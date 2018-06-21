@@ -36,14 +36,25 @@ cd $WorkDir
 mkdir -p Tmp_AMPS_test
 cd Tmp_AMPS_test
 
-#Remove the previous test directory if necessary
-rm -rf AMPS */AMPS
+#checkout the new copy of AMPS if needed otherwise update the existing copy 
+if (-e AMPS) then 
+  cd AMPS
+  git checkout
 
-#Checkout the latest code version
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS 
-cd AMPS
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS_data 
-cd ..
+  cd SWMF_data
+  git checkout
+
+  cd ../../
+else  
+  gitclone AMPS
+  
+  cd AMPS 
+  gitclone SWMF_data
+  ./Config.pl
+
+  cd ../
+endif
+
 
 #Create separate folders for different compilers
 rm -rf GNU
