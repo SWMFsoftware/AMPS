@@ -1,7 +1,7 @@
 //  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
 //  For more information, see http://csem.engin.umich.edu/tools/swmf
 //====================================================
-//$Id$
+//$Id: pic.cpp,v 1.129 2018/06/09 21:50:58 vtenishe Exp $
 //====================================================
 //the general functions for the pic solver
 
@@ -926,9 +926,9 @@ void PIC::Sampling::Sampling() {
 
 
 	            //sample data
-              cell->SampleDatum(PIC::Mesh::DatumParticleWeight,LocalParticleWeight, s);
-              cell->SampleDatum(PIC::Mesh::DatumParticleNumber, 1.0, s);
-              cell->SampleDatum(PIC::Mesh::DatumNumberDensity,
+              cell->SampleDatum(&PIC::Mesh::DatumParticleWeight,LocalParticleWeight, s);
+              cell->SampleDatum(&PIC::Mesh::DatumParticleNumber, 1.0, s);
+              cell->SampleDatum(&PIC::Mesh::DatumNumberDensity,
               LocalParticleWeight/cell->Measure, s);
 
               double miscv2[3];
@@ -939,9 +939,9 @@ void PIC::Sampling::Sampling() {
                 miscv2[idim]=v2;
               }
 
-              cell->SampleDatum(PIC::Mesh::DatumParticleVelocity,v, s, LocalParticleWeight);
-              cell->SampleDatum(PIC::Mesh::DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
-              cell->SampleDatum(PIC::Mesh::DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
+              cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity,v, s, LocalParticleWeight);
+              cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
+              cell->SampleDatum(&PIC::Mesh::DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
 
               #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
               #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -966,8 +966,8 @@ void PIC::Sampling::Sampling() {
 
                 for (int i=0;i<3;i++) v2TemepratureSample[i]=pow(vTemepratureSample[i],2);
 
-                cell->SampleDatum(PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity,vTemepratureSample, s, LocalParticleWeight);
-                cell->SampleDatum(PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity2,v2TemepratureSample, s, LocalParticleWeight);
+                cell->SampleDatum(&PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity,vTemepratureSample, s, LocalParticleWeight);
+                cell->SampleDatum(&PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity2,v2TemepratureSample, s, LocalParticleWeight);
               } //_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_
 
               //sample data for the internal degrees of freedom model

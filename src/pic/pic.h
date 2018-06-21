@@ -1,7 +1,7 @@
 //  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
 //  For more information, see http://csem.engin.umich.edu/tools/swmf
 //===============================================
-//$Id$
+//$Id: pic.h,v 1.278 2018/06/11 20:21:23 shyinsi Exp $
 //===============================================
 //the header for the new particle model
 
@@ -2202,9 +2202,9 @@ namespace PIC {
       // - for scalars
       //-----------------------------------------------------------------------
 
-      void SampleDatum(Datum::cDatumSampled Datum, double* In, int spec, double weight=1.0);
-      void SampleDatum(Datum::cDatumSampled Datum, double In, int spec,  double weight=1.0);
-      void SetDatum(Datum::cDatumSampled Datum, double* In, int spec);
+//      void SampleDatum(Datum::cDatumSampled Datum, double* In, int spec, double weight=1.0);
+//      void SampleDatum(Datum::cDatumSampled Datum, double In, int spec,  double weight=1.0);
+//      void SetDatum(Datum::cDatumSampled Datum, double* In, int spec);
       void GetDatumCumulative(Datum::cDatumSampled Datum, double* Out, int spec);
       double GetDatumCumulative(Datum::cDatumSampled Datum, int spec);
       void GetDatumAverage(cDatumTimed Datum, double* Out, int spec);
@@ -2221,6 +2221,28 @@ namespace PIC {
 
       // data interpolation
       void InterpolateDatum(Datum::cDatumSampled Datum, cDataCenterNode** InterpolationList,double *InterpolationCoefficients,int nInterpolationCoefficients, int spec);
+
+      inline void SampleDatum(Datum::cDatumSampled* Datum, double* In, int spec, double weight=1.0) {
+        int length=Datum->length;
+        double* ptr=(double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset);
+
+        for (int i=0;i<length;i++) *(i+length*spec+ptr)+=In[i]*weight;
+      }
+
+      inline void SampleDatum(Datum::cDatumSampled* Datum, double In, int spec,  double weight=1.0) {
+        *(spec + (double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset))+= In*weight;
+      }
+
+      //.......................................................................
+      inline void SetDatum(Datum::cDatumSampled* Datum, double* In, int spec) {
+        int length=Datum->length;
+        double *ptr=(double*)(associatedDataPointer+completedCellSampleDataPointerOffset+Datum->offset);
+
+        for (int i=0;i<length;i++) *(i+length*spec+ptr)=In[i];
+      }
+
+
+
 
 
       /*
