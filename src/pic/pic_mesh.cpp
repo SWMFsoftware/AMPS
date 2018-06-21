@@ -1,7 +1,7 @@
 //  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
 //  For more information, see http://csem.engin.umich.edu/tools/swmf
 //====================================================
-//$Id$
+//$Id: pic_mesh.cpp,v 1.39 2018/06/07 18:28:19 vtenishe Exp $
 //====================================================
 //the function for particle's data sampling
 
@@ -320,8 +320,8 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
       c=GetDatumCumulative(DatumParticleWeight,s)/TotalParticleWeight;
       for (idim=0;idim<3;idim++) v[idim]*=c,v2[idim]*=c;
 
-      SetDatum(DatumParticleVelocity,v,s);
-      SetDatum(DatumParticleVelocity2,v2,s);
+      SetDatum(&DatumParticleVelocity,v,s);
+      SetDatum(&DatumParticleVelocity2,v2,s);
 
       if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
         for (idim=0;idim<3;idim++) {
@@ -329,8 +329,8 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
           v2ParallelTangentialTemperatureSample[idim]*=c;
         }
 
-        SetDatum(DatumParallelTantentialTemepratureSample_Velocity,vParallelTangentialTemperatureSample,s);
-        SetDatum(DatumParallelTantentialTemepratureSample_Velocity2,v2ParallelTangentialTemperatureSample,s);
+        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity,vParallelTangentialTemperatureSample,s);
+        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity2,v2ParallelTangentialTemperatureSample,s);
       }
     }
 
@@ -807,6 +807,7 @@ int PIC::Mesh::GetCenterNodesInterpolationCoefficients(double *x,double *Coeffic
 
 //===============================================================================================================
 //cell dat aaccess routines
+/*
 void PIC::Mesh::cDataCenterNode::SampleDatum(Datum::cDatumSampled Datum, double* In, int spec, double weight) {
   for(int i=0; i<Datum.length; i++) {
     *(i + Datum.length * spec + (double*)(associatedDataPointer + collectingCellSampleDataPointerOffset+Datum.offset))+= In[i] * weight;
@@ -821,6 +822,7 @@ void PIC::Mesh::cDataCenterNode::SampleDatum(Datum::cDatumSampled Datum, double 
 void PIC::Mesh::cDataCenterNode::SetDatum(Datum::cDatumSampled Datum, double* In, int spec) {
   for(int i=0; i<Datum.length; i++) *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) = In[i];
 }
+*/
 
 //get accumulated data
 //.......................................................................
@@ -905,7 +907,7 @@ void PIC::Mesh::cDataCenterNode::InterpolateDatum(Datum::cDatumSampled Datum, cD
     for(int j=0; j<Datum.length; j++) interpolated[j] += InterpolationCoefficients[i] * value[j];
   }
 
-  SetDatum(Datum, interpolated, spec);
+  SetDatum(&Datum, interpolated, spec);
 
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
