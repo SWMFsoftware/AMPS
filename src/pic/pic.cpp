@@ -708,6 +708,33 @@ void PIC::Sampling::Sampling() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
   
+  if ((_PIC_SAMPLING_MODE_==_PIC_MODE_OFF_)&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_)) {
+    //sample only the particle number for using in the energency load balancing if needed
+
+    for (int iNode=0;iNode<DomainBlockDecomposition::nLocalBlocks;iNode++) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[iNode];
+
+      if (node->block!=NULL) {
+        long int *FirstCellParticleTable=node->block->FirstCellParticleTable;
+
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
+            for (i=0;i<_BLOCK_CELLS_X_;i++) {
+              ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+              if (ptr!=-1) {
+                node->ParallelLoadMeasure++;
+                ptr=PIC::ParticleBuffer::GetNext(ptr);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return;
+  }
+
   #if _PIC_SAMPLING_MODE_ == _PIC_MODE_ON_ //<-- begining of the particle sample section
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
