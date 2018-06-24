@@ -1949,9 +1949,19 @@ Keys=-model-data-path=/Volumes/Data01/AMPS_DATA/MARS@@(0+valeriy)
 Compile=
 >>>@echo "test_Mars-Hot-Oxygen_compile..." > test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
 >>>./Config.pl -application=test/Mars-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTMars-Hot-OxygenKEYS}
->>>cd srcMars; cvs update -r Mars_HotO_DRofO2p_PERMAX
->>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+
+
+>>>mkdir SourceTempDir
+>>>@cd SourceTempDir; cvs co AMPS
+>>>@cd SourceTempDir/AMPS/srcMars; cvs update -r Mars_HotO_DRofO2p_PERMAX 
+>>>@mv srcMars srcMars--new
+>>>@mv SourceTempDir/AMPS/srcMars .
+>>>@rm -rf SourceTempDir
+
+>>>-@($(MAKE) -j8 amps)
+>>>@rm -rf srcMars
+>>>@mv srcMars--new srcMars
+
 >>>@echo "test_Mars-Hot-Oxygen_compile... done" >> test_Mars-Hot-Oxygen$(TESTMars-Hot-Oxygen-REF).diff
 
 Check=
@@ -1970,9 +1980,18 @@ Time=1
 Compile=
 >>>@echo "test_Mars-Hot-Carbon_compile..." > test_Mars-Hot-Carbon.diff
 >>>./Config.pl -application=test/Mars-Hot-Carbon -spice-path=nospice -spice-kernels=nospice  -amps-test=on -model-data-path=/Volumes/Data01/AMPS_DATA/MARS 
->>>cd srcMars; cvs update -r HotC_DRofCOp_EL
->>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
+
+>>>mkdir SourceTempDir
+>>>@cd SourceTempDir; cvs co AMPS 
+>>>@cd SourceTempDir/AMPS/srcMars; cvs update -r HotC_DRofCOp_EL
+>>>@mv srcMars srcMars--new
+>>>@mv SourceTempDir/AMPS/srcMars .
+>>>@rm -rf SourceTempDir
+
+>>>-@($(MAKE) -j8 amps)
+>>>@rm -rf srcMars
+>>>@mv srcMars--new srcMars
+
 >>>@echo "test_Mars-Hot-Carbon_compile... done" >> test_Mars-Hot-Carbon.diff
 
 Run=
