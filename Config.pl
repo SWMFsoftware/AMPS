@@ -178,9 +178,6 @@ foreach (@Arguments) {
       `echo KAMELEON=$1 >> Makefile.local`;
       next};
       
-      
-      
-      
   if (/^-openmp=(.*)$/i) {
     my $t;
     $t=lc($1);
@@ -275,11 +272,11 @@ foreach (@Arguments) {
     open($fh,'>',"Makefile");
       
     foreach my $line (@lines) {
-	    if($line =~ m/^EXTRALINKEROPTIONS=/) {
-	      $line = "EXTRALINKEROPTIONS=$options\n";
-	    }
-	      
-	    print $fh $line;
+      if($line =~ m/^EXTRALINKEROPTIONS=/) {
+        $line = "EXTRALINKEROPTIONS=$options\n";
+      }
+      
+      print $fh $line;
     }
       
     close($fh);
@@ -298,11 +295,11 @@ foreach (@Arguments) {
     open($fh,'>',"Makefile");
       
     foreach my $line (@lines) {
-	    if($line =~ m/^EXTRALINKEROPTIONS_F=/) {
-	      $line = "EXTRALINKEROPTIONS_F=$options\n";
-	    }
+      if ($line =~ m/^EXTRALINKEROPTIONS_F=/) {
+        $line = "EXTRALINKEROPTIONS_F=$options\n";
+      }
 	      
-	    print $fh $line;
+      print $fh $line;
     }
       
     close($fh);
@@ -321,11 +318,11 @@ foreach (@Arguments) {
     open($fh,'>',"Makefile");
       
     foreach my $line (@lines) {
-	    if($line =~ m/^EXTRALINKEROPTIONS_CPP=/) {
-	      $line = "EXTRALINKEROPTIONS_CPP=$options\n";
-	    }
+      if ($line =~ m/^EXTRALINKEROPTIONS_CPP=/) {
+         $line = "EXTRALINKEROPTIONS_CPP=$options\n";
+      }
 	      
-	    print $fh $line;
+      print $fh $line;
     }
       
     close($fh);
