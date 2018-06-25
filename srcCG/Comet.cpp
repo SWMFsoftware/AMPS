@@ -6,23 +6,14 @@
  */
 
 
-//$Id$
+//$Id: Comet.cpp,v 1.77 2017/07/03 20:14:49 shyinsi Exp $
 
 
 #include "pic.h"
 #include "Dust.h"
 #include "Comet.h"
 #include "SingleVariableDiscreteDistribution.h"
-
 #include "RosinaMeasurements.h"
-
-//output the field of view
-bool Comet::OutputFieldViewMapMode=false;
-
-//surface mesh 
-char Comet::Mesh::name[_MAX_STRING_LENGTH_PIC_]="";
-double Comet::Mesh::ConversionFactor=1.0;
-int Comet::Mesh::Format=Comet::Mesh::FormatCodeCEA;
 
 //the object name and the names of the frames
 char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="CHURYUMOV-GERASIMENKO";
@@ -55,7 +46,7 @@ double Comet::DustInitialVelocity::RotationAxis[3]={1.0,0.0,0.0};
 double Comet::DustInitialVelocity::InjectionConstantVelocity=0.001;
 
 static bool probabilityFunctionDefinedUniformNASTRAN=false;
-double *productionDistributionUniformNASTRAN,*cumulativeProductionDistributionUniformNASTRAN;
+double *productionDistributionUniformNASTRAN;
 
 static bool probabilityFunctionDefinedJetNASTRAN=false;
 
@@ -64,7 +55,7 @@ static double azimuthCenter;
 static double zenithCenter;
 static cInternalRotationBodyData* Nucleus;
 
-double **productionDistributionNASTRAN,**cumulativeProductionDistributionNASTRAN;
+double **productionDistributionNASTRAN;
 static double *BjornProductionANALYTICAL;
 bool *definedFluxBjorn,*probabilityFunctionDefinedNASTRAN;
 static double **fluxBjorn;
@@ -85,26 +76,25 @@ long int offsetSurfaceElement;
 
   //Nucleus activity
 #if _NUCLEUS_SHAPE__MODE_ == _SHAP5_
-/*
-const double  Activity[3][25]={
-    {1.88802089096550e+18,-3.32193190779201e+18,2.16030831636854e+18,1.16303584760745e+18,-3.48031365453629e+17,-3.97108996341047e+18,2.32187315012071e+18,2.62881801954068e+18,-1.64152743317681e+17,5.48474318492987e+16,-8.81665110610612e+16,-6.71346849527855e+17,8.17079244731431e+17,2.10263858732877e+17,-7.31447243364394e+17,1.87954830493877e+16,1.59517599584823e+16,2.22312552878431e+17,-4.12879355040244e+17,-1.37905625912140e+18,1.83112475092734e+17,1.21579175185910e+18,-2.43316081589516e+17,-4.24836863227363e+17,2.11834459021013e+16},
+/*const double  Activity[3][25]={
+      {1.88802089096550e+18,-3.32193190779201e+18,2.16030831636854e+18,1.16303584760745e+18,-3.48031365453629e+17,-3.97108996341047e+18,2.32187315012071e+18,2.62881801954068e+18,-1.64152743317681e+17,5.48474318492987e+16,-8.81665110610612e+16,-6.71346849527855e+17,8.17079244731431e+17,2.10263858732877e+17,-7.31447243364394e+17,1.87954830493877e+16,1.59517599584823e+16,2.22312552878431e+17,-4.12879355040244e+17,-1.37905625912140e+18,1.83112475092734e+17,1.21579175185910e+18,-2.43316081589516e+17,-4.24836863227363e+17,2.11834459021013e+16},
     {1.33147318596808e+16,-5.99325576797965e+15,-1.44574576415506e+16,-1.23844936447417e+16,-1.55154864153184e+15,-6.53313342291062e+15,1.07049479617418e+16,1.24456131751260e+16,-6.54238886353421e+15,1.12926642418814e+15,3.89604594220916e+15,-531055729734858,-398604759758765,-2.61684944191026e+15,1.41771647341777e+16,2.03706829667621e+15,-351642267595628,-1.40564295976192e+15,-2.04618374895345e+15,-6.09023703216270e+15,349833485542175,3.58729877013097e+15,-4.35629505817132e+15,-2.91104899991473e+15,1.36495458239451e+15},
     {8.24876290734347e+15,-1.15993586348543e+16,3.36505486424125e+15,-6.76013519095671e+15,-314999862632954,-1.08780416335274e+16,7.95233182311777e+15,9.16964842516085e+15,-2.81955448931900e+15,1.21059245593790e+15,-1.25443670217006e+15,-2.11455950796835e+15,1.24045282758517e+15,-1.65067535925255e+15,-5.46839069247522e+15,1.09833316361053e+15,264156854265098,1.90947201360750e+15,-892524030311892,-2.10255875207271e+15,515450866463768,3.93817676318131e+15,-2.90479115840660e+15,-5.21185256041148e+15,955141456973813}
-  };
-*/
+    };*/
 
 const double  Activity[3][25]={
   {4.05046248124461e+18,-6.24852324327984e+18,2.21076492545965e+18,2.30599337468561e+18,-2.13210433468755e+17,-2.93503736570305e+18,3.95331594911279e+18,1.68907123485848e+18,-6.08959099576041e+17,-4.16173340986745e+16,9.32458392311055e+17,-1.26249822048652e+18,1.62639906735530e+18,4.44344062917283e+17,-2.19800074898424e+17,-3.09240102191735e+16,-3.65030014319170e+16,5.62661677195891e+17,-1.42321279586207e+17,-1.01108207402486e+18,3.51289231652432e+16,9.78822133937292e+17,-6.54348712733332e+17,3.50405718897770e+17,2.01220064658058e+16},
 {5.58212657442640e+16,1.69923105273369e+16,-1.11485144585308e+17,4.80451191798595e+16,-2.16039737511624e+15,-9.72865936712572e+15,6.42995705259692e+16,-2.82972844843761e+16,1.99903529283788e+15,-4.35631480177077e+15,8.27717361536908e+15,4.38784103825026e+15,-3.74737956801617e+16,1.00277250023657e+16,-7.01596097987841e+15,2.13718387796689e+15,-895847944164670,1.58698759568649e+16,-2.98230008018983e+15,-5.65823460351568e+15,4.89096082360416e+15,-956987487100146,-674786277253384,-2.93847516004506e+15,-2.62095522434557e+15},
 {6.49770471124331e+15,1.28275301833506e+15,-1.49535524354824e+15,-1.13602611845553e+15,-614665717100327,-5.43017412724682e+15,6.27282882539673e+15,3.70160085257730e+15,-470480792005991,-630840676620350,3.74623283386353e+15,519215876621864,-1.17473779532147e+15,-182968580972229,-1.08429682423166e+15,943777384180566,-614847800919776,37783608919615.6,-1.66533993427704e+15,-1.16535459980132e+15,558006441164194,3.12255469342375e+15,-280583249139547,1.15127664468944e+15,297238831934724}
 }; //AllData SHAP5.1 data from DFMS_major_species_20160310.txt (MNRAS Paper)
+
 
 #elif _NUCLEUS_SHAPE__MODE_ == _SHAP5_1_
 const double  Activity[3][25]={
   {4.05046248124461e+18,-6.24852324327984e+18,2.21076492545965e+18,2.30599337468561e+18,-2.13210433468755e+17,-2.93503736570305e+18,3.95331594911279e+18,1.68907123485848e+18,-6.08959099576041e+17,-4.16173340986745e+16,9.32458392311055e+17,-1.26249822048652e+18,1.62639906735530e+18,4.44344062917283e+17,-2.19800074898424e+17,-3.09240102191735e+16,-3.65030014319170e+16,5.62661677195891e+17,-1.42321279586207e+17,-1.01108207402486e+18,3.51289231652432e+16,9.78822133937292e+17,-6.54348712733332e+17,3.50405718897770e+17,2.01220064658058e+16},
 {5.58212657442640e+16,1.69923105273369e+16,-1.11485144585308e+17,4.80451191798595e+16,-2.16039737511624e+15,-9.72865936712572e+15,6.42995705259692e+16,-2.82972844843761e+16,1.99903529283788e+15,-4.35631480177077e+15,8.27717361536908e+15,4.38784103825026e+15,-3.74737956801617e+16,1.00277250023657e+16,-7.01596097987841e+15,2.13718387796689e+15,-895847944164670,1.58698759568649e+16,-2.98230008018983e+15,-5.65823460351568e+15,4.89096082360416e+15,-956987487100146,-674786277253384,-2.93847516004506e+15,-2.62095522434557e+15},
 {6.49770471124331e+15,1.28275301833506e+15,-1.49535524354824e+15,-1.13602611845553e+15,-614665717100327,-5.43017412724682e+15,6.27282882539673e+15,3.70160085257730e+15,-470480792005991,-630840676620350,3.74623283386353e+15,519215876621864,-1.17473779532147e+15,-182968580972229,-1.08429682423166e+15,943777384180566,-614847800919776,37783608919615.6,-1.66533993427704e+15,-1.16535459980132e+15,558006441164194,3.12255469342375e+15,-280583249139547,1.15127664468944e+15,297238831934724}
-}; //AllData SHAP5.1 data from DFMS_major_species_20160310.txt (MNRAS Paper)
+  }; //AllData SHAP5.1 data from DFMS_major_species_20160310.txt (MNRAS Paper)
 
   /*  {1.57325301469702e+18,-3.06818217775564e+18,1.31208309667974e+18,1.46041554024817e+18,8.15209500298318e+16,-1.24651294678361e+18,1.35526945505413e+18,2.54057731030077e+17,-3.66692212249671e+17,1.55903292460876e+16,1.81666967120391e+17,-6.18543289507991e+17,3.12482388738060e+17,2.86385636557309e+17,-5.75937279996881e+17,-2.30661343795578e+16,-5.26756643398108e+16,6.20037543471409e+17,-4.83723255010864e+16,-2.55416973732876e+17,-2.97314650780211e+16,3.37966240023484e+15,-2.53012917097097e+17,-3.31563421581800e+17,-9.68864617418557e+15},
   {6.95194683393876e+15,3.53975989249000e+15,-9.60410454463290e+15,-1.51985764823435e+16,-3.35662187412235e+15,-1.74875020291974e+15,3.37189330545273e+15,9.83484243760754e+15,-1.07795854964915e+15,-189242730075281,7.45931650543153e+15,1.10042807076842e+15,1.01161206947616e+15,-3.21502070435106e+15,3.77800005387426e+15,754918608027546,-199452155788754,1.57442441676983e+15,-2.76117302592304e+15,-2.84861304992834e+15,-472389433000515,4.38242937082001e+15,-500786443547847,-2.57832043518761e+15,59915754234166.5},
@@ -184,20 +174,18 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
   productionDistributionNASTRAN=new double* [PIC::nTotalSpecies];
   productionDistributionNASTRAN[0]=new double [PIC::nTotalSpecies*CutCell::nBoundaryTriangleFaces];
 
-  cumulativeProductionDistributionNASTRAN=new double* [PIC::nTotalSpecies];
-  cumulativeProductionDistributionNASTRAN[0]=new double [PIC::nTotalSpecies*CutCell::nBoundaryTriangleFaces];
+ 
 
   for(int i=0;i<PIC::nTotalSpecies;i++) {
     productionDistributionNASTRAN[i]=productionDistributionNASTRAN[0]+i*CutCell::nBoundaryTriangleFaces;
-    cumulativeProductionDistributionNASTRAN[i]=cumulativeProductionDistributionNASTRAN[0]+i*CutCell::nBoundaryTriangleFaces;
+  
     for(int j=0;j<CutCell::nBoundaryTriangleFaces;j++) {
       productionDistributionNASTRAN[i][j]=0.0;
-      cumulativeProductionDistributionNASTRAN[i][j]=0.0;
+    
     }  
   }
 
   productionDistributionUniformNASTRAN=new double[CutCell::nBoundaryTriangleFaces];
-  cumulativeProductionDistributionUniformNASTRAN=new double[CutCell::nBoundaryTriangleFaces];
   BjornProductionANALYTICAL=new double[PIC::nTotalSpecies];
   definedFluxBjorn=new bool[PIC::nTotalSpecies];
   probabilityFunctionDefinedNASTRAN=new bool[PIC::nTotalSpecies];
@@ -209,7 +197,6 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
 
   for(int i=0;i<CutCell::nBoundaryTriangleFaces;i++) {
     productionDistributionUniformNASTRAN[i]=0.0;
-    cumulativeProductionDistributionUniformNASTRAN[i]=0.0;
   }
 
   for(int i=0;i<PIC::nTotalSpecies;i++) {
@@ -227,13 +214,14 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
 
   //recalculate the location of the Sun
   #ifndef _NO_SPICE_CALLS_
+
   if ((Comet::Time::RecalculateSunLocationFlag==true)||(Comet::Time::InitSunLocationFlag==true)) {
     SpiceDouble lt,et,xSun[3];
-
+   
     utc2et_c(Comet::Time::SimulationStartTimeString,&et);
     spkpos_c("SUN",et,"67P/C-G_CK","NONE","CHURYUMOV-GERASIMENKO",xSun,&lt);
     reclat_c(xSun,&HeliocentricDistance,&subSolarPointAzimuth,&subSolarPointZenith);
-
+    subSolarPointZenith = Pi/2 - subSolarPointZenith;
     HeliocentricDistance*=1.0E3;
 
     if (PIC::ThisThread==0) {
@@ -249,6 +237,7 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
   positionSun[1]=HeliocentricDistance*sin(subSolarPointAzimuth)*sin(subSolarPointZenith);
   positionSun[2]=HeliocentricDistance*cos(subSolarPointZenith);
 
+ 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
   //init the dust model                                                                                                                                                                           
   ElectricallyChargedDust::Init_AfterParser();
@@ -443,7 +432,7 @@ double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_
 long int Comet::InjectionBoundaryModel_Limited() {
   int spec;
   long int res=0;
-
+  
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=InjectionBoundaryModel_Limited(spec);
 
   return res;
@@ -513,8 +502,10 @@ long int Comet::InjectionBoundaryModel_Limited(int spec) {
 
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+  LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-    LocalTimeStep=Comet::CG->maxIntersectedNodeTimeStep[spec];
+  LocalTimeStep=Comet::CG->maxIntersectedNodeTimeStep[spec];
 #else
   exit(__LINE__,__FILE__,"Error: the time step node is not defined");
 #endif
@@ -557,7 +548,8 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
    FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__1_Uniform_]=Comet::GetTotalProductionRateUniformNASTRAN(_H2O_SPEC_);
    FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalProductionRateJetNASTRAN(_H2O_SPEC_);
  }
- TotalFlux=Comet::GetTotalProductionRateBjornNASTRAN(_H2O_SPEC_)+Comet::GetTotalProductionRateUniformNASTRAN(_H2O_SPEC_)+Comet::GetTotalProductionRateJetNASTRAN(_H2O_SPEC_);;
+ TotalFlux=Comet::GetTotalProductionRateBjornNASTRAN(_H2O_SPEC_)+Comet::GetTotalProductionRateUniformNASTRAN(_H2O_SPEC_)+Comet::GetTotalProductionRateJetNASTRAN(_H2O_SPEC_);
+
 #endif
 
 /* double CalculatedSourceRate[PIC::nTotalSpecies][1+_exosphere__SOURCE_MAX_ID_VALUE_];
@@ -583,7 +575,8 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
    if (TotalGasMassProductionRate<0.0) {
      TotalGasMassProductionRate=0.0;
-
+     
+  
      for (int s=0;s<PIC::nTotalSpecies;s++) if ((s<_DUST_SPEC_)||(_DUST_SPEC_>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) {
        TotalGasMassProductionRate+=PIC::MolecularData::GetMass(s)*
            (Comet::GetTotalProductionRateBjornNASTRAN(s)+Comet::GetTotalProductionRateUniformNASTRAN(s)+Comet::GetTotalProductionRateJetNASTRAN(s));
@@ -706,19 +699,27 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
 
 
-/*
+      /*
     //apply condition of tracking the particle
     #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
     PIC::ParticleTracker::InitParticleID(tempParticleData);
     PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x_SO_OBJECT,v_SO_OBJECT,spec,tempParticleData,(void*)startNode);
     #endif
-*/
+      */
 
 
     //generate a new particle
     newParticle=PIC::ParticleBuffer::GetNewParticle();
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
     memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+
+    /*
+    //apply condition of tracking the particle
+    #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+    PIC::ParticleTracker::InitParticleID(newParticleData);
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x_SO_OBJECT,v_SO_OBJECT,spec,newParticleData,(void*)startNode);
+    #endif
+    */
 
     //determine the initial charge of the dust grain
     #if _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ == _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__ON_
@@ -860,7 +861,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 */
 
 #endif //_COMPILATION_MODE_
-while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+       while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
   //determine the source process to generate a particle's properties                                               
   do {
     SourceProcessID=(int)(rnd()*(1+_exosphere__SOURCE_MAX_ID_VALUE_));
@@ -1089,6 +1090,59 @@ double sphericalHarmonic(int i,double colatitude,double longitude){
 }
 
 
+void useDustActiveRegion(double * productionRateArray){
+
+
+#if _COMET_DUST_USE_ACTIVE_REGION_ == _PIC_MODE_ON_
+  
+  long int totalSurfaceElementsNumber,i,j;
+  int idim;
+  const int numActiveRegion=2;
+  // const double locActiveRegion[numActiveRegion][2]={{0.,0.},{150,0}}; // location of active region
+  const double locActiveRegion[numActiveRegion][2]={{90.,0.},{290,0}};
+  double widthActiveRegion= 5.0; // in degree
+  double distInDegree;
+
+  totalSurfaceElementsNumber=CutCell::nBoundaryTriangleFaces;
+    
+  for (i=0;i<totalSurfaceElementsNumber;i++) {
+
+    double colatitude,longitude,latitude;
+    double xCenter[3];
+      
+    productionRateArray[i]=0.0;
+    CutCell::BoundaryTriangleFaces[i].GetCenterPosition(xCenter);
+     
+    colatitude=acos(xCenter[2]/sqrt(xCenter[0]*xCenter[0]+xCenter[1]*xCenter[1]+xCenter[2]*xCenter[2]));
+    latitude=90.0-colatitude/Pi*180.0;
+    if (xCenter[0]*xCenter[0]+xCenter[1]*xCenter[1]==0.0) {
+      longitude=0.0;
+    }else if(xCenter[1]>0.0) {
+      longitude=acos(xCenter[0]/sqrt(xCenter[0]*xCenter[0]+xCenter[1]*xCenter[1]));
+    }else{
+      longitude=-acos(xCenter[0]/sqrt(xCenter[0]*xCenter[0]+xCenter[1]*xCenter[1]))+2*Pi;
+    }
+    longitude = longitude/Pi*180.0;
+      
+    for (j=0;j<numActiveRegion;j++){
+      distInDegree = fmod(fabs(longitude-locActiveRegion[j][0]),360);
+      distInDegree = sqrt(pow(distInDegree,2)+pow(latitude-locActiveRegion[j][1],2));
+	
+      //set value for triangle surface in active region
+      if(distInDegree<widthActiveRegion){
+	productionRateArray[i] =CutCell::BoundaryTriangleFaces[i].SurfaceArea; //with uniform flux
+	break;
+      }
+	
+    }
+      
+  }
+
+  
+#endif 
+}
+
+
 double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
   double c=0.0,X=0.0,totalProductionRate=0.0;
   double x[3],norm[3],xMiddle[3],lattitude,factor=1.0;
@@ -1103,9 +1157,10 @@ double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
   if (definedFluxBjorn[spec]==false) {
     if (spec==_H2O_SPEC_) {
 #if _NUCLEUS_SHAPE__MODE_ == _SHAP5_
-      double Qmin=10.0*0.02/pow(HeliocentricDistance/_AU_,4.2143229)*600,Qmax=1.0/pow(HeliocentricDistance/_AU_,4.2143229)*600;
+      double Qmin=0.02*0.2824,Qmax=1.0*0.2824;
+      //      double Qmin=0.02/pow(HeliocentricDistance/_AU_,4.2143229)*600,Qmax=1.0/pow(HeliocentricDistance/_AU_,4.2143229)*600;
 #elif _NUCLEUS_SHAPE__MODE_ == _SHAP5_1_
-      double Qmin=10.0*0.02/pow(HeliocentricDistance/_AU_,4.8)*600,Qmax=1.0/pow(HeliocentricDistance/_AU_,4.8)*600;
+      double Qmin=0.02/pow(HeliocentricDistance/_AU_,4.8)*600,Qmax=1.0/pow(HeliocentricDistance/_AU_,4.8)*600;
 #endif      
       for (i=0;i<90;i++) {
         angle=(double) i;
@@ -1115,7 +1170,8 @@ double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
       nightSideFlux[spec]=Qmin;
     }
     else if (spec==_CO2_SPEC_) {
-      double Qmin=0.1/pow(HeliocentricDistance/_AU_,2.0)*600,Qmax=1.0/pow(HeliocentricDistance/_AU_,2.0)*600;
+      double Qmin=0.02*212.23,Qmax=1.0*212.23;
+      //     double Qmin=0.02/pow(HeliocentricDistance/_AU_,2.0)*600*2.0,Qmax=1.0/pow(HeliocentricDistance/_AU_,2.0)*600*2.0;
       for (i=0;i<90;i++) {
 	angle=(double) i;
 	fluxBjorn[spec][i]=Qmin+(Qmax-Qmin)*cos(angle*Pi/180.0);
@@ -1159,6 +1215,8 @@ double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
     
     totalSurfaceElementsNumber=CutCell::nBoundaryTriangleFaces;
     
+    if(PIC::ThisThread==0) printf("Position of the Sun: %6.3f %6.3f %6.3f \n",positionSun[0],positionSun[1],positionSun[2]); 
+
     for (i=0;i<totalSurfaceElementsNumber;i++) {
       for (idim=0;idim<3;idim++) norm[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
       CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh.EPS); 
@@ -1225,7 +1283,7 @@ cSingleVariableDiscreteDistribution<int> *Comet::BjornNASTRAN::SurfaceInjectionP
 int Comet::BjornNASTRAN::nDev=25;
 
 void Comet::BjornNASTRAN::Init() {
-  int i,j,idim,specIn,totalSurfaceElementsNumber;
+  int i,j,idim,specIn,pass,totalSurfaceElementsNumber;
   double norm[3],x[3],c,X;
 
 
@@ -1239,15 +1297,12 @@ void Comet::BjornNASTRAN::Init() {
   for (specIn=-1;specIn<PIC::nTotalSpecies;specIn++) {
     int spec;
 
-    switch (specIn) {
-    case -1:
+    if (specIn==-1) {
       spec=_H2O_SPEC_;
-      break;
-    case _H2O_SPEC_:
-      continue;
-      break;
-    default:
+    }
+    else {
       spec=specIn;
+      if (spec==_H2O_SPEC_) continue;
     }
 
     if (probabilityFunctionDefinedNASTRAN[spec]==true) continue;
@@ -1317,14 +1372,8 @@ void Comet::BjornNASTRAN::Init() {
         }
       }
 
-      cumulativeProductionDistributionNASTRAN[spec][0]=0.0;
-      for (i=0;i<totalSurfaceElementsNumber;i++) {
-        if (i==0) {
-          cumulativeProductionDistributionNASTRAN[spec][i]+=productionDistributionNASTRAN[spec][i]/total;
-        }else{
-          cumulativeProductionDistributionNASTRAN[spec][i]=cumulativeProductionDistributionNASTRAN[spec][i-1]+productionDistributionNASTRAN[spec][i]/total;
-        }
-      }
+     
+    
 
       //the cumulative distributino of dust has to be the same as of water
       if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) {
@@ -1332,14 +1381,17 @@ void Comet::BjornNASTRAN::Init() {
           //water must be defined before dust
           if (probabilityFunctionDefinedNASTRAN[_H2O_SPEC_]==false) exit(__LINE__,__FILE__,"Error: water cumulative distribution has to be defined before that of the dust");
 
-          //copy water cumulative distribution into that of the dust
-          for (i=0;i<totalSurfaceElementsNumber;i++) cumulativeProductionDistributionNASTRAN[spec][i]=cumulativeProductionDistributionNASTRAN[_H2O_SPEC_][i];
-
+         
 
           //load correction to the dust injection distribution if needed
           double rate[totalSurfaceElementsNumber];
 
+#if _COMET_DUST_USE_ACTIVE_REGION_ == _PIC_MODE_ON_
+	  useDustActiveRegion(rate);
+#else
           for (i=0;i<totalSurfaceElementsNumber;i++) rate[i]=productionDistributionNASTRAN[_H2O_SPEC_][i];
+#endif
+
 
           //init surface injection probability for dust
           if (_DUST_INJECTION_RATE_CORRECTION_MODE_ != _DUST_INJECTION_RATE_CORRECTION_MODE__OFF_) {
@@ -1423,11 +1475,13 @@ void Comet::BjornNASTRAN::Init() {
 
         }
 
-      }
+      } // if (PIC_MODEL_DUST_MODE_ON_)
 
 //      if (SurfaceInjectionProbability[spec].CumulativeDistributionTable==NULL) {
+      if ( (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__OFF_) ||
+          ((_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_)&&((spec<_DUST_SPEC_)||(spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups))) ) {
         SurfaceInjectionProbability[spec].InitArray(productionDistributionNASTRAN[spec],totalSurfaceElementsNumber,10*totalSurfaceElementsNumber);
-//      }
+      }
 
 
       probabilityFunctionDefinedNASTRAN[spec]=true;
@@ -1727,15 +1781,8 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
       total+=productionDistributionUniformNASTRAN[i];
     }
       
-    cumulativeProductionDistributionUniformNASTRAN[0]=0.0;
-    for (i=0;i<totalSurfaceElementsNumber;i++) {
-      if (i==0) {
-	cumulativeProductionDistributionUniformNASTRAN[i]+=productionDistributionUniformNASTRAN[i]/total;
-      }else{
-	cumulativeProductionDistributionUniformNASTRAN[i]=cumulativeProductionDistributionUniformNASTRAN[i-1]+productionDistributionUniformNASTRAN[i]/total;
-      }
-      
-    }
+   
+  
     probabilityFunctionDefinedUniformNASTRAN=true;
   }
   
@@ -1964,13 +2011,15 @@ void Comet::StepOverTime() {
 	      if (PIC::ParticleBuffer::GetI(ptr)==_H2O_SPEC_) {
 		ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);		
 	  
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[PIC::ParticleBuffer::GetI(ptr)];
-#elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  LocalTimeStep=block->GetLocalTimeStep(PIC::ParticleBuffer::GetI(ptr)); //   node->Sphere->maxIntersectedNodeTimeStep[PIC::ParticleBuffer::GetI(ptr)];
-#else
-  exit(__LINE__,__FILE__,"Error: the time step node is not defined");
-#endif
+                #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+                LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[PIC::ParticleBuffer::GetI(ptr)];
+                #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+                LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+                #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
+                LocalTimeStep=block->GetLocalTimeStep(PIC::ParticleBuffer::GetI(ptr)); //   node->Sphere->maxIntersectedNodeTimeStep[PIC::ParticleBuffer::GetI(ptr)];
+                #else
+                exit(__LINE__,__FILE__,"Error: the time step node is not defined");
+                #endif //_SIMULATION_TIME_STEP_MODE_ 
 
 		Erot=PIC::IDF::LB::GetRotE(ParticleData);
 		Erot-=radiativeCoolingRate*LocalTimeStep;
@@ -2270,6 +2319,8 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
 
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   ParentTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+  ParentTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   ParentTimeStep=node->block->GetLocalTimeStep(spec);
 #else
@@ -2305,6 +2356,8 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
 
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
      ProductTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[specProduct];
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+     ProductTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
      ProductTimeStep=node->block->GetLocalTimeStep(specProduct);
 #else
