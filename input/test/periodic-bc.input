@@ -47,6 +47,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   FirstPrintedOutputFile=10000000
 
   define  _PIC_SAMPLING_MODE_  _PIC_MODE_OFF_ 
+  define _PIC_EMERGENCY_LOAD_REBALANCING_MODE_ _PIC_MODE_OFF_
 
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
