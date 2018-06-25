@@ -710,7 +710,7 @@ void PIC::Sampling::Sampling() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
   
-  if ((_PIC_SAMPLING_MODE_==_PIC_MODE_OFF_)&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_)) {
+  if ((_PIC_SAMPLING_MODE_==_PIC_MODE_OFF_)&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_)&&(_PIC_EMERGENCY_LOAD_REBALANCING_MODE_==_PIC_MODE_ON_)) {
     //sample only the particle number for using in the energency load balancing if needed
 
     for (int iNode=0;iNode<DomainBlockDecomposition::nLocalBlocks;iNode++) {
@@ -733,8 +733,6 @@ void PIC::Sampling::Sampling() {
         }
       }
     }
-
-    return;
   }
 
   #if _PIC_SAMPLING_MODE_ == _PIC_MODE_ON_ //<-- begining of the particle sample section
