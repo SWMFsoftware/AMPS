@@ -1,4 +1,4 @@
-//$Id$
+//$Id: pic_mover_relativistic_boris.cpp,v 1.11 2018/04/10 05:52:32 vtenishe Exp $
 //relativistic particle trajectory integration
 
 /*
@@ -381,7 +381,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int nd,tempFirstCellParticle,*tempFirstCellParticlePtr;
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -390,24 +390,11 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 #endif
 #endif
 
-  if ((nd=PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
-
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  PIC::Mesh::cDataCenterNode *cell;
-
-  cell=startNode->block->GetCenterNode(nd);
-
-  if (cell->Measure<=0.0) {
-    cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
-    exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
-  }
-
-#endif
-
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
