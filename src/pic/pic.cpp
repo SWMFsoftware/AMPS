@@ -785,7 +785,7 @@ void PIC::Sampling::Sampling() {
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) reduction(+:nTotalSampledParticles) default(none) \
   private (s,i,j,k,idim,LocalCellNumber,ptr,ptrNext,ParticleData, ParticleDataNext,cell,block,SamplingData,v,LocalParticleWeight,Speed2,v2,node, \
-    tempSamplingBuffer,tempParticleData,FirstCellParticleTable, \
+    FirstCellParticleTable, \
     lParallelTemepratureSampleDirection,l0TangentialTemepratureSampleDirection,l1TangentialTemepratureSampleDirection)  \
   shared (localSimulatedSpeciesParticleNumber,PIC::Mesh::mesh, \
      DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable, \
