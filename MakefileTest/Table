@@ -2015,6 +2015,8 @@ Check=
 Name=test/InterpolateAMR-test
 Time=2
 
+ExeptionCode=SKIP{pgcc}
+
 Run=
 >>>@echo "test_InterpolateAMR-test_run..." >> test_InterpolateAMR-test.diff
 >>>@echo Test test_InterpolateAMR-test has started: `date`
