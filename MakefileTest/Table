@@ -713,7 +713,7 @@ Check=
 >>>@cat test_particle_energy$(TESTlightwave-current-on-REF).diff test_langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 >>>@ls -l test_particle_energy$(TESTlightwave-current-on-REF).diff
->>>@ls -l test__langmuir_wave$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_langmuir_wave$(TESTlightwave-current-on-REF).diff
 >>>@ls -l test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 >>>@echo Test test_lightwave-current-on has finished: `date`
 
