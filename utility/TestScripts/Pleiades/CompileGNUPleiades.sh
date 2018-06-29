@@ -6,6 +6,7 @@ source $HOME/.cshrc
 set WorkDir = /nobackup/`whoami`
 
 module unload comp-intel
+module unload comp-pgi
 module load gcc                          
 
 echo -n "Compiling GNU....."                 

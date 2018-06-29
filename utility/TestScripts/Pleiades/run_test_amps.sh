@@ -53,13 +53,30 @@ cd Tmp_AMPS_test
 rm -f *.job
 
 # Remove the previous test directory if necessary
-rm -rf AMPS */AMPS
+rm -rf */AMPS
 
 # Checkout the latest code version
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS 
-cd AMPS
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS_data 
-cd ..
+if (-e AMPS) then
+  cd AMPS_Legacy
+  git pull
+
+  cd ../AMPS
+  git pull
+
+  cd SWMF_data
+  git pull
+
+  cd ../../
+else
+  gitclone AMPS_Legacy
+  gitclone AMPS
+
+  cd AMPS
+  gitclone SWMF_data
+
+  cd ../
+endif
+
 
 # Update data files for test at supercomputers
 #>Pleiades>Yellowstone>Stampede #########################

@@ -70,6 +70,6 @@ foreach $file (@files) {
    close (FILE);
 }
     
-
+print "Test routine is completed\n";
 
  
