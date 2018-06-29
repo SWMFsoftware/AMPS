@@ -105,7 +105,7 @@ cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 ./Config.pl -install -compiler=ifortmpif90,iccmpicxx >& test_amps.log    
 #>PGIAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
-./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.14r19/lib,-lmpi++,-lmpi       >& test_amps.log    
+./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >& test_amps.log    
 
 # copy job files to the AMPS directory on supercomputers
 #>Pleiades ###############################################
@@ -124,7 +124,7 @@ echo -n "Set Exeptions....."
 #>Pleiades ##############################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                   #
 ./Config.pl -install -compiler=ifort,icc
-./Config.pl -cpp-link-option=-lmpi 
+./Config.pl -cpp-link-option=-lmpi,-lpthread 
 ./Config.pl -f-link-option=-lmpi                     #
 ./Config.pl -cpplib-rm=-lmpi_cxx
 ./Config.pl -noopenmp
