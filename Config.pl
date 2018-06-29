@@ -20,7 +20,7 @@ our @Compilers;
 
 my $config     = "share/Scripts/Config.pl";
 #check util and share
-my $GITCLONE = "git clone"; my $GITDIR = "herot:/GIT/FRAMEWORK/";
+my $GITCLONE = "git clone"; my $GITDIR = "herot.engin.umich.edu:/GIT/FRAMEWORK/";
 
 if (-f $config or -f "../../$config"){
 }else{
