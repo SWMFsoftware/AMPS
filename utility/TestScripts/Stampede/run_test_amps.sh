@@ -50,20 +50,29 @@ mkdir -p Tmp_AMPS_test
 cd Tmp_AMPS_test
 
 # Remove the previous test directory if necessary
-rm -rf AMPS */AMPS
+rm -rf */AMPS
 
 # Checkout the latest code version
-set  CVSROOT=vtenishe@herot.engin.umich.edu:/CVS/FRAMEWORK/
-set  CVS_RSH=ssh
+if (-e AMPS) then
+  cd AMPS_Legacy
+  git pull
 
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS 
-cd AMPS
-cvs co -D "`date +%m/%d/%Y` 23:20" AMPS_data 
-cd ..
+  cd ../AMPS
+  git pull
 
-# Update data files for test at supercomputers
-#>Pleiades>Yellowstone>Stampede #########################
-rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST 
+  cd SWMF_data
+  git pull
+
+  cd ../../
+else
+  gitclone AMPS
+  gitclone AMPS_Legacy
+
+  cd AMPS
+  gitclone SWMF_data
+
+  cd ../
+endif 
 
 # create separate folders for different compilers
 #>GNUAll ############################
@@ -77,7 +86,7 @@ mkdir -p Intel; cp -r AMPS Intel/;
 #>GNUAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >& test_amps.log    
-utility/TestScripts/BuildTest.pl -test-run-time=60
+utility/TestScripts/BuildTest.pl -test-run-time=15 
 
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
@@ -89,14 +98,18 @@ cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 #cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
 #./Config.pl -install -compiler=pgf90,pgccmpicxx      >& test_amps.log    <#
 
+# Update data files for test at supercomputers
+#>Pleiades>Yellowstone>Stampede #########################
+rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST
 
 # copy job files to the AMPS directory on supercomputers
 # #>Pleiades ###############################################
 # #cp AMPS/utility/TestScripts/test_amps.pleiades.*.job . <#
 # #>Stampede ###############################################
 rm -f utility/TestScripts/test_amps.stampede.all.overtime*.job
-utility/TestScripts/BuildTest.pl -test-run-time=60 
+utility/TestScripts/BuildTest.pl -test-run-time=15  
 
+rm -rf ../../test_amps.stampede.*.job
 cp utility/TestScripts/test_amps.stampede.*.job ../.. 
 
 # Compile AMPS tests
