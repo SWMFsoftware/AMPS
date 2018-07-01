@@ -147,27 +147,21 @@ Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02
 Compile=
 >>>@echo "test_CG-Rosina-Liouville--Trajectory_compile..." > test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
->>>@mkdir -p Temp
->>>@cd Temp; cvs co -r CG_Rosina_Liouville__dev_branch_071117 AMPS
+>>>@mkdir -p ../TempSourceDir  
+>>>@cd ../TempSourceDir;git clone herot.engin.umich.edu:/GIT/FRAMEWORK/AMPS
+>>>@cd ../TempSourceDir/AMPS;git checkout ROSINA-END-OF-MISSION
 
->>>@cp -r srcCG srcCG--original
->>>@cp -r Temp/AMPS/srcCG .
-
->>>@cp -r src src--original
->>>@cp -r Temp/AMPS/src .
+>>>@mv srcCG srcCG--original
+>>>@mv ../TempSourceDir/AMPS/srcCG .
+>>>@rm -rf ../TempSourceDir
 
 >>>./Config.pl -application=test/cg-end-of-mission-rosina-trajectory -amps-test=on $(TESTCG-Rosina-Liouville--TrajectoryKEYS)
 >>>./Config.pl -amps-test=off
 >>>-@($(MAKE) -j8 amps)
 >>>./Config.pl -amps-test=on
 
->>>@rm -rf Temp
->>>rm -rf src 
->>>mv src--original src
-
->>>rm -rf srcCG
->>>mv srcCG--original srcCG
-
+>>>@rm -rf srcCG
+>>>@mv srcCG--original srcCG
 >>>@echo "test_CG-Rosina-Liouville--Trajectory_compile... done" >> test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
 Check= 
@@ -526,7 +520,7 @@ Ref=1{gcc}@@(0+pleiades)
 Compile=
 >>>@echo "test_batl-reader_compile..." > test_batl-reader.diff 
 >>>echo "Installing BATL....." 
->>>@gitclone BATL
+>>>@gitclone BATL --depth=1 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=4,4,4 -r=2,2,2 -ng=0; make READAMRLIB 
 >>>@echo "Install AMPS......"  
 >>>./Config.pl -application=test/BATL-reader -spice-path=nospice -batl-path=${PTDIR}/BATL -swmf-path=${PTDIR}/SWMF -cplr-data-path=${PTDIR}/data/input/DataFileReader/BATL  
@@ -545,7 +539,7 @@ Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
 >>>echo "Installing BATL....."
->>>@gitclone BATL
+>>>@gitclone BATL --depth=1 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
 >>>./Config.pl -application=test/Earth-test -spice-path=nospice -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS} 
 >>>@($(MAKE) -j1 amps) 
@@ -575,7 +569,7 @@ Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
 >>>echo "Installing BATL....."
->>>@gitclone BATL
+>>>@gitclone BATL --depth=1 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
 >>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
 >>>@($(MAKE) -j1 amps)
