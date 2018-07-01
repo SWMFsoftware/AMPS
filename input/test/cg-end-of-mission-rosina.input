@@ -196,6 +196,8 @@ CouplerMode=file(tecplot) !!off, file,  swmf
   !MeshSignature=0xd7058cc2a680a3a2
  ! MeshSignature=0xd5058fc3e01a454f
 
+  Mesh::Name=SHAP5_stefano.bdf,ConversionFactor=1.0,Format=NAS
+
   RosinaDataSampling=on !on,off 
 
   !simulation and Rosina sampling times
