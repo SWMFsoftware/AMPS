@@ -57,19 +57,16 @@ rm -rf */AMPS
 
 # Checkout the latest code version
 if (-e AMPS) then
-  cd AMPS_Legacy
-  git pull
-
-  cd ../AMPS
-  git pull
-
-  cd SWMF_data
-  git pull
+  cd AMPS_Legacy; git pull
+  cd ../BATL; git pull
+  cd ../AMPS; git pull
+  cd SWMF_data; git pull
 
   cd ../../
 else
   gitclone AMPS_Legacy
   gitclone AMPS
+  gitclone BATL
 
   cd AMPS
   gitclone SWMF_data
@@ -89,12 +86,15 @@ rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDi
 #>GNUAll ############################
 rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/;  
+cp -r BATL GNU/AMPS/
 #>IntelAll ##########################
 rm -rf Intel
 mkdir -p Intel; cp -r AMPS Intel/;
+cp -r BATL Intel/AMPS/
 #>PGIAll ############################
 rm -rf PGI
 mkdir -p PGI;   cp -r AMPS PGI/;  
+cp -r BATL PGI/AMPS/
 
 # install AMPS
 #>GNUAll ###################################################################
