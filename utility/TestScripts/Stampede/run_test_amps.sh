@@ -54,19 +54,16 @@ rm -rf */AMPS
 
 # Checkout the latest code version
 if (-e AMPS) then
-  cd AMPS_Legacy
-  git pull
-
-  cd ../AMPS
-  git pull
-
-  cd SWMF_data
-  git pull
+  cd AMPS_Legacy; git pull
+  cd ../BATL; git pull
+  cd ../AMPS; git pull
+  cd SWMF_data; git pull
 
   cd ../../
 else
   gitclone AMPS
   gitclone AMPS_Legacy
+  gitclone BATL
 
   cd AMPS
   gitclone SWMF_data
@@ -77,8 +74,10 @@ endif
 # create separate folders for different compilers
 #>GNUAll ############################
 mkdir -p GNU;   cp -r AMPS GNU/;  
+cp -r BATL GNU/AMPS/
 #>IntelAll ##########################
 mkdir -p Intel; cp -r AMPS Intel/;
+cp -r BATL Intel/AMPS/
 #>PGIAll ############################
 #mkdir -p PGI;   cp -r AMPS PGI/;  <#
 
