@@ -38,19 +38,16 @@ cd Tmp_AMPS_test
 
 #checkout the new copy of AMPS if needed otherwise update the existing copy 
 if (-e AMPS) then 
-  cd AMPS_Legacy 
-  git pull
-
-  cd ../AMPS
-  git pull 
-
-  cd SWMF_data
-  git pull 
+  cd AMPS_Legacy; git pull 
+  cd ../BATL; git pull 
+  cd ../AMPS; git pull 
+  cd SWMF_data; git pull 
 
   cd ../../
 else  
   gitclone AMPS_Legacy
   gitclone AMPS
+  gitclone BATL
   
   cd AMPS 
   gitclone SWMF_data
@@ -62,13 +59,17 @@ endif
 #Create separate folders for different compilers
 rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/; 
+cp -r BATL GNU/AMPS/
 
 rm -rf Intel
 mkdir -p Intel; cp -r AMPS Intel/; 
+cp -r BATL Intel/AMPS/
+
 #cp -r AMPS_Legacy Intel/; 
 
 rm -rf PGI
 mkdir -p PGI;   cp -r AMPS PGI/; 
+cp -r BATL  PGI/AMPS
 
 #Install AMPS
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
