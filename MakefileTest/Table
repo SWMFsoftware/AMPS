@@ -153,7 +153,12 @@ Compile=
 
 >>>@mv srcCG srcCG--original
 >>>@mv ../TempSourceDir/AMPS/srcCG .
+
+>>>@mv src src--original
+>>>@mv ../TempSourceDir/AMPS/src .
+
 >>>@rm -rf ../TempSourceDir
+
 
 >>>./Config.pl -application=test/cg-end-of-mission-rosina-trajectory -amps-test=on $(TESTCG-Rosina-Liouville--TrajectoryKEYS)
 >>>./Config.pl -amps-test=off
@@ -162,6 +167,10 @@ Compile=
 
 >>>@rm -rf srcCG
 >>>@mv srcCG--original srcCG
+
+>>>@rm -rf src
+>>>@mv src--original src
+
 >>>@echo "test_CG-Rosina-Liouville--Trajectory_compile... done" >> test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
 Check= 
