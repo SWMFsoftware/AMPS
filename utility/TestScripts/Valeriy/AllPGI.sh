@@ -1,6 +1,7 @@
 #!/bin/csh
 
-set WorkDir = $HOME
+#set WorkDir = $HOME
+set WorkDir = /Volumes/Data01
 
 source $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/CompilerSetup/set_mpi_pgi.valeriy
 echo -n "Compiling PGI....."

@@ -27,7 +27,8 @@
 source $HOME/.cshrc
 
 #Set the working directory
-set WorkDir = $HOME  
+#set WorkDir = $HOME  
+set WorkDir = /Volumes/Data01
 
 #Go to your home directory
 cd $WorkDir
