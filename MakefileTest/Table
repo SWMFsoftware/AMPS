@@ -523,6 +523,11 @@ Ref=1{gcc}@@(0+pleiades)
 Compile=
 >>>@echo "test_batl-reader_compile..." > test_batl-reader.diff 
 >>>echo "Installing BATL....." 
+
+<<<ifeq ($(wildcard BATL/*),)
+>>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+<<<endif
+
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=4,4,4 -r=2,2,2 -ng=0; make READAMRLIB 
 >>>@echo "Install AMPS......"  
 >>>./Config.pl -application=test/BATL-reader -spice-path=nospice -batl-path=${PTDIR}/BATL -swmf-path=${PTDIR}/SWMF -cplr-data-path=${PTDIR}/data/input/DataFileReader/BATL  
@@ -541,6 +546,11 @@ Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
 >>>echo "Installing BATL....."
+
+<<<ifeq ($(wildcard BATL/*),)
+>>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+<<<endif
+
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
 >>>./Config.pl -application=test/Earth-test -spice-path=nospice -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS} 
 >>>@($(MAKE) -j1 amps) 
@@ -570,6 +580,11 @@ Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
 >>>echo "Installing BATL....."
+
+<<<ifeq ($(wildcard BATL/*),)
+>>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+<<<endif
+
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
 >>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
 >>>@($(MAKE) -j1 amps)
@@ -2196,6 +2211,11 @@ Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02
 Compile=
 >>>@echo "test_CG-BATSRUS-dust-coupling_compile..." > test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.diff
 >>>echo "Installing BATL....."
+
+<<<ifeq ($(wildcard BATL/*),)
+>>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL  
+<<<endif
+
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB;
 >>>./Config.pl  -application=CG-BATSRUS-dust-coupling-test  -batl-path=${PTDIR}/BATL -swmf-path=${PTDIR}/SWMF -amps-test=on  $(TESTCG-BATSRUS-dust-couplingKEYS)
 >>>rm -rf srcTemp
