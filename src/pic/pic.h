@@ -5206,7 +5206,7 @@ namespace PIC {
         extern CMPI_channel pipe;
 
         //init the list of the ghost blocks
-        void InitBlockPairTable();
+        void InitBlockPairTable(bool RebuildBlockPairTable=false);
 
         void ExchangeBlockDataMPI(cBlockPairTable& BlockPair);
         void ExchangeBlockDataLocal(cBlockPairTable& BlockPair);

@@ -402,9 +402,11 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
   PIC::Mesh::mesh.init(xminDomain,xmaxDomain,ModifiedLocalResolution);
 }
 
-void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(){
+void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable) {
   std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> GhostBlockVector;
   
+  if ((RebuildBlockPairTable==false)&&(BlockPairTableLength!=0)) return;
+
   PopulateGhostBlockVector(GhostBlockVector,NULL);
   BlockPairTableLength=GhostBlockVector.size();
 
