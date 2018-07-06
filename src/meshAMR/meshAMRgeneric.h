@@ -9540,8 +9540,6 @@ nMPIops++;
         }
 
         startNode->ParallelLoadMeasure=res;
-//        printf("block xCenter:%e,%e,%e, block load:%e\n",0.5*(startNode->xmin[0]+startNode->xmax[0]),0.5*(startNode->xmin[1]+startNode->xmax[1]),0.5*(startNode->xmin[2]+startNode->xmax[2]),startNode->ParallelLoadMeasure);
-
       }
       else pipe.send(res);
       #elif _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_OFF_
@@ -10083,6 +10081,7 @@ if (TmpAllocationCounter==2437) {
 
       while (CurveNode!=NULL) {
         CumulativeProcessorLoad+=CurveNode->ParallelLoadMeasure;
+        CumulativeThreadLoad[nCurrentProcessorBalancing]+=CurveNode->ParallelLoadMeasure;
 
         if ((isfinite(CumulativeProcessorLoad)==false)||(isfinite(CumulativeThreadLoad[nCurrentProcessorBalancing])==false)) {
           char msg[500];
@@ -10092,12 +10091,11 @@ if (TmpAllocationCounter==2437) {
         }  
 
         //increment the processor number if needed
-        if ((CumulativeProcessorLoad>1.1+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
+        if ((CumulativeProcessorLoad>1.0+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)) {
           nCurrentProcessorBalancing++;
-          ThreadStartNode[nCurrentProcessorBalancing]=CurveNode;
+          ThreadStartNode[nCurrentProcessorBalancing]=CurveNode->FillingCurveNextNode;
         }
 
-        CumulativeThreadLoad[nCurrentProcessorBalancing]+=CurveNode->ParallelLoadMeasure;
         CurveNode=CurveNode->FillingCurveNextNode;
       }
 
