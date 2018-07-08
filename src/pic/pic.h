@@ -5210,6 +5210,9 @@ namespace PIC {
 
         void ExchangeBlockDataMPI(cBlockPairTable& BlockPair);
         void ExchangeBlockDataLocal(cBlockPairTable& BlockPair);
+        
+        //modify the newly created 'ParallelNodesDistributionList' to ensure that a 'ghost' and corresponding 'real' blocks are assigned to the same MPI process
+        void AssignGhostBlockThreads(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>**  ParallelNodesDistributionList);
 
         // populate the vector with pointers to ghost blocks.
         void PopulateGhostBlockVector(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> &BlockVector, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * startNode);

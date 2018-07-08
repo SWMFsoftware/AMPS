@@ -402,7 +402,7 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
   PIC::Mesh::mesh.init(xminDomain,xmaxDomain,ModifiedLocalResolution);
 }
 
-void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable) {
+void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable){
   std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> GhostBlockVector;
   
   if ((RebuildBlockPairTable==false)&&(BlockPairTableLength!=0)) return;
@@ -420,6 +420,100 @@ void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPa
   }
 }
 
+//To improve the particle data exchange speed between a 'ghost' and the corresponding 'real' blocks (PIC::BC::ExternalBoundary::Periodic::ExchangeParticles())
+//both of them need to be assigned to the same MPI process. PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads() is called by the mesh generator right
+//after the new domain decomposition is finished to correct the new 'ParallelNodesDistributionList'
+void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>**  ParallelNodesDistributionList){
+  int countMovingBlocks[PIC::nTotalThreads];
+  std::map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *,int> GhostNodeMovingMap[PIC::nTotalThreads]; 
+  std::map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *,int> GhostTrueBlockMap;
+
+  InitBlockPairTable();
+  for (int i=0; i<PIC::nTotalThreads;i++) countMovingBlocks[i]=0;
+  
+  for (int iPair=0; iPair<BlockPairTableLength; iPair++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* GhostBlock = BlockPairTable[iPair].GhostBlock;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* RealBlock  = BlockPairTable[iPair].RealBlock;
+    GhostTrueBlockMap[GhostBlock]=-1;
+    GhostTrueBlockMap[RealBlock]=-1;    
+  }
+  
+  for (int iThread=0; iThread<PIC::nTotalThreads; iThread++){
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node = ParallelNodesDistributionList[iThread];  
+    while (node!=NULL){
+      std::map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *,int>::iterator it=GhostTrueBlockMap.find(node);
+      if (it!=GhostTrueBlockMap.end()){
+        it->second=iThread;
+      }
+      node = node->nextNodeThisThread;
+    }
+  }
+  
+
+  for (int iPair=0; iPair<BlockPairTableLength; iPair++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* GhostBlock = BlockPairTable[iPair].GhostBlock;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* RealBlock  = BlockPairTable[iPair].RealBlock;
+    
+    int GhostThread = GhostTrueBlockMap[GhostBlock];
+    int RealThread = GhostTrueBlockMap[RealBlock];
+    if (GhostThread!=RealThread){
+      GhostNodeMovingMap[GhostThread][GhostBlock]=RealThread;
+      countMovingBlocks[GhostThread]++;
+    } 
+  }
+
+
+  for (int iThread=0; iThread<PIC::nTotalThreads; iThread++){
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node = ParallelNodesDistributionList[iThread];
+    while (countMovingBlocks[iThread]!=0 && node!=NULL){
+      std::map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *,int>::iterator it=GhostNodeMovingMap[iThread].find(node);
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nextNode = node->nextNodeThisThread;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * prevNode = node->prevNodeThisThread;
+      if (it!=GhostNodeMovingMap[iThread].end()){
+       
+        int destThread = it->second;
+
+        node->nextNodeThisThread=ParallelNodesDistributionList[destThread];
+        node->prevNodeThisThread=NULL;
+        if (ParallelNodesDistributionList[destThread]!=NULL) ParallelNodesDistributionList[destThread]->prevNodeThisThread=node;
+        ParallelNodesDistributionList[destThread]=node;
+        GhostNodeMovingMap[iThread].erase(it);
+        countMovingBlocks[iThread]--;
+        if (prevNode!=NULL){ 
+          prevNode->nextNodeThisThread = nextNode;
+        }else{
+          //removed node is the head
+          ParallelNodesDistributionList[iThread]=nextNode;
+        }
+
+        if (nextNode!=NULL) nextNode->prevNodeThisThread = prevNode;
+        /*
+        if (PIC::ThisThread==0){
+          printf("move nodeid:%d from thread:%d to thread:%d\n",node?node->Temp_ID:-1, iThread, destThread);
+
+          int prevId=prevNode?prevNode->Temp_ID:-1;
+          int prevNextId=-1;
+          if (prevNode) prevNextId= prevNode->nextNodeThisThread?prevNode->nextNodeThisThread->Temp_ID:-1;
+          int nextId=nextNode?nextNode->Temp_ID:-1;
+          int nextPrevId =-1;
+          
+          if (nextNode) nextPrevId=nextNode->prevNodeThisThread?nextNode->prevNodeThisThread->Temp_ID:-1;
+          int currId = node?node->Temp_ID:-1;
+          int currNextId= node->nextNodeThisThread?node->nextNodeThisThread->Temp_ID:-1;
+          printf("prevId:%d, prev.nextId:%d\n",prevId,prevNextId);     
+          printf("nextId:%d, next.prevId:%d\n",nextId,nextPrevId);
+          int headId = ParallelNodesDistributionList[destThread]?ParallelNodesDistributionList[destThread]->Temp_ID:-1;
+          printf("after destThread:%d, headnode:%d\n", destThread,headId);
+          printf("currentId:%d,currentid.nextId:%d\n",currId, currNextId);
+        }*/
+      }
+
+      node = nextNode;
+    }
+  }
+  
+
+}
 
 double PIC::BC::ExternalBoundary::Periodic::ModifiedLocalResolution(double* x) {
   for (int iDim=0;iDim<3;iDim++) {
