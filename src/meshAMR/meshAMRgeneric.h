@@ -1114,6 +1114,9 @@ public:
   //the counter of any mesh modifications or rebalancing 
   unsigned long int nMeshModificationCounter; 
 
+  //process the newly created 'ParallelNodesDistributionList' to correct the domain decomposition if needed
+  void (*UserProcessParallelNodeDistributionList)(cTreeNodeAMR<cBlockAMR>** nodeList );
+
   //limit of the accuracy of calculation of the mesh parameters
   double EPS;
 
@@ -1793,6 +1796,9 @@ public:
 
      //set the defaul value of the diagnostic stream
      DiagnospticMessageStream=stdout;
+
+     //init UserProcessParallelNodeDistributionList
+     UserProcessParallelNodeDistributionList=NULL;
 
      //the counter of the load re-balancing operations
      nParallelListRedistributions=0;
@@ -9540,6 +9546,8 @@ nMPIops++;
         }
 
         startNode->ParallelLoadMeasure=res;
+//        printf("block xCenter:%e,%e,%e, block load:%e\n",0.5*(startNode->xmin[0]+startNode->xmax[0]),0.5*(startNode->xmin[1]+startNode->xmax[1]),0.5*(startNode->xmin[2]+startNode->xmax[2]),startNode->ParallelLoadMeasure);
+
       }
       else pipe.send(res);
       #elif _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_OFF_
@@ -10081,7 +10089,6 @@ if (TmpAllocationCounter==2437) {
 
       while (CurveNode!=NULL) {
         CumulativeProcessorLoad+=CurveNode->ParallelLoadMeasure;
-        CumulativeThreadLoad[nCurrentProcessorBalancing]+=CurveNode->ParallelLoadMeasure;
 
         if ((isfinite(CumulativeProcessorLoad)==false)||(isfinite(CumulativeThreadLoad[nCurrentProcessorBalancing])==false)) {
           char msg[500];
@@ -10091,11 +10098,12 @@ if (TmpAllocationCounter==2437) {
         }  
 
         //increment the processor number if needed
-        if ((CumulativeProcessorLoad>1.0+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)) {
+        if ((CumulativeProcessorLoad>1.1+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
           nCurrentProcessorBalancing++;
-          ThreadStartNode[nCurrentProcessorBalancing]=CurveNode->FillingCurveNextNode;
+          ThreadStartNode[nCurrentProcessorBalancing]=CurveNode;
         }
 
+        CumulativeThreadLoad[nCurrentProcessorBalancing]+=CurveNode->ParallelLoadMeasure;
         CurveNode=CurveNode->FillingCurveNextNode;
       }
 
@@ -10191,10 +10199,10 @@ if (TmpAllocationCounter==2437) {
     }
 
     pipe.closeBcast();
+    
+    if (UserProcessParallelNodeDistributionList!=NULL) UserProcessParallelNodeDistributionList(ParallelNodesDistributionList);
 
     //check if the nodes' distribution is the same on all processors
-
-
     if (ThisThread==0) {
       int t;
       cTreeNodeAMR<cBlockAMR> *ptr;
@@ -10430,11 +10438,15 @@ if (TmpAllocationCounter==2437) {
 //for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
 //for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
 
-       for (i=0;i<6*4;i++) if (node->neibNodeFace[i]!=NULL) if (node->neibNodeFace[i]->Thread!=node->Thread) {
-         ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
-         ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
-       }
+       for (i=0;i<6*4;i++) if (node->neibNodeFace[i]!=NULL) {
 
+           
+           if (node->neibNodeFace[i]->Thread!=node->Thread) {
+             ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
+             ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+           }
+         }
+       
        for (i=0;i<8;i++) if (node->neibNodeCorner[i]!=NULL) if (node->neibNodeCorner[i]->Thread!=node->Thread) {
          ParallelSendRecvMap[node->neibNodeCorner[i]->Thread][node->Thread]=true;
          ParallelSendRecvMap[node->Thread][node->neibNodeCorner[i]->Thread]=true;
