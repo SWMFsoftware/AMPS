@@ -1820,6 +1820,10 @@ void PIC::Init_BeforeParser() {
     }
   }
 
+  //Init manager of the periodic boundary conditions that is called by the mesh generator after each domain decomposition procedure
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+    PIC::Mesh::mesh.UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
+  }
 
   //Init the field solver
   if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) PIC::FieldSolver::Init();
