@@ -13,6 +13,7 @@
 #include <string.h>
 #include <list>
 #include <utility>
+#include <map>
 #include <cmath>
 #include <fcntl.h>
 #include <sys/stat.h>
