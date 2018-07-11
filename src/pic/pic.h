@@ -2460,6 +2460,12 @@ namespace PIC {
          return res;
        }
 
+       static int CheckoutFlag() {
+         for (int ibit=0;ibit<8;ibit++) if (CheckoutFlag(ibit)==true) return ibit;
+
+         return -1;
+       }
+
        static void ReleaseFlag(int ibit) {
          unsigned char mask=1<<ibit;
 
