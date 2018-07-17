@@ -506,6 +506,9 @@ Keys=-model-data-path=${PTDIR} -spice-path=/scratch/02452/vtenishe/SPICE/cspice 
 #>
 Name=Mercury-test 
 Time=2
+
+Ref=2{icc}@@(0+valeriy)
+
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/MESSENGER/kernels -cplr-data-path=${PTDIR}/data/input/Mercury/TestCase@@(0+valeriy)  
 Keys=-spice-path=/Users/dborovik/SPICE/cspice -spice-kernels=/Users/dborovik/SPICE/Kernels/MESSENGER/kernels -cplr-data-path=${PTDIR}/data/input/Mercury/TestCase@@(0+srbwks73465-01)  
 Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels/MESSENGER/kernels -cplr-data-path=${PTDIR}/data/input/Mercury/TestCase@@(0+pleiades)   
@@ -695,6 +698,10 @@ Check=
 Name=test/lightwave-current-on 
 Time=3
 
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
+
 Outs=
 
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
@@ -712,11 +719,11 @@ Check=
 >>>@echo "test_lightwave-current-on_check..." >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat \ 
->>>output/test_lightwave-current-on/PIC_particle_case0.out=6.ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_particle_energy$(TESTlightwave-current-on-REF).diff;) 
+>>>output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_particle_energy$(TESTlightwave-current-on-REF).diff;) 
 
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat \ 
->>>output/test_lightwave-current-on/PIC_particle_case1.out=6.ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_langmuir_wave$(TESTlightwave-current-on-REF).diff;) 
+>>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_langmuir_wave$(TESTlightwave-current-on-REF).diff;) 
 
 
 >>>@cat test_particle_energy$(TESTlightwave-current-on-REF).diff test_langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
