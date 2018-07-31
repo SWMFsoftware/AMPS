@@ -78,7 +78,18 @@ endif
 # Update data files for test at supercomputers
 #>Pleiades>Yellowstone>Stampede #########################
 
-rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST 
+#rsync -P -a -c -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST 
+
+cd $WorkDir 
+
+if (-e AMPS_DATA_TEST) then   
+  cd AMPS_DATA_TEST
+  git pull
+else 
+  git clone tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST
+endif
+
+cd $WorkDir/Tmp_AMPS_test
 
 #cp /home3/vtenishe/Table /nobackupp8/vtenishe/Tmp_AMPS_test/AMPS/MakefileTest
 
