@@ -99,7 +99,19 @@ cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 
 # Update data files for test at supercomputers
 #>Pleiades>Yellowstone>Stampede #########################
-rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST
+#rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST
+
+
+cd $WorkDir
+
+if (-e AMPS_DATA_TEST) then
+  cd AMPS_DATA_TEST
+  git pull
+else
+  git clone amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST
+endif
+
+cd $WorkDir/Tmp_AMPS_test
 
 # copy job files to the AMPS directory on supercomputers
 # #>Pleiades ###############################################
