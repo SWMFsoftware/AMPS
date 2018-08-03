@@ -53,6 +53,9 @@ cd Tmp_AMPS_test
 rm -rf */AMPS
 
 # Checkout the latest code version
+set CheckoutTime = `date`
+
+# Checkout the latest code version
 if (-e AMPS) then
   cd AMPS_Legacy; git pull
   cd ../BATL; git pull
@@ -84,12 +87,14 @@ cp -r BATL Intel/AMPS/
 # install AMPS
 #>GNUAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
-./Config.pl -install -compiler=gfortran,gcc_mpicc    >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 utility/TestScripts/BuildTest.pl -test-run-time=15 
 
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
-./Config.pl -install -compiler=ifortmpif90,iccmpicxx >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
 #>Valeriy ##################################################################
 #cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 #./Config.pl -link-option=-lc++ -install -compiler=ifort,iccmpicxx -link-option=-cxxlib >>& test_amps.log<#
