@@ -56,6 +56,8 @@ rm -f *.job
 rm -rf */AMPS
 
 # Checkout the latest code version
+set CheckoutTime = `date`
+
 if (-e AMPS) then
   cd AMPS_Legacy; git pull
   cd ../BATL; git pull
@@ -110,13 +112,16 @@ cp -r BATL PGI/AMPS/
 # install AMPS
 #>GNUAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
-./Config.pl -install -compiler=gfortran,gcc_mpicc    >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
-./Config.pl -install -compiler=ifortmpif90,iccmpicxx >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
 #>PGIAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
-./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >>& test_amps.log    
 
 # copy job files to the AMPS directory on supercomputers
 #>Pleiades ###############################################
