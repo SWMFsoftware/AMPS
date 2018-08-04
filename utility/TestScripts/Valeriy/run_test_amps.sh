@@ -38,6 +38,8 @@ mkdir -p Tmp_AMPS_test
 cd Tmp_AMPS_test
 
 #checkout the new copy of AMPS if needed otherwise update the existing copy 
+set CheckoutTime = `date`
+
 if (-e AMPS) then 
   cd AMPS_Legacy; git pull 
   cd ../BATL; git pull 
@@ -74,13 +76,16 @@ cp -r BATL  PGI/AMPS
 
 #Install AMPS
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
-./Config.pl -install -compiler=gfortran,gcc_mpicc -f-link-option=-lmpi_cxx   >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=gfortran,gcc_mpicc -f-link-option=-lmpi_cxx   >>& test_amps.log    
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
-./Config.pl -f-link-option=-lc++,-lmpi_cxx -install -compiler=ifort,iccmpicxx  -link-option=-cxxlib >& test_amps.log
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -f-link-option=-lc++,-lmpi_cxx -install -compiler=ifort,iccmpicxx  -link-option=-cxxlib >>& test_amps.log
 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
-./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >>& test_amps.log    
 
 #Execute the tests
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllGNU.sh & 
