@@ -5,6 +5,8 @@ source $HOME/.cshrc
 
 set WorkDir = /nobackup/`whoami`
 
+
+module unload gcc
 module unload comp-intel
 module load comp-pgi 
 

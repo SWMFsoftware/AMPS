@@ -5,8 +5,10 @@ source $HOME/.cshrc
 
 set WorkDir = /nobackup/`whoami`
 
-## module load comp-intel/2016.2.181;           
-## module load mpi-sgi/mpt;
+module unload gcc
+module unload comp-pgi
+module load comp-intel
+
 
 echo -n "Compiling Intel....."                 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS           
