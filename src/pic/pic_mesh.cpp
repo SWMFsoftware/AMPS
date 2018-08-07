@@ -482,7 +482,7 @@ void PIC::Mesh::buildMesh() {
 
 
 
-void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node) {
+void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int To,int *RequestTableIndex,MPI_Request *RequestTable) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
@@ -503,8 +503,16 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
-    pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
-    pipe->send(CenterNode->Measure);
+    if (pipe!=NULL) {
+      pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
+      pipe->send(CenterNode->Measure);
+    } else {
+      MPI_Isend(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+
+      MPI_Isend(&CenterNode->Measure,1,MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+    }
   }
 
   //send the corner node associated data
@@ -515,7 +523,12 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
-    pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    if (pipe!=NULL) {
+      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    } else {
+      MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+    }
   }
 
   //send 'corners' from the 'right' boundary of the block
@@ -535,7 +548,12 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          } else {
+            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
 
@@ -545,7 +563,12 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          } else {
+            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
 
@@ -555,7 +578,12 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          } else {
+            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
       }
@@ -563,14 +591,19 @@ void PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,voi
 
   }
 
-  pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
+  if (pipe!=NULL) {
+    pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
+  } else {
+    MPI_Isend(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+    *RequestTableIndex=*RequestTableIndex+1;
+  }
 }
 
 void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
 
-  sendBoundaryLayerBlockData(pipe,Node);
+  sendBoundaryLayerBlockData(pipe,Node,-1,NULL,NULL);
 
   #if DIM == 3
   static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -617,7 +650,7 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
   delete [] buffer;
 }
 
-void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int From,void* Node) {
+void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int From,int *RequestTableIndex,MPI_Request *RequestTable) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
@@ -638,8 +671,16 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
-    pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
-    pipe->recv(CenterNode->Measure,From);
+    if (pipe!=NULL) {
+      pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
+      pipe->recv(CenterNode->Measure,From);
+    } else {
+      MPI_Irecv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+
+      MPI_Irecv(&CenterNode->Measure,1,MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+    }
   }
 
   //recieve the 'internal' corner node associated data
@@ -647,7 +688,12 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
-    pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+    if (pipe!=NULL) {
+      pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+    } else {
+      MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+      *RequestTableIndex=*RequestTableIndex+1;
+    }
   }
 
   //recv 'corners' from the 'right' boundary of the block
@@ -667,7 +713,12 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          if (pipe!=NULL) {
+            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          } else {
+            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
 
@@ -677,7 +728,12 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          if (pipe!=NULL) {
+            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          } else {
+            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
 
@@ -687,7 +743,12 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          if (pipe!=NULL) {
+            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          } else {
+            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+            *RequestTableIndex=*RequestTableIndex+1;
+          }
         }
         break;
       }
@@ -695,7 +756,12 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int
 
   }
 
-  pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
+  if (pipe!=NULL) {
+    pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
+  } else {
+    MPI_Irecv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
+    *RequestTableIndex=*RequestTableIndex+1;
+  }
 }
 
 //recieve all blocks' data when the blocks is moved to another processo
@@ -703,7 +769,7 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
   long int LocalCellNumber=-1;
   int i=-10,j=-10,k=-10;
 
-  recvBoundaryLayerBlockData(pipe,From,Node);
+  recvBoundaryLayerBlockData(pipe,Node,-1,NULL,NULL);
 
   long int Particle;
   char buffer[PIC::ParticleBuffer::ParticleDataLength];
