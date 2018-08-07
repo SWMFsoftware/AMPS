@@ -2644,8 +2644,8 @@ namespace PIC {
 
     
       //exchenge of the data between processors
-      void sendBoundaryLayerBlockData(CMPI_channel *pipe,void *Node);
-      void recvBoundaryLayerBlockData(CMPI_channel *pipe,int From,void *Node);
+      void sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int To,int *RequestTableIndex,MPI_Request *RequestTable);
+      void recvBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int From,int *RequestTableIndex,MPI_Request *RequestTable);
 
       //send the block to abother processor
       void sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node);
@@ -5215,7 +5215,7 @@ namespace PIC {
         //init the list of the ghost blocks
         void InitBlockPairTable(bool RebuildBlockPairTable=false);
 
-        void ExchangeBlockDataMPI(cBlockPairTable& BlockPair);
+        void ExchangeBlockDataMPI(cBlockPairTable& BlockPair,char *SendRecvDataBuffer);
         void ExchangeBlockDataLocal(cBlockPairTable& BlockPair);
         
         //modify the newly created 'ParallelNodesDistributionList' to ensure that a 'ghost' and corresponding 'real' blocks are assigned to the same MPI process
