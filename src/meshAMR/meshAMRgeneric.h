@@ -10957,6 +10957,7 @@ if (TmpAllocationCounter==2437) {
 
     for (int iRound=0;iRound<ParallelBlockDataExchangeData.nDataExchangeRounds;iRound++) {
       MPI_Request RecvRequestTable[nTotalThreads],SendRequestTable[nTotalThreads];
+      int RecvProcessIndexTable[nTotalThreads];
       int RecvRequestTableIndex=0,SendRequestTableIndex=0;
 
       //initiate the data buffer recieve operation
@@ -10970,7 +10971,7 @@ if (TmpAllocationCounter==2437) {
 
 
           MPI_Irecv(ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From],(iEnd-iStart)*ParallelBlockDataExchangeData.NodeDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvRequestTableIndex);
-          RecvRequestTableIndex++;
+          RecvProcessIndexTable[RecvRequestTableIndex++]=From;
         }
       }
 
@@ -10997,11 +10998,14 @@ if (TmpAllocationCounter==2437) {
       while (RecvRequestTableIndex!=0) {
         //waite for anything to come
         MPI_Status status;
-        int From;
+        int From,index;
 
-        MPI_Waitany(RecvRequestTableIndex,RecvRequestTable,&From,&status);
+        MPI_Waitany(RecvRequestTableIndex,RecvRequestTable,&index,&status);
 
-        RecvRequestTable[From]=RecvRequestTable[RecvRequestTableIndex-1];
+        From=RecvProcessIndexTable[index];
+        RecvProcessIndexTable[index]=RecvProcessIndexTable[RecvRequestTableIndex-1];
+
+        RecvRequestTable[index]=RecvRequestTable[RecvRequestTableIndex-1];
         RecvRequestTableIndex--;
 
         //unpack the data
