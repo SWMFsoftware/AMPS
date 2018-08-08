@@ -10884,7 +10884,7 @@ if (TmpAllocationCounter==2437) {
 
           MPI_Recv(ParallelBlockDataExchangeData.RecvNodeIDTable[From],ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]*sizeof(cAMRnodeID),MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-          //determine the pointerd to the nodes from the nodeid
+          //determine the pointer to the nodes using the nodeid
           for (int i=0;i<ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads];i++) {
             ParallelBlockDataExchangeData.RecvNodeTable[From][i]=findAMRnodeWithID(ParallelBlockDataExchangeData.RecvNodeIDTable[From][i]);
           }
@@ -10956,8 +10956,6 @@ if (TmpAllocationCounter==2437) {
 
 
     for (int iRound=0;iRound<ParallelBlockDataExchangeData.nDataExchangeRounds;iRound++) {
-      int RequestTableIndex=0;
-
       MPI_Request RecvRequestTable[nTotalThreads],SendRequestTable[nTotalThreads];
       int RecvRequestTableIndex=0,SendRequestTableIndex=0;
 
@@ -11024,7 +11022,7 @@ if (TmpAllocationCounter==2437) {
 
 
       //waite completion of the send operations
-      MPI_Waitall(SendRequestTableIndex,SendRequestTable,MPI_STATUSES_IGNORE);
+      if (SendRequestTableIndex!=0) MPI_Waitall(SendRequestTableIndex,SendRequestTable,MPI_STATUSES_IGNORE);
     }
 
 
