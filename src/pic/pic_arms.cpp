@@ -46,7 +46,7 @@ double PIC::CPLR::DATAFILE::ARMS::GetFileTime(const char *fname){
   }
 
   fin.closefile();
-  if (std::isnan(time)) exit(__LINE__, __FILE__,"ERROR: failed to read valid time from ARMS datafile"); 
+  if (isnan(time)) exit(__LINE__, __FILE__,"ERROR: failed to read valid time from ARMS datafile"); 
   return time;
 }
 
