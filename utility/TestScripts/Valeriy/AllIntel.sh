@@ -1,9 +1,8 @@
 #!/bin/csh
 
-#set WorkDir = $HOME
-set WorkDir = /Volumes/Data01
+set WorkDir = $HOME
+source $WorkDir/module/intel 
 
-source $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/CompilerSetup/set_mpi_intel.valeriy
 echo -n "Compiling Intel....."
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS; 
