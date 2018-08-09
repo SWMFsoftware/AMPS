@@ -27,8 +27,8 @@
 source $HOME/.cshrc
 
 #Set the working directory
-#set WorkDir = $HOME  
-set WorkDir = /Volumes/Data01
+set WorkDir = $HOME  
+#set WorkDir = /Volumes/Data01
 
 #Go to your home directory
 cd $WorkDir
@@ -68,28 +68,26 @@ rm -rf Intel
 mkdir -p Intel; cp -r AMPS Intel/; 
 cp -r BATL Intel/AMPS/
 
-#cp -r AMPS_Legacy Intel/; 
-
-rm -rf PGI
-mkdir -p PGI;   cp -r AMPS PGI/; 
-cp -r BATL  PGI/AMPS
+#rm -rf PGI
+#mkdir -p PGI;   cp -r AMPS PGI/; 
+#cp -r BATL  PGI/AMPS
 
 #Install AMPS
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
 echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -install -compiler=gfortran,gcc_mpicc -f-link-option=-lmpi_cxx   >>& test_amps.log    
+./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
 echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -f-link-option=-lc++,-lmpi_cxx -install -compiler=ifort,iccmpicxx  -link-option=-cxxlib >>& test_amps.log
+./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
 
-cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
-echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >>& test_amps.log    
+#cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
+#echo AMPS was checked out on $CheckoutTime > test_amps.log
+#./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >>& test_amps.log    
 
 #Execute the tests
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllGNU.sh & 
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllIntel.sh &   
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllPGI.sh &
+#$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllPGI.sh &
 
 
