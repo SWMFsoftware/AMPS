@@ -523,7 +523,7 @@ inline double ProductionRateCaluclation_HotC(double *x) {
         if (localH<COpScaleHeight/3) {
             localH=COpScaleHeight/2;
         }
-        else if (std::isnan(localH)==true) {
+        else if (isfinite(localH)==false) {
             localH=COpScaleHeight;
         }
         else if (localH>COpScaleHeight) {
@@ -537,7 +537,7 @@ inline double ProductionRateCaluclation_HotC(double *x) {
         
         //	if (nz>100E3){exit(__LINE__,__FILE__,"Error");}
         double nz=1E3,tt=0.0;
-        while (std::isnan(t)==true) {
+        while (isfinite(t)==false) {
             if (nz>=Altitude) {t=1.0;}
             for (idim=0;idim<DIM;idim++) {vectop2[idim]= (3388.25E3+(Altitude-nz))*(x[idim]/r);}
             t=COp.Interpolate(vectop2);
