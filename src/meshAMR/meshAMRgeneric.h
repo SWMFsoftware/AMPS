@@ -10789,6 +10789,69 @@ if (TmpAllocationCounter==2437) {
   void ParallelBlockDataExchange() {
     int thread;
 
+
+/*    auto PrintMarks = [&] (const char *base) {
+      char fname[1000];
+
+      sprintf(fname,"thread=%i.%s.dat",ThisThread,base);
+      FILE *fout=fopen(fname,"w");
+
+      for (cTreeNodeAMR<cBlockAMR> *node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+        int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+        int i,j,k,LocalCellNumber;
+        CRC32 cs;
+
+        for (i=0;i<=_BLOCK_CELLS_X_;i++) for (j=0;j<=_BLOCK_CELLS_Y_;j++) for (k=0;k<=_BLOCK_CELLS_Z_;k++) {
+
+          LocalCellNumber=getCenterNodeLocalNumber(i,j,k);
+
+          cs.clear();
+          cs.add(node->block->GetCornerNode(LocalCellNumber)->associatedDataPointer,node->block->GetCornerNode(LocalCellNumber)->totalAssociatedDataLength);
+
+          fprintf(fout,"%i:  %i  %i  %i: %i\n",node->Temp_ID,i,j,k,cs.crc_accum );
+        }
+      }
+
+      fclose(fout);
+    };*/
+
+    //PrintMarks("before");
+/*
+    {
+      char fname[1000];
+      char base[100]="before";
+
+      sprintf(fname,"thread=%i.%s.dat",ThisThread,base);
+      FILE *fout=fopen(fname,"w");
+
+      for (cTreeNodeAMR<cBlockAMR> *node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+        int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+        int i,j,k,LocalCellNumber;
+        CRC32 cs;
+
+        for (i=0;i<=_BLOCK_CELLS_X_;i++) for (j=0;j<=_BLOCK_CELLS_Y_;j++) for (k=0;k<=_BLOCK_CELLS_Z_;k++) {
+
+          LocalCellNumber=getCenterNodeLocalNumber(i,j,k);
+
+          cs.clear();
+          cs.add(node->block->GetCornerNode(LocalCellNumber)->associatedDataPointer,node->block->GetCornerNode(LocalCellNumber)->totalAssociatedDataLength);
+
+          fprintf(fout,"%i:  %i  %i  %i: %i\n",node->Temp_ID,i,j,k,cs.crc_accum );
+        }
+      }
+
+      fclose(fout);
+    }
+
+
+
+    ParallelBlockDataExchange_Internal(NULL,NULL,NULL,2);
+
+    PrintMarks("after");
+    return;*/
+
+
+
     //determine whether the data exchange parameters needs to be updated
     int localMeshChangeFlag,globalMeshChangeFlag;
 
@@ -10896,9 +10959,7 @@ if (TmpAllocationCounter==2437) {
       const int nMaxBytesSendPerRound=10000000;
 
 
-      for (int i=0;i<nTotalThreads*nTotalThreads;i++) if (nMaxSendNodes<ParallelBlockDataExchangeData.GlobalSendTable[i]) nMaxSendNodes=ParallelBlockDataExchangeData.GlobalSendTable[i];
 
-      ParallelBlockDataExchangeData.nDataExchangeRounds=1+nMaxSendNodes/ParallelBlockDataExchangeData.NodeSendPerRound;
 
       if (ParallelBlockDataExchangeData.NodeDataLength==-1) for (thread=0;thread<nTotalThreads;thread++) {
         if (ParallelBlockDataExchangeData.RecvNodeTable[thread]!=NULL) {
@@ -10913,6 +10974,10 @@ if (TmpAllocationCounter==2437) {
       }
 
       ParallelBlockDataExchangeData.NodeSendPerRound=1+nMaxBytesSendPerRound/ParallelBlockDataExchangeData.NodeDataLength;
+
+      for (int i=0;i<nTotalThreads*nTotalThreads;i++) if (nMaxSendNodes<ParallelBlockDataExchangeData.GlobalSendTable[i]) nMaxSendNodes=ParallelBlockDataExchangeData.GlobalSendTable[i];
+
+      ParallelBlockDataExchangeData.nDataExchangeRounds=1+nMaxSendNodes/ParallelBlockDataExchangeData.NodeSendPerRound;
 
       //int RequestTableIndex=0;
 
@@ -10953,6 +11018,263 @@ if (TmpAllocationCounter==2437) {
     }
 
 
+    auto InitSendData = [&] (int iRound,int To,MPI_Request& Request) {
+      int i,iStart,iEnd;
+      char *DataBufferBegin=ParallelBlockDataExchangeData.SendDataExchangeBuffer[To];
+
+      iStart=iRound*ParallelBlockDataExchangeData.NodeSendPerRound;
+      iEnd=iStart+ParallelBlockDataExchangeData.NodeSendPerRound;
+      if (iEnd>ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]) iEnd=ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads];
+
+      for (i=iStart;i<iEnd;i++) {
+        ParallelBlockDataExchangeData.SendNodeTable[To][i]->block->sendBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.SendNodeTable[To][i],To,NULL,NULL,DataBufferBegin);
+        DataBufferBegin+=ParallelBlockDataExchangeData.NodeDataLength;
+      }
+
+      MPI_Isend(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],(iEnd-iStart)*ParallelBlockDataExchangeData.NodeDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,&Request);
+    };
+
+    auto InitRecvData = [&] (int iRound,int From,MPI_Request& Request) {
+      int i,iStart,iEnd;
+
+      iStart=iRound*ParallelBlockDataExchangeData.NodeSendPerRound;
+      iEnd=iStart+ParallelBlockDataExchangeData.NodeSendPerRound;
+      if (iEnd>ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) iEnd=ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
+
+      MPI_Irecv(ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From],(iEnd-iStart)*ParallelBlockDataExchangeData.NodeDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,&Request);
+    };
+
+    auto UnpackRecvData = [&] (int iRound,int From) {
+      char *RecvDataBegin;
+      int i,iStart,iEnd;
+
+      RecvDataBegin=ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From];
+
+      iStart=iRound*ParallelBlockDataExchangeData.NodeSendPerRound;
+      iEnd=iStart+ParallelBlockDataExchangeData.NodeSendPerRound;
+      if (iEnd>ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) iEnd=ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
+
+
+      for (i=iStart;i<iEnd;i++) {
+        ParallelBlockDataExchangeData.RecvNodeTable[From][i]->block->recvBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.RecvNodeTable[From][i],From,NULL,NULL,RecvDataBegin);
+        RecvDataBegin+=ParallelBlockDataExchangeData.NodeDataLength;
+      }
+    };
+
+
+    int nTotalSendRounds[nTotalThreads],nTotalRecvRounds[nTotalThreads];
+    int nSendCounter[nTotalThreads],nRecvCounter[nTotalThreads];
+    int SendProcessTable[nTotalThreads],RecvProcessTable[nTotalThreads];
+    MPI_Request SendRequestTable[nTotalThreads],RecvRequestTable[nTotalThreads];
+    int SendTableIndex=0,RecvTableIndex=0;
+
+
+    for (thread=0;thread<nTotalThreads;thread++) {
+      nTotalSendRounds[thread]=ParallelBlockDataExchangeData.GlobalSendTable[thread+ThisThread*nTotalThreads]/ParallelBlockDataExchangeData.NodeSendPerRound;
+      if (ParallelBlockDataExchangeData.GlobalSendTable[thread+ThisThread*nTotalThreads]%ParallelBlockDataExchangeData.NodeSendPerRound!=0) nTotalSendRounds[thread]++;
+
+      nTotalRecvRounds[thread]=ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+thread*nTotalThreads]/ParallelBlockDataExchangeData.NodeSendPerRound;
+      if (ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+thread*nTotalThreads]%ParallelBlockDataExchangeData.NodeSendPerRound!=0) nTotalRecvRounds[thread]++;
+
+      nSendCounter[thread]=0,nRecvCounter[thread]=0;
+    }
+
+    //set the initial recv operations
+    int From,To,iFrom,iTo;
+    bool CommunicationCompleted=false;
+    int cnt,flag;
+
+
+
+    for (cnt=0;CommunicationCompleted==false;cnt++) {
+      CommunicationCompleted=true;
+
+      //initiate recieve if needed
+      if (cnt==0) {
+        for (From=0;From<nTotalThreads;From++) {
+          if (nRecvCounter[From]<nTotalRecvRounds[From]) {
+            InitRecvData(nRecvCounter[From],From,RecvRequestTable[RecvTableIndex]);
+            RecvProcessTable[RecvTableIndex]=From;
+            RecvTableIndex++;
+
+            nRecvCounter[From]++;
+            if (nRecvCounter[From]<nTotalRecvRounds[From]) CommunicationCompleted=false;
+          }
+        }
+      }
+      else {
+        //check for something arrived
+        for (iFrom=0;iFrom<RecvTableIndex;iFrom++) {
+          MPI_Test(RecvRequestTable+iFrom,&flag,MPI_STATUS_IGNORE);
+
+          if (flag==true) {
+            //a message has arrived -> read it
+            //unpack the data
+            UnpackRecvData(nRecvCounter[From]-1,From);
+
+            //update the table
+            RecvProcessTable[iFrom]=RecvProcessTable[RecvTableIndex-1];
+            RecvRequestTable[iFrom]=RecvRequestTable[RecvTableIndex-1];
+            RecvTableIndex--;
+            iFrom--;
+
+            //initiate a new recieve if needed
+            if (nRecvCounter[From]<nTotalRecvRounds[From]) {
+              InitRecvData(nRecvCounter[From],From,RecvRequestTable[RecvTableIndex]);
+              RecvProcessTable[RecvTableIndex]=From;
+              RecvTableIndex++;
+
+              nRecvCounter[From]++;
+              if (nRecvCounter[From]<nTotalRecvRounds[From]) CommunicationCompleted=false;
+            }
+          }
+        }
+      }
+
+
+      //initiate new send opetation
+      if (cnt==0) {
+        for (To=0;To<nTotalThreads;To++) {
+          if (nSendCounter[To]<nTotalRecvRounds[To]) {
+            InitSendData(nSendCounter[To],To,SendRequestTable[SendTableIndex]);
+            SendProcessTable[SendTableIndex]=To;
+            SendTableIndex++;
+
+            nSendCounter[To]++;
+            if (nSendCounter[To]<nTotalRecvRounds[To]) CommunicationCompleted=false;
+          }
+        }
+      }
+      else {
+        for (iTo=0;iTo<SendTableIndex;iTo++) {
+          MPI_Test(SendRequestTable+iTo,&flag,MPI_STATUS_IGNORE);
+
+
+          if (flag==true) {
+            //the send operation is compete -> initiate a new one id needed
+            //update the table
+            To=SendProcessTable[iTo];
+
+            SendProcessTable[iTo]=SendProcessTable[SendTableIndex-1];
+            SendRequestTable[iTo]=SendRequestTable[SendTableIndex-1];
+            SendTableIndex--;
+            iTo--;
+
+            //initiate a new send operation
+            if (nSendCounter[To]<nTotalRecvRounds[To]) {
+              InitSendData(nSendCounter[To],To,SendRequestTable[SendTableIndex]);
+              SendProcessTable[SendTableIndex]=To;
+              SendTableIndex++;
+
+              nSendCounter[To]++;
+              if (nSendCounter[To]<nTotalRecvRounds[To]) CommunicationCompleted=false;
+            }
+          }
+        }
+
+      }
+    }
+
+
+    //waite for any uncopleted recv operations
+    while (RecvTableIndex!=0) {
+      MPI_Status status;
+      int From,index,iRound,iStart,iEnd,i;
+      char *RecvDataBegin;
+
+      MPI_Waitany(RecvTableIndex,RecvRequestTable,&index,&status);
+
+      From=RecvProcessTable[index];
+      UnpackRecvData(nRecvCounter[From]-1,From);
+
+      //update the table
+      RecvProcessTable[index]=RecvProcessTable[RecvTableIndex-1];
+      RecvRequestTable[index]=RecvRequestTable[RecvTableIndex-1];
+
+      RecvTableIndex--;
+    }
+
+    //waite for the uncompleted send operations
+    MPI_Waitall(SendTableIndex,SendRequestTable,MPI_STATUSES_IGNORE);
+  }
+
+/*    for (From=0;From<nTotalThreads;From++) {
+      if (nRecvCounter[From]<nTotalRecvRounds[From]) {
+        InitRecvData(nRecvCounter[From],From,RecvRequestTable+RecvTableIndex);
+        RecvProcessTable[RecvTableIndex]=From;
+        RecvTableIndex++;
+
+        nRecvCounter[From]++;
+        if (nRecvCounter[From]<nTotalRecvRounds[From]) CommunicationCompleted=true;
+      }
+    }
+
+    //set the initial send operation
+    for (To=0;To<nTotalThreads;To++) {
+      if (nSendCounter[To]<nTotalRecvRounds[To]) {
+        InitSendData(nSendCounter[To],To,SendRequestTable+SendTableIndex);
+        SendProcessTable[SendTableIndex]=To;
+        SendTableIndex++;
+
+        nSendCounter[To]++;
+        if (nSendCounter[To]<nTotalRecvRounds[To]) CommunicationCompleted=true;
+      }
+    }
+
+    //conduce the communication loop
+    while (CommunicationCompleted==true) {
+      CommunicationCompleted=false;
+
+      //test for something recieved
+      for (iFrom=0;iFrom<RecvTableIndex;iFrom++) {
+        MPI_Test(RecvRequestTable+iFrom,&flag,MPI_STATUS_IGNORE);
+
+        if (flag==true) {
+          //a message has arrived -> read it
+          //unpack the data
+          char *RecvDataBegin=ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From];
+
+          int i,iStart,iEnd,iRound;
+
+          iRound=nRecvCounter[From]-1;
+          iStart=iRound*ParallelBlockDataExchangeData.NodeSendPerRound;
+          iEnd=iStart+ParallelBlockDataExchangeData.NodeSendPerRound;
+          if (iEnd>ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) iEnd=ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
+
+
+          for (i=iStart;i<iEnd;i++) {
+            ParallelBlockDataExchangeData.RecvNodeTable[From][i]->block->recvBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.RecvNodeTable[From][i],From,NULL,NULL,RecvDataBegin);
+            RecvDataBegin+=ParallelBlockDataExchangeData.NodeDataLength;
+          }
+
+
+
+
+
+          InitRecvData = [&] (nRecvCounter[From]-1,From,RecvRequestTable+iFrom)
+        }
+
+      }
+
+      //test for something to be send
+
+
+      //test whether mode communication is need
+    }
+
+    //waite for completing of all communication
+
+
+    //verify whether more communication is needed
+    for ()
+
+    while (something need to be done)
+
+      test compeltion of send to a thread -> send the next
+
+      test completion of recv from a thread -> recv and initiate the next
+
+      //set the flag of completion of the communication
 
 
     for (int iRound=0;iRound<ParallelBlockDataExchangeData.nDataExchangeRounds;iRound++) {
@@ -11031,7 +11353,7 @@ if (TmpAllocationCounter==2437) {
 
 
 
-  }
+  }*/
 
   //verify node connections
   void VerifyNodeConenctivity(cTreeNodeAMR<cBlockAMR> *node) {
