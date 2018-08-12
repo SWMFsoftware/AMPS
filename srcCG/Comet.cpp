@@ -376,8 +376,8 @@ void Comet::GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh:
     exit(__LINE__,__FILE__,"Error: the block is NULL. Most probably the time step is too large");
   }
 
-  register int idim;
-  register double *offset=(double*)(GravityFieldOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
+  int idim;
+  double *offset=(double*)(GravityFieldOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
 
   for (idim=0;idim<3;idim++) x[idim]=offset[idim];
 

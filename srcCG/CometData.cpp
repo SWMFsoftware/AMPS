@@ -284,8 +284,8 @@ double Comet::CometData::GetNeutralsMassDensity(int s,long int nd,cTreeNodeAMR<P
 
 
 void  Comet::CometData::GetNeutralsVelocity(double *x, int s,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  register int idim;
-  register double *offset=(double*)(4*s*sizeof(double)+sizeof(double)+NeutralsFromBinaryOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
+  int idim;
+  double *offset=(double*)(4*s*sizeof(double)+sizeof(double)+NeutralsFromBinaryOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
   
   for (idim=0;idim<3;idim++) x[idim]=offset[idim];
 }

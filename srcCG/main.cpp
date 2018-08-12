@@ -313,7 +313,7 @@ int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::c
 
 
 double SurfaceResolution(CutCell::cTriangleFace* t) {
-  register double a=18.0*t->CharacteristicSize();
+  double a=18.0*t->CharacteristicSize();
 
   return ((1.0>a) ? 1 : a)/1.5;
 
