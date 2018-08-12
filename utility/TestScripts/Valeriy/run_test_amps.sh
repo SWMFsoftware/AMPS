@@ -30,6 +30,10 @@ source $HOME/.cshrc
 set WorkDir = $HOME  
 #set WorkDir = /Volumes/Data01
 
+#update the data file repository 
+cd /Users/vtenishe/AMPS_DATA_TEST
+git pull
+
 #Go to your home directory
 cd $WorkDir
 
