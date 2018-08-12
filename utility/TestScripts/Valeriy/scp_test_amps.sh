@@ -15,9 +15,7 @@
 # 30 8 * * * $HOME/bin/scp_test_amps.sh
 
 # set the working directory
-#set WorkDir = $HOME  
-
-set WorkDir = /Volumes/Data01
+set WorkDir = $HOME  
 set Server  = vtenishe@herot.engin.umich.edu
 
 #>Pleiades ############################
@@ -36,32 +34,36 @@ cd $WorkDir/Tmp_AMPS_test
 
 # GNU compiled test
 #>GNUAll #####################################################################
-cd GNU/AMPS                                                                 #
-rm -rf test_amps.res
-ls -ltr  *diff > test_amps.res                                              #
-echo '===============================================' >> test_amps.res     # 
-head -100 *diff >> test_amps.res                                            #
-scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_gnu/  #
-cd ../..                                                                   
-
+if (-e GNU) then 
+  cd GNU/AMPS                                                                 #
+  rm -rf test_amps.res
+  ls -ltr  *diff > test_amps.res                                              #
+  echo '===============================================' >> test_amps.res     # 
+  head -100 *diff >> test_amps.res                                            #
+  scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_gnu/  #
+  cd ../..                                                                   
+endif
 
 # Intel compiled test
 #>IntelAll ###################################################################
-cd Intel/AMPS                                                               #
-rm -rf test_amps.res
-ls -ltr  *diff > test_amps.res                                              #
-echo '===============================================' >> test_amps.res     # 
-head -100 *diff >> test_amps.res                                            #
-scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_intel/#
-cd ../..                                                                   
+if (-e Intel) then
+  cd Intel/AMPS                                                               #
+  rm -rf test_amps.res
+  ls -ltr  *diff > test_amps.res                                              #
+  echo '===============================================' >> test_amps.res     # 
+  head -100 *diff >> test_amps.res                                            #
+  scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_intel/#
+  cd ../..                                                                   
+endif 
 
 # PGI compiled test
 #>PGIAll #####################################################################
-cd PGI/AMPS                                                                 #
-rm -rf test_amps.res
-ls -ltr  *diff > test_amps.res                                              #
-echo '===============================================' >> test_amps.res     # 
-head -100 *diff >> test_amps.res                                            #
-scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_pgi/  #
-cd ../..                                                                   
-
+if (-e PGI) then
+  cd PGI/AMPS                                                                 #
+  rm -rf test_amps.res
+  ls -ltr  *diff > test_amps.res                                              #
+  echo '===============================================' >> test_amps.res     # 
+  head -100 *diff >> test_amps.res                                            #
+  scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_pgi/  #
+  cd ../..                                                                   
+endif
