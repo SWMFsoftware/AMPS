@@ -2554,6 +2554,9 @@ namespace PIC {
       static int LocalTimeStepOffset,LocalParticleWeightOffset;
       char *associatedDataPointer;
 
+      typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
+      static fPackBlockData PackBlockData,UnpackBlockData;
+
     private:
       static int tempParticleMovingListTableThreadOffset,tempParticleMovingListTableThreadLength; //the offset and length of the tempParticleMovingListTable for each
       static int totalAssociatedDataLength;
