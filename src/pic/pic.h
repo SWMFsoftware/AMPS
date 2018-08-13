@@ -5218,7 +5218,7 @@ namespace PIC {
         //init the list of the ghost blocks
         void InitBlockPairTable(bool RebuildBlockPairTable=false);
 
-        void ExchangeBlockDataMPI(cBlockPairTable& BlockPair,char *SendRecvDataBuffer);
+        void ExchangeBlockDataMPI(cBlockPairTable& BlockPair);
         void ExchangeBlockDataLocal(cBlockPairTable& BlockPair);
         
         //modify the newly created 'ParallelNodesDistributionList' to ensure that a 'ghost' and corresponding 'real' blocks are assigned to the same MPI process
