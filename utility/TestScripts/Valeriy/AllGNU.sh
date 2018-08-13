@@ -1,9 +1,8 @@
 #!/bin/csh
 
-#set WorkDir = $HOME
-set WorkDir = /Volumes/Data01
+set WorkDir = $HOME
+source $WorkDir/module/gnu 
 
-source $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/CompilerSetup/set_mpi_gnu.valeriy
 echo -n "Compiling GNU....."
 
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS  

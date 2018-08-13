@@ -36,7 +36,7 @@ void Comet::SunLocationUpdate::Processor() {
   if (FirstUpdateOutputCycleNumber>++OutputCycleCounter) return;
 
   //if StartTime_et is not initialized yet -> initialize it
-  if (std::isnan(StartTime_et)==true) {
+  if (isfinite(StartTime_et)==false) {
     utc2et_c(StartTime,&StartTime_et);
   }
 

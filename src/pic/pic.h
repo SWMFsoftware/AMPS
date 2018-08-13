@@ -4230,7 +4230,7 @@ namespace PIC {
         for (int i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
 
         #if  _PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
-        if (std::isnan(Time)) Time = PIC::SimulationTime::Get();
+        if (isfinite(Time)==false) Time = PIC::SimulationTime::Get();
 
         offset = (double*)(DataOffsetBegin+MULTIFILE::NextDataFileOffset+CenterNodeAssociatedDataOffsetBegin+cell->GetAssociatedDataBufferPointer());
 

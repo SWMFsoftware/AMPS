@@ -2091,7 +2091,7 @@ cutBlockFlag=false;
        k=edgeCutNodeCoordinates[nedge][2];
 
        //check existance of the cornet nodes
-       register int pnode;
+       int pnode;
        int ii,jj,kk;
 
        //if the cut node does not exists ->
@@ -2131,7 +2131,7 @@ cutBlockFlag=false;
       k=edgeCutNodeCoordinates[nedge][2];
 
       //check existance of the cornet nodes
-      register int pnode;
+      int pnode;
       int ii,jj,kk;
 
       //if the cut node does not exists ->
@@ -2325,7 +2325,7 @@ cout << __LINE__ << endl;
 
 
       //check existance of the cornet nodes
-      register int pnode;
+      int pnode;
       int ii,jj,kk;
 
       int nCornerNodes=0;
@@ -2955,12 +2955,12 @@ if (  ((nd0->ghostNode==false)&&(nd1->ghostNode==false)&&(nd2->ghostNode==false)
 
         //construct a coordinate system in the plane: get the first coordinate vector
         if (fabs(norm[0])>1.0E-1) {
-          register double t=sqrt(norm[0]*norm[0]+norm[1]*norm[1]);
+          double t=sqrt(norm[0]*norm[0]+norm[1]*norm[1]);
 
           e0[0]=norm[1]/t,e0[1]=-norm[0]/t,e0[2]=0.0;
         }
         else {
-          register double t=sqrt(norm[2]*norm[2]+norm[1]*norm[1]);
+          double t=sqrt(norm[2]*norm[2]+norm[1]*norm[1]);
 
           e0[0]=0.0,e0[1]=-norm[2]/t,e0[2]=norm[1]/t;
         }
@@ -2992,7 +2992,7 @@ if (  ((nd0->ghostNode==false)&&(nd1->ghostNode==false)&&(nd2->ghostNode==false)
 
           if (nmin!=n) {
             //swap the nodes in the list
-            register cBlockNode *t;
+            cBlockNode *t;
 
             t=nd0Connection[n];
             nd0Connection[n]=nd0Connection[nmin];

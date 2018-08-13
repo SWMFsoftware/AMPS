@@ -152,7 +152,7 @@ public:
 #if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
     ZenithAngle=acos(1.0-dCosZenithAngle*(nZenithElement+0.5));
 #elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    ZenithAngle=(0.5+nZenithElement)*dZenithAngle
+    ZenithAngle=(0.5+nZenithElement)*dZenithAngle; 
 #else
     exit(__LINE__,__FILE__,"Error: wrong option");
 #endif

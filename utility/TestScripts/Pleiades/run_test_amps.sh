@@ -56,6 +56,8 @@ rm -f *.job
 rm -rf */AMPS
 
 # Checkout the latest code version
+set CheckoutTime = `date`
+
 if (-e AMPS) then
   cd AMPS_Legacy; git pull
   cd ../BATL; git pull
@@ -78,7 +80,18 @@ endif
 # Update data files for test at supercomputers
 #>Pleiades>Yellowstone>Stampede #########################
 
-rsync -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST 
+#rsync -P -a -c -r amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST/ $WorkDir/AMPS_DATA_TEST 
+
+cd $WorkDir 
+
+if (-e AMPS_DATA_TEST) then   
+  cd AMPS_DATA_TEST
+  git pull
+else 
+  git clone tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST
+endif
+
+cd $WorkDir/Tmp_AMPS_test
 
 #cp /home3/vtenishe/Table /nobackupp8/vtenishe/Tmp_AMPS_test/AMPS/MakefileTest
 
@@ -99,13 +112,16 @@ cp -r BATL PGI/AMPS/
 # install AMPS
 #>GNUAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
-./Config.pl -install -compiler=gfortran,gcc_mpicc    >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
-./Config.pl -install -compiler=ifortmpif90,iccmpicxx >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
 #>PGIAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
-./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >& test_amps.log    
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >>& test_amps.log    
 
 # copy job files to the AMPS directory on supercomputers
 #>Pleiades ###############################################
@@ -124,8 +140,8 @@ echo -n "Set Exeptions....."
 #>Pleiades ##############################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                   #
 ./Config.pl -install -compiler=ifort,icc
-./Config.pl -cpp-link-option=-lmpi,-lpthread 
-./Config.pl -f-link-option=-lmpi                     #
+./Config.pl -cpp-link-option=-lmpi,-lmpi++,-lpthread 
+./Config.pl -f-link-option=-lmpi,-lmpi++                     #
 ./Config.pl -cpplib-rm=-lmpi_cxx
 ./Config.pl -noopenmp
 

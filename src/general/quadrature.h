@@ -351,7 +351,7 @@ namespace Quadrature {
             x[idim]=B[idim];
             s[idim]=wGauss[0]*Integrant(x);
 
-            for (register int ii=1;ii<IntegrationTableLength;ii++) {
+            for (int ii=1;ii<IntegrationTableLength;ii++) {
               x[idim]=B[idim]+A[idim]*xGauss[ii];
               s[idim]+=wGauss[ii]*Integrant(x);
 
@@ -411,7 +411,7 @@ namespace Quadrature {
           if (idim==VectorDimention-1) { //Calculate the integral
             s[idim]=0.0;
 
-            for (register int ii=0;ii<IntegrationTableLength;ii++) {
+            for (int ii=0;ii<IntegrationTableLength;ii++) {
               x[idim]=B[idim]+A[idim]*xGauss[ii];
               s[idim]+=wGauss[ii]*(*Integrant)(x);
 

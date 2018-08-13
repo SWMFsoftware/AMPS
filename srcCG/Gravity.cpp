@@ -216,7 +216,7 @@ void nucleusGravity::readMesh_longformat(const char *fname) {
       }
       ifile.closefile();
 
-      register long int nd,nfc,id;
+      long int nd,nfc,id;
       
       //renumerate nodes
       //determine the maximum valus of node->id and allocate the map for relating node->id with the node number
@@ -391,7 +391,7 @@ void nucleusGravity::readMesh(const char *fname) {
     }
 
     //renumerate nodes
-    register long int id;
+    long int id;
 
     for (nfc=0;nfc<ntetras;nfc++) for (idim=0;idim<4;idim++) {
       id=tetras[nfc].node[idim];
