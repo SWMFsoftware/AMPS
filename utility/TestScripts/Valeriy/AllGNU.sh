@@ -6,7 +6,6 @@ source $WorkDir/module/gnu
 echo -n "Compiling GNU....."
 
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS  
-./Config.pl -link-option=-lmpi_cxx
 make test_compile >>& test_amps.log
 
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS/
