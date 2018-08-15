@@ -139,7 +139,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=CG-Rosina-Liouville--Trajectory 
+Name=CG-Rosina-Liouville--Trajectory@@(0+valeriy) 
 Time=3
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
@@ -180,19 +180,19 @@ Check=
 >>>@echo "test_CG-Rosina-Liouville--Trajectory_check..." >> test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
 >>>@${TESTCG-Rosina-Liouville--TrajectoryDIR}/../utility/ReduceFile.pl ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/SurfaceTriangulation.dat 40
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/SurfaceTriangulation.dat.Reduced.Step=40 output/test_CG-Rosina-Liouville--Trajectory/SurfaceTriangulation.dat.Reduced.Step=40$(TESTCG-Rosina-Liouville--Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--Triangulation$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/SurfaceTriangulation.dat.Reduced.Step=40   /Users/vtenishe/AMPS_DATA_TEST/ROSETTA/END-OF-MISSION/SurfaceTriangulation.dat.Reduced.Step=40$(TESTCG-Rosina-Liouville--Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--Triangulation$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/Liouville.spec=SUM.dat  output/test_CG-Rosina-Liouville--Trajectory/Liouville.spec=SUM$(TESTCG-Rosina-Liouville--Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--COPS-Data$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/RefTrajectory.dat  /Users/vtenishe/AMPS_DATA_TEST/ROSETTA/END-OF-MISSION/RefTrajectory$(TESTCG-Rosina-Liouville-Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--RefTrajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/TrajectoryAll.dat  output/test_CG-Rosina-Liouville--Trajectory/TrajectoryAll$(TESTCG-Rosina-Liouville-Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--Trajectory-All$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/RefMeasurements.dat  /Users/vtenishe/AMPS_DATA_TEST/ROSETTA/END-OF-MISSION/RefMeasurements$(TESTCG-Rosina-Liouville-Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--RefMeasurements$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/TrajectoryLastMeasurements.dat  output/test_CG-Rosina-Liouville--Trajectory/TrajectoryLastMeasurements$(TESTCG-Rosina-Liouville-Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-Rosina-Liouville--TrajectoryDIR}/PT/plots/RefNiceGroundTrack0.dat  /Users/vtenishe/AMPS_DATA_TEST/ROSETTA/END-OF-MISSION/RefNiceGroundTrack0$(TESTCG-Rosina-Liouville-Trajectory-REF).ref_np`ls $(TESTCG-Rosina-Liouville--TrajectoryDIR)/PT/thread* |wc -l |tr -d ' '`  > test_CG-Rosina-Liouville--RefGroundTrack$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
 
 >>>@ls -l test_CG-Rosina-Liouville--Triangulation$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
->>>@ls -l test_CG-Rosina-Liouville--COPS-Data$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
->>>@ls -l test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
->>>@ls -l test_CG-Rosina-Liouville--Trajectory-All$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>@ls -l test_CG-Rosina-Liouville--RefTrajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>@ls -l test_CG-Rosina-Liouville--RefMeasurements$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
+>>>@ls -l test_CG-Rosina-Liouville--RefGroundTrack$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 >>>@echo Test test_CG-Rosina-Liouville--Trajectory has finished: `date`
 
 <#
