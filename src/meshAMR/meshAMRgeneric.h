@@ -11041,7 +11041,7 @@ if (TmpAllocationCounter==2437) {
             //a message has arrived -> read it
             //unpack the data
             From=RecvProcessTable[iFrom];
-            UnpackRecvData(nRecvCounter[iFrom]-1,From);
+            UnpackRecvData(nRecvCounter[From]-1,From);
 
             //update the table
             RecvProcessTable[iFrom]=RecvProcessTable[RecvTableIndex-1];
