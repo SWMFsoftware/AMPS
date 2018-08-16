@@ -10500,13 +10500,14 @@ if (TmpAllocationCounter==2437) {
     }
   }
 
+//  void ParallelBlockDataExchange() {
 
 
 #define _ParallelBlockDataExchangeMode_Count_ 0
 #define _ParallelBlockDataExchangeMode_PopulateNodeList_ 1
 #define _ParallelBlockDataExchangeMode_DataExchange_ 2
 
-  void ParallelBlockDataExchange_Internal(int *SendBlockCounter,cAMRnodeID** SendNodeIDTable,cTreeNodeAMR<cBlockAMR>*** SendNodeTable,int Mode) {
+  void ParallelBlockDataExchange_Internal(int *SendBlockCounter,cAMRnodeID** SendNodeIDTable,cTreeNodeAMR<cBlockAMR>*** SendNodeTable,int Mode) { 
     int From,To,i,pipeLastRecvThread;
     CMPI_channel pipe(100000);
 
@@ -10524,8 +10525,19 @@ if (TmpAllocationCounter==2437) {
     const int _End_Communication_SIGNAL_=1;
     int Signal;
 
+    /*
+    //the list of nodes to be send
+    const int SendNodelListCounterMax=60;
+    int SendNodeListCounter;
+    cTreeNodeAMR<cBlockAMR>* SendNodeList[SendNodelListCounterMax];
+    bool found;
+*/
+
     //the data exchange loop
     for (From=0;From<nTotalThreads;From++) for (To=0;To<nTotalThreads;To++) if ((From!=To)&&(ParallelSendRecvMap[From][To]==true)) {
+//      SendNodeListCounter=0;
+
+
       //the part of the sender
       if (ThisThread==From) {
         //redirect the send pipe buffers
@@ -10534,6 +10546,17 @@ if (TmpAllocationCounter==2437) {
         //reset the proceesed flaf for the blocks to be send
         //send the nodes' data
         for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) {
+
+
+
+//================  DEBUG ========================
+
+          /*
+if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+1000.0,2)+pow(recvNode->xmin[2]+500.0,2)<0.00001)||(recvNode->Temp_ID==14)) {
+   *DiagnospticMessageStream << __LINE__ << std::endl;
+}
+*/
+//================ END DEBUG =====================
 
 
 #if _MESH_DIMENSION_ == 2
@@ -10549,20 +10572,68 @@ if (TmpAllocationCounter==2437) {
 
 
           //add face-neighbors into the send list
+//#if _MESH_DIMENSION_ == 2
+//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
+//#elif _MESH_DIMENSION_ == 3
+//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
+//#endif
+
+//#ifdef _AMR_ParallelBlockDataExchange_SEND_FACES_
          for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+         /*
+           //Search the send-list if the node is already there
+           for (found=false,k=0;k<SendNodeListCounter;k++) {
+             if (sendNode==SendNodeList[k]) {
+               found=true;
+               break;
+             }
+           }
 
-
+           //add the sendBlock to the send-list
+           if (found==true) {
+             if (SendNodeListCounter+1==SendNodelListCounterMax) exit(__LINE__,__FILE__,"Error: increase the value of SendNodelListCounterMax");
+             SendNodeList[SendNodeListCounter++]=sendNode;
+           }
+         }
+         */
+//#endif
 
 
          //add the edge-neighbors to the send list
 #if _MESH_DIMENSION_ == 3
          for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+         /*
+           //Search the send-list if the node is already there
+           for (found=false,k=0;k<SendNodeListCounter;k++) {
+             if (sendNode==SendNodeList[k]) {
+               found=true;
+               break;
+             }
+           }
+
+           //add the sendBlock to the send-list
+           if (found==true) {
+             if (SendNodeListCounter+1==SendNodelListCounterMax) exit(__LINE__,__FILE__,"Error: increase the value of SendNodelListCounterMax");
+             SendNodeList[SendNodeListCounter++]=sendNode;
+           }
+         }
+         */
 #endif
 
 //         recvNode=recvNode->nextNodeThisThread;
         }
 
+/*
+        for (k=0;k<SendNodeListCounter;k++) {
+          sendNode=SendNodeList[k];
+          GetAMRnodeID(nodeid,sendNode);
 
+          pipe.send(_Next_Node_SIGNAL_);
+          pipe.send((char*)(&nodeid),sizeof(nodeid));
+
+           //send the data
+           sendNode->block->SendNodeData(&pipe,DataSetTag);
+         }*/
 
 
         //send the data
@@ -10587,18 +10658,16 @@ if (TmpAllocationCounter==2437) {
               pipe.send((char*)(&nodeid),sizeof(nodeid));
 
               //send the data
-              sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,-1,NULL,NULL,NULL);
+              sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,NULL);
               break;
-
-            case _ParallelBlockDataExchangeMode_Count_:
-              SendBlockCounter[To]++;
-              break;
-
-            case _ParallelBlockDataExchangeMode_PopulateNodeList_:
-              SendNodeIDTable[To][SendBlockCounter[To]]=nodeid;
-              SendNodeTable[To][SendBlockCounter[To]]=sendNode;
-              SendBlockCounter[To]++;
-            }
+           case _ParallelBlockDataExchangeMode_Count_:
+             SendBlockCounter[To]++;
+             break;
+           case _ParallelBlockDataExchangeMode_PopulateNodeList_:
+             SendNodeIDTable[To][SendBlockCounter[To]]=nodeid;
+             SendNodeTable[To][SendBlockCounter[To]]=sendNode;
+             SendBlockCounter[To]++;
+           }
           }
 #endif
 
@@ -10614,23 +10683,22 @@ if (TmpAllocationCounter==2437) {
            GetAMRnodeID(nodeid,sendNode);
 
            switch (Mode) {
-           case _ParallelBlockDataExchangeMode_DataExchange_:
+           case _ParallelBlockDataExchangeMode_DataExchange_: 
              pipe.send(_Next_Node_SIGNAL_);
              pipe.send((char*)(&nodeid),sizeof(nodeid));
 
              //send the data
-             sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,-1,NULL,NULL,NULL);
+             sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,NULL);
              break;
-
            case _ParallelBlockDataExchangeMode_Count_:
              SendBlockCounter[To]++;
              break;
-
            case _ParallelBlockDataExchangeMode_PopulateNodeList_:
              SendNodeIDTable[To][SendBlockCounter[To]]=nodeid;
              SendNodeTable[To][SendBlockCounter[To]]=sendNode;
              SendBlockCounter[To]++;
            }
+
          }
 
 
@@ -10640,37 +10708,38 @@ if (TmpAllocationCounter==2437) {
          for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
-
+      
            switch (Mode) {
            case _ParallelBlockDataExchangeMode_DataExchange_:
              pipe.send(_Next_Node_SIGNAL_);
              pipe.send((char*)(&nodeid),sizeof(nodeid));
 
              //send the data
-             sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,-1,NULL,NULL,NULL);
+             sendNode->block->sendBoundaryLayerBlockData(&pipe,sendNode,NULL);
              break;
-
            case _ParallelBlockDataExchangeMode_Count_:
              SendBlockCounter[To]++;
              break;
-
            case _ParallelBlockDataExchangeMode_PopulateNodeList_:
              SendNodeIDTable[To][SendBlockCounter[To]]=nodeid;
              SendNodeTable[To][SendBlockCounter[To]]=sendNode;
-             SendBlockCounter[To]++;           }
+             SendBlockCounter[To]++;
+           }
+
+
          }
 #endif
 //         recvNode=recvNode->nextNodeThisThread;
         }
 
 
-        if (Mode==_ParallelBlockDataExchangeMode_DataExchange_) {
+         if (Mode==_ParallelBlockDataExchangeMode_DataExchange_) {
            pipe.send(_End_Communication_SIGNAL_);
            pipe.flush();
-        }
+         }
         //end the part of the sender
       }
-      else if (ThisThread==To) if (Mode==_ParallelBlockDataExchangeMode_DataExchange_) {
+      else if ((ThisThread==To)&&(Mode==_ParallelBlockDataExchangeMode_DataExchange_)) {
         //the part of the receiver
 
         //redirect the recv's pipe buffers
@@ -10732,7 +10801,21 @@ if (TmpAllocationCounter==2437) {
             exit(__LINE__,__FILE__,"Error: the node is not allocated");
           }
 
-          recvNode->block->recvBoundaryLayerBlockData(&pipe,recvNode,From,NULL,NULL,NULL);
+
+//================  DEBUG ========================
+
+          /*
+if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.0,2)+pow(recvNode->xmin[0]+0.0,2)<0.00001) {
+  *DiagnospticMessageStream << __LINE__ << std::endl;
+}
+*/
+
+//================ END DEBUG =====================
+
+
+
+
+          recvNode->block->recvBoundaryLayerBlockData(&pipe,From,recvNode,NULL);
           pipe.recv(Signal,From);
         }
 
@@ -10747,6 +10830,13 @@ if (TmpAllocationCounter==2437) {
       pipe.closeRecv(pipeLastRecvThread);
     }
   }
+
+
+/*
+  void ParallelBlockDataExchange() {
+    ParallelBlockDataExchange_Internal(NULL,NULL,NULL,_ParallelBlockDataExchangeMode_DataExchange_);
+  }
+*/
 
   class cParallelBlockDataExchangeData {
   public:
@@ -10788,6 +10878,10 @@ if (TmpAllocationCounter==2437) {
 
   void ParallelBlockDataExchange() {
     int thread;
+
+
+//ParallelBlockDataExchange_Internal(NULL,NULL,NULL,2);
+//return;
 
     //determine whether the data exchange parameters needs to be updated
     int localMeshChangeFlag,globalMeshChangeFlag;
@@ -10897,17 +10991,20 @@ if (TmpAllocationCounter==2437) {
 
       if (ParallelBlockDataExchangeData.NodeDataLength==-1) for (thread=0;thread<nTotalThreads;thread++) {
         if (ParallelBlockDataExchangeData.RecvNodeTable[thread]!=NULL) {
-          ParallelBlockDataExchangeData.NodeDataLength=ParallelBlockDataExchangeData.RecvNodeTable[thread][0]->block->sendBoundaryLayerBlockData(NULL,NULL,-1,NULL,NULL,NULL);
+          ParallelBlockDataExchangeData.NodeDataLength=ParallelBlockDataExchangeData.RecvNodeTable[thread][0]->block->sendBoundaryLayerBlockData(NULL,NULL,NULL);
           break;
         }
 
         if (ParallelBlockDataExchangeData.SendNodeTable[thread]!=NULL) {
-          ParallelBlockDataExchangeData.NodeDataLength=ParallelBlockDataExchangeData.SendNodeTable[thread][0]->block->sendBoundaryLayerBlockData(NULL,NULL,-1,NULL,NULL,NULL);
+          ParallelBlockDataExchangeData.NodeDataLength=ParallelBlockDataExchangeData.SendNodeTable[thread][0]->block->sendBoundaryLayerBlockData(NULL,NULL,NULL);
           break;
         }
       }
 
       ParallelBlockDataExchangeData.NodeSendPerRound=1+nMaxBytesSendPerRound/ParallelBlockDataExchangeData.NodeDataLength;
+
+//ParallelBlockDataExchangeData.NodeSendPerRound=14;
+//cout << ParallelBlockDataExchangeData.NodeSendPerRound << "   " << ParallelBlockDataExchangeData.NodeDataLength << endl;
 
       for (int i=0;i<nTotalThreads*nTotalThreads;i++) if (nMaxSendNodes<ParallelBlockDataExchangeData.GlobalSendTable[i]) nMaxSendNodes=ParallelBlockDataExchangeData.GlobalSendTable[i];
 
@@ -10957,9 +11054,17 @@ if (TmpAllocationCounter==2437) {
       if (iEnd>ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]) iEnd=ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads];
 
       for (i=iStart;i<iEnd;i++) {
-        ParallelBlockDataExchangeData.SendNodeTable[To][i]->block->sendBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.SendNodeTable[To][i],To,NULL,NULL,DataBufferBegin);
+        ParallelBlockDataExchangeData.SendNodeTable[To][i]->block->sendBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.SendNodeTable[To][i],DataBufferBegin);
         DataBufferBegin+=ParallelBlockDataExchangeData.NodeDataLength;
       }
+
+if ((iEnd-iStart<=0)||(To<0)||(To>=4)||(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To]==NULL)) {
+
+cout << iEnd << "  " << iStart << "  " << To << endl;
+
+exit(__LINE__,__FILE__,"rqwerqwerqwerqwerqwerqwerw");
+}
+
 
       MPI_Isend(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],(iEnd-iStart)*ParallelBlockDataExchangeData.NodeDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,&Request);
     };
@@ -10988,7 +11093,7 @@ if (TmpAllocationCounter==2437) {
 
 
       for (i=iStart;i<iEnd;i++) {
-        ParallelBlockDataExchangeData.RecvNodeTable[From][i]->block->recvBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.RecvNodeTable[From][i],From,NULL,NULL,RecvDataBegin);
+        ParallelBlockDataExchangeData.RecvNodeTable[From][i]->block->recvBoundaryLayerBlockData(NULL,-1,ParallelBlockDataExchangeData.RecvNodeTable[From][i],RecvDataBegin);
         RecvDataBegin+=ParallelBlockDataExchangeData.NodeDataLength;
       }
     };
@@ -11028,7 +11133,7 @@ if (TmpAllocationCounter==2437) {
             RecvTableIndex++;
 
             nRecvCounter[From]++;
-            if (nRecvCounter[From]<nTotalRecvRounds[From]) CommunicationCompleted=false;
+            CommunicationCompleted=false;
           }
         }
       }
@@ -11056,9 +11161,10 @@ if (TmpAllocationCounter==2437) {
               RecvTableIndex++;
 
               nRecvCounter[From]++;
-              if (nRecvCounter[From]<nTotalRecvRounds[From]) CommunicationCompleted=false;
+              CommunicationCompleted=false;
             }
           }
+          else CommunicationCompleted=false;
         }
       }
 
@@ -11066,13 +11172,13 @@ if (TmpAllocationCounter==2437) {
       //initiate new send opetation
       if (cnt==0) {
         for (To=0;To<nTotalThreads;To++) {
-          if (nSendCounter[To]<nTotalRecvRounds[To]) {
+          if (nSendCounter[To]<nTotalSendRounds[To]) {
             InitSendData(nSendCounter[To],To,SendRequestTable[SendTableIndex]);
             SendProcessTable[SendTableIndex]=To;
             SendTableIndex++;
 
             nSendCounter[To]++;
-            if (nSendCounter[To]<nTotalRecvRounds[To]) CommunicationCompleted=false;
+            CommunicationCompleted=false;
           }
         }
       }
@@ -11091,21 +11197,22 @@ if (TmpAllocationCounter==2437) {
             iTo--;
 
             //initiate a new send operation
-            if (nSendCounter[To]<nTotalRecvRounds[To]) {
+            if (nSendCounter[To]<nTotalSendRounds[To]) {
               InitSendData(nSendCounter[To],To,SendRequestTable[SendTableIndex]);
               SendProcessTable[SendTableIndex]=To;
               SendTableIndex++;
 
               nSendCounter[To]++;
-              if (nSendCounter[To]<nTotalRecvRounds[To]) CommunicationCompleted=false;
+              CommunicationCompleted=false;
             }
           }
+          else CommunicationCompleted=false;
         }
 
       }
     }
 
-
+/*
     //waite for any uncopleted recv operations
     while (RecvTableIndex!=0) {
       MPI_Status status;
@@ -11126,6 +11233,7 @@ if (TmpAllocationCounter==2437) {
 
     //waite for the uncompleted send operations
     MPI_Waitall(SendTableIndex,SendRequestTable,MPI_STATUSES_IGNORE);
+*/
   }
 
   //verify node connections

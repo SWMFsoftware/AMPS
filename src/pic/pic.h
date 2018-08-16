@@ -2647,8 +2647,8 @@ namespace PIC {
 
     
       //exchenge of the data between processors
-      int sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int To,int *RequestTableIndex,MPI_Request *RequestTable,char* SendDataBuffer);
-      void recvBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int From,int *RequestTableIndex,MPI_Request *RequestTable,char* SendDataBuffer);
+      int sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,char* SendDataBuffer);
+      int recvBoundaryLayerBlockData(CMPI_channel *pipe,int From,void* Node,char* RecvDataBuffer);
 
       //send the block to abother processor
       void sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node);

@@ -71,10 +71,6 @@ unsigned int PIC::DomainBlockDecomposition::nLocalBlocks=0;
 int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTable=NULL;
 
-//user-defined functions that pack and unpack block's data for the data exchange between iteratinos
-PIC::Mesh::cDataBlockAMR::fPackBlockData PIC::Mesh::cDataBlockAMR::PackBlockData=NULL;
-PIC::Mesh::cDataBlockAMR::fPackBlockData PIC::Mesh::cDataBlockAMR::UnpackBlockData=NULL;
-
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
@@ -486,18 +482,12 @@ void PIC::Mesh::buildMesh() {
 
 
 
-int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int To,int *RequestTableIndex,MPI_Request *RequestTable,char* SendDataBuffer) {
+int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,char *SendDataBuffer) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
-  int SendByteCounter=0;
-
-  //if a user-defined fucntion for un-packing the block's data are available -> use it
-  if (PackBlockData!=NULL) {
-    return PackBlockData(this,SendDataBuffer);
-  }
-
+  int SendBufferIndex=0;
 
   #if DIM == 3
   static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -514,25 +504,26 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
-    SendByteCounter+=sizeof(double)+CenterNode->totalAssociatedDataLength;
+/*
+    pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
+    pipe->send(CenterNode->Measure);
+*/
 
     if (pipe!=NULL) {
       pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
       pipe->send(CenterNode->Measure);
-    } else if (RequestTable!=NULL)  {
-      MPI_Isend(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-
-      MPI_Isend(&CenterNode->Measure,1,MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-    } else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer,CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
-      SendDataBuffer+=CenterNode->totalAssociatedDataLength;
-
-      memcpy(SendDataBuffer,&CenterNode->Measure,sizeof(double));
-      SendDataBuffer+=sizeof(double);
     }
-//    else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+    else if (SendDataBuffer!=NULL) { 
+      memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
+      SendBufferIndex+=CenterNode->totalAssociatedDataLength;
+
+      memcpy(SendDataBuffer+SendBufferIndex,&CenterNode->Measure,sizeof(double));
+      SendBufferIndex+=sizeof(double);
+    }
+    else {
+      SendBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
+    }  
+
   }
 
   //send the corner node associated data
@@ -543,30 +534,35 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
-    SendByteCounter+=CornerNode->totalAssociatedDataLength;
+/*
+    pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+*/
 
     if (pipe!=NULL) {
       pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-    } else if (RequestTable!=NULL) {
-      MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-    } else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-      SendDataBuffer+=CornerNode->totalAssociatedDataLength;
-    } //else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+    }
+    else if (SendDataBuffer!=NULL) {
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+    else {
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    } 
   }
 
   //send 'corners' from the 'right' boundary of the block
   int iface,iFaceTable[3]={1,3,5};
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-
-  SendByteCounter+=3*3*CornerNode->totalAssociatedDataLength;
-
-  if (ThisNode!=NULL) for (int i=0;i<3;i++) {
+  for (int i=0;i<3;i++) {
     iface=iFaceTable[i];
 
-    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+    bool flag=false; 
+
+    if ((pipe==NULL)&&(SendDataBuffer==NULL)) flag=true;
+    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+
+    if (flag==true) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {
@@ -576,15 +572,21 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          if (pipe!=NULL) {
-            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-          } else if (RequestTable!=NULL) {
-            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else if (SendDataBuffer!=NULL) {
-            memcpy(SendDataBuffer,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-            SendDataBuffer+=CornerNode->totalAssociatedDataLength;
-          } //else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+/*
+          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+*/
+
+    if (pipe!=NULL) {
+      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    }
+    else if (SendDataBuffer!=NULL) {
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+    else {
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+
         }
         break;
 
@@ -594,15 +596,21 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          if (pipe!=NULL) {
-            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-          } else if (RequestTable!=NULL) {
-            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else if (SendDataBuffer!=NULL) {
-            memcpy(SendDataBuffer,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-            SendDataBuffer+=CornerNode->totalAssociatedDataLength;
-          } //else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+/*
+          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+*/
+
+    if (pipe!=NULL) {
+      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    }
+    else if (SendDataBuffer!=NULL) {
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+    else {
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+
         }
         break;
 
@@ -612,15 +620,22 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-          if (pipe!=NULL) {
-            pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-          } else if (RequestTable!=NULL) {
-            MPI_Isend(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else if (SendDataBuffer!=NULL) {
-            memcpy(SendDataBuffer,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-            SendDataBuffer+=CornerNode->totalAssociatedDataLength;
-          } //else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+/*
+          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+*/
+
+    if (pipe!=NULL) {
+      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    }
+    else if (SendDataBuffer!=NULL) {
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+    else {
+      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+
+
         }
         break;
       }
@@ -628,28 +643,29 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
 
   }
 
-  SendByteCounter+=totalAssociatedDataLength-UserAssociatedDataOffset;
+/*
+  pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
+*/
 
-  if (associatedDataPointer!=NULL) {
-    if (pipe!=NULL) {
-      pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
-    } else if (SendDataBuffer!=NULL) {
-      MPI_Isend(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-    } else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer,associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
-      SendDataBuffer+=(totalAssociatedDataLength-UserAssociatedDataOffset);
-    } //else exit(__LINE__,__FILE__,"Error: all means of sending the data are not initialized");
+  if (pipe!=NULL) {
+    pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
+  }
+  else if (SendDataBuffer!=NULL) {
+    memcpy(SendDataBuffer+SendBufferIndex,associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
+    SendBufferIndex+=totalAssociatedDataLength-UserAssociatedDataOffset;
+  }
+  else {
+    SendBufferIndex+=totalAssociatedDataLength-UserAssociatedDataOffset;
   }
 
-  return SendByteCounter;
+  return SendBufferIndex;
 }
 
 void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
 
-  sendBoundaryLayerBlockData(pipe,Node,-1,NULL,NULL,NULL);
+  sendBoundaryLayerBlockData(pipe,Node,NULL);
 
   #if DIM == 3
   static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -696,17 +712,12 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
   delete [] buffer;
 }
 
-void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,int From,int *RequestTableIndex,MPI_Request *RequestTable,char* RecvDataBuffer) {
+int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int From,void* Node,char *RecvDataBuffer) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
-
-  //if a user-defined fucntion for un-packing the block's data are available -> use it
-  if (UnpackBlockData!=NULL) {
-     UnpackBlockData(this,RecvDataBuffer);
-     return;
-  }
+  int RecvDataBufferIndex=0;
 
   #if DIM == 3
   static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -723,22 +734,24 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
+/*
+    pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
+    pipe->recv(CenterNode->Measure,From);
+*/
+
     if (pipe!=NULL) {
       pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
       pipe->recv(CenterNode->Measure,From);
-    } else if (RequestTable!=NULL) {
-      MPI_Irecv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
+    }
+    else if (RecvDataBuffer!=NULL) {
+      memcpy(CenterNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CenterNode->totalAssociatedDataLength);
+      RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength;
 
-      MPI_Irecv(&CenterNode->Measure,1,MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
+      memcpy(&CenterNode->Measure,RecvDataBuffer+RecvDataBufferIndex,sizeof(double));
+      RecvDataBufferIndex+=sizeof(double);
     }
     else {
-      memcpy(CenterNode->associatedDataPointer,RecvDataBuffer,CenterNode->totalAssociatedDataLength);
-      RecvDataBuffer+=CenterNode->totalAssociatedDataLength;
-
-      memcpy(&CenterNode->Measure,RecvDataBuffer,sizeof(double));
-      RecvDataBuffer+=sizeof(double);
+      RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
     }
   }
 
@@ -747,14 +760,19 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
+/*
+    pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+*/
+
     if (pipe!=NULL) {
       pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
-    } else if (RequestTable!=NULL) {
-      MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-    } else {
-      memcpy(CornerNode->associatedDataPointer,RecvDataBuffer,CornerNode->totalAssociatedDataLength);
-      RecvDataBuffer+=CornerNode->totalAssociatedDataLength;
+    }
+    else if (RecvDataBuffer!=NULL) {
+      memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
+      RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+    }
+    else {
+      RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
     }
   }
 
@@ -775,15 +793,21 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
+/*
+          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+*/
+
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
-          } else if (RequestTable!=NULL) {
-            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer,CornerNode->totalAssociatedDataLength);
-            RecvDataBuffer+=CornerNode->totalAssociatedDataLength;
           }
+          else if (RecvDataBuffer!=NULL) {
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+          else {
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+
         }
         break;
 
@@ -793,15 +817,21 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
+/*
+          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+*/
+
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
-          } else if (RequestTable!=NULL) {
-            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer,CornerNode->totalAssociatedDataLength);
-            RecvDataBuffer+=CornerNode->totalAssociatedDataLength;
           }
+          else if (RecvDataBuffer!=NULL) {
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+          else {
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+
         }
         break;
 
@@ -811,15 +841,23 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
+/*
+          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+*/
+
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
-          } else if (RequestTable!=NULL) {
-            MPI_Irecv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-            *RequestTableIndex=*RequestTableIndex+1;
-          } else {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer,CornerNode->totalAssociatedDataLength);
-            RecvDataBuffer+=CornerNode->totalAssociatedDataLength;
           }
+          else if (RecvDataBuffer!=NULL) {
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+          else {
+            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+          }
+
+
+
         }
         break;
       }
@@ -827,17 +865,22 @@ void PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,voi
 
   }
 
-  if (associatedDataPointer!=NULL) {
-    if (pipe!=NULL) {
-      pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
-    } else if (RequestTable!=NULL)  {
-      MPI_Irecv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+(*RequestTableIndex));
-      *RequestTableIndex=*RequestTableIndex+1;
-    } else if (RecvDataBuffer!=NULL) {
-      memcpy(associatedDataPointer+UserAssociatedDataOffset,RecvDataBuffer,totalAssociatedDataLength-UserAssociatedDataOffset);
-      RecvDataBuffer+=(totalAssociatedDataLength-UserAssociatedDataOffset);
-    }
+/*
+  pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
+*/
+
+  if (pipe!=NULL) {
+    pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
   }
+  else if (RecvDataBuffer!=NULL) {
+    memcpy(associatedDataPointer+UserAssociatedDataOffset,RecvDataBuffer+RecvDataBufferIndex,totalAssociatedDataLength-UserAssociatedDataOffset);
+    RecvDataBufferIndex+=totalAssociatedDataLength-UserAssociatedDataOffset;
+  }
+  else {
+    RecvDataBufferIndex+=totalAssociatedDataLength-UserAssociatedDataOffset;
+  }
+
+  return RecvDataBufferIndex;
 }
 
 //recieve all blocks' data when the blocks is moved to another processo
@@ -845,7 +888,7 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
   long int LocalCellNumber=-1;
   int i=-10,j=-10,k=-10;
 
-  recvBoundaryLayerBlockData(pipe,Node,-1,NULL,NULL,NULL);
+  recvBoundaryLayerBlockData(pipe,From,Node,NULL);
 
   long int Particle;
   char buffer[PIC::ParticleBuffer::ParticleDataLength];
