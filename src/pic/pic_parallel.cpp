@@ -516,47 +516,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   //generate a new stencil table
   static int nMeshModificationCounter=-1;
 
-  //reset the ContributingCornerNodeFlag
-  static int ibitContributingCornerNodeFlag=-1;
-
-  auto SetContributingCornerNodeFlag = [&] () {
-    int i,j,k;
-
-    if (ibitContributingCornerNodeFlag==-1) {
-      ibitContributingCornerNodeFlag=PIC::Mesh::cDataCornerNode::CheckoutFlag();
-
-      if (ibitContributingCornerNodeFlag==-1) {
-        exit(__LINE__,__FILE__,"Error: cannot checkout the ContributingCornerNodeFlag");
-      }
-    }
-
-    //set the flag to the default value
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-      PIC::Mesh::cDataBlockAMR *block=node->block;
-
-      if (block!=NULL) {
-        for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
-          PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-
-          if (CornerNode!=NULL) CornerNode->SetFlag(false,ibitContributingCornerNodeFlag);
-        }
-      }
-    }
-
-    //set the actual flag value
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->Thread==PIC::ThisThread) {
-      PIC::Mesh::cDataBlockAMR *block=node->block;
-
-      if (block!=NULL) {
-        for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
-          PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-
-          if (CornerNode!=NULL) CornerNode->SetFlag(true,ibitContributingCornerNodeFlag);
-        }
-      }
-    }
-  };
-
 
   //function to reset the corner node 'processed' flag
   auto ResetProcessedFlag = [&] () {
@@ -886,9 +845,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     //reset the flags
     ResetProcessedFlag();
 
-    //set flags for 'conttributing' corner nodes
-    SetContributingCornerNodeFlag();
-
     //determine the new length of the table
     for (iStencil=0,node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
       if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_)||(PIC::Mesh::mesh.ExternalBoundaryBlock(node)!=_EXTERNAL_BOUNDARY_BLOCK_)) {
@@ -914,8 +870,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           if ((CornerNode=GetCornerNode(iNode,jNode,kNode,ActualNode,nodeid))!=NULL) {
             //the corner node exists at the current MPI process
             CornerNode->SetProcessedFlag(true);
-
-            flag=(CornerNode->TestFlag(ibitContributingCornerNodeFlag)==true) ? 1 : 0;
+            flag=1;
           }
           else flag=0;
 
@@ -962,8 +917,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           if ((CornerNode=GetCornerNode(iNode,jNode,kNode,ActualNode,nodeid))!=NULL) {
             //the corner node exists at the current MPI process
             CornerNode->SetProcessedFlag(true);
-
-            flag=(CornerNode->TestFlag(ibitContributingCornerNodeFlag)==true) ? 1 : 0;
+            flag=1;
           }
           else flag=0;
 
@@ -986,15 +940,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
             for (thread=0;thread<PIC::nTotalThreads;thread++) if (FlagTable[thread]==1) {
               StencilTable[iStencil].StencilThreadTable[StencilTable[iStencil].StencilLength++]=thread;
             }
-
-            //change the first element in StencilTable[iStencil].StencilThreadTable. That is used to determine the 'processing' MPI process.
-            //the first element will be taken among the content of StencilTable[iStencil].StencilThreadTable to "equalize" the "load"
-            int t,it;
-
-            it=iStencil%StencilTable[iStencil].StencilLength;
-            t=StencilTable[iStencil].StencilThreadTable[0];
-            StencilTable[iStencil].StencilThreadTable[0]=StencilTable[iStencil].StencilThreadTable[it];
-            StencilTable[iStencil].StencilThreadTable[it]=t;
 
             iStencil++;
           }
