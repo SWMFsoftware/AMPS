@@ -10466,7 +10466,7 @@ if (TmpAllocationCounter==2437) {
     }
 
     //create the list of boundary layer, allocated and init the corresponding blocks
-#if _AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
+    #if _AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
     for (i=0;i<nTotalThreads;i++) DomainBoundaryLayerNodesList[i]=NULL;
 
     InitDomainBoundaryLayer(rootTree);
@@ -10483,14 +10483,11 @@ if (TmpAllocationCounter==2437) {
 
     //exchenge data from the boundary layer blocks
     if (blocks.usedElements()!=0) ParallelBlockDataExchange();
+    #endif //_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
 
- //   if (blocks.usedElements()!=0)  exit(__LINE__,__FILE__,"not implemented"); //the blocks are not exists -> simply create the boundary layer list
-
-#endif
-
-#if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-#endif
+    #endif  //_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
 
     {//broadcast to everyone if changes have been made
       int send_flag, recv_flag;
@@ -10500,12 +10497,9 @@ if (TmpAllocationCounter==2437) {
     }
   }
 
-//  void ParallelBlockDataExchange() {
-
-
-#define _ParallelBlockDataExchangeMode_Count_ 0
-#define _ParallelBlockDataExchangeMode_PopulateNodeList_ 1
-#define _ParallelBlockDataExchangeMode_DataExchange_ 2
+  #define _ParallelBlockDataExchangeMode_Count_ 0
+  #define _ParallelBlockDataExchangeMode_PopulateNodeList_ 1
+  #define _ParallelBlockDataExchangeMode_DataExchange_ 2
 
   void ParallelBlockDataExchange_Internal(int *SendBlockCounter,cAMRnodeID** SendNodeIDTable,cTreeNodeAMR<cBlockAMR>*** SendNodeTable,int Mode) { 
     int From,To,i,pipeLastRecvThread;
@@ -10525,18 +10519,8 @@ if (TmpAllocationCounter==2437) {
     const int _End_Communication_SIGNAL_=1;
     int Signal;
 
-    /*
-    //the list of nodes to be send
-    const int SendNodelListCounterMax=60;
-    int SendNodeListCounter;
-    cTreeNodeAMR<cBlockAMR>* SendNodeList[SendNodelListCounterMax];
-    bool found;
-*/
-
     //the data exchange loop
     for (From=0;From<nTotalThreads;From++) for (To=0;To<nTotalThreads;To++) if ((From!=To)&&(ParallelSendRecvMap[From][To]==true)) {
-//      SendNodeListCounter=0;
-
 
       //the part of the sender
       if (ThisThread==From) {
@@ -10546,107 +10530,34 @@ if (TmpAllocationCounter==2437) {
         //reset the proceesed flaf for the blocks to be send
         //send the nodes' data
         for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) {
+          #if _MESH_DIMENSION_ == 2
+          #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #elif _MESH_DIMENSION_ == 3
+          #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #endif
 
-
-
-//================  DEBUG ========================
-
-          /*
-if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+1000.0,2)+pow(recvNode->xmin[2]+500.0,2)<0.00001)||(recvNode->Temp_ID==14)) {
-   *DiagnospticMessageStream << __LINE__ << std::endl;
-}
-*/
-//================ END DEBUG =====================
-
-
-#if _MESH_DIMENSION_ == 2
-#define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-#elif _MESH_DIMENSION_ == 3
-#define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-#endif
-
-#ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
           for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
-#endif
+          #endif  //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
+           //add face-neighbors into the send list
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
 
-
-          //add face-neighbors into the send list
-//#if _MESH_DIMENSION_ == 2
-//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
-//#elif _MESH_DIMENSION_ == 3
-//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
-//#endif
-
-//#ifdef _AMR_ParallelBlockDataExchange_SEND_FACES_
-         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
-         /*
-           //Search the send-list if the node is already there
-           for (found=false,k=0;k<SendNodeListCounter;k++) {
-             if (sendNode==SendNodeList[k]) {
-               found=true;
-               break;
-             }
+           //add the edge-neighbors to the send list
+           if (_MESH_DIMENSION_==3) {
+             for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
            }
-
-           //add the sendBlock to the send-list
-           if (found==true) {
-             if (SendNodeListCounter+1==SendNodelListCounterMax) exit(__LINE__,__FILE__,"Error: increase the value of SendNodelListCounterMax");
-             SendNodeList[SendNodeListCounter++]=sendNode;
-           }
-         }
-         */
-//#endif
-
-
-         //add the edge-neighbors to the send list
-#if _MESH_DIMENSION_ == 3
-         for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
-         /*
-           //Search the send-list if the node is already there
-           for (found=false,k=0;k<SendNodeListCounter;k++) {
-             if (sendNode==SendNodeList[k]) {
-               found=true;
-               break;
-             }
-           }
-
-           //add the sendBlock to the send-list
-           if (found==true) {
-             if (SendNodeListCounter+1==SendNodelListCounterMax) exit(__LINE__,__FILE__,"Error: increase the value of SendNodelListCounterMax");
-             SendNodeList[SendNodeListCounter++]=sendNode;
-           }
-         }
-         */
-#endif
-
-//         recvNode=recvNode->nextNodeThisThread;
         }
-
-/*
-        for (k=0;k<SendNodeListCounter;k++) {
-          sendNode=SendNodeList[k];
-          GetAMRnodeID(nodeid,sendNode);
-
-          pipe.send(_Next_Node_SIGNAL_);
-          pipe.send((char*)(&nodeid),sizeof(nodeid));
-
-           //send the data
-           sendNode->block->SendNodeData(&pipe,DataSetTag);
-         }*/
-
 
         //send the data
         for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) {
+          #if _MESH_DIMENSION_ == 2
+          #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #elif _MESH_DIMENSION_ == 3
+          #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #endif
 
-
-#if _MESH_DIMENSION_ == 2
-#define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-#elif _MESH_DIMENSION_ == 3
-#define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-#endif
-
-#ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+          #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
           for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
             sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
@@ -10669,15 +10580,8 @@ if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+100
              SendBlockCounter[To]++;
            }
           }
-#endif
+          #endif //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-//#if _MESH_DIMENSION_ == 2
-//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
-//#elif _MESH_DIMENSION_ == 3
-//#define _AMR_ParallelBlockDataExchange_SEND_FACES_
-//#endif
-
-//#ifdef _AMR_ParallelBlockDataExchange_SEND_FACES_
          for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
@@ -10698,13 +10602,9 @@ if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+100
              SendNodeTable[To][SendBlockCounter[To]]=sendNode;
              SendBlockCounter[To]++;
            }
-
          }
 
-
-//#endif
-
-#if _MESH_DIMENSION_ == 3
+         #if _MESH_DIMENSION_ == 3
          for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
@@ -10725,11 +10625,8 @@ if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+100
              SendNodeTable[To][SendBlockCounter[To]]=sendNode;
              SendBlockCounter[To]++;
            }
-
-
          }
-#endif
-//         recvNode=recvNode->nextNodeThisThread;
+         #endif //_MESH_DIMENSION_ == 3
         }
 
 
@@ -10759,26 +10656,24 @@ if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+100
 
             fprintf(DiagnospticMessageStream,"$PREFIX:Error: the node is not allocated:\n");
 
-#ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
+            #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
             for (i=0;i<(1<<_MESH_DIMENSION_);i++) if (recvNode->neibNodeCorner[i]!=NULL) if (recvNode->neibNodeCorner[i]->Thread==ThisThread) {
               found=true;
               fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
             }
-#endif
+            #endif
 
-//#ifdef _AMR_ParallelBlockDataExchange_SEND_FACES_
            for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if (recvNode->neibNodeFace[i]!=NULL) if (recvNode->neibNodeFace[i]->Thread==ThisThread) {
              found=true;
              fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
            }
-//#endif
 
-#if _MESH_DIMENSION_ == 3
+           #if _MESH_DIMENSION_ == 3
            for (i=0;i<12*2;i++) if (recvNode->neibNodeEdge[i]!=NULL) if (recvNode->neibNodeEdge[i]->Thread==ThisThread) {
              found=true;
              fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
            }
-#endif
+           #endif
 
            if (found==false) fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' doesn't have neibours at ThisThread (file=%s, line=%i)\n",__FILE__,__LINE__);
 
@@ -10801,20 +10696,6 @@ if (ThisThread==1) if ((pow(recvNode->xmin[0]+500.0,2)+pow(recvNode->xmin[1]+100
             exit(__LINE__,__FILE__,"Error: the node is not allocated");
           }
 
-
-//================  DEBUG ========================
-
-          /*
-if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.0,2)+pow(recvNode->xmin[0]+0.0,2)<0.00001) {
-  *DiagnospticMessageStream << __LINE__ << std::endl;
-}
-*/
-
-//================ END DEBUG =====================
-
-
-
-
           recvNode->block->recvBoundaryLayerBlockData(&pipe,From,recvNode,NULL);
           pipe.recv(Signal,From);
         }
@@ -10830,13 +10711,6 @@ if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.
       pipe.closeRecv(pipeLastRecvThread);
     }
   }
-
-
-/*
-  void ParallelBlockDataExchange() {
-    ParallelBlockDataExchange_Internal(NULL,NULL,NULL,_ParallelBlockDataExchangeMode_DataExchange_);
-  }
-*/
 
   class cParallelBlockDataExchangeData {
   public:
@@ -10878,10 +10752,6 @@ if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.
 
   void ParallelBlockDataExchange() {
     int thread;
-
-
-//ParallelBlockDataExchange_Internal(NULL,NULL,NULL,2);
-//return;
 
     //determine whether the data exchange parameters needs to be updated
     int localMeshChangeFlag,globalMeshChangeFlag;
@@ -11003,9 +10873,6 @@ if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.
 
       ParallelBlockDataExchangeData.NodeSendPerRound=1+nMaxBytesSendPerRound/ParallelBlockDataExchangeData.NodeDataLength;
 
-//ParallelBlockDataExchangeData.NodeSendPerRound=14;
-//cout << ParallelBlockDataExchangeData.NodeSendPerRound << "   " << ParallelBlockDataExchangeData.NodeDataLength << endl;
-
       for (int i=0;i<nTotalThreads*nTotalThreads;i++) if (nMaxSendNodes<ParallelBlockDataExchangeData.GlobalSendTable[i]) nMaxSendNodes=ParallelBlockDataExchangeData.GlobalSendTable[i];
 
       ParallelBlockDataExchangeData.nDataExchangeRounds=1+nMaxSendNodes/ParallelBlockDataExchangeData.NodeSendPerRound;
@@ -11057,14 +10924,6 @@ if (ThisThread==2) if (pow(recvNode->xmin[0]+250.0,2)+pow(recvNode->xmin[1]+500.
         ParallelBlockDataExchangeData.SendNodeTable[To][i]->block->sendBoundaryLayerBlockData(NULL,ParallelBlockDataExchangeData.SendNodeTable[To][i],DataBufferBegin);
         DataBufferBegin+=ParallelBlockDataExchangeData.NodeDataLength;
       }
-
-if ((iEnd-iStart<=0)||(To<0)||(To>=4)||(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To]==NULL)) {
-
-cout << iEnd << "  " << iStart << "  " << To << endl;
-
-exit(__LINE__,__FILE__,"rqwerqwerqwerqwerqwerqwerw");
-}
-
 
       MPI_Isend(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],(iEnd-iStart)*ParallelBlockDataExchangeData.NodeDataLength,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,&Request);
     };
