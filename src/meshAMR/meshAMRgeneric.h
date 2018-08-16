@@ -10998,8 +10998,10 @@ if (TmpAllocationCounter==2437) {
       }
       else {
         //check for any message arrived
-        for (iFrom=0;iFrom<RecvTableIndex;iFrom++) {
-          MPI_Test(RecvRequestTable+iFrom,&flag,MPI_STATUS_IGNORE);
+        flag=true;
+
+        while ((flag==true)&&(RecvTableIndex>0)) {
+          MPI_Testany(RecvTableIndex,RecvRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
           if (flag==true) {
             //a message has arrived -> read it
@@ -11011,7 +11013,6 @@ if (TmpAllocationCounter==2437) {
             RecvProcessTable[iFrom]=RecvProcessTable[RecvTableIndex-1];
             RecvRequestTable[iFrom]=RecvRequestTable[RecvTableIndex-1];
             RecvTableIndex--;
-            iFrom--;
 
             //initiate a new recieve if needed
             if (nRecvCounter[From]<nTotalRecvRounds[From]) {
@@ -11042,8 +11043,10 @@ if (TmpAllocationCounter==2437) {
         }
       }
       else {
-        for (iTo=0;iTo<SendTableIndex;iTo++) {
-          MPI_Test(SendRequestTable+iTo,&flag,MPI_STATUS_IGNORE);
+        flag=true;
+
+        while ((flag==true)&&(SendTableIndex>0)) {
+          MPI_Testany(SendTableIndex,SendRequestTable,&iTo,&flag,MPI_STATUS_IGNORE);
 
           if (flag==true) {
             //the send operation is compete -> initiate a new one id needed
@@ -11053,7 +11056,6 @@ if (TmpAllocationCounter==2437) {
             SendProcessTable[iTo]=SendProcessTable[SendTableIndex-1];
             SendRequestTable[iTo]=SendRequestTable[SendTableIndex-1];
             SendTableIndex--;
-            iTo--;
 
             //initiate a new send operation
             if (nSendCounter[To]<nTotalSendRounds[To]) {
