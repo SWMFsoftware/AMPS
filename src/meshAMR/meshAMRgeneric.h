@@ -10835,25 +10835,47 @@ if (TmpAllocationCounter==2437) {
       //3. distribute the list that will be send
       MPI_Allgather(ParallelBlockDataExchangeData.SendNodeTableLength,nTotalThreads,MPI_INT,ParallelBlockDataExchangeData.GlobalSendTable,nTotalThreads,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
 
+      MPI_Request SendRequestTable[nTotalThreads],RecvRequestTable[nTotalThreads];
+      int RecvProcessTable[nTotalThreads];
+      int SendRequestTableLength=0,RecvRequestTableLength=0;
 
-      for (int From=0;From<nTotalThreads;From++) for (int To=0;To<nTotalThreads;To++) if ((From!=To)&&(ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]!=0)) {
-        if (ThisThread==From) {
-          MPI_Send(ParallelBlockDataExchangeData.SendNodeIDTable[To],ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]*sizeof(cAMRnodeID),MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR);
-        }
-        else if (ThisThread==To) {
-          MPI_Status status;
+      //initiate recieve of the block list
+      for (int From=0;From<nTotalThreads;From++) if ((From!=ThisThread)&&(ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]!=0)) {
+        ParallelBlockDataExchangeData.RecvNodeIDTable[From]=new cAMRnodeID [ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]];
+        ParallelBlockDataExchangeData.RecvNodeTable[From]=new cTreeNodeAMR<cBlockAMR>* [ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]];
 
-          ParallelBlockDataExchangeData.RecvNodeIDTable[From]=new cAMRnodeID [ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]];
-          ParallelBlockDataExchangeData.RecvNodeTable[From]=new cTreeNodeAMR<cBlockAMR>* [ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]];
+        MPI_Irecv(ParallelBlockDataExchangeData.RecvNodeIDTable[From],ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]*sizeof(cAMRnodeID),MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvRequestTableLength);
+        RecvProcessTable[RecvRequestTableLength]=From;
+        RecvRequestTableLength++;
+      }
 
-          MPI_Recv(ParallelBlockDataExchangeData.RecvNodeIDTable[From],ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads]*sizeof(cAMRnodeID),MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      //initiate send of the block list
+      for (int To=0;To<nTotalThreads;To++) if ((ThisThread!=To)&&(ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]!=0)) {
+        MPI_Isend(ParallelBlockDataExchangeData.SendNodeIDTable[To],ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]*sizeof(cAMRnodeID),MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+        SendRequestTableLength++;
+      }
 
-          //determine the pointer to the nodes using the nodeid
-          for (int i=0;i<ParallelBlockDataExchangeData.GlobalSendTable[To+From*nTotalThreads];i++) {
+      //recieve the block list
+      int flag,iFrom,From;
+
+      while (RecvRequestTableLength>0) {
+        MPI_Testany(RecvRequestTableLength,RecvRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
+
+        if (flag==true) {
+          From=RecvProcessTable[iFrom];
+
+          RecvProcessTable[iFrom]=RecvProcessTable[RecvRequestTableLength-1];
+          RecvRequestTable[iFrom]=RecvRequestTable[RecvRequestTableLength-1];
+          RecvRequestTableLength--;
+
+          for (int i=0;i<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];i++) {
             ParallelBlockDataExchangeData.RecvNodeTable[From][i]=findAMRnodeWithID(ParallelBlockDataExchangeData.RecvNodeIDTable[From][i]);
           }
         }
       }
+
+      //waite for completing the send operation
+      MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
 
       //determine the maximum number of data exchange 'rounds
       int nMaxSendNodes=-1;
