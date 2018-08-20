@@ -1574,6 +1574,10 @@ void PIC::Init_BeforeParser() {
   //intialize the interpolation module
   InterpolationRoutines::Init();
 
+  //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
+  PIC::Mesh::mesh.fDefaultPackBlockData=PIC::Mesh::PackBlockData;
+  PIC::Mesh::mesh.fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
+
 /*
   //init the particle buffer
   //the default value of 'RequestedParticleBufferLength' is -1, which can be chganged by ampsConfig.pl
