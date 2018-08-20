@@ -2553,13 +2553,13 @@ namespace PIC {
     public:
       static int LocalTimeStepOffset,LocalParticleWeightOffset;
       char *associatedDataPointer;
+      static int totalAssociatedDataLength;
 
       typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
       static fPackBlockData PackBlockData,UnpackBlockData;
 
     private:
       static int tempParticleMovingListTableThreadOffset,tempParticleMovingListTableThreadLength; //the offset and length of the tempParticleMovingListTable for each
-      static int totalAssociatedDataLength;
 
     public:
       static int LoadBalancingMeasureOffset;
@@ -2751,6 +2751,11 @@ namespace PIC {
     void Init(double*,double*,fLocalMeshResolution);
     void buildMesh();
     void loadMesh(char*);
+
+    //pack and un-pack blocks data
+    int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer);
+    int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+
 
     //tratment of the cut-cells
     namespace IrregularSurface {
