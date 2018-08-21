@@ -10767,6 +10767,7 @@ if (TmpAllocationCounter==2437) {
         //re-allocate the table
         if (IsAllocated()==true) {
           delete [] BlockDataLengthTable;
+          BlockDataLengthTable=NULL;
         }
 
         Allocate(NewLength,fPackBlockDataIn);
