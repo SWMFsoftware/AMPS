@@ -483,11 +483,24 @@ void PIC::Mesh::buildMesh() {
 
 //pack block data for the data syncronization
 int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+  int ibegin=0;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+
+   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
+       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&BlockUserDataLength,1);
+}
+
+
+int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer,
+          int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
+          int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
+          int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
   int SendBufferIndex=0;
 
   auto ProcessNode=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,int iNode) {
-
-    int iCell,jCell,kCell;
+    int iDataInterval,iCell,jCell,kCell;
     long int LocalCellNumber;
     PIC::Mesh::cDataCenterNode *CenterNode=NULL;
     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
@@ -511,16 +524,21 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
       CenterNode=block->GetCenterNode(LocalCellNumber);
 
       if (SendDataBuffer!=NULL) {
-        memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
-        SendBufferIndex+=CenterNode->totalAssociatedDataLength;
+        for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+          memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],CenterNodeStateVectorIntervalLength[iDataInterval]);
+          SendBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+        }
 
         memcpy(SendDataBuffer+SendBufferIndex,&CenterNode->Measure,sizeof(double));
         SendBufferIndex+=sizeof(double);
       }
       else {
-        SendBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
-      }
+        for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+          SendBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+        }
 
+        SendBufferIndex+=sizeof(double);
+      }
     }
 
     //send the corner node associated data
@@ -532,11 +550,15 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
       CornerNode=block->GetCornerNode(nd);
 
       if (SendDataBuffer!=NULL) {
-        memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-        SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+        for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+          memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+          SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+        }
       }
       else {
-        SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+        for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+          SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+        }
       }
     }
 
@@ -562,11 +584,15 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
             CornerNode=block->GetCornerNode(nd);
 
             if (SendDataBuffer!=NULL) {
-              memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
             else {
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
           }
           break;
@@ -578,11 +604,15 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
             CornerNode=block->GetCornerNode(nd);
 
             if (SendDataBuffer!=NULL) {
-              memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
             else {
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
           }
           break;
@@ -594,11 +624,15 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
             CornerNode=block->GetCornerNode(nd);
 
             if (SendDataBuffer!=NULL) {
-              memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
             else {
-              SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+              }
             }
           }
           break;
@@ -608,11 +642,15 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
     }
 
     if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,block->associatedDataPointer+block->UserAssociatedDataOffset,block->totalAssociatedDataLength-block->UserAssociatedDataOffset);
-      SendBufferIndex+=block->totalAssociatedDataLength-block->UserAssociatedDataOffset;
+      for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+        memcpy(SendDataBuffer+SendBufferIndex,block->associatedDataPointer+block->UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],iBlockUserDataStateVectorIntervalLength[iDataInterval]);
+        SendBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+      }
     }
     else {
-      SendBufferIndex+=block->totalAssociatedDataLength-block->UserAssociatedDataOffset;
+      for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+        SendBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+      }
     }
 
     if (NodeDataLength!=NULL) NodeDataLength[iNode]=SendBufferIndex-BeginSendBufferIndex;
@@ -629,10 +667,23 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
 
 //unpack data for the data syncronization
 int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+  int ibegin=0;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+
+   return UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
+       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&BlockUserDataLength,1);
+}
+
+int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
+    int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
+    int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
+    int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
   int RecvDataBufferIndex=0;
 
   auto ProcessNode = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node) {
-    int iCell,jCell,kCell;
+    int iCell,jCell,kCell,iDataInterval;
      long int LocalCellNumber;
      PIC::Mesh::cDataCenterNode *CenterNode=NULL;
      PIC::Mesh::cDataCornerNode *CornerNode=NULL;
@@ -654,14 +705,20 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
        CenterNode=block->GetCenterNode(LocalCellNumber);
 
        if (RecvDataBuffer!=NULL) {
-         memcpy(CenterNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CenterNode->totalAssociatedDataLength);
-         RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength;
+         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+           memcpy(CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CenterNodeStateVectorIntervalLength[iDataInterval]);
+           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+         }
 
          memcpy(&CenterNode->Measure,RecvDataBuffer+RecvDataBufferIndex,sizeof(double));
          RecvDataBufferIndex+=sizeof(double);
        }
        else {
-         RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
+         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+         }
+
+         RecvDataBufferIndex+=sizeof(double);
        }
      }
 
@@ -671,11 +728,15 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
        CornerNode=block->GetCornerNode(nd);
 
        if (RecvDataBuffer!=NULL) {
-         memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-         RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+         for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+           memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+           RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+         }
        }
        else {
-         RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+         for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+           RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+         }
        }
      }
 
@@ -697,11 +758,15 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
              CornerNode=block->GetCornerNode(nd);
 
              if (RecvDataBuffer!=NULL) {
-               memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
              else {
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
 
            }
@@ -714,11 +779,15 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
              CornerNode=block->GetCornerNode(nd);
 
              if (RecvDataBuffer!=NULL) {
-               memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
              else {
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
 
            }
@@ -731,11 +800,15 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
              CornerNode=block->GetCornerNode(nd);
 
              if (RecvDataBuffer!=NULL) {
-               memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
              else {
-               RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+               }
              }
            }
            break;
@@ -745,11 +818,15 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
      }
 
      if (RecvDataBuffer!=NULL) {
-       memcpy(block->associatedDataPointer+block->UserAssociatedDataOffset,RecvDataBuffer+RecvDataBufferIndex,block->totalAssociatedDataLength-block->UserAssociatedDataOffset);
-       RecvDataBufferIndex+=block->totalAssociatedDataLength-block->UserAssociatedDataOffset;
+       for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+         memcpy(block->associatedDataPointer+block->UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,iBlockUserDataStateVectorIntervalLength[iDataInterval]);
+         RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+       }
      }
      else {
-       RecvDataBufferIndex+=block->totalAssociatedDataLength-block->UserAssociatedDataOffset;
+       for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+         RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+       }
      }
   };
 
