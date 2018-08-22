@@ -519,7 +519,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     #endif
 
     //send the center node associated data
-    for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+    if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
       LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
       CenterNode=block->GetCenterNode(LocalCellNumber);
 
@@ -545,7 +545,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     //in a block corners with indecies from 0 to 'iCellMax-1' are considered belongs to the block. The corner with index 'iCellMax' is considered belongs to the next block
 
     //send the 'internal corners'
-    for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+    if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
       int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
       CornerNode=block->GetCornerNode(nd);
 
@@ -566,7 +566,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     int iface,iFaceTable[3]={1,3,5};
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-    for (int i=0;i<3;i++) {
+    if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
       iface=iFaceTable[i];
 
       bool flag=false;
@@ -700,7 +700,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
      #endif
 
      //recieve the center node associeated data
-     for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+     if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
        LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
        CenterNode=block->GetCenterNode(LocalCellNumber);
 
@@ -723,7 +723,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
      }
 
      //recieve the 'internal' corner node associated data
-     for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+     if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
        int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
        CornerNode=block->GetCornerNode(nd);
 
@@ -744,7 +744,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
      int iface,iFaceTable[3]={1,3,5};
      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-     for (int i=0;i<3;i++) {
+     if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
        iface=iFaceTable[i];
 
        if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
