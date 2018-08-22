@@ -195,7 +195,9 @@ public:
   void MultiplyVector(double *p,double *x,int length);
 
   //call the linear system solver, and unpack the solution afterward
-  void Solve(void (*fInitialUnknownValues)(double* x,cCornerNode* CornerNode),void (*fUnpackSolution)(double* x,cCornerNode* CornerNode),double Tol,int nMaxIter);
+  void Solve(void (*fInitialUnknownValues)(double* x,cCornerNode* CornerNode),void (*fUnpackSolution)(double* x,cCornerNode* CornerNode),double Tol,int nMaxIter,
+      int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer),
+      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer));
 
   //update the RHS vector
   void UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int));
@@ -1027,7 +1029,9 @@ int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Solve(void (*fInitialUnknownValues)(double* x,cCornerNode* CornerNode),
       void (*fUnpackSolution)(double* x,cCornerNode* CornerNode),
       double Tol, //the residual tolerance. The recommended value is 1e-5;
-      int nMaxIter //the max iteration error allowed. The recommended value is 100
+      int nMaxIter, //the max iteration error allowed. The recommended value is 100
+      int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer),
+      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer)
       ) {
   cMatrixRow* row;
   int GlobalVariableIndex,cnt;
@@ -1100,14 +1104,19 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   //execute the data exchange between 'ghost' blocks
-  switch (_PIC_BC__PERIODIC_MODE_) {
-  case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
-    break;
+  if (fPackBlockData!=NULL) {
+    switch (_PIC_BC__PERIODIC_MODE_) {
+    case _PIC_BC__PERIODIC_MODE_OFF_:
+      PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+      break;
 
-  case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
-    break;
+    case _PIC_BC__PERIODIC_MODE_ON_:
+      PIC::BC::ExternalBoundary::Periodic::UpdateData(fPackBlockData,fUnpackBlockData);
+      break;
+    }
+  }
+  else {
+    exit(__LINE__,__FILE__,"Error: fPackBlockData and fUnpackBlockData have to be defined");
   }
 
 }
