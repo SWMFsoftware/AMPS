@@ -1366,7 +1366,7 @@ int main(int argc,char **argv) {
   for (int niter=0;niter<200;niter++) {
 //    SolverTimeDependent.Solve(SetInitialGuess,ProcessFinalSolutionTimeDependent);
 
-    SolverTimeDependent.Solve(SetInitialGuess,ProcessFinalSolution,1.0E-5,100);
+    SolverTimeDependent.Solve(SetInitialGuess,ProcessFinalSolution,1.0E-5,100,PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 
     int t=CurrentCornerNodeOffset;
     CurrentCornerNodeOffset=NextCornerNodeOffset;
