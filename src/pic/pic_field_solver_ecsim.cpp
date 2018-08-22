@@ -73,6 +73,84 @@ double length_conv=1e2;
 #endif
 
 
+
+//magnetic field
+int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  int dataLengthByte=6*sizeof(double);
+
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
+                                NULL,NULL,0,
+                                &ibegin,&dataLengthByte,1,
+                                NULL,NULL,0);
+}
+
+
+
+//magnetic fieled
+int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  int dataLengthByte=6*sizeof(double);
+
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
+                                  NULL,NULL,0,
+                                  &ibegin,&dataLengthByte,1,
+                                  NULL,NULL,0);
+}
+
+//electric field
+int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  int dataLengthByte=6*sizeof(double);
+
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
+                                &ibegin,&dataLengthByte,1,
+                                NULL,NULL,0,
+                                NULL,NULL,0);
+}
+
+
+
+//electric fieled
+int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  int dataLengthByte=6*sizeof(double);
+
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
+                                  &ibegin,&dataLengthByte,1,
+                                  NULL,NULL,0,
+                                  NULL,NULL,0);
+}
+
+//current and massmatrix
+int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
+  int dataLengthByte=246*sizeof(double);
+
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
+                                &ibegin,&dataLengthByte,1,
+                                NULL,NULL,0,
+                                NULL,NULL,0);
+}
+
+
+
+//current and massmatrix
+int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
+  int dataLengthByte=246*sizeof(double);
+
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
+                                  &ibegin,&dataLengthByte,1,
+                                  NULL,NULL,0,
+                                  NULL,NULL,0);
+}
+
+
+
+
+
+
 bool IsInit=false;
 
 //The global initialization procedure
@@ -998,7 +1076,7 @@ void UpdateJMassMatrix(){
      
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -1006,7 +1084,7 @@ void UpdateJMassMatrix(){
     PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyPeriodicJMassMatrix;
     PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
 
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
 
     PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
 
@@ -1105,11 +1183,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
 
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_B,UnpackBlockData_B);
     break;
   }
 }
@@ -1172,11 +1250,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_E,UnpackBlockData_E);
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_E,UnpackBlockData_E);
     break;
   }
  
