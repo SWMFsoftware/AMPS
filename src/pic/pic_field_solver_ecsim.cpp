@@ -1350,7 +1350,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
    
   linear_solver_matvec_c = matvec;
-  Solver.Solve(SetInitialGuess,ProcessFinalSolution,1e-8,200);
+  Solver.Solve(SetInitialGuess,ProcessFinalSolution,1e-8,200,PackBlockData_E,UnpackBlockData_E);
   UpdateB();
   UpdateE();
 
