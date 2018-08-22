@@ -5249,6 +5249,8 @@ namespace PIC {
 
         //manager of the information update between the real and ghost blocks
         void UpdateData();
+        void UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer),
+            int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer));
 
         //send particles from 'ghost' to 'real' blocks
         void ExchangeParticles();
