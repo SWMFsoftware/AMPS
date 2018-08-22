@@ -11090,13 +11090,13 @@ if (TmpAllocationCounter==2437) {
 
 
 
-    auto InitSendData = [&] (int To,MPI_Request& Request) {
+    auto InitSendData = [this,nMaxBytesSendPerRound,fPackBlockData] (int To,MPI_Request& Request,int* iStartSendTable,int **BlockSendDataLengthTable) {
       int i,iStart,iEnd;
-      char *DataBufferBegin=ParallelBlockDataExchangeData.SendDataExchangeBuffer[To];
+      char *DataBufferBegin=this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To];
       cTreeNodeAMR<cBlockAMR>** SendNodeList;
 
       int TotalMessageSize=0;
-      int nNodeListMaxLength=ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads];
+      int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[To+this->ThisThread*this->nTotalThreads];
 
       iStart=iStartSendTable[To];
 
@@ -11112,16 +11112,16 @@ if (TmpAllocationCounter==2437) {
       iStartSendTable[To]=iEnd;
 
       //pack and send the data
-      fPackBlockData(ParallelBlockDataExchangeData.SendNodeTable[To]+iStart,iEnd-iStart,NULL,ParallelBlockDataExchangeData.SendDataExchangeBuffer[To]);
-      MPI_Isend(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],TotalMessageSize,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,&Request);
+      fPackBlockData(this->ParallelBlockDataExchangeData.SendNodeTable[To]+iStart,iEnd-iStart,NULL,this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To]);
+      MPI_Isend(this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],TotalMessageSize,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,&Request);
     };
 
     //initiate non-blocking recieved of the boundary layer data from process 'From'
-    auto InitRecvData = [&] (int From,MPI_Request& Request) {
+    auto InitRecvData = [this] (int From,MPI_Request& Request,int* iStartRecvTable,int** BlockRecvDataLengthTable,cLastRecvMessage* LastRecvMessageTable) {
       int i,iStart,iEnd;
 
       int TotalMessageSize=0;
-      int nNodeListMaxLength=ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
+      int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
 
       iStart=iStartRecvTable[From];
 
@@ -11143,9 +11143,9 @@ if (TmpAllocationCounter==2437) {
     };
 
     //unpack boundary layer data recieved from process 'From'
-    auto UnpackRecvData = [&] (int From) {
-      fUnpackBlockData(ParallelBlockDataExchangeData.RecvNodeTable[From]+LastRecvMessageTable[From].FirstBlockIndex,
-          LastRecvMessageTable[From].BlockMessageCount,ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From]);
+    auto UnpackRecvData = [this,fUnpackBlockData] (int From,cLastRecvMessage* LastRecvMessageTable) {
+      fUnpackBlockData(this->ParallelBlockDataExchangeData.RecvNodeTable[From]+LastRecvMessageTable[From].FirstBlockIndex,
+          LastRecvMessageTable[From].BlockMessageCount,this->ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From]);
     };
 
 
@@ -11167,7 +11167,7 @@ if (TmpAllocationCounter==2437) {
       if (cnt==0) {
         for (From=0;From<nTotalThreads;From++) {
           if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-            InitRecvData(From,RecvRequestTable[RecvTableIndex]);
+            InitRecvData(From,RecvRequestTable[RecvTableIndex],iStartRecvTable,BlockRecvDataLengthTable,LastRecvMessageTable);
 
             RecvProcessTable[RecvTableIndex]=From;
             RecvTableIndex++;
@@ -11188,7 +11188,7 @@ if (TmpAllocationCounter==2437) {
             //a message has arrived -> read it
             //unpack the data
             From=RecvProcessTable[iFrom];
-            UnpackRecvData(From);
+            UnpackRecvData(From,LastRecvMessageTable);
 
             //update the table
             RecvProcessTable[iFrom]=RecvProcessTable[RecvTableIndex-1];
@@ -11197,7 +11197,7 @@ if (TmpAllocationCounter==2437) {
 
             //initiate a new recieve if needed
             if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-              InitRecvData(From,RecvRequestTable[RecvTableIndex]);
+              InitRecvData(From,RecvRequestTable[RecvTableIndex],iStartRecvTable,BlockRecvDataLengthTable,LastRecvMessageTable);
 
               RecvProcessTable[RecvTableIndex]=From;
               RecvTableIndex++;
@@ -11215,7 +11215,7 @@ if (TmpAllocationCounter==2437) {
       if (cnt==0) {
         for (To=0;To<nTotalThreads;To++) {
           if (iStartSendTable[To]<ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]) {
-            InitSendData(To,SendRequestTable[SendTableIndex]);
+            InitSendData(To,SendRequestTable[SendTableIndex],iStartSendTable,BlockSendDataLengthTable);
 
             SendProcessTable[SendTableIndex]=To;
             SendTableIndex++;
@@ -11242,7 +11242,7 @@ if (TmpAllocationCounter==2437) {
 
             //initiate a new send operation
             if ((iStartSendTable[To]<ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads])) {
-              InitSendData(To,SendRequestTable[SendTableIndex]);
+              InitSendData(To,SendRequestTable[SendTableIndex],iStartSendTable,BlockSendDataLengthTable);
 
               SendProcessTable[SendTableIndex]=To;
               SendTableIndex++;
