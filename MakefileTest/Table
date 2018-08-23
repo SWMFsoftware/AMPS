@@ -680,7 +680,7 @@ Outs=Transport.out=190
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
->>>@echo "test_periodic-bc-gmres_compile..." >> test_periodic-bc-gmres.diff
+>>>@echo "test_periodic-bc-gmres_compile..." > test_periodic-bc-gmres.diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/periodic-bc-gmres ${TESTperiodic-bc-gmresKEYS}
@@ -712,13 +712,13 @@ Outs=
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
 
 Compile=
->>>@echo "test_lightwave-current-on_compile..." >> test_lightwave-current-on.diff
+>>>@echo "test_lightwave-current-on_compile..." > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/lightwave-current-on ${TESTlightwave-current-onKEYS}
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
->>>@echo "test_lightwave-current-on_compile... done" >> test_lightwave-current-on.diff
+>>>@echo "test_lightwave-current-on_compile... done" >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 Check=
 >>>@echo "test_lightwave-current-on_check..." >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
@@ -749,7 +749,7 @@ Outs=
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
 
 Compile=
->>>@echo "test_fast-wave_compile..." >> test_fast-wave.diff
+>>>@echo "test_fast-wave_compile..." > test_fast-wave$(TESTfast-wave-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-waveKEYS} 
@@ -785,7 +785,7 @@ Outs=
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
 
 Compile=
->>>@echo "test_lightwave-current-off_compile..." >> test_lightwave-current-off.diff
+>>>@echo "test_lightwave-current-off_compile..." > test_lightwave-current-off$(TESTlightwave-current-off-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/lightwave-current-off ${TESTlightwave-current-offKEYS}
@@ -1098,7 +1098,7 @@ CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/CG-POST-PROCESS@@(0+valeri
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/CG-POST-PROCESS@@(0+pleiades) 
 
 Compile=
->>>@echo "test_CG-PostProcess--Read-Trajectories--off_compile..." >> test_CG-PostProcess--Read-Trajectories--off.diff
+>>>@echo "test_CG-PostProcess--Read-Trajectories--off_compile..." > test_CG-PostProcess--Read-Trajectories--off.diff
 >>>@cp Makefile Makefile.bak
 >>> ./Config.pl -application=test/cg-pproc-test -amps-test=on -openmp=on ${TESTCG-PostProcess--Read-Trajectories--offKEYS}
 >>>-@cd utility/PostProcess; make
@@ -1143,7 +1143,7 @@ Name=CG-VIRTIS-Inversion-Legacy@@(0+valeriy)
 Time=9
 
 Compile=
->>>@echo "test_CG-VIRTIS-Inversion-Legacy_compile..." >> test_CG-VIRTIS-Inversion-Legacy.diff
+>>>@echo "test_CG-VIRTIS-Inversion-Legacy_compile..." > test_CG-VIRTIS-Inversion-Legacy.diff
 >>>@cp Makefile Makefile.bak
 >>>cd /Users/vtenishe/Legacy/CG-VIRTIS-Inversion-Legacy;./ampsConfig.pl -input cg.input
 >>>@mv Makefile.bak Makefile
@@ -1181,7 +1181,7 @@ Name=CG-DFMS-Inversion-Legacy@@(0+valeriy)
 Time=5
 
 Compile=
->>>@echo "test_CG-DFMS-Inversion-Legacy_compile..." >> test_CG-DFMS-Inversion-Legacy.diff
+>>>@echo "test_CG-DFMS-Inversion-Legacy_compile..." > test_CG-DFMS-Inversion-Legacy.diff
 >>>@cp Makefile Makefile.bak
 >>>cd /Users/vtenishe/Legacy/CG-DFMS-Inversion-Legacy;./ampsConfig.pl -input cg.input
 >>>@mv Makefile.bak Makefile
