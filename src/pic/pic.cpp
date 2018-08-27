@@ -1578,6 +1578,11 @@ void PIC::Init_BeforeParser() {
   PIC::Mesh::mesh.fDefaultPackBlockData=PIC::Mesh::PackBlockData;
   PIC::Mesh::mesh.fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
 
+  PIC::Mesh::mesh.fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic;
+  PIC::Mesh::mesh.fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
+  PIC::Mesh::mesh.fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
+
+
 /*
   //init the particle buffer
   //the default value of 'RequestedParticleBufferLength' is -1, which can be chganged by ampsConfig.pl
