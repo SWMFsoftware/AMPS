@@ -75,75 +75,87 @@ double length_conv=1e2;
 
 
 //magnetic field
-int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
-  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
-                                NULL,NULL,0,
-                                &ibegin,&dataLengthByte,1,
-                                NULL,NULL,0);
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      SendDataBuffer,
+      NULL,NULL,0,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0);
 }
 
 
 
 //magnetic fieled
-int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
-  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
-                                  NULL,NULL,0,
-                                  &ibegin,&dataLengthByte,1,
-                                  NULL,NULL,0);
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      RecvDataBuffer,
+      NULL,NULL,0,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0);
 }
 
 //electric field
-int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
-  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
-                                &ibegin,&dataLengthByte,1,
-                                NULL,NULL,0,
-                                NULL,NULL,0);
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      SendDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
 }
 
 
 
 //electric fieled
-int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
-  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
-                                  &ibegin,&dataLengthByte,1,
-                                  NULL,NULL,0,
-                                  NULL,NULL,0);
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      RecvDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
 }
 
 //current and massmatrix
-int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
+int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=246*sizeof(double);
 
-  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
-                                &ibegin,&dataLengthByte,1,
-                                NULL,NULL,0,
-                                NULL,NULL,0);
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      SendDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
 }
 
 
 
 //current and massmatrix
-int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=246*sizeof(double);
 
-  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
-                                  &ibegin,&dataLengthByte,1,
-                                  NULL,NULL,0,
-                                  NULL,NULL,0);
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      RecvDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
 }
 
 
