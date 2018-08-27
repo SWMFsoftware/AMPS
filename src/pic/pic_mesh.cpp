@@ -526,7 +526,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
-  auto ProcessNode=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,int iNode) {
+  for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL)  {
     int iDataInterval,iCell,jCell,kCell;
     long int LocalCellNumber;
     PIC::Mesh::cDataCenterNode *CenterNode=NULL;
@@ -536,6 +536,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
     unsigned char* CurrentBlockCornerNodeMask=(BlockCornerNodeMask!=NULL) ? BlockCornerNodeMask+iNode*CornerNodeSendMaskLength : NULL;
 
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NodeTable[iNode];
     cDataBlockAMR* block=Node->block;
 
     #if DIM == 3
@@ -713,12 +714,6 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     }
 
     if (NodeDataLength!=NULL) NodeDataLength[iNode]=SendBufferIndex-BeginSendBufferIndex;
-  };
-
-
-  //pricess the list
-  for (int inode=0;inode<NodeTableLength;inode++) {
-    if (NodeTable[inode]->block!=NULL) ProcessNode(NodeTable[inode],inode);
   }
 
   return SendBufferIndex;
@@ -768,11 +763,13 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
-  auto ProcessNode = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,int iNode) {
-    int iCell,jCell,kCell,iDataInterval;
+  for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {
+     int iCell,jCell,kCell,iDataInterval;
      long int LocalCellNumber;
      PIC::Mesh::cDataCenterNode *CenterNode=NULL;
      PIC::Mesh::cDataCornerNode *CornerNode=NULL;
+
+     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NodeTable[iNode];
      PIC::Mesh::cDataBlockAMR *block=Node->block;
 
      unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
@@ -948,12 +945,8 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
          RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
        }
      }
-  };
-
-  //pricess the list
-  for (int inode=0;inode<NodeTableLength;inode++) {
-    if (NodeTable[inode]->block!=NULL) ProcessNode(NodeTable[inode],inode);
   }
+
 
   return RecvDataBufferIndex;
 }
