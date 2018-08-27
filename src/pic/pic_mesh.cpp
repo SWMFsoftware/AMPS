@@ -486,18 +486,45 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
 
-   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,SendDataBuffer,
+   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
        &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
        &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
        &ibegin,&BlockUserDataLength,1);
 }
 
+int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+  int ibegin=0;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+
+   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+       BlockCenterNodeMask,BlockCornerNodeMask, 
+       SendDataBuffer,
+       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&BlockUserDataLength,1);
+}
 
 int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer,
-          int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
-          int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
-          int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
+    int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
+    int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
+    int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
+
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
+    iCornerNodeStateVectorIntervalBegin,CornerNodeStateVectorIntervalLength,nCornerNodeStateVectorIntervals,
+    iCenterNodeStateVectorIntervalBegin,CenterNodeStateVectorIntervalLength,nCenterNodeStateVectorIntervals,
+    iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
+}
+
+int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
+    unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
+    char* SendDataBuffer,
+    int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
+    int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
+    int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
   int SendBufferIndex=0;
+
+  int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
+  int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
   auto ProcessNode=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,int iNode) {
     int iDataInterval,iCell,jCell,kCell;
@@ -505,6 +532,9 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     PIC::Mesh::cDataCenterNode *CenterNode=NULL;
     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
     int BeginSendBufferIndex=SendBufferIndex;
+
+    unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
+    unsigned char* CurrentBlockCornerNodeMask=(BlockCornerNodeMask!=NULL) ? BlockCornerNodeMask+iNode*CornerNodeSendMaskLength : NULL;
 
     cDataBlockAMR* block=Node->block;
 
@@ -522,6 +552,12 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
       LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
       CenterNode=block->GetCenterNode(LocalCellNumber);
+
+      if (BlockCenterNodeMask!=NULL) {
+        if (BlockElementSendMask::CenterNode::Test(iCell,jCell,kCell,CurrentBlockCenterNodeMask)==false) {
+          continue;
+        }
+      }
 
       if (SendDataBuffer!=NULL) {
         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
@@ -543,102 +579,125 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
     //send the corner node associated data
     //in a block corners with indecies from 0 to 'iCellMax-1' are considered belongs to the block. The corner with index 'iCellMax' is considered belongs to the next block
+    if (BlockCornerNodeMask!=NULL) {
+      if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax+1;kCell++) for (jCell=0;jCell<jCellMax+1;jCell++) for (iCell=0;iCell<iCellMax+1;iCell++) {
+        int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+        CornerNode=block->GetCornerNode(nd);
 
-    //send the 'internal corners'
-    if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
-      int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-      CornerNode=block->GetCornerNode(nd);
-
-      if (SendDataBuffer!=NULL) {
-        for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-          memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
-          SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+        if (BlockElementSendMask::CornerNode::Test(iCell,jCell,kCell,CurrentBlockCornerNodeMask)==false) {
+          continue;
         }
-      }
-      else {
-        for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-          SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+
+        if (SendDataBuffer!=NULL) {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+            SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
+        }
+        else {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
         }
       }
     }
+    else {
+      //send the 'internal corners'
+      if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+        int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+        CornerNode=block->GetCornerNode(nd);
 
-    //send 'corners' from the 'right' boundary of the block
-    int iface,iFaceTable[3]={1,3,5};
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
-
-    if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
-      iface=iFaceTable[i];
-
-      bool flag=false;
-
-      if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
-
-      if (flag==true) {
-        //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
-
-        switch (iface) {
-        case 1:
-          //the plane normal to 'x' and at the maximum 'x'
-          for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
-            int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-            CornerNode=block->GetCornerNode(nd);
-
-            if (SendDataBuffer!=NULL) {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
-            else {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
+        if (SendDataBuffer!=NULL) {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+            SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
           }
-          break;
-
-        case 3:
-          //the plane is normal to the 'y' direction, and is at maximum 'y'
-          for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
-            int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-            CornerNode=block->GetCornerNode(nd);
-
-            if (SendDataBuffer!=NULL) {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
-            else {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
+        }
+        else {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
           }
-          break;
-
-        case 5:
-          //the plane normal to 'z' and at the maximum 'z'
-          for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
-            int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-            CornerNode=block->GetCornerNode(nd);
-
-            if (SendDataBuffer!=NULL) {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
-            else {
-              for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-              }
-            }
-          }
-          break;
         }
       }
 
+      //send 'corners' from the 'right' boundary of the block
+      int iface,iFaceTable[3]={1,3,5};
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
+
+      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
+        iface=iFaceTable[i];
+
+        bool flag=false;
+
+        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+
+        if (flag==true) {
+          //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
+
+          switch (iface) {
+          case 1:
+            //the plane normal to 'x' and at the maximum 'x'
+            for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
+
+              if (SendDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+            }
+            break;
+
+          case 3:
+            //the plane is normal to the 'y' direction, and is at maximum 'y'
+            for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
+
+              if (SendDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+            }
+            break;
+
+          case 5:
+            //the plane normal to 'z' and at the maximum 'z'
+            for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
+
+              if (SendDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  SendBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+            }
+            break;
+          }
+        }
+
+      }
     }
 
     if (SendDataBuffer!=NULL) {
@@ -676,18 +735,48 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
        &ibegin,&BlockUserDataLength,1);
 }
 
+int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+  int ibegin=0;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+
+   return UnpackBlockData_Internal(NodeTable,NodeTableLength,
+       BlockCenterNodeMask,BlockCornerNodeMask,
+       RecvDataBuffer,
+       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&BlockUserDataLength,1);
+}
+
 int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
+    int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
+    int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
+    int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
+  return UnpackBlockData_Internal(NodeTable, NodeTableLength,NULL,NULL,RecvDataBuffer,
+      iCornerNodeStateVectorIntervalBegin,CornerNodeStateVectorIntervalLength,nCornerNodeStateVectorIntervals,
+      iCenterNodeStateVectorIntervalBegin,CenterNodeStateVectorIntervalLength,nCenterNodeStateVectorIntervals,
+      iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
+}
+
+int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
+    unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
+    char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
   int RecvDataBufferIndex=0;
 
-  auto ProcessNode = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node) {
+  int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
+  int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
+
+  auto ProcessNode = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,int iNode) {
     int iCell,jCell,kCell,iDataInterval;
      long int LocalCellNumber;
      PIC::Mesh::cDataCenterNode *CenterNode=NULL;
      PIC::Mesh::cDataCornerNode *CornerNode=NULL;
      PIC::Mesh::cDataBlockAMR *block=Node->block;
+
+     unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
+     unsigned char* CurrentBlockCornerNodeMask=(BlockCornerNodeMask!=NULL) ? BlockCornerNodeMask+iNode*CornerNodeSendMaskLength : NULL;
 
      #if DIM == 3
      static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -703,6 +792,12 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
      if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
        LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
        CenterNode=block->GetCenterNode(LocalCellNumber);
+
+       if (BlockCenterNodeMask!=NULL) {
+         if (BlockElementSendMask::CenterNode::Test(iCell,jCell,kCell,CurrentBlockCenterNodeMask)==false) {
+           continue;
+         }
+       }
 
        if (RecvDataBuffer!=NULL) {
          for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
@@ -722,99 +817,124 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
        }
      }
 
-     //recieve the 'internal' corner node associated data
-     if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
-       int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-       CornerNode=block->GetCornerNode(nd);
 
-       if (RecvDataBuffer!=NULL) {
-         for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-           memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-           RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+     if (BlockCornerNodeMask!=NULL) {
+       if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax+1;kCell++) for (jCell=0;jCell<jCellMax+1;jCell++) for (iCell=0;iCell<iCellMax+1;iCell++) {
+         int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+         CornerNode=block->GetCornerNode(nd);
+
+         if (BlockElementSendMask::CornerNode::Test(iCell,jCell,kCell,CurrentBlockCornerNodeMask)==false) {
+           continue;
          }
-       }
-       else {
-         for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-           RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+
+         if (RecvDataBuffer!=NULL) {
+           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+             memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+           }
+         }
+         else {
+           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+           }
          }
        }
      }
+     else {
+       //recieve the 'internal' corner node associated data
+       if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+         int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+         CornerNode=block->GetCornerNode(nd);
 
-     //recv 'corners' from the 'right' boundary of the block
-     int iface,iFaceTable[3]={1,3,5};
-     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
-
-     if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
-       iface=iFaceTable[i];
-
-       if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
-         //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
-
-         switch (iface) {
-         case 1:
-           //the plane normal to 'x' and at the maximum 'x'
-           for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
-             int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-             CornerNode=block->GetCornerNode(nd);
-
-             if (RecvDataBuffer!=NULL) {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-             else {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-
+         if (RecvDataBuffer!=NULL) {
+           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+             memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
            }
-           break;
-
-         case 3:
-           //the plane is normal to the 'y' direction, and is at maximum 'y'
-           for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
-             int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-             CornerNode=block->GetCornerNode(nd);
-
-             if (RecvDataBuffer!=NULL) {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-             else {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-
+         }
+         else {
+           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
            }
-           break;
-
-         case 5:
-           //the plane normal to 'z' and at the maximum 'z'
-           for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
-             int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-             CornerNode=block->GetCornerNode(nd);
-
-             if (RecvDataBuffer!=NULL) {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-             else {
-               for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                 RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-               }
-             }
-           }
-           break;
          }
        }
 
+       //recv 'corners' from the 'right' boundary of the block
+       int iface,iFaceTable[3]={1,3,5};
+       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
+
+       if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
+         iface=iFaceTable[i];
+
+         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
+
+           switch (iface) {
+           case 1:
+             //the plane normal to 'x' and at the maximum 'x'
+             for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
+               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+               CornerNode=block->GetCornerNode(nd);
+
+               if (RecvDataBuffer!=NULL) {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+               else {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+
+             }
+             break;
+
+           case 3:
+             //the plane is normal to the 'y' direction, and is at maximum 'y'
+             for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
+               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+               CornerNode=block->GetCornerNode(nd);
+
+               if (RecvDataBuffer!=NULL) {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+               else {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+
+             }
+             break;
+
+           case 5:
+             //the plane normal to 'z' and at the maximum 'z'
+             for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
+               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+               CornerNode=block->GetCornerNode(nd);
+
+               if (RecvDataBuffer!=NULL) {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+               else {
+                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                 }
+               }
+             }
+             break;
+           }
+         }
+
+       }
      }
 
      if (RecvDataBuffer!=NULL) {
@@ -832,7 +952,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
 
   //pricess the list
   for (int inode=0;inode<NodeTableLength;inode++) {
-    if (NodeTable[inode]->block!=NULL) ProcessNode(NodeTable[inode]);
+    if (NodeTable[inode]->block!=NULL) ProcessNode(NodeTable[inode],inode);
   }
 
   return RecvDataBufferIndex;
