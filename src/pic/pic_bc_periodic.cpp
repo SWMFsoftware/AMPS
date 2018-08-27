@@ -226,8 +226,8 @@ void PIC::BC::ExternalBoundary::Periodic::UpdateData() {
   UpdateData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 }
 
-void PIC::BC::ExternalBoundary::Periodic::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer),
-    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer)) {
+void PIC::BC::ExternalBoundary::Periodic::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
   int iBlockPair,RealBlockThread,GhostBlockThread;
 
   //exchange particle data
