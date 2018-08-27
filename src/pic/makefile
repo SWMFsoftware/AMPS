@@ -57,7 +57,8 @@ PICOBJ = pic.o \
 	pic_sample_energy_distribution_relativistic.o \
 	pic_stopping_power.o \
 	pic_bc_periodic.o \
-	pic_field_solver_ecsim.o 
+	pic_field_solver_ecsim.o \
+	pic_block_send_mask.o
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \
