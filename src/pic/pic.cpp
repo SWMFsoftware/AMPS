@@ -1578,7 +1578,7 @@ void PIC::Init_BeforeParser() {
   PIC::Mesh::mesh.fDefaultPackBlockData=PIC::Mesh::PackBlockData;
   PIC::Mesh::mesh.fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
 
-  PIC::Mesh::mesh.fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic;
+  PIC::Mesh::mesh.fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
   PIC::Mesh::mesh.fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
   PIC::Mesh::mesh.fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
 
