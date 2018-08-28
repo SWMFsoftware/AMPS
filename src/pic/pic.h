@@ -2789,6 +2789,7 @@ namespace PIC {
       extern int CommunicationDepthLarge,CommunicationDepthSmall;
 
       void InitLayerBlockBasic(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
+      void InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
       void Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
 
       namespace CornerNode {
