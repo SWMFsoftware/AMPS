@@ -50,9 +50,59 @@ void PIC::Parallel::CopyCenterNodeAssociatedData_default(char *TargetBlockAssoci
 //====================================================
 //Exchange particles between Processors
 void PIC::Parallel::ExchangeParticleData() {
-  int From,To;
+  int From,To,i,iFrom,flag;
   long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
+
+  static MPI_Request *SendMessageSizeRequestTable=NULL,*RecvMessageSizeRequestTable=NULL;
+  static int *SendMessageLengthTable=NULL,*RecvMessageLengthTable=NULL,*SendMessageLengthProcessTable=NULL,*RecvMessageLengthProcessTable=NULL;
+  int SendMessageSizeRequestTableLength=0,RecvMessageSizeRequestTableLength=0;
+
+  static char **RecvParticleDataBuffer=NULL;
+  static int *RecvParticleDataBufferLengthTable=NULL;
+
+  MPI_Request RecvPaticleDataRequestTable[PIC::nTotalThreads];
+  int RecvPaticleDataRequestTableLength=0;
+  int RecvPaticleDataProcessTable[PIC::nTotalThreads];
+
+  static char **SendParticleDataBuffer=NULL;
+  static int *SendParticleDataBufferLengthTable=NULL;
+
+  static MPI_Request *SendParticleDataRequestTable=NULL;
+  static int SendParticleDataRequestTableLength=0;
+
+
+  if (SendMessageSizeRequestTable==NULL) {
+    SendParticleDataRequestTable=new MPI_Request[PIC::nTotalThreads];
+
+    SendMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
+    RecvMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
+
+    SendMessageLengthTable=new int [PIC::nTotalThreads];
+    RecvMessageLengthTable=new int [PIC::nTotalThreads];
+
+    SendMessageLengthProcessTable=new int [PIC::nTotalThreads];
+    RecvMessageLengthProcessTable=new int [PIC::nTotalThreads];
+
+    RecvParticleDataBuffer=new char* [PIC::nTotalThreads];
+    RecvParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
+
+    SendParticleDataBuffer=new char* [PIC::nTotalThreads];
+    SendParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
+
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) RecvParticleDataBufferLengthTable[thread]=0,SendParticleDataBufferLengthTable[thread]=0;
+
+  }
+
+
+  //finish previous send operations in case nor finished yet
+  if (SendParticleDataRequestTableLength!=0) {
+    MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
+    SendParticleDataRequestTableLength=0;
+  }
+
+  //set the default value inthe counters
+  for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
 
 
 #if DIM == 3
@@ -83,113 +133,195 @@ void PIC::Parallel::ExchangeParticleData() {
 #endif
 
 
-
-
-  int sendProcList[PIC::Mesh::mesh.nTotalThreads],nSendProc=0;
-  int recvProcList[PIC::Mesh::mesh.nTotalThreads],nRecvProc=0;
-  int sendProcVector[PIC::Mesh::mesh.nTotalThreads],exchangeProcMatrix[PIC::Mesh::mesh.nTotalThreads*PIC::Mesh::mesh.nTotalThreads];
+  //calculate the number of bytes that will be send
+  long int *FirstCellParticleTable;
   int thread;
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) sendProcList[thread]=-1,recvProcList[thread]=-1,sendProcVector[thread]=0;
-
-
-  //local copy of the block's cells
-//  int cellListLength=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
-
-  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-
-  //PIC::Mesh::cDataCenterNode *cellList[cellListLength],*cell;
-
-  //calculate the number of bytes that will be send
   for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
-      bool CommunicationInitialed_BLOCK_;
-      int iCell,jCell,kCell;
+    bool CommunicationInitialed_BLOCK_;
+    int iCell,jCell,kCell;
 
-      for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) {
-        CommunicationInitialed_BLOCK_=false;
-        memcpy(FirstCellParticleTable,sendNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) {
+      CommunicationInitialed_BLOCK_=false;
+      FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
 
+      for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+        Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
-        for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
-          Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
+        if  (Particle!=-1) {
+          if (CommunicationInitialed_BLOCK_==false) {
+            SendMessageLengthTable[To]+=sizeof(nodeid)+sizeof(int);
 
-          if  (Particle!=-1) {
-            if (CommunicationInitialed_BLOCK_==false) {
-              sendProcVector[To]+=sizeof(nodeid)+sizeof(int);
+            CommunicationInitialed_BLOCK_=true;
+          }
 
-              CommunicationInitialed_BLOCK_=true;
-            }
+          SendMessageLengthTable[To]+=sizeof(int)+sizeof(LocalCellNumber);
 
-            sendProcVector[To]+=sizeof(int)+sizeof(LocalCellNumber);
+          while (Particle!=-1) {
+            SendMessageLengthTable[To]+=sizeof(int)+PIC::ParticleBuffer::ParticleDataLength;
 
-            while (Particle!=-1) {
-              sendProcVector[To]+=sizeof(int)+PIC::ParticleBuffer::ParticleDataLength;
-
-              Particle=PIC::ParticleBuffer::GetNext(Particle);
-            }
-
-
+            Particle=PIC::ParticleBuffer::GetNext(Particle);
           }
         }
       }
+    }
 
+    //end the part of the sender
+    if (SendMessageLengthTable[To]!=0) {
+      SendMessageLengthTable[To]+=sizeof(int);
+    }
 
-      //end the part of the sender
-      if (sendProcVector[To]!=0) {
-        sendProcVector[To]+=sizeof(int);
-        sendProcList[nSendProc++]=To;
+    //the total length of the message to be send
+    MPI_Isend(SendMessageLengthTable+To,1,MPI_INT,To,10,MPI_GLOBAL_COMMUNICATOR,SendMessageSizeRequestTable+SendMessageSizeRequestTableLength);
+    SendMessageLengthProcessTable[SendMessageSizeRequestTableLength]=To;
+    SendMessageSizeRequestTableLength++;
+  }
+
+  //recieve the length of the message to be recieved
+  for (From=0;From<PIC::Mesh::mesh.nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][From]==true)) {
+    MPI_Irecv(RecvMessageLengthTable+From,1,MPI_INT,From,10,MPI_GLOBAL_COMMUNICATOR,RecvMessageSizeRequestTable+RecvMessageSizeRequestTableLength);
+    RecvMessageLengthProcessTable[RecvMessageSizeRequestTableLength]=From;
+    RecvMessageSizeRequestTableLength++;
+  }
+
+  //remove unused send buffers
+  for (thread=0;thread<PIC::nTotalThreads;thread++) {
+    if ((SendMessageLengthTable[thread]==0)&&(SendParticleDataBufferLengthTable[thread]!=0)) {
+      //the data buffer is not used
+      delete [] SendParticleDataBuffer[thread];
+      SendParticleDataBufferLengthTable[thread]=0;
+    }
+  }
+
+  To=0;
+
+  while ((RecvMessageSizeRequestTableLength!=0)||(RecvPaticleDataRequestTableLength!=0)||(To<PIC::nTotalThreads)) {
+
+    if (RecvMessageSizeRequestTableLength!=0) {
+      //check whether sise of the incoming message has been recieved
+      MPI_Testany(RecvMessageSizeRequestTableLength,RecvMessageSizeRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
+
+      if (flag==true) {
+        From=RecvMessageLengthProcessTable[iFrom];
+        RecvMessageLengthProcessTable[iFrom]=RecvMessageLengthProcessTable[RecvMessageSizeRequestTableLength-1];
+        RecvMessageSizeRequestTable[iFrom]=RecvMessageSizeRequestTable[RecvMessageSizeRequestTableLength-1];
+        RecvMessageSizeRequestTableLength--;
+
+        if (RecvMessageLengthTable[From]!=0) {
+          //schedule recieving the message
+          if (RecvParticleDataBufferLengthTable[From]<RecvMessageLengthTable[From]) {
+            if (RecvParticleDataBufferLengthTable[From]!=0) delete [] RecvParticleDataBuffer[From];
+
+            RecvParticleDataBuffer[From]=new char [RecvMessageLengthTable[From]];
+            RecvParticleDataBufferLengthTable[From]=RecvMessageLengthTable[From];
+          }
+
+          MPI_Irecv(RecvParticleDataBuffer[From],RecvMessageLengthTable[From],MPI_CHAR,From,11,MPI_GLOBAL_COMMUNICATOR,RecvPaticleDataRequestTable+RecvPaticleDataRequestTableLength);
+          RecvPaticleDataProcessTable[RecvPaticleDataRequestTableLength]=From;
+          RecvPaticleDataRequestTableLength++;
+        }
+        else {
+          //the data buffer is not used. it should be removed in case allocated
+          if (RecvParticleDataBufferLengthTable[From]!=0) {
+            //the data buffer is not used
+            delete [] RecvParticleDataBuffer[From];
+            RecvParticleDataBufferLengthTable[From]=0;
+          }
+        }
       }
-   }
+    }
 
+    if (RecvPaticleDataRequestTableLength!=0) {
+      //check whether new particle data has been recieved
+      MPI_Testany(RecvPaticleDataRequestTableLength,RecvPaticleDataRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
-  //collect the data exchenge matrix
-  Latency=MPI_Wtime();
-  MPI_Allgather(sendProcVector,PIC::Mesh::mesh.nTotalThreads,MPI_INT,exchangeProcMatrix,PIC::Mesh::mesh.nTotalThreads,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
-  Latency=MPI_Wtime()-Latency;
+      if (flag==true) {
+        //the new particle data message has been recieve => unpach the particle data
+        From=RecvPaticleDataProcessTable[iFrom];
 
-  //extract the list of the processors that will send information to 'ThisThread'
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if (exchangeProcMatrix[thread*PIC::Mesh::mesh.nTotalThreads+PIC::Mesh::mesh.ThisThread]!=0) recvProcList[nRecvProc++]=thread;
+        RecvPaticleDataProcessTable[iFrom]=RecvPaticleDataProcessTable[RecvPaticleDataRequestTableLength-1];
+        RecvPaticleDataRequestTable[iFrom]=RecvPaticleDataRequestTable[RecvPaticleDataRequestTableLength-1];
+        RecvPaticleDataRequestTableLength--;
 
-  //Allocate all nessesary data exchange buffers
-  int nproc;
-  char *recvDataBuffer[PIC::Mesh::mesh.nTotalThreads],*sendDataBuffer[PIC::Mesh::mesh.nTotalThreads];
+        //unpacking the particle data
+        if (_PIC_PARTICLE_EXCHANGE_ENFORCE_RECIEVING_ORDER_MODE_==_PIC_MODE_OFF_) {
+          int offset=0;
+          char *buffer=RecvParticleDataBuffer[From];
+          int iCell,jCell,kCell;
 
-  for (nproc=0;nproc<nRecvProc;nproc++) {
-    thread=recvProcList[nproc];
-    recvDataBuffer[nproc]=new char[exchangeProcMatrix[thread*PIC::Mesh::mesh.nTotalThreads+PIC::Mesh::mesh.ThisThread]];
-  }
+          //recieve the data
+          Signal=*((int*)(buffer+offset));
+          offset+=sizeof(int);
 
-  for (nproc=0;nproc<nSendProc;nproc++) {
-    thread=sendProcList[nproc];
-    sendDataBuffer[nproc]=new char[sendProcVector[thread]];
-  }
+           while (Signal!=_END_COMMUNICATION_SIGNAL_) {
+             switch (Signal) {
+             case _NEW_BLOCK_ID_SIGNAL_ :
+               #if DIM == 3
+               nodeid=*((cAMRnodeID*)(buffer+offset));
+               #else
+               exit(__LINE__,__FILE__,"Error: not implemetned");
+               #endif
 
-  //collect the send data
-  int offset;
-  char *buffer;
-  MPI_Request SendRequest[PIC::Mesh::mesh.nTotalThreads],RecvRequest[PIC::Mesh::mesh.nTotalThreads];
+               offset+=sizeof(nodeid);
+               recvNode=PIC::Mesh::mesh.findAMRnodeWithID(nodeid);
 
-  sendParticleCounter=0;
-  recvParticleCounter=0;
+               FirstCellParticleTable=recvNode->block->FirstCellParticleTable;
 
-  //the part of the sender
-  for (nproc=0;nproc<nSendProc;nproc++) {
+               if (recvNode->block==NULL) exit(__LINE__,__FILE__,"Error: the node is not allocated");
+               break;
+             case _CENTRAL_NODE_NUMBER_SIGNAL_ :
+               //pipe.recv(LocalCellNumber,From);
+               LocalCellNumber=*((long int*)(buffer+offset));
+
+               PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,iCell,jCell,kCell);
+               offset+=sizeof(long int);
+
+               break;
+             case _NEW_PARTICLE_SIGNAL_ :
+               newParticle=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)],true);
+
+               PIC::ParticleBuffer::UnPackParticleData(buffer+offset,newParticle);
+               recvParticleCounter++;
+
+               offset+=PIC::ParticleBuffer::ParticleDataLength;
+               break;
+             default:
+               exit(__LINE__,__FILE__,"Error: the option is not recognized");
+             }
+
+             Signal=*((int*)(buffer+offset));
+             offset+=sizeof(int);
+           }
+
+            //end the part of the receiver
+           if (offset!=RecvMessageLengthTable[From]) exit(__LINE__,__FILE__,"Error: the amount of recieved data is not consistent");
+        }
+      }
+    }
+
+    //send the particle data message if there is something to send
+    if ((To<PIC::nTotalThreads)&&(To!=PIC::ThisThread)&&(SendMessageLengthTable[To]!=0)) {
+      //there is something to send => pacj the data and send it
       bool CommunicationInitialed_BLOCK_;
       int iCell,jCell,kCell;
       bool CellParticleTableModified;
 
-      To=sendProcList[nproc];
-      offset=0;
-      buffer=sendDataBuffer[nproc];
+      if (SendParticleDataBufferLengthTable[To]<SendMessageLengthTable[To]) {
+        if (SendParticleDataBufferLengthTable[To]!=0) delete [] SendParticleDataBuffer[To];
+
+        SendParticleDataBuffer[To]=new char [SendMessageLengthTable[To]];
+        SendParticleDataBufferLengthTable[To]=SendMessageLengthTable[To];
+      }
+
+      int offset=0;
+      char *buffer=SendParticleDataBuffer[To];
 
       //reset the proceesed flaf for the blocks to be send
       //send the nodes' data
       for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) {
         CommunicationInitialed_BLOCK_=false;
 
-
-        //memcpy(cellList,sendNode->block->GetCenterNodeList(),cellListLength*sizeof(PIC::Mesh::cDataCenterNode*));
-        memcpy(FirstCellParticleTable,sendNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+        FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
         CellParticleTableModified=false;
 
         for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
@@ -240,113 +372,75 @@ void PIC::Parallel::ExchangeParticleData() {
           }
         }
 
-        if (CellParticleTableModified==true) memcpy(sendNode->block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
       }
 
       *((int*)(buffer+offset))=_END_COMMUNICATION_SIGNAL_;
       offset+=sizeof(int);
 
-      if ((offset!=sendProcVector[To])||(offset!=exchangeProcMatrix[PIC::Mesh::mesh.ThisThread*PIC::Mesh::mesh.nTotalThreads+To])) exit(__LINE__,__FILE__,"Error: the data anount to be send is not consistent");
+      if (offset!=SendMessageLengthTable[To]) exit(__LINE__,__FILE__,"Error: the data anount to be send is not consistent");
 
       //end the part of the sender - initiate non-blocks send
-      MPI_Isend(buffer,offset,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequest+nproc);
-   }
-
-
-  //initiate reciving of the data
-  for (nproc=0;nproc<nRecvProc;nproc++) {
-    thread=recvProcList[nproc];
-    MPI_Irecv(recvDataBuffer[nproc],exchangeProcMatrix[thread*PIC::Mesh::mesh.nTotalThreads+PIC::Mesh::mesh.ThisThread],MPI_BYTE,thread,0,MPI_GLOBAL_COMMUNICATOR,RecvRequest+nproc);
-  }
-
-
-  //recieve particles
-  int DataStillToRecieve=nRecvProc;
-  MPI_Status status;
-  int flag;
-  int iCell=-10,jCell=-10,kCell=-10;
-
-  while (DataStillToRecieve!=0) {
-
-    //determine the processor that has finished sending the data
-    do {
-      for (nproc=0;nproc<nRecvProc;nproc++) if (recvDataBuffer[nproc]!=NULL) {
-        MPI_Test(RecvRequest+nproc,&flag,&status);
-        if (flag==true) break;
-
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-        break;
-#endif
-      }
+      MPI_Isend(buffer,offset,MPI_CHAR,To,11,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequestTable+SendParticleDataRequestTableLength);
+      SendParticleDataRequestTableLength++;
     }
-    while (flag==false);
 
-    buffer=recvDataBuffer[nproc];
-    offset=0;
-    From=recvProcList[nproc];
-
-    //recieve the data
-    Signal=*((int*)(buffer+offset));
-    offset+=sizeof(int);
-
-     while (Signal!=_END_COMMUNICATION_SIGNAL_) {
-
-       switch (Signal) {
-       case _NEW_BLOCK_ID_SIGNAL_ :
-         #if DIM == 3
-         nodeid=*((cAMRnodeID*)(buffer+offset));
-         #else
-         exit(__LINE__,__FILE__,"Error: not implemetned");
-         #endif
-
-         offset+=sizeof(nodeid);
-         recvNode=PIC::Mesh::mesh.findAMRnodeWithID(nodeid);
-
-         memcpy(FirstCellParticleTable,recvNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
-
-         if (recvNode->block==NULL) exit(__LINE__,__FILE__,"Error: the node is not allocated");
-         break;
-       case _CENTRAL_NODE_NUMBER_SIGNAL_ :
-         //pipe.recv(LocalCellNumber,From);
-         LocalCellNumber=*((long int*)(buffer+offset));
-
-         PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,iCell,jCell,kCell);
-         offset+=sizeof(long int);
-
-         break;
-       case _NEW_PARTICLE_SIGNAL_ :
-         newParticle=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)],true);
-
-         PIC::ParticleBuffer::UnPackParticleData(buffer+offset,newParticle);
-         recvParticleCounter++;
-
-         offset+=PIC::ParticleBuffer::ParticleDataLength;
-         break;
-       default:
-         exit(__LINE__,__FILE__,"Error: the option is not recognized");
-       }
-
-       Signal=*((int*)(buffer+offset));
-       offset+=sizeof(int);
-
-       if ((Signal==_NEW_BLOCK_ID_SIGNAL_)||(Signal==_END_COMMUNICATION_SIGNAL_)) {
-         memcpy(recvNode->block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
-       }
-
-     }
-
-      //end the part of the receiver
-     if (offset!=exchangeProcMatrix[From*PIC::Mesh::mesh.nTotalThreads+PIC::Mesh::mesh.ThisThread]) exit(__LINE__,__FILE__,"Error: the amount of recieved data is not consistent");
-
-     DataStillToRecieve--;
-     delete [] recvDataBuffer[nproc];
-     recvDataBuffer[nproc]=NULL;
+    To++;
   }
 
-  //finish the send operations
-  for (nproc=0;nproc<nSendProc;nproc++) {
-    MPI_Wait(SendRequest+nproc,&status);
-    delete [] sendDataBuffer[nproc];
+  //in case the order that particles are recieved has to be conserved
+  if (_PIC_PARTICLE_EXCHANGE_ENFORCE_RECIEVING_ORDER_MODE_==_PIC_MODE_ON_)  {
+    for (From=0;From<PIC::nTotalThreads;From++) if ((From!=PIC::ThisThread)&&(RecvMessageLengthTable[From]!=0)) {
+      int offset=0;
+      char *buffer=RecvParticleDataBuffer[From];
+      int iCell,jCell,kCell;
+
+      //recieve the data
+      Signal=*((int*)(buffer+offset));
+      offset+=sizeof(int);
+
+       while (Signal!=_END_COMMUNICATION_SIGNAL_) {
+         switch (Signal) {
+         case _NEW_BLOCK_ID_SIGNAL_ :
+           #if DIM == 3
+           nodeid=*((cAMRnodeID*)(buffer+offset));
+           #else
+           exit(__LINE__,__FILE__,"Error: not implemetned");
+           #endif
+
+           offset+=sizeof(nodeid);
+           recvNode=PIC::Mesh::mesh.findAMRnodeWithID(nodeid);
+
+           FirstCellParticleTable=recvNode->block->FirstCellParticleTable;
+
+           if (recvNode->block==NULL) exit(__LINE__,__FILE__,"Error: the node is not allocated");
+           break;
+         case _CENTRAL_NODE_NUMBER_SIGNAL_ :
+           //pipe.recv(LocalCellNumber,From);
+           LocalCellNumber=*((long int*)(buffer+offset));
+
+           PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,iCell,jCell,kCell);
+           offset+=sizeof(long int);
+
+           break;
+         case _NEW_PARTICLE_SIGNAL_ :
+           newParticle=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)],true);
+
+           PIC::ParticleBuffer::UnPackParticleData(buffer+offset,newParticle);
+           recvParticleCounter++;
+
+           offset+=PIC::ParticleBuffer::ParticleDataLength;
+           break;
+         default:
+           exit(__LINE__,__FILE__,"Error: the option is not recognized");
+         }
+
+         Signal=*((int*)(buffer+offset));
+         offset+=sizeof(int);
+       }
+
+        //end the part of the receiver
+       if (offset!=RecvMessageLengthTable[From]) exit(__LINE__,__FILE__,"Error: the amount of recieved data is not consistent");
+    }
   }
 }
 
