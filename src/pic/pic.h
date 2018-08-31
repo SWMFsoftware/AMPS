@@ -3777,9 +3777,236 @@ namespace PIC {
 
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
      void ProcessCornerBlockBoundaryNodes();
-
+     void ProcessCornerBlockBoundaryNodes_old(); 
      //Latency of the run
      extern double Latency;
+         
+     class XYZTree{
+     public:
+      
+       class leafNode {
+       public:
+         int iThread;
+         char * DataBuffer;
+         leafNode(int i, char * Buffer){
+           iThread=i, DataBuffer=Buffer;
+         }
+         leafNode(){
+
+         }
+         ~leafNode(){
+
+         }
+       };
+        
+       class zNode {
+       public:
+         double z;
+         std::list<XYZTree::leafNode*> leafList;
+         void addLeafNode(leafNode * leaf){
+           if (leafList.empty()) {
+             leafList.push_back(leaf);
+             return;
+           }
+           std::list<XYZTree::leafNode*>::iterator it;//=leafList.begin();
+           for (it = leafList.begin();it!=leafList.end();it++)
+             {
+               //discard the same leaf node
+               if ((*it)->iThread==(leaf->iThread) && (*it)->DataBuffer==(leaf->DataBuffer))
+                 return;
+               if ((*it)->iThread>(leaf->iThread)) break;
+             }
+           //in ascending order
+           leafList.insert(it,leaf);
+         }
+
+         zNode(double zz, XYZTree::leafNode * leaf){
+           z=zz;
+           leafList.push_back(leaf);
+         }
+         ~zNode(){
+           //leafList.~list();
+         }
+       };//zNode
+
+       class yNode {
+       public:  
+         double y;
+         std::list<XYZTree::zNode*> zList;
+            
+         void addZNode(double z, XYZTree::leafNode * leaf){
+           double eps = 0.3*PIC::Mesh::mesh.EPS;
+           if (zList.empty()) {
+             XYZTree::zNode * node = new XYZTree::zNode(z,leaf);
+             zList.push_back(node);
+             return;
+           }
+          
+           std::list<XYZTree::zNode*>::iterator it;
+              
+           double lower=  z - eps;
+           double upper=  z + eps;
+              
+           for (it = zList.begin();it!=zList.end();it++)
+             if ((*it)->z>=lower) break;
+              
+           if (it==zList.end()) {
+             XYZTree::zNode * node = new XYZTree::zNode(z,leaf);
+             zList.push_back(node);
+             return;
+           }
+              
+           if ((*it)->z >upper) {
+             XYZTree::zNode * node = new XYZTree::zNode(z,leaf);
+             zList.insert(it,node);
+           }else{
+             //z matches
+             (*it)->addLeafNode(leaf);
+           }              
+         }
+            
+         yNode(double yy, double zz, XYZTree::leafNode * leaf){
+           y =yy;
+           XYZTree::zNode * node= new XYZTree::zNode(zz,leaf);
+           zList.push_back(node);
+         }
+        
+         void printY(){
+           printf("y:%e ",y);
+           std::list<XYZTree::zNode*>::iterator it;
+          
+           printf("z:");
+           for (it = zList.begin();it!=zList.end();it++)
+             printf("%e ", (*it)->z);
+           printf("\n");        
+         }
+         ~yNode(){
+ 
+         }         
+       };
+
+          
+       class xNode {
+       public:
+         double x;
+         std::list<XYZTree::yNode*> yList;
+         void addYNode(double y, double z, XYZTree::leafNode * leaf){
+           double eps=PIC::Mesh::mesh.EPS;
+           if (yList.empty()) {
+             XYZTree::yNode * node = new XYZTree::yNode(y,z,leaf);
+             yList.push_back(node);
+             return;
+           }
+           std::list<XYZTree::yNode*>::iterator it;
+              
+           double lower=  y - eps;
+           double upper=  y + eps;
+              
+           for (it = yList.begin();it!=yList.end();it++)
+             if ((*it)->y >= lower) break;
+              
+           if (it==yList.end()) {
+             XYZTree::yNode * node = new XYZTree::yNode(y,z,leaf);
+             yList.push_back(node);
+             return;
+           }
+              
+           if ((*it)->y > upper) {
+             XYZTree::yNode * node = new XYZTree::yNode(y,z,leaf);
+             yList.insert(it,node);
+           }else{
+             //y matches
+             (*it)->addZNode(z,leaf);
+           }              
+         }
+            
+         xNode(double xx, double yy, double zz, XYZTree::leafNode * leaf){
+           x=xx;
+           XYZTree::yNode * node= new XYZTree::yNode(yy,zz,leaf);
+           yList.push_back(node);
+         }
+        
+         ~xNode(){
+
+         }   
+      
+         void printX(){
+           printf("x:%e ",x);
+           std::list<XYZTree::yNode*>::iterator it;
+          
+           for (it = yList.begin();it!=yList.end();it++)
+             (*it)->printY();   
+         }
+
+       };
+          
+         
+       XYZTree(){
+ 
+       }
+
+       ~XYZTree(){
+
+       }   
+          
+       void addXNode(double x, double y, double z, XYZTree::leafNode * leaf){
+            
+         if (leaf->DataBuffer==NULL) return;
+         double eps=PIC::Mesh::mesh.EPS;
+         if (xList.empty()) {
+           XYZTree::xNode * node = new XYZTree::xNode(x,y,z,leaf);
+           xList.push_back(node);
+           return;
+         }
+         std::list<XYZTree::xNode*>::iterator it;
+              
+         double lower=  x - eps;
+         double upper=  x + eps;
+              
+         for (it = xList.begin();it!=xList.end();it++)
+           if ((*it)->x >= lower) break;
+              
+         if (it==xList.end()) {
+           xNode * node = new xNode(x,y,z,leaf);
+           xList.push_back(node);
+           return;
+         }
+              
+         if ((*it)->x > upper) {
+           XYZTree::xNode * node = new XYZTree::xNode(x,y,z,leaf);
+           /*
+           if (it==xList.begin()){
+             if (PIC::ThisThread==0)
+             printf("insert head: x:%e,(*it)->x:%e\n",x,(*it)->x);
+           }else{
+             //             std::list<XYZTree::xNode*>::iterator tempit=it-1;
+             if(PIC::ThisThread==0)
+             printf("insert middle: (*(it-1))->x:%e,x:%e,(*it)->x:%e\n",(*(--it))->x,x,(*(++it))->x);
+           }
+           */
+           xList.insert(it,node);
+         }else{
+           //x matches
+           /*
+           if(PIC::ThisThread==0)
+           printf("match x:%e,(*it)->x:%e\n",x,(*it)->x);
+           */
+           (*it)->addYNode(y,z,leaf);
+         }              
+       }
+      
+       std::list<xNode*> xList;
+       void printTree(){
+         std::list<XYZTree::xNode*>::iterator it;
+         
+         if (PIC::ThisThread==0){
+           printf("printing tree:\n");
+           for (it = xList.begin();it!=xList.end();it++)
+             (*it)->printX();   
+         }
+       }                  
+ 
+     };
 
 /*
      //processing 'corner' and 'center' node associated data vectors when perform syncronization
