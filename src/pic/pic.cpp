@@ -433,7 +433,7 @@ int PIC::TimeStep() {
     localRunStatisticData.ParticleMovingTime=ParticleMovingTime;
     localRunStatisticData.PhotoChemistryTime=PhotoChemistryTime;
     localRunStatisticData.InjectionBoundaryTime=InjectionBoundaryTime;
-    localRunStatisticData.Latency=PIC::Parallel::Latency;
+    localRunStatisticData.Latency=MPI_Wtime();
     localRunStatisticData.recvParticleCounter=PIC::Parallel::recvParticleCounter;
     localRunStatisticData.sendParticleCounter=PIC::Parallel::sendParticleCounter;
     localRunStatisticData.nInjectedParticles=PIC::BC::nTotalInjectedParticles;
@@ -491,8 +491,15 @@ int PIC::TimeStep() {
       for (int i=1;i<=17;i++) fprintf(PIC::DiagnospticMessageStream,"%12d ",i);
       fprintf(PIC::DiagnospticMessageStream,"\n");
 
+      //detemine the earliest time that a thread has passed the point of collecting the runtime statistical information
+      double minCheckPointTime=-1.0;
+
+      for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if ((minCheckPointTime<0.0)||(minCheckPointTime>ExchangeBuffer[thread].Latency)) minCheckPointTime=ExchangeBuffer[thread].Latency;
+
 
       for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+        ExchangeBuffer[thread].Latency-=minCheckPointTime;
+
         fprintf(PIC::DiagnospticMessageStream,"$PREFIX: %12d %12d %10e %10e %10e %10e %10e %10e %10e %10e %12d %12d %10e %10e %10e %10e %10e %10e\n",
             thread,
             (int)ExchangeBuffer[thread].TotalParticlesNumber,
