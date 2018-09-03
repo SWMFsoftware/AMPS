@@ -89,12 +89,14 @@ cp -r BATL Intel/AMPS/
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
-utility/TestScripts/BuildTest.pl -test-run-time=30 
+utility/TestScripts/BuildTest.pl -test-run-time=30
 
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
+utility/TestScripts/BuildTest.pl -test-run-time=30
+
 #>Valeriy ##################################################################
 #cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 #./Config.pl -link-option=-lc++ -install -compiler=ifort,iccmpicxx -link-option=-cxxlib >>& test_amps.log<#
@@ -120,12 +122,12 @@ endif
 # #>Pleiades ###############################################
 # #cp AMPS/utility/TestScripts/test_amps.pleiades.*.job . <#
 # #>Stampede ###############################################
-cd $WorkDir/Tmp_AMPS_test/AMPS 
+cd $WorkDir/Tmp_AMPS_test/GNU/AMPS 
 rm -f utility/TestScripts/test_amps.stampede.all.overtime*.job
 utility/TestScripts/BuildTest.pl -test-run-time=30  
 
-rm -rf ../test_amps.stampede.*.job
-cp utility/TestScripts/test_amps.stampede.*.job .. 
+rm -rf ../../test_amps.stampede.*.job
+cp utility/TestScripts/test_amps.stampede.*.job ../.. 
 
 # Compile AMPS tests
 cd $WorkDir/Tmp_AMPS_test
