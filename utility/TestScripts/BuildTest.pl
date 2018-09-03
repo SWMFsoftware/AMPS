@@ -444,13 +444,14 @@ sub check_overtime {
   my $overtime="$path/test_amps.$hostname.all.overtime$iOvertime.job";
 	
   if (-e $original) {
-	  system("cp $original $overtime");
+    system("cp $original $overtime");
     my @lines = read_content("$overtime");
 	    
     foreach my $line (@lines) {
       $line =~ s/test_run/test_run_OVERTIME$iOvertime/;
-	  }
+      $line =~ s/test_amps/test_amps_OVERTIME$iOvertime/;
+    }
 	    
-	  &write_content($overtime, @lines);
-	}
+    &write_content($overtime, @lines);
+  }
 }
