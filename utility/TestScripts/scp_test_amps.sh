@@ -27,6 +27,26 @@ set Server  = vtenishe@herot.engin.umich.edu
 #>Yellowstone ###########
 #set WorkDir =         <#
 
+
+#Combine multiple log filed into a signle log file
+cd $WorkDir/Tmp_AMPS_test/GNU/AMPS
+
+foreach f (test_amps_OVERTIME*.log) #
+  cat $f >> test_amps.log
+end
+
+cd $WorkDir/Tmp_AMPS_test/Intel/AMPS
+
+foreach f (test_amps_OVERTIME*.log) #
+  cat $f >> test_amps.log
+end
+
+cd $WorkDir/Tmp_AMPS_test/PGI/AMPS
+
+foreach f (test_amps_OVERTIME*.log) #
+  cat $f >> test_amps.log
+end
+
 # Go to your home directory
 cd $WorkDir/Tmp_AMPS_test
 
