@@ -4,10 +4,10 @@
 
 #PBS -N AMPS_pfe
 
-#PBS -q devel
+#PBS -q normal 
 #PBS -l select=1:ncpus=24:model=has
 
-#PBS -l walltime=2:00:00
+#PBS -l walltime=4:00:00
 
 #PBS -j oe
 #PBS -m e

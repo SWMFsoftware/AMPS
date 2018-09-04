@@ -89,12 +89,14 @@ cp -r BATL Intel/AMPS/
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
-utility/TestScripts/BuildTest.pl -test-run-time=15 
+utility/TestScripts/BuildTest.pl -test-run-time=30
 
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
+utility/TestScripts/BuildTest.pl -test-run-time=30
+
 #>Valeriy ##################################################################
 #cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 #./Config.pl -link-option=-lc++ -install -compiler=ifort,iccmpicxx -link-option=-cxxlib >>& test_amps.log<#
@@ -116,14 +118,13 @@ else
   git clone amps@tower-left.engin.umich.edu:/Volumes/Data01/AMPS_DATA_TEST
 endif
 
-cd $WorkDir/Tmp_AMPS_test
-
 # copy job files to the AMPS directory on supercomputers
 # #>Pleiades ###############################################
 # #cp AMPS/utility/TestScripts/test_amps.pleiades.*.job . <#
 # #>Stampede ###############################################
+cd $WorkDir/Tmp_AMPS_test/GNU/AMPS 
 rm -f utility/TestScripts/test_amps.stampede.all.overtime*.job
-utility/TestScripts/BuildTest.pl -test-run-time=15  
+utility/TestScripts/BuildTest.pl -test-run-time=30  
 
 rm -rf ../../test_amps.stampede.*.job
 cp utility/TestScripts/test_amps.stampede.*.job ../.. 
@@ -152,29 +153,31 @@ foreach job (test_amps.stampede.all*.job) #
   rm -rf AmpsTestComplete
   @ iTest=0
 
-  while ($iTest<2) 
-    sbatch $job
+  sbatch $job
 
-    echo $job is submitted 
-    set JobCompletedFlag='false'
+# while ($iTest<2) 
+#   sbatch $job
 
-    while ($JobCompletedFlag == 'false')
-      sleep 60
+#   echo $job is submitted 
+#   set JobCompletedFlag='false'
 
-      if (`squeue -u vtenishe | grep AMPS_tes` == "") then
-        set JobCompletedFlag='true'
-      endif
-    end
+#   while ($JobCompletedFlag == 'false')
+#     sleep 60
 
-    echo $job is completed
-    sleep 120
+#     if (`squeue -u vtenishe | grep AMPS_tes` == "") then
+#       set JobCompletedFlag='true'
+#     endif
+#   end
 
-    if (-e AmpsTestDone) then 
-      break
-    endif 
+#   echo $job is completed
+#   sleep 120
 
-    @ iTest++ 
-  end
+#   if (-e AmpsTestDone) then 
+#     break
+#   endif 
+
+#   @ iTest++ 
+# end
 end
 
 echo The test routine is completed
