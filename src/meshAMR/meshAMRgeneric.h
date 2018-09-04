@@ -10104,20 +10104,21 @@ if (TmpAllocationCounter==2437) {
       LoadMeasureNormal=CalculateTotalParallelLoadMeasure(rootTree,InitialProcessorLoad)/nTotalThreads;
     }
 
-    if (ThisThread==0) {
-      cTreeNodeAMR<cBlockAMR> *ptr;
-      long int nblocks;
+    //calcualte the number of blocks per thread
+    cTreeNodeAMR<cBlockAMR> *ptr;
+    long int GlobalTotalBlockNumberTable[nTotalThreads];
 
-      fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tBlock's Number\n");
+    for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) nTotalBlocks++;
+
+    MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
       for (int t=0;t<nTotalThreads;t++) {
-        for (nblocks=0,ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) nblocks++;
-
-        fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,nblocks);
+        fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalBlockNumberTable[t]);
       }
     }
-
-
 
 
     //normalize the load
@@ -10125,8 +10126,6 @@ if (TmpAllocationCounter==2437) {
 
     //Recalculate the space filling curve if its needed
     if (meshModifiedFlag_CreateNewSpaceFillingCurve==true) {
-//      long int nBalancingLevel,nBalancigElements,nBalancigElementsUpLevels;
-
       meshModifiedFlag_CreateNewSpaceFillingCurve=false;
 
       rootTree->FillingCurveNextNode=NULL;
@@ -10135,23 +10134,6 @@ if (TmpAllocationCounter==2437) {
       startNodeFillingCurve=rootTree;
 
       CreateMortonSpaceFillingCurve(&startNodeFillingCurve,rootTree);
-
-      /*
-      for (nBalancingLevel=0;nBalancingLevel<=_MAX_REFINMENT_LEVEL_;nBalancingLevel++) {
-        for (nBalancigElements=0,i=0;i<=nBalancingLevel;i++) nBalancigElements+=nResolutionLevelBlocks[i];
-
-        for (nBalancigElementsUpLevels=nBalancingLevel+1;i<=_MAX_REFINMENT_LEVEL_;i++) {
-          nBalancigElementsUpLevels+=nResolutionLevelBlocks[i];
- //         nBalancigElements+=(long int)(double(nResolutionLevelBlocks[i])/(1<<(_MESH_DIMENSION_*(i-nBalancingLevel))));
-        }
-
-        if ((nBalancigElementsUpLevels==0)||((nBalancigElementsUpLevels+nBalancigElements)*0.1>nBalancigElementsUpLevels)) break;
-      }
-
-      if (nBalancingLevel>_MAX_REFINMENT_LEVEL_) nBalancingLevel=_MAX_REFINMENT_LEVEL_;
-
-      CreateSpaceFillingCurve(&startNodeFillingCurve,nBalancingLevel);
-      */
     }
 
 
@@ -10166,18 +10148,18 @@ if (TmpAllocationCounter==2437) {
       ParallelNodesDistributionList[i]=NULL;
 
       //deallocate the boundary layer
-#if _AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
-      if (DomainBoundaryLayerNodesList[i]!=NULL) { //exit(__LINE__,__FILE__,"not implemented");
-        node=DomainBoundaryLayerNodesList[i];
+      if (_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_) {
+        if (DomainBoundaryLayerNodesList[i]!=NULL) { //exit(__LINE__,__FILE__,"not implemented");
+          node=DomainBoundaryLayerNodesList[i];
 
-        while (node!=NULL) {
-          DeallocateBlock(node);
-          node=node->nextNodeThisThread;
+          while (node!=NULL) {
+            DeallocateBlock(node);
+            node=node->nextNodeThisThread;
+          }
+
+          DomainBoundaryLayerNodesList[i]=NULL;
         }
-
-        DomainBoundaryLayerNodesList[i]=NULL;
       }
-#endif
     }
 
     //redistribute the load on the root processor
@@ -10338,7 +10320,7 @@ if (TmpAllocationCounter==2437) {
 
       pipe.closeRecvAll();
 
-      fprintf(DiagnospticMessageStream,"$PREFIX:Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tBlock's Number\n");
+      fprintf(DiagnospticMessageStream,"$PREFIX:Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
       int minThreadBlockNumber=-1,maxThreadBlockNumber=-1;
       double minLoadMeasure=-1.0,maxLoadMeasure=-1.0;
@@ -10449,20 +10431,8 @@ if (TmpAllocationCounter==2437) {
 
     if (nTotalBlocks!=nDistributedNodes) exit(__LINE__,__FILE__,"Error: some nodes were lost during the load rebalancing");
 
-//    delete [] nResolutionLevelBlocks;
-
     //clear the node's load sample
     SetConstantParallelLoadMeasure(0.0,rootTree);
-
-    /*
-    //deallocate blocks from the subdomain boundary layer
-    node=DomainBoundaryLayerNodesList[ThisThread];
-
-    while (node!=NULL) {
-      DeallocateBlock(node);
-      node=node->nextNodeThisThread;
-    }
-    */
 
     //move the cells between processes according the new distribution
     pipe.openSend(0);
@@ -10474,8 +10444,6 @@ if (TmpAllocationCounter==2437) {
 
       while (node!=NULL) {
         if ((userDefinedCodeForSendingBlockData!=-1)&&(node->Thread!=thread)&&((ThisThread==node->Thread)||(ThisThread==thread))) { //the block is moved from processor=node->Thread to processor=thread
-//          exit(__LINE__,__FILE__,"blocks' exchange is not implemented"); //userDefinedCodeForSendingBlockData
-
           if (ThisThread==thread) { //the block is moved to processor 'thread'
             if (pipeLastRecvThread!=node->Thread) {
               pipe.RedirectRecvBuffer(node->Thread);
@@ -10483,7 +10451,6 @@ if (TmpAllocationCounter==2437) {
             }
 
             AllocateBlock(node);
-//            InitCellMeasure(node);
             node->block->recvMoveBlockAnotherProcessor(&pipe,node->Thread,node);
           }
           else { //the block is moved out from the processor
