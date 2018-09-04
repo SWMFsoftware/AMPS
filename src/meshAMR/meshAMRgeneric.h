@@ -9991,6 +9991,92 @@ if (TmpAllocationCounter==2437) {
   }
 */
 
+  void GetTotalBlockNumber(int *res,cTreeNodeAMR<cBlockAMR>* node) {
+    bool flag=false;
+    int iDownNode;
+
+    if (node==rootTree) *res=0;
+
+    for (iDownNode=0;iDownNode<(1<<_MESH_DIMENSION_);iDownNode++) {
+      if (node->downNode[iDownNode]!=NULL) {
+        flag=true;
+        GetTotalBlockNumber(res,node->downNode[iDownNode]);
+      }
+    }
+
+    if (flag==false) (*res)++;
+  };
+
+  void GetDomainDecompositionSignature(const char* msg=NULL) {
+    int thread;
+    cTreeNodeAMR<cBlockAMR> *node;
+    CRC32 checksum[nTotalThreads],Signature;
+    int nTotalBlocks[nTotalThreads];
+
+    for (thread=0;thread<nTotalThreads;thread++) {
+      nTotalBlocks[thread]=0;
+
+      for (node=ParallelNodesDistributionList[thread];node!=NULL;node=node->nextNodeThisThread) {
+        checksum[thread].add(node->xmin,3);
+        checksum[thread].add(node->xmax,3);
+
+        Signature.add(node->xmin,3);
+        Signature.add(node->xmax,3);
+
+        nTotalBlocks[thread]++;
+      }
+    }
+
+    //compare the checksums of the domain decompositions
+    int GlobalTotalBlocksTable[nTotalThreads];
+    unsigned long CheckSumVector[nTotalThreads];
+    unsigned long GlobalCheckSumTable[nTotalThreads*nTotalThreads];
+
+    for (thread=0;thread<nTotalThreads;thread++) CheckSumVector[thread]=checksum[thread].checksum();
+
+    MPI_Gather(&CheckSumVector,nTotalThreads,MPI_UNSIGNED_LONG,GlobalCheckSumTable,nTotalThreads,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      if (msg!=NULL) {
+        printf("Domain Decomposition Signature is 0x%lx  (msg=%s):\n",Signature.checksum(),msg);
+      }
+      else {
+        printf("Domain Decomposition Signature is 0x%lx\n",Signature.checksum());
+      }
+
+      printf("Thread\tNumber of Blocks:\n");
+      for (thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\n",thread,nTotalBlocks[thread]);
+    }
+
+    //get the total number of bloks
+    int nTotalMeshBlocks=0;
+
+    GetTotalBlockNumber(&nTotalMeshBlocks,rootTree);
+
+    MPI_Gather(&nTotalMeshBlocks,1,MPI_INT,GlobalTotalBlocksTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The total number of blocks: %i\n",nTotalMeshBlocks);
+
+      for (thread=1;thread<nTotalThreads;thread++) if (GlobalTotalBlocksTable[thread]!=nTotalMeshBlocks) exit(__LINE__,__FILE__,"Error: the number of blocks is inconsistent");
+
+      for (thread=1;thread<nTotalThreads;thread++) {
+        for (int t=0;t<nTotalThreads;t++) if (CheckSumVector[t]!=GlobalCheckSumTable[t+thread*nTotalThreads]) {
+          exit(__LINE__,__FILE__,"Error: the domain decomposition list 'ParallelNodesDistributionList' is not consistent");
+        }
+      }
+    }
+  }
+
+  void GetDomainDecompositionSignature(long int nline,const char* fname) {
+    char message[1000];
+
+    sprintf(message," line=%ld, file=%s",nline,fname);
+    GetDomainDecompositionSignature(message);
+  }
+
+
+
 
   long int nParallelListRedistributions;
 
@@ -10219,6 +10305,9 @@ if (TmpAllocationCounter==2437) {
     pipe.closeBcast();
     
     if (UserProcessParallelNodeDistributionList!=NULL) UserProcessParallelNodeDistributionList(ParallelNodesDistributionList);
+
+    //output signature of the domain decomposition
+    GetDomainDecompositionSignature(__LINE__,__FILE__);
 
     //check if the nodes' distribution is the same on all processors
     if (ThisThread==0) {
