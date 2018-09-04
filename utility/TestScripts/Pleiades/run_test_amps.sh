@@ -114,14 +114,19 @@ cp -r BATL PGI/AMPS/
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
+./utility/TestScripts/BuildTest.pl -test-run-time=90
+
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
+./utility/TestScripts/BuildTest.pl -test-run-time=90
+
 #>PGIAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >>& test_amps.log    
+./utility/TestScripts/BuildTest.pl -test-run-time=90
 
 # copy job files to the AMPS directory on supercomputers
 #>Pleiades ###############################################
@@ -185,9 +190,11 @@ echo Compiling of AMPS is completed
 #Execute the tests 
 source $HOME/.cshrc
 #$HOME/bin/RunAllPleiades.sh
+#perl $HOME/bin/RunAllPleiades.pl
 
-perl $HOME/bin/RunAllPleiades.pl
-
-
+# Run test
+foreach job (test_amps.pleiades.all*.job) #
+   qsub $job
+end
 
 
