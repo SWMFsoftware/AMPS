@@ -2866,6 +2866,18 @@ namespace PIC {
       }
     }
 
+    //functions used to move blocks between procesees as a part of the domain re-decomposisiton
+    namespace MoveBlock {
+      const int _NEW_BLOCK_ID_SIGNAL_=       0;
+      const int _CENTRAL_NODE_NUMBER_SIGNAL_=1;
+      const int _NEW_PARTICLE_SIGNAL_=       2;
+      const int _END_COMMUNICATION_SIGNAL_=  3;
+
+      void GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength);
+      int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+      int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+    }
+
     //tratment of the cut-cells
     namespace IrregularSurface {
       using namespace CutCell;
