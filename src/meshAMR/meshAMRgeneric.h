@@ -10516,7 +10516,7 @@ if (TmpAllocationCounter==2437) {
     int MoveOutRequestTableSize=0,MoveInRequestTableSize=0;
 
     for (thread=0;thread<nTotalThreads;thread++) {
-      if (MoveInNodeTableSize[thread]!=NULL) {
+      if (MoveInNodeTableSize[thread]!=0) {
         MoveInDataSizeTable[thread]=new int [MoveInNodeTableSize[thread]];
 
         //schedule reciving of the table
@@ -10565,7 +10565,7 @@ if (TmpAllocationCounter==2437) {
       SendBlockMaxMessageSize[thread]=0,RecvBlockMaxMessageSize[thread]=0;
       LastRecvMessageSize[thread]=0;
 
-      if (MoveInNodeTableSize[thread]!=NULL) {
+      if (MoveInNodeTableSize[thread]!=0) {
         for (inode=0,MaxSize=0;inode<MoveInNodeTableSize[thread];inode++) if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
 
         if (MaxSize>MessageSizeLimit) {
