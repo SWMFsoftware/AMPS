@@ -1589,6 +1589,12 @@ void PIC::Init_BeforeParser() {
   PIC::Mesh::mesh.fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
   PIC::Mesh::mesh.fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
 
+  //set function that are used for moving blocks during the domain re-decomposition
+  PIC::Mesh::mesh.fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
+  PIC::Mesh::mesh.fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
+  PIC::Mesh::mesh.fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+
+
 
 /*
   //init the particle buffer
