@@ -2138,7 +2138,7 @@ if (nLoopCycle>100) {
         if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
         for (idim=0;idim<3;idim++) {
-          xInit[idim]+=dtIntersection*vInit[idim]-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh.EPS;
+          xInit[idim]+=dtIntersection*vInit[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
           vInit[idim]+=dtIntersection*acclInit[idim];
         } 
 
@@ -2992,7 +2992,7 @@ exit(__LINE__,__FILE__,"not implemented");
          if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
          for (idim=0;idim<3;idim++) {
-           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh.EPS;
+           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
            vInit[idim]+=dtIntersection*acclMiddle[idim];
          } 
 
