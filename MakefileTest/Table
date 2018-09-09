@@ -413,7 +413,7 @@ Run=
 Name=test/ices-reader@@(0+valeriy) 
 
 Time=2
-ExeptionCode=SKIP{intel}
+ExeptionCode=SKIP{icc}
 ExeptionCode=SKIP{gcc}
 
 Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
