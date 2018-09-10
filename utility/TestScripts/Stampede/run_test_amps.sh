@@ -62,7 +62,7 @@ if (-e AMPS) then
   cd ../AMPS; git pull
   cd SWMF_data; git pull
 
-  cd ../../
+  cd $WorkDir/Tmp_AMPS_test 
 else
   gitclone AMPS
   gitclone AMPS_Legacy
@@ -78,6 +78,7 @@ endif
 #>GNUAll ############################
 mkdir -p GNU;   cp -r AMPS GNU/;  
 cp -r BATL GNU/AMPS/
+
 #>IntelAll ##########################
 mkdir -p Intel; cp -r AMPS Intel/;
 cp -r BATL Intel/AMPS/
