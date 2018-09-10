@@ -384,7 +384,7 @@ void PIC::Parallel::ExchangeParticleData() {
       SendParticleDataRequestTableLength++;
     }
 
-    To++;
+    if (To<PIC::nTotalThreads) To++;
   }
 
   //in case the order that particles are recieved has to be conserved
