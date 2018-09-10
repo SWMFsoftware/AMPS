@@ -300,8 +300,8 @@ void PIC::Parallel::ExchangeParticleData() {
     }
 
     //send the particle data message if there is something to send
-    if ((To<PIC::nTotalThreads)&&(To!=PIC::ThisThread)&&(SendMessageLengthTable[To]!=0)) {
-      //there is something to send => pacj the data and send it
+    if (To<PIC::nTotalThreads) if ((To!=PIC::ThisThread)&&(SendMessageLengthTable[To]!=0)) {
+      //there is something to send => pack the data and send it
       bool CommunicationInitialed_BLOCK_;
       int iCell,jCell,kCell;
       bool CellParticleTableModified;
