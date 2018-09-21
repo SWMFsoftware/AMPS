@@ -743,6 +743,24 @@ Check=
 
 <#
 -------------------------------------------------------------------------------
+Name=test/magnetic-reconnection
+Time=10
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_magnetic-reconnection_compile..." > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/magnetic-reconnection ${TESTmagnetic-reconnectionKEYS}
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection.diff
+
+
+-------------------------------------------------------------------------------
 #>
 Name=test/fast-wave
 Time=3
