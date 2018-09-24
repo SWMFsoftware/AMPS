@@ -755,10 +755,21 @@ Compile=
 >>>@echo "test_magnetic-reconnection_compile..." > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
->>>./Config.pl -application=test/magnetic-reconnection ${TESTmagnetic-reconnectionKEYS}
+>>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnectionKEYS}
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection.diff
+
+Check=
+>>>@echo "test_magnetic-reconnection_check..." >> test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
+>>>-@${TESTmagnetic-reconnectionDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnectionDIR}/PIC_reconnect_out=200.dat 10
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \ 
+>>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10.ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff;)
+
+>>>@ls -l test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
+>>>@echo Test test_magnetic-reconnection has finished: `date`
+
 <#
 
 -------------------------------------------------------------------------------
