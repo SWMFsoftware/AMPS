@@ -743,6 +743,7 @@ Check=
 
 <#
 -------------------------------------------------------------------------------
+#>
 Name=test/magnetic-reconnection
 Time=10
 
@@ -758,7 +759,7 @@ Compile=
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection.diff
-
+<#
 
 -------------------------------------------------------------------------------
 #>
