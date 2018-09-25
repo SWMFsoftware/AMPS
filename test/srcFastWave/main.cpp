@@ -668,7 +668,7 @@ int main(int argc,char **argv) {
 
     }
   
-  PIC::RunTimeSystemState::CumulitaveTiming::Print();
+  PIC::RunTimeSystemState::CumulativeTiming::Print();
   MPI_Finalize();
   
   TimeValue=time(NULL);
