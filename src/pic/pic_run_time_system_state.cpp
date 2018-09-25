@@ -288,7 +288,7 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(const char *f
 }
 
 //print the cumulative time of the model run
-void PIC::RunTimeSystemState::CumulitaveTiming::Print() {
+void PIC::RunTimeSystemState::CumulativeTiming::Print() {
   if (PIC::ThisThread==0) {
     printf("$PREFIX: Cumulative execution time report:\n");
 
@@ -303,6 +303,10 @@ void PIC::RunTimeSystemState::CumulitaveTiming::Print() {
     printf("$PREFIX: SamplingTime=%e\n",SamplingTime);
     printf("$PREFIX: IterationExecutionTime=%e\n",IterationExecutionTime);
     printf("$PREFIX: TotalRunTime=%e\n",TotalRunTime);
+
+
+    //call other function used for timing
+    for (auto& it : PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable) it();
   }
 }
 
