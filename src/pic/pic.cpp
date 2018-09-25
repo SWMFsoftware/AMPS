@@ -204,7 +204,7 @@ int PIC::TimeStep() {
 #endif
 
   SamplingTime=MPI_Wtime()-SamplingTime;
-  RunTimeSystemState::CumulitaveTiming::SamplingTime+=SamplingTime;
+  RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
 //#endif
 
   //injection boundary conditions
@@ -232,7 +232,7 @@ int PIC::TimeStep() {
   }
 
   InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
-  RunTimeSystemState::CumulitaveTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
+  RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
 
 
   //simulate particle collisions
@@ -251,7 +251,7 @@ int PIC::TimeStep() {
   #endif
 
   ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
-  RunTimeSystemState::CumulitaveTiming::ParticleCollisionTime+=ParticleCollisionTime;
+  RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
 #endif
 
   //simulate collisions with the background atmosphere
@@ -268,7 +268,7 @@ int PIC::TimeStep() {
   #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
 
   BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
-  RunTimeSystemState::CumulitaveTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
+  RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
 #elif _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__STOPPING_POWER_
   MolecularCollisions::StoppingPowerModel::ModelProcessor();
 #endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
@@ -279,7 +279,7 @@ int PIC::TimeStep() {
   PhotoChemistryTime=MPI_Wtime();
   ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
   PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
-  RunTimeSystemState::CumulitaveTiming::PhotoChemistryTime+=PhotoChemistryTime;
+  RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   #endif  //_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
 
   //perform user-define processing of the model particles
@@ -288,7 +288,7 @@ int PIC::TimeStep() {
   UserDefinedParticleProcessingTime=MPI_Wtime();
   PIC::UserParticleProcessing::Processing();
   UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
-  RunTimeSystemState::CumulitaveTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
+  RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
 #endif
 
   //move existing particles
@@ -300,7 +300,7 @@ int PIC::TimeStep() {
   }
   isFirstMove=false;
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
-  RunTimeSystemState::CumulitaveTiming::ParticleMovingTime+=ParticleMovingTime;
+  RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
   //check the consistence of the particles lists
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -314,7 +314,7 @@ int PIC::TimeStep() {
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
-  RunTimeSystemState::CumulitaveTiming::ParticleExchangeTime+=ParticleExchangeTime;
+  RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
   #if _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_
@@ -342,12 +342,12 @@ int PIC::TimeStep() {
   #endif
 
   FieldSolverTime=MPI_Wtime()-FieldSolverTime;
-  RunTimeSystemState::CumulitaveTiming::FieldSolverTime+=FieldSolverTime;
+  RunTimeSystemState::CumulativeTiming::FieldSolverTime+=FieldSolverTime;
   #endif //_PIC_FIELD_SOLVER_MODE_
 
   IterationExecutionTime=MPI_Wtime()-StartTime;
   summIterationExecutionTime+=IterationExecutionTime;
-  RunTimeSystemState::CumulitaveTiming::IterationExecutionTime+=IterationExecutionTime;
+  RunTimeSystemState::CumulativeTiming::IterationExecutionTime+=IterationExecutionTime;
 
   //in case the dust model is turned on: re-distribute the dust particles in the velocity groups
   #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -375,7 +375,7 @@ int PIC::TimeStep() {
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime();
   _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_();
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime()-UserDefinedMPI_RoutineExecutionTime;
-  RunTimeSystemState::CumulitaveTiming::UserDefinedMPI_RoutineExecutionTime+=UserDefinedMPI_RoutineExecutionTime;
+  RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime+=UserDefinedMPI_RoutineExecutionTime;
 #endif
 
   //update the glabal time counter if needed
@@ -719,7 +719,7 @@ int PIC::TimeStep() {
     }
   }
 
-  PIC::RunTimeSystemState::CumulitaveTiming::TotalRunTime+=MPI_Wtime()-StartTime;
+  PIC::RunTimeSystemState::CumulativeTiming::TotalRunTime+=MPI_Wtime()-StartTime;
   return _PIC_TIMESTEP_RETURN_CODE__SUCCESS_;
 
 }
