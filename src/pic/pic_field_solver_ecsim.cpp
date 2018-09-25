@@ -38,6 +38,25 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
 int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
 
 
+double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateETime=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalRunTime=0.0;
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
+  if (PIC::ThisThread==0) {
+    printf("\n$PREFIX: Electromagnetic::ECSIM timing:\n");
+    printf("$PREFIX: SolveTime=%e\n",SolveTime);
+    printf("$PREFIX: UpdateBTime=%e\n",UpdateBTime);
+    printf("$PREFIX: UpdateETime=%e\n",UpdateETime);
+    printf("$PREFIX: UpdateJMassMatrixTime=%e\n",UpdateJMassMatrixTime);
+    printf("$PREFIX: TotalRunTime=%e\n",TotalRunTime);
+  }
+}
+
+
+
 //location of the solver's data in the corner node associated data vector
 int PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
 
@@ -192,6 +211,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   //register the linear system solver with the core 
   PIC::RegisterLinearSolver(&Solver); 
 
+  //set function for timing of the field solver
+  PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable.push_back(CumulativeTiming::Print);
 
   if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
     exit(__LINE__,__FILE__,"Error: reinitialization of the magnetic field offset");
@@ -1357,15 +1378,34 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   
   //perform the rest of the field solver calculstions
-  UpdateJMassMatrix(); 
+  double t0,t1,StartTime=MPI_Wtime();
+
+  t0=StartTime;
+  UpdateJMassMatrix();
+  t1=MPI_Wtime();
+  CumulativeTiming::UpdateJMassMatrixTime+=t1-t0;
+
+
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
-   
+
+  t0=MPI_Wtime();
   linear_solver_matvec_c = matvec;
   Solver.Solve(SetInitialGuess,ProcessFinalSolution,1e-8,200,PackBlockData_E,UnpackBlockData_E);
-  UpdateB();
-  UpdateE();
+  t1=MPI_Wtime();
+  CumulativeTiming::SolveTime+=t1-t0;
 
+  t0=t1;
+  UpdateB();
+  t1=MPI_Wtime();
+  CumulativeTiming::UpdateBTime+=t1-t0;
+
+  t0=t1;
+  UpdateE();
+  t1=MPI_Wtime();
+  CumulativeTiming::UpdateETime+=t1-t0;
+
+  CumulativeTiming::TotalRunTime+=MPI_Wtime()-StartTime;
  }
 
 
