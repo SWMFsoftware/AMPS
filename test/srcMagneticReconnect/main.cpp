@@ -622,7 +622,7 @@ int main(int argc,char **argv) {
   totalIter = 1000;
 
   if (_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) {
-    totalIter=100;
+    totalIter=201;
   }
       
   switch (_PIC_BC__PERIODIC_MODE_) {
