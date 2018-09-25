@@ -1382,6 +1382,15 @@ namespace PIC {
     void GetMeanParticleMicroscopicParameters(FILE* fout,const char *msg=NULL);
     void GetMeanParticleMicroscopicParameters(FILE* fout,long int nline,const char *fname);
     void GetMeanParticleMicroscopicParameters(const char *fname);
+
+    //timing of the code execution
+    namespace CumulitaveTiming {
+      extern double UserDefinedMPI_RoutineExecutionTime,ParticleMovingTime,FieldSolverTime;
+      extern double PhotoChemistryTime,InjectionBoundaryTime,ParticleExchangeTime,SamplingTime;
+      extern double IterationExecutionTime,TotalRunTime,ParticleCollisionTime;
+
+      void Print();
+    }
   }
 
 

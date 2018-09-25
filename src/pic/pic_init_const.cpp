@@ -47,3 +47,10 @@ char PIC::UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_]="/Users/dborovik/AMPS_
 unsigned char PIC::Mesh::cDataCornerNode::FlagTableStatusVector=7; ///0b111;
 unsigned char PIC::Mesh::cDataCenterNode::FlagTableStatusVector=3; ///0b011;
 
+//timing of the code execution
+double PIC::RunTimeSystemState::CumulitaveTiming::UserDefinedMPI_RoutineExecutionTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::ParticleMovingTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::FieldSolverTime=0.0;
+double PIC::RunTimeSystemState::CumulitaveTiming::PhotoChemistryTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::InjectionBoundaryTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::ParticleExchangeTime=0.0;
+double PIC::RunTimeSystemState::CumulitaveTiming::SamplingTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::ParticleCollisionTime=0.0;
+double PIC::RunTimeSystemState::CumulitaveTiming::TotalRunTime=0.0,PIC::RunTimeSystemState::CumulitaveTiming::IterationExecutionTime=0.0;
+
+

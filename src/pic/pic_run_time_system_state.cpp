@@ -287,3 +287,24 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(const char *f
   if (PIC::ThisThread==0) fclose(fout);
 }
 
+//print the cumulative time of the model run
+void PIC::RunTimeSystemState::CumulitaveTiming::Print() {
+  if (PIC::ThisThread==0) {
+    printf("$PREFIX: Cumulative execution time report:\n");
+
+    if (_PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_) printf("$PREFIX: UserDefinedMPI_RoutineExecutionTime=%e\n",UserDefinedMPI_RoutineExecutionTime);
+    printf("$PREFIX: ParticleMovingTime=%e\n",ParticleMovingTime);
+    if (_PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__OFF_) printf("$PREFIX: FieldSolverTime=%e\n",FieldSolverTime);
+    if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) printf("$PREFIX: PhotoChemistryTime=%e\n",PhotoChemistryTime);
+    if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) printf("$PREFIX: ParticleCollisionTime=%e\n",ParticleCollisionTime);
+
+    printf("$PREFIX: InjectionBoundaryTime=%e\n",InjectionBoundaryTime);
+    printf("$PREFIX: ParticleExchangeTime=%e\n",ParticleExchangeTime);
+    printf("$PREFIX: SamplingTime=%e\n",SamplingTime);
+    printf("$PREFIX: IterationExecutionTime=%e\n",IterationExecutionTime);
+    printf("$PREFIX: TotalRunTime=%e\n",TotalRunTime);
+  }
+}
+
+
+
