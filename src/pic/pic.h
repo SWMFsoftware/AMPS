@@ -1384,10 +1384,13 @@ namespace PIC {
     void GetMeanParticleMicroscopicParameters(const char *fname);
 
     //timing of the code execution
-    namespace CumulitaveTiming {
+    namespace CumulativeTiming {
       extern double UserDefinedMPI_RoutineExecutionTime,ParticleMovingTime,FieldSolverTime;
       extern double PhotoChemistryTime,InjectionBoundaryTime,ParticleExchangeTime,SamplingTime;
       extern double IterationExecutionTime,TotalRunTime,ParticleCollisionTime;
+
+      typedef void (*fPrintTiming)();
+      extern vector<fPrintTiming> PrintTimingFunctionTable;
 
       void Print();
     }
@@ -5927,6 +5930,17 @@ namespace FieldSolver {
             extern double cDt;
             extern double theta;
             extern double LightSpeed;
+
+            //timing of the solver execution
+            namespace CumulativeTiming {
+              extern double UpdateJMassMatrixTime;
+              extern double SolveTime;
+              extern double UpdateBTime;
+              extern double UpdateETime;
+              extern double TotalRunTime;
+
+              void Print();
+            }
 
             //location of the solver's data in the corner node associated data vector
             extern int CornerNodeAssociatedDataOffsetBegin,CornerNodeAssociatedDataOffsetLast;  //CornerNodeAssociatedDataOffsetLast still belongs to the solver
