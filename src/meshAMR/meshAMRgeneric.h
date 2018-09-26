@@ -1199,6 +1199,9 @@ public:
   int (*fPackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
   int (*fUnpackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
+  //Flag: populate center and corner 'ghost' nodes that are outside of the domain. The feature is needed when the code is used in the embedded PIC mode
+  bool PopulateOutsideDomainNodesFlag;
+
   //the root block;
   cBlockAMR *rootBlock;
   double dxRootBlock[3];
@@ -1870,6 +1873,8 @@ public:
      //functions used to move blocks between MPI processes as a result of the domain re-decomposistion
      fGetMoveBlockDataSize=NULL,fPackMoveBlockData=NULL,fUnpackMoveBlockData=NULL;
 
+     //Flag: populate center and corner 'ghost' nodes that are outside of the domain. The feature is needed when the code is used in the embedded PIC mode
+     PopulateOutsideDomainNodesFlag=false;
   }
 
   //register the 'internal boundary' (the surface determining cut cells)
@@ -3846,22 +3851,10 @@ if (startNode->Temp_ID==77) {
         break;
       }
 
-      if (OutsideDomainFlag==true) {
+      if ((OutsideDomainFlag==true)&&(PopulateOutsideDomainNodesFlag==false)) {
         startNode->block->SetCornerNode(NULL,nd);
         continue;
       }
-
-
-
-//==========================    DEBUG ======================
-/*
-      if ((fabs(x[0]+225)<EPS)&&(fabs(x[1]+225)<EPS)&&(fabs(x[2]+12.5)<EPS)) {
-  *DiagnospticMessageStream << __LINE__ << std::endl;
-}
-*/
-//========================== END DEBUG ===========================
-
-
 
       ptrCornerNode=CornerNodes.newElement();
       ptrCornerNode->SetX(x);
@@ -3932,7 +3925,7 @@ if (startNode->Temp_ID==77) {
         break;
       }
 
-      if (OutsideDomainFlag==true) {
+      if ((OutsideDomainFlag==true)&&(PopulateOutsideDomainNodesFlag==false)) {
         startNode->block->SetCenterNode(NULL,nd);
         continue;
       }
