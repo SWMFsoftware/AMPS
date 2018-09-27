@@ -1242,21 +1242,19 @@ void PIC::Sampling::Sampling() {
       #if _CUT_CELL__TRIANGULAR_FACE__USER_DATA__MODE_ == _ON_AMR_MESH_
       //output the data sampled on the triangulated cut-cells
       sprintf(fname,"%s/amps.cut-cell.surface-data.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-      CutCell::PrintSurfaceData(fname);
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) CutCell::PrintSurfaceData(fname);
       #endif
 
       #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
       //print sampled particle trajectories
       sprintf(fname,"%s/amps.TrajectoryTracking.out=%ld",OutputDataFileDirectory,DataOutputFileNumber);
-      PIC::ParticleTracker::OutputTrajectory(fname);
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleTracker::OutputTrajectory(fname);
       #endif
 
       #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
       //print sampled data along field lines
-      sprintf(fname,
-              "%s/amps.FieldLines.out=%ld.dat",
-              OutputDataFileDirectory,DataOutputFileNumber);
-      PIC::FieldLine::Output(fname, false);
+      sprintf(fname,"%s/amps.FieldLines.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname, false);
       #endif
 
       //print the macroscopic parameters of the flow
@@ -1271,7 +1269,7 @@ void PIC::Sampling::Sampling() {
 
         if (DataOutputFileNumber>=FirstPrintedOutputFile) {
           if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_) {
-            PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+            if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
           }
         }
 
@@ -1284,22 +1282,22 @@ void PIC::Sampling::Sampling() {
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_ON_
         if (PIC::DistributionFunctionSample::SamplingInitializedFlag==true) {
           sprintf(fname,"%s/pic.distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          PIC::DistributionFunctionSample::printDistributionFunction(fname,s);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::DistributionFunctionSample::printDistributionFunction(fname,s);
         }
 
         if (PIC::EnergyDistributionSampleRelativistic::SamplingInitializedFlag==true) {
           sprintf(fname,"%s/pic.energy-distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(fname,s);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(fname,s);
         }
 
         if (PIC::ParticleFluxDistributionSample::SamplingInitializedFlag==true) {
           sprintf(fname,"%s/pic.flux.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          PIC::ParticleFluxDistributionSample::printMacroscopicParameters(fname,s);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleFluxDistributionSample::printMacroscopicParameters(fname,s);
         }
 
-	if (PIC::PitchAngleDistributionSample::SamplingInitializedFlag==true) {
+        if (PIC::PitchAngleDistributionSample::SamplingInitializedFlag==true) {
           sprintf(fname,"%s/pic.pitch_angle.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
-          PIC::PitchAngleDistributionSample::printDistributionFunction(fname,s);
+          if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::PitchAngleDistributionSample::printDistributionFunction(fname,s);
         }
 
 #endif
@@ -1308,11 +1306,13 @@ void PIC::Sampling::Sampling() {
       //save the sampling data restart file in case when the macroscopic data are downloaded from remote host for post-processing
       if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_) {
         sprintf(fname,"%s/pic.SamplingDataRestart.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-        PIC::Restart::SamplingData::Save(fname);
+        if ((SupressRestartFilesFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Restart::SamplingData::Save(fname);
       }
 
       //print the sampled local data sets of the user defined functions
-      for (int nfunc=0;nfunc<PIC::Sampling::ExternalSamplingLocalVariables::SamplingRoutinesRegistrationCounter;nfunc++) PIC::Sampling::ExternalSamplingLocalVariables::PrintOutputFile[nfunc](DataOutputFileNumber);
+      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0))for (int nfunc=0;nfunc<PIC::Sampling::ExternalSamplingLocalVariables::SamplingRoutinesRegistrationCounter;nfunc++) {
+        PIC::Sampling::ExternalSamplingLocalVariables::PrintOutputFile[nfunc](DataOutputFileNumber);
+      }
 
       //print the sampled total production rate due to volume injection
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_

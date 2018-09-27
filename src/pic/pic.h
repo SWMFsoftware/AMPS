@@ -3088,6 +3088,9 @@ namespace PIC {
 
     }
 
+    //supress output of the sampled macrospcopic data
+    extern bool SupressOutputFlag,SupressRestartFilesFlag;
+    extern int SkipOutputStep;
 
 
     void Sampling();

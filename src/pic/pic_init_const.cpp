@@ -55,4 +55,8 @@ double PIC::RunTimeSystemState::CumulativeTiming::TotalRunTime=0.0,PIC::RunTimeS
 double PIC::RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime=0.0;
 vector<PIC::RunTimeSystemState::CumulativeTiming::fPrintTiming> PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable;
 
+//supress output of the sampled macrospcopic data
+bool PIC::Sampling::SupressOutputFlag=false,PIC::Sampling::SupressRestartFilesFlag=false;
+int PIC::Sampling::SkipOutputStep=1;
+
 
