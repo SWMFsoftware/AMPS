@@ -1388,6 +1388,7 @@ namespace PIC {
       extern double UserDefinedMPI_RoutineExecutionTime,ParticleMovingTime,FieldSolverTime;
       extern double PhotoChemistryTime,InjectionBoundaryTime,ParticleExchangeTime,SamplingTime;
       extern double IterationExecutionTime,TotalRunTime,ParticleCollisionTime;
+      extern double BackgroundAtmosphereCollisionTime,UserDefinedParticleProcessingTime;
 
       typedef void (*fPrintTiming)();
       extern vector<fPrintTiming> PrintTimingFunctionTable;

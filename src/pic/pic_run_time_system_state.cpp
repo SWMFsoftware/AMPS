@@ -298,6 +298,9 @@ void PIC::RunTimeSystemState::CumulativeTiming::Print() {
     if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) printf("$PREFIX: PhotoChemistryTime=%e\n",PhotoChemistryTime);
     if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) printf("$PREFIX: ParticleCollisionTime=%e\n",ParticleCollisionTime);
 
+    if (_PIC_BACKGROUND_ATMOSPHERE_MODE_==_PIC_BACKGROUND_ATMOSPHERE_MODE__ON_) printf("$PREFIX: BackgroundAtmosphereCollisionTime=%e\n",BackgroundAtmosphereCollisionTime);
+    if (_PIC_USER_PARTICLE_PROCESSING__MODE_==_PIC_MODE_ON_) printf("$PREFIX: UserDefinedParticleProcessingTime=%e\n",UserDefinedParticleProcessingTime);
+
     printf("$PREFIX: InjectionBoundaryTime=%e\n",InjectionBoundaryTime);
     printf("$PREFIX: ParticleExchangeTime=%e\n",ParticleExchangeTime);
     printf("$PREFIX: SamplingTime=%e\n",SamplingTime);
