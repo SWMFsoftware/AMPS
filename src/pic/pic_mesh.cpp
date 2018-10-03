@@ -18,7 +18,7 @@ namespace PIC {
 
     cDatumWeighted DatumParticleVelocity(3, "\"Vx [m/s]\", \"Vy [m/s]\", \"Vz [m/s]\"", true);
     cDatumWeighted DatumParticleVelocity2(3,"\"Vx^2 [(m/s)^2]\", \"Vy^2 [(m/s)^2]\", \"Vz^2 [(m/s)^2]\"", false);
-
+    cDatumWeighted DatumParticleVelocity2Tensor(3,"\"VxVy [(m/s)^2]\", \"VyVz [(m/s)^2]\", \"VzVx [(m/s)^2]\"", false);
     //-------------------------------------------------------------------------
     // IMPORTANT: some data may be oncluded only for certain species!!!!
     //if(GetSpecieType(DataSetNumber)==_PIC_SPECIE_TYPE__GAS_)
@@ -285,6 +285,10 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
     //temeprature is exeption: it needs avaraging of the mean velocity and mean squate of velocity are not
     //interpolated using the interpolation weights but are averaged
     double TotalParticleWeight=0.0,v[3]={0.0,0.0,0.0},v2[3]={0.0,0.0,0.0},vtemp[3],v2temp[3],w;
+#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+    double v2Tensor[3]={0,0,0}, v2TensorTemp[3];
+#endif
+
     double vParallelTangentialTemperatureSample[3]={0.0,0.0,0.0},v2ParallelTangentialTemperatureSample[3]={0.0,0.0,0.0};
     int iStencil,idim;
 
@@ -294,8 +298,14 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
       InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity, vtemp, s);
       InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity2,v2temp,s);
+#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+      InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity2Tensor,v2TensorTemp,s);
+#endif
 
       for (idim=0;idim<3;idim++) v[idim]+=vtemp[idim],v2[idim]+=v2temp[idim];
+#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+      for (idim=0;idim<3;idim++) v2Tensor[idim]+=v2TensorTemp[idim];
+#endif
 
       if ((w>0.0)&&(_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_)) {
          InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemepratureSample_Velocity,vtemp,s);
@@ -314,9 +324,14 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
       c=GetDatumCumulative(DatumParticleWeight,s)/TotalParticleWeight;
       for (idim=0;idim<3;idim++) v[idim]*=c,v2[idim]*=c;
-
+      
       SetDatum(&DatumParticleVelocity,v,s);
       SetDatum(&DatumParticleVelocity2,v2,s);
+
+#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+      for (idim=0;idim<3;idim++) v2Tensor[idim]*=c;
+      SetDatum(&DatumParticleVelocity2Tensor,v2Tensor,s);
+#endif
 
       if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
         for (idim=0;idim<3;idim++) {
@@ -377,6 +392,9 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   DatumParticleNumber.activate(offset, &DataSampledCenterNodeActive);
   DatumParticleVelocity.activate(offset, &DataSampledCenterNodeActive);
   DatumParticleVelocity2.activate(offset, &DataSampledCenterNodeActive);
+#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+  DatumParticleVelocity2Tensor.activate(offset, &DataSampledCenterNodeActive);
+#endif
   DatumParticleSpeed.activate(offset, &DataSampledCenterNodeActive);
   DatumTranslationalTemperature.activate(&cDataCenterNode::GetTranslationalTemperature, &DataDerivedCenterNodeActive);
 

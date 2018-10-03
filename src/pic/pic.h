@@ -2069,6 +2069,7 @@ namespace PIC {
     extern cDatumTimed    DatumNumberDensity;
     extern cDatumWeighted DatumParticleVelocity;
     extern cDatumWeighted DatumParticleVelocity2;
+    extern cDatumWeighted DatumParticleVelocity2Tensor;
     extern cDatumWeighted DatumParticleSpeed;
     extern cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity;
     extern cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity2;

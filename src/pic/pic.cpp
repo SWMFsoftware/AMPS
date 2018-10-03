@@ -809,7 +809,7 @@ void PIC::Sampling::Sampling() {
   shared (localSimulatedSpeciesParticleNumber,PIC::Mesh::mesh, \
      DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable, \
      PIC::IDF::_VIBRATIONAL_ENERGY_SAMPLE_DATA_OFFSET_, PIC::IDF::_ROTATIONAL_ENERGY_SAMPLE_DATA_OFFSET_,PIC::IDF::_TOTAL_SAMPLE_PARTICLE_WEIGHT_SAMPLE_DATA_OFFSET_,  \
-     PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity2,PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity,PIC::Mesh::DatumParticleSpeed,PIC::Mesh::DatumParticleVelocity2,PIC::Mesh::DatumParticleVelocity, \
+          PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity2,PIC::Mesh::DatumParallelTantentialTemepratureSample_Velocity,PIC::Mesh::DatumParticleSpeed,PIC::Mesh::DatumParticleVelocity2,PIC::Mesh::DatumParticleVelocity2Tensor,PIC::Mesh::DatumParticleVelocity, \
      PIC::Mesh::DatumNumberDensity,PIC::Mesh::DatumParticleNumber,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::Mesh::sampleSetDataLength,PIC::ParticleBuffer::ParticleDataLength, \
      PIC::Mesh::DatumParticleWeight, PIC::Sampling::constNormalDirection__SampleParallelTangentialTemperature, \
      PIC::IDF::nTotalVibtationalModes, cout)
@@ -988,6 +988,14 @@ void PIC::Sampling::Sampling() {
               cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity,v, s, LocalParticleWeight);
               cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
               cell->SampleDatum(&PIC::Mesh::DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
+            
+              #if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+              double v2tensor[3];
+              for (idim=0;idim<3;idim++) {
+                v2tensor[idim]=v[idim]*v[(idim+1)%3];
+              }
+              cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity2Tensor,v2tensor, s, LocalParticleWeight);
+              #endif
 
               #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
               #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_

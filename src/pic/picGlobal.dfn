@@ -158,6 +158,9 @@ at the end of each time step
 //sample normal and tangential kinetic temperature 
 #define _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_ _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__CONSTANT_DIRECTION_ORIGIN_
 
+//sample velocity tensor VxVy, VyVz, VzVx
+#define _PIC_SAMPLE__VELOCITY_TENSOR_MODE_  _PIC_MODE_OFF_
+
 //the default mode for the backgound atmosphere models
 #define _PIC_BACKGROUND_ATMOSPHERE_MODE_ _PIC_BACKGROUND_ATMOSPHERE_MODE__OFF_
 #define _PIC_BACKGROUND_ATMOSPHERE__LOAD_USER_DEFINITION__MODE_ _PIC_MODE_OFF_
