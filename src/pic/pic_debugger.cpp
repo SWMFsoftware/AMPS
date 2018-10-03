@@ -298,13 +298,33 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
 
 
       for (s=0;s<PIC::nTotalSpecies;s++) {
-        PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleWeghtRelativeOffset)),1,__LINE__,__FILE__);
-        PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleNumberRelativeOffset)),1,__LINE__,__FILE__);
-        PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleNumberDensityRelativeOffset)),1,__LINE__,__FILE__);
+        if (PIC::Mesh::DatumParticleWeight.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::DatumParticleWeight.offset)),1,__LINE__,__FILE__);
+        }
 
-        PIC::Debugger::CatchOutLimitValue((3*s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleVelocityRelativeOffset)),DIM,__LINE__,__FILE__);
-        PIC::Debugger::CatchOutLimitValue((3*s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleVelocity2RelativeOffset)),DIM,__LINE__,__FILE__);
-        PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleSpeedRelativeOffset)),1,__LINE__,__FILE__);
+        if (PIC::Mesh::DatumParticleNumber.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::DatumParticleNumber.offset)),1,__LINE__,__FILE__);
+        }
+
+        if (PIC::Mesh::DatumNumberDensity.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::DatumNumberDensity.offset)),1,__LINE__,__FILE__);
+        }
+
+  
+        if (PIC::Mesh::DatumParticleVelocity.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((3*s+(double*)(SamplingBuffer+PIC::Mesh::DatumParticleVelocity.offset)),DIM,__LINE__,__FILE__);
+        }
+
+
+        if (PIC::Mesh::DatumParticleVelocity2.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((3*s+(double*)(SamplingBuffer+PIC::Mesh::DatumParticleVelocity2.offset)),DIM,__LINE__,__FILE__);
+        }
+
+
+        if (PIC::Mesh::DatumParticleSpeed.is_active()==true) {
+          PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingBuffer+PIC::Mesh::DatumParticleSpeed.offset)),1,__LINE__,__FILE__);
+        }
+
       }
 
     }

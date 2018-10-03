@@ -2091,16 +2091,6 @@ namespace PIC {
     //4. The offset of the data buffer for 'collecting sample'
     
     //sampling data each specie
-    //a. for each specie
-    //1. particle weight
-    //2. particle number
-    //3. particle velocity[3]
-    //4. particle pow(velocity[3],2)
-    //b. sampling data requested for involved physical models and external species
-    extern int sampledParticleWeghtRelativeOffset,sampledParticleNumberRelativeOffset,sampledParticleNumberDensityRelativeOffset;
-    extern int sampledParticleVelocityRelativeOffset,sampledParticleVelocity2RelativeOffset,sampledParticleSpeedRelativeOffset;
-    extern int sampledParticleNormalParallelVelocityRelativeOffset,sampledParticleNormalParallelVelocity2RelativeOffset;
-    extern int sampledExternalDataRelativeOffset;
     extern int sampleSetDataLength;
     
     //user defiend functions for printing the 'center node' data into an output file
@@ -3095,41 +3085,6 @@ namespace PIC {
 
     void Sampling();
     void CatchOutLimitSampledValue();
-
-    //sample the particle data
-    inline void SampleParticleData(char* ParticleData,char *SamplingBuffer,PIC::Mesh::cDataBlockAMR *block,PIC::Mesh::cDataCenterNode *cell,double TimeStepFraction) {
-      double Speed2,*v,LocalParticleWeight,v2;
-      int s,idim;
-      double *sampledVelocityOffset,*sampledVelocity2Offset;
-
-
-      Speed2=0.0;
-
-      s=PIC::ParticleBuffer::GetI((PIC::ParticleBuffer::byte*)ParticleData);
-      v=PIC::ParticleBuffer::GetV((PIC::ParticleBuffer::byte*)ParticleData);
-
-      LocalParticleWeight=block->GetLocalParticleWeight(s);
-      LocalParticleWeight*=TimeStepFraction*PIC::ParticleBuffer::GetIndividualStatWeightCorrection((PIC::ParticleBuffer::byte*)ParticleData);
-
-      *(s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleWeghtRelativeOffset))+=LocalParticleWeight;
-      *(s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleNumberRelativeOffset))+=1;
-      *(s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleNumberDensityRelativeOffset))+=LocalParticleWeight/cell->Measure;
-
-
-      sampledVelocityOffset=3*s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleVelocityRelativeOffset);
-      sampledVelocity2Offset=3*s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleVelocity2RelativeOffset);
-
-      for (idim=0;idim<3;idim++) {
-        v2=v[idim]*v[idim];
-        Speed2+=v2;
-
-        *(idim+sampledVelocityOffset)+=v[idim]*LocalParticleWeight;
-        *(idim+sampledVelocity2Offset)+=v2*LocalParticleWeight;
-      }
-
-      *(s+(double*)(SamplingBuffer+PIC::Mesh::sampledParticleSpeedRelativeOffset))+=sqrt(Speed2)*LocalParticleWeight;
-
-    }
   }
 
   //colecular collisions

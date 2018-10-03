@@ -59,11 +59,6 @@ int PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset=0;
 
 //the offsets to the sampled data stored in 'center nodes'
 int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;
-
-int PIC::Mesh::sampledParticleWeghtRelativeOffset=0,PIC::Mesh::sampledParticleNumberRelativeOffset=0,PIC::Mesh::sampledParticleNumberDensityRelativeOffset=0;
-int PIC::Mesh::sampledParticleVelocityRelativeOffset=0,PIC::Mesh::sampledParticleVelocity2RelativeOffset=0,PIC::Mesh::sampledParticleSpeedRelativeOffset=0;
-int PIC::Mesh::sampledParticleNormalParallelVelocityRelativeOffset=0,PIC::Mesh::sampledParticleNormalParallelVelocity2RelativeOffset=0;
-int PIC::Mesh::sampledExternalDataRelativeOffset=0;
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops
@@ -396,8 +391,6 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 #endif
 
   //check if user defined sampling data is requested
-  sampledExternalDataRelativeOffset=offset;
-
   if (PIC::IndividualModelSampling::DataSampledList.size()!=0) {
     for (unsigned int i=0;i<PIC::IndividualModelSampling::DataSampledList.size();i++) PIC::IndividualModelSampling::DataSampledList[i]->activate(offset, &DataSampledCenterNodeActive);
   }
