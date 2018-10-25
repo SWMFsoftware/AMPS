@@ -222,7 +222,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
 
     if ((block=node->block)!=NULL) {
-      for (int i=0;i<_BLOCK_CELLS_X_+1;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
         if ((CornerNode=block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k)))!=NULL) {
           CornerNode->LinearSolverUnknownVectorIndex=-1;
         }
@@ -506,7 +506,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   //build the matrix
   for (nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-
+    if (node->block==NULL) continue;
     //in case of the periodic boundary condition it is only the points that are inside the "real" computational domain that are considered
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
