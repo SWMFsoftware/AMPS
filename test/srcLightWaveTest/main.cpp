@@ -374,7 +374,7 @@ void SetIC() {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::Periodic::UpdateData();
+      PIC::BC::ExternalBoundary::UpdateData();
       break;
     }
 }
@@ -590,7 +590,7 @@ int main(int argc,char **argv) {
       break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::UpdateData();
       break;
   }
   //PIC::FieldSolver::Init(); 
@@ -623,7 +623,7 @@ int main(int argc,char **argv) {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::Periodic::UpdateData();
+      PIC::BC::ExternalBoundary::UpdateData();
       break;
     }
     PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
@@ -699,7 +699,7 @@ int main(int argc,char **argv) {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::Periodic::UpdateData();
+      PIC::BC::ExternalBoundary::UpdateData();
       break;
     }
 
@@ -721,7 +721,7 @@ int main(int argc,char **argv) {
 	break;
 
       case _PIC_BC__PERIODIC_MODE_ON_:
-	PIC::BC::ExternalBoundary::Periodic::UpdateData();
+	PIC::BC::ExternalBoundary::UpdateData();
 	break;
       }
 

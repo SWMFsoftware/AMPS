@@ -446,7 +446,7 @@ void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, d
 
   PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
 
-  PIC::BC::ExternalBoundary::Periodic::UpdateData();
+  PIC::BC::ExternalBoundary::UpdateData();
  
   sprintf(wave_init_fname,"test%d-wave-init-updated.dat",iTest);
   PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
@@ -463,7 +463,7 @@ void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, d
     CurrentCornerNodeOffset=NextCornerNodeOffset;
     NextCornerNodeOffset=temp;
 
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::UpdateData();
 
     if (iter%5==0){
       char wave_fname[STRING_LENGTH];

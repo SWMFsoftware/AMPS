@@ -222,11 +222,11 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
 
 
 //update data between the 'real' and 'ghost' blocks
-void PIC::BC::ExternalBoundary::Periodic::UpdateData() {
+void PIC::BC::ExternalBoundary::UpdateData() {
   UpdateData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 }
 
-void PIC::BC::ExternalBoundary::Periodic::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
   int iBlockPair,RealBlockThread,GhostBlockThread;
 

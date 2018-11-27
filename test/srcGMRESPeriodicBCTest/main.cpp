@@ -569,7 +569,7 @@ int main(int argc,char **argv) {
         } 
       }
 
-PIC::BC::ExternalBoundary::Periodic::UpdateData();
+PIC::BC::ExternalBoundary::UpdateData();
 
       int t=CurrentCornerNodeOffset;
       CurrentCornerNodeOffset=NextCornerNodeOffset;
@@ -582,7 +582,7 @@ PIC::BC::ExternalBoundary::Periodic::UpdateData();
 
 
 
- PIC::BC::ExternalBoundary::Periodic::UpdateData();
+ PIC::BC::ExternalBoundary::UpdateData();
 
   TransportEquation::BuildMatrix();
 

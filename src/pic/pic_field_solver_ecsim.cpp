@@ -319,7 +319,7 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
   //update the 'ghost' cells and 'ghost' blocks
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData();
+    PIC::BC::ExternalBoundary::UpdateData();
     break;
   default:
     PIC::Mesh::mesh.ParallelBlockDataExchange();
@@ -1118,7 +1118,7 @@ void UpdateJMassMatrix(){
     PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyPeriodicJMassMatrix;
     PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
 
-    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
+    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
 
     PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
 
@@ -1222,7 +1222,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_B,UnpackBlockData_B);
+    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_B,UnpackBlockData_B);
     break;
   }
 }
@@ -1289,7 +1289,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::Periodic::UpdateData(PackBlockData_E,UnpackBlockData_E);
+    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_E,UnpackBlockData_E);
     break;
   }
  
