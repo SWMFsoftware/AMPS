@@ -230,12 +230,14 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
   int iBlockPair,RealBlockThread,GhostBlockThread;
 
+  using namespace PIC::BC::ExternalBoundary::Periodic;
   //exchange particle data
   ExchangeParticles();
 
   //update associated data accounting for the periodic boundary conditions
   PIC::Parallel::ProcessCornerBlockBoundaryNodes();
 
+#if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   //loop through all blocks
   for (iBlockPair=0;iBlockPair<BlockPairTableLength;iBlockPair++) {
     GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
@@ -251,6 +253,7 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
     }
   }
 
+#endif
   //update the associated data in the subdomain 'boundary layer' of blocks
   PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
 }
