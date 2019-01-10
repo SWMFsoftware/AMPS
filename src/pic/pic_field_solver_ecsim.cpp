@@ -15,16 +15,20 @@
 
 //using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
-
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
 
-cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
+PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedParticleBC  PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC;
+PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::Electromagnetic::ECSIM::setE_half_BC, 
+  PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
+  PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
+cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
+int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;
 int PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex=1;
@@ -36,6 +40,18 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
 int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
 int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
+
+int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUy_=2;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUz_=3;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUx_=4;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUy_=5;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
+int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
+int * PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 
 double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime=0.0;
@@ -72,8 +88,6 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
 double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
 #endif
 
-
-
 double TotalParticleEnergy=0.0;
 double TotalWaveEnergy=0.0;
 
@@ -90,7 +104,6 @@ double mass_conv = 1e3;
 double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
 double length_conv=1e2; 
 #endif
-
 
 
 //magnetic field
@@ -177,8 +190,29 @@ int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTab
       NULL,NULL,0);
 }
 
+int PackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
+  int dataLengthByte=(246+10*PIC::nTotalSpecies)*sizeof(double);
 
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      SendDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
+}
 
+int UnpackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
+  int dataLengthByte=(246+10*PIC::nTotalSpecies)*sizeof(double);
+
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      RecvDataBuffer,
+      &ibegin,&dataLengthByte,1,
+      NULL,NULL,0,
+      NULL,NULL,0);
+}
 
 
 
@@ -246,10 +280,22 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   //allocate memory for 81 mass matrix elements
   PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=243*sizeof(double);
   MassMatrixOffsetIndex = 9;
-    
-  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
-   
+
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_  
+  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=10*sizeof(double)*PIC::nTotalSpecies;
+  SpeciesDataIndex = new int[PIC::nTotalSpecies];
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) 
+    SpeciesDataIndex[iSp]=9+243+iSp*10; // 10 vars for each species
+#endif
   
+#if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+  OffsetB_corner = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength-
+    PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength += 6*sizeof(double);
+#endif
+
+  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+     
   PIC::Mesh::AddVaraibleListFunction(PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeVariableList);
   PIC::Mesh::PrintDataCenterNode.push_back(PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeData);
   PIC::Mesh::InterpolateCenterNode.push_back(PIC::FieldSolver::Electromagnetic::ECSIM::output::InterpolateCenterNode);
@@ -422,7 +468,46 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
   }
 
+#if _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ 
+
+  double eps=PIC::Mesh::mesh.EPS;
+  bool isFixed=false;
+  int indexG[3];
   
+  for (int idim=0; idim<3; idim++) {
+   
+    indexG[idim]=
+      (fabs(x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(x[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
+      round((x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-x[idim])/dx[idim]);
+    //minus value means outside the domain
+    //positive value means inside
+    if (indexG[idim]==0) {
+      isFixed=true;
+      break;
+    }
+  }
+  
+  if (isFixed){
+    
+    MatrixRowNonZeroElementTable[0].i=i;
+    MatrixRowNonZeroElementTable[0].j=j;
+    MatrixRowNonZeroElementTable[0].k=k;
+    MatrixRowNonZeroElementTable[0].MatrixElementValue=0.0;
+    MatrixRowNonZeroElementTable[0].iVar=iVar;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0]=1.0;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength=1;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
+    MatrixRowNonZeroElementTable[0].Node=node;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0]=NULL;
+    NonZeroElementsFound =1;
+    rhs =0.0;
+    RhsSupportLength_CenterNodes = 0;
+    RhsSupportLength_CornerNodes = 0;
+    return;
+  }
+
+#endif
+
   if (!initMassMatrixOffsetTable) computeMassMatrixOffsetTable(); 
 
   int indexAddition[3] = {0,-1,1};
@@ -487,8 +572,81 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
   
+    
+  //find corners outside the boundary
+  vector<int> pointLeft;
+  int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
+  for (int ii=0;ii<81;ii++) {
+    MatrixRowNonZeroElementTable[ii].Node=node;
 
-  NonZeroElementsFound=81;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeTemp = node;
+    int i0,j0,k0; //for test
+    i0 = MatrixRowNonZeroElementTable[ii].i;
+    j0 = MatrixRowNonZeroElementTable[ii].j;
+    k0 = MatrixRowNonZeroElementTable[ii].k;
+   
+    pointLeft.push_back(ii);
+    if (MatrixRowNonZeroElementTable[ii].Node==NULL || MatrixRowNonZeroElementTable[ii].Node->Thread==-1) {
+      pointLeft.pop_back();
+    }else{
+      double xlocal[3];
+      int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
+      int indexG_local[3];
+      bool isFixed=false;
+      for (int idim=0; idim<3; idim++) {
+        xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
+      }
+
+      for (int idim=0; idim<3; idim++) {
+        
+        indexG_local[idim]=
+           (fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
+          round((xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-xlocal[idim])/dx[idim]);
+        //minus value means outside the domain
+        //positive value means inside
+        if (indexG_local[idim]==0) {
+          isFixed=true;
+          break;
+        }
+      }
+
+      if (isFixed) pointLeft.pop_back();
+     
+    }//else
+    
+  }
+
+  for (int ii=0; ii<pointLeft.size();ii++){
+
+    int copyFrom = pointLeft[ii];
+
+    if (ii!=copyFrom){
+      MatrixRowNonZeroElementTable[ii].i=
+        MatrixRowNonZeroElementTable[copyFrom].i;
+      MatrixRowNonZeroElementTable[ii].j=
+        MatrixRowNonZeroElementTable[copyFrom].j;
+      MatrixRowNonZeroElementTable[ii].k=
+        MatrixRowNonZeroElementTable[copyFrom].k;
+      MatrixRowNonZeroElementTable[ii].MatrixElementValue=
+        MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
+      MatrixRowNonZeroElementTable[ii].iVar=
+        MatrixRowNonZeroElementTable[copyFrom].iVar;
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=
+        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=
+        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = 
+        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
+         
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=
+        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
+    }
+
+  }
+  
+  NonZeroElementsFound=pointLeft.size();
+
+  //NonZeroElementsFound=81;
 
   //  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
 
@@ -726,7 +884,7 @@ int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,2
 
 
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessPeriodicJMassMatrix(char * realData, char * ghostData){
+void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix(char * realData, char * ghostData){
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   
@@ -744,9 +902,31 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessPeriodicJMassMatrix(char *
 }
 
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData(char * realData, char * ghostData){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  
+  realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+  for (int ii=0;ii<3;ii++)   {
+    ((double*)realData)[JxOffsetIndex+ii]+=((double*)ghostData)[JxOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<243;ii++) {
+    ((double*)realData)[MassMatrixOffsetIndex+ii]+=((double*)ghostData)[MassMatrixOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<10*PIC::nTotalSpecies;ii++) {
+    ((double*)realData)[SpeciesDataIndex[0]+ii]+=((double*)ghostData)[SpeciesDataIndex[0]+ii];
+  }
 
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::CopyPeriodicJMassMatrix(char * ghostData, char * realData){
+}
+
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix(char * ghostData, char * realData){
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   
@@ -765,7 +945,31 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyPeriodicJMassMatrix(char * gh
 }
 
 
-void UpdateJMassMatrix(){
+void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData(char * ghostData, char * realData){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  
+  realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+  for (int ii=0;ii<3;ii++)   {
+    ((double*)ghostData)[JxOffsetIndex+ii]=((double*)realData)[JxOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<243;ii++) {
+    ((double*)ghostData)[MassMatrixOffsetIndex+ii]=((double*)realData)[MassMatrixOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<10*PIC::nTotalSpecies;ii++) {
+    ((double*)ghostData)[SpeciesDataIndex[0]+ii]=((double*)realData)[SpeciesDataIndex[0]+ii];
+  }
+
+
+}
+
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   // update J and MassMatrix 
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
@@ -780,6 +984,10 @@ void UpdateJMassMatrix(){
 
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_  
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+#endif
 
   int nparticle=0;
   // update J and MassMatrix
@@ -802,7 +1010,7 @@ void UpdateJMassMatrix(){
 
     if (node->Thread!=PIC::ThisThread) continue;
      
-
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_  
     double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
     for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
       for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
@@ -816,6 +1024,23 @@ void UpdateJMassMatrix(){
         }
       }
     }
+#endif
+
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
+    double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+    for (int k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_+1;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_+1;i++) {
+          int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+          if (!node->block->GetCornerNode(LocalCornerId)) continue; 
+          char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+          double * ptr =  (double*)(offset+CurrentBOffset);
+	  //for (int idim=0;idim<3;idim++) B_Center[LocalCenterId][idim]=ptr[idim];
+          memcpy(B_corner[LocalCornerId],ptr,3*sizeof(double));
+        }
+      }
+    }
+#endif
 
     int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
     
@@ -858,8 +1083,15 @@ void UpdateJMassMatrix(){
                 }
               }
             }
-            
-	    
+
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_            
+            double SpeciesData_GI[8][PIC::nTotalSpecies*10];
+            for (int ii=0; ii<8; ii++){
+              for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
+                SpeciesData_GI[ii][kk]=0.0;
+              }
+            }
+#endif            
 	    ptrNext=ptr;
 	    ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 	  
@@ -877,13 +1109,26 @@ void UpdateJMassMatrix(){
               ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
 	      double temp[3], B[3]={0.0,0.0,0.0};
+#if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
 	      PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil(false);
 	      //interpolate the magnetic field from center nodes to particle location
 	      MagneticFieldStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node));
-	      
+#endif
+
+#if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+              PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil(false);
+	      //interpolate the magnetic field from center nodes to particle location
+	      MagneticFieldStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node));             
+#endif
+
 	      for (int iStencil=0;iStencil<MagneticFieldStencil.Length;iStencil++) {
 		//memcpy(temp,MagneticFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+CurrentBOffset,3*sizeof(double));
+#if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
 		double * B_temp = B_Center[MagneticFieldStencil.LocalCellID[iStencil]];
+#endif
+#if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+                double * B_temp = B_corner[MagneticFieldStencil.LocalCellID[iStencil]];
+#endif
 		for (int idim=0;idim<3;idim++) B[idim]+=MagneticFieldStencil.Weight[iStencil]*B_temp[idim];
 	      }
 
@@ -1013,7 +1258,23 @@ void UpdateJMassMatrix(){
 
                 }
 	      }
-
+      
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_        
+              for (int ii=0; ii<8; ii++){
+                int tempOffset = 10*spec;
+                SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUz_]+=mass*vInit[2]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=mass*vInit[0]*vInit[0]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=mass*vInit[1]*vInit[1]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=mass*vInit[2]*vInit[2]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=mass*vInit[0]*vInit[1]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=mass*vInit[1]*vInit[2]*WeightPG[ii];
+                SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
+              }
+#endif
+              
               double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 	      for (int iCorner=0; iCorner<8; iCorner++){
                 double tempWeightConst = matrixConst*WeightPG[iCorner];
@@ -1040,7 +1301,8 @@ void UpdateJMassMatrix(){
                 double * CornerMassMatrixPtr[8];
                 double * CornerJPtr[8]; 
                 char * offset[8];
-                
+                double * specDataPtr[8];
+                               
                 offset[0]=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 offset[1]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 offset[2]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j+1,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -1054,6 +1316,9 @@ void UpdateJMassMatrix(){
                 for (int ii=0; ii<8; ii++) {
                   CornerMassMatrixPtr[ii] = ((double*)offset[ii])+MassMatrixOffsetIndex;
                   CornerJPtr[ii]=((double*)offset[ii])+JxOffsetIndex;
+                  #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+                  specDataPtr[ii]=((double*)offset[ii])+SpeciesDataIndex[0];
+                  #endif
                 }                
                 
                 //collect current
@@ -1062,6 +1327,15 @@ void UpdateJMassMatrix(){
                     CornerJPtr[iCorner][ii] += (Jg[iCorner][ii])/CellVolume;
                   }                  
                 }
+
+                #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+                //collect species data
+                for (int iCorner=0; iCorner<8; iCorner++){
+                  for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
+                    specDataPtr[iCorner][ii] += SpeciesData_GI[iCorner][ii]/CellVolume;
+                  }                  
+                }
+                #endif
 
                 //collect massmatrix
                 for (int iCorner=0; iCorner<8; iCorner++){
@@ -1106,27 +1380,22 @@ void UpdateJMassMatrix(){
    }
     
   }
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+  PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData;
+  PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData;
+#elif  _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_OFF_
+  PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix;
+  PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix;
+#endif
 
-     
-  switch (_PIC_BC__PERIODIC_MODE_) {
-  case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
-    break;
-    
-  case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessPeriodicJMassMatrix;
-    PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyPeriodicJMassMatrix;
-    PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
-
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
-
-    PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
-
-    break;
-  }
-
-
- 
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
+#if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+  PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrixSpeciesData,UnpackBlockData_JMassMatrixSpeciesData);
+#elif  _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_OFF_
+  PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
+#endif
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
+  
   MPI_Reduce(&ParticleEnergy, &TotalParticleEnergy, 1, MPI_DOUBLE, MPI_SUM, 0,
 	     MPI_GLOBAL_COMMUNICATOR);
   // TotalParticleEnergy *= 1e-7; //in SI
@@ -1137,7 +1406,6 @@ void UpdateJMassMatrix(){
     std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;  
   }
 }
-
 
 
 
@@ -1227,6 +1495,114 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
   }
 }
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (!node->block) continue;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+      
+      if (BoundaryBlock==true) continue;
+    }
+    
+    if (node->Thread!=PIC::ThisThread) continue;
+    
+    for (int k=0;k<=_BLOCK_CELLS_Z_;k++) for (int j=0;j<=_BLOCK_CELLS_Y_;j++) for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
+          char * offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+          
+          double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
+          for (int kk=-1;kk<=0; kk++) for (int jj=-1; jj<=0; jj++) for (int ii=-1; ii<=0; ii++){
+            char *  offsetTmp=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+            double * CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
+            //   double * PrevPtr = (double*)(offsetTmp+PrevBOffset);
+            
+            for (int idim=0;idim<3;idim++) {
+              tempB_curr[idim] += CurrentPtr[idim];
+              // tempB_prev[idim] += PrevPtr[idim];
+            }
+              }
+
+          double * nodeCurrPtr = (double*)(offset+CurrentBOffset);
+          // double * nodePrevPtr = (double*)(offset+PrevBOffset);
+          
+          for (int idim=0;idim<3;idim++) {
+            nodeCurrPtr[idim] = tempB_curr[idim]/8.0; 
+            // nodePrevPtr[idim] = tempB_prev[idim]/8.0;
+          }
+          
+        }
+  }
+  
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (!node->block) continue;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+      
+      if (BoundaryBlock==true) continue;
+    }
+    
+    if (node->Thread!=PIC::ThisThread) continue;
+    
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          //  char * offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+          char * offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+          double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
+          for (int kk=0;kk<=1; kk++) for (int jj=0; jj<=1; jj++) for (int ii=0; ii<=1; ii++){
+                //char *  offsetTmp=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+            char *  offsetTmp=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+            
+            double * CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
+            double * PrevPtr = (double*)(offsetTmp+PrevBOffset);
+            
+            for (int idim=0;idim<3;idim++) {
+              tempB_curr[idim] += CurrentPtr[idim];
+              tempB_prev[idim] += PrevPtr[idim];
+            }
+              }
+
+          double * nodeCurrPtr = (double*)(offset+CurrentBOffset);
+          double * nodePrevPtr = (double*)(offset+PrevBOffset);
+          
+          for (int idim=0;idim<3;idim++) {
+            nodeCurrPtr[idim] = tempB_curr[idim]/8.0; 
+            nodePrevPtr[idim] = tempB_prev[idim]/8.0;
+          }
+          /*
+          printf("interpolationB localnumber:%d, ind:%d,%d,%d,prev:%e,%e,%e,curr:%e,%e,%e\n",
+                 _getCornerNodeLocalNumber(i,j,k),i,j,k,nodePrevPtr[0],nodePrevPtr[1],nodePrevPtr[2],
+                 nodeCurrPtr[0],nodeCurrPtr[1],nodeCurrPtr[2]);
+          */
+        }
+  }
+
+
+}
+
+
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
@@ -1309,7 +1685,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystem
   for (int iElement=0; iElement<row->nNonZeroElements;iElement++){
     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cStencilElement* el=row->Elements+iElement;
     el->MatrixElementValue=el->MatrixElementParameterTable[0];
-    el->MatrixElementValue+=*((double *)el->MatrixElementSupportTable[0])*fourPiDtTheta;
+    if (el->MatrixElementSupportTable[0]!=NULL)
+      el->MatrixElementValue+=*((double *)el->MatrixElementSupportTable[0])*fourPiDtTheta;
     
     //printf("iElement:%d,const:%f,matrixvalue:%f\n",iElement,el->MatrixElementParameterTable[0],el->MatrixElementValue);
   }  
@@ -1381,12 +1758,26 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
   //perform the rest of the field solver calculstions
   double t0,t1,StartTime=MPI_Wtime();
-
-  t0=StartTime;
-  UpdateJMassMatrix();
-  t1=MPI_Wtime();
-  CumulativeTiming::UpdateJMassMatrixTime+=t1-t0;
-
+  
+  if (PIC::CPLR::FLUID::iCycle==0){  
+    UpdateJMassMatrix();
+    {// Output
+      double timeNow = 0.0;  
+      bool doForceOutput = false; 
+      PIC::CPLR::FLUID::
+        FluidInterface.writers_write(timeNow, PIC::CPLR::FLUID::iCycle, 
+                                     doForceOutput,
+                                     &PIC::CPLR::FLUID::find_output_list, 
+                                     &PIC::CPLR::FLUID::get_field_var);
+    }    
+  }
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ){
+    setB_center_BC();
+    setB_corner_BC();
+    setE_curr_BC();
+  }
+  
+  PIC::BC::ExternalBoundary::UpdateData();
 
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
@@ -1398,15 +1789,28 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   CumulativeTiming::SolveTime+=t1-t0;
 
   t0=t1;
+  
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    setE_half_BC();
   UpdateB();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    setB_center_BC();
+  PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+  InterpolateB_C2N();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    setB_corner_BC();
+  
   t1=MPI_Wtime();
   CumulativeTiming::UpdateBTime+=t1-t0;
 
   t0=t1;
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    setE_half_BC();
   UpdateE();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    setE_curr_BC();
   t1=MPI_Wtime();
   CumulativeTiming::UpdateETime+=t1-t0;
-
   CumulativeTiming::TotalRunTime+=MPI_Wtime()-StartTime;
  }
 

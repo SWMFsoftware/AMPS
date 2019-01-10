@@ -12,14 +12,14 @@ include ../Makefile.conf
 # OBJECT FILE FOR THE WRAPPER
 
 OBJECTS = \
-	PT_wrapper.o \
+	${COMPONENT}_wrapper.o \
 	amps2swmf.o  \
 	amps_param_interface.o
 
 #
 #	Making library
 #
-MY_LIB    = ${LIBDIR}/libPT.a
+MY_LIB    = ${LIBDIR}/libPC.a
 
 LIB:
 	rm -rf *.o
@@ -34,7 +34,7 @@ ${MY_LIB}: ${AMPS_LIB} ${OBJECTS}
 	cp -f ${AMPS_LIB} ${MY_LIB}
 	${AR} ${MY_LIB} ${OBJECTS}
 
-PT_wrapper.o: ${LIBRARYDIR}/CON_comp_info.o
+${COMPONENT}_wrapper.o: ${LIBRARYDIR}/CON_comp_info.o
 
 amps_interface.o:
 

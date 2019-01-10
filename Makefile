@@ -9,7 +9,7 @@ SPICE=nospice
 OPENMP=off
 
 #extra compiler options can be defined in Makefile.local
-EXTRACOMPILEROPTIONS=
+EXTRACOMPILEROPTIONS= 
 
 #extra linker options specific for fortran and c++ linker
 EXTRALINKEROPTIONS_F=
@@ -58,8 +58,14 @@ SEARCH_F=
 
 # These definitions are inherited from Makefile.def and Makefile.conf
 CC=${COMPILE.mpicxx}
-CWD=${PTDIR}
 AMPSLINKER=${CC}
+
+# CWD=${PCDIR}
+ifeq ($(COMPONENT),PC)
+	CWD=${PCDIR}
+else ifeq  ($(COMPONENT),PT)
+	CWD=${PTDIR}
+endif
 
 AMPSLINKLIB= 
 
@@ -160,9 +166,10 @@ allclean: clean
 	rm -f output
 
 rundir:
-	mkdir -p ${RUNDIR}/PT
-	cd ${RUNDIR}/PT; mkdir restartIN restartOUT plots
-
+	mkdir -p ${RUNDIR}/${COMPONENT}
+	cd ${RUNDIR}/${COMPONENT}; mkdir restartIN restartOUT plots; \
+		ln -s ${BINDIR}/PostIDL.exe .; \
+		cp    ${SCRIPTDIR}/pIDL .;
 
 EXE=amps
 

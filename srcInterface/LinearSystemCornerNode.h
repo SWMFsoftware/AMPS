@@ -697,7 +697,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   //add 'virtual' blocks at the right boundary of the domain
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
-    ProcessRightDomainBoundary(RecvDataPointCounter,f);
+    //ProcessRightDomainBoundary(RecvDataPointCounter,f);
   }
 
 
@@ -935,7 +935,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
 
     if ((block=startNode->block)!=NULL) {
-      for (int i=0;i<_BLOCK_CELLS_X_+1;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
         if ((CornerNode=block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k)))!=NULL) {
           CornerNode->LinearSolverUnknownVectorIndex=-1;
         }

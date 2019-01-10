@@ -803,16 +803,23 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
     for (int iStencil=0;iStencil<ElectricFieldStencil.Length;iStencil++) {
    
-       double * tempE1=PIC::Mover::E_Corner[ElectricFieldStencil.LocalCellID[iStencil]];  
+       double * tempE1=PIC::Mover::E_Corner[ElectricFieldStencil.LocalCellID[iStencil]]; 
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
+       double * tempB1=PIC::Mover::B_Corner[ElectricFieldStencil.LocalCellID[iStencil]];
+#endif
        //    char * tempoffset = startNode->block->GetCornerNode(ElectricFieldStencil.LocaCellID[iStencil])->GetAssociatedDataBufferPointer();
        //double * tempE =(double *)(ElectricFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep);
        //double * tempE2 =(double*)(tempoffset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep);
        
        for (idim=0;idim<3;idim++) {
-         E[idim]+=ElectricFieldStencil.Weight[iStencil]*tempE1[idim];       
+         E[idim]+=ElectricFieldStencil.Weight[iStencil]*tempE1[idim];
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_           
+         B[idim]+=ElectricFieldStencil.Weight[iStencil]*tempB1[idim];
+#endif
        }
     }
 
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_  
     //interpolate the magnetic field (center nodes)
     MagneticFieldStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,startNode));
 
@@ -825,7 +832,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
         //if (fabs(tempB1[idim]-tempB[idim])>1e-5) printf("B different, local id:%d, Btest:%e, B_corr:%e\n",MagneticFieldStencil.LocaCellID[iStencil],tempB1[idim],tempB[idim]);
       }
     }
-
+#endif
     break;
   default:
     exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");

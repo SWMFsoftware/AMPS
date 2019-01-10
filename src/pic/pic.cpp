@@ -293,29 +293,26 @@ int PIC::TimeStep() {
 
   //move existing particles
   ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__MoveParticles_;
-  ParticleMovingTime=MPI_Wtime();
-  static bool isFirstMove=true;
-  if (!isFirstMove || _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_){
+  
+#if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+    ParticleMovingTime=MPI_Wtime();
     PIC::Mover::MoveParticles();
-  }
-  isFirstMove=false;
-  ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
-  RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
+    ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
+    RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
-  //check the consistence of the particles lists
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CheckParticleList_;
-  PIC::ParticleBuffer::CheckParticleList();
-  #endif
-
-
-  //syncronize processors and exchange particle data
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeParticleData_;
+    //check the consistence of the particles lists
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CheckParticleList_;
+    PIC::ParticleBuffer::CheckParticleList();
+#endif
+    
+    //syncronize processors and exchange particle data
+    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeParticleData_;
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
-
+#endif  
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   PIC::BC::ExternalBoundary::UpdateData();
@@ -336,6 +333,43 @@ int PIC::TimeStep() {
     exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
   }
 
+#if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+  ParticleMovingTime=MPI_Wtime();
+  PIC::Mover::MoveParticles();
+  ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
+  RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
+
+  //check the consistence of the particles lists
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CheckParticleList_;
+  PIC::ParticleBuffer::CheckParticleList();
+  #endif
+
+  //syncronize processors and exchange particle data
+  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeParticleData_;
+  ParticleExchangeTime=MPI_Wtime();
+  PIC::Parallel::ExchangeParticleData();
+  ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
+  RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
+  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  
+  PIC::CPLR::FLUID::iCycle++;
+  {// Output
+    double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;
+    
+    printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
+    bool doForceOutput = false; 
+    PIC::CPLR::FLUID::
+      FluidInterface.writers_write(timeNow, PIC::CPLR::FLUID::iCycle, 
+				   doForceOutput,
+				   &PIC::CPLR::FLUID::find_output_list, 
+				   &PIC::CPLR::FLUID::get_field_var);
+  }
+  
+  #endif
   //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   PIC::BC::ExternalBoundary::UpdateData();
@@ -344,7 +378,7 @@ int PIC::TimeStep() {
   FieldSolverTime=MPI_Wtime()-FieldSolverTime;
   RunTimeSystemState::CumulativeTiming::FieldSolverTime+=FieldSolverTime;
   #endif //_PIC_FIELD_SOLVER_MODE_
-
+  
   IterationExecutionTime=MPI_Wtime()-StartTime;
   summIterationExecutionTime+=IterationExecutionTime;
   RunTimeSystemState::CumulativeTiming::IterationExecutionTime+=IterationExecutionTime;

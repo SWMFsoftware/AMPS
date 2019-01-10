@@ -556,6 +556,7 @@ sub ReadMainBlock {
       
       if ($s0 eq "OFF") {$CouplingMode="_PIC_COUPLER_MODE__OFF_";}
       elsif ($s0 eq "SWMF") {$CouplingMode="_PIC_COUPLER_MODE__SWMF_";}
+      elsif ($s0 eq "FLUID") {$CouplingMode="_PIC_COUPLER_MODE__FLUID_";}
       elsif ($s0 eq "GEOPACK") {$CouplingMode="_PIC_COUPLER_MODE__GEOPACK_";}
       elsif ($s0 eq "T96") {$CouplingMode="_PIC_COUPLER_MODE__T96_";}
       elsif ($s0 eq "KMAG") {$CouplingMode="_PIC_COUPLER_MODE__KMAG_";}

@@ -27,6 +27,7 @@
 #include <sys/resource.h>
 
 #include "global.h"
+#include "FluidPicInterface.h"
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #include <omp.h>
@@ -3583,6 +3584,8 @@ namespace PIC {
 
     extern double E_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
     extern double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
+    extern double B_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+
     void SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
@@ -4363,6 +4366,47 @@ namespace PIC {
         GetBackgroundElectricField(E,cell);
       }
 
+    }
+
+    namespace FLUID {
+      extern bool FirstCouplingOccured;
+      extern int nCells[3];
+      extern int *npcelx,*npcely,*npcelz;
+
+      extern FluidPicInterface FluidInterface;       
+      extern long int iCycle;
+      extern int nBlockProc; 
+
+      static const int nDimMax = 3; 
+      void set_FluidInterface();
+      void read_param(); 
+      
+      void find_output_list(const Writer & writerIn, long int & nPointAllProc, 
+			    VectorPointList & pointList_II, 
+			    std::array<double, nDimMax> & xMin_D,
+			    std::array<double, nDimMax> & xMax_D);
+      void get_field_var(const VectorPointList & pointList_II,
+			 const std::vector<std::string> & sVar_I, 
+			 MDArray<double> & var_II); 
+      
+      double get_var(std::string var, char * DataPtr, double * x, PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,bool isCoord);
+      
+      void ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc);
+      
+            // Put corner data from BATSRUS to AMPS. 
+      void GetCornerPointNumber(int *nCornerPoints);
+      void GetCornerPointCoordinates(double *x);
+      void ReceiveCornerPointData(char* ValiableList, int nVarialbes,double *data,int *index);
+      
+      bool isTrueBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+      
+      typedef void (*fSendCenterPointData)(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, double *Xyz_DI, double *Data_VI);
+      extern list <fSendCenterPointData> SendCenterPointData;
+      
+      double CellInterpolatedVar(std::string var,PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr);
+      double CellInterpolatedVar(std::string var,PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,int iSp);
+      double GetCornerVar(std::string var,char * DataPtr,int iSp);
+      void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin);
     }
 
 
@@ -5880,15 +5924,26 @@ namespace FieldSolver {
     namespace Electromagnetic {
         //Energy conserving field solver (same as used in the IPIC3D)
         namespace ECSIM {
+          
+            typedef void (*fUserDefinedFieldBC)();
+            typedef long int (*fUserDefinedParticleBC)();
+            extern fUserDefinedParticleBC setParticle_BC;
+            extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
+            extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
             extern int CurrentEOffset, OffsetE_HalfTimeStep;
             extern int CurrentBOffset, PrevBOffset;
+            extern int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> Solver;
             //	extern cLinearSystemCornerNode Solver;
             extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
             extern int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
             extern int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
             extern int MassMatrixOffsetIndex;
-            
+            extern int * SpeciesDataIndex;
+            extern int Rho_, RhoUx_, RhoUy_, RhoUz_, 
+              RhoUxUx_, RhoUyUy_, RhoUzUz_, 
+              RhoUxUy_, RhoUyUz_, RhoUxUz_;
+          
             extern double cDt;
             extern double theta;
             extern double LightSpeed;
@@ -5924,7 +5979,11 @@ namespace FieldSolver {
             //init the solver
             void Init();
             void Init_IC();
-            
+          
+            void UpdateJMassMatrix();
+            void InterpolateB_C2N();
+            void InterpolateB_N2C();
+             
             //update the matrix element
             void UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRow* row);
             //update the Rhs of the Ax=b
@@ -5936,8 +5995,11 @@ namespace FieldSolver {
             //process final solution
             void ProcessFinalSolution(double* x,PIC::Mesh::cDataCornerNode* CornerNode);
 	    
-            void ProcessPeriodicJMassMatrix(char * realData, char * ghostData);
-            void CopyPeriodicJMassMatrix(char * realData, char * ghostData);
+            void ProcessJMassMatrix(char * realData, char * ghostData);
+            void CopyJMassMatrix(char * realData, char * ghostData);
+            
+            void ProcessJMassMatrixSpeciesData(char * realData, char * ghostData);
+            void CopyJMassMatrixSpeciesData(char * realData, char * ghostData);
 
             void BuildMatrix();
             void TimeStep();

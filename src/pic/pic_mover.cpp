@@ -18,6 +18,7 @@ int PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
 
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 double PIC::Mover::E_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3]; 
+double PIC::Mover::B_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3]; 
 double PIC::Mover::B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
 #endif
 //====================================================
@@ -60,39 +61,58 @@ void PIC::Mover::TotalParticleAcceleration_default(double *accl,int spec,long in
   for (int idim=0;idim<3;idim++) accl[idim]=0.0;
 }
 //====================================================
-//Set B for B_Center
+//Set B for B_Center/B_Corner
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
-  
+  if (!node->block) return;
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_  
   for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
-        for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
-          if (!node->block->GetCenterNode(LocalCenterId)) continue; 
-          char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-          double * ptr =  (double*)(offset+PrevBOffset);
-          memcpy(PIC::Mover::B_Center[LocalCenterId],ptr,3*sizeof(double));
-        }
+    for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
+      for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+        int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+        if (!node->block->GetCenterNode(LocalCenterId)) continue; 
+        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        double * ptr =  (double*)(offset+PrevBOffset);
+        memcpy(PIC::Mover::B_Center[LocalCenterId],ptr,3*sizeof(double));
       }
     }
+  }
+#endif
+
+#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
+  
+  for (int k=0;k<=_BLOCK_CELLS_Z_;k++) {
+    for (int j=0;j<=_BLOCK_CELLS_Y_;j++)  {
+      for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
+        int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+        if (!node->block->GetCornerNode(LocalCornerId)) continue; 
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+        double * ptr =  (double*)(offset+PrevBOffset);
+        memcpy(PIC::Mover::B_Corner[LocalCornerId],ptr,3*sizeof(double));
+      }
+    }
+  }
+  
+#endif
+
 } 
 //====================================================
 //Set E for E_Corner
 void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
- 
-    for (int k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-      for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
-        for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-          int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
-           if (!node->block->GetCornerNode(LocalCornerId)) continue;
-          char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-          double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
-          memcpy(PIC::Mover::E_Corner[LocalCornerId],ptr,3*sizeof(double));
-        }
+  if (!node->block) return;
+  for (int k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+    for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
+      for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+        int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+        if (!node->block->GetCornerNode(LocalCornerId)) continue;
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+        double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
+        memcpy(PIC::Mover::E_Corner[LocalCornerId],ptr,3*sizeof(double));
       }
     }
+  }
 } 
 
 #endif
@@ -156,8 +176,9 @@ void PIC::Mover::MoveParticles() {
       double StartTime=MPI_Wtime();
 #endif
 
-    block=node->block;
-    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      block=node->block;
+      if (!block) continue;
+      memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (j=0;j<_BLOCK_CELLS_Y_;j++) {
@@ -200,6 +221,8 @@ void PIC::Mover::MoveParticles() {
     int nLocalNode,ii=cnt;
 
     nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    node=DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (!node->block) continue;
     ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
     k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
@@ -209,7 +232,7 @@ void PIC::Mover::MoveParticles() {
     ii-=j*_BLOCK_CELLS_X_;
 
     i=ii;
-    node=DomainBlockDecomposition::BlockTable[nLocalNode];
+    //node=DomainBlockDecomposition::BlockTable[nLocalNode];
 
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
       double StartTime=MPI_Wtime();
@@ -307,6 +330,7 @@ void PIC::Mover::MoveParticles() {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
     
       block=node->block;
+      if (!block) continue;
       memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
       for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -359,6 +383,9 @@ void PIC::Mover::MoveParticles() {
 //************************** MPI ONLY  *********************************
   for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
+    block=node->block;  
+    if (!block) continue;
+
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
     PIC::Mover::SetBlock_E(node);
     PIC::Mover::SetBlock_B(node);
@@ -367,7 +394,7 @@ void PIC::Mover::MoveParticles() {
       double StartTime=MPI_Wtime();
 #endif
 
-    block=node->block;
+      //block=node->block;
     memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -412,7 +439,7 @@ void PIC::Mover::MoveParticles() {
         }
      }
   }
-
+  
   for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
     node=(thread==PIC::Mesh::mesh.ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
 
@@ -421,7 +448,7 @@ void PIC::Mover::MoveParticles() {
 
     for (;node!=NULL;node=node->nextNodeThisThread) {
       block=node->block;
-
+      if (!block) continue;
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       memcpy(block->FirstCellParticleTable,block->tempParticleMovingListTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
       memcpy(block->tempParticleMovingListTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));

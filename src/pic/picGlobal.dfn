@@ -367,4 +367,10 @@ at the end of each time step
 //enforce the recieving order of particles in the PIC::Parallel::ExchangeParticleData()
 #define _PIC_PARTICLE_EXCHANGE_ENFORCE_RECIEVING_ORDER_MODE_ _PIC_MODE_OFF_
 
+//default field solver uses B at the center
+#define _PIC_FIELD_SOLVER_B_MODE_  _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
+
+//defaulted field solver does not sample species data on corners
+#define _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_ _PIC_MODE_OFF_
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

@@ -20,13 +20,14 @@
 #include <fstream>
 #include <signal.h>
 #include <sstream>
+#include <string>
 
 #include <sys/time.h>
 #include <sys/resource.h>
 
 #include "pic.h"
 #include "amps2swmf.h"
-
+#include "FluidPicInterface.h"
 
 using namespace std;
 
@@ -37,6 +38,9 @@ void amps_time_step();
 
 
 extern "C" { 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+  void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
+#endif
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit);
   int initamps_();
   void amps_impose_global_time_step_(double *Dt);
@@ -53,26 +57,69 @@ extern "C" {
   }
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
-
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
+#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
+    PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
+    //initialize the coupler and AMPS
+    //PIC::CPLR::FLUID::init();
+#endif
     amps_init_mesh();
   }
 
 
   void amps_get_center_point_number_(int *nCenterPoints) {
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints);
+#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    //PIC::CPLR::FLUID::GetCenterPointNumber(nCenterPoints); 
+#endif 
+
   }
 
   void amps_get_center_point_coordinates_(double *x) {
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::GetCenterPointCoordinates(x);
+#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    //PIC::CPLR::FLUID::GetCenterPointCoordinates(x);
+#endif 
+
   }
 
 
   void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index) {
+    
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index);
+#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    //PIC::CPLR::FLUID::RecieveCenterPointData(NameVar,*nVar,data,index);
+#endif 
   }
+
+  
+  void amps_get_corner_point_number_(int *nCornerPoints) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    PIC::CPLR::FLUID::GetCornerPointNumber(nCornerPoints);
+#endif
+  }
+  
+  void amps_get_corner_point_coordinates_(double *x) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    PIC::CPLR::FLUID::GetCornerPointCoordinates(x);
+#endif
+  }
+  
+  
+  void amps_recieve_batsrus2amps_corner_point_data_(char *NameVar, int *nVar, double *data,int *index) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_    
+    PIC::CPLR::FLUID::ReceiveCornerPointData(NameVar,*nVar,data,index);
+#endif  
+  }
+
 
   void amps_impose_global_time_step_(double *Dt) {
     for(int spec=0; spec<PIC::nTotalSpecies; spec++)
@@ -85,11 +132,30 @@ extern "C" {
   }
 
   void amps_send_batsrus2amps_center_point_data_(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, double *Xyz_DI, double *Data_VI) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     list<PIC::CPLR::SWMF::fSendCenterPointData>::iterator f;
+#elif  _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
+    list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
+#endif
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    static bool initFlag=false;
+    if (!initFlag){
+      amps_init();
+      initFlag = true; 
+    }
+#endif
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     for (f=PIC::CPLR::SWMF::SendCenterPointData.begin();f!=PIC::CPLR::SWMF::SendCenterPointData.end();f++) {
       (*f)(NameVar,nVarIn,nDimIn,nPoint,Xyz_DI,Data_VI);
     }
+#elif  _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
+    for (f=PIC::CPLR::FLUID::SendCenterPointData.begin();f!=PIC::CPLR::FLUID::SendCenterPointData.end();f++) {
+      (*f)(NameVar,nVarIn,nDimIn,nPoint,Xyz_DI,Data_VI);
+    }
+#endif
+
   }
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit) {
@@ -98,12 +164,21 @@ extern "C" {
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_    
     //call AMPS only after the first coupling has occured
     if (PIC::CPLR::SWMF::FirstCouplingOccured==false) {
       *TimeSimulation=*TimeSimulationLimit;
       return;
     }
+#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_    
+    //call AMPS only after the first coupling has occured
+    if (PIC::CPLR::FLUID::FirstCouplingOccured==false) {
+      *TimeSimulation=*TimeSimulationLimit;
+      return;
+    }
+#endif
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     //init AMPS
     if (InitFlag==false) {
       //initamps_();
@@ -114,6 +189,7 @@ extern "C" {
       //print the output file on each iteration
       //PIC::RequiredSampleLength=1;
     }
+#endif
 
     //determine whether to proceed with the current iteraction
     if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
@@ -165,22 +241,67 @@ extern "C" {
 
   int amps_read_param_(char *param, int *nlines, int *ncharline, int *iProc){
     // convert character array to string stream object                                                                                                      
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     std::stringstream ss;
 
     AMPS2SWMF::PARAMIN::char_to_stringstream(param, *nlines, *ncharline,&ss);
     AMPS2SWMF::PARAMIN::read_paramin(&ss);
+#endif
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    std::string paramString; 
+    // Convert char* to a string with the function below in ReadParam.h
+    char_to_string(paramString, param, (*nlines)*(*ncharline), (*ncharline));
+    // Use a string to initialize readParam.
+    PIC::CPLR::FLUID::FluidInterface.readParam = paramString; 
+#endif
 
     return 0;
   }
 
   //find the thread number that point 'x' is located at
   void amps_get_point_thread_number_(int *thread,double *x) {
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
 
     node=PIC::Mesh::mesh.findTreeNode(x,node);
     *thread=(node!=NULL) ? node->Thread : -1;
+#endif
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;    
+    double pic_D[3]; 
+
+    PIC::CPLR::FLUID::FluidInterface.mhd_to_Pic_Vec(x, pic_D);
+    node=PIC::Mesh::mesh.findTreeNode(pic_D,node);
+    *thread=(node!=NULL) ? node->Thread : -2;
+    if (*thread==-2) printf("cannot find x:%e,%e,%e\n",x[0],x[1],x[2]);
+#endif
   }
 
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+  void amps_from_gm_init_(int *ParamInt, double *ParamReal, char *NameVar){
+    string nameFunc = "PC: amps_from_gm_init";
+    std::stringstream *ss;
+    ss = new std::stringstream;
+    (*ss) << NameVar;
+
+    int nPIC = 1, iPIC = 0, nParamRegion = 21; 
+
+    PIC::CPLR::FLUID::FluidInterface.ReadFromGMinit(ParamInt, 
+						 &ParamReal[iPIC*nParamRegion], 
+						 &ParamReal[nPIC*nParamRegion], 
+						 ss);
+  
+    PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
+    
+    PIC::CPLR::FLUID::read_param();
+    
+    
+    //amps_init();
+    delete ss;
+  }    
+  #endif
 
 }
 

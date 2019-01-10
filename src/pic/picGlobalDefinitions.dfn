@@ -175,6 +175,7 @@ species number (between reactions). Each segment is saved in the trajectory file
 #define _PIC_COUPLER_MODE__GEOPACK_           4
 #define _PIC_COUPLER_MODE__T96_               5
 #define _PIC_COUPLER_MODE__KMAG_              6
+#define _PIC_COUPLER_MODE__FLUID_             7
 
 //define the background data file reader 
 #define _PIC_COUPLER_DATAFILE_READER_MODE__TECPLOT_    0
@@ -302,6 +303,8 @@ species number (between reactions). Each segment is saved in the trajectory file
 #define	 _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_  0
 #define  _PIC_FIELD_SOLVER_INPUT_UNIT_SI_  1
 
-
+//determine whether B uses corner nodes
+#define _PIC_FIELD_SOLVER_B_CENTER_BASED_ 0
+#define _PIC_FIELD_SOLVER_B_CORNER_BASED_ 1
 
 
