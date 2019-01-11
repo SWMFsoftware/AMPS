@@ -60,11 +60,14 @@ SEARCH_F=
 CC=${COMPILE.mpicxx}
 AMPSLINKER=${CC}
 
-# CWD=${PCDIR}
+CWD=${MYDIR}
+
 ifeq ($(COMPONENT),PC)
 	CWD=${PCDIR}
 else ifeq  ($(COMPONENT),PT)
 	CWD=${PTDIR}
+else 
+	CWD=${MYDIR}
 endif
 
 AMPSLINKLIB= 
