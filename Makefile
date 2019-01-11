@@ -62,14 +62,6 @@ AMPSLINKER=${CC}
 
 CWD=${MYDIR}
 
-ifeq ($(COMPONENT),PC)
-	CWD=${PCDIR}
-else ifeq  ($(COMPONENT),PT)
-	CWD=${PTDIR}
-else 
-	CWD=${MYDIR}
-endif
-
 AMPSLINKLIB= 
 
 EXTRALINKEROPTIONS=
