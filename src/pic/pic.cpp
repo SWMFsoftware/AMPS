@@ -358,15 +358,9 @@ int PIC::TimeStep() {
   
   PIC::CPLR::FLUID::iCycle++;
   {// Output
-    double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;
-    
+    double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
     printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
-    bool doForceOutput = false; 
-    PIC::CPLR::FLUID::
-      FluidInterface.writers_write(timeNow, PIC::CPLR::FLUID::iCycle, 
-				   doForceOutput,
-				   &PIC::CPLR::FLUID::find_output_list, 
-				   &PIC::CPLR::FLUID::get_field_var);
+    PIC::CPLR::FLUID::write_output(timeNow);
   }
   
   #endif

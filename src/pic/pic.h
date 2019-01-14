@@ -4383,6 +4383,12 @@ namespace PIC {
       void set_FluidInterface();
       void read_param(); 
       
+      bool isBoundaryCorner(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex);
+
+      void fix_plasma_node_boundary();
+
+      void write_output(double timeNow, bool doForceOutput = false);
+
       void find_output_list(const Writer & writerIn, long int & nPointAllProc, 
 			    VectorPointList & pointList_II, 
 			    std::array<double, nDimMax> & xMin_D,

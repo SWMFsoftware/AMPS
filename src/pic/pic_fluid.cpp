@@ -555,6 +555,99 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
 
 
 
+void PIC::CPLR::FLUID::write_output(double timeNow, bool doForceOutput){
+  fix_plasma_node_boundary();
+  FluidInterface.writers_write(timeNow, iCycle, doForceOutput, find_output_list,
+                               get_field_var);
+}
+
+void PIC::CPLR::FLUID::fix_plasma_node_boundary(){
+  // Fix the plasma variables (rho, u, p) at the boundary nodes. 
+  
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) return;
+ 
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  int iBlock=0;
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+
+    if (!node->block) continue;
+        
+    double dx[3];
+    double *xminBlock= node->xmin, *xmaxBlock= node->xmax;
+       
+    for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
+    PIC::Mesh::cDataBlockAMR *block = node->block;
+    
+    for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
+              
+          double x[3];
+          int ind[3]={i,j,k};
+             
+          for (int idim=0; idim<3; idim++) {
+            x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
+          }
+
+
+          if (!isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+              
+          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+          if (CornerNode!=NULL){
+            char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+                
+	    for (int spec = 0; spec<PIC::nTotalSpecies; spec++){
+	    double * SpeciesData_I = ((double*)offset)+SpeciesDataIndex[0];
+	    
+	    int tempOffset = 10*spec;
+	    double mass = PIC::MolecularData::GetMass(spec)/_AMU_;
+	    double charge = PIC::MolecularData::GetElectricCharge(spec)/ElectronCharge;
+	    double inVqom = mass/charge; 
+	    SpeciesData_I[tempOffset+Rho_] = mass*FluidInterface.getPICRhoNum(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUx_] = inVqom*FluidInterface.getPICJx(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUy_] = inVqom*FluidInterface.getPICJy(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUz_] = inVqom*FluidInterface.getPICJz(iBlock, x[0], x[1], x[2], spec);
+
+	    SpeciesData_I[tempOffset+RhoUxUx_] = inVqom*FluidInterface.getPICPxx(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUyUy_] = inVqom*FluidInterface.getPICPyy(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUzUz_] = inVqom*FluidInterface.getPICPzz(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUxUy_] = inVqom*FluidInterface.getPICPxy(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUxUz_] = inVqom*FluidInterface.getPICPxz(iBlock, x[0], x[1], x[2], spec);
+	    SpeciesData_I[tempOffset+RhoUyUz_] = inVqom*FluidInterface.getPICPyz(iBlock, x[0], x[1], x[2], spec);
+
+	    }
+          }
+        }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
+
+    iBlock++;
+  }
+
+
+}
+
+
+bool PIC::CPLR::FLUID::isBoundaryCorner(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
+
+  if ( maxIndex < minIndex)
+    exit(__LINE__,__FILE__,"Error: minIndex is greater than maxIndex");
+  
+  int indexBoundary[3]; //index count from the boundary
+
+  for (int idim=0; idim<3; idim++) {
+    indexBoundary[idim]=
+      (fabs(x[idim]-xmin[idim])<fabs(x[idim]-xmax[idim])?
+       round((x[idim]-xmin[idim])/dx[idim]):round((xmax[idim]-x[idim])/dx[idim]));
+    //minus value means outside the domain
+    //positive value inside
+    for (int idx=minIndex;idx<=maxIndex; idx++){
+      if (indexBoundary[idim]==idx) return true;
+    }
+  }
+
+  return false;
+}
+
+
 double PIC::CPLR::FLUID::get_var(std::string var, 
 				char * DataPtr, double * x,
                                 PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,

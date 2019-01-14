@@ -103,26 +103,26 @@ bool isBoundaryCell(double *x, double *dx, double * xmin, double * xmax, int min
 }
 
 
-bool isBoundaryCorner(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
+// bool isBoundaryCorner(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
 
-  if ( maxIndex < minIndex)
-    exit(__LINE__,__FILE__,"Error: minIndex is greater than maxIndex");
+//   if ( maxIndex < minIndex)
+//     exit(__LINE__,__FILE__,"Error: minIndex is greater than maxIndex");
   
-  int indexBoundary[3]; //index count from the boundary
+//   int indexBoundary[3]; //index count from the boundary
 
-  for (int idim=0; idim<3; idim++) {
-    indexBoundary[idim]=
-      (fabs(x[idim]-xmin[idim])<fabs(x[idim]-xmax[idim])?
-       round((x[idim]-xmin[idim])/dx[idim]):round((xmax[idim]-x[idim])/dx[idim]));
-    //minus value means outside the domain
-    //positive value inside
-    for (int idx=minIndex;idx<=maxIndex; idx++){
-      if (indexBoundary[idim]==idx) return true;
-    }
-  }
+//   for (int idim=0; idim<3; idim++) {
+//     indexBoundary[idim]=
+//       (fabs(x[idim]-xmin[idim])<fabs(x[idim]-xmax[idim])?
+//        round((x[idim]-xmin[idim])/dx[idim]):round((xmax[idim]-x[idim])/dx[idim]));
+//     //minus value means outside the domain
+//     //positive value inside
+//     for (int idx=minIndex;idx<=maxIndex; idx++){
+//       if (indexBoundary[idim]==idx) return true;
+//     }
+//   }
 
-  return false;
-}
+//   return false;
+// }
 
 
 
@@ -826,7 +826,7 @@ void setFixedE_BC_half(){
           }
 
 
-          if (!isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
               
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
@@ -880,7 +880,7 @@ void setFixedE_BC_curr(){
           }
 
 
-          if (!isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
               
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
@@ -991,7 +991,7 @@ void setFixedB_corner_BC(){
             x[idim]=xminBlock[idim]+(ind[idim])*dx[idim];
           }
               
-          if (!isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
 
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
