@@ -453,8 +453,8 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
           xp = xTemp[0], yp = xTemp[1],zp = xTemp[2];
           
           if (writerIn.is_inside_plot_region(index_G[0], index_G[1], index_G[2], xp, yp, zp)) {
-            pointList_II.push_back({(double)i, (double)j, (double)k,    xp,
-                  yp,         zp,         (double)iLocalNode });          
+            pointList_II.push_back({{(double)i, (double)j, (double)k,    xp,
+                    yp,         zp,         (double)iLocalNode} });          
           
             if (xp < xMinL_I[0])
               xMinL_I[0] = xp;
