@@ -40,6 +40,7 @@ int nI_Gh = _GHOST_CELLS_X_< 2 ? 2:_GHOST_CELLS_X_;
 int nJ_Gh = _GHOST_CELLS_Y_< 2 ? 2:_GHOST_CELLS_Y_;
 int nK_Gh = _GHOST_CELLS_Z_< 2 ? 2:_GHOST_CELLS_Z_;
 
+double PIC::CPLR::FLUID::dt  = 0;
 
 void PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc) {
   MPI_GLOBAL_COMMUNICATOR=MPI_Comm_f2c(*iComm);
@@ -217,9 +218,6 @@ bool PIC::CPLR::FLUID::isTrueBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node
 
 
 void PIC::CPLR::FLUID::set_FluidInterface(){
-
-  FluidInterface.set_myrank(PIC::ThisThread);
-  FluidInterface.set_nProcs(PIC::nTotalThreads);
   FluidInterface.writers_init();
 }
 
@@ -228,7 +226,7 @@ void PIC::CPLR::FLUID::set_FluidInterface(){
 void PIC::CPLR::FLUID::read_param(){
 
   ReadParam & readParam = FluidInterface.readParam;
-  readParam.set_verbose( true );
+  readParam.set_verbose(PIC::ThisThread==0);
 
   double *qom; 
   qom = new double[1];
@@ -393,8 +391,23 @@ void PIC::CPLR::FLUID::read_param(){
       readParam.read_var("npcelx", npcelx[0]);
       readParam.read_var("npcely", npcely[0]);
       readParam.read_var("npcelz", npcelz[0]);
+    
+    } else if (command == "#TIMESTEPPING") {
+      // These three variables are not used so far in MHD-AMPS. 
+      bool useSWMFDt, useFixedDt;
+      double cflLimit, fixedDt;
+      readParam.read_var("useSWMFDt", useSWMFDt);
+      if (!useSWMFDt) {
+        readParam.read_var("useFixedDt", useFixedDt);
+        if (useFixedDt) {
+          readParam.read_var("fixedDt", fixedDt); // In SI unit
+	  dt = fixedDt*FluidInterface.getSi2NoT(); // Convert to normalized unit
+	  
+        } else {
+          readParam.read_var("CFL", cflLimit);
+        }
+      }
     }
-
   }  // while
 
   int ns = 2; 

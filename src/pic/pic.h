@@ -4376,6 +4376,8 @@ namespace PIC {
       extern FluidPicInterface FluidInterface;       
       extern long int iCycle;
       extern int nBlockProc; 
+      
+      extern double dt; 
 
       static const int nDimMax = 3; 
       void set_FluidInterface();

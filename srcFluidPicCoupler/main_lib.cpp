@@ -49,21 +49,11 @@ char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="Europa";
 void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLength,double* x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {}
 double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& ReemissionParticleFraction,double Temp) {return 0.0;}
 
-const double DomainLength[3]={1.0E8,1.0E8,1.0E8},DomainCenterOffset[3]={0.0,0.0,0.0};
-
-
+//const double DomainLength[3]={1.0E8,1.0E8,1.0E8},DomainCenterOffset[3]={0.0,0.0,0.0};
 
 #ifndef _TEST_MESH_MODE_
 #define _TEST_MESH_MODE_ _UNIFORM_MESH_
 #endif
-
-
-double xmin[3]={0.0,0.0,0.0};
-double xmax[3]={32.0,16.0,8.0};
-//double xmax[3]={64.0,32.0,16.0};  
-
-double PICxmin[3]={0,0,0};
-double PICxmax[3]={32.0,16.0,8.0};
 
 double rho0,rho1,ux0,uy0,uz0,ux1,uy1,uz1,p0,p1,ppar0,ppar1;
 double uth0,uth1;
@@ -73,8 +63,6 @@ int nCells[3] ={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
  
 int CurrentCenterNodeOffset=-1,NextCenterNodeOffset=-1;
 int CurrentCornerNodeOffset=-1,NextCornerNodeOffset=-1;
-
-
 
 void GetGlobalCellIndex(int * index ,double * x, double * dx, double * xmin){
   //global cell index starts from 1 for true cells
@@ -1385,43 +1373,21 @@ void SetIC() {
 
 
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-    double CellSize;
-    double CharacteristicSpeed;
-    double dt;
 
-
-    CellSize=startNode->GetCharacteristicCellSize();
-    //return 0.3*CellSize/CharacteristicSpeed;
-
-    //return 0.05;
-    return 1.0;
+  return PIC::CPLR::FLUID::dt;
 }
 
 
 double BulletLocalResolution(double *x) {                                                                                           
-  double dist = xmax[0]-xmin[0];
-
-
-#if _TEST_MESH_MODE_==_UNIFORM_MESH_  
-  double res = 3;
-#endif
-
-
-#if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
-  double highRes = dist/32.0, lowRes= dist/2.0;     
-  double res =(5-1)/dist*(x[0]-xmin[0])+1;  
-#endif
-
-  res=sqrt(3)+0.1;
+  // Assume dx = dy = dz
+  double dx = PIC::CPLR::FLUID::FluidInterface.getdx(0);
+  // Why use 0.1? How about res = res*(1+1e-6)? --Yuxi
+  double res=sqrt(3*dx*dx) + 0.1;
   return res;
 }
                        
-
-
-
 void amps_init_mesh() {
-  
-  
+    
   PIC::InitMPI();
   PIC::Init_BeforeParser();
 
@@ -1451,11 +1417,22 @@ void amps_init_mesh() {
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
   sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
 
+
+  double xMin[3] = {0, 0, 0};
+
+  double xMax[3] = {PIC::CPLR::FLUID::FluidInterface.getphyMax(0) - 
+		    PIC::CPLR::FLUID::FluidInterface.getphyMin(0), 
+		    PIC::CPLR::FLUID::FluidInterface.getphyMax(1) - 
+		    PIC::CPLR::FLUID::FluidInterface.getphyMin(1), 
+		    PIC::CPLR::FLUID::FluidInterface.getphyMax(2) - 
+		    PIC::CPLR::FLUID::FluidInterface.getphyMin(2)};
+
+
   PIC::Mesh::mesh.AllowBlockAllocation=false;
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
-    PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
+    PIC::BC::ExternalBoundary::Periodic::Init(xMin,xMax,BulletLocalResolution);
   }else{
-    PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
+    PIC::Mesh::mesh.init(xMin,xMax,BulletLocalResolution);
   }
   PIC::Mesh::mesh.memoryAllocationReport();
 
