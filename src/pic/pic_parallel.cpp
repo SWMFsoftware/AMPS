@@ -1685,7 +1685,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       }
     }
    
-    printf("thisthread:%d, nPointsToComm:%d\n",PIC::ThisThread,nPointsToComm[PIC::ThisThread]);
+    //printf("thisthread:%d, nPointsToComm:%d\n",PIC::ThisThread,nPointsToComm[PIC::ThisThread]);
 
     if (SendCoordBuff!=NULL) delete [] SendCoordBuff;
     SendCoordBuff = new double [3*nPointsToComm[PIC::ThisThread]];    
@@ -1788,7 +1788,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     PIC::Parallel::XYZTree::leafNode ** leafNodeArr = new  PIC::Parallel::XYZTree::leafNode * [PIC::nTotalThreads];
    
     for (iThread=0; iThread<PIC::nTotalThreads; iThread++) {
-      printf("nPointsToComm[%d]:%d\n",iThread,nPointsToComm[iThread]);
+      // printf("nPointsToComm[%d]:%d\n",iThread,nPointsToComm[iThread]);
       leafNodeArr[iThread] = new PIC::Parallel::XYZTree::leafNode [nPointsToComm[iThread]];
     }
     //create tree from local thread
@@ -1841,11 +1841,11 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       }
     }//while (nProcDone<PIC::nTotalThreads-1)
     
-    printf("nProcDone:%d\n",nProcDone);
-    printf("\n");
-    printf("thisthread:%d ,counterarr: ",PIC::ThisThread);
-    for (i=0;i<PIC::nTotalThreads-1;i++) printf(" %d",counterArr[i]);
-    printf("\n");
+    // printf("nProcDone:%d\n",nProcDone);
+    // printf("\n");
+    // printf("thisthread:%d ,counterarr: ",PIC::ThisThread);
+    // for (i=0;i<PIC::nTotalThreads-1;i++) printf(" %d",counterArr[i]);
+    //printf("\n");
     //Tree.printTree();
 
     int totalStencil=0;
@@ -1867,7 +1867,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
     StencilTableLength=totalStencil;
     StencilTable=new cStencilElement[totalStencil];
-    printf("totalStencil:%d, thisthread:%d\n", totalStencil, PIC::ThisThread);
+    //printf("totalStencil:%d, thisthread:%d\n", totalStencil, PIC::ThisThread);
 
     int totalNodes=0;
     int iSt =0;
@@ -2005,12 +2005,12 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     
     int sumLoad=0;
     for (int i=0;i<PIC::Mesh::mesh.nTotalThreads;i++) {
-      printf("thread:%d, loadlist[%d],%d",PIC::ThisThread,i,LoadList[i]);
+      //  printf("thread:%d, loadlist[%d],%d",PIC::ThisThread,i,LoadList[i]);
       sumLoad+=LoadList[i];
     }
     
-    printf("thread:%d, StencilTableLength:%d\n",PIC::ThisThread,StencilTableLength);
-    printf("\n");
+    //printf("thread:%d, StencilTableLength:%d\n",PIC::ThisThread,StencilTableLength);
+    //printf("\n");
     //    if (sumLoad!=StencilTableLength) exit(__LINE__,__FILE__,"Error: Stencils containing only one thread/proc are in the StencilTable");
         
     if (wholeStencilIndexOfBuffer!=NULL) delete [] wholeStencilIndexOfBuffer;
