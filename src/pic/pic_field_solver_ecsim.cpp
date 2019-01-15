@@ -1779,7 +1779,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
   t0=MPI_Wtime();
   linear_solver_matvec_c = matvec;
-  Solver.Solve(SetInitialGuess,ProcessFinalSolution,1e-8,200,PackBlockData_E,UnpackBlockData_E);
+  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,
+	       PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E);
   t1=MPI_Wtime();
   CumulativeTiming::SolveTime+=t1-t0;
 

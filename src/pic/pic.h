@@ -4378,6 +4378,9 @@ namespace PIC {
       extern int nBlockProc; 
       
       extern double dt; 
+      
+      extern double EFieldTol; 
+      extern double EFieldIter; 
 
       static const int nDimMax = 3; 
       void set_FluidInterface();

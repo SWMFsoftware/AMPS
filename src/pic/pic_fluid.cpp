@@ -42,6 +42,10 @@ int nK_Gh = _GHOST_CELLS_Z_< 2 ? 2:_GHOST_CELLS_Z_;
 
 double PIC::CPLR::FLUID::dt  = 0;
 
+// #EFIELDSOLVER
+double PIC::CPLR::FLUID::EFieldTol = 1.0e-6;
+double PIC::CPLR::FLUID::EFieldIter = 200;
+
 void PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc) {
   MPI_GLOBAL_COMMUNICATOR=MPI_Comm_f2c(*iComm);
   PIC::InitMPI();
@@ -391,7 +395,11 @@ void PIC::CPLR::FLUID::read_param(){
       readParam.read_var("npcelx", npcelx[0]);
       readParam.read_var("npcely", npcely[0]);
       readParam.read_var("npcelz", npcelz[0]);
-    
+
+
+    } else if (command == "#EFIELDSOLVER") {
+      readParam.read_var("EFieldTol", EFieldTol);
+      readParam.read_var("EFieldIter", EFieldIter);    
     } else if (command == "#TIMESTEPPING") {
       // These three variables are not used so far in MHD-AMPS. 
       bool useSWMFDt, useFixedDt;
