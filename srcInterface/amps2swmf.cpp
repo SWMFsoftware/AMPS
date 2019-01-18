@@ -61,6 +61,7 @@ extern "C" {
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
+    amps_init_mesh();
 #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
     PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
