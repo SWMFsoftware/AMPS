@@ -19,7 +19,7 @@ OBJECTS = \
 #
 #	Making library
 #
-MY_LIB    = ${LIBDIR}/libPC.a
+MY_LIB    = ${LIBDIR}/lib${COMPONENT}.a
 
 LIB:
 	rm -rf *.o
