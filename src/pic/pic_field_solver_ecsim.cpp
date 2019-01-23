@@ -1760,15 +1760,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   double t0,t1,StartTime=MPI_Wtime();
   
   if (PIC::CPLR::FLUID::iCycle==0){  
-    UpdateJMassMatrix();
+    UpdateJMassMatrix();    
     {// Output
       double timeNow = 0.0;  
-      bool doForceOutput = false; 
-      PIC::CPLR::FLUID::
-        FluidInterface.writers_write(timeNow, PIC::CPLR::FLUID::iCycle, 
-                                     doForceOutput,
-                                     &PIC::CPLR::FLUID::find_output_list, 
-                                     &PIC::CPLR::FLUID::get_field_var);
+      PIC::CPLR::FLUID::write_output(timeNow);
     }    
   }
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ){
@@ -1784,7 +1779,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
   t0=MPI_Wtime();
   linear_solver_matvec_c = matvec;
-  Solver.Solve(SetInitialGuess,ProcessFinalSolution,1e-8,200,PackBlockData_E,UnpackBlockData_E);
+  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,
+	       PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E);
   t1=MPI_Wtime();
   CumulativeTiming::SolveTime+=t1-t0;
 

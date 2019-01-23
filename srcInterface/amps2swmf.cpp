@@ -61,12 +61,13 @@ extern "C" {
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
+    amps_init_mesh();
 #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
     PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
     //PIC::CPLR::FLUID::init();
 #endif
-    amps_init_mesh();
+    // amps_init_mesh();
   }
 
 
@@ -288,12 +289,19 @@ extern "C" {
 
     int nPIC = 1, iPIC = 0, nParamRegion = 21; 
 
+
+    PIC::CPLR::FLUID::FluidInterface.set_myrank(PIC::ThisThread);
+    PIC::CPLR::FLUID::FluidInterface.set_nProcs(PIC::nTotalThreads);
+
     PIC::CPLR::FLUID::FluidInterface.ReadFromGMinit(ParamInt, 
 						 &ParamReal[iPIC*nParamRegion], 
 						 &ParamReal[nPIC*nParamRegion], 
 						 ss);
   
     PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
+    
+    // The domain size and resolution is in the FluidInterface now. 
+    amps_init_mesh();
     
     PIC::CPLR::FLUID::read_param();
     
