@@ -387,38 +387,38 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 
   //set up the offsets for 'center node' sampled data
   long int offset=0;
-  DatumParticleWeight.activate(offset, &DataSampledCenterNodeActive);
-  DatumNumberDensity.activate(offset, &DataSampledCenterNodeActive);
-  DatumParticleNumber.activate(offset, &DataSampledCenterNodeActive);
-  DatumParticleVelocity.activate(offset, &DataSampledCenterNodeActive);
-  DatumParticleVelocity2.activate(offset, &DataSampledCenterNodeActive);
-#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
-  DatumParticleVelocity2Tensor.activate(offset, &DataSampledCenterNodeActive);
-#endif
-  DatumParticleSpeed.activate(offset, &DataSampledCenterNodeActive);
-  DatumTranslationalTemperature.activate(&cDataCenterNode::GetTranslationalTemperature, &DataDerivedCenterNodeActive);
 
-  //sampling the 'parallel' and 'tangential' kinetic temperatures
-#if _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_ == _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_
-  //do nothing
-#else
-  DatumParallelTantentialTemepratureSample_Velocity.activate(offset, &DataSampledCenterNodeActive);
-  DatumParallelTantentialTemepratureSample_Velocity2.activate(offset,&DataSampledCenterNodeActive);
-  DatumParallelTranslationalTemperature.activate(&cDataCenterNode::GetParallelTranslationalTemperature, &DataDerivedCenterNodeActive);
-  DatumTangentialTranslationalTemperature.activate(&cDataCenterNode::GetTangentialTranslationalTemperature, &DataDerivedCenterNodeActive);
-#endif
+  if (_PIC_SAMPLING_MODE_==_PIC_MODE_ON_) {
+    DatumParticleWeight.activate(offset, &DataSampledCenterNodeActive);
+    DatumNumberDensity.activate(offset, &DataSampledCenterNodeActive);
+    DatumParticleNumber.activate(offset, &DataSampledCenterNodeActive);
+    DatumParticleVelocity.activate(offset, &DataSampledCenterNodeActive);
+    DatumParticleVelocity2.activate(offset, &DataSampledCenterNodeActive);
 
-  //check if user defined sampling data is requested
-  if (PIC::IndividualModelSampling::DataSampledList.size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::DataSampledList.size();i++) PIC::IndividualModelSampling::DataSampledList[i]->activate(offset, &DataSampledCenterNodeActive);
+    if (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) {
+      DatumParticleVelocity2Tensor.activate(offset, &DataSampledCenterNodeActive);
+    }
+
+    DatumParticleSpeed.activate(offset, &DataSampledCenterNodeActive);
+    DatumTranslationalTemperature.activate(&cDataCenterNode::GetTranslationalTemperature, &DataDerivedCenterNodeActive);
+
+    //sampling the 'parallel' and 'tangential' kinetic temperatures
+    if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_ != _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
+      DatumParallelTantentialTemepratureSample_Velocity.activate(offset, &DataSampledCenterNodeActive);
+      DatumParallelTantentialTemepratureSample_Velocity2.activate(offset,&DataSampledCenterNodeActive);
+      DatumParallelTranslationalTemperature.activate(&cDataCenterNode::GetParallelTranslationalTemperature, &DataDerivedCenterNodeActive);
+      DatumTangentialTranslationalTemperature.activate(&cDataCenterNode::GetTangentialTranslationalTemperature, &DataDerivedCenterNodeActive);
+    }
+
+    //check if user defined sampling data is requested
+    if (PIC::IndividualModelSampling::DataSampledList.size()!=0) {
+      for (unsigned int i=0;i<PIC::IndividualModelSampling::DataSampledList.size();i++) PIC::IndividualModelSampling::DataSampledList[i]->activate(offset, &DataSampledCenterNodeActive);
+    }
+
+    if (PIC::IndividualModelSampling::RequestSamplingData.size()!=0) {
+      for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestSamplingData.size();i++) offset+=PIC::IndividualModelSampling::RequestSamplingData[i](offset);
+    }
   }
-
-  if (PIC::IndividualModelSampling::RequestSamplingData.size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestSamplingData.size();i++) offset+=PIC::IndividualModelSampling::RequestSamplingData[i](offset);
-  }
-
-
-
 
   PIC::Mesh::sampleSetDataLength=offset;
 
@@ -426,6 +426,7 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
 
   PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
+
 
   //the volume partilce injection: save the volume particle injection rate
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
