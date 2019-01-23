@@ -164,8 +164,8 @@
 
 
 //a stack class for the mesh elements
-#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 10000
-#define _STACK_DEFAULT_BUFFER_LIST_SIZE_ 10000
+#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 100
+#define _STACK_DEFAULT_BUFFER_LIST_SIZE_ 100
 
 //macro definition for the real and ghost blocks 
 #define _GHOST_BLOCK_ true
