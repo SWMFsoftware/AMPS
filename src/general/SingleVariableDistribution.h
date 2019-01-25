@@ -17,7 +17,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef __PGI
 #include <emmintrin.h>
+#endif
 #include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
