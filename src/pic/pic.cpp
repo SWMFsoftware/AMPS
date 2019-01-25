@@ -934,7 +934,9 @@ void PIC::Sampling::Sampling() {
                 int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
 
                 for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
+#ifndef __PGI
                   _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ptrNext,_MM_HINT_T1);
+#endif
                 }
                 #endif
               }
