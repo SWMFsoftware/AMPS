@@ -8,7 +8,9 @@ set WorkDir = /nobackup/`whoami`
 
 module unload gcc
 module unload comp-intel
-module load comp-pgi 
+
+module use -a /nasa/modulefiles/testing
+module load comp-pgi/18.4 mpi-hpe/mpt.2.18r160
 
 echo -n "Compiling PGI....."                 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS           
