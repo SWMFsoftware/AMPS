@@ -1007,10 +1007,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     
 
     for (res=0.0,iElement=0;iElement<iElementMax;iElement++) {
-      cStencilElementData *ptr=&Elements[iElement];
-      cStencilElementData data=*ptr;
+      cStencilElementData *data=Elements+iElement;
 
-      res+=data.MatrixElementValue*RecvExchangeBuffer[data.Thread][data.iVar+NodeUnknownVariableVectorLength*data.UnknownVectorIndex];
+      res+=data->MatrixElementValue*RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
 
      p[cnt]=res;
