@@ -74,7 +74,7 @@ endif
 #include AVX instruction flag when compile with Intel or GCC compilers
 ifeq ($(COMPILE.mpicxx),icc)
         SEARCH_C+= -mavx
-else ($(COMPILE.mpicxx),gcc)
+else ifeq ($(COMPILE.mpicxx),gcc)
         SEARCH_C+= -mavx
 endif
 
