@@ -33,18 +33,21 @@ cd $WorkDir/Tmp_AMPS_test/GNU/AMPS
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
+  rm -f $f
 end
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
+  rm -f $f
 end
 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
+  rm -f $f
 end
 
 # Go to your home directory
