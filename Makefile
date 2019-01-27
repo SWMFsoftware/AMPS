@@ -71,6 +71,13 @@ ifeq ($(LINK_SWMF_SHARED_LIB),on)
 	AMPSLINKLIB+=./share/lib/libSHARE.a
 endif
 
+#include AVX instruction flag when compile with Intel or GCC compilers
+ifeq ($(COMPILE.mpicxx),icc)
+        SEARCH_C+= -mavx
+else ($(COMPILE.mpicxx),gcc)
+        SEARCH_C+= -mavx
+endif
+
 #include BATL-related libraries for linking
 ifneq ($(BATL),nobatl)	
 	AMPSLINKLIB+=${BATL}/lib/libREADAMR.a
