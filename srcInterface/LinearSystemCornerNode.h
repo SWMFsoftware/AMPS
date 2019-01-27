@@ -16,6 +16,10 @@
 #include <functional>
 #include <iostream>
 
+#ifndef __PGI
+#include <immintrin.h>
+#endif
+
 class cLinearSystemCornerNodeDataRequestListElement {
 public:
   int CornerNodeID;
@@ -1005,9 +1009,40 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     iElementMax=row->nNonZeroElements;
     Elements=row->Elements;
     
+    res=0.0,iElement=0;
+    cStencilElementData *data;
 
-    for (res=0.0,iElement=0;iElement<iElementMax;iElement++) {
-      cStencilElementData *data=Elements+iElement;
+    #ifndef __PGI  //PGI 17.10 compiler has a problem with the following section
+    double a[4],b[4],*r;
+    __m256d av,bv,cv,rv;
+
+    //add most of the vector
+    for (;iElement+3<iElementMax;iElement+=4) {
+      data=Elements+iElement;
+      a[0]=data->MatrixElementValue,b[0]=RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+
+      data=Elements+iElement+1;
+      a[1]=data->MatrixElementValue,b[1]=RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+
+      data=Elements+iElement+2;
+      a[2]=data->MatrixElementValue,b[2]=RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+
+      data=Elements+iElement+3;
+      a[3]=data->MatrixElementValue,b[3]=RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+
+      av=_mm256_load_pd(a);
+      bv=_mm256_load_pd(b);
+      cv=_mm256_mul_pd(av,bv);
+      rv=_mm256_hadd_pd(cv,cv);
+
+      r=(double*)&rv;
+      res+=r[1]+r[2];
+    }
+    #endif
+
+    //add the rest of the vector
+    for (;iElement<iElementMax;iElement++) {
+      data=Elements+iElement;
 
       res+=data->MatrixElementValue*RecvExchangeBuffer[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
