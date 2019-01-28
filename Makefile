@@ -72,9 +72,9 @@ ifeq ($(LINK_SWMF_SHARED_LIB),on)
 endif
 
 #include AVX instruction flag when compile with Intel or GCC compilers
-ifeq ($(COMPILE.mpicxx),icc)
+ifeq ($(COMPILE.c),icc)
         SEARCH_C+= -mavx
-else ifeq ($(COMPILE.mpicxx),gcc)
+else ifeq ($(COMPILE.c),gcc)
         SEARCH_C+= -mavx
 endif
 
