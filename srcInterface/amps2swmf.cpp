@@ -297,14 +297,13 @@ extern "C" {
 						 &ParamReal[iPIC*nParamRegion], 
 						 &ParamReal[nPIC*nParamRegion], 
 						 ss);
-  
-    PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
     
     // The domain size and resolution is in the FluidInterface now. 
     amps_init_mesh();
     
     PIC::CPLR::FLUID::read_param();
-    
+
+    PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
     
     //amps_init();
     delete ss;

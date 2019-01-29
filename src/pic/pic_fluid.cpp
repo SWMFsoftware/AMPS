@@ -716,15 +716,15 @@ double PIC::CPLR::FLUID::get_var(std::string var,
     //value = Bzn[i][j][k];
   } else if (var.substr(0, 1) == "X") {
 
-    value = x[0]-16;
+    value = x[0] + PIC::CPLR::FLUID::FluidInterface.getFluidStartX();
     //    printf("x:%f\n",x[0]);
   } else if (var.substr(0, 1) == "Y") {
 
-    value = x[1]-8;
+    value = x[1] + PIC::CPLR::FLUID::FluidInterface.getFluidStartY();
     //printf("y:%f\n",x[1]);     
   } else if (var.substr(0, 1) == "Z") {
 
-    value = x[2]-4;
+    value = x[2] + PIC::CPLR::FLUID::FluidInterface.getFluidStartZ();
 
   } else if (var.substr(0, 4) == "rhoc") {
     // rhocS0, rhocS1... rhoc
