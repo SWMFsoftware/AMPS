@@ -1013,7 +1013,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     cStencilElementData *data;
 
     #ifndef __PGI  //PGI 17.10 compiler has a problem with the following section
-    double a[4],b[4],*r;
+    alignas(32) double a[4],b[4],*r;
     __m256d av,bv,cv,rv;
 
     //add most of the vector
