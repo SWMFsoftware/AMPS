@@ -579,7 +579,8 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
           double ParVel_D[3];
           double uth[3];
           
-          if (iSp!=0){
+          if ((iSp!=0 || PIC::CPLR::FLUID::FluidInterface.get_useElectronFluid()) && PIC::CPLR::FLUID::FluidInterface.getUseAnisoP()){
+            
             double rand[4];
             for (int irand=0; irand<4; irand++) rand[irand]=rndNum();
             
@@ -587,6 +588,7 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
                                                          iBlock,xPar[0],xPar[1],xPar[2],
                                                          uth,uth+1,uth+2,
                                                          rand[0], rand[1], rand[2], rand[3],iSp);
+            
           }else{
             double rand[4];
             for (int irand=0; irand<4; irand++) rand[irand]=rndNum();
