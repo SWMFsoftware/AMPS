@@ -22,6 +22,10 @@
 #include <atomic>
 #include <vector>
 
+#ifndef __PGI
+#include <immintrin.h>
+#endif
+
 #define _STDOUT_ERRORLOG_MODE__ON_   0
 #define _STDOUT_ERRORLOG_MODE__OFF_  1
 #define _STDOUT_ERRORLOG_MODE_ _STDOUT_ERRORLOG_MODE__ON_
@@ -261,9 +265,31 @@ namespace VectorRotation {
 //Vector Operations
 namespace Vector3D {
   inline void CrossProduct(double *res,double *a,double *b) {
+
+    /*
+    cross(a, b).z = a.x * b.y - a.y * b.x;
+    cross(a, b).x = a.y * b.z - a.z * b.y;
+    cross(a, b).y = a.z * b.x - a.x * b.z;
+     */
+
+#ifndef __PGI
+    __m256d av,bv;
+
+    const int PermutationTable=201;// 11 00 10 01 b
+    static const __m256i mask=_mm256_set_epi64x(0,0x8000000000000000,0x8000000000000000,0x8000000000000000);
+
+    av=_mm256_set_pd(0.0,a[2],a[1],a[0]);
+    bv=_mm256_set_pd(0.0,b[2],b[1],b[0]);
+
+    _mm256_maskstore_pd(res,mask,
+        _mm256_permute4x64_pd(
+          _mm256_fmsub_pd (av,_mm256_permute4x64_pd(bv,PermutationTable),_mm256_mul_pd(_mm256_permute4x64_pd(av,PermutationTable),bv)),
+          PermutationTable));
+#else //__PGI
     res[0]=a[1]*b[2]-a[2]*b[1];
     res[1]=a[2]*b[0]-a[0]*b[2];
     res[2]=a[0]*b[1]-a[1]*b[0];
+#endif
   }
 
   inline double Length(double *x) {
