@@ -73,9 +73,9 @@ endif
 
 #include AVX instruction flag when compile with Intel or GCC compilers
 ifeq ($(COMPILE.c),icc)
-        SEARCH_C+= -mavx
+        SEARCH_C+= -march=core-avx2  
 else ifeq ($(COMPILE.c),gcc)
-        SEARCH_C+= -mavx
+        SEARCH_C+= -mavx2 -mfma 
 endif
 
 #include BATL-related libraries for linking
