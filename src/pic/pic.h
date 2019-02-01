@@ -1980,6 +1980,25 @@ namespace PIC {
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
 
+    inline void PrefertchParticleData_Basic(byte* ParticleDataStart) {
+      int iPrefetch,iPrefetchMax=1+(int)(_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
+
+      for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
+      #ifndef __PGI
+        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
+      #endif
+      }
+    }
+
+    inline void PreferchParticleData_Full(byte* ParticleDataStart) {
+      int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
+
+      for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
+      #ifndef __PGI
+        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
+      #endif
+      }
+    }
 
     //========================================================
 
