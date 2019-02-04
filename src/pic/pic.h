@@ -33,6 +33,10 @@
 #include <omp.h>
 #endif //_PIC_COMPILATION_MODE_ == _PIC_COMPILATION_MODE__HYBRID_
 
+#ifndef __PGI
+#include <immintrin.h>
+#endif
+
 using namespace std;
 
 #ifndef _PIC_
