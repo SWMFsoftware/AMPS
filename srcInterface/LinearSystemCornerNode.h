@@ -16,7 +16,7 @@
 #include <functional>
 #include <iostream>
 
-#ifndef __PGI
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
 #endif
 
@@ -1012,7 +1012,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     res=0.0,iElement=0;
     cStencilElementData *data;
 
-    #ifndef __PGI  //PGI 17.10 compiler has a problem with the following section
+    #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
     alignas(32) double a[4],b[4],*r;
     __m256d av,bv,cv,rv;
 
