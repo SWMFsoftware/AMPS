@@ -103,6 +103,7 @@ foreach (@Arguments) {
      print "-cpp-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe c++ compiler is used as a linker \n";
      print "-cpp-compiler=opt\t\treplace C++ compiler name defined by the variable COMPILE.mpicxx in Makefile.conf\n";
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
+     print "-avx=[on,off]\t\t\tsettings for using AVX instructions\n";
      exit;
    }
    
@@ -259,6 +260,26 @@ foreach (@Arguments) {
     require "./utility/TestScripts/RemoveNightlyTest.pl";     
     next;
   } 
+
+  if (/^-avx=(.*)$/) {
+    my $t;
+
+    $t=lc($1);
+        
+    if ($t eq "on") {
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__ON_");
+      `echo AVXMODE=on >> Makefile.local`;
+    }
+    elsif ($t eq "off") {
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__OFF_");
+      `echo AVXMODE=off >> Makefile.local`;
+    }
+    else {
+      die "Option is not recognized: -avx=($1)";
+    }
+    
+    next;
+  }
 
   if (/^-link-option=(.*)$/) {
     my $options=$1; 
