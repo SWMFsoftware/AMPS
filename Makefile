@@ -25,6 +25,9 @@ INTERFACE=off
 #Link the SWMF' shared library
 LINK_SWMF_SHARED_LIB=off
 
+#use AVX instructions in the calculations 
+AVXMODE=off
+
 include Makefile.conf
 include Makefile.def
 
@@ -72,10 +75,12 @@ ifeq ($(LINK_SWMF_SHARED_LIB),on)
 endif
 
 #include AVX instruction flag when compile with Intel or GCC compilers
+ifeq ($(AVXMODE),on)
 ifeq ($(COMPILE.c),icc)
         SEARCH_C+= -march=core-avx2  
 else ifeq ($(COMPILE.c),gcc)
         SEARCH_C+= -mavx2 -mfma 
+endif
 endif
 
 #include BATL-related libraries for linking
