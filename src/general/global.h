@@ -20,6 +20,9 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 //compilation mode
 #define _COMPILATION_MODE_ _COMPILATION_MODE__MPI_
 
+//using AVX instructions in calculations
+#define _AVX_INSTRUCTIONS_USAGE_MODE_  _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+
 //inlcude settings of the general block
 #include "../../.general.conf"
 

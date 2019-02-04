@@ -7,3 +7,7 @@
 //Compilation mode (pure MPI or MPI+OpenMP)
 #define _COMPILATION_MODE__MPI_     0
 #define _COMPILATION_MODE__HYBRID_  1
+
+//using AVX instructions in calculations 
+#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_  0
+#define _AVX_INSTRUCTIONS_USAGE_MODE__OFF_ 1

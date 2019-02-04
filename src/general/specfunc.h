@@ -22,7 +22,7 @@
 #include <atomic>
 #include <vector>
 
-#ifndef __PGI
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
 #endif
 
@@ -272,7 +272,7 @@ namespace Vector3D {
     cross(a, b).y = a.z * b.x - a.x * b.z;
      */
 
-#ifndef __PGI
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
     __m256d av,bv;
 
     const int PermutationTable=201;// 11 00 10 01 b
@@ -285,7 +285,7 @@ namespace Vector3D {
         _mm256_permute4x64_pd(
           _mm256_fmsub_pd (av,_mm256_permute4x64_pd(bv,PermutationTable),_mm256_mul_pd(_mm256_permute4x64_pd(av,PermutationTable),bv)),
           PermutationTable));
-#else //__PGI
+#else //_AVX_INSTRUCTIONS_USAGE_MODE_
     res[0]=a[1]*b[2]-a[2]*b[1];
     res[1]=a[2]*b[0]-a[0]*b[2];
     res[2]=a[0]*b[1]-a[1]*b[0];
