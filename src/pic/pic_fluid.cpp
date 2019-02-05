@@ -387,6 +387,15 @@ void PIC::CPLR::FLUID::read_param(){
     } else if (command == "#ELECTRON") {
       // iones info comes from BATSRUS
       readParam.read_var("qom", qom[0]);
+    } else if (command == "#DISCRETIZATION") {
+      //isDisParamSet = true;
+      double th; 
+      readParam.read_var("th", th);
+      //readParam.read_var("gradRhoRatio", gradRhoRatio);
+      //readParam.read_var("cDiff", cDiff);
+      //readParam.read_var("ratioDivC2C", ratioDivC2C);
+
+      PIC::FieldSolver::Electromagnetic::ECSIM::theta = th;
     } else if (command == "#PARTICLES") {
       int nCommand = 3; // Number of commands for each region.
       readParam.skip_lines(nCommand * FluidInterface.getiRegion());
@@ -420,6 +429,7 @@ void PIC::CPLR::FLUID::read_param(){
       }
     }
   }  // while
+
 
   int ns = 2; 
   FluidInterface.fixPARAM(qom, npcelx, npcely, npcelz, &ns);
