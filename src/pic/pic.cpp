@@ -34,6 +34,9 @@ int *PIC::Sampling::SimulatedSpeciesParticleNumber=NULL;
 list <cRebuildMatrix*> PIC::LinearSolverTable;
 
 
+bool PIC::doPicCoupleFluid=false;
+std::vector<double> PIC::partMass, PIC::partCharge;
+
 //====================================================
 //perform one time step
 int PIC::TimeStep() {

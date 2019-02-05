@@ -110,6 +110,9 @@ namespace PIC {
   extern char OutputDataFileDirectory[_MAX_STRING_LENGTH_PIC_];
   extern char InputDataFileDirectory[_MAX_STRING_LENGTH_PIC_];
 
+  extern bool doPicCoupleFluid; 
+  extern std::vector<double> partMass, partCharge;
+
   //the variables that controls the sampling procedure
   //LastSampleLength: the length of the last collected sample
   //CollectingSampleCounter: the number of iterations passed in the current sample loop
@@ -1488,10 +1491,21 @@ namespace PIC {
     static const double MolMass[]={0.0};
     static const double ElectricChargeTable[]={0.0};
 
-//    extern double *MolMass;
-//    void SetMass(double,int);
-    inline double GetMass(int spec) {return MolMass[spec];}
-    inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
+    inline double GetMass(int spec) { 
+      if(doPicCoupleFluid){
+	return partMass[spec];
+      }else{
+	return MolMass[spec]; 
+      }
+    }
+
+    inline double GetElectricCharge(int spec) { 
+      if(doPicCoupleFluid){
+	return partCharge[spec];
+      }else{
+	return ElectricChargeTable[spec]; 
+      }
+    }
 
 
     //get and set the value of the electric charge for a species
@@ -1500,8 +1514,7 @@ namespace PIC {
     void SetElectricCharge(double,int);*/
 
     //get and set the species numbers and chemical symbols
-    static const char ChemTable[][_MAX_STRING_LENGTH_PIC_]={"nothin is defined"};
-
+    static const char ChemTable[][_MAX_STRING_LENGTH_PIC_]={"nothin is defined"};    
 
 //    extern char **ChemTable; // <- The table of chemical symbols used in the simulation
     extern char **LoadingSpeciesList; // <- the list of species that CAN BE locased in the simualtion
@@ -4394,8 +4407,8 @@ namespace PIC {
     namespace FLUID {
       extern bool FirstCouplingOccured;
       extern int nCells[3];
-      extern int *npcelx,*npcely,*npcelz;
-
+      extern int *npcelx,*npcely,*npcelz;     
+      
       extern FluidPicInterface FluidInterface;       
       extern long int iCycle;
       extern int nBlockProc; 
@@ -4406,6 +4419,7 @@ namespace PIC {
       extern double EFieldIter; 
 
       static const int nDimMax = 3; 
+      
       void set_FluidInterface();
       void read_param(); 
       

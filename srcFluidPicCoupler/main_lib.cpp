@@ -1517,7 +1517,7 @@ void amps_init(){
 
   //  PIC::BC::UserDefinedParticleInjectionFunction=setFixedBC;
   
-
+  PIC::doPicCoupleFluid = true; 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
 

@@ -234,7 +234,7 @@ void PIC::CPLR::FLUID::read_param(){
 
   double *qom; 
   qom = new double[1];
-  qom[0] = -25;
+  qom[0] = -100;
 
   //int *npcelx,*npcely,*npcelz;
 
@@ -384,6 +384,9 @@ void PIC::CPLR::FLUID::read_param(){
 	}
 
       } // iPlot
+    } else if (command == "#ELECTRON") {
+      // iones info comes from BATSRUS
+      readParam.read_var("qom", qom[0]);
     } else if (command == "#PARTICLES") {
       int nCommand = 3; // Number of commands for each region.
       readParam.skip_lines(nCommand * FluidInterface.getiRegion());
@@ -420,6 +423,16 @@ void PIC::CPLR::FLUID::read_param(){
 
   int ns = 2; 
   FluidInterface.fixPARAM(qom, npcelx, npcely, npcelz, &ns);
+
+  if(ns !=2 )
+    exit(__LINE__,__FILE__,"Error: more than 2 species are not supported so far!");
+  
+  for(int iSpecies = 0; iSpecies<ns; ++iSpecies){
+    // Set the mass and charge for the PIC code. 
+    PIC::partMass.push_back(FluidInterface.getMiSpecies(iSpecies)*_AMU_);
+    PIC::partCharge.push_back(FluidInterface.getQiSpecies(iSpecies)*ElectronCharge);
+  }
+  
 }
 
 
