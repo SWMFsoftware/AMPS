@@ -1164,6 +1164,8 @@ sub ReadGeneralBlock {
       
       #insert the user data into the source code
       if ($Mode eq "on") {
+        my @FileContent;
+        
         if (! defined $Class) {
           die "$InputLine: Class is not defined in $InputFileName.Assembled\n";
         }
@@ -1173,30 +1175,7 @@ sub ReadGeneralBlock {
         }
         
         ampsConfigLib::RedefineMacro("_CUT_CELL__TRIANGULAR_FACE__USER_DATA__MODE_","_ON_AMR_MESH_","meshAMR/meshAMRcutcell.h");
-        
-        #add the total species number into general.h
-        my @FileContent;
-        my $found=0;
-        
-        open (GENERALIN,"<$ampsConfigLib::WorkingSourceDirectory/general/global.h") || die "Cannot open file $ampsConfigLib::WorkingSourceDirectory/general/global.h\n";
-        @FileContent=<GENERALIN>;
-        close (GENERALIN);
-        
-        open (GENERALOUT,">$ampsConfigLib::WorkingSourceDirectory/general/global.h");
-        
-        foreach (@FileContent) {
-          print GENERALOUT "$_";
-         
-          if ($_=~/_GLOBAL_VARIABLES_/) {
-            if ($found == 0) {
-              print GENERALOUT "#define _TOTAL_SPECIES_NUMBER_ $TotalSpeciesNumber\n";
-              $found=1;            
-            }
-          }
-        }
-         
-        close(GENERALOUT); 
-                
+                        
         #add the header information at the beginig of the file
         open (MESHFILEIN,"<$ampsConfigLib::WorkingSourceDirectory/meshAMR/meshAMRcutcell.h") || die "Cannot open file $ampsConfigLib::WorkingSourceDirectory/meshAMR/meshAMRcutcell.h\n";  
         @FileContent=<MESHFILEIN>;
@@ -1630,6 +1609,29 @@ sub ReadGeneralBlock {
    
     ### ENDGENERAL ###
     elsif ($InputLine eq "#ENDGENERAL") {
+      #add the total species number into general.h
+      my @FileContent;
+      my $found=0;
+      
+      open (GENERALIN,"<$ampsConfigLib::WorkingSourceDirectory/general/global.h") || die "Cannot open file $ampsConfigLib::WorkingSourceDirectory/general/global.h\n";
+      @FileContent=<GENERALIN>;
+      close (GENERALIN);
+      
+      open (GENERALOUT,">$ampsConfigLib::WorkingSourceDirectory/general/global.h");
+      
+      foreach (@FileContent) {
+        print GENERALOUT "$_";
+       
+        if ($_=~/_GLOBAL_VARIABLES_/) {
+          if ($found == 0) {
+            print GENERALOUT "#define _TOTAL_SPECIES_NUMBER_ $TotalSpeciesNumber\n";
+            $found=1;            
+          }
+        }
+      }
+       
+      close(GENERALOUT); 
+      
       last;
     }
     else {      
@@ -3706,8 +3708,8 @@ sub ReadSpeciesBlock {
   }
   
   ampsConfigLib::ChangeValueOfArray("static const char ChemTable\\[\\]\\[_MAX_STRING_LENGTH_PIC_\\]",\@t,"pic/pic.h");
-  ampsConfigLib::ChangeValueOfArray("static const double MolMass\\[\\]",\@MassArray,"pic/pic.h");
-  ampsConfigLib::ChangeValueOfArray("static const double ElectricChargeTable\\[\\]",\@ElectricChargeArray,"pic/pic.h");
+  ampsConfigLib::ChangeValueOfArray("double PIC::MolecularData::MolMass\\[_TOTAL_SPECIES_NUMBER_\\]",\@MassArray,"pic/pic_mol.cpp");
+  ampsConfigLib::ChangeValueOfArray("double PIC::MolecularData::ElectricChargeTable\\[_TOTAL_SPECIES_NUMBER_\\]",\@ElectricChargeArray,"pic/pic_mol.cpp");
   ampsConfigLib::ChangeValueOfArray("static const int SpcecieTypeTable\\[\\]",\@SpeciesTypeTable,"pic/pic.h");
   
 
@@ -3772,6 +3774,10 @@ sub ampsConfigSettings {
       if (/^InputFileAMPS=(.*)$/i) {
         $InputFileName = $1;
         next;
+      }
+
+      if (/^MemoryPrefetch=(.*)$/i) {
+         ampsConfigLib::RedefineMacro("_PIC_MEMORY_PREFETCH_MODE_","_PIC_MEMORY_PREFETCH_MODE__".$1."_","pic/picGlobal.dfn");
       }
 	     
       if (/^SPICEKERNELS=(.*)$/i) {
