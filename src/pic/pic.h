@@ -26,6 +26,9 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+//the global model settings
+#include "picGlobal.dfn" 
+
 #include "global.h"
 #include "FluidPicInterface.h"
 
@@ -33,17 +36,19 @@
 #include <omp.h>
 #endif //_PIC_COMPILATION_MODE_ == _PIC_COMPILATION_MODE__HYBRID_
 
-#ifndef __PGI
+#if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
 #include <immintrin.h>
 #endif
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
+#include <immintrin.h>
+#endif
+
 
 using namespace std;
 
 #ifndef _PIC_
 #define _PIC_
-
-//the global model settings
-#include "picGlobal.dfn"
 
 //if the code is compiler for the nightly tests than a) turn the debug model ON, and b) turn on the dynamic domain decomposition based on the particle number
 #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
@@ -109,9 +114,6 @@ namespace PIC {
   //the directory for the input and output files
   extern char OutputDataFileDirectory[_MAX_STRING_LENGTH_PIC_];
   extern char InputDataFileDirectory[_MAX_STRING_LENGTH_PIC_];
-
-  extern bool doPicCoupleFluid; 
-  extern std::vector<double> partMass, partCharge;
 
   //the variables that controls the sampling procedure
   //LastSampleLength: the length of the last collected sample
@@ -1488,30 +1490,14 @@ namespace PIC {
     void Init();
 
     //mass of particles
-    static const double MolMass[]={0.0};
-    static const double ElectricChargeTable[]={0.0};
+    extern double MolMass[_TOTAL_SPECIES_NUMBER_];
+    extern double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
 
-    inline double GetMass(int spec) { 
-      if(doPicCoupleFluid){
-	return partMass[spec];
-      }else{
-	return MolMass[spec]; 
-      }
-    }
+    inline double GetMass(int spec) {return MolMass[spec];}
+    inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
 
-    inline double GetElectricCharge(int spec) { 
-      if(doPicCoupleFluid){
-	return partCharge[spec];
-      }else{
-	return ElectricChargeTable[spec]; 
-      }
-    }
-
-
-    //get and set the value of the electric charge for a species
-/*    extern double *ElectricCharge;
-    int GetElectricCharge(int);
-    void SetElectricCharge(double,int);*/
+    inline void SetMass(double t,int spec) {MolMass[spec]=t;}
+    inline void SetElectricCharge(double t,int spec) {ElectricChargeTable[spec]=t;}
 
     //get and set the species numbers and chemical symbols
     static const char ChemTable[][_MAX_STRING_LENGTH_PIC_]={"nothin is defined"};    
@@ -1998,23 +1984,23 @@ namespace PIC {
     }
 
     inline void PrefertchParticleData_Basic(byte* ParticleDataStart) {
+      #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
       int iPrefetch,iPrefetchMax=1+(int)(_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-      #ifndef __PGI
         _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
-      #endif
       }
+      #endif
     }
 
     inline void PreferchParticleData_Full(byte* ParticleDataStart) {
+      #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
       int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-      #ifndef __PGI
         _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
-      #endif
       }
+      #endif
     }
 
     //========================================================
