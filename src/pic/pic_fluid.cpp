@@ -439,8 +439,8 @@ void PIC::CPLR::FLUID::read_param(){
   
   for(int iSpecies = 0; iSpecies<ns; ++iSpecies){
     // Set the mass and charge for the PIC code. 
-    PIC::partMass.push_back(FluidInterface.getMiSpecies(iSpecies)*_AMU_);
-    PIC::partCharge.push_back(FluidInterface.getQiSpecies(iSpecies)*ElectronCharge);
+    PIC::MolecularData::SetMass(FluidInterface.getMiSpecies(iSpecies)*_AMU_,iSpecies);  
+    PIC::MolecularData::SetElectricCharge(FluidInterface.getQiSpecies(iSpecies)*ElectronCharge,iSpecies); 
   }
   
 }
