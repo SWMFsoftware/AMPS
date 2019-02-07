@@ -104,6 +104,7 @@ foreach (@Arguments) {
      print "-cpp-compiler=opt\t\treplace C++ compiler name defined by the variable COMPILE.mpicxx in Makefile.conf\n";
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
      print "-avx=[on,off]\t\t\tsettings for using AVX instructions\n";
+     print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      exit;
    }
    
@@ -179,6 +180,14 @@ foreach (@Arguments) {
       `echo KAMELEON=$1 >> Makefile.local`;
       next};
       
+  if (/^-mp=(.*)$/i) {
+    my $t;
+    $t=uc($1);
+
+    add_line_amps_conf("MemoryPrefetch=$t");
+    next;
+  }
+
   if (/^-openmp=(.*)$/i) {
     my $t;
     $t=lc($1);
