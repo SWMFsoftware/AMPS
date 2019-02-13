@@ -1055,7 +1055,19 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
-    exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
+    if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
+      double Rate;
+
+      Rate=startNode->block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)/
+          startNode->block->GetLocalTimeStep(spec);
+
+      PIC::Mover::Sampling::Errors::AddRemovedParticleData(Rate,spec,__LINE__,__FILE__);
+
+      //remove the particle
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+    else exit(__LINE__,__FILE__,"Error: the block is empty. Most probably the time step is too large");
   }
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
