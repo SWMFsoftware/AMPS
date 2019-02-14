@@ -33,7 +33,6 @@ int *PIC::Sampling::SimulatedSpeciesParticleNumber=NULL;
 //the table of the linear solvers 
 list <cRebuildMatrix*> PIC::LinearSolverTable;
 
-
 //====================================================
 //perform one time step
 int PIC::TimeStep() {

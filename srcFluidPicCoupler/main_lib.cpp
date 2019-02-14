@@ -1517,7 +1517,6 @@ void amps_init(){
 
   //  PIC::BC::UserDefinedParticleInjectionFunction=setFixedBC;
   
-
   PIC::Init_AfterParser();
   PIC::Mover::Init();
 
