@@ -193,12 +193,12 @@ extern "C" {
 #endif
 
     //determine whether to proceed with the current iteraction
-    if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
+    if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT()>*TimeSimulationLimit) {
       *TimeSimulation=*TimeSimulationLimit;
       return;
     }
     else {
-      swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+      swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT();
       *TimeSimulation=swmfTimeSimulation;
     }
 

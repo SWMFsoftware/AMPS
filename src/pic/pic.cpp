@@ -358,7 +358,7 @@ int PIC::TimeStep() {
   PIC::CPLR::FLUID::iCycle++;
   {// Output
     double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
-    printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
+    if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
     PIC::CPLR::FLUID::write_output(timeNow);
   }
   

@@ -676,7 +676,7 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
 long int setFixedParticle_BC(){
   
 
-  printf("setFixedBC, iCycle:%ld\n",PIC::CPLR::FLUID::iCycle);
+  if (PIC::ThisThread==0) printf("setFixedBC, iCycle:%ld\n",PIC::CPLR::FLUID::iCycle);
 
   // if (PIC::CPLR::FLUID::iCycle==0) return 0;
 
@@ -702,7 +702,7 @@ long int setFixedParticle_BC(){
     for (int iFace=0; iFace<6; iFace++) countedFaceBC[iBlk][iFace]=0;
   }  
   //printf("fixed Bc is called!\n");
-  printf("PIC::DomainBlockDecomposition::nLocalBlocks:%d\n",PIC::DomainBlockDecomposition::nLocalBlocks);
+  if (PIC::ThisThread==0) printf("PIC::DomainBlockDecomposition::nLocalBlocks:%d\n",PIC::DomainBlockDecomposition::nLocalBlocks);
 
           
   for (int iFace=0;iFace<6;iFace++){
@@ -789,7 +789,7 @@ long int setFixedParticle_BC(){
 
   sprintf(fullname,"test_fixedbc_after_iter=%d.dat",cnt);
   //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                cnt++;         
-  printf("setfixed bc done\n");
+  if (PIC::ThisThread==0) printf("setfixed bc done\n");
 
   //fclose(fPartData);
 
@@ -1069,9 +1069,9 @@ long int PrepopulateDomain() {
 
 
   int iBlock=0;
-  printf("prepopulation icycle:%ld\n", PIC::CPLR::FLUID::iCycle);
+  if (PIC::ThisThread==0) printf("prepopulation icycle:%ld\n", PIC::CPLR::FLUID::iCycle);
 
-  printf("UseAniso:%s",PIC::CPLR::FLUID::FluidInterface.getUseAnisoP()?"T\n":"F\n" );
+  if (PIC::ThisThread==0) printf("UseAniso:%s",PIC::CPLR::FLUID::FluidInterface.getUseAnisoP()?"T\n":"F\n" );
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -1224,7 +1224,7 @@ long int PrepopulateDomain() {
   }
 
   MPI_Allreduce(&nLocalInjectedParticles,&nGlobalInjectedParticles,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  printf("particles prepopulated!\n");
+  if (PIC::ThisThread==0) printf("particles prepopulated!\n");
   //fclose(fPartData);
   return nGlobalInjectedParticles;
 }
@@ -1248,7 +1248,7 @@ void SetIC() {
     using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
     int nBreak=0;
 
-    printf("User Set IC called\n");
+    if (PIC::ThisThread==0) printf("User Set IC called\n");
 
 
     int nCells[3] ={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
@@ -1394,19 +1394,19 @@ void amps_init_mesh() {
   PIC::Init_BeforeParser();
 
 #if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
-  printf("non-uniform mesh!\n");
+  if (PIC::ThisThread==0) printf("non-uniform mesh!\n");
 #endif
 #if _TEST_MESH_MODE_==_UNIFORM_MESH_
-  printf("uniform mesh!\n");
+  if (PIC::ThisThread==0) printf("uniform mesh!\n");
 #endif
 
 
 #if _CURRENT_MODE_==_PIC_MODE_ON_
-  printf("current on!\n");
+  if (PIC::ThisThread==0) printf("current on!\n");
 #endif
 
 #if _CURRENT_MODE_==_PIC_MODE_OFF_
-  printf("current mode off!\n");
+  if (PIC::ThisThread==0) printf("current mode off!\n");
 #endif
 
 
@@ -1589,20 +1589,20 @@ void amps_init(){
   int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
   int GlobalParticleNumber;
   MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-  std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+  //printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
+  //std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
 
   CleanParticles();
   LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
   MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
+  //printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
 
   PrepopulateDomain();
 
   LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
   MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  printf("After prepopulating, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-  std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+  //printf("After prepopulating, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
+  //std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
    
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
@@ -1617,7 +1617,7 @@ void amps_init(){
   //  PIC::Sampling::Sampling();
   PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
 
-  cout<<"Calling set_FluidInterface"<<endl;
+  if (PIC::ThisThread==0) cout<<"Calling set_FluidInterface"<<endl;
   PIC::CPLR::FLUID::set_FluidInterface();
   
 }
@@ -1627,14 +1627,14 @@ void amps_time_step(){
   
   static int cnt=0;
   static int niter=0;
-  printf("output what read from GM\n");                                                                                                         
+  //printf("output what read from GM\n");                                                                                                         
   
   char fullname[STRING_LENGTH];
   sprintf(fullname,"test_pic_coupler_data_iter=%d.dat",cnt);
   cnt++;
   //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                         
-  printf("done: output what read from GM\n");                               
-  printf(" Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
+  // printf("done: output what read from GM\n");                               
+  if (PIC::ThisThread==0) printf(" Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
          niter++,
          PIC::RequiredSampleLength,
          PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
