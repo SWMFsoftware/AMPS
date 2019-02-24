@@ -1075,22 +1075,22 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 	      }
 	    }
             
-            double MassMatrix_GGD[8][8][9];
-            for (int iCorner=0;iCorner<8;iCorner++){
-              for(int jCorner=0;jCorner<8;jCorner++){
-                for (int idim=0;idim<9;idim++){
-                  MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;                  
-                }
-              }
-            }
+      double MassMatrix_GGD[8][8][9];
+      for (int iCorner=0;iCorner<8;iCorner++){
+        for(int jCorner=0;jCorner<8;jCorner++){
+          for (int idim=0;idim<9;idim++){
+            MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
+          }
+        }
+      }
 
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_            
-            double SpeciesData_GI[8][PIC::nTotalSpecies*10];
-            for (int ii=0; ii<8; ii++){
-              for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
-                SpeciesData_GI[ii][kk]=0.0;
-              }
-            }
+      double SpeciesData_GI[8][PIC::nTotalSpecies*10];
+      for (int ii=0; ii<8; ii++){
+        for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
+          SpeciesData_GI[ii][kk]=0.0;
+        }
+      }
 #endif            
 	    ptrNext=ptr;
 	    ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
@@ -1101,12 +1101,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 	      ptr=ptrNext;
 	      ParticleData=ParticleDataNext;	  	    
 	     
-              spec=PIC::ParticleBuffer::GetI(ParticleData);
+        spec=PIC::ParticleBuffer::GetI(ParticleData);
 	      PIC::ParticleBuffer::GetV(vInit,ParticleData);
 	      PIC::ParticleBuffer::GetX(xInit,ParticleData);
-              LocalParticleWeight=block->GetLocalParticleWeight(spec);
-              LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-              ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+        LocalParticleWeight=block->GetLocalParticleWeight(spec);
+        LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+        ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+
+        if (ptrNext!=-1) {
+          ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+          PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
+        }
+
 
 	      double temp[3], B[3]={0.0,0.0,0.0};
 #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
@@ -1295,7 +1302,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 	      
             
 	      if (ptrNext!=-1) {
-	        ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+// do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
 	      } else {
 
                 double * CornerMassMatrixPtr[8];
