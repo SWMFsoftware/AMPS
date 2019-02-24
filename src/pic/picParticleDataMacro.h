@@ -30,9 +30,22 @@
 // Mandatory parameter: position of a particle
 #define _PIC_PARTICLE_DATA__POSITION_OFFSET_ \
     (_PIC_PARTICLE_DATA__VELOCITY_OFFSET_+ 3*sizeof(double))
+
+
+
+//Mabdatory parameter: keep the weight correction factor with the basic parameters
+#define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_  \
+    (_PIC_PARTICLE_DATA__POSITION_OFFSET_+DIM*sizeof(double))
+
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_   sizeof(double)
+#else
+    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_   0
+#endif
+
 // Total space occupied by mandatory parameters
 #define _PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ \
-    (_PIC_PARTICLE_DATA__POSITION_OFFSET_+DIM*sizeof(double))
+    (_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_)
 //-----------------------------------------------------------------------------
 
 
@@ -96,15 +109,6 @@
 
 // Once active optional parameters have been determined => set offsets
 //-----------------------------------------------------------------------------
-#if _USE_WEIGHT_CORRECTION_ == _PIC_MODE_ON_
-    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_ \
-                _PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_
-    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_ sizeof(double)
-#else
-    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_  -1
-    #define _PIC_PARTICLE_DATA__WEIGHT_CORRECTION_LENGTH_   0
-#endif//_USE_WEIGHT_CORRECTION_
-
 #if _USE_DUST_GRAIN_MASS_ == _PIC_MODE_ON_
     #define _PIC_PARTICLE_DATA__DUST_GRAIN_MASS_OFFSET_ \
                (_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_ +\
