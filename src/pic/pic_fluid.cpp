@@ -195,9 +195,7 @@ void PIC::CPLR::FLUID::ReceiveCornerPointData(char* ValiableList, int nVarialbes
 			       _BLOCK_CELLS_Y_ + 2*nJ_Gh + 1, 
 			       _BLOCK_CELLS_Z_ + 2*nK_Gh + 1, 
 			       data, index);
-
   FirstCouplingOccured=true;
-
 }
 
 
@@ -231,6 +229,8 @@ void PIC::CPLR::FLUID::read_param(){
 
   ReadParam & readParam = FluidInterface.readParam;
   readParam.set_verbose(PIC::ThisThread==0);
+
+  bool doSaveBinary = true; 
 
   double *qom; 
   qom = new double[1];
@@ -384,6 +384,8 @@ void PIC::CPLR::FLUID::read_param(){
 	}
 
       } // iPlot
+    } else if (command == "#SAVEBINARY") {
+      readParam.read_var("doSaveBinary", doSaveBinary);
     } else if (command == "#ELECTRON") {
       // iones info comes from BATSRUS
       readParam.read_var("qom", qom[0]);
@@ -431,6 +433,8 @@ void PIC::CPLR::FLUID::read_param(){
   }  // while
 
 
+  FluidInterface.set_doSaveBinary(doSaveBinary);
+
   int ns = 2; 
   FluidInterface.fixPARAM(qom, npcelx, npcely, npcelz, &ns);
 
@@ -452,7 +456,6 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
 		      std::array<double, 3> & xMin_D,
 		      std::array<double, 3> & xMax_D){
   std::string nameSub = "find_output_list";
-  std::cout<<nameSub<<" is called"<<std::endl;
 
   /*Something like this. Note: the node shared by two blocks 
     should be count once only !!*/
@@ -544,7 +547,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
 		   const std::vector<std::string> & sVar_I, 
 		   MDArray<double> & var_II){
   std::string nameSub = "get_field_var";
-  std::cout<<nameSub<<" is called"<<std::endl;
+  //std::cout<<nameSub<<" is called"<<std::endl;
 
   bool isCoord = false;
   int ix_=0, iy_=1, iz_=2, iBlk_=6;
@@ -553,7 +556,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
   long nPoint = pointList_II.size();
   int nVar = sVar_I.size();   
 
-  printf("get_field_var nPoint:%ld, nVar:%d\n",nPoint, nVar);
+  //printf("get_field_var nPoint:%ld, nVar:%d\n",nPoint, nVar);
 
   for(long iPoint = 0; iPoint<nPoint; ++iPoint){
     ix = pointList_II[iPoint][ix_];
@@ -588,6 +591,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
 
 void PIC::CPLR::FLUID::write_output(double timeNow, bool doForceOutput){
   fix_plasma_node_boundary();
+  timeNow *= FluidInterface.getNo2SiT();
   FluidInterface.writers_write(timeNow, iCycle, doForceOutput, find_output_list,
                                get_field_var);
 }
