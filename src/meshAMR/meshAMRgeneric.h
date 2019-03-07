@@ -10043,7 +10043,7 @@ if (TmpAllocationCounter==2437) {
     nParallelListRedistributions++;
     nMeshModificationCounter++;
 
-    auto PrepareLoadMeasure= [&] () {
+    auto PrepareLoadMeasure= [&] (long int *GlobalTotalBlockNumberTable) {
       //calculate and normalized the load measure
       for (nLevel=0;nLevel<=_MAX_REFINMENT_LEVEL_;nLevel++) nResolutionLevelBlocks[nLevel]=0;
 
@@ -10447,7 +10447,7 @@ if (TmpAllocationCounter==2437) {
     cTreeNodeAMR<cBlockAMR> *node;
     cTreeNodeAMR<cBlockAMR>** ThreadStartNode=new cTreeNodeAMR<cBlockAMR>* [nTotalThreads];
 
-    PrepareLoadMeasure();
+    PrepareLoadMeasure(GlobalTotalBlockNumberTable);
     DeallocateBoundaryLayer();
 
     if (ThisThread==0) RedistributeParallelLoad(ThreadStartNode);
