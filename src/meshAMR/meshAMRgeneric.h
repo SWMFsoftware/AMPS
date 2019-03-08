@@ -220,13 +220,9 @@ public:
   int ResolutionLevel;
   unsigned char id[1+(int)((3*_MAX_REFINMENT_LEVEL_)/8)];
 
-  void clean() {
+  cAMRnodeID() {
     ResolutionLevel=0;
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
-  }
-
-  cAMRnodeID() {
-    clean();
   }
 
   bool operator == (cAMRnodeID ID) {
@@ -9479,8 +9475,6 @@ nMPIops++;
     byteOffset=bitOffset/8;
     bitOffset-=8*byteOffset;
 
-    node.clean();
-
     nDownNodes=1<<_MESH_DIMENSION_;
     upNode=startNode->upNode;
 
@@ -9947,6 +9941,58 @@ if (TmpAllocationCounter==2437) {
   }
 
 
+/*
+  void CreateSpaceFillingCurve(cTreeNodeAMR<cBlockAMR> **startNodeFillingCurve,int UpperResolutionLevel) {
+    int idim,i,j,k,iMax,jMax,kMax;
+    double xProbe[3]={0.0,0.0,0.0},dxCurve[3]={0.0,0.0,0.0};
+    cTreeNodeAMR<cBlockAMR> *TreeNode=NULL;
+    int iStart=0,iIncrement=-1,jStart=0,jIncrement=-1;
+
+    ResetAMRnodeProcessingFlag();
+    *startNodeFillingCurve=NULL;
+
+#if _MESH_DIMENSION_ == 1
+    iMax=1<<UpperResolutionLevel,jMax=1,kMax=1;
+#elif _MESH_DIMENSION_ == 2
+    iMax=1<<UpperResolutionLevel,jMax=1<<UpperResolutionLevel,kMax=1;
+#elif _MESH_DIMENSION_ == 3
+    iMax=1<<UpperResolutionLevel,jMax=1<<UpperResolutionLevel,kMax=1<<UpperResolutionLevel;
+#else
+    exit(__LINE__,__FILE__,"Error: unknown option");
+#endif
+
+
+    for (idim=0;idim<_MESH_DIMENSION_;idim++) dxCurve[idim]=(xGlobalMax[idim]-xGlobalMin[idim])/(1<<UpperResolutionLevel);
+
+
+    for (k=0;k<kMax;k++) {
+      if (_MESH_DIMENSION_==3) xProbe[2]=xGlobalMin[2]+(k+0.5)*dxCurve[2];
+
+      if (jIncrement==1) jIncrement=-1,jStart=jMax-1;
+      else jIncrement=1,jStart=0;
+
+      for (j=jStart;(j<jMax)&&(j>=0);j+=jIncrement) {
+        if (_MESH_DIMENSION_>=2) xProbe[1]=xGlobalMin[1]+(j+0.5)*dxCurve[1];
+
+        if (iIncrement==1) iIncrement=-1,iStart=iMax-1;
+        else iIncrement=1,iStart=0;
+
+        for (i=iStart;(i<iMax)&&(i>=0);i+=iIncrement) {
+          xProbe[0]=xGlobalMin[0]+(i+0.5)*dxCurve[0];
+          TreeNode=findTreeNodeLimitedResolutionLevel(xProbe,UpperResolutionLevel,TreeNode);
+          if (TreeNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the location");
+
+          if (TreeNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_) {
+            TreeNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
+            TreeNode->FillingCurveNextNode=(*startNodeFillingCurve);
+            *startNodeFillingCurve=TreeNode;
+          }
+        }
+      }
+    }
+  }
+*/
+
   void GetTotalBlockNumber(int *res,cTreeNodeAMR<cBlockAMR>* node) {
     bool flag=false;
     int iDownNode;
@@ -10040,16 +10086,15 @@ if (TmpAllocationCounter==2437) {
     double LoadMeasureNormal;
     long int nTotalBlocks,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
     int i,nLevel;
+    cTreeNodeAMR<cBlockAMR> *ptr;
 
     static cTreeNodeAMR<cBlockAMR> *startNodeFillingCurve=NULL;
-    cTreeNodeAMR<cBlockAMR> *ptr;
-    long int GlobalTotalBlockNumberTable[nTotalThreads];
 
     //increment the counter of the load redistributions
     nParallelListRedistributions++;
     nMeshModificationCounter++;
 
-    auto PrepareLoadMeasure= [&] (long int *GlobalTotalBlockNumberTable) {
+    auto PrepareLoadMeasure= [&] () {
       //calculate and normalized the load measure
       for (nLevel=0;nLevel<=_MAX_REFINMENT_LEVEL_;nLevel++) nResolutionLevelBlocks[nLevel]=0;
 
@@ -10064,6 +10109,9 @@ if (TmpAllocationCounter==2437) {
       }
 
       //calcualte the number of blocks per thread
+      cTreeNodeAMR<cBlockAMR> *ptr;
+      long int GlobalTotalBlockNumberTable[nTotalThreads];
+
       for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) nTotalBlocks++;
 
       MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
@@ -10076,21 +10124,27 @@ if (TmpAllocationCounter==2437) {
         }
       }
 
+
       //normalize the load
       nTotalBlocks=NormalizeParallelLoadMeasure(LoadMeasureNormal,nResolutionLevelBlocks,rootTree);
     };
 
+
+
     //Recalculate the space filling curve if its needed
     auto RecalculateMortonCurve = [&] () {
-      rootTree->FillingCurveNextNode=NULL;
-      rootTree->FillingCurvePrevNode=NULL;
+      if (meshModifiedFlag_CreateNewSpaceFillingCurve==true) {
+        meshModifiedFlag_CreateNewSpaceFillingCurve=false;
 
-      startNodeFillingCurve=rootTree;
+        rootTree->FillingCurveNextNode=NULL;
+        rootTree->FillingCurvePrevNode=NULL;
 
-      CreateMortonSpaceFillingCurve(&startNodeFillingCurve,rootTree);
+        startNodeFillingCurve=rootTree;
+
+        CreateMortonSpaceFillingCurve(&startNodeFillingCurve,rootTree);
+      }
     };
 
-    //Deallocate the boundary layer
     auto DeallocateBoundaryLayer = [&] () {
       int i;
       cTreeNodeAMR<cBlockAMR> *node;
@@ -10100,7 +10154,7 @@ if (TmpAllocationCounter==2437) {
 
         //deallocate the boundary layer
         if (_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_) {
-          if (DomainBoundaryLayerNodesList[i]!=NULL) {
+          if (DomainBoundaryLayerNodesList[i]!=NULL) { //exit(__LINE__,__FILE__,"not implemented");
             node=DomainBoundaryLayerNodesList[i];
 
             while (node!=NULL) {
@@ -10114,21 +10168,17 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
-    //Redistribute the parallel load
     auto RedistributeParallelLoad = [&] (cTreeNodeAMR<cBlockAMR>** ThreadStartNode) {
-      double CumulativeProcessorLoad=0.0;
-      cTreeNodeAMR<cBlockAMR>* CurveNode=startNodeFillingCurve;
-      int nCurrentProcessorBalancing=0;
-      cTreeNodeAMR<cBlockAMR> *node;
-
-      //redistribute the load on the root processor
       double *CumulativeThreadLoad=new double [nTotalThreads];
-      int thread;
+      double CumulativeProcessorLoad=0.0;
+      int thread,nCurrentProcessorBalancing=0;
+      cTreeNodeAMR<cBlockAMR>* CurveNode=startNodeFillingCurve;
 
       for (thread=0;thread<nTotalThreads;thread++) CumulativeThreadLoad[thread]=0.0,ThreadStartNode[thread]=NULL;
 
       ThreadStartNode[0]=CurveNode;
       nCurrentProcessorBalancing=0;
+
 
       while (CurveNode!=NULL) {
         CumulativeProcessorLoad+=CurveNode->ParallelLoadMeasure;
@@ -10136,9 +10186,9 @@ if (TmpAllocationCounter==2437) {
         if ((isfinite(CumulativeProcessorLoad)==false)||(isfinite(CumulativeThreadLoad[nCurrentProcessorBalancing])==false)) {
           char msg[500];
 
-          sprintf(msg,"Error: the parallel load measure is not finite (CumulativeProcessorLoad=%e, CumulativeThreadLoad[nCurrentProcessorBalancing]=%e, nCurrentProcessorBalancing=%i)",CumulativeProcessorLoad,CumulativeThreadLoad[nCurrentProcessorBalancing],nCurrentProcessorBalancing);
+          sprintf(msg,"Error: the parallel load measure is not finite (CumulativeProcessorLoad=%e, CumulativeThreadLoad[nCurrentProcessorBalancing]=%e, nCurrentProcessorBalancing=%i)",CumulativeProcessorLoad,CumulativeThreadLoad[nCurrentProcessorBalancing],nCurrentProcessorBalancing); 
           exit(__LINE__,__FILE__,msg);
-        }
+        }  
 
         //increment the processor number if needed
         if ((CumulativeProcessorLoad>1.1+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
@@ -10173,7 +10223,7 @@ if (TmpAllocationCounter==2437) {
                      //'thread' has only one block
                      break;
                    }
-                 }
+                 } 
                  else {
                    if (ThreadStartNode[thread]->FillingCurveNextNode==NULL) {
                      break;
@@ -10216,12 +10266,15 @@ if (TmpAllocationCounter==2437) {
       delete [] CumulativeThreadLoad;
     };
 
+
+
+    //Exchange the load distribution
     //Broadbast the new domain decompositions
     auto BroadcastNewDomainDecomposition = [&] (cTreeNodeAMR<cBlockAMR>** ThreadStartNode) {
-      int thread;
-      CMPI_channel pipe(100000);
       cTreeNodeAMR<cBlockAMR>* nextThreadStartNode=startNodeFillingCurve;
       cTreeNodeAMR<cBlockAMR>* CurveNode=startNodeFillingCurve;
+      CMPI_channel pipe(100000);
+      int thread;
 
       CurveNode=startNodeFillingCurve;
       thread=-1;
@@ -10250,127 +10303,122 @@ if (TmpAllocationCounter==2437) {
       pipe.closeBcast();
     };
 
-    //verify that the domain decomposistion data at each process is the same
     auto VerifyDomainDecomposistionConsistency = [&] () {
-      CRC32 checksum;
-      int t;
-      cTreeNodeAMR<cBlockAMR> *ptr;
-      cAMRnodeID id;
+      CMPI_channel pipe(100000);
+      int t,thread;
 
-      unsigned long *CheckSumTable=new unsigned long [nTotalThreads];
-      int ListBreakStamp=0xffffff;
+      //output signature of the domain decomposition
+      GetDomainDecompositionSignature(__LINE__,__FILE__);
 
-      for (t=0;t<nTotalThreads;t++) {
-        for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
-          GetAMRnodeID(id,ptr);
-          checksum.add(id);
-        }
-
-        checksum.add(ListBreakStamp);
-      }
-
-
-      unsigned long crc_accum=checksum.checksum();
-      MPI_Gather(&crc_accum,1,MPI_UNSIGNED_LONG,CheckSumTable,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-
+      //check if the nodes' distribution is the same on all processors
       if (ThisThread==0) {
-        for (t=1;t<nTotalThreads;t++) {
-          if (CheckSumTable[0]!=CheckSumTable[t]) {
-            exit(__LINE__,__FILE__,"Error: the domain decomposition data is not the same an all processes");
+        int t;
+        cTreeNodeAMR<cBlockAMR> *ptr;
+        cAMRnodeID id,idtemp;
+
+        //cumulutive load distribution
+        double newCumulativeParallelLoadMeasure[nTotalThreads];
+        double TotalParallelLoadMeasure=0.0;
+
+        for (t=0;t<nTotalThreads;t++) newCumulativeParallelLoadMeasure[t]=0.0;
+
+        pipe.openRecvAll();
+
+        for (t=0;t<nTotalThreads;t++) for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+          GetAMRnodeID(id,ptr);
+
+          TotalParallelLoadMeasure+=ptr->ParallelLoadMeasure;
+          newCumulativeParallelLoadMeasure[t]+=ptr->ParallelLoadMeasure;
+
+          for (thread=1;thread<nTotalThreads;thread++) {
+            pipe.recv(idtemp,thread);
+
+            if (id!=idtemp) exit(__LINE__,__FILE__,"Error: the processor's distribution of the tree is not consistent");
           }
         }
+
+         pipe.closeRecvAll();
+
+         fprintf(DiagnospticMessageStream,"$PREFIX:Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
+
+         int minThreadBlockNumber=-1,maxThreadBlockNumber=-1;
+         double minLoadMeasure=-1.0,maxLoadMeasure=-1.0;
+         int minLoadThread=-1,maxLoadThread=-1;
+         double minBlockLoad=-1.0,maxBlockLoad=-1.0;
+         cTreeNodeAMR<cBlockAMR> *maxLoadBlock=NULL;
+
+         for (t=0;t<nTotalThreads;t++) {
+           long int nblocks;
+
+           for (nblocks=0,ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+             nblocks++;
+
+             if ((minBlockLoad<0.0)||(minBlockLoad>ptr->ParallelLoadMeasure)) minBlockLoad=ptr->ParallelLoadMeasure;
+             if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
+           }
+
+           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
+
+           if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
+           if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
+
+           if ((minLoadMeasure<0.0)||(minLoadMeasure>nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure)) {
+             minLoadMeasure=nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure;
+             minLoadThread=t;
+           }
+
+           if ((maxLoadMeasure<0.0)||(maxLoadMeasure<nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure)) {
+             maxLoadMeasure=nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure;
+             maxLoadThread=t;
+           }
+         }
+
+         fprintf(DiagnospticMessageStream,"$PREFIX:Min number of blocks per processor: %i\n$PREFIX:Max number of blocks per processor: %i\n",minThreadBlockNumber,maxThreadBlockNumber);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Min processor load: %e, thread=%i\n",minLoadMeasure,minLoadThread);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Max processor load: %e, thread=%i\n",maxLoadMeasure,maxLoadThread);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Individual block load: min=%e, max=%e\n",minBlockLoad,maxBlockLoad);
+
+         fprintf(DiagnospticMessageStream,"$PREFIX:Parameters of the block with the maximum load\n");
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block->Temp_ID=%ld\n",maxLoadBlock->Temp_ID);
+
+         //the position of the block's nodes
+         double middleX[3]={0.0,0.0,0.0},xnode[3];
+         int j,k,idim;
+
+         for (i=0;i<2;i++) for (j=0;j<((_MESH_DIMENSION_>1) ? 2 : 1);j++) for (k=0;k<((_MESH_DIMENSION_>2) ? 2 : 1);k++) {
+           maxLoadBlock->GetCornerNodePosition(xnode,i*_BLOCK_CELLS_X_,j*_BLOCK_CELLS_Y_,k*_BLOCK_CELLS_Z_);
+
+           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=(%i,%i,%i): x=",i,j,k);
+           for (idim=0;idim<_MESH_DIMENSION_;idim++) {
+             fprintf(DiagnospticMessageStream,"%e ",xnode[idim]);
+             middleX[idim]+=xnode[idim];
+           }
+
+           fprintf(DiagnospticMessageStream,"\n");
+         }
+
+
+         fprintf(DiagnospticMessageStream,"$PREFIX:Middle block's coordinates=");
+         for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",middleX[idim]/(1<<_MESH_DIMENSION_));
+         fprintf(DiagnospticMessageStream,"\n\n");
       }
+      else {
+        int t;
+        cTreeNodeAMR<cBlockAMR> *ptr;
+        cAMRnodeID id;
 
-      callMpiBarrier();
-      delete [] CheckSumTable;
-    };
+        pipe.openSend(0);
 
-    auto OutputDecompositionStatistics = [&] () {
-      int t;
-      cTreeNodeAMR<cBlockAMR> *ptr;
-
-      //cumulutive load distribution
-      double newCumulativeParallelLoadMeasure[nTotalThreads];
-      double TotalParallelLoadMeasure=0.0;
-
-      for (t=0;t<nTotalThreads;t++) newCumulativeParallelLoadMeasure[t]=0.0;
-
-      fprintf(DiagnospticMessageStream,"$PREFIX:Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
-
-      int minThreadBlockNumber=-1,maxThreadBlockNumber=-1;
-      double minLoadMeasure=-1.0,maxLoadMeasure=-1.0;
-      int minLoadThread=-1,maxLoadThread=-1;
-      double minBlockLoad=-1.0,maxBlockLoad=-1.0;
-      cTreeNodeAMR<cBlockAMR> *maxLoadBlock=NULL;
-
-      for (t=0;t<nTotalThreads;t++) {
-        long int nblocks;
-
-        for (nblocks=0,ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
-          nblocks++;
-
-          if ((minBlockLoad<0.0)||(minBlockLoad>ptr->ParallelLoadMeasure)) minBlockLoad=ptr->ParallelLoadMeasure;
-          if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
+        for (t=0;t<nTotalThreads;t++) for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+          GetAMRnodeID(id,ptr);
+          pipe.send(id);
         }
 
-        fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
-
-        if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
-        if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
-
-        if ((minLoadMeasure<0.0)||(minLoadMeasure>nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure)) {
-          minLoadMeasure=nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure;
-          minLoadThread=t;
-        }
-
-        if ((maxLoadMeasure<0.0)||(maxLoadMeasure<nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure)) {
-          maxLoadMeasure=nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure;
-          maxLoadThread=t;
-        }
-      }
-
-      fprintf(DiagnospticMessageStream,"$PREFIX:Min number of blocks per processor: %i\n$PREFIX:Max number of blocks per processor: %i\n",minThreadBlockNumber,maxThreadBlockNumber);
-      fprintf(DiagnospticMessageStream,"$PREFIX:Min processor load: %e, thread=%i\n",minLoadMeasure,minLoadThread);
-      fprintf(DiagnospticMessageStream,"$PREFIX:Max processor load: %e, thread=%i\n",maxLoadMeasure,maxLoadThread);
-      fprintf(DiagnospticMessageStream,"$PREFIX:Individual block load: min=%e, max=%e\n",minBlockLoad,maxBlockLoad);
-
-      fprintf(DiagnospticMessageStream,"$PREFIX:Parameters of the block with the maximum load\n");
-      fprintf(DiagnospticMessageStream,"$PREFIX:Block->Temp_ID=%ld\n",maxLoadBlock->Temp_ID);
-
-      //the position of the block's nodes
-      double middleX[3]={0.0,0.0,0.0},xnode[3];
-      int j,k,idim;
-
-      for (i=0;i<2;i++) for (j=0;j<((_MESH_DIMENSION_>1) ? 2 : 1);j++) for (k=0;k<((_MESH_DIMENSION_>2) ? 2 : 1);k++) {
-        maxLoadBlock->GetCornerNodePosition(xnode,i*_BLOCK_CELLS_X_,j*_BLOCK_CELLS_Y_,k*_BLOCK_CELLS_Z_);
-
-        fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=(%i,%i,%i): x=",i,j,k);
-        for (idim=0;idim<_MESH_DIMENSION_;idim++) {
-          fprintf(DiagnospticMessageStream,"%e ",xnode[idim]);
-          middleX[idim]+=xnode[idim];
-        }
-
-        fprintf(DiagnospticMessageStream,"\n");
-      }
-
-
-      fprintf(DiagnospticMessageStream,"$PREFIX:Middle block's coordinates=");
-      for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",middleX[idim]/(1<<_MESH_DIMENSION_));
-      fprintf(DiagnospticMessageStream,"\n\n");
-    };
-
-    //Unpack the recieved message
-    auto UnpackMessage = [&] (int From,int *iLastRecvStartNode, int *iLastRecvFinishNode,cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable, int *LastRecvMessageSize,char **RecvBlockDataBuffer) {
-      //unpack the message
-      int iStart=iLastRecvStartNode[From];
-      int iFinish=iLastRecvFinishNode[From];
-
-      if (LastRecvMessageSize[From]!=fUnpackMoveBlockData(MoveInNodeTable[From]+iStart,iFinish-iStart+1,RecvBlockDataBuffer[From])) {
-        exit(__LINE__,__FILE__,"Error: size of the message is not consistent");
+        pipe.closeSend();
       }
     };
 
-    //Initiate new recive operation
+
     auto InitRecieve = [&] (int From,int *iLastRecvStartNode, int *iLastRecvFinishNode,
         cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,
         int *LastRecvMessageSize,
@@ -10441,38 +10489,28 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
-    //=======================================================  DO IT!  ==================================
-    if (meshModifiedFlag_CreateNewSpaceFillingCurve==true) {
-      meshModifiedFlag_CreateNewSpaceFillingCurve=false;
-      RecalculateMortonCurve();
-    }
-
-    //redistribute the parallel load
-    int thread,nCurrentProcessorBalancing=0;
-    CMPI_channel pipe(100000);
-    cTreeNodeAMR<cBlockAMR> *node;
-    cTreeNodeAMR<cBlockAMR>** ThreadStartNode=new cTreeNodeAMR<cBlockAMR>* [nTotalThreads];
-
-    PrepareLoadMeasure(GlobalTotalBlockNumberTable);
+    PrepareLoadMeasure();
+    RecalculateMortonCurve();
     DeallocateBoundaryLayer();
 
-    if (ThisThread==0) RedistributeParallelLoad(ThreadStartNode);
+    //redistribute the load on the root processor
+    cTreeNodeAMR<cBlockAMR>** ThreadStartNode=new cTreeNodeAMR<cBlockAMR>* [nTotalThreads];
+    int thread;
+    cTreeNodeAMR<cBlockAMR> *node;
 
-    //Exchange the load distribution
+    if (ThisThread==0) {
+      RedistributeParallelLoad(ThreadStartNode);
+    }
+
     BroadcastNewDomainDecomposition(ThreadStartNode);
-    
-    if (UserProcessParallelNodeDistributionList!=NULL) UserProcessParallelNodeDistributionList(ParallelNodesDistributionList);
 
-    //output signature of the domain decomposition
-    GetDomainDecompositionSignature(__LINE__,__FILE__);
+    if (UserProcessParallelNodeDistributionList!=NULL) {
+      UserProcessParallelNodeDistributionList(ParallelNodesDistributionList);
+    }
 
-    //verify consistency
     VerifyDomainDecomposistionConsistency();
 
-    //check if the nodes' distribution is the same on all processors
-    if (ThisThread==0) OutputDecompositionStatistics();
-
-    callMpiBarrier();
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
     //de-allocate the temporary data buffers
     delete [] ThreadStartNode;
@@ -10480,7 +10518,6 @@ if (TmpAllocationCounter==2437) {
 
     //check that all blocks are presented in the new blocks' distribution lists
     long int nDistributedNodes=0;
-    //cTreeNodeAMR<cBlockAMR> *node;
 
     ResetAMRnodeProcessingFlag();
 
@@ -10615,12 +10652,7 @@ if (TmpAllocationCounter==2437) {
 
     int *LastRecvMessageSize=new int [nTotalThreads];
 
-    bool *RecvCompletedTable=new bool [nTotalThreads];
-    bool *SendCompletedTable=new bool [nTotalThreads];
-
-    const int MessageSizeLimit=5000000;
-    const int TotalBufferSize=100000000;
-    int SendBufferTotalSize=0,RecvBufferTotalSize=0;
+    const int MessageSizeLimit=10000000;
 
     //allocate the send/recv buffers
     for (thread=0;thread<nTotalThreads;thread++) {
@@ -10630,29 +10662,15 @@ if (TmpAllocationCounter==2437) {
       iLastRecvStartNode[thread]=-1,iLastRecvFinishNode[thread]=-1;
       SendBlockMaxMessageSize[thread]=0,RecvBlockMaxMessageSize[thread]=0;
       LastRecvMessageSize[thread]=0;
-      SendBlockDataBuffer[thread]=NULL,RecvBlockDataBuffer[thread]=NULL;
-
-      SendCompletedTable[thread]=false,RecvCompletedTable[thread]=false;
 
       if (MoveInNodeTableSize[thread]!=0) {
         for (inode=0,MaxSize=0;inode<MoveInNodeTableSize[thread];inode++) if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
 
         if (MaxSize>MessageSizeLimit) {
-          if (RecvBufferTotalSize+MaxSize<TotalBufferSize) {
-            RecvBlockDataBuffer[thread]=new char [MaxSize];
-            RecvBufferTotalSize+=MaxSize;
-          }
-          else RecvBlockDataBuffer[thread]=NULL;
-
+          RecvBlockDataBuffer[thread]=new char [MaxSize];
           RecvBlockMaxMessageSize[thread]=MaxSize;
-        }
-        else {
-          if (RecvBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-            RecvBlockDataBuffer[thread]=new char [MessageSizeLimit];
-            RecvBufferTotalSize+=MessageSizeLimit;
-          }
-          else RecvBlockDataBuffer[thread]=NULL;
-
+        } else {
+          RecvBlockDataBuffer[thread]=new char [MessageSizeLimit];
           RecvBlockMaxMessageSize[thread]=MessageSizeLimit;
         }
       }
@@ -10661,21 +10679,10 @@ if (TmpAllocationCounter==2437) {
         for (inode=0,MaxSize=0;inode<MoveOutNodeTableSize[thread];inode++) if (MaxSize<MoveOutDataSizeTable[thread][inode]) MaxSize=MoveOutDataSizeTable[thread][inode];
 
         if (MaxSize>MessageSizeLimit) {
-          if (SendBufferTotalSize+MaxSize<TotalBufferSize) {
-            SendBlockDataBuffer[thread]=new char [MaxSize];
-            SendBufferTotalSize+=MaxSize;
-          }
-          else SendBlockDataBuffer[thread]=NULL;
-
+          SendBlockDataBuffer[thread]=new char [MaxSize];
           SendBlockMaxMessageSize[thread]=MaxSize;
-        }
-        else {
-          if (SendBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-            SendBlockDataBuffer[thread]=new char [MessageSizeLimit];
-            SendBufferTotalSize+=MessageSizeLimit;
-          }
-          else SendBlockDataBuffer[thread]=NULL;
-
+        } else {
+          SendBlockDataBuffer[thread]=new char [MessageSizeLimit];
           SendBlockMaxMessageSize[thread]=MessageSizeLimit;
         }
       }
@@ -10688,30 +10695,26 @@ if (TmpAllocationCounter==2437) {
     MoveInRequestTableSize=0;
     MoveOutRequestTableSize=0;
 
+
+
     //start the initial send
-    for (To=0;To<nTotalThreads;To++) {
-      if (MoveOutNodeTableSize[To]!=0) {
+    for (thread=0;thread<nTotalThreads;thread++) {
+      if (MoveOutNodeTableSize[thread]!=0) {
         CommunicationCompleted=false;
 
-        if (SendBlockDataBuffer[To]!=NULL) {
-          InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
-                SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
-          SendCompletedTable[To]=true;
-        }
+        InitSend(thread,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
+              SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
       }
     }
 
 
     //schedule the initial recieving
-    for (From=0;From<nTotalThreads;From++) {
-      if (MoveInNodeTableSize[From]!=0) {
+    for (thread=0;thread<nTotalThreads;thread++) {
+      if (MoveInNodeTableSize[thread]!=0) {
         CommunicationCompleted=false;
 
-        if (RecvBlockDataBuffer[From]!=NULL) {
-          InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
-            RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-          RecvCompletedTable[From]=true;
-        }
+        InitRecieve(thread,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
+          RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
       }
     }
 
@@ -10733,38 +10736,21 @@ if (TmpAllocationCounter==2437) {
           MoveInRequestTableSize--;
 
           //unpack the message
-          UnpackMessage(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,LastRecvMessageSize,RecvBlockDataBuffer);
+          int iStart=iLastRecvStartNode[From];
+          int iFinish=iLastRecvFinishNode[From];
+
+          if (LastRecvMessageSize[From]!=fUnpackMoveBlockData(MoveInNodeTable[From]+iStart,iFinish-iStart+1,RecvBlockDataBuffer[From])) {
+            exit(__LINE__,__FILE__,"Error: size of the message is not consistent");
+          }
 
           //initiate the new recieve if needed
-          if (iLastRecvFinishNode[From]!=MoveInNodeTableSize[From]-1) {
+          if (iFinish!=MoveInNodeTableSize[From]-1) {
             //another message need to be recieved
             CommunicationCompleted=false;
 
             InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
                 RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-          }
-          else {
-            //free data buffer used to recieve the message
-            delete [] RecvBlockDataBuffer[From];
-
-            RecvBlockDataBuffer[From]=NULL;
-            RecvBufferTotalSize-=RecvBlockMaxMessageSize[From];
-
-            //initiate recieve from a process that cound not started before because of insufficient memory was avaialble
-            for (From=0;From<nTotalThreads;From++) if ((RecvCompletedTable[From]==false)&&(MoveInNodeTableSize[From]!=0)) {
-              CommunicationCompleted=false;
-
-              //if there is available memory -> allocate it and initiate recieving operation
-              if (RecvBufferTotalSize+RecvBlockMaxMessageSize[From]<TotalBufferSize) {
-                RecvBlockDataBuffer[From]=new char[RecvBlockMaxMessageSize[From]];
-                RecvBufferTotalSize+=RecvBlockMaxMessageSize[From];
-
-                InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
-                  RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-                RecvCompletedTable[From]=true;
-              }
-            }
-
+          } else {
             if ((MoveInRequestTableSize!=0)||(MoveOutRequestTableSize!=0)) CommunicationCompleted=false;
           }
         } else {
@@ -10791,29 +10777,7 @@ if (TmpAllocationCounter==2437) {
 
             InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
                     SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
-          }
-          else {
-            //free data buffer used to send the message
-            delete [] SendBlockDataBuffer[To];
-
-            SendBlockDataBuffer[To]=NULL;
-            SendBufferTotalSize-=SendBlockMaxMessageSize[To];
-
-            //initiate send to a process that cound not started before because of insufficient memory was avaialble
-            for (To=0;To<nTotalThreads;To++) if ((SendCompletedTable[To]==false)&&(MoveOutNodeTableSize[To]!=0)) {
-              CommunicationCompleted=false;
-
-              //if case there is enough memory -> allocate it and initiate send
-              if (SendBufferTotalSize+SendBlockMaxMessageSize[To]<TotalBufferSize) {
-                SendBlockDataBuffer[To]=new char [SendBlockMaxMessageSize[To]];
-                SendBufferTotalSize+=SendBlockMaxMessageSize[To];
-
-                InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
-                      SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
-                SendCompletedTable[To]=true;
-              }
-            }
-
+          } else {
             if ((MoveInRequestTableSize!=0)||(MoveOutRequestTableSize!=0)) CommunicationCompleted=false;
           }
         } else {
@@ -10829,21 +10793,12 @@ if (TmpAllocationCounter==2437) {
 
     //de-allocate the temporary data buffers
     for (thread=0;thread<nTotalThreads;thread++) {
-      if (MoveInDataSizeTable[thread]!=NULL) delete [] MoveInDataSizeTable[thread];
+      if (MoveInDataSizeTable[thread]!=NULL) delete [] MoveOutDataSizeTable[thread];
       if (MoveOutDataSizeTable[thread]!=NULL) delete [] MoveOutDataSizeTable[thread];
 
       if (MoveInNodeTable[thread]!=NULL) delete [] MoveInNodeTable[thread];
       if (MoveOutNodeTable[thread]!=NULL) delete [] MoveOutNodeTable[thread];
-
-      if (SendBlockDataBuffer[thread]!=NULL) delete [] SendBlockDataBuffer[thread];
-      if (RecvBlockDataBuffer[thread]!=NULL) delete [] RecvBlockDataBuffer[thread];
     }
-
-    delete [] SendBlockMaxMessageSize;
-    delete [] RecvBlockMaxMessageSize;
-
-    delete [] SendBlockDataBuffer;
-    delete [] RecvBlockDataBuffer;
 
     delete [] MoveInDataSizeTable;
     delete [] MoveOutDataSizeTable;
@@ -10865,9 +10820,6 @@ if (TmpAllocationCounter==2437) {
     delete [] iLastRecvFinishNode;
 
     delete [] LastRecvMessageSize;
-
-    delete [] RecvCompletedTable;
-    delete [] SendCompletedTable;
     ////// !!!!!! This is the end of the block moving procedure!!!!!!!!
 
     //update the new node threads
@@ -10905,11 +10857,13 @@ if (TmpAllocationCounter==2437) {
 //for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
 
        for (i=0;i<6*4;i++) if (node->neibNodeFace[i]!=NULL) {
-         if (node->neibNodeFace[i]->Thread!=node->Thread) {
-           ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
-           ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+
+           
+           if (node->neibNodeFace[i]->Thread!=node->Thread) {
+             ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
+             ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+           }
          }
-       }
        
        for (i=0;i<8;i++) if (node->neibNodeCorner[i]!=NULL) if (node->neibNodeCorner[i]->Thread!=node->Thread) {
          ParallelSendRecvMap[node->neibNodeCorner[i]->Thread][node->Thread]=true;
@@ -10945,7 +10899,7 @@ if (TmpAllocationCounter==2437) {
       }
     }
 
-    //exchange data from the boundary layer blocks
+    //exchenge data from the boundary layer blocks
     if (blocks.usedElements()!=0) ParallelBlockDataExchange(fDefaultPackBlockData,fDefaultUnpackBlockData);
     #endif //_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
 
