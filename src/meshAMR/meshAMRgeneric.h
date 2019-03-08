@@ -220,9 +220,13 @@ public:
   int ResolutionLevel;
   unsigned char id[1+(int)((3*_MAX_REFINMENT_LEVEL_)/8)];
 
-  cAMRnodeID() {
+  void clean() {
     ResolutionLevel=0;
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
+  }
+
+  cAMRnodeID() {
+    clean();
   }
 
   bool operator == (cAMRnodeID ID) {
@@ -9475,6 +9479,8 @@ nMPIops++;
     byteOffset=bitOffset/8;
     bitOffset-=8*byteOffset;
 
+    node.clean();
+
     nDownNodes=1<<_MESH_DIMENSION_;
     upNode=startNode->upNode;
 
@@ -10704,7 +10710,7 @@ if (TmpAllocationCounter==2437) {
         if (RecvBlockDataBuffer[From]!=NULL) {
           InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
             RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-          RecvCompletedTable[thread]=true;
+          RecvCompletedTable[From]=true;
         }
       }
     }
@@ -10755,7 +10761,7 @@ if (TmpAllocationCounter==2437) {
 
                 InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
                   RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-                RecvCompletedTable[thread]=true;
+                RecvCompletedTable[From]=true;
               }
             }
 
