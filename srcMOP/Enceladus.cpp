@@ -129,4 +129,6 @@ long int MOP::SaturninanSystem::Enceladus::InjectParticles() {
     PIC::BC::ParticleProductionRate[spec]+=nTotalInjectedParticles/LocalTimeStep;
     PIC::BC::ParticleMassProductionRate[spec]+=nTotalInjectedParticles/LocalTimeStep*PIC::MolecularData::GetMass(spec);
   }
+
+  return nTotalInjectedParticles;
 }
