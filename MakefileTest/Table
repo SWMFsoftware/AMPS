@@ -808,6 +808,27 @@ Check=
 >>>@echo Test test_fast-wave has finished: `date`
 
 <#
+
+-------------------------------------------------------------------------------
+#>
+Name=photon-test
+Time=3
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_photon-test_compile..." > test_photon-test$(TESTphoton-test-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=photon-test ${TESTphoton-testKEYS} 
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>@echo "test_photon-test_compile... done" >> test_photon-test.diff
+
+
+<#
 -------------------------------------------------------------------------------
 #>
 Name=test/lightwave-current-off 
