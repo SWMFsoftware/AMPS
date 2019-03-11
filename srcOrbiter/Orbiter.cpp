@@ -444,6 +444,7 @@ double Orbiter::CalculateProjectionArea() {
   }
 
   delete [] map;
+  return ProjectionOrbiterSurfaceArea;
 }
 
 //====================================================================
