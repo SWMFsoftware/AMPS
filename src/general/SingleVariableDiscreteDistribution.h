@@ -11,25 +11,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifndef __PGI
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_  == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <emmintrin.h>
 #endif
+
 #include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
-
-
-
-
 
 #define _SINGLE_VARIABLE_DISCRETE_DISTRIBUTION_ON_    0
 #define _SINGLE_VARIABLE_DISCRETE_DISTRIBUTION_OFF_   1
 
 #define _SINGLE_VARIABLE_DISCRETE_DISTRIBUTION__DEFAULT__CUMULATIVE_DISTRIBUTION_INTERVAL_  100000
-
-
-
-
 
 template <class T>
 class cSingleVariableDiscreteDistribution {

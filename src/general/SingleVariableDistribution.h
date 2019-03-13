@@ -17,9 +17,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#ifndef __PGI
+
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_  == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <emmintrin.h>
 #endif
+
+
 #include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
