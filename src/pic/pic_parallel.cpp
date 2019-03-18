@@ -143,6 +143,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
     for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) {
       CommunicationInitialed_BLOCK_=false;
+      if (!sendNode->block) continue;
       FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
 
       for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
@@ -320,7 +321,7 @@ void PIC::Parallel::ExchangeParticleData() {
       //send the nodes' data
       for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) {
         CommunicationInitialed_BLOCK_=false;
-
+        if (!sendNode->block) continue;
         FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
         CellParticleTableModified=false;
 

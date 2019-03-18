@@ -938,7 +938,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 #endif //_TARGET_ == _TARGET_NONE_
 
 
-  if (newNode==NULL) {
+  if (newNode==NULL || !newNode->block ) {
     //the particle left the computational domain
     int code=_PARTICLE_DELETED_ON_THE_FACE_;
 
@@ -1054,7 +1054,8 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
-  if ((block=newNode->block)==NULL) {
+
+  if ((block=newNode->block)==NULL && newNode->Thread!=-1) {
     if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
       double Rate;
 
@@ -1068,6 +1069,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
     else exit(__LINE__,__FILE__,"Error: the block is empty. Most probably the time step is too large");
+
   }
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_

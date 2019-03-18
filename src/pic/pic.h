@@ -6018,6 +6018,10 @@ namespace FieldSolver {
             void InterpolateB_C2N();
             void InterpolateB_N2C();
              
+            bool isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+            bool isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+            bool isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+          
             //update the matrix element
             void UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRow* row);
             //update the Rhs of the Ax=b

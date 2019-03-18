@@ -476,7 +476,8 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {                                        
     
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];      
-    if(!isTrueBlock(node) || !node->block) continue;
+    //if(!isTrueBlock(node) || !node->block) continue;
+    if(!isTrueBlock(node)) continue;
     block=node->block;
     double dx[3];
     for (int idim=0;idim<3;idim++)
@@ -490,9 +491,11 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
     for (i=0;i<nI;i++) {
       for (j=0;j<nJ;j++)
         for (k=0;k<nK;k++) {
-          corner=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+	  //   corner=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+	  int index_b[3]={i,j,k};
 	  double xTemp[3];
-          corner->GetX(xTemp);
+	  for (int idim=0;idim<3;idim++) xTemp[idim]=node->xmin[idim]+dx[idim]*index_b[idim];
+          //corner->GetX(xTemp);
           int index_G[3];
           double xp,yp,zp;
 
@@ -556,7 +559,6 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
   long nPoint = pointList_II.size();
   int nVar = sVar_I.size();   
 
-  //printf("get_field_var nPoint:%ld, nVar:%d\n",nPoint, nVar);
 
   for(long iPoint = 0; iPoint<nPoint; ++iPoint){
     ix = pointList_II[iPoint][ix_];
@@ -571,26 +573,36 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
     xPoint[0] =node->xmin[0]+(node->xmax[0]-node->xmin[0])/nCells[0]*ix;
     xPoint[1] =node->xmin[1]+(node->xmax[1]-node->xmin[1])/nCells[1]*iy;
     xPoint[2] =node->xmin[2]+(node->xmax[2]-node->xmin[2])/nCells[2]*iz;
-
     
-    PIC::InterpolationRoutines::CellCentered::cStencil CenterStencil(false);
-    //interpolate the magnetic field from center nodes to particle location                              
-                       
-    CenterStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xPoint,node));
 
-    PIC::Mesh::cDataCornerNode *CornerNode= node->block->
-      GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(ix,iy,iz));
-    char * DataPtr = CornerNode->GetAssociatedDataBufferPointer();
-    for(int iVar = 0; iVar < nVar; ++iVar){
-      var_II(iPoint, iVar) = get_var(sVar_I[iVar], DataPtr,xPoint,&CenterStencil, isCoord);
+    PIC::InterpolationRoutines::CellCentered::cStencil CenterStencil(false);
+
+    if (node->block){
+      //interpolate the magnetic field from center nodes to particle location                       
+       
+      
+      CenterStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xPoint,node));
+      
+      PIC::Mesh::cDataCornerNode *CornerNode= node->block->
+	GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(ix,iy,iz));
+      char * DataPtr = CornerNode->GetAssociatedDataBufferPointer();
+
+      for(int iVar = 0; iVar < nVar; ++iVar){
+	var_II(iPoint, iVar) = get_var(sVar_I[iVar], DataPtr,xPoint,&CenterStencil, isCoord);
+      }
+    }else{      
+      for(int iVar = 0; iVar < nVar; ++iVar){
+	var_II(iPoint, iVar) = get_var(sVar_I[iVar], NULL,xPoint,&CenterStencil, isCoord);
+      }
     }
+
   }
 }
 
 
 
 void PIC::CPLR::FLUID::write_output(double timeNow, bool doForceOutput){
-  fix_plasma_node_boundary();
+  //  fix_plasma_node_boundary();
   timeNow *= FluidInterface.getNo2SiT();
   FluidInterface.writers_write(timeNow, iCycle, doForceOutput, find_output_list,
                                get_field_var);
@@ -615,7 +627,7 @@ void PIC::CPLR::FLUID::fix_plasma_node_boundary(){
     for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
     PIC::Mesh::cDataBlockAMR *block = node->block;
     
-    for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
+    for (int i=0;i<=nCells[0];i++) for (int j=0;j<=nCells[1];j++) for (int k=0;k<=nCells[2];k++) {
               
           double x[3];
           int ind[3]={i,j,k};
@@ -625,8 +637,8 @@ void PIC::CPLR::FLUID::fix_plasma_node_boundary(){
           }
 
 
-          if (!isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
-              
+          if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
+    
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -686,18 +698,33 @@ bool PIC::CPLR::FLUID::isBoundaryCorner(double *x, double *dx, double * xmin, do
 double PIC::CPLR::FLUID::get_var(std::string var, 
 				char * DataPtr, double * x,
                                 PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,
-				bool isCoord){
+				 bool isCoord){
   // Something like this. May be iBlock index is needed.
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double value = 0; 
   int ns = PIC::CPLR::FLUID::FluidInterface.get_nS();
  
-  if (var.substr(0, 2) == "Ex") {
-    double  *  currE=(double *)(DataPtr+
-                                PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+CurrentEOffset);
-    value = currE[0];
-    //printf("PC output x:%e,%e,%e, Ex:%e \n",x[0],x[1],x[2],value);
 
+   if (var.substr(0, 1) == "X") {
+     value = x[0] + PIC::CPLR::FLUID::FluidInterface.getFluidStartX();
+     return value;
+   } else if (var.substr(0, 1) == "Y") {
+    value = x[1] + PIC::CPLR::FLUID::FluidInterface.getFluidStartY();
+    return value;
+   } else if (var.substr(0, 1) == "Z") {
+    value = x[2] + PIC::CPLR::FLUID::FluidInterface.getFluidStartZ();      
+    return value;
+  }
+   
+
+   if (!DataPtr) return value;
+
+
+   if (var.substr(0, 2) == "Ex") {
+     double  *  currE=(double *)(DataPtr+
+                                PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+CurrentEOffset);
+     value = currE[0];
+     
     //value = Ex[i][j][k];
   } else if (var.substr(0, 2) == "Ey") {
     //value = Ey[i][j][k];
@@ -723,14 +750,13 @@ double PIC::CPLR::FLUID::get_var(std::string var,
 
     //value = Bxn[i][j][k];
   } else if (var.substr(0, 2) == "By") {    
-
-    double  *  currB=(double *)(DataPtr+
-                                PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner+CurrentBOffset);
-    value = currB[1];
-
-    //value = CellInterpolatedVar("By", centerStencilPtr);
-
-    //value = Byn[i][j][k];
+     
+     double  *  currB=(double *)(DataPtr+
+                                 PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner+CurrentBOffset);
+     value = currB[1];
+    
+     //value = CellInterpolatedVar("By", centerStencilPtr);
+     //value = Byn[i][j][k];
   } else if (var.substr(0, 2) == "Bz") {
     
     double  *  currB=(double *)(DataPtr+
@@ -741,18 +767,6 @@ double PIC::CPLR::FLUID::get_var(std::string var,
     //value = CellInterpolatedVar("Bz", centerStencilPtr);
 
     //value = Bzn[i][j][k];
-  } else if (var.substr(0, 1) == "X") {
-
-    value = x[0] + PIC::CPLR::FLUID::FluidInterface.getFluidStartX();
-    //    printf("x:%f\n",x[0]);
-  } else if (var.substr(0, 1) == "Y") {
-
-    value = x[1] + PIC::CPLR::FLUID::FluidInterface.getFluidStartY();
-    //printf("y:%f\n",x[1]);     
-  } else if (var.substr(0, 1) == "Z") {
-
-    value = x[2] + PIC::CPLR::FLUID::FluidInterface.getFluidStartZ();
-
   } else if (var.substr(0, 4) == "rhoc") {
     // rhocS0, rhocS1... rhoc
 
@@ -782,8 +796,6 @@ double PIC::CPLR::FLUID::get_var(std::string var,
         //       printf("x:%e,%e,%e, Rho:%e\n",x[0],x[1],x[2],value);
         
         value = GetCornerVar("Rho",DataPtr,is);
-        if (fabs(x[0])<1e-3 && fabs(x[1])<1e-3 && fabs(x[2])<1e-3)
-          printf("rho at -16,-8,-4:%e\n",value);
       }
     }
   }else if (var.substr(0, 2) == "pS") {
@@ -1131,28 +1143,43 @@ double PIC::CPLR::FLUID::GetCornerVar(std::string var,char * DataPtr,int iSp){
     value =((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
   }else if (var.substr(0, 2) == "Ux"){
-    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+RhoUx_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+    double rhoTemp= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
+
+    if (rhoTemp==0) value=0.0;
+    else{
+      value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+	[SpeciesDataIndex[iSp]+RhoUx_];
+      value /= rhoTemp;
+    }
 
   }else if (var.substr(0, 2) == "Mx"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUx_];
   }else if (var.substr(0, 2) == "Uy"){
-    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+RhoUy_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+    double rhoTemp= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
-
+    
+    if (rhoTemp==0) value=0.0;
+    else{
+      value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+	[SpeciesDataIndex[iSp]+RhoUy_];
+      value /= rhoTemp;
+    }
   }else if (var.substr(0, 2) == "My"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUy_];
   }else if (var.substr(0, 2) == "Uz"){
-    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+RhoUz_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+    double rhoTemp= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
+    
+    if (rhoTemp==0) value=0.0;
+    else{
+      value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+	[SpeciesDataIndex[iSp]+RhoUz_];
+      value /= rhoTemp;
+    }
+
   }else if (var.substr(0, 2) == "Mz"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUz_];

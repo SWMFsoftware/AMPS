@@ -311,7 +311,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC() {
   //set the initial conditions
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_)
+    dtTotal=PIC::CPLR::FLUID::dt; 
+  //global time step with deallocated blocks in fluid coupler mode will have some issue
+  else 
+    dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
   PIC::FieldSolver::Electromagnetic::ECSIM::cDt=LightSpeed*dtTotal;
   
   PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
@@ -435,6 +439,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+  
   // No.0-No.26  stencil Ex
   // No.27-No.53 stencil Ey
   // No.54-No.80 stencil Ez
@@ -469,26 +474,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
 
 #if _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ 
-
-  double eps=PIC::Mesh::mesh.EPS;
-  bool isFixed=false;
-  int indexG[3];
-  
-  for (int idim=0; idim<3; idim++) {
-   
-    indexG[idim]=
-      (fabs(x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(x[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
-      round((x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-x[idim])/dx[idim]);
-    //minus value means outside the domain
-    //positive value means inside
-    if (indexG[idim]==0) {
-      isFixed=true;
-      break;
-    }
-  }
-  
-  if (isFixed){
-    
+ 
+  if (isBoundaryCorner(x,node)) {  
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
     MatrixRowNonZeroElementTable[0].k=k;
@@ -503,10 +490,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     rhs =0.0;
     RhsSupportLength_CenterNodes = 0;
     RhsSupportLength_CornerNodes = 0;
+    if  (isRightBoundaryCorner(x,node)) NonZeroElementsFound =0;   
+    
     return;
   }
 
 #endif
+
 
   if (!initMassMatrixOffsetTable) computeMassMatrixOffsetTable(); 
 
@@ -584,36 +574,60 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     i0 = MatrixRowNonZeroElementTable[ii].i;
     j0 = MatrixRowNonZeroElementTable[ii].j;
     k0 = MatrixRowNonZeroElementTable[ii].k;
-   
-    pointLeft.push_back(ii);
-    if (MatrixRowNonZeroElementTable[ii].Node==NULL || MatrixRowNonZeroElementTable[ii].Node->Thread==-1) {
-      pointLeft.pop_back();
-    }else{
-      double xlocal[3];
-      int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
-      int indexG_local[3];
-      bool isFixed=false;
-      for (int idim=0; idim<3; idim++) {
-        xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
-      }
 
-      for (int idim=0; idim<3; idim++) {
-        
-        indexG_local[idim]=
-           (fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
-          round((xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-xlocal[idim])/dx[idim]);
-        //minus value means outside the domain
-        //positive value means inside
-        if (indexG_local[idim]==0) {
-          isFixed=true;
-          break;
-        }
-      }
+    if ((i0>=iMax) && (nodeTemp!=NULL)) {
+      i0-=_BLOCK_CELLS_X_;
+      nodeTemp=nodeTemp->GetNeibFace(1,0,0);
+    }
+    else if (i0<0 && nodeTemp!=NULL) {
+      i0+=_BLOCK_CELLS_X_;
+      nodeTemp=nodeTemp->GetNeibFace(0,0,0);
+    }
 
-      if (isFixed) pointLeft.pop_back();
+    if ((j0>=jMax) && (nodeTemp!=NULL)) {
+      j0-=_BLOCK_CELLS_Y_;
+      nodeTemp=nodeTemp->GetNeibFace(3,0,0);
+    }
+    else if (j0<0 && nodeTemp!=NULL) {
+      j0+=_BLOCK_CELLS_Y_;
+      nodeTemp=nodeTemp->GetNeibFace(2,0,0);
+    }
+
+    if ((k0>=kMax) && (nodeTemp!=NULL)) {
+      k0-=_BLOCK_CELLS_Z_;
+      nodeTemp=nodeTemp->GetNeibFace(5,0,0);
+    }
+    else if (k0<0 && nodeTemp!=NULL) {
+      k0+=_BLOCK_CELLS_Z_;
+      nodeTemp=nodeTemp->GetNeibFace(4,0,0);
+    }
+
+    double xlocal[3];
+    int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
+    int indexG_local[3];
+    bool isFixed=false;
+    for (int idim=0; idim<3; idim++) {
+      xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
+    }
      
-    }//else
+    pointLeft.push_back(ii);
+    if (MatrixRowNonZeroElementTable[ii].Node==NULL){
+      pointLeft.pop_back();
+      continue;
+    }else if (MatrixRowNonZeroElementTable[ii].Node->Thread==-1){
+      pointLeft.pop_back();
+      continue;
+    }
     
+    if (nodeTemp==NULL){
+      pointLeft.pop_back();
+      continue;
+    }else if (nodeTemp->Thread==-1){
+      pointLeft.pop_back();
+      continue;
+    }
+
+    if (isBoundaryCorner(xlocal,node)) pointLeft.pop_back();
   }
 
   for (int ii=0; ii<pointLeft.size();ii++){
@@ -645,7 +659,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
   
   NonZeroElementsFound=pointLeft.size();
-
+  
   //NonZeroElementsFound=81;
 
   //  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
@@ -664,7 +678,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
-      // }
+
 
   for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
     // fill next 54 elements
@@ -720,9 +734,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
  
   RhsSupportLength_CornerNodes=82;
 
- 
-   
-   
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
   
@@ -1412,6 +1423,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::cout.precision(20);
     std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;  
   }
+  
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ )
+    PIC::CPLR::FLUID::fix_plasma_node_boundary();
 }
 
 
@@ -1905,3 +1919,352 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * Ve
   Solver.MultiplyVector(VecOut,VecIn,n);
 }
 
+
+
+bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+
+  for (int idim=0; idim<3 && node; idim++){
+    if ((x[idim]-0.5*dx[idim])<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
+  }
+  
+  if (node==NULL) return true;
+
+
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->Thread==-1) {
+      
+      if (fabs(x[idim]-0.5*dx[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }
+  
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+      
+      if (fabs(x[idim]+0.5*dx[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }
+
+  int addition =1, sum=0;//sum used to indicate the location of the corner
+  //0 not at the boundary, 111000 at the right most corner...
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-0.5*dx[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+  
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]+0.5*dx[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+
+  if (sum==0) return false;
+
+  switch (sum) {
+  case 111:
+    if (!node->GetNeibCorner(0)) {
+      return true;
+    }else if (node->GetNeibCorner(0)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 1110:
+    if (!node->GetNeibCorner(1)) {
+      return true;
+    }else if (node->GetNeibCorner(1)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 10101:
+    if (!node->GetNeibCorner(2)) {
+      return true;
+    }else if (node->GetNeibCorner(2)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 11100:
+    if (!node->GetNeibCorner(3)) {
+      return true;
+    }else if (node->GetNeibCorner(3)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 100011:
+    if (!node->GetNeibCorner(4)) {
+      return true;
+    }else if (node->GetNeibCorner(4)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 101010:
+    if (!node->GetNeibCorner(5)) {
+      return true;
+    }else if (node->GetNeibCorner(5)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 110001:
+    if (!node->GetNeibCorner(6)) {
+      return true;
+    }else if (node->GetNeibCorner(6)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 111000:
+    if (!node->GetNeibCorner(7)) {
+      return true;
+    }else if (node->GetNeibCorner(7)->Thread==-1){
+      return true;
+    }
+    else return false;
+   
+  case 110:
+    if (!node->GetNeibEdge(0,0)) return true;
+    else if (node->GetNeibEdge(0,0)->Thread==-1) return true;
+    else return false;
+
+  case 10100:
+    if (!node->GetNeibEdge(1,0)) return true;
+    else if (node->GetNeibEdge(1,0)->Thread==-1) return true;
+    else return false;
+
+  case 110000:
+    if (!node->GetNeibEdge(2,0)) return true;
+    else if (node->GetNeibEdge(2,0)->Thread==-1) return true;
+    else return false;
+
+  case 100010:
+    if (!node->GetNeibEdge(3,0)) return true;
+    else if (node->GetNeibEdge(3,0)->Thread==-1) return true;
+    else return false;
+
+  case 101:
+    if (!node->GetNeibEdge(4,0)) return true;
+    else if (node->GetNeibEdge(4,0)->Thread==-1) return true;
+    else return false;
+
+  case 1100:
+    if (!node->GetNeibEdge(5,0)) return true;
+    else if (node->GetNeibEdge(5,0)->Thread==-1) return true;
+    else return false;
+
+  case 101000:
+    if (!node->GetNeibEdge(6,0)) return true;
+    else if (node->GetNeibEdge(6,0)->Thread==-1) return true;
+    else return false;
+
+  case 100001:
+    if (!node->GetNeibEdge(7,0)) return true;
+    else if (node->GetNeibEdge(7,0)->Thread==-1) return true;
+    else return false;
+
+  case 11:
+    if (!node->GetNeibEdge(8,0)) return true;
+    else if (node->GetNeibEdge(8,0)->Thread==-1) return true;
+    else return false;
+
+  case 1010:
+    if (!node->GetNeibEdge(9,0)) return true;
+    else if (node->GetNeibEdge(9,0)->Thread==-1) return true;
+    else return false;
+
+  case 11000:
+    if (!node->GetNeibEdge(10,0)) return true;
+    else if (node->GetNeibEdge(10,0)->Thread==-1) return true;
+    else return false;
+
+  case 10001:
+    if (!node->GetNeibEdge(11,0)) return true;
+    else if (node->GetNeibEdge(11,0)->Thread==-1) return true;
+    else return false;
+    
+  default:
+    return false;
+  }
+  
+}
+
+
+bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+
+  for (int idim=0; idim<3 && node; idim++){
+    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
+  }
+  
+  if (node==NULL) return true;
+
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->Thread==-1) {
+
+      if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
+        return true;
+      }
+    }
+  
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }
+
+  int addition =1, sum=0;//sum used to indicate the location of the corner
+  //0 not at the boundary, 111000 at the right most corner...
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+  
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+
+  if (sum==0) return false;
+  
+  switch (sum) {
+  case 111:
+    if (!node->GetNeibCorner(0)) {
+      return true;
+    }else if (node->GetNeibCorner(0)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 1110:
+    if (!node->GetNeibCorner(1)) {
+      return true;
+    }else if (node->GetNeibCorner(1)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 10101:
+    if (!node->GetNeibCorner(2)) {
+      return true;
+    }else if (node->GetNeibCorner(2)->Thread==-1){
+      return true;
+    }
+    else return false;
+   
+  case 11100:
+    if (!node->GetNeibCorner(3)) {
+      return true;
+    }else if (node->GetNeibCorner(3)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 100011:
+    if (!node->GetNeibCorner(4)) {
+      return true;
+    }else if (node->GetNeibCorner(4)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 101010:
+    if (!node->GetNeibCorner(5)) {
+      return true;
+    }else if (node->GetNeibCorner(5)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+
+  case 110001:
+    if (!node->GetNeibCorner(6)) {
+      return true;
+    }else if (node->GetNeibCorner(6)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+
+  case 111000:
+    if (!node->GetNeibCorner(7)) {
+      return true;
+    }else if (node->GetNeibCorner(7)->Thread==-1){
+      return true;
+    }
+    else return false;
+   
+  case 110:
+    if (!node->GetNeibEdge(0,0)) return true;
+    else if (node->GetNeibEdge(0,0)->Thread==-1) return true;
+    else return false;
+
+  case 10100:
+    if (!node->GetNeibEdge(1,0)) return true;
+    else if (node->GetNeibEdge(1,0)->Thread==-1) return true;
+    else return false;
+
+  case 110000:
+    if (!node->GetNeibEdge(2,0)) return true;
+    else if (node->GetNeibEdge(2,0)->Thread==-1) return true;
+    else return false;
+
+  case 100010:
+    if (!node->GetNeibEdge(3,0)) return true;
+    else if (node->GetNeibEdge(3,0)->Thread==-1) return true;
+    else return false;
+
+  case 101:
+    if (!node->GetNeibEdge(4,0)) return true;
+    else if (node->GetNeibEdge(4,0)->Thread==-1) return true;
+    else return false;
+
+  case 1100:
+    if (!node->GetNeibEdge(5,0)) return true;
+    else if (node->GetNeibEdge(5,0)->Thread==-1) return true;
+    else return false;
+
+  case 101000:
+    if (!node->GetNeibEdge(6,0)) return true;
+    else if (node->GetNeibEdge(6,0)->Thread==-1) return true;
+    else return false;
+
+  case 100001:
+    if (!node->GetNeibEdge(7,0)) return true;
+    else if (node->GetNeibEdge(7,0)->Thread==-1) return true;
+    else return false;
+
+  case 11:
+    if (!node->GetNeibEdge(8,0)) return true;
+    else if (node->GetNeibEdge(8,0)->Thread==-1) return true;
+    else return false;
+
+  case 1010:
+    if (!node->GetNeibEdge(9,0)) return true;
+    else if (node->GetNeibEdge(9,0)->Thread==-1) return true;
+    else return false;
+
+  case 11000:
+    if (!node->GetNeibEdge(10,0)) return true;
+    else if (node->GetNeibEdge(10,0)->Thread==-1) return true;
+    else return false;
+
+  case 10001:
+    if (!node->GetNeibEdge(11,0)) return true;
+    else if (node->GetNeibEdge(11,0)->Thread==-1) return true;
+    else return false;
+    
+  default:
+    return false;
+  }
+  
+
+}
+
+
+
+
+bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }  
+  return false;
+  
+}

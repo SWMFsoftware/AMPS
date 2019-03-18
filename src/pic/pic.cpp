@@ -851,6 +851,7 @@ void PIC::Sampling::Sampling() {
     #endif
 
     block=node->block;
+    if (!block) continue;
     FirstCellParticleTable=block->FirstCellParticleTable;
     
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
@@ -1215,7 +1216,7 @@ void PIC::Sampling::Sampling() {
 
       for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
         block=node->block;
-
+        if (!block) continue;
         for (k=0;k<_BLOCK_CELLS_Z_;k++) {
           for (j=0;j<_BLOCK_CELLS_Y_;j++) {
             for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -1917,7 +1918,7 @@ void PIC::Init_AfterParser() {
   //flush the sampling buffers
   for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
-
+    if (!block) continue;
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (i=0;i<_BLOCK_CELLS_X_;i++) {
