@@ -398,6 +398,82 @@ void PIC::CPLR::FLUID::read_param(){
       //readParam.read_var("ratioDivC2C", ratioDivC2C);
 
       PIC::FieldSolver::Electromagnetic::ECSIM::theta = th;
+    } else if (command == "#DIVE") {
+      /*
+        Examples:
+         1) #DIVE
+            weight_estimate
+
+         2) #DIVE
+            weight          divECleanType
+            1              nPower
+            1e-8            divECleanTol
+            50              divECleanIter
+
+         3) #DIVE
+            position_light  divECleanType
+            1          nPower
+            1e-8            divECleanTol
+            50              divECleanIter
+            3               nIterNonLinear
+
+         4) #DIVE
+            position_all    divECleanType
+            1               nPower
+            1e-8            divECleanTol
+            50              divECleanIter
+            3               nIterNonLinear
+
+         5) #DIVE
+            position_estimate_phi  divECleanType
+            1                      nPower
+            1e-2                   divECleanTol
+            20                     divECleanIter
+
+            #DIVE
+            position_estimate      divECleanType
+
+	  6) #DIVE
+	     F                //Turn divEClean off. 
+
+      */
+      string divECleanType;
+      readParam.read_var("divECleanType",divECleanType);
+
+       if (divECleanType == "F") {
+ 	 PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false; 
+       }else{
+          PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = true;
+       }
+//         if (divECleanType.substr(0, 15) != "weight_estimate" &&
+// 	    divECleanType != "position_estimate") {
+// 	  readParam.read_var("nPower", nPowerWeight);
+// 	  readParam.read_var("divECleanTol", divECleanTol);
+// 	  readParam.read_var("divECleanIter", divECleanIter);
+// 	  if (divECleanType == "position_light" ||
+// 	      divECleanType == "position_all")
+// 	    readParam.read_var("nIterNonLinear", nIterNonLinear);
+// 	}
+
+// 	if (divECleanType == "weight" ||
+// 	    divECleanType.substr(0, 15) == "weight_estimate" ||
+// 	    divECleanType == "position_light" ||
+// 	    divECleanType == "position_all" ||
+// 	    divECleanType == "position_estimate" ||
+// 	    divECleanType == "position_estimate_phi") {
+// 	  doCleanDivE = true;
+// 	  DoCalcRhocDirectly = true;
+// 	} else {
+// 	  cout << "Error: divECleanType = " << divECleanType
+// 	       << " is not recognized!" << endl;
+// 	  abort();
+// 	}
+// 	if (divECleanType == "position_estimate_phi")
+// 	  correctionRatio = 0.9;
+// 	if (divECleanType == "position_estimate")
+// 	  correctionRatio = 0.5;
+//       }
+
     } else if (command == "#PARTICLES") {
       int nCommand = 3; // Number of commands for each region.
       readParam.skip_lines(nCommand * FluidInterface.getiRegion());
@@ -583,16 +659,20 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
       
       CenterStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xPoint,node));
       
+      PIC::Mesh::cDataCenterNode *CenterNode= node->block->
+        GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(ix,iy,iz));
+      char * centerDataPtr =  CenterNode->GetAssociatedDataBufferPointer();
+
       PIC::Mesh::cDataCornerNode *CornerNode= node->block->
 	GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(ix,iy,iz));
       char * DataPtr = CornerNode->GetAssociatedDataBufferPointer();
 
       for(int iVar = 0; iVar < nVar; ++iVar){
-	var_II(iPoint, iVar) = get_var(sVar_I[iVar], DataPtr,xPoint,&CenterStencil, isCoord);
+	var_II(iPoint, iVar) = get_var(sVar_I[iVar], DataPtr,xPoint,centerDataPtr, isCoord);
       }
     }else{      
       for(int iVar = 0; iVar < nVar; ++iVar){
-	var_II(iPoint, iVar) = get_var(sVar_I[iVar], NULL,xPoint,&CenterStencil, isCoord);
+	var_II(iPoint, iVar) = get_var(sVar_I[iVar], NULL,xPoint, NULL, isCoord);
       }
     }
 
@@ -696,8 +776,8 @@ bool PIC::CPLR::FLUID::isBoundaryCorner(double *x, double *dx, double * xmin, do
 
 
 double PIC::CPLR::FLUID::get_var(std::string var, 
-				char * DataPtr, double * x,
-                                PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,
+				 char * DataPtr, double * x,
+                                 char * centerDataPtr,
 				 bool isCoord){
   // Something like this. May be iBlock index is needed.
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
@@ -995,9 +1075,21 @@ double PIC::CPLR::FLUID::get_var(std::string var,
       value =GetCornerVar("Uz",DataPtr,is);
       //value = CellInterpolatedVar("Uz", centerStencilPtr,is);     
     }
-  } else {
+   }else if (var.substr(0, 5) == "divEc") {
+    value = ((double *)(centerDataPtr+   
+                        PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[divEIndex];    
+   }else if (var.substr(0, 2) == "qc") {
+    value = 0.51*((double *)(centerDataPtr+   
+                        PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[netChargeNewIndex]+
+      0.49*((double *)(centerDataPtr+   
+                       PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[netChargeOldIndex];
+      
+   }else if (var.substr(0, 3) == "phi") {
+    value = ((double *)(centerDataPtr+   
+                        PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[phiIndex];    
+   } else {
     value = 0;
-  }
+   }
   return value;
 
   //~/SWMF/PC/IPIC3D2/src/fields/EMfields3D.cpp

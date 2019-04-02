@@ -519,8 +519,6 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
     xCorner[idim]=xCenter[idim]-0.5*dx[idim];
   }
 
-  bool isTest=false;
-  if (fabs(xCorner[0]-20)<0.1 && fabs(xCorner[1]-3.5)<0.1 && fabs(xCorner[2]-4)<0.1)  isTest=true;
 
   // double BulkVel[PIC::nTotalSpecies][3];
 
@@ -600,14 +598,14 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
       for (int jj = 0; jj < PIC::CPLR::FLUID::npcely[0]; jj++){
         for (int kk = 0; kk < PIC::CPLR::FLUID::npcelz[0]; kk++){
           
-          double xPar[3];
+          double xPar[3],rndLoc[3];
           int index_sub[3]={ii,jj,kk};
           for (int idim=0; idim<3; idim++){
-            
-            xPar[idim] = (index_sub[idim] + rndNum()) * (dx[idim]/nSubCells[idim])
+            rndLoc[idim]=rndNum();
+            xPar[idim] = (index_sub[idim] + rndLoc[idim]) * (dx[idim]/nSubCells[idim])
               + xCorner[idim];
           }
-  
+
           double NumberDensity=fabs(PIC::CPLR::FLUID::FluidInterface.getPICRhoNum(iBlock,xPar[0],xPar[1],xPar[2],iSp));
   
           double weightCorrection=NumberDensity*CellVolume/ParticleWeight[iSp]/cellParNumPerSp;
@@ -900,7 +898,7 @@ void setFixedE_BC_half(){
             Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
             Ez = PIC::CPLR::FLUID::FluidInterface.getEz(iBlock,x[0],x[1],x[2]);
-            
+
             ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ex;
             ((double*)(offset+OffsetE_HalfTimeStep))[EyOffsetIndex]=Ey;
             ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]=Ez;
@@ -943,7 +941,6 @@ void setFixedE_BC_curr(){
             x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
           }
 
-
           if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
           
@@ -956,11 +953,12 @@ void setFixedE_BC_curr(){
             Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
             Ez = PIC::CPLR::FLUID::FluidInterface.getEz(iBlock,x[0],x[1],x[2]);
-            
+
             ((double*)(offset+CurrentEOffset))[ExOffsetIndex]=Ex;
             ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=Ey;
             ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
-	             
+            
+          
           }
         }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
 
@@ -1041,7 +1039,7 @@ void setFixedB_corner_BC(){
     PIC::Mesh::cDataBlockAMR *block = node->block;
   
 
-    for (int i=0;i<=nCells[0];i++) for (int j=0;j<=nCells[1];j++) for (int k=0;k<=nCells[2];k++) {
+    for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
 
           double x[3];
           int ind[3]={i,j,k};

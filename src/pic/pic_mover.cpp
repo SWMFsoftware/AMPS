@@ -495,7 +495,7 @@ void PIC::Mover::MoveParticles() {
 
 //      node=node->nextNodeThisThread;
     }
-  }
+  }//for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++)
 
 }
 

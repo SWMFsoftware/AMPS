@@ -353,8 +353,14 @@ int PIC::TimeStep() {
 
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
+  
+  if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
+    PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
+
+
   PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   
+
   PIC::CPLR::FLUID::iCycle++;
   {// Output
     double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
