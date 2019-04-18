@@ -1680,6 +1680,32 @@ void PIC::Mesh::SetCornerNodeAssociatedDataValue(double NewValue,int ResetElemen
 }
 
 
+//=====================================================================================
+//reset values of the 'center' node associated data vector
+void PIC::Mesh::SetCenterNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
+  int i,j,k;
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    PIC::Mesh::cDataBlockAMR *block=node->block;
+
+    if (block!=NULL) for (i=-1;i<_BLOCK_CELLS_X_+1;i++) for (j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
+      PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+
+      if (CenterNode!=NULL) memcpy(CenterNode->GetAssociatedDataBufferPointer()+DataBufferOffset,DataBuffer,DataBufferLength);
+    }
+  }
+}
+
+void PIC::Mesh::SetCenterNodeAssociatedDataValue(double NewValue,int ResetElementNumber,int DataBufferOffset) {
+  double DataBuffer[ResetElementNumber];
+
+  //init the data buffer
+  for (int i=0;i<ResetElementNumber;i++) DataBuffer[i]=NewValue;
+
+  //reset the associated data vector
+  SetCenterNodeAssociatedDataValue(DataBuffer,ResetElementNumber*sizeof(double),DataBufferOffset);
+}
+
 
 
 

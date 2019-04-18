@@ -79,8 +79,31 @@ void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
   index[2] = round((x[2]-xmin[2])/dx[2]);
 
 }
+/*
+bool PIC::CPLR::FLUID::IsOutside(double * x){
 
+  double xx=x[0];  
+  double yy=x[1];
 
+  double dx = fabs(-yy*(yy-16.0)/8.0+16.0-xx);
+  double dy;
+  if (xx<=24) dy = min(fabs(sqrt(-8*xx+192)+8-yy),fabs(-sqrt(-8*xx+192)+8-yy));
+  double dis;
+  if (xx>=24) dis = dx+10;
+  else dis = min(dx,dy);
+  
+  
+  //if (dis>1.0) return true;
+  //  if (xx<1) printf("isoutside  xx:%e,zz:%e,dx:%e,dy:%e,dis:%e\n", xx,zz,dx,dy,dis);
+  //if (fabs(xx-0.375)<0.1 && fabs(zz-6.375)<0.1) printf("test point xx:%e,zz:%e,dx:%e,dy:%e,dis:%e\n",xx,zz,dx,dy,dis);
+
+  if (dis>2.0) return true;
+  // if (xx>3 && zz>8) return true;
+  
+  return false;
+
+}
+*/
 bool isBoundaryCell(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
 
   if ( maxIndex < minIndex)
@@ -101,28 +124,6 @@ bool isBoundaryCell(double *x, double *dx, double * xmin, double * xmax, int min
 
   return false;
 }
-
-
-// bool isBoundaryCorner(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
-
-//   if ( maxIndex < minIndex)
-//     exit(__LINE__,__FILE__,"Error: minIndex is greater than maxIndex");
-  
-//   int indexBoundary[3]; //index count from the boundary
-
-//   for (int idim=0; idim<3; idim++) {
-//     indexBoundary[idim]=
-//       (fabs(x[idim]-xmin[idim])<fabs(x[idim]-xmax[idim])?
-//        round((x[idim]-xmin[idim])/dx[idim]):round((xmax[idim]-x[idim])/dx[idim]));
-//     //minus value means outside the domain
-//     //positive value inside
-//     for (int idx=minIndex;idx<=maxIndex; idx++){
-//       if (indexBoundary[idim]==idx) return true;
-//     }
-//   }
-
-//   return false;
-// }
 
 
 
@@ -264,28 +265,43 @@ double GetCornerVar(std::string var,char * DataPtr,int iSp){
     value =((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
   }else if (var.substr(0, 2) == "Ux"){
+    double rhoTemp =  ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+      [SpeciesDataIndex[iSp]+Rho_];
+    
+    if (rhoTemp==0) value =0;
+    else{
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUx_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+Rho_];
+    value /= rhoTemp;
+    }
 
   }else if (var.substr(0, 2) == "Mx"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUx_];
   }else if (var.substr(0, 2) == "Uy"){
-    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+RhoUy_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+    double rhoTemp =  ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
 
+    if (rhoTemp==0) value =0;
+    else{
+    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+      [SpeciesDataIndex[iSp]+RhoUy_];
+    value /= rhoTemp;
+    }
+    
   }else if (var.substr(0, 2) == "My"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUy_];
   }else if (var.substr(0, 2) == "Uz"){
-    value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
-      [SpeciesDataIndex[iSp]+RhoUz_];
-    value /= ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+    double rhoTemp =  ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+Rho_];
+    
+    if (rhoTemp==0) value =0;
+    else{   
+      value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
+      [SpeciesDataIndex[iSp]+RhoUz_];
+      value /= rhoTemp;
+    }
   }else if (var.substr(0, 2) == "Mz"){
     value = ((double *)(DataPtr+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))
       [SpeciesDataIndex[iSp]+RhoUz_];
@@ -361,12 +377,17 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
   double mhd_D[3], pic_D[3];
   double xp, yp, zp;
 
+  static int iCountOutput = 0; 
+
+  iCountOutput = 0; 
 
   for (int iPoint = 0; iPoint < nPoint; iPoint++) {
     mhd_D[0] = Xyz_I[iPoint * nDim] * col->getSi2NoL();
     mhd_D[1] = Xyz_I[iPoint * nDim + 1] * col->getSi2NoL();
     mhd_D[2] = Xyz_I[iPoint * nDim + 2] * col->getSi2NoL();
     col->mhd_to_Pic_Vec(mhd_D, pic_D);
+
+    iCountOutput++; 
     
     for (int ii=0;ii<nVarPIC;ii++) dataPIC_I[ii]=0;
     //  if (col->isThisRun(pic_D)) {
@@ -398,7 +419,13 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
           double tempWeight= CornerStencil.Weight[iStencil];
           dataPIC_I[iRho+iStart] +=
             tempWeight*GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies);
-      
+   
+          /*
+          if (iCountOutput<5)
+          printf("test111 xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e, rho1:%e \n",xp,yp,zp,
+                mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho+iStart],GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies));
+          */
+
           dataPIC_I[iMx+iStart]  += 
             tempWeight*GetCornerVar("Mx",DataPtr_I[iStencil],iSpecies);
           
@@ -427,8 +454,14 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
              tempWeight*GetCornerVar("Pyz",DataPtr_I[iStencil],iSpecies);
          
         }
-      } // iSpecies
+        //printf("test 000 xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e\n",xp,yp,zp,
+        //       mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho+iStart]);
 
+      } // iSpecies
+      
+    
+      //printf("xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e\n",xp,yp,zp,
+      //       mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho+iStart]);
 
       for (int iStencil=0;iStencil<CornerStencil.Length;iStencil++) {
         double * tempB = 
@@ -484,7 +517,9 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
   for (int idim=0; idim<3; idim++) {
     xCenter[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
     xCorner[idim]=xCenter[idim]-0.5*dx[idim];
-  }    
+  }
+
+
   // double BulkVel[PIC::nTotalSpecies][3];
 
   /*
@@ -563,14 +598,14 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
       for (int jj = 0; jj < PIC::CPLR::FLUID::npcely[0]; jj++){
         for (int kk = 0; kk < PIC::CPLR::FLUID::npcelz[0]; kk++){
           
-          double xPar[3];
+          double xPar[3],rndLoc[3];
           int index_sub[3]={ii,jj,kk};
           for (int idim=0; idim<3; idim++){
-            
-            xPar[idim] = (index_sub[idim] + rndNum()) * (dx[idim]/nSubCells[idim])
+            rndLoc[idim]=rndNum();
+            xPar[idim] = (index_sub[idim] + rndLoc[idim]) * (dx[idim]/nSubCells[idim])
               + xCorner[idim];
           }
-  
+
           double NumberDensity=fabs(PIC::CPLR::FLUID::FluidInterface.getPICRhoNum(iBlock,xPar[0],xPar[1],xPar[2],iSp));
   
           double weightCorrection=NumberDensity*CellVolume/ParticleWeight[iSp]/cellParNumPerSp;
@@ -661,6 +696,10 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
                   xPar[0],xPar[1],xPar[2],
                   ParVel_D[0],ParVel_D[1],ParVel_D[2], BulkVel[0], uth[1]);
           */
+          //if (isnan(ParVel_D[0])||isnan(ParVel_D[1]) || isnan(ParVel_D[2]))
+          //  printf("isnan: at xpar:%e,%e,%e\n",xPar[0],xPar[1],xPar[2]);
+
+          //if (iSp==0 && isTest) printf("electron velocity:%e,%e,%e\n",ParVel_D[0],ParVel_D[1],ParVel_D[2]);
           PIC::ParticleBuffer::InitiateParticle(xPar, ParVel_D,&weightCorrection,&iSp,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
           
         }
@@ -676,11 +715,12 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
 long int setFixedParticle_BC(){
   
 
-  if (PIC::ThisThread==0) printf("setFixedBC, iCycle:%ld\n",PIC::CPLR::FLUID::iCycle);
+  //printf("setFixedBC, iCycle:%ld\n",PIC::CPLR::FLUID::iCycle);
 
   // if (PIC::CPLR::FLUID::iCycle==0) return 0;
 
   static int cnt=0;
+  int cntBCcell =0;
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
   //set field for one layer ghost corners 
 
@@ -693,68 +733,82 @@ long int setFixedParticle_BC(){
   
   long nParticleDeleted=0, nParticleCreated=0;
     
+  int nAllocatedBlocks =0;
   int ** countedFaceBC;
-  countedFaceBC = new int * [PIC::DomainBlockDecomposition::nLocalBlocks];
-  countedFaceBC[0] = new int [PIC::DomainBlockDecomposition::nLocalBlocks*6]; 
 
-  for (int iBlk=0; iBlk<PIC::DomainBlockDecomposition::nLocalBlocks;iBlk++){
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    if(!node->block) continue;    
+    nAllocatedBlocks++; 
+  }
+  countedFaceBC = new int * [nAllocatedBlocks];
+  countedFaceBC[0] = new int [nAllocatedBlocks*6]; 
+
+  for (int iBlk=0; iBlk<nAllocatedBlocks;iBlk++){
     countedFaceBC[iBlk] =  countedFaceBC[0]+6*iBlk;
     for (int iFace=0; iFace<6; iFace++) countedFaceBC[iBlk][iFace]=0;
-  }  
-  //printf("fixed Bc is called!\n");
-  if (PIC::ThisThread==0) printf("PIC::DomainBlockDecomposition::nLocalBlocks:%d\n",PIC::DomainBlockDecomposition::nLocalBlocks);
-
-          
+  } 
+ 
+  
   for (int iFace=0;iFace<6;iFace++){
     
-    //int iBlock=0;
-    //    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    for (int iBlk=0; iBlk<PIC::DomainBlockDecomposition::nLocalBlocks;iBlk++){
+    int iBlk=-1;
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      //for (int iBlk=0; iBlk<PIC::DomainBlockDecomposition::nLocalBlocks;iBlk++){
 
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::DomainBlockDecomposition::BlockTable[iBlk];
+      //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::DomainBlockDecomposition::BlockTable[iBlk];
 
+       
+      if (!node->block) continue;
+      iBlk++;
+      //if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
+      if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
 
-    if (!node->block) continue;
-    if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
-   
-    //if (node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
+      //printf("iFace:%d, iBlk:%d, node:%p,nodeXmin:%e,%e,%e\n",iFace,iBlk,node,
+      //       node->xmin[0],node->xmin[1],node->xmin[2]);
+      
+      // if (node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
 
-    int ind_beg[3]={0,0,0}, ind_end[3] = {nCells[0]-1, nCells[1]-1,nCells[2]-1};
+      int ind_beg[3]={0,0,0}, ind_end[3] = {nCells[0]-1, nCells[1]-1,nCells[2]-1};
 
     
-    int * iFaceMin[6]={&ind_beg[0],&ind_end[0],&ind_beg[0],&ind_beg[0],&ind_beg[0],&ind_beg[0]};
-    int * iFaceMax[6]={&ind_beg[0],&ind_end[0],&ind_end[0],&ind_end[0],&ind_end[0],&ind_end[0]};
-    int * jFaceMin[6]={&ind_beg[1],&ind_beg[1],&ind_beg[1],&ind_end[1],&ind_beg[1],&ind_beg[1]};
-    int * jFaceMax[6]={&ind_end[1],&ind_end[1],&ind_beg[1],&ind_end[1],&ind_end[1],&ind_end[1]};
-    int * kFaceMin[6]={&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_end[2]};
-    int * kFaceMax[6]={&ind_end[2],&ind_end[2],&ind_end[2],&ind_end[2],&ind_beg[2],&ind_end[2]};
+      int * iFaceMin[6]={&ind_beg[0],&ind_end[0],&ind_beg[0],&ind_beg[0],&ind_beg[0],&ind_beg[0]};
+      int * iFaceMax[6]={&ind_beg[0],&ind_end[0],&ind_end[0],&ind_end[0],&ind_end[0],&ind_end[0]};
+      int * jFaceMin[6]={&ind_beg[1],&ind_beg[1],&ind_beg[1],&ind_end[1],&ind_beg[1],&ind_beg[1]};
+      int * jFaceMax[6]={&ind_end[1],&ind_end[1],&ind_beg[1],&ind_end[1],&ind_end[1],&ind_end[1]};
+      int * kFaceMin[6]={&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_beg[2],&ind_end[2]};
+      int * kFaceMax[6]={&ind_end[2],&ind_end[2],&ind_end[2],&ind_end[2],&ind_beg[2],&ind_end[2]};
   
     
   
-    double dx[3];
-    double *xminBlock= node->xmin, *xmaxBlock= node->xmax;
+      double dx[3];
+      double *xminBlock= node->xmin, *xmaxBlock= node->xmax;
           
-    for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
-    PIC::Mesh::cDataBlockAMR *block = node->block;
+      for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
+      PIC::Mesh::cDataBlockAMR *block = node->block;
  
-    long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
-    double CellVolume=1;
-    for (int idim=0;idim<3;idim++) CellVolume *= dx[idim];
-    double ParticleWeight[PIC::nTotalSpecies];
-    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-      ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
+      long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+      double CellVolume=1;
+      for (int idim=0;idim<3;idim++) CellVolume *= dx[idim];
+      double ParticleWeight[PIC::nTotalSpecies];
+      for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+        ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
         
-    //    for (int iFace=0;iFace<6;iFace++){
-    //  if (node->neibNodeFace[iFace]!=NULL && node->neibNodeFace[iFace]->Thread!=-1) continue;
+      //    for (int iFace=0;iFace<6;iFace++){
+      //  if (node->neibNodeFace[iFace]!=NULL && node->neibNodeFace[iFace]->Thread!=-1) continue;
 
-    for (int jface=0; jface<iFace; jface+=2) ind_beg[jface/2]+=countedFaceBC[iBlk][jface]; 
-    for (int jface=1; jface<iFace; jface+=2) ind_end[(jface-1)/2]-=countedFaceBC[iBlk][jface]; 
-    
-    for (int i=*iFaceMin[iFace];i<=*iFaceMax[iFace];i++)
-      for (int j=*jFaceMin[iFace];j<=*jFaceMax[iFace];j++)
-        for (int k=*kFaceMin[iFace];k<=*kFaceMax[iFace];k++){
-          
-          
+      for (int jface=0; jface<iFace; jface+=2) ind_beg[jface/2]+=countedFaceBC[iBlk][jface]; 
+      for (int jface=1; jface<iFace; jface+=2) ind_end[(jface-1)/2]-=countedFaceBC[iBlk][jface]; 
+      
+      for (int i=*iFaceMin[iFace];i<=*iFaceMax[iFace];i++)
+        for (int j=*jFaceMin[iFace];j<=*jFaceMax[iFace];j++)
+          for (int k=*kFaceMin[iFace];k<=*kFaceMax[iFace];k++){
+            
+      /*
+      for (int i=0;i<=nI-1;i++)
+        for (int j=0;j<=nJ-1;j++)
+          for (int k=0;k<=nK-1;k++){
+      */
+
             //for (int i=0;i<nCells[0];i++) for (int j=0;j<nCells[1];j++) for (int k=0;k<nCells[2];k++) {
       
             double x[3];
@@ -765,10 +819,15 @@ long int setFixedParticle_BC(){
             }
  
             
-            if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
-           
+            //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+            if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(x,dx,node)) continue;
+            
+            // printf("boundary cell x:%e,%e,%e, isBoundaryCell:%s\n",x[0],x[1],x[2], 
+            //       PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(x,dx,node)?"T":"F");
             //printf("fixRho at x:%e,%e,%e\n", x[0],x[1],x[2]);
               
+           
+
             if (FirstCellParticleTable!=NULL){
               long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
               while ((*ptr)!=-1) {
@@ -780,12 +839,11 @@ long int setFixedParticle_BC(){
             SetParticleForCell(node,iBlk,i,j,k,dx,xminBlock,ParticleWeight,CellVolume, nParticleCreated);
           }//for (int i=0;i<nCells[0];i++) for (int j=0;j<nCells[1];j++) for (int k=0;k<nCells[2];k++)
           
-    countedFaceBC[iBlk][iFace]++;
-    //iBlock++;
+      countedFaceBC[iBlk][iFace]++;
+   
     }
 
   }
-
 
   sprintf(fullname,"test_fixedbc_after_iter=%d.dat",cnt);
   //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                cnt++;         
@@ -797,6 +855,7 @@ long int setFixedParticle_BC(){
   delete [] countedFaceBC;
   return  nParticleCreated-nParticleDeleted;
 }
+
 
 
 
@@ -816,7 +875,7 @@ void setFixedE_BC_half(){
     PIC::Mesh::cDataBlockAMR *block = node->block;
     
     for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
-              
+          //-1 set bc at subdomain boundaries
           //if (CornerNode==block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))) {
           
           //}
@@ -827,9 +886,9 @@ void setFixedE_BC_half(){
             x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
           }
 
+          if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
-          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
-              
+
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -839,11 +898,12 @@ void setFixedE_BC_half(){
             Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
             Ez = PIC::CPLR::FLUID::FluidInterface.getEz(iBlock,x[0],x[1],x[2]);
-            
+
             ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ex;
             ((double*)(offset+OffsetE_HalfTimeStep))[EyOffsetIndex]=Ey;
             ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]=Ez;
            
+            //if (isTest) printf("test E bc: i,j,k:%d,%d,%d; x:%e %e %e; E:%e,%e,%e\n", i,j,k,x[0],x[1],x[2],Ex,Ey,Ez);
           }
         }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
 
@@ -870,7 +930,7 @@ void setFixedE_BC_curr(){
     PIC::Mesh::cDataBlockAMR *block = node->block;
     
     for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
-              
+          //for (int i=0;i<=nCells[0];i++) for (int j=0;j<=nCells[1];j++) for (int k=0;k<=nCells[2];k++) {
           //if (CornerNode==block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))) {
           
           //}
@@ -881,9 +941,9 @@ void setFixedE_BC_curr(){
             x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
           }
 
+          if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
-          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
-              
+          
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -893,15 +953,12 @@ void setFixedE_BC_curr(){
             Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
             Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
             Ez = PIC::CPLR::FLUID::FluidInterface.getEz(iBlock,x[0],x[1],x[2]);
-       
-            if (fabs(x[0]-32)<1e-3 && fabs(x[1]-5)<1e-3 && fabs(x[2]-3)<1e-3)
-              printf("fixedBC E i,j,k:%d,%d,%d; x:%e,%e,%e, E:%e,%e,%e\n",i,j,k,x[0],x[1],x[2],Ex,Ey,Ez);
 
-       
             ((double*)(offset+CurrentEOffset))[ExOffsetIndex]=Ex;
             ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=Ey;
             ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
-	             
+            
+          
           }
         }// for (int i=iFaceMin_n[iface];i<=iFaceMax_n[iface];i++)...
 
@@ -926,7 +983,7 @@ void setFixedB_center_BC(){
     for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
     PIC::Mesh::cDataBlockAMR *block = node->block;
   
-    for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
+    for (int i=-1;i<nCells[0]+1;i++) for (int j=-1;j<nCells[1]+1;j++) for (int k=-1;k<nCells[2]+1;k++) {
       
 
           double x[3];
@@ -936,7 +993,9 @@ void setFixedB_center_BC(){
             x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
           }
 
-          if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(x,dx,node)) continue;
+
 
           PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
           if (CenterNode!=NULL){
@@ -947,7 +1006,7 @@ void setFixedB_center_BC(){
             Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
-              
+
             ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=Bx;
             ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz;
@@ -981,19 +1040,16 @@ void setFixedB_corner_BC(){
   
 
     for (int i=-1;i<=nCells[0];i++) for (int j=-1;j<=nCells[1];j++) for (int k=-1;k<=nCells[2];k++) {
-          /*   
-               for (int i=iFaceMin[iFace];i<=iFaceMax[iFace];i++)
-               for (int j=jFaceMin[iFace];j<=jFaceMax[iFace];j++)
-               for (int k=kFaceMin[iFace];k<=kFaceMax[iFace];k++){
-          */
+
           double x[3];
           int ind[3]={i,j,k};
             
           for (int idim=0; idim<3; idim++) {
             x[idim]=xminBlock[idim]+(ind[idim])*dx[idim];
           }
-              
-          if (!PIC::CPLR::FLUID::isBoundaryCorner(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          
+          if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
+
 
           PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
@@ -1004,8 +1060,7 @@ void setFixedB_corner_BC(){
             Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
-              
-            
+
             ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=Bx;
             ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz;
@@ -1429,7 +1484,14 @@ void amps_init_mesh() {
 		    PIC::CPLR::FLUID::FluidInterface.getphyMax(2) - 
 		    PIC::CPLR::FLUID::FluidInterface.getphyMin(2)};
 
+  /*
+  double xx=xMax[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiL()/
+    PIC::CPLR::FLUID::FluidInterface.getrPlanet();
 
+  double zz=xMax[2]*PIC::CPLR::FLUID::FluidInterface.getNo2SiL()/
+    PIC::CPLR::FLUID::FluidInterface.getrPlanet();
+  */
+  
   PIC::Mesh::mesh.AllowBlockAllocation=false;
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
     PIC::BC::ExternalBoundary::Periodic::Init(xMin,xMax,BulletLocalResolution);
@@ -1490,24 +1552,24 @@ void amps_init_mesh() {
   PIC::Mesh::mesh.InitCellMeasure();
 
   //experiment of staircase blocks
-  /*  
+  /*
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
     double xmiddle[3];
-    bool isOutside=false;
+    //   bool isOutside=false;
     for (int idim=0;idim<3;idim++){
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
-      if (xmiddle[idim]<PIC::Mesh::mesh.xGlobalMin[idim] || xmiddle[idim]>PIC::Mesh::mesh.xGlobalMax[idim])
-        isOutside = true;
     }
-    if (isOutside)  {
+
+    if (PIC::CPLR::FLUID::IsOutside(xmiddle))  {
       printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
       PIC::Mesh::mesh.DeallocateBlock(node);
       node->Thread = -1;
+      node->block = NULL;
     }
   }
   */
-
+  
   //coupling send info from amps to fluid
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
@@ -1522,8 +1584,16 @@ void amps_init(){
 
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
-  PIC::ParticleWeightTimeStep::initTimeStep();
+  //PIC::ParticleWeightTimeStep::initTimeStep();
+  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) 
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=PIC::CPLR::FLUID::dt; 	
+  }
 
+
+
+  //PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=PIC::CPLR::FLUID::dt;
   if (PIC::ThisThread==0) printf("test1\n");
   //PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
   
@@ -1536,8 +1606,9 @@ void amps_init(){
   PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1);
   PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(1,1);
 
+  if (PIC::ThisThread==0) printf("test3\n");
   PIC::DomainBlockDecomposition::UpdateBlockTable();
-
+  if (PIC::ThisThread==0) printf("test4\n");
   //  PIC::BC::UserDefinedParticleInjectionFunction=setFixedBC;   
   
   PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC=
@@ -1555,7 +1626,7 @@ void amps_init(){
   //set the initial conditions for the transport equation
   //  TransportEquation::SetIC(3);
  
-
+  if (PIC::ThisThread==0) printf("test5\n");
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
     PIC::Mesh::mesh.ParallelBlockDataExchange();
@@ -1572,6 +1643,7 @@ void amps_init(){
   //PIC::FieldSolver::Init();
   PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC();
 
+  if (PIC::ThisThread==0) printf("test6\n");
  
      
   switch (_PIC_BC__PERIODIC_MODE_) {

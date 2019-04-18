@@ -213,7 +213,7 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
   //sample the mean values
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
     for (node=((thread==PIC::ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[thread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread]);node!=NULL;node=node->nextNodeThisThread) {
-
+      if (!node->block) continue;
       for (k=0;k<_BLOCK_CELLS_Z_;k++) {
         for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
           for (i=0;i<_BLOCK_CELLS_X_;i++)  {

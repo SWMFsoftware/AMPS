@@ -236,6 +236,7 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
 
   //update associated data accounting for the periodic boundary conditions
   PIC::Parallel::ProcessCornerBlockBoundaryNodes();
+  PIC::Parallel::ProcessCenterBlockBoundaryNodes();
 
 #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   //loop through all blocks

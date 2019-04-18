@@ -23,7 +23,9 @@ PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::
   PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
 cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
+cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
 
+bool PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset=-1;
@@ -40,6 +42,11 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
 int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
 int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
+
+int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeOldIndex;
+int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
+int PIC::FieldSolver::Electromagnetic::ECSIM::divEIndex;
+int PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
@@ -106,6 +113,27 @@ double length_conv=1e2;
 #endif
 
 
+inline double interp2D(double vmm, double vpm, double vpp, double vmp,
+                                               double dx, double dy) {
+
+  /*Interpolate the value at p from the surounding 4 points. 'p' means plus, and
+    'm' means minus.
+        vmp----------------vpp
+        |                   |
+        |                   |
+        |----dx-----p       |
+        |           |       |
+        |           dy      |
+        |           |       |
+        vmm----------------vpm
+   */
+
+    return vmm * (1 - dx) * (1 - dy) + vpm * dx * (1 - dy) + vpp * dx * dy +
+           vmp * (1 - dx) * dy;
+}
+
+
+
 //magnetic field
 int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
@@ -134,6 +162,64 @@ int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int Nod
       NULL,NULL,0);
 }
 
+//net charge
+int PackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+    int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+        +PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex*sizeof(double);
+    int dataLengthByte=1*sizeof(double);
+
+    return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+                                                    BlockCenterNodeMask,BlockCornerNodeMask,
+                                                    SendDataBuffer,
+                                                    NULL,NULL,0,
+                                                    &ibegin,&dataLengthByte,1,
+                                                    NULL,NULL,0);
+}
+
+//net charge
+int UnpackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+    +PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex*sizeof(double);
+  int dataLengthByte=1*sizeof(double);
+  
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+                                             BlockCenterNodeMask,BlockCornerNodeMask,
+                                             RecvDataBuffer,
+                                             NULL,NULL,0,
+                                             &ibegin,&dataLengthByte,1,
+                                             NULL,NULL,0);
+}
+
+//phi
+int PackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+    +PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex*sizeof(double);
+  int dataLengthByte=1*sizeof(double);
+  
+  return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+                                           BlockCenterNodeMask,BlockCornerNodeMask,
+                                           SendDataBuffer,
+                                           NULL,NULL,0,
+                                           &ibegin,&dataLengthByte,1,
+                                           NULL,NULL,0);
+}
+
+
+//phi
+int UnpackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+  int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
+    +PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex*sizeof(double);
+  int dataLengthByte=1*sizeof(double);
+  
+  return PIC::Mesh::UnpackBlockData_Internal(NodeTable,NodeTableLength,
+                                             BlockCenterNodeMask,BlockCornerNodeMask,
+                                             RecvDataBuffer,
+                                             NULL,NULL,0,
+                                             &ibegin,&dataLengthByte,1,
+                                             NULL,NULL,0);
+}
+
+
 //electric field
 int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -146,7 +232,6 @@ int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeT
       NULL,NULL,0,
       NULL,NULL,0);
 }
-
 
 
 //electric fieled
@@ -174,7 +259,6 @@ int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable
       NULL,NULL,0,
       NULL,NULL,0);
 }
-
 
 
 //current and massmatrix
@@ -259,6 +343,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
     PrevBOffset = 3*sizeof(double);
   }
 
+  netChargeOldIndex = 6;
+  netChargeNewIndex = 7;
+  divEIndex = 8;
+  phiIndex = 9;
+  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=4*sizeof(double);
+
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
     exit(__LINE__,__FILE__,"Error: reinitialization of the electric field offset");
   }
@@ -311,7 +401,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC() {
   //set the initial conditions
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_)
+    dtTotal=PIC::CPLR::FLUID::dt; 
+  //global time step with deallocated blocks in fluid coupler mode will have some issue
+  else 
+    dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
   PIC::FieldSolver::Electromagnetic::ECSIM::cDt=LightSpeed*dtTotal;
   
   PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
@@ -429,12 +523,109 @@ static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,
 
 
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
+                       cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+ 
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  double x[3];
+  //power of 3 array created
+  //for some pgi compilers that cannot convert result of pow() from double to int correctly
+  int pow3_arr[3]={1,3,9};
+  int index[3] = {i,j,k};
+  int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  double dx[3],dx_no[3]; 
+  double CoeffSqr[3];
+
+  for (int iDim=0; iDim<3; iDim++){
+    dx_no[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
+    //convert length
+    dx[iDim] =dx_no[iDim]* length_conv;
+    CoeffSqr[iDim] = 1./(dx[iDim]*dx[iDim]);
+    x[iDim]=node->xmin[iDim]+(index[iDim]+0.5)*dx_no[iDim];
+  }
+
+  if (isBoundaryCell(x,dx_no,node)) {  
+    MatrixRowNonZeroElementTable[0].i=i;
+    MatrixRowNonZeroElementTable[0].j=j;
+    MatrixRowNonZeroElementTable[0].k=k;
+    MatrixRowNonZeroElementTable[0].MatrixElementValue=1.0;
+    MatrixRowNonZeroElementTable[0].iVar=iVar;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTable[0]=0.0;
+    MatrixRowNonZeroElementTable[0].MatrixElementParameterTableLength=1;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTableLength = 0;
+    MatrixRowNonZeroElementTable[0].Node=node;
+    MatrixRowNonZeroElementTable[0].MatrixElementSupportTable[0]=NULL;
+    NonZeroElementsFound =1;
+    rhs =0.0;
+    RhsSupportLength_CenterNodes = 0;
+    RhsSupportLength_CornerNodes = 0;
+    
+    return;
+  }
+
+  int iElement =0;
+  MatrixRowNonZeroElementTable[iElement].i=i;
+  MatrixRowNonZeroElementTable[iElement].j=j;
+  MatrixRowNonZeroElementTable[iElement].k=k;
+  MatrixRowNonZeroElementTable[iElement].MatrixElementValue=0.0;
+  MatrixRowNonZeroElementTable[iElement].iVar=0;
+  MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]=0.0;
+  MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTableLength=1;
+  MatrixRowNonZeroElementTable[iElement].MatrixElementSupportTableLength =0;
+
+  for (int idim=0;idim<3;idim++)
+    MatrixRowNonZeroElementTable[iElement].MatrixElementValue -=2*CoeffSqr[idim];
+  
+  iElement++;
+  int indexAddition[2] = {-1,1};
+  //  char * CenterNodeDataOffset = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+  for (int ii=0;ii<3;ii++){
+    for (int jj=0;jj<2;jj++){
+      int iNode = i+(ii==0?indexAddition[jj]:0);
+      int jNode = j+(ii==1?indexAddition[jj]:0);
+      int kNode = k+(ii==2?indexAddition[jj]:0);
+        
+      MatrixRowNonZeroElementTable[iElement].i=iNode;
+      MatrixRowNonZeroElementTable[iElement].j=jNode;
+      MatrixRowNonZeroElementTable[iElement].k=kNode;
+   
+      MatrixRowNonZeroElementTable[iElement].MatrixElementValue=CoeffSqr[ii];
+      MatrixRowNonZeroElementTable[iElement].iVar=0;
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]=0.0;
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTableLength=1;
+      MatrixRowNonZeroElementTable[iElement].MatrixElementSupportTableLength =0;
+
+      iElement++;
+    }
+  }
+
+  NonZeroElementsFound=iElement;
+
+  RhsSupportTable_CenterNodes[0].AssociatedDataPointer=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+  RhsSupportTable_CenterNodes[0].Coefficient=1.0;
+ 
+  RhsSupportLength_CenterNodes=1;   
+   
+  
+  rhs=0.0;
+  /*
+  double * CenterOffset = ((double*)(RhsSupportTable_CornerNodes[0].AssociatedDataPointer+
+                                     PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+
+  rhs = -4*Pi*CenterOffset[netChargeIndex]+CenterOffset[divEIndex];
+  */
+  return;
+}
+
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+  
   // No.0-No.26  stencil Ex
   // No.27-No.53 stencil Ey
   // No.54-No.80 stencil Ez
@@ -469,26 +660,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
 
 #if _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ 
-
-  double eps=PIC::Mesh::mesh.EPS;
-  bool isFixed=false;
-  int indexG[3];
-  
-  for (int idim=0; idim<3; idim++) {
-   
-    indexG[idim]=
-      (fabs(x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(x[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
-      round((x[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-x[idim])/dx[idim]);
-    //minus value means outside the domain
-    //positive value means inside
-    if (indexG[idim]==0) {
-      isFixed=true;
-      break;
-    }
-  }
-  
-  if (isFixed){
-    
+ 
+  if (isBoundaryCorner(x,node)) {  
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
     MatrixRowNonZeroElementTable[0].k=k;
@@ -503,10 +676,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     rhs =0.0;
     RhsSupportLength_CenterNodes = 0;
     RhsSupportLength_CornerNodes = 0;
+    if  (isRightBoundaryCorner(x,node)) NonZeroElementsFound =0;   
+    
     return;
   }
 
 #endif
+
 
   if (!initMassMatrixOffsetTable) computeMassMatrixOffsetTable(); 
 
@@ -584,36 +760,60 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     i0 = MatrixRowNonZeroElementTable[ii].i;
     j0 = MatrixRowNonZeroElementTable[ii].j;
     k0 = MatrixRowNonZeroElementTable[ii].k;
-   
-    pointLeft.push_back(ii);
-    if (MatrixRowNonZeroElementTable[ii].Node==NULL || MatrixRowNonZeroElementTable[ii].Node->Thread==-1) {
-      pointLeft.pop_back();
-    }else{
-      double xlocal[3];
-      int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
-      int indexG_local[3];
-      bool isFixed=false;
-      for (int idim=0; idim<3; idim++) {
-        xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
-      }
 
-      for (int idim=0; idim<3; idim++) {
-        
-        indexG_local[idim]=
-           (fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])<fabs(xlocal[idim]-PIC::Mesh::mesh.xGlobalMax[idim]))?
-          round((xlocal[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/dx[idim]):round((PIC::Mesh::mesh.xGlobalMax[idim]-xlocal[idim])/dx[idim]);
-        //minus value means outside the domain
-        //positive value means inside
-        if (indexG_local[idim]==0) {
-          isFixed=true;
-          break;
-        }
-      }
+    if ((i0>=iMax) && (nodeTemp!=NULL)) {
+      i0-=_BLOCK_CELLS_X_;
+      nodeTemp=nodeTemp->GetNeibFace(1,0,0);
+    }
+    else if (i0<0 && nodeTemp!=NULL) {
+      i0+=_BLOCK_CELLS_X_;
+      nodeTemp=nodeTemp->GetNeibFace(0,0,0);
+    }
 
-      if (isFixed) pointLeft.pop_back();
+    if ((j0>=jMax) && (nodeTemp!=NULL)) {
+      j0-=_BLOCK_CELLS_Y_;
+      nodeTemp=nodeTemp->GetNeibFace(3,0,0);
+    }
+    else if (j0<0 && nodeTemp!=NULL) {
+      j0+=_BLOCK_CELLS_Y_;
+      nodeTemp=nodeTemp->GetNeibFace(2,0,0);
+    }
+
+    if ((k0>=kMax) && (nodeTemp!=NULL)) {
+      k0-=_BLOCK_CELLS_Z_;
+      nodeTemp=nodeTemp->GetNeibFace(5,0,0);
+    }
+    else if (k0<0 && nodeTemp!=NULL) {
+      k0+=_BLOCK_CELLS_Z_;
+      nodeTemp=nodeTemp->GetNeibFace(4,0,0);
+    }
+
+    double xlocal[3];
+    int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
+    int indexG_local[3];
+    bool isFixed=false;
+    for (int idim=0; idim<3; idim++) {
+      xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
+    }
      
-    }//else
+    pointLeft.push_back(ii);
+    if (MatrixRowNonZeroElementTable[ii].Node==NULL){
+      pointLeft.pop_back();
+      continue;
+    }else if (MatrixRowNonZeroElementTable[ii].Node->Thread==-1){
+      pointLeft.pop_back();
+      continue;
+    }
     
+    if (nodeTemp==NULL){
+      pointLeft.pop_back();
+      continue;
+    }else if (nodeTemp->Thread==-1){
+      pointLeft.pop_back();
+      continue;
+    }
+
+    if (isBoundaryCorner(xlocal,node)) pointLeft.pop_back();
   }
 
   for (int ii=0; ii<pointLeft.size();ii++){
@@ -645,7 +845,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
   
   NonZeroElementsFound=pointLeft.size();
-
+  
   //NonZeroElementsFound=81;
 
   //  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
@@ -664,7 +864,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
-      // }
+
 
   for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
     // fill next 54 elements
@@ -720,9 +920,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
  
   RhsSupportLength_CornerNodes=82;
 
- 
-   
-   
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
   
@@ -924,6 +1121,32 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData(cha
 
 }
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessNetCharge(char * realData, char * ghostData){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  
+  realData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  ghostData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+  ((double*)realData)[netChargeNewIndex]+=((double*)ghostData)[netChargeNewIndex];
+
+
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge(char * ghostData, char * realData){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  
+  realData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  ghostData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+  ((double*)ghostData)[netChargeNewIndex]=((double*)realData)[netChargeNewIndex];
+ 
+}
+
+
+
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix(char * ghostData, char * realData){
@@ -967,6 +1190,83 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData(char *
 
 }
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+
+
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+    
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+
+    
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    PIC::Mesh::cDataBlockAMR * block=node->block;
+    
+    double CellVolume=1;
+    double dx[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;    
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+    
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          
+          char * offset[8];
+          double *CornerECurr[8];
+                               
+          offset[0]=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[1]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[2]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j+1,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[3]=block->GetCornerNode(_getCornerNodeLocalNumber(i,  j+1,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[4]=block->GetCornerNode(_getCornerNodeLocalNumber(i,    j,k+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[5]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,  j,k+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[6]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j+1,k+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          offset[7]=block->GetCornerNode(_getCornerNodeLocalNumber(i,  j+1,k+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          
+          for (int ii=0; ii<8; ii++) {
+            CornerECurr[ii]=((double*)(offset[ii]+CurrentEOffset));
+          }                
+
+              
+          double divE = 0.0;
+          int positiveCorner[3][4]={{1,2,5,6},{2,3,6,7},{4,5,6,7}};
+          int negativeCorner[3][4]={{0,3,4,7},{0,1,4,5},{0,1,2,3}};
+          
+          for (int iDim=0; iDim<3; iDim++){
+            for (int iCorner=0;iCorner<4;iCorner++){
+              divE += (CornerECurr[positiveCorner[iDim][iCorner]][iDim]
+                       - CornerECurr[negativeCorner[iDim][iCorner]][iDim])/dx[iDim];
+              
+            }
+          }
+                
+          double * CenterOffset = (double *)(block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+                
+          CenterOffset[divEIndex] = divE * CellVolume*0.25;
+
+        }
+      }
+    }
+
+  }
+
+  
+}
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
@@ -988,6 +1288,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_  
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
 #endif
+
+  double qom[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) 
+    qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)
+      /(PIC::MolecularData::GetMass(iSp)*mass_conv); 
+
 
   int nparticle=0;
   // update J and MassMatrix
@@ -1049,8 +1355,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
-    for (int iDim=0; iDim<3;iDim++) CellVolume*=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
-    
+    double dx[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;      
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+  
     
     for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
@@ -1101,13 +1409,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 	      ptr=ptrNext;
 	      ParticleData=ParticleDataNext;	  	    
 	     
-        spec=PIC::ParticleBuffer::GetI(ParticleData);
+              spec=PIC::ParticleBuffer::GetI(ParticleData);
 	      PIC::ParticleBuffer::GetV(vInit,ParticleData);
 	      PIC::ParticleBuffer::GetX(xInit,ParticleData);
-        LocalParticleWeight=block->GetLocalParticleWeight(spec);
-        LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-        ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+              LocalParticleWeight=block->GetLocalParticleWeight(spec);
+              LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+              
+              ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
         if (ptrNext!=-1) {
           ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
@@ -1309,7 +1617,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                 double * CornerJPtr[8]; 
                 char * offset[8];
                 double * specDataPtr[8];
-                               
+                                             
                 offset[0]=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 offset[1]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 offset[2]=block->GetCornerNode(_getCornerNodeLocalNumber(i+1,j+1,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -1343,7 +1651,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                   }                  
                 }
                 #endif
-
+                
                 //collect massmatrix
                 for (int iCorner=0; iCorner<8; iCorner++){
                   for (int jCorner=0; jCorner<=iCorner; jCorner++){
@@ -1412,7 +1720,670 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::cout.precision(20);
     std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;  
   }
+  
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ )
+    PIC::CPLR::FLUID::fix_plasma_node_boundary();
 }
+
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  ComputeNetCharge(true);
+  ComputeDivE();
+  SetBoundaryChargeDivE();
+  PoissonSolver.UpdateRhs(PoissonUpdateRhs);
+  linear_solver_matvec_c = PoissonMatvec;
+  PoissonSolver.Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
+                      PIC::CPLR::FLUID::EFieldIter,PackBlockData_phi,UnpackBlockData_phi);
+  SetBoundaryPHI();
+  CorrectParticleLocation();
+  PIC::Parallel::ExchangeParticleData();
+  ComputeNetCharge(false);
+}
+
+void exchangeParticleLocal(){
+  
+   long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  /*
+  for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+    for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+      for (i=0;i<_BLOCK_CELLS_X_;i++) {
+        
+        //LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        
+          FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
+      }
+    }
+  }
+  */
+  for (int ii=0;ii<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;ii++)
+    FirstCellParticleTable[ii]=-1;  
+
+  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *  node=(thread==PIC::Mesh::mesh.ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
+
+    if (node==NULL) continue;
+
+
+    for (;node!=NULL;node=node->nextNodeThisThread) {
+
+      PIC::Mesh::cDataBlockAMR *block=node->block;
+      if (!block) continue;
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+      memcpy(block->FirstCellParticleTable,block->tempParticleMovingListTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      memcpy(block->tempParticleMovingListTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+      int thread_OpenMP;
+
+      memcpy(block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+
+      //link the lists created by each OpenMP threads
+      long int FirstParticle,LastParticle=-1,pNext,*LastParticlePtr;
+
+      for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+          LastParticlePtr=block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k);
+
+          LastParticle=(*LastParticlePtr);
+
+          if (LastParticle!=-1) {
+            FirstParticle=LastParticle;
+            pNext=PIC::ParticleBuffer::GetNext(LastParticle);
+
+            while (pNext!=-1) {
+              LastParticle=pNext;
+              pNext=PIC::ParticleBuffer::GetNext(LastParticle);
+            }
+
+            //link patricle list
+            long int *FirstCellParticlePtr=block->FirstCellParticleTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+
+            PIC::ParticleBuffer::SetNext(*FirstCellParticlePtr,LastParticle);
+            if (*FirstCellParticlePtr!=-1) PIC::ParticleBuffer::SetPrev(LastParticle,*FirstCellParticlePtr);
+
+            *FirstCellParticlePtr=FirstParticle;
+          }
+
+          *LastParticlePtr=-1;
+        }
+      }
+
+#else
+#error The option is unknown
+#endif
+
+
+//      node=node->nextNodeThisThread;
+    }
+  }//for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++)
+  
+
+}
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber,ptr,ptrNext;    
+
+  double qom[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) 
+    qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)
+      /(PIC::MolecularData::GetMass(iSp)*mass_conv); 
+
+  
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+  
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+    
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    FirstCellParticleTable=block->FirstCellParticleTable;
+    double CellVolume=1;
+    double dx[3],dx_no[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
+    for (int iDim=0; iDim<3;iDim++) dx_no[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
+
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+    
+    
+    double Phi[_BLOCK_CELLS_X_+2][_BLOCK_CELLS_Y_+2][_BLOCK_CELLS_Z_+2];
+    //calculate grad phi for every corner node
+    for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
+      for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) {
+        for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          Phi[i+1][j+1][k+1] =  ((double *) (block->GetCenterNode(LocalCenterId)->
+                   GetAssociatedDataBufferPointer()+
+                   PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[phiIndex];
+                  
+        }//i
+      }//j
+    }//k
+
+    int nparticle=0;
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+	  
+          if (ptr!=-1) {
+            
+	    double xInit[3]={0.0,0.0,0.0};
+	    int spec;
+            double xNode[3];
+            double xCell[3];
+            int index[3]={i,j,k};
+            for (int iDim=0;iDim<3;iDim++){ 
+              xNode[iDim] = node->xmin[iDim]*length_conv+dx[iDim]*index[iDim];
+              xCell[iDim] =  node->xmin[iDim]+dx_no[iDim]*(index[iDim]+0.5);
+            }
+            
+            bool atBoundary = isBoundaryCell(xCell,dx_no,node);
+            
+            
+            //if (isBoundaryCell(xCell,dx_no,node)) continue;
+            
+        
+	    ptrNext=ptr;
+	    ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+	  
+	    while (ptrNext!=-1) {
+              nparticle++;
+	      double LocalParticleWeight;
+	      ptr=ptrNext;
+	      ParticleData=ParticleDataNext;	  	    
+	     
+              spec=PIC::ParticleBuffer::GetI(ParticleData);
+              PIC::ParticleBuffer::GetX(xInit,ParticleData);
+              LocalParticleWeight=block->GetLocalParticleWeight(spec);
+              LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+              ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+              double xFinal[3];
+              
+              /*
+              bool isTest=false;
+              if (fabs(xInit[0]-13)<1.0 && fabs(xInit[1]-1)<1.0 && fabs(xInit[2]-3)<1.0) isTest=true; 
+              */
+            
+              if (spec!=0 || atBoundary){
+                for (int idim=0;idim<3;idim++) xFinal[idim]=xInit[idim];
+                
+              }else{
+                double xRel[3];
+                for (int iDim=0;iDim<3;iDim++) xRel[iDim] = (xInit[iDim]*length_conv-xNode[iDim])/dx[iDim];
+              
+                int iClosestNode[3];
+                for (int iDim=0;iDim<3;iDim++) iClosestNode[iDim] = int(index[iDim]+round(xRel[iDim]));
+              
+                int ix=iClosestNode[0]+1,iy=iClosestNode[1]+1,iz=iClosestNode[2]+1;//index of phi array
+                
+                for (int iDim=0;iDim<3;iDim++) xRel[iDim] = xRel[iDim]>=0.5?xRel[iDim]-0.5:xRel[iDim]+0.5;
+
+              
+                double GradPhi[3];
+                GradPhi[0] = 
+                  interp2D(Phi[ix][iy - 1][iz - 1] - Phi[ix - 1][iy - 1][iz - 1],
+                           Phi[ix][iy][iz - 1] - Phi[ix - 1][iy][iz - 1],
+                           Phi[ix][iy][iz] - Phi[ix - 1][iy][iz],
+                           Phi[ix][iy - 1][iz] - Phi[ix - 1][iy - 1][iz], xRel[1], xRel[2]);
+                
+                GradPhi[1] =
+                  interp2D(Phi[ix - 1][iy][iz - 1] - Phi[ix - 1][iy - 1][iz - 1],
+                           Phi[ix][iy][iz - 1] - Phi[ix][iy - 1][iz - 1],
+                           Phi[ix][iy][iz] - Phi[ix][iy - 1][iz],
+                           Phi[ix - 1][iy][iz] - Phi[ix - 1][iy - 1][iz], xRel[0], xRel[2]);
+              
+                GradPhi[2] =
+                  interp2D(Phi[ix - 1][iy - 1][iz] - Phi[ix - 1][iy - 1][iz - 1],
+                           Phi[ix][iy - 1][iz] - Phi[ix][iy - 1][iz - 1],
+                           Phi[ix][iy][iz] - Phi[ix][iy][iz - 1],
+                           Phi[ix - 1][iy][iz] - Phi[ix - 1][iy][iz - 1], xRel[0], xRel[1]);
+
+                for (int iDim=0;iDim<3;iDim++) GradPhi[iDim] /= dx[iDim];
+                
+                double eChargeDens,gammaTmp=0.51,eps=0.9;
+                
+                int localCornerId = _getCornerNodeLocalNumber(iClosestNode[0],iClosestNode[1],iClosestNode[2]);
+                eChargeDens = 
+                  ((double *) (block->GetCornerNode(localCornerId)->
+                               GetAssociatedDataBufferPointer()+
+                               PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))[SpeciesDataIndex[0]]*(-25);
+                
+                
+                double displacement[3],temp;
+                if (eChargeDens!=0) temp = 1./(4.*Pi*eChargeDens);
+                else temp = 0;
+                for (int iDim=0; iDim<3; iDim++) {
+                  displacement[iDim] = -eps*GradPhi[iDim]*temp;
+                  //xFinal[iDim]=xInit[iDim]+displacement[iDim];
+                }
+                                
+                double epsLimit=0.1;
+                
+                if (fabs( displacement[0] / dx_no[0]) > epsLimit ||
+                    fabs( displacement[1] / dx_no[1]) > epsLimit ||
+                    fabs( displacement[2] / dx_no[2]) > epsLimit) {
+                  double dl =
+                    sqrt(pow(displacement[0], 2) + pow(displacement[1], 2) + pow(displacement[2], 2));
+                  for (int iDim = 0; iDim < 3; iDim++)
+                    displacement[iDim] *= epsLimit * dx_no[0] / dl;
+                }
+                
+                for (int iDim=0; iDim<3; iDim++) xFinal[iDim]=xInit[iDim]+displacement[iDim];  
+                //for (int iDim=0; iDim<3; iDim++) xFinal[iDim]=xInit[iDim];  
+               
+              }
+              //bool isTest=false;
+              //if (fabs(xInit[0]-15.5)<0.5 && fabs(xInit[1]-7.5)<0.5 && fabs(xInit[2]-3.5)<0.5) isTest=true; 
+              long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+              int ip, jp, kp;
+              
+              /*
+              if (spec==0)
+                printf("particle correction xFinal:    %e  %e  %e\n",xFinal[0],xFinal[1],xFinal[2]);
+              */
+
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * newNode=PIC::Mesh::mesh.findTreeNode(xFinal,node);
+              if (newNode==NULL || newNode->block==NULL){
+                PIC::ParticleBuffer::DeleteParticle(ptr);
+              }else{
+                  if (PIC::Mesh::mesh.fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+                  
+                  PIC::Mesh::cDataBlockAMR * block=newNode->block;
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+                  tempFirstCellParticlePtr=block->tempParticleMovingListTable+ip+_BLOCK_CELLS_X_*(jp+_BLOCK_CELLS_Y_*kp);
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+                  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),ip,jp,kp);
+#else
+#error The option is unknown
+#endif
+                  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+                  
+                  PIC::ParticleBuffer::SetX(xFinal,ParticleData);
+                  
+                  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+                  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+                  
+                  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+                  *tempFirstCellParticlePtr=ptr;
+              }
+
+              if (ptrNext!=-1) ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+              
+	    }// while (ptrNext!=-1)
+	  }//if (ptr!=-1)
+	}// for i
+      }//for j   
+    }//for k
+
+
+  }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+ 
+  exchangeParticleLocal();
+
+  
+}
+
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld){
+  // update J and MassMatrix 
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber,ptr,ptrNext;    
+
+  double q_I[PIC::nTotalSpecies];
+  if (doUpdateOld)
+    UpdateOldNetCharge();
+  PIC::Mesh::SetCenterNodeAssociatedDataValue(0.0,1,netChargeNewIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) 
+    q_I[iSp] = PIC::MolecularData::GetElectricCharge(iSp)*charge_conv;
+   
+  
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+  
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+    
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    FirstCellParticleTable=block->FirstCellParticleTable;
+    double CellVolume=1;
+    double dx[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
+    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+    
+    
+    double q_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+    /*
+    for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+      for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+        for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+    */
+    for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
+      for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) {
+        for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          q_Center[LocalCenterId]=0.0;
+        }
+      }
+    }
+
+    int nparticle=0;
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+	  
+          if (ptr!=-1) {
+            
+	    double xInit[3]={0.0,0.0,0.0};
+	    int spec;
+
+            
+	    ptrNext=ptr;
+	    ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+	  
+	    while (ptrNext!=-1) {
+              nparticle++;
+	      double LocalParticleWeight;
+	      ptr=ptrNext;
+	      ParticleData=ParticleDataNext;	  	    
+	     
+              spec=PIC::ParticleBuffer::GetI(ParticleData);
+              PIC::ParticleBuffer::GetX(xInit,ParticleData);
+              LocalParticleWeight=block->GetLocalParticleWeight(spec);
+              LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+              ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+
+
+              double chargeQ = q_I[spec]*LocalParticleWeight;
+	    
+
+              PIC::InterpolationRoutines::CellCentered::cStencil NetChargeStencil(false);
+	      //interpolate the magnetic field from center nodes to particle location
+	      NetChargeStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node));
+
+	      for (int iStencil=0;iStencil<NetChargeStencil.Length;iStencil++) {
+                q_Center[NetChargeStencil.LocalCellID[iStencil]]+=NetChargeStencil.Weight[iStencil]*chargeQ;
+	      }
+
+              if (ptrNext!=-1) ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+              
+	    }// while (ptrNext!=-1)
+	  }//if (ptr!=-1)
+	}// for i
+      }//for j   
+    }//for k
+
+    
+ 
+    for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
+      for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) {
+        for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          ((double *) (node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[netChargeNewIndex] += q_Center[LocalCenterId];
+        
+        }
+      }
+    }
+  }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+  
+  PIC::Parallel::CenterBlockBoundaryNodes::ProcessCenterNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessNetCharge;
+  PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge;
+  
+  PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(true);
+  PIC::BC::ExternalBoundary::UpdateData(PackBlockData_netCharge,UnpackBlockData_netCharge);
+  PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
+  
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber,ptr,ptrNext;    
+
+  
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+  
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+    
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          double * PtrTemp =  ((double *) (block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+          PtrTemp[netChargeOldIndex] = PtrTemp[netChargeNewIndex]; 
+          
+        }// for i
+      }//for j   
+    }//for k
+
+  }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+
+  
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+
+
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber;    
+
+  
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+  
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+
+    double dx[3];
+    for (int idim=0;idim<3;idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCell[idim];
+    
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          int index[3]={i,j,k};
+          double x[3];
+          for (int idim=0;idim<3;idim++) x[idim]=node->xmin[idim]+dx[idim]*(index[idim]+0.5);
+          
+          int ind = isBoundaryCell(x,dx,node);
+          if (!ind) continue;
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          int indNeib[3]={i,j,k};
+          
+          for (int ii=0; ii<3; ii++){
+            int flag = ind%2;
+            ind = ind/2;
+            if (flag==1) {
+              if (indNeib[ii]==0) indNeib[ii]+=1;
+              else if (indNeib[ii]==nCell[ii]-1) indNeib[ii]-=1;
+              else exit(__LINE__,__FILE__,"Error: Something is wrong!");
+            }
+          }
+          
+          
+          double * PtrTemp =  ((double *) (block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+          double * PtrNeib =  ((double *) (block->GetCenterNode(_getCenterNodeLocalNumber(indNeib[0],indNeib[1],indNeib[2]))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+          PtrTemp[phiIndex] = PtrNeib[phiIndex]; 
+
+        }// for i
+      }//for j   
+    }//for k
+    
+  }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+  
+  switch (_PIC_BC__PERIODIC_MODE_) {
+  case _PIC_BC__PERIODIC_MODE_OFF_:
+    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_phi,UnpackBlockData_phi);
+    break;
+    
+  case _PIC_BC__PERIODIC_MODE_ON_:
+    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_phi,UnpackBlockData_phi);
+    break;
+  }
+
+
+}
+  
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+
+
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber;    
+
+  
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+  
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+
+    double dx[3];
+    for (int idim=0;idim<3;idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCell[idim];
+    
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          int index[3]={i,j,k};
+          double x[3];
+          for (int idim=0;idim<3;idim++) x[idim]=node->xmin[idim]+dx[idim]*(index[idim]+0.5);
+          if (!isBoundaryCell(x,dx,node)) continue;
+          
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          double * PtrTemp =  ((double *) (block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+          PtrTemp[netChargeNewIndex] = 0.0; 
+          PtrTemp[divEIndex]=0.0;// to compare with ipic3d
+        }// for i
+      }//for j   
+    }//for k
+    
+  }//for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+}
+  
+
 
 
 
@@ -1699,6 +2670,26 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystem
   }  
   
 }
+
+
+
+double PIC::FieldSolver::Electromagnetic::ECSIM::PoissonUpdateRhs(int iVar,
+			      cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
+			      cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  double res=0.0;
+
+  double * CenterOffset = ((double*)(RhsSupportTable_CenterNodes[0].AssociatedDataPointer+
+             PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+  double gammaTmp =0.51;
+  res = (-4*Pi*(gammaTmp*CenterOffset[netChargeNewIndex]+
+               (1-gammaTmp)*CenterOffset[netChargeOldIndex])
+         +CenterOffset[divEIndex])/gammaTmp;
+
+  //the equation solves phi/gammaTmp
+  return res;
+}
  
 
  //update the RHS vector
@@ -1758,6 +2749,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   Solver.Reset();
   Solver.BuildMatrix(GetStencil);
+  if (DoDivECorrection){
+    PoissonSolver.Reset();
+    PoissonSolver.BuildMatrix(PoissonGetStencil);
+  }
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
@@ -1768,6 +2763,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
   if (PIC::CPLR::FLUID::iCycle==0){  
     UpdateJMassMatrix();    
+    ComputeNetCharge(true);
+    SetBoundaryChargeDivE();
+
     {// Output
       double timeNow = 0.0;  
       PIC::CPLR::FLUID::write_output(timeNow);
@@ -1779,7 +2777,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
     setE_curr_BC();
   }
   
-  PIC::BC::ExternalBoundary::UpdateData();
+  //  PIC::BC::ExternalBoundary::UpdateData();
 
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
@@ -1827,6 +2825,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetInitialGuess(double* x,PIC::Me
   x[2]=0.0;
 }
 
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSetInitialGuess(double* x,PIC::Mesh::cDataCenterNode* CenterNode) {
+  //  x[0]=*((double*)(CornerNode->GetAssociatedDataBufferPointer()+CurrentCornerNodeOffset));
+  x[0]=0.0;
+
+}
+
 //process the solution vector
 void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessFinalSolution(double* x,PIC::Mesh::cDataCornerNode* CornerNode) {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
@@ -1836,6 +2841,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessFinalSolution(double* x,PI
   ((double*)(offset+OffsetE_HalfTimeStep))[1] =x[1]/E_conv+((double*)(offset+CurrentEOffset))[1];
   ((double*)(offset+OffsetE_HalfTimeStep))[2] =x[2]/E_conv+((double*)(offset+CurrentEOffset))[2];
 
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonProcessFinalSolution(double* x,PIC::Mesh::cDataCenterNode* CenterNode) {
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+  double *offset=(double *)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+
+  offset[phiIndex] = x[0];
+ 
 }
 
 
@@ -1905,3 +2919,717 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * Ve
   Solver.MultiplyVector(VecOut,VecIn,n);
 }
 
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  PoissonSolver.MultiplyVector(VecOut,VecIn,n);
+}
+
+int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+
+  switch (sum) {
+
+  case   1:
+    if (!node->GetNeibFace(0,0,0)){
+      return 1;
+    }else if (node->GetNeibFace(0,0,0)->Thread==-1){
+      return 1;
+    }
+    else return 0;
+    
+  case   1000:
+    if (!node->GetNeibFace(1,0,0)){
+      return 1;
+    }else if (node->GetNeibFace(1,0,0)->Thread==-1){
+      return 1;
+    }
+    else return 0;
+    
+  case   10:
+    if (!node->GetNeibFace(2,0,0)){
+      return 2;
+    }else if (node->GetNeibFace(2,0,0)->Thread==-1){
+      return 2;
+    }
+    else return 0;
+
+  case 10000:
+    if (!node->GetNeibFace(3,0,0)){
+      return 2;
+    }else if (node->GetNeibFace(3,0,0)->Thread==-1){
+      return 2;
+    }
+    else return 0;
+
+  case  100:
+    if (!node->GetNeibFace(4,0,0)){
+      return 4;
+    }else if (node->GetNeibFace(4,0,0)->Thread==-1){
+      return 4;
+    }
+    else return 0;
+    
+  case  100000:
+    if (!node->GetNeibFace(5,0,0)){
+      return 4;
+    }else if (node->GetNeibFace(5,0,0)->Thread==-1){
+      return 4;
+    }
+    else return 0;
+    
+  default:
+    return 0;
+  }
+
+}
+
+int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  
+  int temp,a,b;
+  switch (sum){
+    
+  case 110:
+    a = isFaceBoundary(100,node);
+    b = isFaceBoundary(10,node);
+    if (a && b){
+      if (a!=b){
+        return 6;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b) { return a+b;
+    }else {
+      if (!node->GetNeibEdge(0,0)) return 6;
+      else if (node->GetNeibEdge(0,0)->Thread==-1) return 6;
+      else return 0;
+    }
+    
+  case 10100:
+    a= isFaceBoundary(10000,node);
+    b= isFaceBoundary(100,node);
+    if (a && b){
+      if (a!=b){
+        return 6;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b) { return a+b;
+    }else {
+      if (!node->GetNeibEdge(1,0)) return 6;
+      else if (node->GetNeibEdge(1,0)->Thread==-1) return 6;
+      else return 0;
+    }
+    
+  case 110000:
+    a = isFaceBoundary(100000,node);
+    b = isFaceBoundary(10000,node);
+
+    if (a && b){
+      if (a!=b){
+        return 6;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b) { return a+b;
+    } else {
+      if (!node->GetNeibEdge(2,0)) return 6;
+      else if (node->GetNeibEdge(2,0)->Thread==-1) return 6;
+      else return 0;
+    }
+
+  case 100010:
+    a = isFaceBoundary(100000,node);
+    b = isFaceBoundary(10,node);
+    if (a && b){
+      if (a!=b) {
+        return 6;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b) { return a+b;
+    }else{
+      if (!node->GetNeibEdge(3,0)) return 6;
+      else if (node->GetNeibEdge(3,0)->Thread==-1) return 6;
+      else return 0;
+    }
+
+  case 101:
+    a = isFaceBoundary(100,node);
+    b = isFaceBoundary(1,node);
+    if (a && b){
+      if (a!=b){
+        return 5;
+      }else{
+        return a;
+      }
+    }
+      
+    if (a+b) { return a+b;
+    }else{
+      if (!node->GetNeibEdge(4,0)) return 5;
+      else if (node->GetNeibEdge(4,0)->Thread==-1) return 5;
+      else return 0;
+    }
+    
+  case 1100:
+    a = isFaceBoundary(1000,node);
+    b = isFaceBoundary(100,node);
+
+    if (a && b){
+      if (a!=b){
+        return 5;
+      }else{
+        return a;
+      }
+    }
+   
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(5,0)) return 5;
+      else if (node->GetNeibEdge(5,0)->Thread==-1) return 5;
+      else return 0;
+    }
+  
+  case 101000:
+    a = isFaceBoundary(100000,node);
+    b = isFaceBoundary(1000,node);
+
+    if (a && b){
+      if (a!=b){
+        return 5;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(6,0)) return 5;
+      else if (node->GetNeibEdge(6,0)->Thread==-1) return 5;
+      else return 0;
+    }
+    
+  case 100001:
+    a = isFaceBoundary(100000,node);
+    b = isFaceBoundary(1,node);
+    
+    if (a && b){
+      if (a!=b){
+        return 5;
+      }else{
+        return a;
+      }
+    }
+
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(7,0)) return 5;
+      else if (node->GetNeibEdge(7,0)->Thread==-1) return 5;
+      else return 0;
+    }
+    
+  case 11:
+    a = isFaceBoundary(10,node);
+    b = isFaceBoundary(1,node);
+  
+    if (a && b){
+      if (a!=b){
+        return 3;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(8,0)) return 3;
+      else if (node->GetNeibEdge(8,0)->Thread==-1) return 3;
+      else return 0;
+    }
+   
+  case 1010:
+    a = isFaceBoundary(1000,node);
+    b = isFaceBoundary(10,node);
+    
+    if (a && b){
+      if (a!=b){
+        return 3;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(9,0)) return 3;
+      else if (node->GetNeibEdge(9,0)->Thread==-1) return 3;
+      else return 0;
+    }
+    
+  case 11000:
+    a = isFaceBoundary(10000,node);
+    b = isFaceBoundary(1000,node);
+    
+    if (a && b){
+      if (a!=b){
+        return 3;
+      }else{
+        return a;
+      }
+    }
+
+    if (a+b){ return a+b;
+    }else{
+      if (!node->GetNeibEdge(10,0)) return 3;
+      else if (node->GetNeibEdge(10,0)->Thread==-1) return 3;
+      else return 0;
+    }
+        
+  case 10001:
+    a = isFaceBoundary(10000,node);
+    b = isFaceBoundary(1,node);
+   
+    if (a && b){
+      if (a!=b){
+        return 3;
+      }else{
+        return a;
+      }
+    }
+    
+    if (a+b){ return a+b;
+    }else{    
+      if (!node->GetNeibEdge(11,0)) return 3;
+      else if (node->GetNeibEdge(11,0)->Thread==-1) return 3;
+      else return 0;
+    }
+    
+  default:
+    return 0;
+  }
+}
+
+int computeRes(int *a){
+  
+  int iface[3]={1,2,4};
+  int iedge[3]={6,5,3};
+ 
+  for (int ii=0;ii<3; ii++){
+    for (int jj=0;jj<3;jj++){
+      if (iface[ii]==a[jj]) {
+        a[3]+=iface[ii];
+        break;
+      }
+    }
+  }
+  
+  for (int ii=0;ii<3; ii++){
+    for (int jj=0;jj<4;jj++){
+      if (iedge[ii]==a[jj]) {
+        a[4]+=iedge[ii];
+        break;
+      }
+    }
+  }
+
+  if (a[4]>=7) {
+    return 7;
+  }else if (a[4]>0){
+    return a[4];
+  }else if (a[3]>0){
+    return a[3];
+  }
+  
+  return 0;
+ 
+}
+
+int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+ 
+  int temp,a[5],res;
+  a[3]=0,a[4]=0;
+
+  switch (sum){
+    
+  case 111:
+    a[0]=isEdgeBoundary(11,node);
+    a[1]=isEdgeBoundary(101,node);
+    a[2]=isEdgeBoundary(110,node);
+
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(0)) {
+        return 7;
+      }else if (node->GetNeibCorner(0)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+
+  case 1110:
+    a[0]=isEdgeBoundary(110,node);
+    a[1]=isEdgeBoundary(1010,node);
+    a[2]=isEdgeBoundary(1100,node);
+    
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(1)) {
+        return 7;
+      }else if (node->GetNeibCorner(1)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+    
+  case 10101:
+    a[0]=isEdgeBoundary(101,node);
+    a[1]=isEdgeBoundary(10001,node);
+    a[2]=isEdgeBoundary(10100,node);
+    
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(2)) {
+        return 7;
+      }else if (node->GetNeibCorner(2)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+       
+  case 11100:
+    a[0]=isEdgeBoundary(1100,node);
+    a[1]=isEdgeBoundary(10100,node);
+    a[2]=isEdgeBoundary(11000,node);
+    
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(3)) {
+        return 7;
+      }else if (node->GetNeibCorner(3)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+    
+  case 100011:
+    a[0]=isEdgeBoundary(11,node);
+    a[1]=isEdgeBoundary(100010,node);
+    a[2]=isEdgeBoundary(100001,node);
+
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(4)) {
+        return 7;
+      }else if (node->GetNeibCorner(4)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+    
+  case 101010:
+    a[0]=isEdgeBoundary(1010,node);
+    a[1]=isEdgeBoundary(101000,node);
+    a[2]=isEdgeBoundary(100010,node);
+
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(5)) {
+        return 7;
+      }else if (node->GetNeibCorner(5)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+
+  case 110001:
+    a[0]=isEdgeBoundary(10001,node);
+    a[1]=isEdgeBoundary(100001,node);
+    a[2]=isEdgeBoundary(110000,node);
+
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(6)) {
+        return 7;
+      }else if (node->GetNeibCorner(6)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+    
+  case 111000:
+    a[0]=isEdgeBoundary(11000,node);
+    a[1]=isEdgeBoundary(101000,node);
+    a[2]=isEdgeBoundary(110000,node);
+
+    res = computeRes(a);
+    if (res>0){
+      return res;
+    }else{
+      if (!node->GetNeibCorner(7)) {
+        return 7;
+      }else if (node->GetNeibCorner(7)->Thread==-1){
+        return 7;
+      }
+      else return 0;
+    }
+
+  default:
+    return 0;
+  }
+}
+
+
+int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  // 0:    not boundary cell
+  // 1:001 x-direction face  
+  // 2:010 y-direction face
+  // 4:100 z-direction face
+  // 6:110 x-direction edge
+  // 5:101 y-direction edge
+  // 3:011 z-direction edge
+  // 7:111 corner
+  // 8: outside block and outside domain
+  /*
+  bool isTest=false;
+  if (fabs(x[0]-16.5)<0.1 && fabs(x[1]-8.5)<0.1 && fabs(x[2]-4.5)<0.1) isTest=true;
+  */
+  for (int idim=0; idim<3 && node; idim++){
+    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
+  }
+
+  for (int idim=0; idim<3 && node; idim++){
+    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
+  }
+
+  
+  if (node==NULL || node->Thread==-1) return 8;
+
+
+  int addition =1, sum=0;//sum used to indicate the location of the corner
+  //0 not at the boundary, 111000 at the right most corner...
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-0.5*dx[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+  
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]+0.5*dx[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+
+  if (sum==0) return 0;
+
+  int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
+
+  return val;
+  
+}
+
+
+bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  
+  for (int idim=0; idim<3 && node; idim++){
+    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
+  }
+
+  for (int idim=0; idim<3 && node; idim++){
+    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
+  }
+
+  
+  if (node==NULL || node->Thread==-1) return true;
+
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->Thread==-1) {
+
+      if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
+        return true;
+      }
+    }
+  
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }
+
+  int addition =1, sum=0;//sum used to indicate the location of the corner
+  //0 not at the boundary, 111000 at the right most corner...
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+  
+  for (int idim=0;idim<3;idim++) {
+    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    addition *=10;
+  }
+
+  if (sum==0) return false;
+  
+  switch (sum) {
+  case 111:
+    if (!node->GetNeibCorner(0)) {
+      return true;
+    }else if (node->GetNeibCorner(0)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 1110:
+    if (!node->GetNeibCorner(1)) {
+      return true;
+    }else if (node->GetNeibCorner(1)->Thread==-1){
+      return true;
+    }
+    else return false;
+    
+  case 10101:
+    if (!node->GetNeibCorner(2)) {
+      return true;
+    }else if (node->GetNeibCorner(2)->Thread==-1){
+      return true;
+    }
+    else return false;
+   
+  case 11100:
+    if (!node->GetNeibCorner(3)) {
+      return true;
+    }else if (node->GetNeibCorner(3)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 100011:
+    if (!node->GetNeibCorner(4)) {
+      return true;
+    }else if (node->GetNeibCorner(4)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+  case 101010:
+    if (!node->GetNeibCorner(5)) {
+      return true;
+    }else if (node->GetNeibCorner(5)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+
+  case 110001:
+    if (!node->GetNeibCorner(6)) {
+      return true;
+    }else if (node->GetNeibCorner(6)->Thread==-1){
+      return true;
+    }
+    else return false;
+
+
+  case 111000:
+    if (!node->GetNeibCorner(7)) {
+      return true;
+    }else if (node->GetNeibCorner(7)->Thread==-1){
+      return true;
+    }
+    else return false;
+   
+  case 110:
+    if (!node->GetNeibEdge(0,0)) return true;
+    else if (node->GetNeibEdge(0,0)->Thread==-1) return true;
+    else return false;
+
+  case 10100:
+    if (!node->GetNeibEdge(1,0)) return true;
+    else if (node->GetNeibEdge(1,0)->Thread==-1) return true;
+    else return false;
+
+  case 110000:
+    if (!node->GetNeibEdge(2,0)) return true;
+    else if (node->GetNeibEdge(2,0)->Thread==-1) return true;
+    else return false;
+
+  case 100010:
+    if (!node->GetNeibEdge(3,0)) return true;
+    else if (node->GetNeibEdge(3,0)->Thread==-1) return true;
+    else return false;
+
+  case 101:
+    if (!node->GetNeibEdge(4,0)) return true;
+    else if (node->GetNeibEdge(4,0)->Thread==-1) return true;
+    else return false;
+
+  case 1100:
+    if (!node->GetNeibEdge(5,0)) return true;
+    else if (node->GetNeibEdge(5,0)->Thread==-1) return true;
+    else return false;
+
+  case 101000:
+    if (!node->GetNeibEdge(6,0)) return true;
+    else if (node->GetNeibEdge(6,0)->Thread==-1) return true;
+    else return false;
+
+  case 100001:
+    if (!node->GetNeibEdge(7,0)) return true;
+    else if (node->GetNeibEdge(7,0)->Thread==-1) return true;
+    else return false;
+
+  case 11:
+    if (!node->GetNeibEdge(8,0)) return true;
+    else if (node->GetNeibEdge(8,0)->Thread==-1) return true;
+    else return false;
+
+  case 1010:
+    if (!node->GetNeibEdge(9,0)) return true;
+    else if (node->GetNeibEdge(9,0)->Thread==-1) return true;
+    else return false;
+
+  case 11000:
+    if (!node->GetNeibEdge(10,0)) return true;
+    else if (node->GetNeibEdge(10,0)->Thread==-1) return true;
+    else return false;
+
+  case 10001:
+    if (!node->GetNeibEdge(11,0)) return true;
+    else if (node->GetNeibEdge(11,0)->Thread==-1) return true;
+    else return false;
+    
+  default:
+    return false;
+  }
+  
+
+}
+
+
+
+
+bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+        return true;
+    }  
+  return false;
+  
+}

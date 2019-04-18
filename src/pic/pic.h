@@ -2206,7 +2206,9 @@ namespace PIC {
       inline char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
-          
+        
+      int LinearSolverUnknownVectorIndex;
+
       //clean the sampling buffers
       void cleanDataBuffer() {
         cBasicCenterNode::cleanDataBuffer();
@@ -2972,7 +2974,9 @@ namespace PIC {
     //reset the associated data to a "default" values
     void SetCornerNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset);
     void SetCornerNodeAssociatedDataValue(double NewValue,int ResetElementNumber,int DataBufferOffset);
-
+    
+    void SetCenterNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset);
+    void SetCenterNodeAssociatedDataValue(double NewValue,int ResetElementNumber,int DataBufferOffset);
   } 
   // namespace Mesh ===========================================================
 
@@ -3781,12 +3785,24 @@ namespace PIC {
        void CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
      }
 
+     namespace CenterBlockBoundaryNodes {
+       extern bool ActiveFlag;
+       void SetActiveFlag(bool flag);
+       
+       typedef void (*fUserDefinedProcessNodeAssociatedData)(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
+       extern fUserDefinedProcessNodeAssociatedData ProcessCenterNodeAssociatedData,CopyCenterNodeAssociatedData;
+     }
+
+
      //exchenge paricles between iterations
      void ExchangeParticleData();
 
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
      void ProcessCornerBlockBoundaryNodes();
      void ProcessCornerBlockBoundaryNodes_old(); 
+
+     void ProcessCenterBlockBoundaryNodes();
+   
      //Latency of the run
      extern double Latency;
          
@@ -4423,8 +4439,9 @@ namespace PIC {
 			 const std::vector<std::string> & sVar_I, 
 			 MDArray<double> & var_II); 
       
-      double get_var(std::string var, char * DataPtr, double * x, PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,bool isCoord);
-      
+      //double get_var(std::string var, char * DataPtr, double * x, PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,bool isCoord);
+      double get_var(std::string var, char * DataPtr, double * x, char * centerDataPtr,bool isCoord);
+
       void ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc);
       
             // Put corner data from BATSRUS to AMPS. 
@@ -5946,6 +5963,7 @@ namespace PIC {
 
 //field solver
 #include "LinearSystemCornerNode.h"
+#include "LinearSystemCenterNode.h"
 
 namespace PIC {
 
@@ -5968,7 +5986,10 @@ namespace FieldSolver {
             extern int CurrentBOffset, PrevBOffset;
             extern int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> Solver;
+            extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> PoissonSolver;
+
             //	extern cLinearSystemCornerNode Solver;
+            extern bool DoDivECorrection;
             extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
             extern int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
             extern int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
@@ -5978,6 +5999,7 @@ namespace FieldSolver {
               RhoUxUx_, RhoUyUy_, RhoUzUz_, 
               RhoUxUy_, RhoUyUz_, RhoUxUz_;
           
+            extern int netChargeOldIndex,netChargeNewIndex, divEIndex, phiIndex;
             extern double cDt;
             extern double theta;
             extern double LightSpeed;
@@ -5999,12 +6021,16 @@ namespace FieldSolver {
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
-            
+            void PoissonMatvec(double* VecIn, double * VecOut, int n);
+
             //construct the matrix stencil
             void GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
                             cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
                             cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes,
                             cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+
+            void PoissonGetStencil(int i, int j, int k, int iVar,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+
             //compute B^(n+1) from B^(n) and E^(n+theta)
             void UpdateB();
             //compute E^(n+1) from E^(n) and E^(n+theta)
@@ -6018,6 +6044,18 @@ namespace FieldSolver {
             void InterpolateB_C2N();
             void InterpolateB_N2C();
              
+            int  isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+            bool isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+            bool isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+          
+            void ComputeNetCharge(bool doUpdateOld);
+            void SetBoundaryChargeDivE();
+            void SetBoundaryPHI();
+            void divECorrection();
+            void CorrectParticleLocation();
+            void UpdateOldNetCharge();
+            void ComputeDivE();
+
             //update the matrix element
             void UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRow* row);
             //update the Rhs of the Ax=b
@@ -6029,11 +6067,22 @@ namespace FieldSolver {
             //process final solution
             void ProcessFinalSolution(double* x,PIC::Mesh::cDataCornerNode* CornerNode);
 	    
+            double PoissonUpdateRhs(int iVar,
+                                    cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
+                                    cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes);
+            //set initial guess
+            void PoissonSetInitialGuess(double* x,PIC::Mesh::cDataCenterNode* CenterNode);
+            //process final solution
+            void PoissonProcessFinalSolution(double* x,PIC::Mesh::cDataCenterNode* CenterNode);
+            
             void ProcessJMassMatrix(char * realData, char * ghostData);
             void CopyJMassMatrix(char * realData, char * ghostData);
             
             void ProcessJMassMatrixSpeciesData(char * realData, char * ghostData);
             void CopyJMassMatrixSpeciesData(char * realData, char * ghostData);
+
+            void ProcessNetCharge(char * realData, char * ghostData);
+            void CopyNetCharge(char * realData, char * ghostData);
 
             void BuildMatrix();
             void TimeStep();
