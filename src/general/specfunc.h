@@ -308,6 +308,13 @@ namespace Vector3D {
     return res;
   }
 
+  inline double MixedProduct(double *a,double *b,double *c) {
+    double l[3];
+
+    CrossProduct(l,b,c);
+    return DotProduct(a,l);
+  }
+
   inline void Orthogonalize(double *PrimaryVector,double *OrthogonalVector) {
      double l2=0.0,c=0.0;
      int i;
