@@ -93,9 +93,18 @@
 /*--------------------------  END SATURN   -----------------------------*/
 
 
+/*--------------------------   VENUS   -----------------------------*/
+
+#define _VENUS__ID_  11
+#define _VENUS__RADIUS_  6051.8E3
+#define _VENUS__MASS_    4.8675E24
+
+/*--------------------------  END VENUS   -----------------------------*/
+
+
 /*-------------------------- NONE ----------------*/
 //this target is used when no astronomical body is inside the domain. the definition is needed to satisfy the compiler
-#define _TARGET_NONE__ID_ 10
+#define _TARGET_NONE__ID_ 12
 #define _TARGET_NONE__MASS_   0.0
 #define _TARGET_NONE__RADIUS_ 1.0
 
