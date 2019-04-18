@@ -568,18 +568,20 @@ double PIC::Mesh::IrregularSurface::GetClosestDistance(double *x,double *xCloses
       }
     }
     else {
+      double *xFace;
+
       //in case there is no intersection of the line that is along the  normal -> get the distances to the corners to the face
       for (iPoint=0;iPoint<DIM;iPoint++) {
         //get the corner point on the face
         switch (iPoint) {
         case 0:
-          memcpy(xFace,CutCell::BoundaryTriangleFaces[iFace].x0Face,3*sizeof(double));
+          xFace=CutCell::BoundaryTriangleFaces[iFace].x0Face;
           break;
         case 1:
-          memcpy(xFace,CutCell::BoundaryTriangleFaces[iFace].x1Face,3*sizeof(double));
+          xFace=CutCell::BoundaryTriangleFaces[iFace].x1Face;
           break;
         case 2:
-          memcpy(xFace,CutCell::BoundaryTriangleFaces[iFace].x2Face,3*sizeof(double));
+          xFace=CutCell::BoundaryTriangleFaces[iFace].x2Face;
           break;
         default:
           exit(__LINE__,__FILE__,"Error: something went wrong");
