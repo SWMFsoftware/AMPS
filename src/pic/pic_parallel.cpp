@@ -2267,6 +2267,11 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       }
     }
     
+    MPI_Waitall(iProcessBuffer,processRecvList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iCopyBuffer,copyRecvList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iCopyBuffer,processSendList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iProcessBuffer,copySendList,MPI_STATUSES_IGNORE);
+
     }//if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL)
   
 }
@@ -2966,8 +2971,13 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
         }
       }
     }
+   
+    MPI_Waitall(iProcessBuffer,processRecvList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iCopyBuffer,copyRecvList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iCopyBuffer,processSendList,MPI_STATUSES_IGNORE);
+    MPI_Waitall(iProcessBuffer,copySendList,MPI_STATUSES_IGNORE);
     
-    }//if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL)
+  }//if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL)
  
 }
 
