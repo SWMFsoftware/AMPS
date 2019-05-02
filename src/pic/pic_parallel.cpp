@@ -210,6 +210,9 @@ void PIC::Parallel::ExchangeParticleData() {
       MPI_Testany(RecvMessageSizeRequestTableLength,RecvMessageSizeRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
       if (flag==true) {
+        //release memoty used by MPI
+        MPI_Wait(RecvMessageSizeRequestTable+iFrom,MPI_STATUS_IGNORE);
+
         From=RecvMessageLengthProcessTable[iFrom];
         RecvMessageLengthProcessTable[iFrom]=RecvMessageLengthProcessTable[RecvMessageSizeRequestTableLength-1];
         RecvMessageSizeRequestTable[iFrom]=RecvMessageSizeRequestTable[RecvMessageSizeRequestTableLength-1];
@@ -244,6 +247,9 @@ void PIC::Parallel::ExchangeParticleData() {
       MPI_Testany(RecvPaticleDataRequestTableLength,RecvPaticleDataRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
       if (flag==true) {
+        //release memoty used by MPI
+        MPI_Wait(RecvPaticleDataRequestTable+iFrom,MPI_STATUS_IGNORE);
+
         //the new particle data message has been recieve => unpach the particle data
         From=RecvPaticleDataProcessTable[iFrom];
 
@@ -1778,7 +1784,11 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     while (nRecvBuffDone<PIC::nTotalThreads-1){
       int q, flag, iProc;
       MPI_Testany(PIC::nTotalThreads-1, RecvPntNumberList, &q, &flag, MPI_STATUS_IGNORE);
+
       if (flag!=0){
+        //release memoty used by MPI
+        MPI_Wait(RecvPntNumberList+q,MPI_STATUS_IGNORE);
+
         iProc = q<PIC::ThisThread?q:q+1;
         if (RecvCoordBuff[q]!=NULL) delete [] RecvCoordBuff[q];
         RecvCoordBuff[q] = new double [3*nPointsToComm[iProc]];
@@ -1821,10 +1831,19 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     while (nProcDone<PIC::nTotalThreads-1){
       int p[2], flag[2];
       
-      if (counter[0]<PIC::nTotalThreads-1)
+      if (counter[0]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvCoordList, p, flag, MPI_STATUS_IGNORE);
-      if (counter[1]<PIC::nTotalThreads-1)
+
+        //release memoty used by MPI
+        if (flag[0]==true) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
+      }
+
+      if (counter[1]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvDataBufferPtrList, p+1, flag+1, MPI_STATUS_IGNORE);
+
+        //release memoty used by MPI
+        if (flag[1]==true) MPI_Wait(RecvCoordList+p[1],MPI_STATUS_IGNORE);
+      }
       
       for (i=0;i<2; i++){
         if (flag[i]!=0 && counter[i]<PIC::nTotalThreads-1){
@@ -2158,11 +2177,15 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           MPI_Testany(iProcessBuffer, processRecvList, &q, &flag, MPI_STATUS_IGNORE);
           // printf("test8 pass\n");
           //printf("nProcessBufferDone:%d, sumProcessBufferNumber:%d\n",nProcessBufferDone,sumProcessBufferNumber);
+
           if (flag!=0 && q!=MPI_UNDEFINED){
             //process buffer of index q is done 
             int processStencilIndex = processStencilIndexOfBuffer[q];
             int wholeStencilIndex = wholeStencilIndexOfBuffer[q];
             
+            //release memoty used by MPI
+            MPI_Wait(processRecvList+q,MPI_STATUS_IGNORE);
+
             //printf("thread id:%d,bufferid:%d processed, nProcessBufferDone:%d/total buffer:%d,\n",PIC::ThisThread,q,nProcessBufferDone,sumProcessBufferNumber);
 
             PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[wholeStencilIndex].AssociatedDataPointer,processRecvDataBuffer[q]);
@@ -2187,6 +2210,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           MPI_Testany(iCopyBuffer, copyRecvList, &q, &flag, MPI_STATUS_IGNORE);
           
           if (flag!=0 && q!=MPI_UNDEFINED){
+            //release memoty used by MPI
+            MPI_Wait(copyRecvList+q,MPI_STATUS_IGNORE);
+
             //int wholeStencilIndex=CopyDataBufferStencilIndex[q];
             if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
               PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(CopyDataBufferDest[q],copyRecvDataBuffer[q]);
@@ -2213,6 +2239,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           //process buffer of index q is done 
           int processStencilIndex = processStencilIndexOfBuffer[q];
           int wholeStencilIndex = wholeStencilIndexOfBuffer[q];
+
+          //release memoty used by MPI
+          MPI_Wait(processRecvList+q,MPI_STATUS_IGNORE);
             
           // printf("thread id:%d,bufferid:%d processed, nProcessBufferDone:%d/total buffer:%d,\n",PIC::ThisThread,q,nProcessBufferDone,sumProcessBufferNumber);
           /*
@@ -2241,6 +2270,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
         MPI_Testany(iCopyBuffer, copyRecvList, &q, &flag, MPI_STATUS_IGNORE);
         
         if (flag!=0 && q!=MPI_UNDEFINED){
+          //release memoty used by MPI
+          MPI_Wait(copyRecvList+q,MPI_STATUS_IGNORE);
+
           int wholeStencilIndex=CopyDataBufferStencilIndex[q];
           if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
             PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(CopyDataBufferDest[q],copyRecvDataBuffer[q]);
@@ -2485,7 +2517,11 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     while (nRecvBuffDone<PIC::nTotalThreads-1){
       int q, flag, iProc;
       MPI_Testany(PIC::nTotalThreads-1, RecvPntNumberList, &q, &flag, MPI_STATUS_IGNORE);
+
       if (flag!=0){
+        //release memoty used by MPI
+        MPI_Wait(RecvPntNumberList+q,MPI_STATUS_IGNORE);
+
         iProc = q<PIC::ThisThread?q:q+1;
         if (RecvCoordBuff[q]!=NULL) delete [] RecvCoordBuff[q];
         RecvCoordBuff[q] = new double [3*nPointsToComm[iProc]];
@@ -2528,10 +2564,20 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     while (nProcDone<PIC::nTotalThreads-1){
       int p[2], flag[2];
       
-      if (counter[0]<PIC::nTotalThreads-1)
+      if (counter[0]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvCoordList, p, flag, MPI_STATUS_IGNORE);
-      if (counter[1]<PIC::nTotalThreads-1)
+
+        //release memoty used by MPI
+        if (flag[0]==true) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
+      }
+
+
+      if (counter[1]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvDataBufferPtrList, p+1, flag+1, MPI_STATUS_IGNORE);
+
+        //release memoty used by MPI
+        if (flag[1]==true) MPI_Wait(RecvCoordList+p[1],MPI_STATUS_IGNORE);
+      }
       
       for (i=0;i<2; i++){
         if (flag[i]!=0 && counter[i]<PIC::nTotalThreads-1){
@@ -2868,6 +2914,9 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
             int processStencilIndex = processStencilIndexOfBuffer[q];
             int wholeStencilIndex = wholeStencilIndexOfBuffer[q];
             
+            //release memoty used by MPI
+            MPI_Wait(processRecvList+q,MPI_STATUS_IGNORE);
+
             //printf("thread id:%d,bufferid:%d processed, nProcessBufferDone:%d/total buffer:%d,\n",PIC::ThisThread,q,nProcessBufferDone,sumProcessBufferNumber);
 
             PIC::Parallel::CenterBlockBoundaryNodes::ProcessCenterNodeAssociatedData(StencilTable[wholeStencilIndex].AssociatedDataPointer,processRecvDataBuffer[q]);
@@ -2891,7 +2940,10 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
 
           MPI_Testany(iCopyBuffer, copyRecvList, &q, &flag, MPI_STATUS_IGNORE);
           
-          if (flag!=0 && q!=MPI_UNDEFINED){
+          if (flag!=0 && q!=MPI_UNDEFINED) {
+            //release memoty used by MPI
+            MPI_Wait(copyRecvList+q,MPI_STATUS_IGNORE);
+
             //int wholeStencilIndex=CopyDataBufferStencilIndex[q];
             if (PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData!=NULL) {
               PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData(CopyDataBufferDest[q],copyRecvDataBuffer[q]);
@@ -2918,6 +2970,9 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           //process buffer of index q is done 
           int processStencilIndex = processStencilIndexOfBuffer[q];
           int wholeStencilIndex = wholeStencilIndexOfBuffer[q];
+
+          //release memoty used by MPI
+          MPI_Wait(processRecvList+q,MPI_STATUS_IGNORE);
             
           // printf("thread id:%d,bufferid:%d processed, nProcessBufferDone:%d/total buffer:%d,\n",PIC::ThisThread,q,nProcessBufferDone,sumProcessBufferNumber);
           /*
@@ -2947,6 +3002,10 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
         
         if (flag!=0 && q!=MPI_UNDEFINED){
           int wholeStencilIndex=CopyDataBufferStencilIndex[q];
+
+          //release memoty used by MPI
+          MPI_Wait(copyRecvList+q,MPI_STATUS_IGNORE);
+
           if (PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData!=NULL) {
             PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData(CopyDataBufferDest[q],copyRecvDataBuffer[q]);
           }
