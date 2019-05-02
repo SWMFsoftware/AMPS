@@ -10769,6 +10769,9 @@ if (TmpAllocationCounter==2437) {
           //a message has been recieved
           From=MoveInProcessTable[index];
 
+          //release memory used by the MPI
+          MPI_Wait(MoveInRequestTable+index,MPI_STATUS_IGNORE);
+
           MoveInProcessTable[index]=MoveInProcessTable[MoveInRequestTableSize-1];
           MoveInRequestTable[index]=MoveInRequestTable[MoveInRequestTableSize-1];
           MoveInRequestTableSize--;
@@ -10826,6 +10829,9 @@ if (TmpAllocationCounter==2437) {
 
         if (flag==true) {
           To=MoveOutProcessTable[index];
+
+          //release memory used by MPI
+          MPI_Wait(MoveOutRequestTable+index,MPI_STATUS_IGNORE);
 
           MoveOutRequestTable[index]=MoveOutRequestTable[MoveOutRequestTableSize-1];
           MoveOutProcessTable[index]=MoveOutProcessTable[MoveOutRequestTableSize-1];
@@ -11509,6 +11515,9 @@ if (TmpAllocationCounter==2437) {
         if (flag==true) {
           From=RecvProcessTable[iFrom];
 
+          //release memoty used by MPI
+          MPI_Wait(RecvRequestTable+iFrom,MPI_STATUS_IGNORE);
+
           RecvProcessTable[iFrom]=RecvProcessTable[RecvRequestTableLength-1];
           RecvRequestTable[iFrom]=RecvRequestTable[RecvRequestTableLength-1];
           RecvRequestTableLength--;
@@ -11762,6 +11771,9 @@ if (TmpAllocationCounter==2437) {
             //unpack the data
             From=RecvProcessTable[iFrom];
 
+            //Release memory used by MPI
+            MPI_Wait(RecvRequestTable+iFrom,MPI_STATUS_IGNORE);
+
             unsigned char *BlockCenterNodeSendMask=ParallelBlockDataExchangeData.RecvCenterNodePackingTable[From];
             if (BlockCenterNodeSendMask!=NULL) BlockCenterNodeSendMask+=LastRecvMessageTable[From].FirstBlockIndex*ParallelBlockDataExchangeData.BlockCenterNodeSendMaskLength;
 
@@ -11870,6 +11882,9 @@ if (TmpAllocationCounter==2437) {
             //the send operation is compete -> initiate a new one id needed
             //update the table
             To=SendProcessTable[iTo];
+
+            //Release memory used by MPI
+            MPI_Wait(SendRequestTable+iTo,MPI_STATUS_IGNORE);
 
             SendProcessTable[iTo]=SendProcessTable[SendTableIndex-1];
             SendRequestTable[iTo]=SendRequestTable[SendTableIndex-1];
