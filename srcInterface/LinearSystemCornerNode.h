@@ -8,10 +8,6 @@
  *      Author: vtenishe
  */
 
-#ifndef _LINEARSYSTEMCORNERNODE_H_
-#define _LINEARSYSTEMCORNERNODE_H_
-
-//#include "pic.h"
 #include "linear_solver_wrapper_c.h"
 #include <functional>
 #include <iostream>
@@ -19,6 +15,9 @@
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
 #endif
+
+#ifndef _LINEARSYSTEMCORNERNODE_H_
+#define _LINEARSYSTEMCORNERNODE_H_
 
 class cLinearSystemCornerNodeDataRequestListElement {
 public:

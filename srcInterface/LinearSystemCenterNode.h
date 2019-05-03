@@ -8,8 +8,6 @@
  *      Author: vtenishe
  */
 
-#ifndef _LINEARSYSTEMCENTERNODE_H_
-#define _LINEARSYSTEMCENTERNODE_H_
 
 #include "linear_solver_wrapper_c.h"
 #include <functional>
@@ -18,6 +16,9 @@
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
 #endif
+
+#ifndef _LINEARSYSTEMCENTERNODE_H_
+#define _LINEARSYSTEMCENTERNODE_H_
 
 class cLinearSystemCenterNodeDataRequestListElement {
 public:
