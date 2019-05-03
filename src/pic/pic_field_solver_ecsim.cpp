@@ -1782,7 +1782,7 @@ void exchangeParticleLocal(){
       long int FirstParticle,LastParticle=-1,pNext,*LastParticlePtr;
 
       for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+        for (int k=0;k<_BLOCK_CELLS_Z_;k++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int i=0;i<_BLOCK_CELLS_X_;i++) {
           LastParticlePtr=block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k);
 
           LastParticle=(*LastParticlePtr);
