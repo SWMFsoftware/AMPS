@@ -30,24 +30,24 @@ set Server  = vtenishe@herot.engin.umich.edu
 
 #Combine multiple log filed into a signle log file
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS
+cp test_amps.log test_amps.log.bak
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
-  rm -f $f
 end
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS
+cp test_amps.log test_amps.log.bak
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
-  rm -f $f
 end
 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS
+cp test_amps.log test_amps.log.bak
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
-  rm -f $f
 end
 
 # Go to your home directory
@@ -63,6 +63,7 @@ cd $WorkDir/Tmp_AMPS_test
 #echo '===============================================' >> test_amps.res     # 
 #head -100 *diff >> test_amps.res                                            #
 #scp test_amps.res test_amps.log ${Server}:Sites/Current/`hostname -s`_gnu/  #
+#mv test_amps.log.bak test_amps.log
 #cd ../..                                                                   <#
 
 
@@ -74,6 +75,7 @@ cd $WorkDir/Tmp_AMPS_test
 #echo '===============================================' >> test_amps.res     # 
 #head -100 *diff >> test_amps.res                                            #
 #scp test_amps.res test_amps.log ${Server}:Sites/Current/`hostname -s`_intel/#
+#mv test_amps.log.bak test_amps.log
 #cd ../..                                                                   <#
 
 # PGI compiled test
@@ -84,5 +86,6 @@ cd $WorkDir/Tmp_AMPS_test
 #echo '===============================================' >> test_amps.res     # 
 #head -100 *diff >> test_amps.res                                            #
 #scp test_amps.res test_amps.log ${Server}:Sites/Current/`hostname -s`_pgi/  #
+#mv test_amps.log.bak test_amps.log
 #cd ../..                                                                   <#
 
