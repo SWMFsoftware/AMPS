@@ -820,10 +820,10 @@ Check=
 >>>@${TESTphoton-testDIR}/../utility/ReduceFile.pl ${TESTphoton-testDIR}/PT/plots/test_photon.dat 10
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTphoton-testDIR)/PT/plots/test_photon.dat.Reduced.Step=10 \
->>>output/test_photon/test_photon.Reduced.Step=10.ref_np`ls $(TESTphoton-testDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon$(TESTphoton-test-REF).diff)
+>>>output/test_photon/test_photon.Reduced.Step=10.ref_np`ls $(TESTphoton-testDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon-test$(TESTphoton-test-REF).diff)
 
->>>@ls -l test_photon$(TESTphoton-test-REF).diff 
->>>@echo Test test_photon has finished: `date`
+>>>@ls -l test_photon-test$(TESTphoton-test-REF).diff 
+>>>@echo Test test_photon-test has finished: `date`
 
 <#
 -------------------------------------------------------------------------------
