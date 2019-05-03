@@ -11,11 +11,9 @@
 #ifndef _LINEARSYSTEMCENTERNODE_H_
 #define _LINEARSYSTEMCENTERNODE_H_
 
-#include "pic.h"
 #include "linear_solver_wrapper_c.h"
 #include <functional>
 #include <iostream>
-#include "LinearSystemCornerNode.h"
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>

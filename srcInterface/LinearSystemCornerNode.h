@@ -11,7 +11,7 @@
 #ifndef _LINEARSYSTEMCORNERNODE_H_
 #define _LINEARSYSTEMCORNERNODE_H_
 
-#include "pic.h"
+//#include "pic.h"
 #include "linear_solver_wrapper_c.h"
 #include <functional>
 #include <iostream>
