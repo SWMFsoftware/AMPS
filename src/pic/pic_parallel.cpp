@@ -1834,15 +1834,15 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       if (counter[0]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvCoordList, p, flag, MPI_STATUS_IGNORE);
 
-        //release memoty used by MPI
-        if (flag[0]==true) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
+        //release memory used by MPI
+        if ((flag[0]==true)&&(p[0]!=MPI_UNDEFINED)) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
       }
 
       if (counter[1]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvDataBufferPtrList, p+1, flag+1, MPI_STATUS_IGNORE);
 
-        //release memoty used by MPI
-        if (flag[1]==true) MPI_Wait(RecvCoordList+p[1],MPI_STATUS_IGNORE);
+        //release memory used by MPI
+        if ((flag[1]==true)&&(p[1]!=MPI_UNDEFINED)) MPI_Wait(RecvDataBufferPtrList+p[1],MPI_STATUS_IGNORE);
       }
       
       for (i=0;i<2; i++){
@@ -2567,16 +2567,16 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       if (counter[0]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvCoordList, p, flag, MPI_STATUS_IGNORE);
 
-        //release memoty used by MPI
-        if (flag[0]==true) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
+        //release memory used by MPI
+        if ((flag[0]==true)&&(p[0]!=MPI_UNDEFINED)) MPI_Wait(RecvCoordList+p[0],MPI_STATUS_IGNORE);
       }
 
 
       if (counter[1]<PIC::nTotalThreads-1) {
         MPI_Testany(PIC::nTotalThreads-1, RecvDataBufferPtrList, p+1, flag+1, MPI_STATUS_IGNORE);
 
-        //release memoty used by MPI
-        if (flag[1]==true) MPI_Wait(RecvCoordList+p[1],MPI_STATUS_IGNORE);
+        //release memory used by MPI
+        if ((flag[1]==true)&&(p[1]!=MPI_UNDEFINED)) MPI_Wait(RecvDataBufferPtrList+p[1],MPI_STATUS_IGNORE);
       }
       
       for (i=0;i<2; i++){
@@ -2909,6 +2909,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           MPI_Testany(iProcessBuffer, processRecvList, &q, &flag, MPI_STATUS_IGNORE);
           // printf("test8 pass\n");
           //printf("nProcessBufferDone:%d, sumProcessBufferNumber:%d\n",nProcessBufferDone,sumProcessBufferNumber);
+
           if (flag!=0 && q!=MPI_UNDEFINED){
             //process buffer of index q is done 
             int processStencilIndex = processStencilIndexOfBuffer[q];
