@@ -10418,6 +10418,10 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
+    int *SendOperationCounterTable=new int[nTotalThreads];
+    int *RecvOperationCounterTable=new int[nTotalThreads];
+
+    for (int thread=0;thread<nTotalThreads;thread++) SendOperationCounterTable[thread]=0,RecvOperationCounterTable[thread]=0;
 
     auto InitRecieve = [&] (int From,int *iLastRecvStartNode, int *iLastRecvFinishNode,
         cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,
@@ -10447,7 +10451,9 @@ if (TmpAllocationCounter==2437) {
       LastRecvMessageSize[From]=Size;
 
       if (Size>0) {
-        MPI_Irecv(RecvBlockDataBuffer[From],Size,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
+        MPI_Irecv(RecvBlockDataBuffer[From],Size,MPI_BYTE,From,RecvOperationCounterTable[From],MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
+
+        RecvOperationCounterTable[From]++;
         MoveInProcessTable[MoveInRequestTableSize]=From;
         MoveInRequestTableSize++;
       }
@@ -10483,7 +10489,9 @@ if (TmpAllocationCounter==2437) {
       }
 
       if (Size>0) {
-        MPI_Isend(SendBlockDataBuffer[To],Size,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
+        MPI_Isend(SendBlockDataBuffer[To],Size,MPI_BYTE,To,SendOperationCounterTable[To],MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
+
+        SendOperationCounterTable[To]++;
         MoveOutProcessTable[MoveOutRequestTableSize]=To;
         MoveOutRequestTableSize++;
       }
@@ -10922,6 +10930,9 @@ if (TmpAllocationCounter==2437) {
 
     delete [] RecvCompletedTable;
     delete [] SendCompletedTable;
+
+    delete [] RecvOperationCounterTable;
+    delete [] SendOperationCounterTable;
     ////// !!!!!! This is the end of the block moving procedure!!!!!!!!
 
     //update the new node threads
