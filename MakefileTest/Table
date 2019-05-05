@@ -217,6 +217,9 @@ Compile=
 >>>@cd ../TempSourceDir;git clone herot.engin.umich.edu:/GIT/FRAMEWORK/AMPS
 >>>@cd ../TempSourceDir/AMPS;git checkout ROSINA-END-OF-MISSION
 
+>>>@mv src src--original
+>>>@mv ../TempSourceDir/AMPS/src .
+
 >>>@mv srcCG srcCG--original
 >>>@mv ../TempSourceDir/AMPS/srcCG .
 >>>@rm -rf ../TempSourceDir
@@ -226,6 +229,10 @@ Compile=
 
 >>>@rm -rf srcCG
 >>>@mv srcCG--original srcCG
+
+>>>@rm -rf src
+>>>@mv src--original src
+
 >>>@echo "test_CG-Rosina-Liouville_compile... done" >> test_CG-Rosina-Liouville$(TESTCG-Rosina-Liouville-REF).diff
 
 Run=
