@@ -44,7 +44,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
 
 #General
-  RequestedParticleBufferLength=80000000
+  RequestedParticleBufferLength=4000000
   FirstPrintedOutputFile=0
 
   !define  _PIC_SAMPLING_MODE_  _PIC_MODE_OFF_ 
