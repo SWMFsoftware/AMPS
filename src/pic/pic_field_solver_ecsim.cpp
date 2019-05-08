@@ -2760,23 +2760,36 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
   //perform the rest of the field solver calculstions
   double t0,t1,StartTime=MPI_Wtime();
-  
-  if (PIC::CPLR::FLUID::iCycle==0){  
-    UpdateJMassMatrix();    
-    ComputeNetCharge(true);
-    SetBoundaryChargeDivE();
+  static int cnt=0;
 
-    {// Output
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_){
+    if (PIC::CPLR::FLUID::iCycle==0){  
+      UpdateJMassMatrix();
+      
+      if (DoDivECorrection){
+        ComputeNetCharge(true);
+        SetBoundaryChargeDivE();
+      }
+      
+      {// Output
       double timeNow = 0.0;  
       PIC::CPLR::FLUID::write_output(timeNow);
+      }    
+    }
+  }else{
+    if (cnt==0){
+      UpdateJMassMatrix();
+      cnt++;
     }    
   }
+  
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ){
     setB_center_BC();
     setB_corner_BC();
     setE_curr_BC();
   }
-  
+
+
   //  PIC::BC::ExternalBoundary::UpdateData();
 
   Solver.UpdateRhs(UpdateRhs); 
@@ -2798,7 +2811,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setB_center_BC();
   PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
-  InterpolateB_C2N();
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ || 
+      _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_ )
+    InterpolateB_C2N();
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setB_corner_BC();
   
