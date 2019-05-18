@@ -300,6 +300,8 @@ public:
 
 //  bool ActiveFlag; //used to prevent repeatable de-allocation of the block from the stack
 
+  bool IsUsedInCalculationFlag; //the flag is used to mark such tree nodes that are not used in calcualtions
+
   //descriptor of the cut-face list
   struct cCutFaceListDescriptor {
     cCutFaceListDescriptor* next;
@@ -315,6 +317,8 @@ public:
     block=NULL,upNode=NULL;
     Temp_ID=-1;
     neibCutFaceListDescriptorList=NULL,neibCutFaceListDescriptorList_temp=NULL;
+
+    IsUsedInCalculationFlag=true;
 
     for (int i=0;i<1<<_MESH_DIMENSION_;i++) downNode[i]=NULL;
 
@@ -3467,8 +3471,8 @@ if (startNode->Temp_ID==77) {
 
 
 
-  //the block cannot be allocated twice AND the block's allocation must be permitted
-  if ((AllowBlockAllocation==false)||(startNode->block!=NULL)) return;
+  //the block cannot be allocated twice AND the block's allocation must be permitted AND the block need to be actively used in calcualtions
+  if ((AllowBlockAllocation==false)||(startNode->block!=NULL)||(startNode->IsUsedInCalculationFlag==false)) return;
   nMeshModificationCounter++,meshModifiedFlag=true,meshModifiedFlag_CountMeshElements=true;
 
 
@@ -9543,7 +9547,7 @@ nMPIops++;
     }
     else {
       #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      res=startNode->ParallelLoadMeasure;
+      res=(startNode->IsUsedInCalculationFlag==true) ? startNode->ParallelLoadMeasure : 0.0;
 
       //check whether the node load measure is normalized
       if (isfinite(res)==false) {
@@ -9557,19 +9561,24 @@ nMPIops++;
       if (ThisThread==0) {
         double t;
 
-        if (ThreadLoad!=NULL) ThreadLoad[0]+=res;
+        if (startNode->IsUsedInCalculationFlag==true) {
+          if (ThreadLoad!=NULL) ThreadLoad[0]+=res;
 
-        for (int thread=1;thread<nTotalThreads;thread++) {
-          pipe.recv(t,thread);
-          res+=t;
-          if (ThreadLoad!=NULL) ThreadLoad[thread]+=t;
+          for (int thread=1;thread<nTotalThreads;thread++) {
+            pipe.recv(t,thread);
+            res+=t;
+            if (ThreadLoad!=NULL) ThreadLoad[thread]+=t;
+          }
+
+          startNode->ParallelLoadMeasure=res;
         }
-
-        startNode->ParallelLoadMeasure=res;
-//        printf("block xCenter:%e,%e,%e, block load:%e\n",0.5*(startNode->xmin[0]+startNode->xmax[0]),0.5*(startNode->xmin[1]+startNode->xmax[1]),0.5*(startNode->xmin[2]+startNode->xmax[2]),startNode->ParallelLoadMeasure);
-
+        else {
+          startNode->ParallelLoadMeasure=0.0;
+        }
       }
-      else pipe.send(res);
+      else {
+        if (startNode->IsUsedInCalculationFlag==true) pipe.send(res);
+      }
       #elif _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_OFF_
       res=0.0;
       #else
@@ -9596,26 +9605,31 @@ nMPIops++;
       nResolutionLevelBlocks[startNode->RefinmentLevel]++;
       res=1;
 
-      #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      startNode->ParallelLoadMeasure/=Norm;
+      if (startNode->IsUsedInCalculationFlag==true) {
+        #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
+        startNode->ParallelLoadMeasure/=Norm;
 
-      //check whether the node load measure is normalized
-      if (isfinite(startNode->ParallelLoadMeasure)==false) {
-        char msg[200];
+        //check whether the node load measure is normalized
+        if (isfinite(startNode->ParallelLoadMeasure)==false) {
+          char msg[200];
 
-        sprintf(msg,"Error: the parallel load measure is not normalized (startNode->ParallelLoadMeasure=%e)\n",startNode->ParallelLoadMeasure);
-        exit(__LINE__,__FILE__,msg);
+          sprintf(msg,"Error: the parallel load measure is not normalized (startNode->ParallelLoadMeasure=%e)\n",startNode->ParallelLoadMeasure);
+          exit(__LINE__,__FILE__,msg);
+        }
+
+        //add the load to all parent nodes
+        cTreeNodeAMR<cBlockAMR>* upNode=startNode->upNode;
+
+        while (upNode!=NULL) {
+          upNode->ParallelLoadMeasure+=startNode->ParallelLoadMeasure;
+          upNode=upNode->upNode;
+        }
+
+        #endif
       }
-
-      //add the load to all parent nodes
-      cTreeNodeAMR<cBlockAMR>* upNode=startNode->upNode;
-
-      while (upNode!=NULL) {
-        upNode->ParallelLoadMeasure+=startNode->ParallelLoadMeasure;
-        upNode=upNode->upNode;
+      else {
+        startNode->ParallelLoadMeasure=0.0;
       }
-
-      #endif
     }
 
     return res;
@@ -10596,7 +10610,7 @@ if (TmpAllocationCounter==2437) {
     for (thread=0;thread<nTotalThreads;thread++) {
       cTreeNodeAMR<cBlockAMR> *ptr;
 
-      for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) {
+      for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) if (ptr->IsUsedInCalculationFlag==true) {
         if (ptr->Thread!=ThisThread) {
           //blocks will be moved In
           MoveInNodeTable[ptr->Thread][MoveInNodeTableSize[ptr->Thread]]=ptr;
@@ -11060,7 +11074,7 @@ if (TmpAllocationCounter==2437) {
 
         //reset the proceesed flaf for the blocks to be send
         //send the nodes' data
-        for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) {
+        for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) if (recvNode->IsUsedInCalculationFlag==true) {
           #if _MESH_DIMENSION_ == 2
           #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
           #elif _MESH_DIMENSION_ == 3
@@ -11081,7 +11095,7 @@ if (TmpAllocationCounter==2437) {
         }
 
         //send the data
-        for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) {
+        for (recvNode=DomainBoundaryLayerNodesList[To];recvNode!=NULL;recvNode=recvNode->nextNodeThisThread) if (recvNode->IsUsedInCalculationFlag==true) {
           #if _MESH_DIMENSION_ == 2
           #define _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
           #elif _MESH_DIMENSION_ == 3
@@ -12106,6 +12120,89 @@ if (TmpAllocationCounter==2437) {
       }
     }
   }
+
+  //Set/Remove TreeNodeActiveUseFlag
+  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int TableOwnerThread,void(*fInitTreeNodeData)(cTreeNodeAMR<cBlockAMR>*)) {
+    cTreeNodeAMR<cBlockAMR> *node;
+    cAMRnodeID *NodeIdTable=NULL;
+    int iNode;
+
+    //increment the mesh modification counter
+    nMeshModificationCounter++,meshModifiedFlag=true
+
+    //broadcast the list of the nodes to be activated
+    MPI_Bcast(&NodeTableLength,1,MPI_INT,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+
+    NodeIdTable=new cAMRnodeID[NodeTableLength];
+
+    if (ThisThread==TableOwnerThread) {
+      for (iNode=0;iNode<NodeTableLength;iNode++) NodeIdTable[iNode]=NodeTable[iNode]->AMRnodeID;
+    }
+
+    MPI_Bcast(NodeIdTable,NodeTableLength*sizeof(cAMRnodeID),MPI_BYTE,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+
+    //allocate the new blocks
+    for (iNode=0;iNode<NodeTableLength;iNode++) {
+      node=findAMRnodeWithID(NodeIdTable[iNode]);
+      node->IsUsedInCalculationFlag=true;
+
+      if (node->Thread==ThisThread) {
+        AllocateBlock(node);
+        if (fInitTreeNodeData!=NULL) fInitTreeNodeData(node);
+      }
+      else {
+        //verify whether the state vector of the node need to be allocated
+        cTreeNodeAMR<cBlockAMR> *NeibNode=DomainBoundaryLayerNodesList[node->Thread];
+
+        while (NeibNode!=NULL) {
+          if (NeibNode==node) {
+            //the newly activated node is in the boundary layer -> allocate it
+            AllocateBlock(node);
+            if (fInitTreeNodeData!=NULL) fInitTreeNodeData(node);
+            break;
+          }
+
+          NeibNode=NeibNode->nextNodeThisThread;
+        }
+      }
+    }
+
+    delete [] NodeIdTable;
+  }
+
+  void RemoveTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int TableOwnerThread,void(*fCleanTreeNodeData)(cTreeNodeAMR<cBlockAMR>*)) {
+    cTreeNodeAMR<cBlockAMR> *node;
+    cAMRnodeID *NodeIdTable=NULL;
+    int iNode;
+
+    //increment the mesh modification counter
+    nMeshModificationCounter++,meshModifiedFlag=true;
+
+    //broadcast the list of the nodes to be activated
+    MPI_Bcast(&NodeTableLength,1,MPI_INT,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+
+    NodeIdTable=new cAMRnodeID[NodeTableLength];
+
+    if (ThisThread==TableOwnerThread) {
+      for (iNode=0;iNode<NodeTableLength;iNode++) NodeIdTable[iNode]=NodeTable[iNode]->AMRnodeID;
+    }
+
+    MPI_Bcast(NodeIdTable,NodeTableLength*sizeof(cAMRnodeID),MPI_BYTE,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+
+    //de-allocate the new blocks
+    for (iNode=0;iNode<NodeTableLength;iNode++) {
+      node=findAMRnodeWithID(NodeIdTable[iNode]);
+      node->IsUsedInCalculationFlag=false;
+
+      if (node->block!=NULL) {
+        if (fCleanTreeNodeData!=NULL) fCleanTreeNodeData(node);
+        DeallocateBlock(node);
+      }
+    }
+
+    delete [] NodeIdTable;
+  }
+
 };
 
 
