@@ -12128,7 +12128,7 @@ if (TmpAllocationCounter==2437) {
     int iNode;
 
     //increment the mesh modification counter
-    nMeshModificationCounter++,meshModifiedFlag=true
+    nMeshModificationCounter++,meshModifiedFlag=true; 
 
     //broadcast the list of the nodes to be activated
     MPI_Bcast(&NodeTableLength,1,MPI_INT,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
