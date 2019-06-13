@@ -543,10 +543,8 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
   PIC::Mesh::cDataCornerNode *corner;
   int iBlock=0;
 
-  double xMinL_I[3] = {PIC::Mesh::xmax[0],PIC::Mesh::xmax[1],PIC::Mesh::xmax[2]};
-  double xMaxL_I[3] = {PIC::Mesh::xmin[0],PIC::Mesh::xmin[1],PIC::Mesh::xmin[2]};
-
-
+  double xMinL_I[3] = {PIC::Mesh::mesh.xGlobalMax[0],PIC::Mesh::mesh.xGlobalMax[1],PIC::Mesh::mesh.xGlobalMax[2]};
+  double xMaxL_I[3] = {PIC::Mesh::mesh.xGlobalMin[0],PIC::Mesh::mesh.xGlobalMin[1],PIC::Mesh::mesh.xGlobalMin[2]};
 
   //  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {                                        
