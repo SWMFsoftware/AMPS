@@ -12122,85 +12122,131 @@ if (TmpAllocationCounter==2437) {
   }
 
   //Set/Remove TreeNodeActiveUseFlag
-  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int TableOwnerThread,void(*fInitTreeNodeData)(cTreeNodeAMR<cBlockAMR>*)) {
+  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag) {
     cTreeNodeAMR<cBlockAMR> *node;
-    cAMRnodeID *NodeIdTable=NULL;
-    int iNode;
+    cAMRnodeID *NodeIdTableGlobal=NULL;
+    int iNode,NodeTableLengthGlobal;
 
     //increment the mesh modification counter
     nMeshModificationCounter++,meshModifiedFlag=true; 
 
-    //broadcast the list of the nodes to be activated
-    MPI_Bcast(&NodeTableLength,1,MPI_INT,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+    //connect all tables at the root process
+    if (NodeTable==NULL) NodeTableLength=0;
 
-    NodeIdTable=new cAMRnodeID[NodeTableLength];
+    int *NodeTableLengthTable=new int [nTotalThreads];
+    MPI_Gather(&NodeTableLength,1,MPI_INT,NodeTableLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
-    if (ThisThread==TableOwnerThread) {
-      for (iNode=0;iNode<NodeTableLength;iNode++) NodeIdTable[iNode]=NodeTable[iNode]->AMRnodeID;
+    if (ThisThread==0) {
+      //determine the total length of the table
+      int thread;
+      MPI_Request *RequestTable=NULL;
+      int RequestTableLength=0,NodeIdTableGlobalCounter=0;
+      int RequestCountet=0;
+
+      for (thread=0,NodeTableLengthGlobal=0;thread<nTotalThreads;thread++) if (NodeTableLengthTable[thread]!=0) {
+        NodeTableLengthGlobal+=NodeTableLengthTable[thread];
+
+        if (thread!=0) RequestTableLength++;
+      }
+
+      //populate the "global" table
+      NodeIdTableGlobal=new cAMRnodeID[NodeTableLengthGlobal];
+
+      RequestTable=new MPI_Request[RequestTableLength];
+      RequestTableLength=0;
+
+      for (thread=0;thread<nTotalThreads;thread++) if (NodeTableLengthTable[thread]!=0) {
+        if (thread==0) {
+          //popule the local node id
+          for (iNode=0;iNode<NodeTableLength;iNode++) {
+            NodeIdTableGlobal[iNode]=NodeTable[iNode]->AMRnodeID;
+            NodeIdTableGlobalCounter++;
+          }
+        }
+        else {
+          //initiate the non-blocking recieve
+          MPI_Irecv(NodeIdTableGlobal+NodeIdTableGlobalCounter,NodeTableLengthTable[thread]*sizeof(cAMRnodeID),MPI_BYTE,thread,0,MPI_GLOBAL_COMMUNICATOR,RequestTable+RequestTableLength);
+
+          RequestTableLength++;
+          NodeIdTableGlobalCounter+=NodeTableLengthTable[thread];
+        }
+      }
+
+      if (NodeIdTableGlobalCounter!=NodeTableLengthGlobal) {
+        exit(__LINE__,__FILE__,"Error: something went wrong");
+      }
+
+      //waite while att recieving is completed
+      MPI_Waitall(RequestTableLength,RequestTable,MPI_STATUSES_IGNORE);
+
+      //remove temporary buffers
+      delete [] RequestTable;
+    }
+    else {
+      if (NodeTableLength!=0) {
+        //send the table to the rood thread
+        cAMRnodeID *NodeIdTableLocal=new cAMRnodeID[NodeTableLength];
+        MPI_Request Request;
+
+        for (iNode=0;iNode<NodeTableLength;iNode++) NodeIdTableLocal[iNode]=NodeTable[iNode]->AMRnodeID;
+
+        MPI_Isend(NodeIdTableLocal,NodeTableLength*sizeof(cAMRnodeID),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&Request);
+        MPI_Wait(&Request,MPI_STATUS_IGNORE);
+
+        delete [] NodeIdTableLocal;
+      }
     }
 
-    MPI_Bcast(NodeIdTable,NodeTableLength*sizeof(cAMRnodeID),MPI_BYTE,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
+    //broadcast the global node id table
+    MPI_Bcast(&NodeTableLengthGlobal,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
-    //allocate the new blocks
-    for (iNode=0;iNode<NodeTableLength;iNode++) {
-      node=findAMRnodeWithID(NodeIdTable[iNode]);
-      node->IsUsedInCalculationFlag=true;
+    if (ThisThread!=0) NodeIdTableGlobal=new cAMRnodeID[NodeTableLengthGlobal];
 
-      if (node->Thread==ThisThread) {
-        AllocateBlock(node);
-        if (fInitTreeNodeData!=NULL) fInitTreeNodeData(node);
-      }
-      else {
-        //verify whether the state vector of the node need to be allocated
-        cTreeNodeAMR<cBlockAMR> *NeibNode=DomainBoundaryLayerNodesList[node->Thread];
+    MPI_Bcast(NodeIdTableGlobal,NodeTableLengthGlobal*sizeof(cAMRnodeID),MPI_BYTE,0,MPI_GLOBAL_COMMUNICATOR);
 
-        while (NeibNode!=NULL) {
-          if (NeibNode==node) {
-            //the newly activated node is in the boundary layer -> allocate it
-            AllocateBlock(node);
-            if (fInitTreeNodeData!=NULL) fInitTreeNodeData(node);
-            break;
+
+    if (IsUsedInCalculationFlag==true) {
+      //allocate the new blocks
+      for (iNode=0;iNode<NodeTableLengthGlobal;iNode++) {
+        node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
+        node->IsUsedInCalculationFlag=true;
+
+        if (node->Thread==ThisThread) {
+          AllocateBlock(node);
+          if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
+        }
+        else {
+          //verify whether the state vector of the node need to be allocated
+          cTreeNodeAMR<cBlockAMR> *NeibNode=DomainBoundaryLayerNodesList[node->Thread];
+
+          while (NeibNode!=NULL) {
+            if (NeibNode==node) {
+              //the newly activated node is in the boundary layer -> allocate it
+              AllocateBlock(node);
+              if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
+              break;
+            }
+
+            NeibNode=NeibNode->nextNodeThisThread;
           }
+        }
+      }
+    }
+    else {
+      //de-allocate the new blocks
+      for (iNode=0;iNode<NodeTableLengthGlobal;iNode++) {
+        node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
+        node->IsUsedInCalculationFlag=false;
 
-          NeibNode=NeibNode->nextNodeThisThread;
+        if (node->block!=NULL) {
+          if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
+          DeallocateBlock(node);
         }
       }
     }
 
-    delete [] NodeIdTable;
-  }
-
-  void RemoveTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int TableOwnerThread,void(*fCleanTreeNodeData)(cTreeNodeAMR<cBlockAMR>*)) {
-    cTreeNodeAMR<cBlockAMR> *node;
-    cAMRnodeID *NodeIdTable=NULL;
-    int iNode;
-
-    //increment the mesh modification counter
-    nMeshModificationCounter++,meshModifiedFlag=true;
-
-    //broadcast the list of the nodes to be activated
-    MPI_Bcast(&NodeTableLength,1,MPI_INT,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
-
-    NodeIdTable=new cAMRnodeID[NodeTableLength];
-
-    if (ThisThread==TableOwnerThread) {
-      for (iNode=0;iNode<NodeTableLength;iNode++) NodeIdTable[iNode]=NodeTable[iNode]->AMRnodeID;
-    }
-
-    MPI_Bcast(NodeIdTable,NodeTableLength*sizeof(cAMRnodeID),MPI_BYTE,TableOwnerThread,MPI_GLOBAL_COMMUNICATOR);
-
-    //de-allocate the new blocks
-    for (iNode=0;iNode<NodeTableLength;iNode++) {
-      node=findAMRnodeWithID(NodeIdTable[iNode]);
-      node->IsUsedInCalculationFlag=false;
-
-      if (node->block!=NULL) {
-        if (fCleanTreeNodeData!=NULL) fCleanTreeNodeData(node);
-        DeallocateBlock(node);
-      }
-    }
-
-    delete [] NodeIdTable;
+    delete [] NodeTableLengthTable;
+    delete [] NodeIdTableGlobal;
   }
 
 };
