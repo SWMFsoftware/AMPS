@@ -12122,7 +12122,7 @@ if (TmpAllocationCounter==2437) {
   }
 
   //Set/Remove TreeNodeActiveUseFlag
-  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag) {
+  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> &NewlyAllocatedNodeList) {
     cTreeNodeAMR<cBlockAMR> *node;
     cAMRnodeID *NodeIdTableGlobal=NULL;
     int iNode,NodeTableLengthGlobal;
@@ -12213,6 +12213,8 @@ if (TmpAllocationCounter==2437) {
 
         if (node->Thread==ThisThread) {
           AllocateBlock(node);
+          NewlyAllocatedNodeList.push_back(node);
+
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
         }
         else {
@@ -12223,6 +12225,8 @@ if (TmpAllocationCounter==2437) {
             if (NeibNode==node) {
               //the newly activated node is in the boundary layer -> allocate it
               AllocateBlock(node);
+              NewlyAllocatedNodeList.push_back(node);
+
               if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
               break;
             }
