@@ -2052,6 +2052,33 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
+Name=test/Venus-Hot-Oxygen
+Time=50 
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=3{gcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades)
+Ref=3{gcc}@@(0+stampede)
+Ref=2{pgcc}@@(0+valeriy)
+
+
+Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
+
+
+Compile=
+>>>@echo "test_Venus-Hot-Oxygen_compile..." > test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
+>>>./Config.pl -application=Venus-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTVenus-Hot-OxygenKEYS}
+>>>-@($(MAKE) -j8 amps)
+
+
+>>>@echo "test_Venus-Hot-Oxygen_compile... done" >> test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
+
+
+<#
+
+/------------------------------------------------------------------------------
+#>
 Name=test/Mars-Hot-Carbon 
 Time=1
 
