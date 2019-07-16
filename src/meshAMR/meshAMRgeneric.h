@@ -8067,7 +8067,7 @@ nMPIops++;
       cBitwiseFlagTable IntersectionFlagTable(CutCell::nBoundaryTriangleFaces);
 
       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-      #pragma omp parallel for schedule(dynamic,1) default (none) shared(nTotalThreads,ThisThread,ParallelMeshGenerationFlag,IntersectionFlagTable,xmin,xmax,EPS)
+      #pragma omp parallel for schedule(dynamic,1) default (none) shared(CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,nTotalThreads,ThisThread,ParallelMeshGenerationFlag,IntersectionFlagTable,xmin,xmax,EPS)
       #endif
       for (nface=0;nface<CutCell::nBoundaryTriangleFaces;nface++) if ((nface%nTotalThreads==ThisThread)||(ParallelMeshGenerationFlag==false)) {
         IntersectionFlagTable.SetFlag(CutCell::BoundaryTriangleFaces[nface].BlockIntersection(xmin,xmax,EPS),nface);
@@ -12251,6 +12251,31 @@ if (TmpAllocationCounter==2437) {
 
     delete [] NodeTableLengthTable;
     delete [] NodeIdTableGlobal;
+  }
+
+  //reduce and nMeshModificationCounter so it is the same oved all MPI processes
+  long int SyncMeshID() {
+    long int buffer[nTotalThreads];
+
+    MPI_Gather(&nMeshModificationCounter,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      //check whether all elements in the buffer are already syncronized
+
+      for (int thread=1;thread<nTotalThreads;thread++) if (buffer[thread]!=buffer[0]) {
+        //mesh ID need to be syncronized
+        for (int i=1;i<nTotalThreads;i++) nMeshModificationCounter+=buffer[i];
+        break;
+      }
+    }
+
+    MPI_Bcast(&nMeshModificationCounter,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    return nMeshModificationCounter;
+  }
+
+  long int GetMeshID() {
+    return nMeshModificationCounter;
   }
 
 };
