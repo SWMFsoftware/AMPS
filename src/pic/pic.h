@@ -5344,6 +5344,35 @@ namespace PIC {
 
   }
 
+  //Random number generator
+  namespace Rnd {
+    namespace CenterNode {
+      extern int Offset;
+
+      int RequestDataBuffer(int);
+      void Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      void Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
+      void Init();
+
+      unsigned long int *GetSeed(char* CenterNodeAssociatedDataBufferPointer);
+      unsigned long int *GetSeed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+
+      inline double Get(char* CenterNodeAssociatedDataBufferPointer) {
+        unsigned long int* seed=GetSeed(CenterNodeAssociatedDataBufferPointer);
+
+        return rnd(seed);
+      }
+
+      inline double Get(unsigned long *seed) {
+        return rnd(seed);
+      }
+    }
+
+    namespace CornerNode {
+    }
+  }
+
+
   //prepopulate the domain
   namespace InitialCondition {
     //constant number density
