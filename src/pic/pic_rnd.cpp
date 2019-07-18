@@ -33,13 +33,11 @@ void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataB
   int iThreadOpneMP,nTotalThreadsOpenMP;
   char* CenterNodeAssociatedDataBufferPointer;
   PIC::Mesh::cDataCenterNode *cell;
-  int LocalCellNumber,Length;
+  int LocalCellNumber;
   PIC::Mesh::cDataBlockAMR *block;
   unsigned long int Seed=0;
 
   LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-  Length=min(sizeof(unsigned long int),(unsigned long)(node->AMRnodeID.Length()));
-
   block=node->block;
 
   if (block!=NULL) {
@@ -51,10 +49,28 @@ void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataB
 
       if (CenterNodeAssociatedDataBufferPointer!=NULL) {
         //copy the seed
-        memcpy(&Seed,node->AMRnodeID.id,Length);
+        int LengthBlockId=node->AMRnodeID.Length(),iByteSeed=0,iByteBlockId=0,iByteSeedZero=-1;
+        unsigned char *SeedPtr,*BlockIdPtr;
+
+        SeedPtr=(unsigned char*)(&Seed);
+        BlockIdPtr=(unsigned char*)(node->AMRnodeID.id);
+
+        for (iByteBlockId=0,iByteSeed=0;iByteBlockId<LengthBlockId;iByteBlockId++,iByteSeed++) {
+          if (iByteSeed>=sizeof(unsigned long)) iByteSeed=0;
+
+          SeedPtr[iByteSeed]^=BlockIdPtr[iByteBlockId];
+          if (SeedPtr[iByteSeed]==0) iByteSeedZero=iByteSeed;
+        }
 
         //Increment seed
-        Seed+=LocalCellNumber;
+        if (iByteSeedZero==-1) iByteSeedZero=0;
+
+        for (int i=0;(i<sizeof(int))&&(iByteSeedZero<sizeof(unsigned long));iByteSeedZero++,i++) {
+          unsigned char t;
+
+          t=((unsigned char*)&LocalCellNumber)[i];
+          SeedPtr[iByteSeedZero]&=t;
+        }
 
         #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
         nTotalThreadsOpenMP=1;
