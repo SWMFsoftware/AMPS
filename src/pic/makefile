@@ -60,7 +60,8 @@ PICOBJ = pic.o \
 	pic_bc_periodic.o \
 	pic_field_solver_ecsim.o \
 	pic_block_send_mask.o \
-	pic_move_blocks.o
+	pic_move_blocks.o \
+	pic_rnd.o 
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \
