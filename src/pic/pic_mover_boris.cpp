@@ -1055,7 +1055,8 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
-  if ((block=newNode->block)==NULL && newNode->Thread!=-1) {
+  //if ((block=newNode->block)==NULL && newNode->Thread!=-1) {
+  if ((block=newNode->block)==NULL && newNode->IsUsedInCalculationFlag!=false) {
     if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
       double Rate;
 

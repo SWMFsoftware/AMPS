@@ -79,12 +79,13 @@ void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
   index[2] = round((x[2]-xmin[2])/dx[2]);
 
 }
-/*
-bool PIC::CPLR::FLUID::IsOutside(double * x){
+
+
+bool IsOutside(double * x){
 
   double xx=x[0];  
   double yy=x[1];
-
+  /*
   double dx = fabs(-yy*(yy-16.0)/8.0+16.0-xx);
   double dy;
   if (xx<=24) dy = min(fabs(sqrt(-8*xx+192)+8-yy),fabs(-sqrt(-8*xx+192)+8-yy));
@@ -99,11 +100,237 @@ bool PIC::CPLR::FLUID::IsOutside(double * x){
 
   if (dis>2.0) return true;
   // if (xx>3 && zz>8) return true;
-  
+  */
+
+  //if (xx>16) return true;
+
   return false;
 
 }
-*/
+
+
+
+void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  
+  long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+  if (FirstCellParticleTable==NULL) return;
+  for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+    for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+      for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+        long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+        while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
+        
+      }   
+    }
+  }
+  
+
+
+}
+
+
+void deallocateBlocks(){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  int iBlock=0;
+  std::vector<int> deallocatedBlockIndexArr; 
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    
+    double xmiddle[3];
+    //   bool isOutside=false;
+    //init flag
+    //node->IsUsedInCalculationFlag=true;
+    for (int idim=0;idim<3;idim++){
+      xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+    }
+    
+    if (xmiddle[0]<=PIC::CPLR::FLUID::iCycle*2 && node->block!=NULL && node->Thread==PIC::ThisThread)  {
+      deallocatedBlockIndexArr.push_back(iBlock);
+    }
+    iBlock++;
+  }
+
+  int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
+  
+  printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
+  iBlock=0;
+  int iDeallocatedBlock=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    if (iDeallocatedBlock==nDeallocatedBlocks) break;
+    if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
+      nodeTable[iDeallocatedBlock] = node;
+      printf("deallocating node->Thread:%d, node->min:%e,%e,%e, node->block:%p,isUsed:%s\n",
+             node->Thread,
+             node->xmin[0],node->xmin[1],node->xmin[2],node->block,
+             node->IsUsedInCalculationFlag?"T":"F");
+      iDeallocatedBlock++;
+    }
+    iBlock++;
+  }
+  
+  
+  if (nDeallocatedBlocks!=0) {
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,deleteBlockParticle,false,NULL);
+  }else{
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
+  }
+
+  delete [] nodeTable;
+  
+}
+
+void  dynamicAllocateBlocks(){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  int iBlock=0, nTotalBlock=0;
+  std::vector<int> allocatedBlockIndexArr; 
+  printf("dynamic allocate blocks called\n");
+  deallocateBlocks();
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    
+    double xmiddle[3];
+    //   bool isOutside=false;
+    for (int idim=0;idim<3;idim++){
+      xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+    }
+
+    if (xmiddle[0]<=16+PIC::CPLR::FLUID::iCycle*2 && xmiddle[0]>PIC::CPLR::FLUID::iCycle*2+0.5  && node->block==NULL && node->Thread==PIC::ThisThread)  {
+      allocatedBlockIndexArr.push_back(iBlock);
+      printf("allocateBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p,iBlock:%d\n",
+             PIC::ThisThread, node->Thread, node->xmin[0],node->xmin[1],node->xmin[2],node->block,iBlock);
+
+    }
+    iBlock++;
+  }
+
+  int nAllocatedBlocks = allocatedBlockIndexArr.size();
+  
+  //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nAllocatedBlocks];
+  iBlock=0;
+  int iAllocatedBlock=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    if (iAllocatedBlock==nAllocatedBlocks) break;
+    if (iBlock==allocatedBlockIndexArr[iAllocatedBlock]) {
+      nodeTable[iAllocatedBlock] = node;
+      iAllocatedBlock++;
+    }
+    iBlock++;
+  }
+
+  //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
+
+  printf("test1 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+
+  //list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;
+  if (nAllocatedBlocks!=0) {
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nAllocatedBlocks,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
+    delete [] nodeTable;
+    nodeTable = NULL;
+  }else{
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
+  }
+ 
+
+  printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+
+  
+  
+  /*
+  for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=newNodeList.begin(); it!=newNodeList.end();it++){
+    PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
+  }
+  */
+
+}
+
+void initNewBlocks() {
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
+    PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
+    
+    printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
+           PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
+   
+    int iBlock=-1;
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      if (!node->block || node->Thread!=PIC::ThisThread) continue;
+  
+      iBlock++;
+      if (*it!=node) continue;
+      
+      double dx[3];
+      double *xminBlock= node->xmin, *xmaxBlock= node->xmax;
+      
+      for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
+      //printf("dx:%e,%e,%e\n",dx[0],dx[1],dx[2]);
+      
+      for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+            
+            int ind[3]={i,j,k};
+            double x[3];
+
+	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+	    if (CornerNode!=NULL){
+              
+	      char * offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+              
+              
+	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
+	  
+              double Ex,Ey,Ez,Bx,By,Bz;
+              
+              Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
+              Ey = PIC::CPLR::FLUID::FluidInterface.getEy(iBlock,x[0],x[1],x[2]);
+              Ez = PIC::CPLR::FLUID::FluidInterface.getEz(iBlock,x[0],x[1],x[2]);
+          
+
+              Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
+              By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
+              Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
+          
+
+              //printf("new block E:%e,%e,%e  B:%e,%e,%e\n",Ex,Ey,Ez,Bx,By,Bz);
+
+              ((double*)(offset+CurrentEOffset))[ExOffsetIndex]=Ex;
+              ((double*)(offset+CurrentEOffset))[EyOffsetIndex]=Ey;
+              ((double*)(offset+CurrentEOffset))[EzOffsetIndex]=Ez;
+	  
+              ((double*)(offset+OffsetE_HalfTimeStep))[ExOffsetIndex]=Ex;
+              ((double*)(offset+OffsetE_HalfTimeStep))[EyOffsetIndex]=Ey;
+              ((double*)(offset+OffsetE_HalfTimeStep))[EzOffsetIndex]=Ez;
+              
+              
+              ((double*)(offset+OffsetB_corner+CurrentBOffset))[BxOffsetIndex]=Bx;
+              ((double*)(offset+OffsetB_corner+CurrentBOffset))[ByOffsetIndex]=By;
+              ((double*)(offset+OffsetB_corner+CurrentBOffset))[BzOffsetIndex]=Bz;
+                        
+              ((double*)(offset+OffsetB_corner+PrevBOffset))[BxOffsetIndex]=Bx;
+              ((double*)(offset+OffsetB_corner+PrevBOffset))[ByOffsetIndex]=By;
+              ((double*)(offset+OffsetB_corner+PrevBOffset))[BzOffsetIndex]=Bz;
+              
+	    }//
+            else{
+              printf("corner node is null!\n");
+            }
+	  }//for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) 
+    }
+  }
+  
+  PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
+
+  PIC::BC::ExternalBoundary::UpdateData();
+  InterpolateB_N2C(); 
+  //  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  
+}
+
+
+
+
 bool isBoundaryCell(double *x, double *dx, double * xmin, double * xmax, int minIndex, int maxIndex){
 
   if ( maxIndex < minIndex)
@@ -387,6 +614,9 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
     mhd_D[2] = Xyz_I[iPoint * nDim + 2] * col->getSi2NoL();
     col->mhd_to_Pic_Vec(mhd_D, pic_D);
 
+    bool isTest=false;
+    if (fabs(xp-24)<0.5 && fabs(yp-8)<0.5 && fabs(zp-4)<0.5) isTest=true;
+
     iCountOutput++; 
     
     for (int ii=0;ii<nVarPIC;ii++) dataPIC_I[ii]=0;
@@ -419,7 +649,12 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
           double tempWeight= CornerStencil.Weight[iStencil];
           dataPIC_I[iRho+iStart] +=
             tempWeight*GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies);
-   
+          
+          if (isTest && (iPoint==1538||iPoint==1539) && iSpecies==0){
+            double xTemp[3];
+            CornerStencil.cell[iStencil]->GetX(xTemp);
+            printf("test iPoint:%d, iStencil:%d,tempWeight:%e, rho:%e, stencilXtemp:%e,%e,%e\n", iPoint, iStencil,tempWeight, GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies),xTemp[0],xTemp[1],xTemp[2]);
+          }
           /*
           if (iCountOutput<5)
           printf("test111 xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e, rho1:%e \n",xp,yp,zp,
@@ -459,9 +694,10 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
 
       } // iSpecies
       
-    
-      //printf("xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e\n",xp,yp,zp,
-      //       mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho+iStart]);
+      
+      if (isTest)
+        printf("iPoint:%d, xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e\n",iPoint, xp,yp,zp,
+               mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho]);
 
       for (int iStencil=0;iStencil<CornerStencil.Length;iStencil++) {
         double * tempB = 
@@ -604,6 +840,9 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
             rndLoc[idim]=rndNum();
             xPar[idim] = (index_sub[idim] + rndLoc[idim]) * (dx[idim]/nSubCells[idim])
               + xCorner[idim];
+            //xPar[idim] = (index_sub[idim] + 0.5) * (dx[idim]/nSubCells[idim])
+            //  + xCorner[idim];
+         
           }
 
           double NumberDensity=fabs(PIC::CPLR::FLUID::FluidInterface.getPICRhoNum(iBlock,xPar[0],xPar[1],xPar[2],iSp));
@@ -646,10 +885,12 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
                                                                       xPar[0],xPar[1],xPar[2],iSp);
     
 
+            
+            for (int idim=0;idim<3;idim++)
+              ParVel_D[idim] = BulkVel[idim]+uth[idim];
+          
+                               
 
-
-          for (int idim=0;idim<3;idim++)
-            ParVel_D[idim] = BulkVel[idim]+uth[idim];
           /*
           static int icnt=0;
           if (icnt==0 && iSp==0) {
@@ -761,8 +1002,8 @@ long int setFixedParticle_BC(){
       if (!node->block) continue;
       iBlk++;
       //if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
-      if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
-
+      //if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
+      if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->IsUsedInCalculationFlag!=false) continue;
       //printf("iFace:%d, iBlk:%d, node:%p,nodeXmin:%e,%e,%e\n",iFace,iBlk,node,
       //       node->xmin[0],node->xmin[1],node->xmin[2]);
       
@@ -1429,6 +1670,71 @@ void SetIC() {
 }
 
 
+
+long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  
+  long int nd,nLocalInjectedParticles=0;
+ 
+  int nBlock[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+
+
+  int iBlock=0;
+  
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+
+    if (!node->block) continue;
+
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+	  BoundaryBlock=true;
+	  break;
+	}
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+ 
+    if (node==nodeIn) {
+
+      double * xminBlock=node->xmin,* xmaxBlock=node->xmax;
+      double dx[3];
+      double CellVolume=1;
+      for (int idim=0;idim<3;idim++) {
+	dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nBlock[idim];
+	CellVolume *= dx[idim];
+      }
+      printf("setBlockParticle: xmin:%e,%e,%e, xmax:%e,%e,%e\n",
+             xminBlock[0], xminBlock[1],xminBlock[2],
+             xmaxBlock[0], xmaxBlock[1],xmaxBlock[2]);
+      
+      double ParticleWeight[PIC::nTotalSpecies];
+      for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+	ParticleWeight[iSp]=node->block->GetLocalParticleWeight(iSp);
+      PIC::Mesh::cDataBlockAMR *block = node->block;
+      
+      for (int iCell=0;iCell<nBlock[0];iCell++) 
+	for (int jCell=0;jCell<nBlock[1];jCell++) 
+	  for (int kCell=0;kCell<nBlock[2];kCell++){
+	    
+	    SetParticleForCell(node,iBlock,iCell,jCell,kCell,dx,xminBlock,ParticleWeight,CellVolume,nLocalInjectedParticles);
+	  }
+      
+    } // if (node==nodeIn)
+    iBlock++;
+  }
+  
+  
+  return nLocalInjectedParticles;
+}
+
+
+
+
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
 
   return PIC::CPLR::FLUID::dt;
@@ -1561,8 +1867,8 @@ void amps_init_mesh() {
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
     }
 
-    if (PIC::CPLR::FLUID::IsOutside(xmiddle))  {
-      printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
+    if (IsOutside(xmiddle))  {
+      //printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
       PIC::Mesh::mesh.DeallocateBlock(node);
       node->Thread = -1;
       node->block = NULL;
@@ -1570,6 +1876,67 @@ void amps_init_mesh() {
   }
   */
   
+  /*
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
+    double xmiddle[3];
+    //   bool isOutside=false;
+    for (int idim=0;idim<3;idim++){
+      xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+    }
+
+    if (IsOutside(xmiddle))  {
+      //printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
+      PIC::Mesh::mesh.DeallocateBlock(node);
+      node->IsUsedInCalculationFlag=false;
+      node->block = NULL;
+    }
+  }
+
+  */
+
+  
+  int iBlock=0, nTotalBlock=0;
+  std::vector<int> deallocatedBlockIndexArr; 
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    
+    double xmiddle[3];
+    //   bool isOutside=false;
+    //init flag
+    node->IsUsedInCalculationFlag=true;
+    for (int idim=0;idim<3;idim++){
+      xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+    }
+    
+    if (IsOutside(xmiddle))  {
+      deallocatedBlockIndexArr.push_back(iBlock);
+    }
+    iBlock++;
+  }
+
+  int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
+  
+  printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
+  iBlock=0;
+  int iDeallocatedBlock=0;
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    if (iDeallocatedBlock==nDeallocatedBlocks) break;
+    if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
+      nodeTable[iDeallocatedBlock] = node;
+      iDeallocatedBlock++;
+    }
+    iBlock++;
+  }
+  
+  
+  if (nDeallocatedBlocks!=0) {
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,NULL,false,NULL);
+  }else{
+    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
+  }
+  
+  delete [] nodeTable;
   //coupling send info from amps to fluid
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
@@ -1621,6 +1988,11 @@ void amps_init(){
     setFixedB_center_BC;
   PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC=
     setFixedB_corner_BC;
+  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle=
+    setBlockParticleMhd;
+  
+  PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks = NULL;
+  PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks = NULL;
 
   //solve the transport equation
   //set the initial conditions for the transport equation

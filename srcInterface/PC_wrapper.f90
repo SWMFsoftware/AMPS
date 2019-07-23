@@ -147,23 +147,28 @@ contains
   !============================================================================
 
   subroutine PC_get_grid_info(nDimOut, iGridOut, iDecompOut)
-
+    
     ! Provide information about AMPS grid
-
+    
     implicit none
-
+    
     integer, intent(out):: nDimOut    ! grid dimensionality
     integer, intent(out):: iGridOut   ! grid index (increases with AMR)
     integer, intent(out):: iDecompOut ! decomposition index
-
+    
     character(len=*), parameter :: NameSub = 'PC_get_grid_info'
     !--------------------------------------------------------------------------
     nDimOut    = 3
-    iGridOut   = 1
-    iDecompOut = 1
-
+    !  iGridOut   = iGridOut + 1
+    !  iDecompOut = iDecompOut + 1
+    
+    !write(*,*)namesub,' is called'
+    call amps_dynamic_allocate_blocks()
     call amps_mesh_id(iDecompOut)
-
+    !call amps_mesh_id(iGridOut)
+    !write(*,*) 'iDecompOut', iDecompOut
+    !write(*,*) 'iGridOut',iGridOut
+    
   end subroutine PC_get_grid_info
 
   !==============================================================================
@@ -216,21 +221,25 @@ contains
 
     character(len=*), parameter :: NameSub='PC_put_from_gm'
     !--------------------------------------------------------------------------
-    if(present(Pos_DI))then
+   
+    if(.not. present(Data_VI))then
+       ! call amps_dynamic_allocate_blocks()
        ! set number of grid points on this processor
        call amps_get_corner_point_number(nPoint)
 
        ! allocate position array
+       if(allocated(Pos_DI)) deallocate(Pos_DI)
        allocate(Pos_DI(3,nPoint))
 
        ! get point positions from AMPS
        call amps_get_corner_point_coordinates(Pos_DI) 
 
-    elseif(present(Data_VI))then
+    else       
        call amps_recieve_batsrus2amps_corner_point_data(&
             NameVar//char(0), nVar, Data_VI, iPoint_I)
-    else
-       call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
+       !    else
+       !    call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
+       call amps_dynamic_init_blocks()   
     end if
 
   end subroutine PC_put_from_gm
@@ -268,7 +277,7 @@ contains
     !do iPoint = 1, nPoint
     !  Xyz_D(:,iPoint) = Xyz_DI(:,iPoint)*Si2No_V(UnitX_)
     !end do
-
+    !write (*,*)  NameSub,'is called'
     call amps_send_batsrus2amps_center_point_data(NameVar,nVarIn,nDimIn,nPoint,Xyz_DI,Data_VI)
 
 

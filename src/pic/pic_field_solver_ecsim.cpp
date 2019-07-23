@@ -16,7 +16,10 @@
 //using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
-
+list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
+PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
+PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedDynamicAllocateBlocks PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks;
+PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedInitNewBlocks PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedParticleBC  PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::Electromagnetic::ECSIM::setE_half_BC, 
   PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
@@ -408,7 +411,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC() {
     dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
   PIC::FieldSolver::Electromagnetic::ECSIM::cDt=LightSpeed*dtTotal;
   
-  PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
+  //PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
   SetIC();
 }
 
@@ -800,7 +803,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     if (MatrixRowNonZeroElementTable[ii].Node==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (MatrixRowNonZeroElementTable[ii].Node->Thread==-1){
+    }else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false){
       pointLeft.pop_back();
       continue;
     }
@@ -808,7 +811,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     if (nodeTemp==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (nodeTemp->Thread==-1){
+    }else if (nodeTemp->IsUsedInCalculationFlag==false){
       pointLeft.pop_back();
       continue;
     }
@@ -1704,6 +1707,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 #endif
 
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
+  printf("updateJmass matrix and updateData is called\n");
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrixSpeciesData,UnpackBlockData_JMassMatrixSpeciesData);
 #elif  _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_OFF_
@@ -2755,13 +2759,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
   }
 }
 
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   
   //perform the rest of the field solver calculstions
   double t0,t1,StartTime=MPI_Wtime();
   static int cnt=0;
-
+  static int nMeshCounter=-1;
+  
   if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_){
     if (PIC::CPLR::FLUID::iCycle==0){  
       UpdateJMassMatrix();
@@ -2773,6 +2779,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       
       {// Output
       double timeNow = 0.0;  
+      if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
       PIC::CPLR::FLUID::write_output(timeNow);
       }    
     }
@@ -2791,7 +2798,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
 
   //  PIC::BC::ExternalBoundary::UpdateData();
-
+  if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+    PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
+    UpdateJMassMatrix();   
+    nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
+  }
+  
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
@@ -2947,7 +2959,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case   1:
     if (!node->GetNeibFace(0,0,0)){
       return 1;
-    }else if (node->GetNeibFace(0,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(0,0,0)->IsUsedInCalculationFlag==false){
       return 1;
     }
     else return 0;
@@ -2955,7 +2967,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case   1000:
     if (!node->GetNeibFace(1,0,0)){
       return 1;
-    }else if (node->GetNeibFace(1,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(1,0,0)->IsUsedInCalculationFlag==false){
       return 1;
     }
     else return 0;
@@ -2963,7 +2975,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case   10:
     if (!node->GetNeibFace(2,0,0)){
       return 2;
-    }else if (node->GetNeibFace(2,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(2,0,0)->IsUsedInCalculationFlag==false){
       return 2;
     }
     else return 0;
@@ -2971,7 +2983,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case 10000:
     if (!node->GetNeibFace(3,0,0)){
       return 2;
-    }else if (node->GetNeibFace(3,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(3,0,0)->IsUsedInCalculationFlag==false){
       return 2;
     }
     else return 0;
@@ -2979,7 +2991,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case  100:
     if (!node->GetNeibFace(4,0,0)){
       return 4;
-    }else if (node->GetNeibFace(4,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(4,0,0)->IsUsedInCalculationFlag==false){
       return 4;
     }
     else return 0;
@@ -2987,7 +2999,7 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   case  100000:
     if (!node->GetNeibFace(5,0,0)){
       return 4;
-    }else if (node->GetNeibFace(5,0,0)->Thread==-1){
+    }else if (node->GetNeibFace(5,0,0)->IsUsedInCalculationFlag==false){
       return 4;
     }
     else return 0;
@@ -3017,7 +3029,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b) { return a+b;
     }else {
       if (!node->GetNeibEdge(0,0)) return 6;
-      else if (node->GetNeibEdge(0,0)->Thread==-1) return 6;
+      else if (node->GetNeibEdge(0,0)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -3035,7 +3047,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b) { return a+b;
     }else {
       if (!node->GetNeibEdge(1,0)) return 6;
-      else if (node->GetNeibEdge(1,0)->Thread==-1) return 6;
+      else if (node->GetNeibEdge(1,0)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -3054,7 +3066,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b) { return a+b;
     } else {
       if (!node->GetNeibEdge(2,0)) return 6;
-      else if (node->GetNeibEdge(2,0)->Thread==-1) return 6;
+      else if (node->GetNeibEdge(2,0)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -3072,7 +3084,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b) { return a+b;
     }else{
       if (!node->GetNeibEdge(3,0)) return 6;
-      else if (node->GetNeibEdge(3,0)->Thread==-1) return 6;
+      else if (node->GetNeibEdge(3,0)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -3090,7 +3102,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b) { return a+b;
     }else{
       if (!node->GetNeibEdge(4,0)) return 5;
-      else if (node->GetNeibEdge(4,0)->Thread==-1) return 5;
+      else if (node->GetNeibEdge(4,0)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -3109,7 +3121,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(5,0)) return 5;
-      else if (node->GetNeibEdge(5,0)->Thread==-1) return 5;
+      else if (node->GetNeibEdge(5,0)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
   
@@ -3128,7 +3140,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(6,0)) return 5;
-      else if (node->GetNeibEdge(6,0)->Thread==-1) return 5;
+      else if (node->GetNeibEdge(6,0)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -3147,7 +3159,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(7,0)) return 5;
-      else if (node->GetNeibEdge(7,0)->Thread==-1) return 5;
+      else if (node->GetNeibEdge(7,0)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -3166,7 +3178,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(8,0)) return 3;
-      else if (node->GetNeibEdge(8,0)->Thread==-1) return 3;
+      else if (node->GetNeibEdge(8,0)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
    
@@ -3185,7 +3197,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(9,0)) return 3;
-      else if (node->GetNeibEdge(9,0)->Thread==-1) return 3;
+      else if (node->GetNeibEdge(9,0)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     
@@ -3204,7 +3216,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{
       if (!node->GetNeibEdge(10,0)) return 3;
-      else if (node->GetNeibEdge(10,0)->Thread==-1) return 3;
+      else if (node->GetNeibEdge(10,0)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
         
@@ -3223,7 +3235,7 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (a+b){ return a+b;
     }else{    
       if (!node->GetNeibEdge(11,0)) return 3;
-      else if (node->GetNeibEdge(11,0)->Thread==-1) return 3;
+      else if (node->GetNeibEdge(11,0)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     
@@ -3285,7 +3297,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(0)) {
         return 7;
-      }else if (node->GetNeibCorner(0)->Thread==-1){
+      }else if (node->GetNeibCorner(0)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3302,7 +3314,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(1)) {
         return 7;
-      }else if (node->GetNeibCorner(1)->Thread==-1){
+      }else if (node->GetNeibCorner(1)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3319,7 +3331,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(2)) {
         return 7;
-      }else if (node->GetNeibCorner(2)->Thread==-1){
+      }else if (node->GetNeibCorner(2)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3336,7 +3348,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(3)) {
         return 7;
-      }else if (node->GetNeibCorner(3)->Thread==-1){
+      }else if (node->GetNeibCorner(3)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3353,7 +3365,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(4)) {
         return 7;
-      }else if (node->GetNeibCorner(4)->Thread==-1){
+      }else if (node->GetNeibCorner(4)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3370,7 +3382,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(5)) {
         return 7;
-      }else if (node->GetNeibCorner(5)->Thread==-1){
+      }else if (node->GetNeibCorner(5)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3387,7 +3399,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(6)) {
         return 7;
-      }else if (node->GetNeibCorner(6)->Thread==-1){
+      }else if (node->GetNeibCorner(6)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3404,7 +3416,7 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }else{
       if (!node->GetNeibCorner(7)) {
         return 7;
-      }else if (node->GetNeibCorner(7)->Thread==-1){
+      }else if (node->GetNeibCorner(7)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -3439,7 +3451,7 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
   }
 
   
-  if (node==NULL || node->Thread==-1) return 8;
+  if (node==NULL || node->IsUsedInCalculationFlag==false) return 8;
 
 
   int addition =1, sum=0;//sum used to indicate the location of the corner
@@ -3474,16 +3486,16 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   }
 
   
-  if (node==NULL || node->Thread==-1) return true;
+  if (node==NULL || node->IsUsedInCalculationFlag==false) return true;
 
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->Thread==-1) {
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->IsUsedInCalculationFlag==false) {
 
       if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
         return true;
       }
     }
   
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
       if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
         return true;
     }
@@ -3506,7 +3518,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 111:
     if (!node->GetNeibCorner(0)) {
       return true;
-    }else if (node->GetNeibCorner(0)->Thread==-1){
+    }else if (node->GetNeibCorner(0)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3514,7 +3526,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 1110:
     if (!node->GetNeibCorner(1)) {
       return true;
-    }else if (node->GetNeibCorner(1)->Thread==-1){
+    }else if (node->GetNeibCorner(1)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3522,7 +3534,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 10101:
     if (!node->GetNeibCorner(2)) {
       return true;
-    }else if (node->GetNeibCorner(2)->Thread==-1){
+    }else if (node->GetNeibCorner(2)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3530,7 +3542,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 11100:
     if (!node->GetNeibCorner(3)) {
       return true;
-    }else if (node->GetNeibCorner(3)->Thread==-1){
+    }else if (node->GetNeibCorner(3)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3538,7 +3550,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 100011:
     if (!node->GetNeibCorner(4)) {
       return true;
-    }else if (node->GetNeibCorner(4)->Thread==-1){
+    }else if (node->GetNeibCorner(4)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3546,7 +3558,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 101010:
     if (!node->GetNeibCorner(5)) {
       return true;
-    }else if (node->GetNeibCorner(5)->Thread==-1){
+    }else if (node->GetNeibCorner(5)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3555,7 +3567,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 110001:
     if (!node->GetNeibCorner(6)) {
       return true;
-    }else if (node->GetNeibCorner(6)->Thread==-1){
+    }else if (node->GetNeibCorner(6)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
@@ -3564,69 +3576,69 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   case 111000:
     if (!node->GetNeibCorner(7)) {
       return true;
-    }else if (node->GetNeibCorner(7)->Thread==-1){
+    }else if (node->GetNeibCorner(7)->IsUsedInCalculationFlag==false){
       return true;
     }
     else return false;
    
   case 110:
     if (!node->GetNeibEdge(0,0)) return true;
-    else if (node->GetNeibEdge(0,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(0,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 10100:
     if (!node->GetNeibEdge(1,0)) return true;
-    else if (node->GetNeibEdge(1,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(1,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 110000:
     if (!node->GetNeibEdge(2,0)) return true;
-    else if (node->GetNeibEdge(2,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(2,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 100010:
     if (!node->GetNeibEdge(3,0)) return true;
-    else if (node->GetNeibEdge(3,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(3,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 101:
     if (!node->GetNeibEdge(4,0)) return true;
-    else if (node->GetNeibEdge(4,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(4,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 1100:
     if (!node->GetNeibEdge(5,0)) return true;
-    else if (node->GetNeibEdge(5,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(5,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 101000:
     if (!node->GetNeibEdge(6,0)) return true;
-    else if (node->GetNeibEdge(6,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(6,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 100001:
     if (!node->GetNeibEdge(7,0)) return true;
-    else if (node->GetNeibEdge(7,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(7,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 11:
     if (!node->GetNeibEdge(8,0)) return true;
-    else if (node->GetNeibEdge(8,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(8,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 1010:
     if (!node->GetNeibEdge(9,0)) return true;
-    else if (node->GetNeibEdge(9,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(9,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 11000:
     if (!node->GetNeibEdge(10,0)) return true;
-    else if (node->GetNeibEdge(10,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(10,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
 
   case 10001:
     if (!node->GetNeibEdge(11,0)) return true;
-    else if (node->GetNeibEdge(11,0)->Thread==-1) return true;
+    else if (node->GetNeibEdge(11,0)->IsUsedInCalculationFlag==false) return true;
     else return false;
     
   default:
@@ -3641,7 +3653,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->Thread==-1) {
+  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
       if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
         return true;
     }  

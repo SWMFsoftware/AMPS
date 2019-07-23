@@ -1657,7 +1657,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
       for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
         
-      if (node->Thread==PIC::ThisThread) { 
+      if (node->Thread==PIC::ThisThread && node->block) { 
         for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
 
                 double x[3];
@@ -1721,7 +1721,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
       int flag;
       
-      if (node->Thread==PIC::ThisThread) { 
+      if (node->Thread==PIC::ThisThread && node->block) { 
         double dx[3];
         int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
         double eps = 0.3*PIC::Mesh::mesh.EPS;
@@ -2390,7 +2390,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
       for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
         
-      if (node->Thread==PIC::ThisThread) { 
+      if (node->Thread==PIC::ThisThread && node->block) { 
         for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
 
                 double x[3];
@@ -2454,7 +2454,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
       int flag;
       
-      if (node->Thread==PIC::ThisThread) { 
+      if (node->Thread==PIC::ThisThread && node->block) { 
         double dx[3];
         int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
         double eps = 0.3*PIC::Mesh::mesh.EPS;

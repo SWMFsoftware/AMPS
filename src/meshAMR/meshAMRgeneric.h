@@ -12124,15 +12124,40 @@ if (TmpAllocationCounter==2437) {
       }
     }
   }
+  
+    
+  long int SyncMeshID() {
+    long int buffer[nTotalThreads];
 
+    MPI_Gather(&nMeshModificationCounter,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    
+    if (ThisThread==0) {
+      //check whether all elements in the buffer are already syncronized
+      
+      for (int thread=1;thread<nTotalThreads;thread++) if (buffer[thread]!=buffer[0]) {
+          //mesh ID need to be syncronized
+          for (int i=1;i<nTotalThreads;i++) nMeshModificationCounter+=buffer[i];
+          break;
+        }
+    }
+    
+    MPI_Bcast(&nMeshModificationCounter,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    return nMeshModificationCounter;
+  }
+  
+  long int GetMeshID() {
+    return nMeshModificationCounter;
+  }
+  
   //Set/Remove TreeNodeActiveUseFlag
-  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> &NewlyAllocatedNodeList) {
+  void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> * NewlyAllocatedNodeList) {
     cTreeNodeAMR<cBlockAMR> *node;
     cAMRnodeID *NodeIdTableGlobal=NULL;
     int iNode,NodeTableLengthGlobal;
-
+    int nOperations=0;
     //increment the mesh modification counter
-    nMeshModificationCounter++,meshModifiedFlag=true; 
+    //nMeshModificationCounter++,meshModifiedFlag=true; 
 
     //connect all tables at the root process
     if (NodeTable==NULL) NodeTableLength=0;
@@ -12214,10 +12239,11 @@ if (TmpAllocationCounter==2437) {
       for (iNode=0;iNode<NodeTableLengthGlobal;iNode++) {
         node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
         node->IsUsedInCalculationFlag=true;
-
+        nOperations++;          
+                
         if (node->Thread==ThisThread) {
           AllocateBlock(node);
-          NewlyAllocatedNodeList.push_back(node);
+          NewlyAllocatedNodeList->push_back(node);
 
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
         }
@@ -12229,7 +12255,8 @@ if (TmpAllocationCounter==2437) {
             if (NeibNode==node) {
               //the newly activated node is in the boundary layer -> allocate it
               AllocateBlock(node);
-              NewlyAllocatedNodeList.push_back(node);
+              nOperations++;
+              //NewlyAllocatedNodeList.push_back(node);
 
               if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
               break;
@@ -12245,7 +12272,7 @@ if (TmpAllocationCounter==2437) {
       for (iNode=0;iNode<NodeTableLengthGlobal;iNode++) {
         node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
         node->IsUsedInCalculationFlag=false;
-
+        nOperations++;
         if (node->block!=NULL) {
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
           DeallocateBlock(node);
@@ -12255,31 +12282,16 @@ if (TmpAllocationCounter==2437) {
 
     delete [] NodeTableLengthTable;
     delete [] NodeIdTableGlobal;
-  }
 
-  //reduce and nMeshModificationCounter so it is the same oved all MPI processes
-  long int SyncMeshID() {
-    long int buffer[nTotalThreads];
-
-    MPI_Gather(&nMeshModificationCounter,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-
-    if (ThisThread==0) {
-      //check whether all elements in the buffer are already syncronized
-
-      for (int thread=1;thread<nTotalThreads;thread++) if (buffer[thread]!=buffer[0]) {
-        //mesh ID need to be syncronized
-        for (int i=1;i<nTotalThreads;i++) nMeshModificationCounter+=buffer[i];
-        break;
-      }
+    int nOperationsGlobal;
+    
+    MPI_Allreduce(&nOperations,&nOperationsGlobal,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    
+    if (nOperationsGlobal!=0) {
+      nMeshModificationCounter++,meshModifiedFlag=true;
     }
-
-    MPI_Bcast(&nMeshModificationCounter,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-
-    return nMeshModificationCounter;
-  }
-
-  long int GetMeshID() {
-    return nMeshModificationCounter;
+    
+    
   }
 
 };

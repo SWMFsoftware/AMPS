@@ -6008,6 +6008,8 @@ namespace FieldSolver {
           
             typedef void (*fUserDefinedFieldBC)();
             typedef long int (*fUserDefinedParticleBC)();
+            typedef long int (*fUserDefinedSetBlockParticle)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *node);
+            extern fUserDefinedSetBlockParticle setBlockParticle;
             extern fUserDefinedParticleBC setParticle_BC;
             extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
             extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
@@ -6016,7 +6018,7 @@ namespace FieldSolver {
             extern int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> Solver;
             extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> PoissonSolver;
-
+            extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
             //	extern cLinearSystemCornerNode Solver;
             extern bool DoDivECorrection;
             extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
@@ -6068,7 +6070,12 @@ namespace FieldSolver {
             //init the solver
             void Init();
             void Init_IC();
-          
+
+            typedef void (*fUserDefinedDynamicAllocateBlocks)();
+            typedef void (*fUserDefinedInitNewBlocks)();
+            extern fUserDefinedDynamicAllocateBlocks dynamicAllocateBlocks;
+            extern fUserDefinedInitNewBlocks initNewBlocks;
+
             void UpdateJMassMatrix();
             void InterpolateB_C2N();
             void InterpolateB_N2C();

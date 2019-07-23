@@ -40,6 +40,8 @@ void amps_time_step();
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
+  void amps_dynamic_allocate_blocks();
+  void amps_dynamic_init_blocks();
 #endif
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit);
   int initamps_();
@@ -53,7 +55,10 @@ extern "C" {
 
   //return the number of the AMPS' mesh rebalancing operations
   void amps_mesh_id_(int* id) {
-    *id=PIC::Mesh::mesh.nParallelListRedistributions;
+    //*id=PIC::Mesh::mesh.nParallelListRedistributions;
+    PIC::Mesh::mesh.SyncMeshID();
+    *id=PIC::Mesh::mesh.GetMeshID();
+    //*id=aa;
   }
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc) {
@@ -276,6 +281,8 @@ extern "C" {
     PIC::CPLR::FLUID::FluidInterface.mhd_to_Pic_Vec(x, pic_D);
     node=PIC::Mesh::mesh.findTreeNode(pic_D,node);
     *thread=(node!=NULL) ? node->Thread : -2;
+    if (node->IsUsedInCalculationFlag==false) *thread=-1;
+   
     if (*thread==-2) printf("cannot find x:%e,%e,%e\n",x[0],x[1],x[2]);
 #endif
   }
@@ -308,6 +315,17 @@ extern "C" {
     //amps_init();
     delete ss;
   }    
+
+  void amps_dynamic_allocate_blocks_(){
+    if (PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks)
+      PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks();
+
+  }
+
+  void amps_dynamic_init_blocks_(){
+    if (PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks)
+    PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks();
+  }
   #endif
 
 }
