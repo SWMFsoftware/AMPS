@@ -4155,6 +4155,9 @@ namespace PIC {
       bool CompareParticleDebugData(const cDebugData& first, const cDebugData& second);
     }
 
+    void check_max_mem_usage(string tag);
+
+
   }
 
   namespace Alarm {
