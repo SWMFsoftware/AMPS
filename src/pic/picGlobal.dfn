@@ -373,4 +373,6 @@ at the end of each time step
 //defaulted field solver does not sample species data on corners
 #define _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_ _PIC_MODE_OFF_
 
+#define _PIC_DYNAMIC_ALLOCATING_BLOCKS_ _PIC_MODE_OFF_
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

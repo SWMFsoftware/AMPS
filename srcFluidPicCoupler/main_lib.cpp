@@ -102,7 +102,7 @@ bool IsOutside(double * x){
   // if (xx>3 && zz>8) return true;
   */
 
-  //if (xx>16) return true;
+  if (xx>16) return true;
 
   return false;
 
@@ -1895,48 +1895,50 @@ void amps_init_mesh() {
 
   */
 
-  
-  int iBlock=0, nTotalBlock=0;
-  std::vector<int> deallocatedBlockIndexArr; 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  if (_PIC_DYNAMIC_ALLOCATING_BLOCKS_== _PIC_MODE_ON_){
+    int iBlock=0, nTotalBlock=0;
+    std::vector<int> deallocatedBlockIndexArr; 
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      
+      double xmiddle[3];
+      //   bool isOutside=false;
+      //init flag
+      node->IsUsedInCalculationFlag=true;
+      for (int idim=0;idim<3;idim++){
+        xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+      }
     
-    double xmiddle[3];
-    //   bool isOutside=false;
-    //init flag
-    node->IsUsedInCalculationFlag=true;
-    for (int idim=0;idim<3;idim++){
-      xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
+      if (IsOutside(xmiddle))  {
+        deallocatedBlockIndexArr.push_back(iBlock);
+      }
+      iBlock++;
     }
-    
-    if (IsOutside(xmiddle))  {
-      deallocatedBlockIndexArr.push_back(iBlock);
-    }
-    iBlock++;
-  }
 
-  int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
+    int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
   
-  printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
-  iBlock=0;
-  int iDeallocatedBlock=0;
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    if (iDeallocatedBlock==nDeallocatedBlocks) break;
-    if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
-      nodeTable[iDeallocatedBlock] = node;
-      iDeallocatedBlock++;
+    //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
+    iBlock=0;
+    int iDeallocatedBlock=0;
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      if (iDeallocatedBlock==nDeallocatedBlocks) break;
+      if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
+        nodeTable[iDeallocatedBlock] = node;
+        iDeallocatedBlock++;
+      }
+      iBlock++;
     }
-    iBlock++;
+  
+  
+    if (nDeallocatedBlocks!=0) {
+      PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,NULL,false,NULL);
+    }else{
+      PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
+    }
+  
+    delete [] nodeTable;
+
   }
-  
-  
-  if (nDeallocatedBlocks!=0) {
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,NULL,false,NULL);
-  }else{
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
-  }
-  
-  delete [] nodeTable;
   //coupling send info from amps to fluid
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
@@ -1990,10 +1992,14 @@ void amps_init(){
     setFixedB_corner_BC;
   PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle=
     setBlockParticleMhd;
-  
-  PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks = NULL;
-  PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks = NULL;
 
+  if (_PIC_DYNAMIC_ALLOCATING_BLOCKS_== _PIC_MODE_ON_){
+    PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks = dynamicAllocateBlocks;
+    PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks = initNewBlocks;
+  }else{
+    PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks = NULL;
+    PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks = NULL;    
+  }
   //solve the transport equation
   //set the initial conditions for the transport equation
   //  TransportEquation::SetIC(3);
