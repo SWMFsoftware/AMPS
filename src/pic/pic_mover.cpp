@@ -180,6 +180,11 @@ void PIC::Mover::MoveParticles() {
       if (!block) continue;
       memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
+#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+    PIC::Mover::SetBlock_E(node);
+    PIC::Mover::SetBlock_B(node);
+#endif
+
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (j=0;j<_BLOCK_CELLS_Y_;j++) {
           for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -223,6 +228,13 @@ void PIC::Mover::MoveParticles() {
     nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
     if (!node->block) continue;
+
+#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+    PIC::Mover::SetBlock_E(node);
+    PIC::Mover::SetBlock_B(node);
+#endif
+
+
     ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
     k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
@@ -332,6 +344,12 @@ void PIC::Mover::MoveParticles() {
       block=node->block;
       if (!block) continue;
       memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+
+
+#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+    PIC::Mover::SetBlock_E(node);
+    PIC::Mover::SetBlock_B(node);
+#endif
 
       for (k=0;k<_BLOCK_CELLS_Z_;k++) {
          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
