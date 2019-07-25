@@ -63,7 +63,8 @@ void PIC::Parallel::ExchangeParticleData() {
 
   static MPI_Request *SendMessageSizeRequestTable=NULL,*RecvMessageSizeRequestTable=NULL;
   static int *SendMessageLengthTable=NULL,*RecvMessageLengthTable=NULL,*SendMessageLengthProcessTable=NULL,*RecvMessageLengthProcessTable=NULL;
-  int SendMessageSizeRequestTableLength=0,RecvMessageSizeRequestTableLength=0;
+  int RecvMessageSizeRequestTableLength=0;
+  static int SendMessageSizeRequestTableLength=0;
 
   static char **RecvParticleDataBuffer=NULL;
   static int *RecvParticleDataBufferLengthTable=NULL;
@@ -107,7 +108,11 @@ void PIC::Parallel::ExchangeParticleData() {
     MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
     SendParticleDataRequestTableLength=0;
   }
-
+  
+  if (SendMessageSizeRequestTableLength!=0){
+    MPI_Waitall(SendMessageSizeRequestTableLength,SendMessageSizeRequestTable,MPI_STATUSES_IGNORE);
+    SendMessageSizeRequestTableLength=0;    
+  }
   //set the default value inthe counters
   for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
 
