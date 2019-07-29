@@ -10909,7 +10909,7 @@ if (TmpAllocationCounter==2437) {
 
     //de-allocate the temporary data buffers
     for (thread=0;thread<nTotalThreads;thread++) {
-      if (MoveInDataSizeTable[thread]!=NULL) delete [] MoveOutDataSizeTable[thread];
+      if (MoveInDataSizeTable[thread]!=NULL) delete [] MoveInDataSizeTable[thread];
       if (MoveOutDataSizeTable[thread]!=NULL) delete [] MoveOutDataSizeTable[thread];
 
       if (MoveInNodeTable[thread]!=NULL) delete [] MoveInNodeTable[thread];
@@ -11613,7 +11613,8 @@ if (TmpAllocationCounter==2437) {
           SendInternalBlockRequestTableLength++;
         }
 
-        MPI_Waitall(RecvInternalBlockRequestTableLength,RecvInternalBlockRequestTable,MPI_STATUSES_IGNORE);
+        if (RecvInternalBlockRequestTableLength!=0) MPI_Waitall(RecvInternalBlockRequestTableLength,RecvInternalBlockRequestTable,MPI_STATUSES_IGNORE);
+        if (SendInternalBlockRequestTableLength!=0) MPI_Waitall(SendInternalBlockRequestTableLength,SendInternalBlockRequestTable,MPI_STATUSES_IGNORE);
       }
 
 
