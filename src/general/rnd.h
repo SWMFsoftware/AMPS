@@ -27,30 +27,41 @@ namespace RandomNumberGenerator {
 
 }
 
+
+struct cRndSeedContainer {
+  unsigned long int Seed;
+};
+
 void rnd_seed(int seed=-1);
 
-inline double rnd(unsigned long int *SeedIn) {
+inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
-  unsigned long int Seed=*SeedIn;
+  unsigned long int Seed=SeedIn->Seed;
 
   Seed*=48828125;
   Seed&=2147483647; // pow(2,31) - 1
   if (Seed==0) Seed=1;
   res=double(Seed/2147483648.0); //(pow(2,31) - 1) + 1
 
-  *SeedIn=Seed;
+  SeedIn->Seed=Seed;
 
   return res;
 }
 
 inline double rnd() {
   double res;
+  cRndSeedContainer SeedContainer;
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  res=rnd(&RandomNumberGenerator::rndLastSeed);
+  SeedContainer.Seed=RandomNumberGenerator::rndLastSeed;
+  res=rnd(&SeedContainer);
+  RandomNumberGenerator::rndLastSeed=SeedContainer.Seed;
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int thread=omp_get_thread_num();
-  res=rnd(RandomNumberGenerator::rndLastSeedArray+thread);
+
+  SeedContainer.Seed=RandomNumberGenerator::rndLastSeedArray[thread];
+  res=rnd(&SeedContainer);
+  RandomNumberGenerator::rndLastSeedArray[thread]=SeedContainer.Seed;
   #else
   #error Unknown option
   #endif //_COMPILATION_MODE_
