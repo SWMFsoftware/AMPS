@@ -1080,7 +1080,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
 }
 
 
-double read_mem_usage(){
+double PIC::Debugger::read_mem_usage() {
   // This function returns the resident set size (RSS) of                                                                                                                             
   // this processor in unit MB.                                                                                                                                                       
 
@@ -1117,8 +1117,7 @@ double read_mem_usage(){
 
 
 
-void PIC::Debugger::check_max_mem_usage(string tag){
-    
+void PIC::Debugger::check_max_mem_usage(string tag) {
     double memLocal = read_mem_usage();
     double memMax = memLocal;
     
@@ -1130,7 +1129,33 @@ void PIC::Debugger::check_max_mem_usage(string tag){
     
 }
 
+void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname) {
+  double LocalMemoryUsage,GlobalMemoryUsage;
+  double *MemoryUsageTable=NULL;
 
+  if (PIC::ThisThread==0) MemoryUsageTable=new double [PIC::nTotalThreads];
+
+  //collect momery usage information
+  LocalMemoryUsage=read_mem_usage();
+
+  //gather the memory usage table
+  MPI_Gather(&LocalMemoryUsage,1,MPI_DOUBLE,MemoryUsageTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+
+  //output the memory usage status
+  if (PIC::ThisThread==0) {
+    int thread;
+
+    printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
+
+    for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) {
+      GlobalMemoryUsage+=MemoryUsageTable[thread];
+      printf("$PREFIX: %i\t%e [MB]\n",thread,MemoryUsageTable[thread]);
+    }
+
+    printf("$PREFIX: Total=%e MB\n",GlobalMemoryUsage);
+    delete [] MemoryUsageTable;
+  }
+}
 
 
 

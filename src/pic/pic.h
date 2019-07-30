@@ -4158,9 +4158,10 @@ namespace PIC {
       bool CompareParticleDebugData(const cDebugData& first, const cDebugData& second);
     }
 
+    //check memory usage
     void check_max_mem_usage(string tag);
-
-
+    double read_mem_usage();
+    void GetMemoryUsageStatus(long int nline,const char *fname);
   }
 
   namespace Alarm {
