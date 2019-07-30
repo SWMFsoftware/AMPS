@@ -54,6 +54,9 @@ int PIC::TimeStep() {
    //Set the exit error code
    ExitErrorCode=_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_;
    
+   //init the random number generator is needed
+   if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh.rootTree);
+
    //update the local block list
    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UpdateBlockTable_;
    DomainBlockDecomposition::UpdateBlockTable();
@@ -1651,6 +1654,8 @@ void PIC::Init_BeforeParser() {
   PIC::Mesh::mesh.fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
 
 
+  //Init the random number generator
+  if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
 
 /*
   //init the particle buffer
