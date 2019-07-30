@@ -309,6 +309,7 @@ unsigned long int GetTriangulationSignature();
     inline void GetProjectedLocalCoordinates(double *xLocal,double *x) {
       double c0=0.0,c1=0.0,t;
 
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
       for (int i=0;i<3;i++) {
         t=x[i]-x0Face[i];
         c0+=t*e0[i],c1+=t*e1[i];
@@ -317,6 +318,13 @@ unsigned long int GetTriangulationSignature();
       c=c11*c00-c01*c01;
       xLocal[0]=(c0*c11-c1*c01)/c;
       xLocal[1]=(c1*c00-c01*c0)/c;
+#else
+      __m256d xv,x0Facev,p0v,p1v,p2v,p3v;
+
+      exit(__LINE__,__FILE__,"Error: not implemented");
+
+
+#endif
     }
 
     inline bool RayIntersection(double *x0,double *l,double &t,double *xLocal,double *xIntersection,double EPS) {
@@ -470,22 +478,22 @@ unsigned long int GetTriangulationSignature();
   //    static const double e1Block[6][3]={{0,0,1},{1,0,1},     {0,0,1},{0,1,1},   {0,1,0},{0,1,1}};
       static const int skipBlockFaceDirection[6]={0,0,1,1,2,2};
 
-      double x0Edge[3],lEdge[3],lNorm,xNorm;
+      double *x0Edge,lEdge[3],lNorm,xNorm;
 
       for (pface=0;pface<6;pface++) for (int pFaceEdge=0;pFaceEdge<3;pFaceEdge++) {
         lNorm=0.0,xNorm=0.0;
 
         switch (pFaceEdge) {
         case 0:
-          memcpy(x0Edge,x1Face,3*sizeof(double));
+          x0Edge=x1Face;
           for (int i=0;i<3;i++) lEdge[i]=x2Face[i]-x1Face[i];
           break;
         case 1:
-          memcpy(x0Edge,x0Face,3*sizeof(double));
+          x0Edge=x0Face;
           for (int i=0;i<3;i++) lEdge[i]=x2Face[i]-x0Face[i];
           break;
         case 2:
-          memcpy(x0Edge,x0Face,3*sizeof(double));
+          x0Edge=x0Face;
           for (int i=0;i<3;i++) lEdge[i]=x1Face[i]-x0Face[i];
         }
 
