@@ -4098,6 +4098,9 @@ namespace PIC {
     unsigned long int SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
     unsigned long int SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
+    unsigned long int SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned long int SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+
     void SaveNodeSignature(int nline,const char *fname);
 
     //save the block distribution
@@ -5351,22 +5354,23 @@ namespace PIC {
   namespace Rnd {
     namespace CenterNode {
       extern int Offset;
+      extern bool CompletedSeedFlag;
 
       int RequestDataBuffer(int);
       void Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
       void Init();
 
-      unsigned long int *GetSeed(char* CenterNodeAssociatedDataBufferPointer);
-      unsigned long int *GetSeed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      cRndSeedContainer *GetSeedPtr(char* CenterNodeAssociatedDataBufferPointer);
+      cRndSeedContainer *GetSeedPtr(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
       inline double Get(char* CenterNodeAssociatedDataBufferPointer) {
-        unsigned long int* seed=GetSeed(CenterNodeAssociatedDataBufferPointer);
+        cRndSeedContainer* seed=GetSeedPtr(CenterNodeAssociatedDataBufferPointer);
 
         return rnd(seed);
       }
 
-      inline double Get(unsigned long *seed) {
+      inline double Get(cRndSeedContainer *seed) {
         return rnd(seed);
       }
     }
