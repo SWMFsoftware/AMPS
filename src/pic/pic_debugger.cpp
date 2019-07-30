@@ -338,6 +338,11 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
 //==========================================================================================
 //get checksum of the corner and center node associated data
 unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  return PIC::Debugger::SaveCornerNodeAssociatedDataSignature(0,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
+}
+
+
+unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int i,j,k;
   PIC::Mesh::cDataCornerNode *CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
@@ -390,10 +395,10 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int 
             if (startNode->Thread==0) {
               //the associated data is located the the root
               if (block!=NULL) if ((CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)))!=NULL) {
-                CheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+                CheckSum.add(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
 
                 if (fnameOutput!=NULL) {
-                  SingleVectorCheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+                  SingleVectorCheckSum.add(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                 }
               }
 
@@ -411,11 +416,11 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int 
                 if (DataSendMode==true) {
                   char *ptr;
 
-                  ptr=pipe.recvPointer<char>(PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,startNode->Thread);
-                  CheckSum.add(ptr,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+                  ptr=pipe.recvPointer<char>(SampleVectorLength,startNode->Thread);
+                  CheckSum.add(ptr,SampleVectorLength);
 
                   if (fnameOutput!=NULL) {
-                    SingleVectorCheckSum.add(ptr,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                    SingleVectorCheckSum.add(ptr,SampleVectorLength);
                   }
                 }
 
@@ -432,7 +437,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int 
                     DataSendMode=true;
                     pipe.send(DataSendMode);
 
-                    pipe.send(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+                    pipe.send(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                   }
                   else {
                     DataSendMode=false;
@@ -457,7 +462,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int 
     //add daugher blocks
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *downNode;
 
-    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) SaveCornerNodeAssociatedDataSignature(nline,fnameSource,fnameOutput,downNode);
+    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) SaveCornerNodeAssociatedDataSignature(SampleVectorOffset,SampleVectorLength,nline,fnameSource,fnameOutput,downNode);
   }
 
   //output the checksum
@@ -489,6 +494,11 @@ unsigned long int PIC::Debugger::GetCenterNodeAssociatedDataSignature(long int n
 }
 
 unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  return SaveCenterNodeAssociatedDataSignature(0,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
+}
+
+
+unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset, int SampleVectorLength, long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int i,j,k;
   PIC::Mesh::cDataCenterNode *CenterNode;
   PIC::Mesh::cDataBlockAMR *block;
@@ -541,10 +551,10 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int 
             if (startNode->Thread==0) {
               //the associated data is located the the root
               if (block!=NULL) if ((CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)))!=NULL) {
-                CheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                CheckSum.add(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
 
                 if (fnameOutput!=NULL) {
-                  SingleVectorCheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                  SingleVectorCheckSum.add(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                 }
               }
 
@@ -563,11 +573,11 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int 
                 if (DataSendMode==true) {
                   char *ptr;
 
-                  ptr=pipe.recvPointer<char>(PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,startNode->Thread);
-                  CheckSum.add(ptr,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                  ptr=pipe.recvPointer<char>(SampleVectorLength,startNode->Thread);
+                  CheckSum.add(ptr,SampleVectorLength);
 
                   if (fnameOutput!=NULL) {
-                    SingleVectorCheckSum.add(ptr,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                    SingleVectorCheckSum.add(ptr,SampleVectorLength);
                   }
                 }
 
@@ -584,7 +594,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int 
                     DataSendMode=true;
                     pipe.send(DataSendMode);
 
-                    pipe.send(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+                    pipe.send(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                   }
                   else {
                     DataSendMode=false;
@@ -609,7 +619,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int 
     //add daugher blocks
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *downNode;
 
-    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) SaveCenterNodeAssociatedDataSignature(nline,fnameSource,fnameOutput,downNode);
+    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) SaveCenterNodeAssociatedDataSignature(SampleVectorOffset,SampleVectorLength,nline,fnameSource,fnameOutput,downNode);
   }
 
   //output the checksum
