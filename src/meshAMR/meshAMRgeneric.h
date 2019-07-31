@@ -10218,6 +10218,54 @@ if (TmpAllocationCounter==2437) {
         CurveNode=CurveNode->FillingCurveNextNode;
       }
 
+      //check that all MPI processes has assigned blocks
+      for (thread=0;thread<nTotalThreads;thread++) if (ThreadStartNode[thread]==NULL) {
+        //determine the processes that has maximum number of assigned blocks
+        int i,nMaxAssignedBlocks=0;
+        int MaxAssignedBlockThread=-1;
+        cTreeNodeAMR<cBlockAMR>* t;
+
+        for (i=0;i<nTotalThreads;i++) if ((i!=thread)&&(ThreadStartNode[i]!=NULL)) {
+          int cnt=0;
+
+          t=ThreadStartNode[i];
+
+          while (t!=NULL) {
+            cnt++;
+            t=t->FillingCurveNextNode;
+
+            if (i!=nTotalThreads-1) {
+              if (t==ThreadStartNode[i+1]) t=NULL;
+            }
+          }
+
+          if (cnt>nMaxAssignedBlocks) nMaxAssignedBlocks=cnt,MaxAssignedBlockThread=i;
+        }
+
+        //split the longest set of the assigned blocks
+        if (MaxAssignedBlockThread>=3) {
+          int SetLength=MaxAssignedBlockThread/2;
+
+          CumulativeThreadLoad[MaxAssignedBlockThread]=0.0;
+
+          for (i=0,t=ThreadStartNode[MaxAssignedBlockThread];i<SetLength;i++) {
+            CumulativeThreadLoad[MaxAssignedBlockThread]+=t->ParallelLoadMeasure;
+            t=t->FillingCurveNextNode;
+          }
+
+          ThreadStartNode[thread]=t;
+
+          while (t!=NULL) {
+            CumulativeThreadLoad[thread]=t->ParallelLoadMeasure;
+            t=t->FillingCurveNextNode;
+
+            if (thread!=nTotalThreads-1) {
+              if (t==ThreadStartNode[thread+1]) t=NULL;
+            }
+          }
+        }
+      }
+
       //fine tuning of the processor's load
       for (thread=0;thread<nTotalThreads;thread++) {
          const double UpperLoadLimit=1.05;
