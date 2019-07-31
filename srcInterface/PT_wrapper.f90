@@ -37,7 +37,7 @@ contains
     use ModReadParam
 
     character (len=*), parameter :: NameSub='PT_set_param'
-    integer :: iComm,iProc,nProc
+    integer :: iComm,iProc,nProc, nThread
 
     ! Arguments
     type(CompInfoType), intent(inout) :: CompInfo   ! Information for this comp
@@ -58,8 +58,8 @@ contains
             Version    =1.0)
 
     case('MPI')
-       call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc)
-       call AMPS_SetMpiCommunicator(iComm, iProc, nProc)
+       call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc, nThread=nThread)
+       call AMPS_SetMpiCommunicator(iComm, iProc, nProc, nThread)
 
     case('CHECK')
        ! AMPS could check now the input parameters for consistency
