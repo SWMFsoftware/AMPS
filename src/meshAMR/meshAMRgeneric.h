@@ -11031,7 +11031,7 @@ if (TmpAllocationCounter==2437) {
     }
 
     //exchenge data from the boundary layer blocks
-    if (blocks.usedElements()!=0) ParallelBlockDataExchange(fDefaultPackBlockData,fDefaultUnpackBlockData);
+    ParallelBlockDataExchange(fDefaultPackBlockData,fDefaultUnpackBlockData);
     #endif //_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
