@@ -11599,7 +11599,7 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
-    auto AlocateSendNodeTable = [&] () {
+    auto AllocateSendNodeTable = [&] () {
       for (int thread=0;thread<nTotalThreads;thread++) {
         if (ParallelBlockDataExchangeData.SendNodeTableLength[thread]!=0) {
           ParallelBlockDataExchangeData.SendNodeTable[thread]=new cTreeNodeAMR<cBlockAMR>* [ParallelBlockDataExchangeData.SendNodeTableLength[thread]];
@@ -11689,6 +11689,23 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
+    auto DeleteSendRecvBuffes = [&] () {
+      for (int thread=0;thread<nTotalThreads;thread++) {
+        ParallelBlockDataExchangeData.SendNodeTableLength[thread]=0;
+        ParallelBlockDataExchangeData.RecvNodeTableLength[thread]=0;
+
+        if (ParallelBlockDataExchangeData.SendDataExchangeBuffer[thread]!=NULL) {
+          delete [] ParallelBlockDataExchangeData.SendDataExchangeBuffer[thread];
+          ParallelBlockDataExchangeData.SendDataExchangeBuffer[thread]=NULL;
+        }
+
+        if (ParallelBlockDataExchangeData.RecvDataExchangeBuffer[thread]!=NULL) {
+          delete [] ParallelBlockDataExchangeData.RecvDataExchangeBuffer[thread];
+          ParallelBlockDataExchangeData.RecvDataExchangeBuffer[thread]=NULL;
+        }
+      }
+    };
+
     //determine whether the data exchange parameters needs to be updated
     if (GetMeshChangeFlag()==true) {
       ParallelBlockDataExchangeData.LastMeshModificationIndexValue=nMeshModificationCounter;
@@ -11717,7 +11734,7 @@ if (TmpAllocationCounter==2437) {
 
       //2. create lists of the blocks that will be send
       DeleteSendRecvNodeTables();
-      AlocateSendNodeTable();
+      AllocateSendNodeTable();
 
       ParallelBlockDataExchange_Internal(ParallelBlockDataExchangeData.SendNodeTableLength,
           ParallelBlockDataExchangeData.SendNodeIDTable,ParallelBlockDataExchangeData.SendNodeTable,
