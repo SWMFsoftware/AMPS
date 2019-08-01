@@ -1744,8 +1744,11 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 double BulletLocalResolution(double *x) {                                                                                           
   // Assume dx = dy = dz
   double dx = PIC::CPLR::FLUID::FluidInterface.getdx(0);
+  double dy = PIC::CPLR::FLUID::FluidInterface.getdx(1);
+  double dz = PIC::CPLR::FLUID::FluidInterface.getdx(2);
+ 
   // Why use 0.1? How about res = res*(1+1e-6)? --Yuxi
-  double res=sqrt(3*dx*dx) + 0.1;
+  double res=sqrt(dx*dx+dy*dy+dz*dz)*(1+ 0.001);
   return res;
 }
                        
