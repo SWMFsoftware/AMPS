@@ -1268,6 +1268,92 @@ public:
 
   } TreeCheckSum;
 
+  //get information of the memory usage from the operating system. needed for the memory leak search
+  double read_mem_usage() {
+    // This function returns the resident set size (RSS) of
+    // this processor in unit MB.
+
+    // From wiki:
+    // RSS is the portion of memory occupied by a process that is
+    // held in main memory (RAM).
+
+    double rssMB = 0.0;
+
+    ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+    if (!stat_stream.fail()) {
+      // Dummy vars for leading entries in stat that we don't care about
+      string pid, comm, state, ppid, pgrp, session, tty_nr;
+      string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+      string utime, stime, cutime, cstime, priority, nice;
+      string O, itrealvalue, starttime;
+
+      // Two values we want
+      unsigned long vsize;
+      unsigned long rss;
+
+      stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+        tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+        stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >>
+        starttime >> vsize >> rss; // Ignore the rest
+      stat_stream.close();
+
+      rssMB = rss*sysconf(_SC_PAGE_SIZE)/1024.0/1024.0;
+    }
+
+    return rssMB;
+  }
+
+
+
+  void check_max_mem_usage(string tag) {
+    double memLocal = read_mem_usage();
+    double memMax = memLocal;
+
+    cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
+  }
+
+  void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag,int Thread=-1) {
+    double LocalMemoryUsage,GlobalMemoryUsage;
+    double *MemoryUsageTable=NULL;
+
+    //collect momery usage information
+    LocalMemoryUsage=read_mem_usage();
+
+    //output the memory usage status
+    if (Thread==-1) {
+      //gather the memory usage tabl
+      MemoryUsageTable=new double [nTotalThreads];
+      MPI_Gather(&LocalMemoryUsage,1,MPI_DOUBLE,MemoryUsageTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+
+      if (ThisThread==0) {
+        int thread;
+
+        if (ShowUsagePerProcessFlag==true) {
+          printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
+
+          for (thread=0,GlobalMemoryUsage=0.0;thread<nTotalThreads;thread++) {
+            GlobalMemoryUsage+=MemoryUsageTable[thread];
+            printf("$PREFIX: %i\t%e [MB]\n",thread,MemoryUsageTable[thread]);
+          }
+
+          printf("$PREFIX: Total=%e MB\n",GlobalMemoryUsage);
+        }
+        else {
+          for (thread=0,GlobalMemoryUsage=0.0;thread<nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
+
+          printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e [MB]\n",fname,nline,GlobalMemoryUsage);
+        }
+      }
+
+      delete [] MemoryUsageTable;
+    }
+    else {
+      if (Thread==ThisThread) {
+        printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Memory Used by MPI Process %i = %e [MB]\n",fname,nline,Thread,LocalMemoryUsage);
+      }
+    }
+  }
 
   //generate the mesh signeture: the signature contained the time of the mesh creeation, the user name and the computer name where the lesh is created
   void generateMeshSignature(cTreeNodeAMR<cBlockAMR> *node=NULL) {
