@@ -1124,7 +1124,7 @@ void PIC::Debugger::check_max_mem_usage(string tag) {
   cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
 }
 
-void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname) {
+void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag) {
   double LocalMemoryUsage,GlobalMemoryUsage;
   double *MemoryUsageTable=NULL;
 
@@ -1140,14 +1140,22 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname) {
   if (PIC::ThisThread==0) {
     int thread;
 
-    printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
+    if (ShowUsagePerProcessFlag==true) {
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
 
-    for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) {
-      GlobalMemoryUsage+=MemoryUsageTable[thread];
-      printf("$PREFIX: %i\t%e [MB]\n",thread,MemoryUsageTable[thread]);
+      for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) {
+        GlobalMemoryUsage+=MemoryUsageTable[thread];
+        printf("$PREFIX: %i\t%e [MB]\n",thread,MemoryUsageTable[thread]);
+      }
+
+      printf("$PREFIX: Total=%e MB\n",GlobalMemoryUsage);
+    }
+    else {
+      for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
+
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e MB [MB]\n",fname,nline,GlobalMemoryUsage);
     }
 
-    printf("$PREFIX: Total=%e MB\n",GlobalMemoryUsage);
     delete [] MemoryUsageTable;
   }
 }

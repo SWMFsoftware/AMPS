@@ -4161,7 +4161,7 @@ namespace PIC {
     //check memory usage
     void check_max_mem_usage(string tag);
     double read_mem_usage();
-    void GetMemoryUsageStatus(long int nline,const char *fname);
+    void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag=true);
   }
 
   namespace Alarm {
