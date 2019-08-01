@@ -63,13 +63,17 @@ extern "C" {
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     omp_set_num_threads(*nThread);
+    #endif
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
     amps_init_mesh();
 #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_       
     omp_set_num_threads(*nThread);
+    #endif
     PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
     //initialize the coupler and AMPS
     //PIC::CPLR::FLUID::init();
