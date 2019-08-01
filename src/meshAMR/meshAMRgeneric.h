@@ -11818,14 +11818,14 @@ if (TmpAllocationCounter==2437) {
           this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To]);
 
 
-      MPI_Isend(ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],TotalMessageSize,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendTableIndex);
+      MPI_Isend(this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To],TotalMessageSize,MPI_BYTE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendTableIndex);
 
 
       SendProcessTable[SendTableIndex]=To;
       SendTableIndex++;
     };
 
-    auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable) {
+    auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable,cLastRecvMessage *LastRecvMessageTable) {
       int i,iStart,iEnd;
 
       int TotalMessageSize=0;
@@ -11847,23 +11847,23 @@ if (TmpAllocationCounter==2437) {
       LastRecvMessageTable[From].FirstBlockIndex=iStart;
       LastRecvMessageTable[From].BlockMessageCount=iEnd-iStart;
 
-      MPI_Irecv(ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From],TotalMessageSize,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvTableIndex);
+      MPI_Irecv(this->ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From],TotalMessageSize,MPI_BYTE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvTableIndex);
 
       RecvProcessTable[RecvTableIndex]=From;
       RecvTableIndex++;
     };
 
-    auto UnpackRecievedData = [&] (int From) {
-      unsigned char *BlockCenterNodeSendMask=ParallelBlockDataExchangeData.RecvCenterNodePackingTable[From];
-      if (BlockCenterNodeSendMask!=NULL) BlockCenterNodeSendMask+=LastRecvMessageTable[From].FirstBlockIndex*ParallelBlockDataExchangeData.BlockCenterNodeSendMaskLength;
+    auto UnpackRecievedData = [&] (int From,cLastRecvMessage *LastRecvMessageTable) {
+      unsigned char *BlockCenterNodeSendMask=this->ParallelBlockDataExchangeData.RecvCenterNodePackingTable[From];
+      if (BlockCenterNodeSendMask!=NULL) BlockCenterNodeSendMask+=LastRecvMessageTable[From].FirstBlockIndex*this->ParallelBlockDataExchangeData.BlockCenterNodeSendMaskLength;
 
-      unsigned char *BlockCornerNodeSendMask=ParallelBlockDataExchangeData.RecvCornerNodePackingTable[From];
-      if (BlockCornerNodeSendMask!=NULL) BlockCornerNodeSendMask+=LastRecvMessageTable[From].FirstBlockIndex*ParallelBlockDataExchangeData.BlockCornerNodeSendMaskLength;
+      unsigned char *BlockCornerNodeSendMask=this->ParallelBlockDataExchangeData.RecvCornerNodePackingTable[From];
+      if (BlockCornerNodeSendMask!=NULL) BlockCornerNodeSendMask+=LastRecvMessageTable[From].FirstBlockIndex*this->ParallelBlockDataExchangeData.BlockCornerNodeSendMaskLength;
 
-      fUnpackBlockData(ParallelBlockDataExchangeData.RecvNodeTable[From]+LastRecvMessageTable[From].FirstBlockIndex,
+      fUnpackBlockData(this->ParallelBlockDataExchangeData.RecvNodeTable[From]+LastRecvMessageTable[From].FirstBlockIndex,
         LastRecvMessageTable[From].BlockMessageCount,
         BlockCenterNodeSendMask,BlockCornerNodeSendMask,
-        ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From]);
+        this->ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From]);
     };
 
     int *NodeSendDataLengthTable;
@@ -11957,7 +11957,7 @@ if (TmpAllocationCounter==2437) {
       if (cnt==0) {
         for (From=0;From<nTotalThreads;From++) {
           if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-            InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable);
+            InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable,LastRecvMessageTable);
 
             nRecvCounter[From]++;
             CommunicationCompleted=false;
@@ -11979,7 +11979,7 @@ if (TmpAllocationCounter==2437) {
             //Release memory used by MPI
             MPI_Wait(RecvRequestTable+iFrom,MPI_STATUS_IGNORE);
 
-            UnpackRecievedData(From);
+            UnpackRecievedData(From,LastRecvMessageTable);
 
             //update the table
             RecvProcessTable[iFrom]=RecvProcessTable[RecvTableIndex-1];
@@ -11988,7 +11988,7 @@ if (TmpAllocationCounter==2437) {
 
             //initiate a new recieve if needed
             if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-              InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable);
+              InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable,LastRecvMessageTable);
 
               nRecvCounter[From]++;
               CommunicationCompleted=false;
