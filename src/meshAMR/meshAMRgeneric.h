@@ -11785,7 +11785,7 @@ if (TmpAllocationCounter==2437) {
     } LastRecvMessageTable[nTotalThreads];
 
 
-    auto InitSend = [&] (int To,int **BlockSendDataLengthTable,int *SendProcessTable,int& SendTableIndex, MPI_Request *SendRequestTable) {
+    auto InitSend = [&] (int To,int **BlockSendDataLengthTable,int *SendProcessTable,int& SendTableIndex, MPI_Request *SendRequestTable,int *iStartSendTable,int *iStartRecvTable) {
       int i,iStart,iEnd;
       char *DataBufferBegin=this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To];
       cTreeNodeAMR<cBlockAMR>** SendNodeList;
@@ -11825,7 +11825,7 @@ if (TmpAllocationCounter==2437) {
       SendTableIndex++;
     };
 
-    auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable) {
+    auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable) {
       int i,iStart,iEnd;
 
       int TotalMessageSize=0;
@@ -11957,7 +11957,7 @@ if (TmpAllocationCounter==2437) {
       if (cnt==0) {
         for (From=0;From<nTotalThreads;From++) {
           if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-            InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable);
+            InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable);
 
             nRecvCounter[From]++;
             CommunicationCompleted=false;
@@ -11988,7 +11988,7 @@ if (TmpAllocationCounter==2437) {
 
             //initiate a new recieve if needed
             if (iStartRecvTable[From]<ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads]) {
-              InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable);
+              InitRecieve(From,BlockRecvDataLengthTable,RecvProcessTable,RecvTableIndex,RecvRequestTable,iStartSendTable,iStartRecvTable);
 
               nRecvCounter[From]++;
               CommunicationCompleted=false;
@@ -12003,7 +12003,7 @@ if (TmpAllocationCounter==2437) {
       if (cnt==0) {
         for (To=0;To<nTotalThreads;To++) {
           if (iStartSendTable[To]<ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]) {
-            InitSend(To,BlockSendDataLengthTable,SendProcessTable,SendTableIndex,SendRequestTable);
+            InitSend(To,BlockSendDataLengthTable,SendProcessTable,SendTableIndex,SendRequestTable,iStartSendTable,iStartRecvTable);
             nSendCounter[To]++;
             CommunicationCompleted=false;
           }
@@ -12029,7 +12029,7 @@ if (TmpAllocationCounter==2437) {
 
             //initiate a new send operation
             if ((iStartSendTable[To]<ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads])) {
-              InitSend(To,BlockSendDataLengthTable,SendProcessTable,SendTableIndex,SendRequestTable);
+              InitSend(To,BlockSendDataLengthTable,SendProcessTable,SendTableIndex,SendRequestTable,iStartSendTable,iStartRecvTable);
               nSendCounter[To]++;
               CommunicationCompleted=false;
             }
