@@ -1153,7 +1153,7 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
     else {
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
 
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e MB [MB]\n",fname,nline,GlobalMemoryUsage);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e [MB]\n",fname,nline,GlobalMemoryUsage);
     }
 
     delete [] MemoryUsageTable;
