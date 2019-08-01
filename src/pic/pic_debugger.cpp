@@ -1118,15 +1118,10 @@ double PIC::Debugger::read_mem_usage() {
 
 
 void PIC::Debugger::check_max_mem_usage(string tag) {
-    double memLocal = read_mem_usage();
-    double memMax = memLocal;
+  double memLocal = read_mem_usage();
+  double memMax = memLocal;
     
-    //    MPI_Allreduce(&memLocal, &memMax, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
-    //if (fabs(memLocal - memMax) < 1e-6) {
-      cout << tag << " Maximum memory usage = " << memLocal
-           << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
-      //}
-    
+  cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
 }
 
 void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname) {
