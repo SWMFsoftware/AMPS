@@ -1310,7 +1310,7 @@ public:
     double memLocal = read_mem_usage();
     double memMax = memLocal;
 
-    cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
+    cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << ThisThread << endl;
   }
 
   void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag,int Thread=-1) {
