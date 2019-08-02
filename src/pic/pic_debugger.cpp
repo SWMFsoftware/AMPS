@@ -403,7 +403,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
               }
 
               if (fnameOutput!=NULL) {
-                fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
               }
             }
             else {
@@ -425,7 +425,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
                 }
 
                 if (fnameOutput!=NULL) {
-                  fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                  fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
@@ -559,7 +559,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
               }
 
               if (fnameOutput!=NULL) {
-                fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
               }
 
             }
@@ -582,7 +582,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
                 }
 
                 if (fnameOutput!=NULL) {
-                  fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                  fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
@@ -685,7 +685,6 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
     }
     else if (PIC::ThisThread==0) {
       //this is the root BUT the block belongs to another MPI process
-      unsigned long t;
       int Signal;
 
       pipe.recv(Signal,node->Thread);
@@ -766,15 +765,15 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
   FILE *fout;
   char FullFileName[100];
   int id,i,j,iface,iedge,icorner;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,*neibNode;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neibNode;
 
-  sprintf(FullFileName,"DomainDecompositionMap.thread=%i(line=%i,file=%s,Index=%i).dat",PIC::ThisThread,nline,fname,Index);
+  sprintf(FullFileName,"DomainDecompositionMap.thread=%i(line=%ld,file=%s,Index=%i).dat",PIC::ThisThread,nline,fname,Index);
   fout=fopen(FullFileName,"w");
 
   fprintf(fout,"VARIABLES=\"NodeTempID\", \"Thread\", \"Face Neib\", \"Edge Neib\", \"Corner Neib\"\n");
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    fprintf(fout,"node->Temp_ID=%i, thread=%i\n",node->Temp_ID,node->Thread);
+    fprintf(fout,"node->Temp_ID=%ld, thread=%i\n",node->Temp_ID,node->Thread);
 
     //face neib
     for (iface=0;iface<6;iface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
@@ -986,7 +985,6 @@ void PIC::Debugger::ParticleDebugData::OutputParticleDebugData(int nLineSource,c
 void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
   int i,j,k;
   static FILE *fout=NULL;
-  static int cnt;
   static int ncall=0;
 
   ncall++;
@@ -1029,7 +1027,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
 
           //print the checksum to a file
           if (PIC::ThisThread==0) {
-            fprintf(fout,"Corner CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%i, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
+            fprintf(fout,"Corner CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%ld, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
           }
         }
       }
@@ -1067,7 +1065,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
 
            //print the checksum to a file
            if (PIC::ThisThread==0) {
-             fprintf(fout,"Center CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%i, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
+             fprintf(fout,"Center CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%ld, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
            }
         }
       }
@@ -1119,7 +1117,6 @@ double PIC::Debugger::read_mem_usage() {
 
 void PIC::Debugger::check_max_mem_usage(string tag) {
   double memLocal = read_mem_usage();
-  double memMax = memLocal;
     
   cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
 }
@@ -1141,7 +1138,7 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
     int thread;
 
     if (ShowUsagePerProcessFlag==true) {
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld)\nThread\tUsed Memory (MB)\n",fname,nline);
 
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) {
         GlobalMemoryUsage+=MemoryUsageTable[thread];
@@ -1153,7 +1150,7 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
     else {
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
 
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e [MB]\n",fname,nline,GlobalMemoryUsage);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld): Total Memory Used=%e [MB]\n",fname,nline,GlobalMemoryUsage);
     }
 
     delete [] MemoryUsageTable;
