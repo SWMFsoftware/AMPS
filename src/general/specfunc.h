@@ -43,7 +43,6 @@ long int nint(double);
 void PrintErrorLog(const char*);
 void PrintErrorLog(long int,const char*,const char*);
 
-void StampSignature(char*);
 extern int ExitErrorCode;
 void exit(long int,const char*,const char* =NULL);
 void PrintLineMark(long int,char*,char* =NULL);

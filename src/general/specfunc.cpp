@@ -115,30 +115,6 @@ void PrintErrorLog(long int nline, const char* fname, const char* message) {
 
 
 //===================================================
-void StampSignature(char* message) {
-  double *buffer=new double[TotalThreadsNumber];
-  double sign=0.0;
-  int thread;
-
-  buffer[0]=rnd();
-
-#ifdef MPI_ON
-  double bufferRecv[TotalThreadsNumber];
-
-  MPI_Gather(buffer,1,MPI_DOUBLE,bufferRecv,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-  memcpy(buffer,bufferRecv,TotalThreadsNumber*sizeof(double));
-#endif
-
-  if (ThisThread==0) {
-    for (thread=0;thread<TotalThreadsNumber;thread++) sign+=buffer[thread];
-     
-    printf("$PREFIX:Signature=%e (msg: %s)\n",sign,message);
-  }
-
-  delete [] buffer;
-}
-
-//===================================================
 //use: exit(__LINE__,__FILE__, "mesage")
 void exit(long int nline, const char* fname, const char* msg) {
   char str[1000];
@@ -266,8 +242,6 @@ void Thread::Sync::SpinlockBarrier::Init(cSpinlockBarrier* barrier,int ntot) {
 
 
 void Thread::Sync::SpinlockBarrier::Wait(cSpinlockBarrier* barrier) {
-  bool enterence_flag=true,exit_flag=false;
-
   while (barrier->enter_flag==false) {
     sched_yield();
   }
