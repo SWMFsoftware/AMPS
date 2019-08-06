@@ -94,18 +94,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
   int i,j,k,iface,iedge,icorner,imin,imax,jmin,jmax,kmin,kmax,ii,jj,kk;
   cTreeNodeAMR<cDataBlockAMR>* neibNode;
   bool flag;
-
   bool neib_found=false;
-
-  #if DIM == 3
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-  #elif DIM == 2
-  static const int iCellMax=_BLOCK_CELLS_X_./,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-  #elif DIM == 1
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-  #else
-  exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-  #endif
 
   //set the default value
   Set(false,CenterNodeMask,CornerNodeMask);

@@ -842,10 +842,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   //advance the particle velocity
   double QdT_over_m,QdT_over_2m,alpha[3][3];
   double c0,QdT_over_2m_squared,mass,chargeQ;
-  
-  
-  double LightSpeed =1;
- 
+
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
   double mass_conv =1.0/_AMU_;
   double charge_conv=1.0/ElectronCharge;
