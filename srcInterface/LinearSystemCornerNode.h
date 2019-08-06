@@ -490,7 +490,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   cStencilElement* el;
   cCornerNode* CornerNode;
 
-  int Debug=0;
+//  int Debug=0;
 
   nRealBlocks=0;
 
@@ -706,7 +706,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   //allocate the data buffers for the partial vectors and link the pointers points that are inside the subdomian
   //allocate the exchange buffer for the data the needs to be recieved from other MPI processess
-  int cnt=0,iElement;
+  int iElement;
 
   int *DataExchangeTableCounter=new int [PIC::nTotalThreads];
   for (thread=0;thread<PIC::nTotalThreads;thread++) DataExchangeTableCounter[thread]=0;
@@ -1068,7 +1068,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)
       ) {
   cMatrixRow* row;
-  int GlobalVariableIndex,cnt;
+  int cnt;
 
   //count the total number of the variables, and create the data buffers
   if (SubdomainPartialRHS==NULL) {
@@ -1127,7 +1127,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   double * Rhs_I=SubdomainPartialRHS;
   double * Sol_I=SubdomainPartialUnknownsVector;
   double PrecondParam=0; // not use preconditioner
-  double ** precond_matrix_II;// pointer to precondition matrix; us  null if no preconditioner
+//  double ** precond_matrix_II;// pointer to precondition matrix; us  null if no preconditioner
   int lTest=(PIC::ThisThread==0);//1: need test output; 0: no test statement
 
   linear_solver_wrapper("GMRES", &Tol,&nMaxIter, &nVar, &nDim,&nI, &nJ, &nK, &nBlock, &iComm, Rhs_I,Sol_I, &PrecondParam, NULL, &lTest);
