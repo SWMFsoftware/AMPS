@@ -6227,9 +6227,9 @@ if (CallsCounter==83) {
         #endif //_AMR__CUT_CELL__MODE_
 
 
-        #if _AMR_ENFORCE_CELL_RESOLUTION_MODE_ == _AMR_ENFORCE_CELL_RESOLUTION_MODE_ON_
-        if (requredResolution<characteristicBlockSize_min) exit(__LINE__,__FILE__,"The required resolution is smaller than the minimum resolution allowed for the mesh. Increase the value of _MAX_REFINMENT_LEVEL_");
-        #endif
+        if (_AMR_ENFORCE_CELL_RESOLUTION_MODE_ == _AMR_ENFORCE_CELL_RESOLUTION_MODE_ON_) {
+          if (requredResolution<characteristicBlockSize_min) exit(__LINE__,__FILE__,"The required resolution is smaller than the minimum resolution allowed for the mesh. Increase the value of _MAX_REFINMENT_LEVEL_");
+        }
       }  
 
 
@@ -10457,7 +10457,7 @@ if (TmpAllocationCounter==2437) {
 
     auto VerifyDomainDecomposistionConsistency = [&] () {
       CMPI_channel pipe(100000);
-      int t,thread;
+      int thread;
 
       //output signature of the domain decomposition
       GetDomainDecompositionSignature(__LINE__,__FILE__);
@@ -10702,7 +10702,6 @@ if (TmpAllocationCounter==2437) {
     SetConstantParallelLoadMeasure(0.0,rootTree);
 
     ////// !!!!!! This is the beginning of the block moving procedure!!!!!!!!
-    int *SourceThread,*TargetThread;
     cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable=new cTreeNodeAMR<cBlockAMR>** [nTotalThreads];
     cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable=new cTreeNodeAMR<cBlockAMR>** [nTotalThreads];
     int *MoveInNodeTableSize=new int [nTotalThreads];
@@ -11615,10 +11614,8 @@ if (TmpAllocationCounter==2437) {
       ParallelBlockDataExchangeData.BlockCornerNodeSendMaskLength=BlockCornerNodeSendMaskLength;
 
       //set the bit flag table
-      int i,j,k,ibyte,ibit,From,To;
-      int iface,icorner,iedge;
-      int imin,imax,jmin,jmax,kmin,kmax,ii,jj,icenter,jcenter,kcenter,nd;
-      cTreeNodeAMR<cBlockAMR> *node,*neibNode;
+      int i,From;
+      cTreeNodeAMR<cBlockAMR> *node;
 
       if ((BlockCenterNodeSendMaskLength>0)&&(BlockCornerNodeSendMaskLength>0)) {
         for (int To=0;To<nTotalThreads;To++) if (ParallelBlockDataExchangeData.GlobalSendTable[To+ThisThread*nTotalThreads]>0) {
@@ -11827,11 +11824,6 @@ if (TmpAllocationCounter==2437) {
           _ParallelBlockDataExchangeMode_PopulateNodeList_);
 
       //3. distribute the list that will be send
-
-      MPI_Request SendRequestTable[nTotalThreads],RecvRequestTable[nTotalThreads];
-      int RecvProcessTable[nTotalThreads];
-      int SendRequestTableLength=0,RecvRequestTableLength=0;
-
       DistributeSendNodeTable();
 
 
@@ -11841,19 +11833,9 @@ if (TmpAllocationCounter==2437) {
 
       //6. Prepare a table of the Center nodes that will be send
       int BlockCenterNodeSendMaskLength=(fCenterNodeMaskSize!=NULL) ? fCenterNodeMaskSize() : -1;
-      unsigned char *BlockCenterNodeSendMask;
-
       int BlockCornerNodeSendMaskLength=(fCornerNodeMaskSize!=NULL) ? fCornerNodeMaskSize() : -1;
-      unsigned char *BlockCornerNodeSendMask;
-
 
       //set the bit flag table
-      int i,j,k,ibyte,ibit;
-      int iface,icorner,iedge;
-      int imin,imax,jmin,jmax,kmin,kmax,ii,jj,icenter,jcenter,kcenter,nd;
-      cTreeNodeAMR<cBlockAMR> *node,*neibNode;
-
-
       CreatePackingTables();
       UpdateSendRecvBufferAllocation();
     }
@@ -11872,10 +11854,7 @@ if (TmpAllocationCounter==2437) {
 
 
     auto InitSend = [&] (int To,int **BlockSendDataLengthTable,int *SendProcessTable,int& SendTableIndex, MPI_Request *SendRequestTable,int *iStartSendTable,int *iStartRecvTable) {
-      int i,iStart,iEnd;
-      char *DataBufferBegin=this->ParallelBlockDataExchangeData.SendDataExchangeBuffer[To];
-      cTreeNodeAMR<cBlockAMR>** SendNodeList;
-
+      int iStart,iEnd;
       int TotalMessageSize=0;
       int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[To+this->ThisThread*this->nTotalThreads];
 
@@ -11912,7 +11891,7 @@ if (TmpAllocationCounter==2437) {
     };
 
     auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable,cLastRecvMessage *LastRecvMessageTable) {
-      int i,iStart,iEnd;
+      int iStart,iEnd;
 
       int TotalMessageSize=0;
       int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
@@ -11951,8 +11930,6 @@ if (TmpAllocationCounter==2437) {
         BlockCenterNodeSendMask,BlockCornerNodeSendMask,
         this->ParallelBlockDataExchangeData.RecvDataExchangeBuffer[From]);
     };
-
-    int *NodeSendDataLengthTable;
 
     //determine the appropriate NodeDataLengthTable
     int *BlockRecvDataLengthTable[nTotalThreads],*BlockSendDataLengthTable[nTotalThreads];
