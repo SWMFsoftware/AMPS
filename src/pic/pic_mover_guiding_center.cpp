@@ -183,14 +183,13 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
   // square of velocity of gyrations
 #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
   exit(__LINE__,__FILE__,"Error: not implemented");
-#else
-  double v_perp2= mu * 2.0 * AbsB / m0;
 #endif //_PIC_PARTICLE_MOVER__RELATIVITY_MODE_
 
   // V^2 = Vguide_paral^2 + (Vguide_perp+Vgyr)^2
   //     = Vguide_paral^2 + Vguide_perp^2 + Vgyr^2 + 2 Vguide_perp * Vgyr
   // <Vguide_perp * Vgyr> = 0
 #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
+  double v_perp2= mu * 2.0 * AbsB / m0;
   double v2     = v[0]*v[0]+v[1]*v[1]+v[2]*v[2] + v_perp2;
   double gamma  = pow(1-v2/c2,-0.5);
 #else
