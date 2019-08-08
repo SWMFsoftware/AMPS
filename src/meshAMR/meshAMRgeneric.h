@@ -12034,6 +12034,8 @@ if (TmpAllocationCounter==2437) {
         while ((flag==true)&&(RecvTableIndex>0)) {
           MPI_Testany(RecvTableIndex,RecvRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
+          if (iFrom==MPI_UNDEFINED) flag=false;
+
           if (flag==true) {
             //a message has arrived -> read it
             //unpack the data
@@ -12077,6 +12079,8 @@ if (TmpAllocationCounter==2437) {
 
         while ((flag==true)&&(SendTableIndex>0)) {
           MPI_Testany(SendTableIndex,SendRequestTable,&iTo,&flag,MPI_STATUS_IGNORE);
+
+          if (iTo==MPI_UNDEFINED) flag=false;
 
           if (flag==true) {
             //the send operation is compete -> initiate a new one id needed
