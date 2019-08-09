@@ -254,6 +254,30 @@ public:
     return true;
   }
 
+  void Checksum(CRC32 *sum) {
+    int nbytes,i,nbits;
+    unsigned char t;
+
+    sum->add(ResolutionLevel);
+
+    nbits=3*ResolutionLevel;
+    nbytes=nbits/8;
+    nbits-=8*nbytes;
+
+    //add bytes
+    for (i=0;i<nbytes;i++) sum->add(id[i]);
+
+    //add bits
+    unsigned char ComparisonMask=0;
+
+    for (i=0;i<nbits;i++) {
+      ComparisonMask|=(unsigned char)(1<<i);
+    }
+
+    t=id[nbytes]&ComparisonMask;
+    sum->add(t);
+  }
+
   bool operator != (cAMRnodeID ID) {
     return ((*this)==ID) ? false : true;
   }
@@ -10456,11 +10480,22 @@ if (TmpAllocationCounter==2437) {
     };
 
     auto VerifyDomainDecomposistionConsistency = [&] () {
-      CMPI_channel pipe(100000);
       int thread;
+      CRC32 checksum;
+      cTreeNodeAMR<cBlockAMR> *ptr;
+      cAMRnodeID id;
 
       //output signature of the domain decomposition
       GetDomainDecompositionSignature(__LINE__,__FILE__);
+
+      checksum.clear();
+
+      for (int t=0;t<nTotalThreads;t++) for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+        GetAMRnodeID(id,ptr);
+        id.Checksum(&checksum);
+      }
+
+      checksum.Compare();
 
       //check if the nodes' distribution is the same on all processors
       if (ThisThread==0) {
@@ -10474,22 +10509,10 @@ if (TmpAllocationCounter==2437) {
 
         for (t=0;t<nTotalThreads;t++) newCumulativeParallelLoadMeasure[t]=0.0;
 
-        pipe.openRecvAll();
-
         for (t=0;t<nTotalThreads;t++) for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
-          GetAMRnodeID(id,ptr);
-
           TotalParallelLoadMeasure+=ptr->ParallelLoadMeasure;
           newCumulativeParallelLoadMeasure[t]+=ptr->ParallelLoadMeasure;
-
-          for (thread=1;thread<nTotalThreads;thread++) {
-            pipe.recv(idtemp,thread);
-
-            if (id!=idtemp) exit(__LINE__,__FILE__,"Error: the processor's distribution of the tree is not consistent");
-          }
         }
-
-         pipe.closeRecvAll();
 
          fprintf(DiagnospticMessageStream,"$PREFIX:Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
@@ -10553,20 +10576,6 @@ if (TmpAllocationCounter==2437) {
          fprintf(DiagnospticMessageStream,"$PREFIX:Middle block's coordinates=");
          for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",middleX[idim]/(1<<_MESH_DIMENSION_));
          fprintf(DiagnospticMessageStream,"\n\n");
-      }
-      else {
-        int t;
-        cTreeNodeAMR<cBlockAMR> *ptr;
-        cAMRnodeID id;
-
-        pipe.openSend(0);
-
-        for (t=0;t<nTotalThreads;t++) for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
-          GetAMRnodeID(id,ptr);
-          pipe.send(id);
-        }
-
-        pipe.closeSend();
       }
     };
 
