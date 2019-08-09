@@ -240,6 +240,26 @@ public:
     if (message!=NULL) printf("$PREFIX:CRC32 checksum=0x%lx, message=%s (thread=%i):\n",checksum(),message,ThisThread);
     else printf("$PREFIX:CRC32 checksum=0x%lx  (thread=%i):\n",checksum(),ThisThread);
   }
+
+  bool Compare() {
+    unsigned long int t,*buffer=new unsigned long int[TotalThreadsNumber];
+    int res=1;
+
+    t=checksum();
+    MPI_Gather(&t,1,MPI_UNSIGNED_LONG,buffer,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      for (int thread=0;thread<TotalThreadsNumber;thread++) if (buffer[0]!=buffer[thread]) {
+        res=0;
+        break;
+      }
+    }
+
+    MPI_Bcast(&res,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    delete [] buffer;
+
+    return (res==1) ? true : false;
+  }
 };
 
 
