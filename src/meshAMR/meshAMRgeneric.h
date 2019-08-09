@@ -10877,13 +10877,13 @@ if (TmpAllocationCounter==2437) {
 
       for (thread=0;thread<nTotalThreads;thread++) {
         if (RecvBlockDataBuffer[thread]!=NULL) {
-          delete [] RecvBlockDataBuffer;
-          RecvBlockDataBuffer=NULL;
+          delete [] RecvBlockDataBuffer[thread];
+          RecvBlockDataBuffer[thread]=NULL;
         }
 
         if (SendBlockDataBuffer[thread]!=NULL) {
-          delete [] SendBlockDataBuffer;
-          SendBlockDataBuffer=NULL;
+          delete [] SendBlockDataBuffer[thread];
+          SendBlockDataBuffer[thread]=NULL;
         }
       }
     };
@@ -11155,16 +11155,9 @@ if (TmpAllocationCounter==2437) {
 
 
     //de-allocate the temporary data buffers
-    for (thread=0;thread<nTotalThreads;thread++) {
-      if (MoveInDataSizeTable[thread]!=NULL) delete [] MoveInDataSizeTable[thread];
-      if (MoveOutDataSizeTable[thread]!=NULL) delete [] MoveOutDataSizeTable[thread];
+    DeallocateSendRecvTables(MoveInNodeTable,MoveOutNodeTable,MoveInDataSizeTable,MoveOutDataSizeTable);
+    DeallocateSendRecvBuffers(RecvBlockDataBuffer,SendBlockDataBuffer);
 
-      if (MoveInNodeTable[thread]!=NULL) delete [] MoveInNodeTable[thread];
-      if (MoveOutNodeTable[thread]!=NULL) delete [] MoveOutNodeTable[thread];
-
-      if (SendBlockDataBuffer[thread]!=NULL) delete [] SendBlockDataBuffer[thread];
-      if (RecvBlockDataBuffer[thread]!=NULL) delete [] RecvBlockDataBuffer[thread];
-    }
 
     delete [] SendBlockMaxMessageSize;
     delete [] RecvBlockMaxMessageSize;
@@ -11267,11 +11260,6 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
-
-
-
-    UpdateSendRecvMap(ParallelNodesDistributionList,ParallelSendRecvMap);
-
     //create the list of boundary layer, allocated and init the corresponding blocks
     auto CreateBoundaryLayer = [&] (cTreeNodeAMR<cBlockAMR> **DomainBoundaryLayerNodesList) {
       int i;
@@ -11296,6 +11284,10 @@ if (TmpAllocationCounter==2437) {
       ParallelBlockDataExchange(fDefaultPackBlockData,fDefaultUnpackBlockData);
       #endif //_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
     };
+
+
+    //Update Send/Recv maps
+    UpdateSendRecvMap(ParallelNodesDistributionList,ParallelSendRecvMap);
 
     //create the list of boundary layer, allocated and init the corresponding blocks
     CreateBoundaryLayer(DomainBoundaryLayerNodesList);
