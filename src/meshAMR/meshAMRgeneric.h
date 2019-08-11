@@ -10814,47 +10814,41 @@ if (TmpAllocationCounter==2437) {
 
     //allocate Send/Recv buffers
     auto InitSendRecvBuffers = [&] (int *SendBlockMaxMessageSize,int *RecvBlockMaxMessageSize,
-        int *MoveInNodeTableSize,int **MoveInDataSizeTable,int *MoveOutNodeTableSize,int **MoveOutDataSizeTable,int MessageSizeLimit,int TotalBufferSize,int& RecvBufferTotalSize,int& SendBufferTotalSize) {
+        int *MoveInNodeTableSize,int **MoveInDataSizeTable,int *MoveOutNodeTableSize,int **MoveOutDataSizeTable,int MessageSizeLimit,int& TotalBufferSize) {
       for (int thread=0;thread<nTotalThreads;thread++) {
-        int inode,MaxSize;
+        int inode,MaxSize,TotalSize;
 
         SendBlockMaxMessageSize[thread]=0,RecvBlockMaxMessageSize[thread]=0;
 
+        //estimate limits of the Recv buffer
         if (MoveInNodeTableSize[thread]!=0) {
-          for (inode=0,MaxSize=0;inode<MoveInNodeTableSize[thread];inode++) if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
+          for (inode=0,MaxSize=0,TotalSize=0;inode<MoveInNodeTableSize[thread];inode++) {
+            TotalSize+=MoveInDataSizeTable[thread][inode];
 
-          if (MaxSize>MessageSizeLimit) {
-            if (RecvBufferTotalSize+MaxSize<TotalBufferSize) {
-              RecvBufferTotalSize+=MaxSize;
-            }
-
-            RecvBlockMaxMessageSize[thread]=MaxSize;
+            if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
           }
-          else {
-            if (RecvBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-              RecvBufferTotalSize+=MessageSizeLimit;
-            }
 
-            RecvBlockMaxMessageSize[thread]=MessageSizeLimit;
+          if (TotalSize<MessageSizeLimit) RecvBlockMaxMessageSize[thread]=TotalSize;
+          else {
+            RecvBlockMaxMessageSize[thread]=(MaxSize<MessageSizeLimit) ? MaxSize : MessageSizeLimit;
+
+            if (MaxSize>TotalBufferSize) TotalBufferSize=1.03*MaxSize;
           }
         }
 
+        //estimate limits of Send buffers
         if (MoveOutNodeTableSize[thread]!=0) {
-          for (inode=0,MaxSize=0;inode<MoveOutNodeTableSize[thread];inode++) if (MaxSize<MoveOutDataSizeTable[thread][inode]) MaxSize=MoveOutDataSizeTable[thread][inode];
+          for (inode=0,MaxSize=0,TotalSize=0;inode<MoveOutNodeTableSize[thread];inode++) {
+            TotalSize+=MoveOutDataSizeTable[thread][inode];
 
-          if (MaxSize>MessageSizeLimit) {
-            if (SendBufferTotalSize+MaxSize<TotalBufferSize) {
-              SendBufferTotalSize+=MaxSize;
-            }
-
-            SendBlockMaxMessageSize[thread]=MaxSize;
+            if (MaxSize<MoveOutDataSizeTable[thread][inode]) MaxSize=MoveOutDataSizeTable[thread][inode];
           }
-          else {
-            if (SendBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-              SendBufferTotalSize+=MessageSizeLimit;
-            }
 
-            SendBlockMaxMessageSize[thread]=MessageSizeLimit;
+          if (TotalSize<MessageSizeLimit) SendBlockMaxMessageSize[thread]=TotalSize;
+          else {
+            SendBlockMaxMessageSize[thread]=(MaxSize<MessageSizeLimit) ? MaxSize : MessageSizeLimit;
+
+            if (MaxSize>TotalBufferSize) TotalBufferSize=1.03*MaxSize;
           }
         }
       }
@@ -11133,12 +11127,11 @@ if (TmpAllocationCounter==2437) {
     int *RecvBlockMaxMessageSize=new int [nTotalThreads];
 
     const int MessageSizeLimit=5000000;
-    const int TotalBufferSize=100000000;
-    int SendBufferTotalSize=0,RecvBufferTotalSize=0;
+    int TotalBufferSize=100000000;
 
-    //allocate the send/recv buffers
+    //determine the limits of the send/recv buffers
     InitSendRecvBuffers(SendBlockMaxMessageSize,RecvBlockMaxMessageSize,MoveInNodeTableSize,MoveInDataSizeTable,MoveOutNodeTableSize,
-        MoveOutDataSizeTable,MessageSizeLimit,TotalBufferSize,RecvBufferTotalSize,SendBufferTotalSize);
+        MoveOutDataSizeTable,MessageSizeLimit,TotalBufferSize);
 
 
     CommunicateBlocks(MoveOutNodeTableSize,MoveOutNodeTable,MoveOutDataSizeTable,SendBlockMaxMessageSize,
