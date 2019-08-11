@@ -10809,39 +10809,31 @@ if (TmpAllocationCounter==2437) {
        delete [] MoveInRequestTable;
     };
 
+
+
+
     //allocate Send/Recv buffers
-    auto AllocateSendRecvBuffers = [&] (int *iLastSendStartNode,int *iLastSendFinishNode,int *SendBlockMaxMessageSize,int *iLastRecvStartNode,int *iLastRecvFinishNode,int *RecvBlockMaxMessageSize,int *LastRecvMessageSize,
-        char **SendBlockDataBuffer,char **RecvBlockDataBuffer,bool *SendCompletedTable,bool *RecvCompletedTable,int *MoveInNodeTableSize,int **MoveInDataSizeTable,int *MoveOutNodeTableSize,int **MoveOutDataSizeTable,
-        int MessageSizeLimit,int TotalBufferSize,int& RecvBufferTotalSize,int& SendBufferTotalSize) {
-      for (thread=0;thread<nTotalThreads;thread++) {
+    auto InitSendRecvBuffers = [&] (int *SendBlockMaxMessageSize,int *RecvBlockMaxMessageSize,
+        int *MoveInNodeTableSize,int **MoveInDataSizeTable,int *MoveOutNodeTableSize,int **MoveOutDataSizeTable,int MessageSizeLimit,int TotalBufferSize,int& RecvBufferTotalSize,int& SendBufferTotalSize) {
+      for (int thread=0;thread<nTotalThreads;thread++) {
         int inode,MaxSize;
 
-        iLastSendStartNode[thread]=-1,iLastSendFinishNode[thread]=-1;
-        iLastRecvStartNode[thread]=-1,iLastRecvFinishNode[thread]=-1;
         SendBlockMaxMessageSize[thread]=0,RecvBlockMaxMessageSize[thread]=0;
-        LastRecvMessageSize[thread]=0;
-
-        SendBlockDataBuffer[thread]=NULL,RecvBlockDataBuffer[thread]=NULL;
-        SendCompletedTable[thread]=false,RecvCompletedTable[thread]=false;
 
         if (MoveInNodeTableSize[thread]!=0) {
           for (inode=0,MaxSize=0;inode<MoveInNodeTableSize[thread];inode++) if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
 
           if (MaxSize>MessageSizeLimit) {
             if (RecvBufferTotalSize+MaxSize<TotalBufferSize) {
-              RecvBlockDataBuffer[thread]=new char [MaxSize];
               RecvBufferTotalSize+=MaxSize;
             }
-            else RecvBlockDataBuffer[thread]=NULL;
 
             RecvBlockMaxMessageSize[thread]=MaxSize;
           }
           else {
             if (RecvBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-              RecvBlockDataBuffer[thread]=new char [MessageSizeLimit];
               RecvBufferTotalSize+=MessageSizeLimit;
             }
-            else RecvBlockDataBuffer[thread]=NULL;
 
             RecvBlockMaxMessageSize[thread]=MessageSizeLimit;
           }
@@ -10852,38 +10844,18 @@ if (TmpAllocationCounter==2437) {
 
           if (MaxSize>MessageSizeLimit) {
             if (SendBufferTotalSize+MaxSize<TotalBufferSize) {
-              SendBlockDataBuffer[thread]=new char [MaxSize];
               SendBufferTotalSize+=MaxSize;
             }
-            else SendBlockDataBuffer[thread]=NULL;
 
             SendBlockMaxMessageSize[thread]=MaxSize;
           }
           else {
             if (SendBufferTotalSize+MessageSizeLimit<TotalBufferSize) {
-              SendBlockDataBuffer[thread]=new char [MessageSizeLimit];
               SendBufferTotalSize+=MessageSizeLimit;
             }
-            else SendBlockDataBuffer[thread]=NULL;
 
             SendBlockMaxMessageSize[thread]=MessageSizeLimit;
           }
-        }
-      }
-    };
-
-    auto DeallocateSendRecvBuffers = [&] (char **RecvBlockDataBuffer,char **SendBlockDataBuffer) {
-      int thread;
-
-      for (thread=0;thread<nTotalThreads;thread++) {
-        if (RecvBlockDataBuffer[thread]!=NULL) {
-          delete [] RecvBlockDataBuffer[thread];
-          RecvBlockDataBuffer[thread]=NULL;
-        }
-
-        if (SendBlockDataBuffer[thread]!=NULL) {
-          delete [] SendBlockDataBuffer[thread];
-          SendBlockDataBuffer[thread]=NULL;
         }
       }
     };
@@ -10937,11 +10909,7 @@ if (TmpAllocationCounter==2437) {
          InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
                  SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
          To=-1;
-
-
-
        }
-
      }
 
      return To;
@@ -10985,121 +10953,152 @@ if (TmpAllocationCounter==2437) {
       return From;
    };
 
-    auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,char **SendBlockDataBuffer,int *iLastSendStartNode,int *iLastSendFinishNode,
-        cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,int *MoveOutProcessTable,int* SendBlockMaxMessageSize,bool *SendCompletedTable,
-        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInProcessTable,int *MoveInNodeTableSize,int *iLastRecvStartNode,int *iLastRecvFinishNode,int& RecvBufferTotalSize,
-        char **RecvBlockDataBuffer,int* RecvBlockMaxMessageSize,bool *RecvCompletedTable,int &SendBufferTotalSize,int *LastRecvMessageSize,
-        int TotalBufferSize) {
-      int To,From;
-      bool CommunicationCompleted=true;
+    auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,int* SendBlockMaxMessageSize,
+        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,int* RecvBlockMaxMessageSize,int TotalBufferSize) {
+      int To,From,from_complete,to_complete;
 
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
       MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
       MPI_Request *MoveInRequestTable=new MPI_Request [nTotalThreads];
 
-      //start the initial send
-      for (To=0;To<nTotalThreads;To++) {
-        if (MoveOutNodeTableSize[To]!=0) {
-          CommunicationCompleted=false;
+      int *MoveOutProcessTable=new int [nTotalThreads];
+      int *MoveInProcessTable=new int [nTotalThreads];
 
-          if (SendBlockDataBuffer[To]!=NULL) {
-            InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
-                SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
+      char **RecvBlockDataBuffer=new char* [nTotalThreads];
+      char **SendBlockDataBuffer=new char* [nTotalThreads];
 
-            SendCompletedTable[To]=true;
-          }
-        }
+      int *iLastSendStartNode=new int [nTotalThreads];
+      int *iLastSendFinishNode=new int [nTotalThreads];
+      int *iLastRecvStartNode=new int [nTotalThreads];
+      int *iLastRecvFinishNode=new int [nTotalThreads];
+      int *LastRecvMessageSize=new int [nTotalThreads];
+
+      int SendBufferTotalSize=0,RecvBufferTotalSize=0;
+
+      for (thread=0;thread<nTotalThreads;thread++) {
+        RecvBlockDataBuffer[thread]=NULL,SendBlockDataBuffer[thread]=NULL;
+
+        iLastSendStartNode[thread]=-1,iLastSendFinishNode[thread]=-1;
+        iLastRecvStartNode[thread]=-1,iLastRecvFinishNode[thread]=-1;
+        LastRecvMessageSize[thread]=0;
       }
 
+      for (From=0;From<nTotalThreads;From++) for (To=0;To<nTotalThreads;To++) if (From!=To) {
+        //the pair From-To will communicate
+        //in case memoty is available -> start new communication round; else waite for any completed communication
+        if ( ((ThisThread==From)&&(MoveOutNodeTableSize[To]!=0)) || ((ThisThread==To)&&(MoveInNodeTableSize[From]!=0)) ) {
+          bool AvailableMemoryFlag=true;
 
-      //schedule the initial recieving
-      for (From=0;From<nTotalThreads;From++) {
-        if (MoveInNodeTableSize[From]!=0) {
-          CommunicationCompleted=false;
+          if (ThisThread==From) if (SendBufferTotalSize+SendBlockMaxMessageSize[To]>TotalBufferSize) AvailableMemoryFlag=false;
+          if (ThisThread==To) if (RecvBufferTotalSize+RecvBlockMaxMessageSize[From]>TotalBufferSize) AvailableMemoryFlag=false;
 
-          if (RecvBlockDataBuffer[From]!=NULL) {
+          //in case memory is not sufficient waite for completing of previously started communication
+          while (AvailableMemoryFlag==false) {
+             //check completing of previous Recv operations
+            if (MoveInRequestTableSize!=0) {
+              do {
+                from_complete=TestRecvOperation(MoveInRequestTable,MoveInRequestTableSize,MoveInProcessTable,iLastRecvStartNode,iLastRecvFinishNode,
+                  LastRecvMessageSize,MoveInNodeTable,RecvBlockDataBuffer,MoveInNodeTableSize,MoveInDataSizeTable,RecvBlockMaxMessageSize);
+
+                if (from_complete!=-1) {
+                  //communication is completed
+                  delete [] RecvBlockDataBuffer[from_complete];
+
+                  RecvBlockDataBuffer[from_complete]=NULL;
+                  RecvBufferTotalSize-=RecvBlockMaxMessageSize[from_complete];
+                }
+              }
+              while ((from_complete!=-1)&&(MoveInRequestTableSize!=0));
+            }
+
+            //check previous Send operations
+            if (MoveOutRequestTableSize!=0) {
+              do {
+                to_complete=TestSendOperation(MoveOutRequestTable,MoveOutRequestTableSize,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,SendBlockMaxMessageSize,
+                  MoveOutProcessTable,SendBlockDataBuffer);
+
+                if (to_complete!=-1) {
+                  delete [] SendBlockDataBuffer[to_complete];
+
+                  SendBlockDataBuffer[to_complete]=NULL;
+                  SendBufferTotalSize-=SendBlockMaxMessageSize[to_complete];
+                }
+
+              }
+              while ((to_complete!=-1)&&(MoveOutRequestTableSize!=0));
+            }
+
+            //re-evaluate memory avaiability
+            AvailableMemoryFlag=true;
+
+            if (ThisThread==From) if (SendBufferTotalSize+SendBlockMaxMessageSize[To]>TotalBufferSize) AvailableMemoryFlag=false;
+            if (ThisThread==To) if (RecvBufferTotalSize+RecvBlockMaxMessageSize[From]>TotalBufferSize) AvailableMemoryFlag=false;
+          }
+
+          //initiate new communication
+          if (ThisThread==To) {
+            RecvBlockDataBuffer[From]=new char[RecvBlockMaxMessageSize[From]];
+            RecvBufferTotalSize+=RecvBlockMaxMessageSize[From];
+
             InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
               RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
+           }
 
-            RecvCompletedTable[From]=true;
-          }
+
+           if (ThisThread==From) {
+             SendBlockDataBuffer[To]=new char [SendBlockMaxMessageSize[To]];
+             SendBufferTotalSize+=SendBlockMaxMessageSize[To];
+
+             InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
+                   SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
+           }
         }
       }
 
-      int flag,index;
 
-      while (CommunicationCompleted==false) {
-        CommunicationCompleted=true;
+      //complete unfinished Recv operations
+      while (MoveInRequestTableSize!=0) {
+        from_complete=TestRecvOperation(MoveInRequestTable,MoveInRequestTableSize,MoveInProcessTable,iLastRecvStartNode,iLastRecvFinishNode,
+          LastRecvMessageSize,MoveInNodeTable,RecvBlockDataBuffer,MoveInNodeTableSize,MoveInDataSizeTable,RecvBlockMaxMessageSize);
 
-        //check whether anything has been recieved
-        if (MoveInRequestTableSize!=0) {
-          From=TestRecvOperation(MoveInRequestTable,MoveInRequestTableSize,MoveInProcessTable,iLastRecvStartNode,iLastRecvFinishNode,
-                 LastRecvMessageSize,MoveInNodeTable,RecvBlockDataBuffer,MoveInNodeTableSize,MoveInDataSizeTable,RecvBlockMaxMessageSize);
+        if (from_complete!=-1) {
+          //communication is completed
+          delete [] RecvBlockDataBuffer[from_complete];
 
-          if (From!=-1) {
-            //free data buffer used to recieve the message
-            delete [] RecvBlockDataBuffer[From];
-
-            RecvBlockDataBuffer[From]=NULL;
-            RecvBufferTotalSize-=RecvBlockMaxMessageSize[From];
-
-            //initiate recieve from a process that cound not started before because of insufficient memory was avaialble
-            for (From=0;From<nTotalThreads;From++) if ((RecvCompletedTable[From]==false)&&(MoveInNodeTableSize[From]!=0)) {
-              CommunicationCompleted=false;
-
-              //if there is available memory -> allocate it and initiate recieving operation
-              if (RecvBufferTotalSize+RecvBlockMaxMessageSize[From]<TotalBufferSize) {
-                RecvBlockDataBuffer[From]=new char[RecvBlockMaxMessageSize[From]];
-                RecvBufferTotalSize+=RecvBlockMaxMessageSize[From];
-
-                InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
-                  RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-                RecvCompletedTable[From]=true;
-              }
-            }
-          }
+          RecvBlockDataBuffer[from_complete]=NULL;
+          RecvBufferTotalSize-=RecvBlockMaxMessageSize[from_complete];
         }
+      }
 
-        //check whether any of previous send operation has need completed
-        if (MoveOutRequestTableSize!=0) {
-          To=TestSendOperation(MoveOutRequestTable,MoveOutRequestTableSize,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,SendBlockMaxMessageSize,
-              MoveOutProcessTable,SendBlockDataBuffer);
+      //complete unfinished send operatoins
+      while (MoveOutRequestTableSize!=0) {
+        to_complete=TestSendOperation(MoveOutRequestTable,MoveOutRequestTableSize,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,SendBlockMaxMessageSize,
+          MoveOutProcessTable,SendBlockDataBuffer);
 
-          if (To!=-1) {
-            //one of send operation is completed
-            //free data buffer used to send the message
-            delete [] SendBlockDataBuffer[To];
+        if (to_complete!=-1) {
+          delete [] SendBlockDataBuffer[to_complete];
 
-            SendBlockDataBuffer[To]=NULL;
-            SendBufferTotalSize-=SendBlockMaxMessageSize[To];
-
-            //initiate send to a process that cound not started before because of insufficient memory was avaialble
-            for (To=0;To<nTotalThreads;To++) if ((SendCompletedTable[To]==false)&&(MoveOutNodeTableSize[To]!=0)) {
-              CommunicationCompleted=false;
-
-              //if case there is enough memory -> allocate it and initiate send
-              if (SendBufferTotalSize+SendBlockMaxMessageSize[To]<TotalBufferSize) {
-                SendBlockDataBuffer[To]=new char [SendBlockMaxMessageSize[To]];
-                SendBufferTotalSize+=SendBlockMaxMessageSize[To];
-
-                InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
-                      SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
-                SendCompletedTable[To]=true;
-              }
-            }
-          }
+          SendBlockDataBuffer[to_complete]=NULL;
+          SendBufferTotalSize-=SendBlockMaxMessageSize[to_complete];
         }
-
-        if ((MoveInRequestTableSize!=0)||(MoveOutRequestTableSize!=0)) CommunicationCompleted=false;
       }
 
 
-      //waite for completing of the send operations
-      if (MoveOutRequestTableSize!=0) MPI_Waitall(MoveOutRequestTableSize,MoveOutRequestTable,MPI_STATUSES_IGNORE);
-      if (MoveInRequestTableSize!=0) MPI_Waitall(MoveInRequestTableSize,MoveInRequestTable,MPI_STATUSES_IGNORE);
-
+      //delete temporary buffers
       delete [] MoveOutRequestTable;
       delete [] MoveInRequestTable;
+
+      delete [] MoveOutProcessTable;
+      delete [] MoveInProcessTable;
+
+      delete [] RecvBlockDataBuffer;
+      delete [] SendBlockDataBuffer;
+
+      delete [] iLastSendStartNode;
+      delete [] iLastSendFinishNode;
+      delete [] iLastRecvStartNode;
+      delete [] iLastRecvFinishNode;
+      delete [] LastRecvMessageSize;
     };
 
 
@@ -11126,61 +11125,32 @@ if (TmpAllocationCounter==2437) {
     int **MoveInDataSizeTable=new int* [nTotalThreads];
     int **MoveOutDataSizeTable=new int* [nTotalThreads];
 
-    MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
-    MPI_Request *MoveInRequestTable=new MPI_Request [nTotalThreads];
-    int *MoveOutProcessTable=new int [nTotalThreads];
-    int *MoveInProcessTable=new int [nTotalThreads];
-
-    int MoveOutRequestTableSize=0,MoveInRequestTableSize=0;
-
 
     DistributeMoveDataSizeTables(MoveInDataSizeTable,MoveInNodeTableSize,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutNodeTable);
 
 
-    char **SendBlockDataBuffer=new char* [nTotalThreads];
-    char **RecvBlockDataBuffer=new char* [nTotalThreads];
-
     int *SendBlockMaxMessageSize=new int [nTotalThreads];
     int *RecvBlockMaxMessageSize=new int [nTotalThreads];
-
-    int *iLastSendStartNode=new int [nTotalThreads];
-    int *iLastSendFinishNode=new int [nTotalThreads];
-    int *iLastRecvStartNode=new int [nTotalThreads];
-    int *iLastRecvFinishNode=new int [nTotalThreads];
-
-    int *LastRecvMessageSize=new int [nTotalThreads];
-
-    bool *RecvCompletedTable=new bool [nTotalThreads];
-    bool *SendCompletedTable=new bool [nTotalThreads];
 
     const int MessageSizeLimit=5000000;
     const int TotalBufferSize=100000000;
     int SendBufferTotalSize=0,RecvBufferTotalSize=0;
 
     //allocate the send/recv buffers
-    AllocateSendRecvBuffers(iLastSendStartNode,iLastSendFinishNode,SendBlockMaxMessageSize,iLastRecvStartNode,iLastRecvFinishNode,RecvBlockMaxMessageSize,LastRecvMessageSize,
-            SendBlockDataBuffer,RecvBlockDataBuffer,SendCompletedTable,RecvCompletedTable,MoveInNodeTableSize,MoveInDataSizeTable,MoveOutNodeTableSize,MoveOutDataSizeTable,
-            MessageSizeLimit,TotalBufferSize,RecvBufferTotalSize,SendBufferTotalSize);
+    InitSendRecvBuffers(SendBlockMaxMessageSize,RecvBlockMaxMessageSize,MoveInNodeTableSize,MoveInDataSizeTable,MoveOutNodeTableSize,
+        MoveOutDataSizeTable,MessageSizeLimit,TotalBufferSize,RecvBufferTotalSize,SendBufferTotalSize);
 
 
-    CommunicateBlocks(MoveOutNodeTableSize,SendBlockDataBuffer,iLastSendStartNode,iLastSendFinishNode,
-            MoveOutNodeTable,MoveOutDataSizeTable,MoveOutProcessTable,SendBlockMaxMessageSize,SendCompletedTable,
-            MoveInNodeTable,MoveInDataSizeTable,MoveInProcessTable,MoveInNodeTableSize,iLastRecvStartNode,iLastRecvFinishNode,RecvBufferTotalSize,
-            RecvBlockDataBuffer,RecvBlockMaxMessageSize,RecvCompletedTable,SendBufferTotalSize,LastRecvMessageSize,
-            TotalBufferSize);
+    CommunicateBlocks(MoveOutNodeTableSize,MoveOutNodeTable,MoveOutDataSizeTable,SendBlockMaxMessageSize,
+            MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,RecvBlockMaxMessageSize,TotalBufferSize);
 
 
 
     //de-allocate the temporary data buffers
     DeallocateSendRecvTables(MoveInNodeTable,MoveOutNodeTable,MoveInDataSizeTable,MoveOutDataSizeTable);
-    DeallocateSendRecvBuffers(RecvBlockDataBuffer,SendBlockDataBuffer);
-
 
     delete [] SendBlockMaxMessageSize;
     delete [] RecvBlockMaxMessageSize;
-
-    delete [] SendBlockDataBuffer;
-    delete [] RecvBlockDataBuffer;
 
     delete [] MoveInDataSizeTable;
     delete [] MoveOutDataSizeTable;
@@ -11190,21 +11160,6 @@ if (TmpAllocationCounter==2437) {
 
     delete [] MoveInNodeTable;
     delete [] MoveOutNodeTable;
-
-    delete [] MoveOutRequestTable;
-    delete [] MoveInRequestTable;
-    delete [] MoveOutProcessTable;
-    delete [] MoveInProcessTable;
-
-    delete [] iLastSendStartNode;
-    delete [] iLastSendFinishNode;
-    delete [] iLastRecvStartNode;
-    delete [] iLastRecvFinishNode;
-
-    delete [] LastRecvMessageSize;
-
-    delete [] RecvCompletedTable;
-    delete [] SendCompletedTable;
 
     delete [] RecvOperationCounterTable;
     delete [] SendOperationCounterTable;
