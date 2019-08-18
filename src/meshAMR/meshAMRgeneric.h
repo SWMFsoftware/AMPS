@@ -2089,9 +2089,10 @@ Start:
 
     }
 
-#if  _AMR_DEBUG_MODE_ == _AMR_DEBUG_MODE_ON_
-    if (res!=NULL) for (int idim=0;idim<_MESH_DIMENSION_;idim++) if ((x[idim]<res->xmin[idim])||(res->xmax[idim]<x[idim])) exit(__LINE__,__FILE__,"Error: did'nt find the tree node");
-#endif
+    if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {  
+      if (res!=NULL) for (int idim=0;idim<_MESH_DIMENSION_;idim++) if ((x[idim]<res->xmin[idim])||(res->xmax[idim]<x[idim])) exit(__LINE__,__FILE__,"Error: did'nt find the tree node");
+    }
+
     return res;
   }
   */
@@ -10612,12 +10613,23 @@ if (TmpAllocationCounter==2437) {
       LastRecvMessageSize[From]=Size;
 
       if (Size>0) {
-        MPI_Irecv(RecvBlockDataBuffer[From],Size,MPI_BYTE,From,RecvOperationCounterTable[From],MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
+        if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
+          int t;
+          MPI_Status status;
+
+          MPI_Recv(&t,1,MPI_INT,From,2*RecvOperationCounterTable[From],MPI_GLOBAL_COMMUNICATOR,&status);
+
+          if (t!=Size) exit(__LINE__,__FILE__,"Error: something wrong with calculating size of the message");
+        }
+
+        MPI_Irecv(RecvBlockDataBuffer[From],Size,MPI_BYTE,From,1+2*RecvOperationCounterTable[From],MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
 
         RecvOperationCounterTable[From]++;
         MoveInProcessTable[MoveInRequestTableSize]=From;
         MoveInRequestTableSize++;
       }
+
+      return Size;
     };
 
     auto InitSend = [&] (int To,int *iLastSendStartNode,int *iLastSendFinishNode,
@@ -10650,12 +10662,20 @@ if (TmpAllocationCounter==2437) {
       }
 
       if (Size>0) {
-        MPI_Isend(SendBlockDataBuffer[To],Size,MPI_BYTE,To,SendOperationCounterTable[To],MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
+        if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
+          //send actual size of the message to check consistensy of the procedure
+          MPI_Send(&Size,1,MPI_INT,To,2*SendOperationCounterTable[To],MPI_GLOBAL_COMMUNICATOR);
+        }
+
+        //send the block state vector
+        MPI_Isend(SendBlockDataBuffer[To],Size,MPI_BYTE,To,1+2*SendOperationCounterTable[To],MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
 
         SendOperationCounterTable[To]++;
         MoveOutProcessTable[MoveOutRequestTableSize]=To;
         MoveOutRequestTableSize++;
       }
+
+      return Size;
     };
 
     PrepareLoadMeasure();
@@ -10778,6 +10798,8 @@ if (TmpAllocationCounter==2437) {
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
       MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
       MPI_Request *MoveInRequestTable=new MPI_Request [nTotalThreads];
+      MPI_Status *MoveOutStatusTable=new MPI_Status [nTotalThreads];
+      MPI_Status *MoveInStatusTable=new MPI_Status [nTotalThreads];
 
       for (thread=0;thread<nTotalThreads;thread++) {
          if (MoveInNodeTableSize[thread]!=0) {
@@ -10801,12 +10823,15 @@ if (TmpAllocationCounter==2437) {
        }
 
        //waite completing of the communication
-       MPI_Waitall(MoveInRequestTableSize,MoveInRequestTable,MPI_STATUSES_IGNORE);
-       MPI_Waitall(MoveOutRequestTableSize,MoveOutRequestTable,MPI_STATUSES_IGNORE);
+      if (MoveInRequestTableSize!=0) MPI_Waitall(MoveInRequestTableSize,MoveInRequestTable,MoveInStatusTable);
+      if (MoveOutRequestTableSize!=0) MPI_Waitall(MoveOutRequestTableSize,MoveOutRequestTable,MoveOutStatusTable);
 
        //delete temporary buffers
        delete [] MoveOutRequestTable;
        delete [] MoveInRequestTable;
+
+       delete [] MoveOutStatusTable;
+       delete [] MoveInStatusTable;
     };
 
 
@@ -10884,14 +10909,17 @@ if (TmpAllocationCounter==2437) {
    auto TestSendOperation = [&] (MPI_Request *MoveOutRequestTable,int &MoveOutRequestTableSize,int *iLastSendStartNode,int *iLastSendFinishNode,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,
        int *MoveOutNodeTableSize,int* SendBlockMaxMessageSize,int *MoveOutProcessTable,char **SendBlockDataBuffer) {
      int index,flag,To=-1;
+     MPI_Status status;
 
-     MPI_Testany(MoveOutRequestTableSize,MoveOutRequestTable,&index,&flag,MPI_STATUS_IGNORE);
+     if (MoveOutRequestTableSize==0) return -1;
+
+     MPI_Testany(MoveOutRequestTableSize,MoveOutRequestTable,&index,&flag,&status);
 
      if ((flag==true)&&(index!=MPI_UNDEFINED)) {
        To=MoveOutProcessTable[index];
 
        //release memory used by MPI
-       MPI_Wait(MoveOutRequestTable+index,MPI_STATUS_IGNORE);
+       MPI_Wait(MoveOutRequestTable+index,&status);
 
        MoveOutRequestTable[index]=MoveOutRequestTable[MoveOutRequestTableSize-1];
        MoveOutProcessTable[index]=MoveOutProcessTable[MoveOutRequestTableSize-1];
@@ -10912,15 +10940,18 @@ if (TmpAllocationCounter==2437) {
    auto TestRecvOperation = [&] (MPI_Request *MoveInRequestTable,int &MoveInRequestTableSize,int *MoveInProcessTable,int *iLastRecvStartNode,int *iLastRecvFinishNode,
        int *LastRecvMessageSize,cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,char **RecvBlockDataBuffer,int *MoveInNodeTableSize,int **MoveInDataSizeTable,int* RecvBlockMaxMessageSize) {
      int flag,index,From=-1;
+     MPI_Status status;
 
-     MPI_Testany(MoveInRequestTableSize,MoveInRequestTable,&index,&flag,MPI_STATUS_IGNORE);
+     if (MoveInRequestTableSize==0) return -1;
+
+     MPI_Testany(MoveInRequestTableSize,MoveInRequestTable,&index,&flag,&status);
 
       if ((flag==true)&&(index!=MPI_UNDEFINED)) {
         //a message has been recieved
         From=MoveInProcessTable[index];
 
         //release memory used by the MPI
-        MPI_Wait(MoveInRequestTable+index,MPI_STATUS_IGNORE);
+        MPI_Wait(MoveInRequestTable+index,&status);
 
         MoveInProcessTable[index]=MoveInProcessTable[MoveInRequestTableSize-1];
         MoveInRequestTable[index]=MoveInRequestTable[MoveInRequestTableSize-1];
@@ -10949,7 +10980,7 @@ if (TmpAllocationCounter==2437) {
 
     auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,int* SendBlockMaxMessageSize,
         cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,int* RecvBlockMaxMessageSize,int TotalBufferSize) {
-      int To,From,from_complete,to_complete;
+      int To,From,from_complete,to_complete,Size;
 
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
       MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
@@ -11034,18 +11065,32 @@ if (TmpAllocationCounter==2437) {
             RecvBlockDataBuffer[From]=new char[RecvBlockMaxMessageSize[From]];
             RecvBufferTotalSize+=RecvBlockMaxMessageSize[From];
 
-            InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
+            Size=InitRecieve(From,iLastRecvStartNode,iLastRecvFinishNode,MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,LastRecvMessageSize,MoveInRequestTable,MoveInRequestTableSize,
               RecvBlockMaxMessageSize,MoveInProcessTable,RecvBlockDataBuffer);
-           }
+
+            if (Size==0) {
+              delete [] RecvBlockDataBuffer[From];
+
+              RecvBlockDataBuffer[From]=NULL;
+              RecvBufferTotalSize-=RecvBlockMaxMessageSize[From];
+            }
+          }
 
 
-           if (ThisThread==From) {
-             SendBlockDataBuffer[To]=new char [SendBlockMaxMessageSize[To]];
-             SendBufferTotalSize+=SendBlockMaxMessageSize[To];
+          if (ThisThread==From) {
+            SendBlockDataBuffer[To]=new char [SendBlockMaxMessageSize[To]];
+            SendBufferTotalSize+=SendBlockMaxMessageSize[To];
 
-             InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
+            Size=InitSend(To,iLastSendStartNode,iLastSendFinishNode,MoveOutNodeTable,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutRequestTable,MoveOutRequestTableSize,
                    SendBlockMaxMessageSize,MoveOutProcessTable,SendBlockDataBuffer);
-           }
+
+            if (Size==0) {
+              delete [] SendBlockDataBuffer[To];
+
+              SendBlockDataBuffer[To]=NULL;
+              SendBufferTotalSize-=SendBlockMaxMessageSize[To];
+            }
+          }
         }
       }
 
@@ -11077,6 +11122,23 @@ if (TmpAllocationCounter==2437) {
         }
       }
 
+      //verify that all communications have been completed
+      bool error_flag=false;
+      char msg[1000]="";
+
+      for (thread=0;thread<nTotalThreads;thread++) {
+        if (RecvBlockDataBuffer[thread]!=NULL) {
+          sprintf(msg,"%sError: Recv operation from process %i was not completed by process %i\n",msg,thread,ThisThread);
+          error_flag=true;
+        }
+
+        if (SendBlockDataBuffer[thread]!=NULL) {
+          sprintf(msg,"%sError: Send operation to process %i was not completed by process %i\n",msg,thread,ThisThread);
+          error_flag=true;
+        }
+      }
+
+      if (error_flag==true) exit(__LINE__,__FILE__,msg);
 
       //delete temporary buffers
       delete [] MoveOutRequestTable;
@@ -11114,7 +11176,6 @@ if (TmpAllocationCounter==2437) {
     CountMoveBlockNumber(ParallelNodesDistributionList,MoveInNodeTableSize,MoveOutNodeTableSize);
     PopulateSendRecvTables(MoveOutNodeTableSize,MoveOutNodeTable,MoveInNodeTableSize,MoveInNodeTable);
 
-
     //perform the moving of the blocks
     int **MoveInDataSizeTable=new int* [nTotalThreads];
     int **MoveOutDataSizeTable=new int* [nTotalThreads];
@@ -11133,11 +11194,8 @@ if (TmpAllocationCounter==2437) {
     InitSendRecvBuffers(SendBlockMaxMessageSize,RecvBlockMaxMessageSize,MoveInNodeTableSize,MoveInDataSizeTable,MoveOutNodeTableSize,
         MoveOutDataSizeTable,MessageSizeLimit,TotalBufferSize);
 
-
     CommunicateBlocks(MoveOutNodeTableSize,MoveOutNodeTable,MoveOutDataSizeTable,SendBlockMaxMessageSize,
             MoveInNodeTable,MoveInDataSizeTable,MoveInNodeTableSize,RecvBlockMaxMessageSize,TotalBufferSize);
-
-
 
     //de-allocate the temporary data buffers
     DeallocateSendRecvTables(MoveInNodeTable,MoveOutNodeTable,MoveInDataSizeTable,MoveOutDataSizeTable);
@@ -11249,7 +11307,6 @@ if (TmpAllocationCounter==2437) {
       ParallelBlockDataExchange(fDefaultPackBlockData,fDefaultUnpackBlockData);
       #endif //_AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
     };
-
 
     //Update Send/Recv maps
     UpdateSendRecvMap(ParallelNodesDistributionList,ParallelSendRecvMap);
@@ -11747,8 +11804,17 @@ if (TmpAllocationCounter==2437) {
           SendInternalBlockRequestTableLength++;
         }
 
-        if (RecvInternalBlockRequestTableLength!=0) MPI_Waitall(RecvInternalBlockRequestTableLength,RecvInternalBlockRequestTable,MPI_STATUSES_IGNORE);
-        if (SendInternalBlockRequestTableLength!=0) MPI_Waitall(SendInternalBlockRequestTableLength,SendInternalBlockRequestTable,MPI_STATUSES_IGNORE);
+        if (RecvInternalBlockRequestTableLength!=0) {
+          MPI_Status StatusTable[RecvInternalBlockRequestTableLength];
+
+          MPI_Waitall(RecvInternalBlockRequestTableLength,RecvInternalBlockRequestTable,StatusTable);
+        }
+
+        if (SendInternalBlockRequestTableLength!=0) {
+          MPI_Status StatusTable[SendInternalBlockRequestTableLength];
+
+          MPI_Waitall(SendInternalBlockRequestTableLength,SendInternalBlockRequestTable,StatusTable);
+        }
       }
     };
 
