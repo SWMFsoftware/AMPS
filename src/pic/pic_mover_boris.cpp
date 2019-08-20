@@ -795,6 +795,10 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   #else //_PIC_FIELD_SOLVER_MODE__OFF_
 
+  int threadId = 0;
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  threadId = omp_get_thread_num();
+#endif
 
   switch ( _PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
@@ -803,9 +807,9 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
     for (int iStencil=0;iStencil<ElectricFieldStencil.Length;iStencil++) {
    
-       double * tempE1=PIC::Mover::E_Corner[ElectricFieldStencil.LocalCellID[iStencil]]; 
+       double * tempE1=&PIC::Mover::E_Corner[threadId][3*ElectricFieldStencil.LocalCellID[iStencil]]; 
 #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
-       double * tempB1=PIC::Mover::B_Corner[ElectricFieldStencil.LocalCellID[iStencil]];
+       double * tempB1=&PIC::Mover::B_Corner[threadId][3*ElectricFieldStencil.LocalCellID[iStencil]];
 #endif
        //    char * tempoffset = startNode->block->GetCornerNode(ElectricFieldStencil.LocaCellID[iStencil])->GetAssociatedDataBufferPointer();
        //double * tempE =(double *)(ElectricFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep);
@@ -825,7 +829,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
     for (int iStencil=0;iStencil<MagneticFieldStencil.Length;iStencil++) {
       //      memcpy(t,MagneticFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,3*sizeof(double));
-      double * tempB1 = PIC::Mover::B_Center[MagneticFieldStencil.LocalCellID[iStencil]];
+      double * tempB1 = &PIC::Mover::B_Center[threadId][3*MagneticFieldStencil.LocalCellID[iStencil]];
       //double * tempB =(double *)(MagneticFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset);
       for (idim=0;idim<3;idim++) {
         B[idim]+=MagneticFieldStencil.Weight[iStencil]*tempB1[idim];
@@ -842,7 +846,9 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   //advance the particle velocity
   double QdT_over_m,QdT_over_2m,alpha[3][3];
   double c0,QdT_over_2m_squared,mass,chargeQ;
-
+  
+  
+ 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
   double mass_conv =1.0/_AMU_;
   double charge_conv=1.0/ElectronCharge;

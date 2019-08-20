@@ -3608,9 +3608,13 @@ namespace PIC {
     //if BackwardTimeIntegrationMode==_PIC_MODE_ON_ the particle trajectory will be integrated backward in time
     extern int BackwardTimeIntegrationMode;
 
-    extern double E_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
-    extern double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
-    extern double B_Corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+    extern double ** E_Corner;
+    extern double ** B_Center;
+    extern double ** B_Corner;
+
+    extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_E_corner;
+    extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_center;
+    extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_corner;
 
     void SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
