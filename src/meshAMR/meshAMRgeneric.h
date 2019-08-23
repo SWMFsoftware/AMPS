@@ -5608,10 +5608,10 @@ if (startNode->Temp_ID==15) {
 
     //reset the flag for the 'corner nodes'
     cCornerNode *cornerNodeDataBuffer;
-    nTotalMemoryBanks=CornerNodes.dataBufferListPointer;   
+    nTotalMemoryBanks=CornerNodes.GetDataBufferListPointer();   
 
     for (nMemoryBank=0;nMemoryBank<nTotalMemoryBanks;nMemoryBank++) {
-      cornerNodeDataBuffer=CornerNodes.dataBufferList[nMemoryBank];
+      cornerNodeDataBuffer=CornerNodes.GetDataBufferList(nMemoryBank);
 
       for (nnode=0;nnode<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;nnode++) {
         (cornerNodeDataBuffer+nnode)->nodeDescriptor.nodeProcessedFlag=_AMR_FALSE_;
@@ -5623,10 +5623,10 @@ if (startNode->Temp_ID==15) {
     #if _AMR_CENTER_NODE_ ==  _ON_AMR_MESH_
     //reset the flag for the 'corner nodes'
     cCenterNode *centerNodeDataBuffer;
-    nTotalMemoryBanks=CenterNodes.dataBufferListPointer;
+    nTotalMemoryBanks=CenterNodes.GetDataBufferListPointer();
 
     for (nMemoryBank=0;nMemoryBank<nTotalMemoryBanks;nMemoryBank++) {
-      centerNodeDataBuffer=CenterNodes.dataBufferList[nMemoryBank];
+      centerNodeDataBuffer=CenterNodes.GetDataBufferList(nMemoryBank);
 
       for (nnode=0;nnode<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;nnode++) {
         (centerNodeDataBuffer+nnode)->nodeDescriptor.nodeProcessedFlag=_AMR_FALSE_;
@@ -7283,11 +7283,11 @@ nMPIops++;
         #endif
 
         if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
-        CornerNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
         if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
-        CenterNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
         rootTree->block->PrintVariableList(fout);
@@ -7306,11 +7306,11 @@ nMPIops++;
         #endif
 
         if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
-        CornerNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
         if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
-        CenterNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
         rootTree->block->PrintVariableList(fout);
@@ -7335,11 +7335,11 @@ nMPIops++;
         #endif
 
         if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
-        CornerNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
         if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
-        CenterNodes.elementStackList[0][0]->PrintVariableList(fout,DataSetNumber);
+        CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
         rootTree->block->PrintVariableList(fout);
@@ -7450,10 +7450,10 @@ nMPIops++;
     exit(__LINE__,__FILE__,"not implemented");
 
     if (PrintMeshData==true) {
-      CornerNodes.elementStackList[0][0]->PrintVariableList(fout);
+      CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout);
 
       #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-      CenterNodes.elementStackList[0][0]->PrintVariableList(fout);
+      CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout);
       #endif
 
       rootTree->block->PrintVariableList(fout);
@@ -9777,10 +9777,10 @@ nMPIops++;
     long int nMemoryBank,nTotalMemoryBanks,nnode;
     cTreeNodeAMR<cBlockAMR>* TreeNode;
 
-    nTotalMemoryBanks=treeNodes.dataBufferListPointer;
+    nTotalMemoryBanks=treeNodes.GetDataBufferListPointer();
 
     for (nMemoryBank=0;nMemoryBank<nTotalMemoryBanks;nMemoryBank++) {
-      TreeNode=treeNodes.dataBufferList[nMemoryBank];
+      TreeNode=treeNodes.GetDataBufferList(nMemoryBank);
 
       for (nnode=0;nnode<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;nnode++) {
         (TreeNode+nnode)->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
@@ -9792,10 +9792,10 @@ nMPIops++;
     long int nMemoryBank,nTotalMemoryBanks,nnode;
     cTreeNodeAMR<cBlockAMR>* TreeNode;
 
-    nTotalMemoryBanks=treeNodes.dataBufferListPointer;
+    nTotalMemoryBanks=treeNodes.GetDataBufferListPointer();
 
     for (nMemoryBank=0;nMemoryBank<nTotalMemoryBanks;nMemoryBank++) {
-      TreeNode=treeNodes.dataBufferList[nMemoryBank];
+      TreeNode=treeNodes.GetDataBufferList(nMemoryBank);
 
       for (nnode=0;nnode<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;nnode++) {
         (TreeNode+nnode)->ParallelLoadMeasure=0.0;

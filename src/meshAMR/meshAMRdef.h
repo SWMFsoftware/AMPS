@@ -429,6 +429,13 @@ public:
   long int totalSize() {return nMaxElements;}
   long int usedElements() {return elementStackPointer;}
 
+  long int GetDataBufferListPointer() {
+    return dataBufferListPointer;
+  }
+
+  T* GetDataBufferList(int iMemoryBank) {
+    return dataBufferList[iMemoryBank];
+  }
 
   T* newElement(bool ForceElementNumberLimit=true) {
     T* res;
@@ -484,16 +491,19 @@ public:
 //=============================================================
 //the stack class that is capable to store additional data associated with the objects stored in the stack
 template<class T>
-class cAssociatedDataAMRstack : public cAMRstack <T> {
-public:
+class cAssociatedDataAMRstack {
+private:
   //the stack's structure to store the associated data
   char*** associatedDataStackList;
   char** associatedDataBufferList;
 
+  cAMRstack<T> BaseElementStack;
+
+public:
   long int getAllocatedMemory() {
     T t;
 
-    return cAMRstack <T>::dataBufferListSize*(sizeof(T)+sizeof(T*)+sizeof(char)*t.AssociatedDataLength());
+    return BaseElementStack.dataBufferListSize*(sizeof(T)+sizeof(T*)+sizeof(char)*t.AssociatedDataLength());
   }
 
   void initMemoryBlock() {
@@ -503,22 +513,22 @@ public:
       long int i=0,j=0;
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
-      if (cAMRstack <T>::dataBufferListPointer==cAMRstack <T>::dataBufferListSize) {
-        char** tmpDataList=new char*[cAMRstack <T>::dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-        char*** tmpStackList=new char**[cAMRstack <T>::dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      if (BaseElementStack.dataBufferListPointer==BaseElementStack.dataBufferListSize) {
+        char** tmpDataList=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        char*** tmpStackList=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
 
-        cAMRstack <T>::MemoryAllocation+=sizeof(char*)*(cAMRstack <T>::dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
-        cAMRstack <T>::MemoryAllocation+=sizeof(char**)*(cAMRstack <T>::dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+        BaseElementStack.MemoryAllocation+=sizeof(char*)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+        BaseElementStack.MemoryAllocation+=sizeof(char**)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
         //copy the content of the old lists to the new ones
-        if (associatedDataBufferList!=NULL) for (;i<cAMRstack <T>::dataBufferListSize;i++) tmpDataList[i]=associatedDataBufferList[i],tmpStackList[i]=associatedDataStackList[i];
+        if (associatedDataBufferList!=NULL) for (;i<BaseElementStack.dataBufferListSize;i++) tmpDataList[i]=associatedDataBufferList[i],tmpStackList[i]=associatedDataStackList[i];
         for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
         if (associatedDataBufferList!=NULL) {
           delete [] associatedDataBufferList;
           delete [] associatedDataStackList;
 
-          cAMRstack <T>::MemoryAllocation-=(sizeof(char*)+sizeof(char**))*cAMRstack <T>::dataBufferListSize;
+          BaseElementStack.MemoryAllocation-=(sizeof(char*)+sizeof(char**))*BaseElementStack.dataBufferListSize;
         }
 
         associatedDataBufferList=tmpDataList;
@@ -528,36 +538,48 @@ public:
       //allocate a new memory chunk for the element's data and update the stack list
       long int offset=t.AssociatedDataLength();
 
-      associatedDataBufferList[cAMRstack <T>::dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
-      associatedDataStackList[cAMRstack <T>::dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+      associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
 
-      cAMRstack <T>::MemoryAllocation+=(offset*sizeof(char)+sizeof(char*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+      BaseElementStack.MemoryAllocation+=(offset*sizeof(char)+sizeof(char*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
-      for (i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) associatedDataStackList[cAMRstack <T>::dataBufferListPointer][i]=associatedDataBufferList[cAMRstack <T>::dataBufferListPointer]+i*offset;
+      for (i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) associatedDataStackList[BaseElementStack.dataBufferListPointer][i]=associatedDataBufferList[BaseElementStack.dataBufferListPointer]+i*offset;
     }
 
     //init the buffer for the stack object itself
-    cAMRstack <T>::initMemoryBlock() ;
+    BaseElementStack.initMemoryBlock() ;
   }
 
+  void CheckAssociatedDataConsistency() {
+    int iElement,elementStackBank,offset;
+
+    for (iElement=BaseElementStack.elementStackPointer;iElement<BaseElementStack.nMaxElements;iElement++) {
+      elementStackBank=BaseElementStack.elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+      offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+
+      if (associatedDataStackList[elementStackBank][offset]==NULL) {
+        exit(__LINE__,__FILE__,"Error: Some associated data vectors in the stack are not defined");
+      }
+    }
+  }
 
 
   T* newElement() {
     T* res;
 
     if (sizeof(T)==0) return NULL;
-    if (cAMRstack <T>::elementStackPointer==cAMRstack <T>::nMaxElements) initMemoryBlock();
+    if (BaseElementStack.elementStackPointer==BaseElementStack.nMaxElements) initMemoryBlock();
 
     long int elementStackBank,offset;
 
-    elementStackBank=cAMRstack <T>::elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
-    offset=cAMRstack <T>::elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+    elementStackBank=BaseElementStack.elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+    offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
-    res=cAMRstack <T>::elementStackList[elementStackBank][offset];
+    res=BaseElementStack.elementStackList[elementStackBank][offset];
     if (associatedDataStackList!=NULL) res->SetAssociatedDataBufferPointer(associatedDataStackList[elementStackBank][offset]);
-    cAMRstack <T>::elementStackPointer++;
+    BaseElementStack.elementStackPointer++;
 
-    if (cAMRstack <T>::usedElements()>_MAX_MESH_ELEMENT_NUMBER_) cAMRexit::exit(__LINE__,__FILE__,"The number of the requested mesh elements exeeds the limit -> increase _MESH_ELEMENTS_NUMBERING_BITS_ ");
+    if (BaseElementStack.usedElements()>_MAX_MESH_ELEMENT_NUMBER_) BaseElementStack.exit(__LINE__,__FILE__,"The number of the requested mesh elements exeeds the limit -> increase _MESH_ELEMENTS_NUMBERING_BITS_ ");
 
 //    if (res->ActiveFlag==true) exit(__LINE__,__FILE__,"Error: the stack element is re-allocated second time");
 
@@ -565,7 +587,7 @@ public:
     res->cleanDataBuffer();
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    res->Temp_ID=cAMRstack <T>::Temp_ID_counter++;
+    res->Temp_ID=BaseElementStack.Temp_ID_counter++;
     #endif
 
     return res;
@@ -581,43 +603,60 @@ public:
         delete [] associatedDataBufferList[i];
         delete [] associatedDataStackList[i];
 
-        cAMRstack <T>::MemoryAllocation-=(sizeof(char)*offset+sizeof(char*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+        BaseElementStack.MemoryAllocation-=(sizeof(char)*offset+sizeof(char*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
       }
 
       delete [] associatedDataBufferList;
       delete [] associatedDataStackList;
 
-      cAMRstack <T>::MemoryAllocation-=(sizeof(char*)+sizeof(char**))*cAMRstack <T>::dataBufferListSize;
+      BaseElementStack.MemoryAllocation-=(sizeof(char*)+sizeof(char**))*BaseElementStack.dataBufferListSize;
     }
 
     associatedDataBufferList=NULL,associatedDataStackList=NULL;
 
-    cAMRstack <T>::clear();
+    BaseElementStack.clear();
   }
 
   void init() {
     clear();
-    initMemoryBlock();
+    BaseElementStack.clear();
+  }
 
-    cAMRstack <T>::init();
+  long int usedElements() {
+    return BaseElementStack.usedElements();
+  }
+
+
+  T*** GetElementStackList() {
+    return BaseElementStack.elementStackList;
   }
 
   void explicitConstructor() {
     associatedDataStackList=NULL;
     associatedDataBufferList=NULL;
 
-    cAMRstack <T>::explicitConstructor();
+    BaseElementStack.explicitConstructor();
   }
 
 
-   cAssociatedDataAMRstack() : cAMRstack<T>() {
+   cAssociatedDataAMRstack() {
       explicitConstructor();
+   }
+
+   int GetDataBufferListPointer() {
+     return BaseElementStack.dataBufferListPointer;
+   }
+
+   T* GetDataBufferList(int iMemoryBank) {
+     return BaseElementStack.dataBufferList[iMemoryBank];
    }
 
    void deleteElement(T* delElement) {
      if (delElement->AssociatedDataLength()!=0) {
        long int elementStackBank,offset;
-       long int localElementStackPointer=cAMRstack<T>::elementStackPointer-1;
+       long int localElementStackPointer=BaseElementStack.elementStackPointer-1;
+
+       if (delElement->AssociatedDataLength()!=0) if (delElement->GetAssociatedDataBufferPointer()==NULL) BaseElementStack.exit(__LINE__,__FILE__,"Error: the pointer to the associated data is not initialized");
 
        elementStackBank=localElementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
        offset=localElementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -625,19 +664,19 @@ public:
        associatedDataStackList[elementStackBank][offset]=delElement->GetAssociatedDataBufferPointer();
      }
 
-     cAMRstack<T>::deleteElement(delElement);
+     BaseElementStack.deleteElement(delElement);
      delElement->SetAssociatedDataBufferPointer(NULL);
    }
 
    //save and load the allocation of the stack
    void saveAllocationParameters(FILE *fout) {
-     cAMRstack<T>::saveAllocationParameters(fout);
+     BaseElementStack.saveAllocationParameters(fout);
    }
 
    void readAllocationParameters(FILE *fout) {
-     cAMRstack<T>::readAllocationParameters(fout);
+     BaseElementStack.readAllocationParameters(fout);
 
-     if (cAMRstack<T>::dataBufferListPointer!=0) cAMRstack<T>::exit(__LINE__,__FILE__,"not implemented");
+     if (BaseElementStack.dataBufferListPointer!=0) BaseElementStack.exit(__LINE__,__FILE__,"not implemented");
    }
 
 };
