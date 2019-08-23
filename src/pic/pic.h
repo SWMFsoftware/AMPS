@@ -451,11 +451,11 @@ namespace PIC {
       //.......................................................................
       //set individual stored variables
       inline void SetDatum(cDatumStored Datum, double* In) {
-        memcpy(AssociatedDataPointer+Datum.offset, In, Datum.length * sizeof(double));
+        if (Datum.offset>=0) memcpy(AssociatedDataPointer+Datum.offset, In, Datum.length * sizeof(double));
       }
 
       inline void SetDatum(cDatumStored Datum, double In) {
-        memcpy(AssociatedDataPointer+Datum.offset, &In, sizeof(double));
+        if (Datum.offset>=0) memcpy(AssociatedDataPointer+Datum.offset, &In, sizeof(double));
       }
 
       inline void SetElectricField(double* ElectricFieldIn) {
@@ -485,21 +485,21 @@ namespace PIC {
       //.......................................................................
       //set individual sampled variables
       inline void SetDatum(cDatumSampled Datum, double* In, int spec) {
-        memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),In, Datum.length * sizeof(double));
+        if (Datum.offset>=0) memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),In, Datum.length * sizeof(double));
       }
 
       inline void SetDatum(cDatumSampled Datum, double In, int spec) {
-        memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),&In, sizeof(double));
+        if (Datum.offset>=0) memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),&In, sizeof(double));
       }
 
       //.......................................................................
       // sample data
       inline void SampleDatum(PIC::Datum::cDatumSampled Datum,double* In, int spec, double weight=1.0) {
-        for (int i=0; i<Datum.length; i++)  *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In[i] * weight;
+        if (Datum.offset>=0) for (int i=0; i<Datum.length; i++)  *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In[i] * weight;
       }
 
       inline void SampleDatum(Datum::cDatumSampled Datum, double In, int spec,double weight=1.0) {
-        *(spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
+        if (Datum.offset>=0) *(spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
       }
 
       //.......................................................................
@@ -2254,21 +2254,27 @@ namespace PIC {
 
       inline void SampleDatum(Datum::cDatumSampled* Datum, double* In, int spec, double weight=1.0) {
         int length=Datum->length;
-        double* ptr=(double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset);
+        double* ptr;
 
-        for (int i=0;i<length;i++) *(i+length*spec+ptr)+=In[i]*weight;
+        if (Datum->offset>0) {
+          ptr=(double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset);
+          for (int i=0;i<length;i++) *(i+length*spec+ptr)+=In[i]*weight;
+        }
       }
 
       inline void SampleDatum(Datum::cDatumSampled* Datum, double In, int spec,  double weight=1.0) {
-        *(spec + (double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset))+= In*weight;
+        if (Datum->offset>=0) *(spec + (double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset))+= In*weight;
       }
 
       //.......................................................................
       inline void SetDatum(Datum::cDatumSampled* Datum, double* In, int spec) {
         int length=Datum->length;
-        double *ptr=(double*)(associatedDataPointer+completedCellSampleDataPointerOffset+Datum->offset);
+        double *ptr;
 
-        for (int i=0;i<length;i++) *(i+length*spec+ptr)=In[i];
+        if (Datum->offset>=0) {
+          ptr=(double*)(associatedDataPointer+completedCellSampleDataPointerOffset+Datum->offset);
+          for (int i=0;i<length;i++) *(i+length*spec+ptr)=In[i];
+        }
       }
 
 
