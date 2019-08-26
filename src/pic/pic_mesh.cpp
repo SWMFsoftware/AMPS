@@ -1494,47 +1494,51 @@ void PIC::Mesh::cDataCenterNode::SetDatum(Datum::cDatumSampled Datum, double* In
 //get accumulated data
 //.......................................................................
 void PIC::Mesh::cDataCenterNode::GetDatumCumulative(Datum::cDatumSampled Datum, double* Out, int spec) {
-  for(int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset));
+  if (Datum.offset>=0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset));
 }
 
 double PIC::Mesh::cDataCenterNode::GetDatumCumulative(Datum::cDatumSampled Datum, int spec) {
-  return *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset));
+  return (Datum.offset>=0) ? *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) : 0.0;
 }
 
 //get data averaged over time
 void PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumTimed Datum, double* Out, int spec) {
-  if (PIC::LastSampleLength > 0) for (int i=0; i<Datum.length; i++) {
-    Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / PIC::LastSampleLength;
+  if (Datum.offset>=0) {
+    if (PIC::LastSampleLength > 0) for (int i=0; i<Datum.length; i++) {
+      Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / PIC::LastSampleLength;
+    }
+    else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
   }
-  else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
 }
 
 double PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumTimed Datum, int spec) {
-  return (PIC::LastSampleLength > 0) ?  *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
+  return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ?  *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
 }
 
 //get data averaged over sampled weight
 void PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumWeighted Datum, double* Out, int spec) {
   double TotalWeight=0.0;
 
-  GetDatumCumulative(DatumParticleWeight, &TotalWeight, spec);
+  if (Datum.offset>=0) {
+    GetDatumCumulative(DatumParticleWeight, &TotalWeight, spec);
 
-  if (TotalWeight > 0) {
-    for(int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / TotalWeight;
+    if (TotalWeight > 0) {
+      for(int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / TotalWeight;
+    }
+    else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
   }
-  else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
 }
 
 double PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumWeighted Datum, int spec) {
   double TotalWeight=0.0;
 
   GetDatumCumulative(DatumParticleWeight, &TotalWeight, spec);
-  return (TotalWeight > 0) ? *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / TotalWeight : 0.0;
+  return ((TotalWeight>0)&&(Datum.offset>=0)) ? *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / TotalWeight : 0.0;
 }
 
 //get average for derived data
 void PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumDerived Datum, double* Out, int spec) {
-  (this->*Datum.GetAverage)(Out,spec);
+  if (Datum.offset>=0) (this->*Datum.GetAverage)(Out,spec);
 }
 //-----------------------------------------------------------------------
 
@@ -1561,26 +1565,28 @@ double PIC::Mesh::cDataCenterNode::GetCompleteSampleCellParticleWeight(int spec)
 //-----------------------------------------------------------------------
 void PIC::Mesh::cDataCenterNode::InterpolateDatum(Datum::cDatumSampled Datum, cDataCenterNode** InterpolationList,double *InterpolationCoefficients,int nInterpolationCoefficients, int spec) {
   // container for the interpolated value; set it to be zero
-  double value[Datum.length], interpolated[Datum.length];
+  if (Datum.offset>=0) {
+    double value[Datum.length], interpolated[Datum.length];
 
-  for (int i=0; i<Datum.length; i++) {
-    value[i]=0.0; interpolated[i]=0.0;
-  }
+    for (int i=0; i<Datum.length; i++) {
+      value[i]=0.0; interpolated[i]=0.0;
+    }
 
-  // interpolation loop
-  for (int i=0; i<nInterpolationCoefficients; i++) {
-    InterpolationList[i]->GetDatumCumulative(Datum, value, spec);
+    // interpolation loop
+    for (int i=0; i<nInterpolationCoefficients; i++) {
+      InterpolationList[i]->GetDatumCumulative(Datum, value, spec);
 
-    for(int j=0; j<Datum.length; j++) interpolated[j] += InterpolationCoefficients[i] * value[j];
-  }
+      for(int j=0; j<Datum.length; j++) interpolated[j] += InterpolationCoefficients[i] * value[j];
+    }
 
-  SetDatum(&Datum, interpolated, spec);
+    SetDatum(&Datum, interpolated, spec);
 
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
     for(int i=0; i<Datum.length; i++) if (isfinite(interpolated[i])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exception");
-  #endif
-  #endif
+    #endif
+    #endif
+  }
 }
 
 

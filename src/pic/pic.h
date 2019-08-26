@@ -505,11 +505,11 @@ namespace PIC {
       //.......................................................................
       //get individual stored variables
       inline void GetDatum(cDatumStored Datum, double* Out) {
-        memcpy(Out, AssociatedDataPointer+Datum.offset, Datum.length * sizeof(double));
+        if (Datum.offset>=0) memcpy(Out, AssociatedDataPointer+Datum.offset, Datum.length * sizeof(double));
       }
 
       inline void GetDatum(cDatumStored Datum, double& Out) {
-        Out = *(double*)(AssociatedDataPointer+Datum.offset);
+        if (Datum.offset>=0) Out = *(double*)(AssociatedDataPointer+Datum.offset);
       }
 
       inline void GetElectricField(double* ElectricFieldOut) {
@@ -539,24 +539,26 @@ namespace PIC {
       //get accumulated data
       //.......................................................................
       inline void GetDatumCumulative(Datum::cDatumSampled Datum, double* Out, int spec) {
-        for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
+        if (Datum.offset>=0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
       }
 
       inline double GetDatumCumulative(Datum::cDatumSampled Datum, int spec) {
-        return *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
+        if (Datum.offset>=0) return *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
       }
 
       //get data averaged over time
       //.......................................................................
       inline void GetDatumAverage(cDatumTimed Datum, double* Out, int spec) {
-        if (PIC::LastSampleLength > 0) {
-          for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength;
+        if (Datum.offset>=0) {
+          if (PIC::LastSampleLength>0) {
+            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength;
+          }
+          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
         }
-        else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
       }
 
       inline double GetDatumAverage(cDatumTimed Datum, int spec) {
-        return (PIC::LastSampleLength > 0) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
+        return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
       }
 
       //get data averaged over sampled weight
@@ -566,8 +568,10 @@ namespace PIC {
 
         GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
 
-        if (TotalWeight > 0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+ Datum.offset)) / TotalWeight;
-        else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        if (Datum.offset>=0) {
+          if (TotalWeight>0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+ Datum.offset)) / TotalWeight;
+          else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        }
       }
 
       inline double GetDatumAverage(cDatumWeighted Datum, int spec) {
@@ -575,7 +579,7 @@ namespace PIC {
 
         GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
 
-        return (TotalWeight > 0) ? *(spec +(double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / TotalWeight : 0.0;
+        return ((TotalWeight>0)&&(Datum.offset>=0)) ? *(spec +(double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / TotalWeight : 0.0;
       }
 
       //.......................................................................
@@ -2256,7 +2260,7 @@ namespace PIC {
         int length=Datum->length;
         double* ptr;
 
-        if (Datum->offset>0) {
+        if (Datum->offset>=0) {
           ptr=(double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset);
           for (int i=0;i<length;i++) *(i+length*spec+ptr)+=In[i]*weight;
         }
