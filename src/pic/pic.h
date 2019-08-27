@@ -179,6 +179,16 @@ namespace PIC {
       char name[_MAX_STRING_LENGTH_PIC_];
       int type;
       bool doPrint;
+
+      cDatum() {}; //default constructor
+
+      cDatum& operator = (const cDatum& v) {
+        offset=v.offset;
+        length=v.length;
+        memcpy(name,v.name,_MAX_STRING_LENGTH_PIC_);
+        type=v.type;
+        doPrint=v.doPrint;
+      }
       
       // print variables' name to file
       //......................................................................
@@ -245,6 +255,8 @@ namespace PIC {
       // at different buffers
       //......................................................................
       inline bool is_active() {return offset >= 0;}
+
+      cDatumSampled() {}; //degault constructor
 
       inline void activate(long int& offsetInOut, vector<cDatumSampled*>* DatumVector) {
         if (is_active()) exit(__LINE__,__FILE__,"ERROR: trying to activate datum a second time");
