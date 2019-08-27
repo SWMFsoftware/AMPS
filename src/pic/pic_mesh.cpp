@@ -277,9 +277,11 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
   for (s=0;s<PIC::nTotalSpecies;s++) {
     // interpolate all sampled data
     vector<PIC::Datum::cDatumSampled*>::iterator ptrDatum;
+    PIC::Datum::cDatumSampled Datum;
 
     for(ptrDatum = DataSampledCenterNodeActive.begin();ptrDatum!= DataSampledCenterNodeActive.end(); ptrDatum++) {
-      InterpolateDatum(**ptrDatum,InterpolationList,InterpolationCoefficients,nInterpolationCoefficients, s);
+      Datum=**ptrDatum;
+      InterpolateDatum(Datum,InterpolationList,InterpolationCoefficients,nInterpolationCoefficients, s);
     }
 
     //temeprature is exeption: it needs avaraging of the mean velocity and mean squate of velocity are not
@@ -341,6 +343,22 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
         SetDatum(&DatumParallelTantentialTemepratureSample_Velocity,vParallelTangentialTemperatureSample,s);
         SetDatum(&DatumParallelTantentialTemepratureSample_Velocity2,v2ParallelTangentialTemperatureSample,s);
+      }
+    }
+    else {
+      //init the approprate locations in the state vector with zeros
+      double v3temp[3]={0.0,0.0,0.0};
+
+      SetDatum(&DatumParticleVelocity,v3temp,s);
+      SetDatum(&DatumParticleVelocity2,v3temp,s);
+
+      #if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+      SetDatum(&DatumParticleVelocity2Tensor,v3temp,s);
+      #endif
+
+      if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
+        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity,v3temp,s);
+        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity2,v3temp,s);
       }
     }
 
