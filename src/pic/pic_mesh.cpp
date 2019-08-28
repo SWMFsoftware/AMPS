@@ -1556,7 +1556,7 @@ double PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumWeighted Datum, int spe
 
 //get average for derived data
 void PIC::Mesh::cDataCenterNode::GetDatumAverage(cDatumDerived Datum, double* Out, int spec) {
-  if (Datum.offset>=0) (this->*Datum.GetAverage)(Out,spec);
+  if (Datum.is_active()==true) (this->*Datum.GetAverage)(Out,spec);
 }
 //-----------------------------------------------------------------------
 
