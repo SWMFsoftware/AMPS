@@ -2055,6 +2055,10 @@ Check=
 Name=test/Venus-Hot-Oxygen
 Time=50 
 
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
+
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
 Keys=-model-data-path=/nobackupp8/AMPS_DATA_TEST/VENUS@@(0+pleiades)
 Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/VENUS@@(0+stampede)
@@ -2063,11 +2067,13 @@ Compile=
 >>>@echo "test_Venus-Hot-Oxygen_compile..." > test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
 >>>./Config.pl -application=Venus-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTVenus-Hot-OxygenKEYS}
 >>>-@($(MAKE) -j8 amps)
-
-
 >>>@echo "test_Venus-Hot-Oxygen_compile... done" >> test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
 
-
+Check=
+>>>@echo "test_Venus-Hot-Oxygen_check..." >> test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl $(TESTVenus-Hot-OxygenDIR)/PT/plots/test_Venus.dat   output/test_Venus/test_Venus$(TESTVenus-Hot-Oxygen-REF).ref_np`ls $(TESTVenus-Hot-OxygenDIR)/PT/thread* |wc -l |tr -d ' '` > test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff   
+>>>@ls -l test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
+>>>@echo Test test_Venus-Hot-Oxygen has finished: `date`
 <#
 
 /------------------------------------------------------------------------------
