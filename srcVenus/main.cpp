@@ -583,7 +583,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   //output the particle statistics for the nightly tests 
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
     char fname[400];
-          sprintf(fname,"%s/test_Mars.dat",PIC::OutputDataFileDirectory);
+          sprintf(fname,"%s/test_Venus.dat",PIC::OutputDataFileDirectory);
           PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
   }
 
