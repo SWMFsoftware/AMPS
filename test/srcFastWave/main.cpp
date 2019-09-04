@@ -599,6 +599,7 @@ int main(int argc,char **argv) {
   int  totalIter,CaseNumber;
   //PIC::FieldSolver::Init();
   PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC();
+  PIC::CPLR::FLUID::EFieldTol = 1.0e-8;
 
   totalIter=60;
      

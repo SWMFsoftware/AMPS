@@ -359,8 +359,9 @@ int PIC::TimeStep() {
   
   if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
     PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
-
-
+  
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ )
+    PIC::BC::ExternalBoundary::UpdateData();
   PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   
 
