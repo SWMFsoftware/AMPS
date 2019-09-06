@@ -8,26 +8,54 @@ use List::Util qw(first);
 use IO::File;
 use File::Copy;
 
+my (@FileNameTable,@ColumnTable,@ColumnTableSorted,$line,$Offset,@l); 
 
-#arguments:
-#$ARGV[0] -> the column that need to be removed
-#$ARGV[1] -> the name of the data file
+#Keys: 
+#-c [the column that neer to be removed]
+#-f [the file that needs to be processed]
 
-my $ColumnOffset=$ARGV[0];
-
-open (fIn,"<$ARGV[1]");
-open (fOut,">$ARGV[1].tmp");
-
-my $line;
-
-while ($line=<fIn>) {
-  my @l = split(/ /, $line);
-
-  splice(@l,$ColumnOffset,1);
-  print fOut "@l";
+for (my $i=0;$i<=$#ARGV;$i++) {
+  if ($ARGV[$i] eq "-f") {
+    $i++;
+    push(@FileNameTable,$ARGV[$i]);
+  }
+  elsif ($ARGV[$i] eq "-c") {
+    $i++; 
+    push(@ColumnTable,$ARGV[$i]);
+  }
+  else {
+    die "Error: Unknown option"; 
+  } 
 }
 
-close (fIn);
-close (fOut);
+@ColumnTableSorted=sort {$b <=> $a } @ColumnTable;
 
-move ("$ARGV[1].tmp","$ARGV[1]");
+print("Remove Columns: @ColumnTableSorted\n");
+print("Process files:\n");
+
+for (my $i=0;$i<=$#FileNameTable;$i++) {
+  print("$i: $FileNameTable[$i]\n");
+}
+
+for (my $ifile=0;$ifile<=$#FileNameTable;$ifile++) {
+  open (fIn,"<$FileNameTable[$ifile]");
+  open (fOut,">$FileNameTable[$ifile].ColumnReduced");
+
+  while ($line=<fIn>) {
+    chomp($line);
+    @l=split(' ', $line);
+
+    for (my $icolumn=0;$icolumn<=$#ColumnTable;$icolumn++) { 
+      $Offset=$ColumnTable[$icolumn]; 
+
+      if ($Offset <= $#l) {
+        splice(@l,"$Offset",1);
+      }
+    }
+
+    print fOut "@l\n";
+  }
+
+  close (fIn);
+  close (fOut);
+}
