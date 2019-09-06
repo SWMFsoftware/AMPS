@@ -2780,12 +2780,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       double timeNow = 0.0;  
       if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
       PIC::CPLR::FLUID::write_output(timeNow);
+      PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
+      nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
+
       }    
     }
   }else{
     if (cnt==0){
       UpdateJMassMatrix();
       cnt++;
+      PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
+      nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
     }    
   }
   
