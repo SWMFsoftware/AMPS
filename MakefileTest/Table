@@ -293,6 +293,8 @@ Run=
 Check=
 >>>@echo "test_SC-Cont_check..." >> test_SC-Cont$(TESTSC-Cont-REF).diff
 
+>>>-@${TESTSC-ContDIR}/../utility/RemoveColumn.pl -c=5 ${TESTSC-ContDIR}/PT/plots/pic.H2O.s=0.out=2.dat
+
 >>>@${TESTSC-ContDIR}/../utility/ReduceFile.pl ${TESTSC-ContDIR}/PT/plots/SurfaceTriangulation.dat 10
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTSC-ContDIR}/PT/plots/SurfaceTriangulation.dat.Reduced.Step=10 ${PTDIR}/../../../AMPS_DATA_TEST/CYGNSS/ContaminationTestOutput/SurfaceTriangulation.dat.Reduced.Step=10.ref_np`ls $(TESTSC-ContDIR)/PT/thread* |wc -l |tr -d ' '`  > test_SC-Cont-Triangulation.diff
 
