@@ -2190,6 +2190,13 @@ Keys=-model-data-path=${PTDIR}/data/input/DragCoefficient
 
 Check=
 >>>@echo "test_Drag-Coefficient--Specular-Reflection_check..." >> test_Drag-Coefficient--Specular-Reflection$(TESTDrag-Coefficient--Specular-Reflection-REF).diff
+
+<<<ifeq ($(wildcard output/test_DragCoefficient/SpecularReflection/*.tmp),)
+>>>-@${TESTDrag-Coefficient--Specular-ReflectionDIR}/../utility/RemoveColumn.pl -c=5 output/test_DragCoefficient/SpecularReflection/pic.H2O.s=0.out=2.dat.Reduced.Step=10$(TESTDrag-Coefficient--Specular-Reflection-REF).ref_np`ls $(TESTDrag-Coefficient--Specular-ReflectionDIR)/PT/thread* |wc -l |tr -d ' '` 
+<<<endif
+
+>>>-@${TESTDrag-Coefficient--Specular-ReflectionDIR}/../utility/RemoveColumn.pl -c=5 ${TESTDrag-Coefficient--Specular-ReflectionDIR}/PT/plots/pic.H2O.s=0.out=2.dat 
+
 >>>-@${SCRIPTDIR}/DiffNum.pl ${TESTDrag-Coefficient--Specular-ReflectionDIR}/PT/plots/test_Orbiter_Drag_Coefficient.dat output/test_DragCoefficient/SpecularReflection/test_Orbiter_Drag_Coefficient$(TESTDrag-Coefficient--Specular-Reflection-REF).ref_np`ls $(TESTDrag-Coefficient--Specular-ReflectionDIR)/PT/thread* |wc -l |tr -d ' '` > test_Drag-Coefficient--Specular-Reflection--Drag-Value$(TESTDrag-Coefficient--Specular-Reflection-REF).diff
 >>>-@${SCRIPTDIR}/DiffNum.pl ${TESTDrag-Coefficient--Specular-ReflectionDIR}/PT/plots/test_Orbiter.dat output/test_DragCoefficient/SpecularReflection/test_Orbiter$(TESTDrag-Coefficient--Specular-Reflection-REF).ref_np`ls $(TESTDrag-Coefficient--Specular-ReflectionDIR)/PT/thread* |wc -l |tr -d ' '` > test_Drag-Coefficient--Specular-Reflection--Particle-Data$(TESTDrag-Coefficient--Specular-Reflection-REF).diff
 >>>-@${SCRIPTDIR}/DiffNum.pl ${TESTDrag-Coefficient--Specular-ReflectionDIR}/PT/plots/amps.cut-cell.surface-data.out=2.dat output/test_DragCoefficient/SpecularReflection/amps.cut-cell.surface-data.out=2$(TESTDrag-Coefficient--Specular-Reflection-REF).ref_np`ls $(TESTDrag-Coefficient--Specular-ReflectionDIR)/PT/thread* |wc -l |tr -d ' '` > test_Drag-Coefficient--Specular-Reflection--Surface-Data$(TESTDrag-Coefficient--Specular-Reflection-REF).diff
