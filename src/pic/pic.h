@@ -2091,7 +2091,7 @@ namespace PIC {
 
       // constructor is inherited as well
       //.......................................................................
-      cDatumDerived(int lengthIn, const char* nameIn, bool doPrintIn = true) : Datum::cDatumSampled(lengthIn, nameIn, doPrintIn) {
+      cDatumDerived(int lengthIn, const char* nameIn, bool doPrintIn = false) : Datum::cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Derived_; GetAverage=NULL;
       }
     };
