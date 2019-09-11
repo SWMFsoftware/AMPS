@@ -122,6 +122,8 @@ contains
 
     character(len=*), parameter :: NameSub='PC_save_restart'
 
+    call amps_save_restart()
+    
   end subroutine PC_save_restart
 
   !============================================================================

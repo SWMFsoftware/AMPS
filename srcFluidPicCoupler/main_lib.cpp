@@ -129,6 +129,32 @@ void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 }
 
 
+void init_from_restart(){
+  
+  //printf("init from restart called!\n");
+  PIC::Restart::SamplingData::Read("PC/restartIN/restart_field.dat");    
+  PIC::Restart::ReadParticleData("PC/restartIN/restart_particle.dat");
+}
+
+void saveRestartData(FILE* fname){                                                                                    
+  // Only the root processor can write.                                                                                 
+  if (PIC::Mesh::mesh.ThisThread==0) {                                                                                
+    fwrite(&PIC::CPLR::FLUID::iCycle, sizeof(long int),1, fname);
+    fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,sizeof(int),1,fname);
+    fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset,sizeof(int),1,fname);
+    std::cout<<"save iter number="<<PIC::CPLR::FLUID::iCycle<<std::endl;                                                            
+  }                                                                                                                   
+}                     
+
+
+void readRestartData(FILE* fname){                                                                                    
+  fread(&PIC::CPLR::FLUID::iCycle, sizeof(long int),1, fname);                                                              
+  fread(&PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,sizeof(int),1,fname);
+  fread(&PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset,sizeof(int),1,fname);
+  std::cout<<"read iter number="<<PIC::CPLR::FLUID::iCycle<<std::endl;                                                              
+}             
+
+
 void deallocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
@@ -151,7 +177,7 @@ void deallocateBlocks(){
 
   int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
   
-  printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+  //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
   iBlock=0;
   int iDeallocatedBlock=0;
@@ -159,10 +185,12 @@ void deallocateBlocks(){
     if (iDeallocatedBlock==nDeallocatedBlocks) break;
     if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
       nodeTable[iDeallocatedBlock] = node;
+      /*
       printf("deallocating node->Thread:%d, node->min:%e,%e,%e, node->block:%p,isUsed:%s\n",
              node->Thread,
              node->xmin[0],node->xmin[1],node->xmin[2],node->block,
              node->IsUsedInCalculationFlag?"T":"F");
+      */
       iDeallocatedBlock++;
     }
     iBlock++;
@@ -183,7 +211,7 @@ void  dynamicAllocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0, nTotalBlock=0;
   std::vector<int> allocatedBlockIndexArr; 
-  printf("dynamic allocate blocks called\n");
+  //printf("dynamic allocate blocks called\n");
   deallocateBlocks();
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
@@ -196,9 +224,10 @@ void  dynamicAllocateBlocks(){
 
     if (xmiddle[0]<=16+PIC::CPLR::FLUID::iCycle*2 && xmiddle[0]>PIC::CPLR::FLUID::iCycle*2+0.5  && node->block==NULL && node->Thread==PIC::ThisThread)  {
       allocatedBlockIndexArr.push_back(iBlock);
+      /*
       printf("allocateBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p,iBlock:%d\n",
              PIC::ThisThread, node->Thread, node->xmin[0],node->xmin[1],node->xmin[2],node->block,iBlock);
-
+      */
     }
     iBlock++;
   }
@@ -220,7 +249,7 @@ void  dynamicAllocateBlocks(){
 
   //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
-  printf("test1 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  //printf("test1 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
 
   //list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;
   if (nAllocatedBlocks!=0) {
@@ -232,7 +261,7 @@ void  dynamicAllocateBlocks(){
   }
  
 
-  printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  //printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
 
   
   
@@ -251,10 +280,10 @@ void initNewBlocks() {
   printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
-    
+    /*
     printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
            PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
-   
+    */
     int iBlock=-1;
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       if (!node->block || node->Thread!=PIC::ThisThread) continue;
@@ -650,11 +679,13 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
           dataPIC_I[iRho+iStart] +=
             tempWeight*GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies);
           
+          /*
           if (isTest && (iPoint==1538||iPoint==1539) && iSpecies==0){
             double xTemp[3];
             CornerStencil.cell[iStencil]->GetX(xTemp);
             printf("test iPoint:%d, iStencil:%d,tempWeight:%e, rho:%e, stencilXtemp:%e,%e,%e\n", iPoint, iStencil,tempWeight, GetCornerVar("Rho",DataPtr_I[iStencil],iSpecies),xTemp[0],xTemp[1],xTemp[2]);
           }
+          */
           /*
           if (iCountOutput<5)
           printf("test111 xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e, rho1:%e \n",xp,yp,zp,
@@ -694,11 +725,12 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
 
       } // iSpecies
       
-      
+      /*
       if (isTest)
         printf("iPoint:%d, xp:%e,%e,%e,xMhd:%e,%e,%e,rho:%e\n",iPoint, xp,yp,zp,
                mhd_D[0],mhd_D[1],mhd_D[2],dataPIC_I[iRho]);
-
+      */
+      
       for (int iStencil=0;iStencil<CornerStencil.Length;iStencil++) {
         double * tempB = 
           (double *)(DataPtr_I[iStencil]+
@@ -1247,7 +1279,13 @@ void setFixedB_center_BC(){
             Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
+            
+            /*
+            if (fabs(x[0]-31.5)<0.01 && fabs(x[1]-7.5)<0.01 && fabs(x[2]-3.5)<0.01){
+              printf("test center b:%e,%e,%e\n", Bx, By, Bz);
 
+            }
+            */
             ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=Bx;
             ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz;
@@ -1301,7 +1339,12 @@ void setFixedB_corner_BC(){
             Bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlock,x[0],x[1],x[2]);
             By = PIC::CPLR::FLUID::FluidInterface.getBy(iBlock,x[0],x[1],x[2]);
             Bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlock,x[0],x[1],x[2]);
-
+            /*
+            if (fabs(x[0]-31)<0.01 && fabs(x[1]-8)<0.01 && fabs(x[2]-4)<0.01){
+              printf("test corner b :%e,%e,%e\n", Bx, By, Bz);
+              
+            }
+            */
             ((double*)(offset+CurrentBOffset))[BxOffsetIndex]=Bx;
             ((double*)(offset+CurrentBOffset))[ByOffsetIndex]=By;
             ((double*)(offset+CurrentBOffset))[BzOffsetIndex]=Bz;
@@ -1996,6 +2039,8 @@ void amps_init(){
   PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle=
     setBlockParticleMhd;
 
+  PIC::Restart::SetUserAdditionalRestartData(&readRestartData,&saveRestartData);        
+
   if (_PIC_DYNAMIC_ALLOCATING_BLOCKS_== _PIC_MODE_ON_){
     PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks = dynamicAllocateBlocks;
     PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks = initNewBlocks;
@@ -2024,6 +2069,9 @@ void amps_init(){
   //PIC::FieldSolver::Init();
   PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC();
 
+  if (PIC::CPLR::FLUID::IsRestart)   init_from_restart();
+
+
   if (PIC::ThisThread==0) printf("test6\n");
  
      
@@ -2041,19 +2089,21 @@ void amps_init(){
 
   int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
   int GlobalParticleNumber;
-  MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  //printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-  //std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
-
-  CleanParticles();
-  LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
-  MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  //printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-
-  PrepopulateDomain();
-
-  LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
-  MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  if (!PIC::CPLR::FLUID::IsRestart) {
+    MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    //printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
+    //std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+    
+    CleanParticles();
+    LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
+    MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    //printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
+    
+    PrepopulateDomain();
+    
+    LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
+    MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  }
   //printf("After prepopulating, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
   //std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
    

@@ -47,8 +47,9 @@ extern "C" {
   int initamps_();
   void amps_impose_global_time_step_(double *Dt);
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
+  void amps_save_restart_();
   void amps_finalize_();
-
+  
   //import magnetic field from GM onto the 'center' nodes
   void amps_get_center_point_number(int*);
   void amps_get_center_point_coordinates(double*);
@@ -80,7 +81,13 @@ extern "C" {
 #endif
     // amps_init_mesh();
   }
-
+  
+  void amps_save_restart_(){
+    //printf("amps_save_restart start\n");
+    PIC::Restart::SamplingData::Save("PC/restartOUT/restart_field.dat");
+    PIC::Restart::SaveParticleData("PC/restartOUT/restart_particle.dat");
+    //printf("amps_save_restart end\n");
+  }
 
   void amps_get_center_point_number_(int *nCenterPoints) {
 

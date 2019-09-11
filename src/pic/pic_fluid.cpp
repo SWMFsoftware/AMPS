@@ -33,6 +33,7 @@ list<PIC::CPLR::FLUID::fSendCenterPointData> PIC::CPLR::FLUID::SendCenterPointDa
 FluidPicInterface PIC::CPLR::FLUID::FluidInterface;
 long int PIC::CPLR::FLUID::iCycle = 0;
 int PIC::CPLR::FLUID::nBlockProc  = 0;
+bool PIC::CPLR::FLUID::IsRestart = false;
 int PIC::CPLR::FLUID::nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 int *PIC::CPLR::FLUID::npcelx, *PIC::CPLR::FLUID::npcely,*PIC::CPLR::FLUID::npcelz;
 
@@ -474,6 +475,16 @@ void PIC::CPLR::FLUID::read_param(){
 // 	  correctionRatio = 0.5;
 //       }
 
+    } else if (command == "#RESTART") {
+      string restartString;
+      readParam.read_var("IsRestart",restartString);
+      
+      if (restartString == "F") {
+        PIC::CPLR::FLUID::IsRestart = false;
+      }else{
+        PIC::CPLR::FLUID::IsRestart = true;
+      }
+      
     } else if (command == "#PARTICLES") {
       int nCommand = 3; // Number of commands for each region.
       readParam.skip_lines(nCommand * FluidInterface.getiRegion());

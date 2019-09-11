@@ -2091,7 +2091,7 @@ namespace PIC {
 
       // constructor is inherited as well
       //.......................................................................
-      cDatumDerived(int lengthIn, const char* nameIn, bool doPrintIn = false) : Datum::cDatumSampled(lengthIn, nameIn, doPrintIn) {
+      cDatumDerived(int lengthIn, const char* nameIn, bool doPrintIn = true) : Datum::cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Derived_; GetAverage=NULL;
       }
     };
@@ -4447,7 +4447,7 @@ namespace PIC {
       extern FluidPicInterface FluidInterface;       
       extern long int iCycle;
       extern int nBlockProc; 
-      
+      extern bool IsRestart;
       extern double dt; 
       
       extern double EFieldTol; 
@@ -6110,6 +6110,7 @@ namespace FieldSolver {
             extern fUserDefinedDynamicAllocateBlocks dynamicAllocateBlocks;
             extern fUserDefinedInitNewBlocks initNewBlocks;
 
+            void testValueAtGivenPoint();
             void UpdateJMassMatrix();
             void InterpolateB_C2N();
             void InterpolateB_N2C();

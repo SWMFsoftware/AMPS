@@ -412,7 +412,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC() {
   PIC::FieldSolver::Electromagnetic::ECSIM::cDt=LightSpeed*dtTotal;
   
   //PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
-  SetIC();
+  if (!PIC::CPLR::FLUID::IsRestart) SetIC();
 }
 
 //set default initial conditions
@@ -1271,6 +1271,132 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
   
 }
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
+   // update J and MassMatrix 
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber,ptr,ptrNext;
+  int iBlk = -1;
+
+  double xTest[3]={31,8,4};
+  // update J and MassMatrix
+  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+    if (node->block==NULL) continue;
+    iBlk++;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+      
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node->Thread!=PIC::ThisThread) continue;
+     
+    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    
+    block=node->block;
+    
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    FirstCellParticleTable=block->FirstCellParticleTable;
+    double CellVolume=1;
+    double dx[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];      
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+
+          double xLoc[3];
+          int ind[3]={i,j,k};
+          for (int iDim=0; iDim<3; iDim++) xLoc[iDim]=node->xmin[iDim]+dx[iDim]*ind[iDim];
+          if (fabs(xLoc[0]-xTest[0])<0.1 && fabs(xLoc[1]-xTest[1])<0.1 && fabs(xLoc[2]-xTest[2])<0.1){ 
+         
+          
+          char * offset;
+          double Jx;
+          double p, ppar, uth, bx, by, bz, vx, vy, vz;
+          offset=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+                          
+          Jx=*(((double*)offset)+JxOffsetIndex);
+          
+          p = PIC::CPLR::FLUID::FluidInterface.getPICP(iBlk,xLoc[0],xLoc[1],xLoc[2],0);
+          ppar =  PIC::CPLR::FLUID::FluidInterface.getPICPpar(iBlk,xLoc[0],xLoc[1],xLoc[2],0);
+          uth = PIC::CPLR::FLUID::FluidInterface.getPICUth(iBlk,xLoc[0],xLoc[1],xLoc[2],0);
+          bx = PIC::CPLR::FLUID::FluidInterface.getBx(iBlk,xLoc[0],xLoc[1],xLoc[2]);
+          by = PIC::CPLR::FLUID::FluidInterface.getBy(iBlk,xLoc[0],xLoc[1],xLoc[2]);
+          bz = PIC::CPLR::FLUID::FluidInterface.getBz(iBlk,xLoc[0],xLoc[1],xLoc[2]);
+
+          
+
+          vx = PIC::CPLR::FLUID::FluidInterface.getPICUx(iBlk,
+                                                         xLoc[0],xLoc[1],xLoc[2],0);
+          
+          vy = PIC::CPLR::FLUID::FluidInterface.getPICUy(iBlk,
+                                                         xLoc[0],xLoc[1],xLoc[2],0);
+          
+          vz = PIC::CPLR::FLUID::FluidInterface.getPICUz(iBlk,
+                                                         xLoc[0],xLoc[1],xLoc[2],0);
+         
+          printf("mhd values spec 0 , p:%e,ppar:%e,uth:%e, B:%e,%e,%e, v:%e,%e,%e\n", p, ppar, uth, bx,by,bz,vx,vy,vz);
+          printf("Jx at x:%e,%e,%e is %e\n",xLoc[0],xLoc[1],xLoc[2],Jx);
+          
+          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+	  
+          if (ptr!=-1) {
+
+	    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);	   
+	    //iPar=i;jPar=j;kPar=k;
+	    //ParticleNode = node;
+
+	    //  LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+            //cell=block->GetCenterNode(LocalCellNumber);
+	    double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
+	    int spec;
+
+	    ptrNext=ptr;
+	    ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+	  
+	    while (ptrNext!=-1) {
+              
+              double LocalParticleWeight;
+	      ptr=ptrNext;
+	      ParticleData=ParticleDataNext;	  	    
+	     
+              spec=PIC::ParticleBuffer::GetI(ParticleData);
+	      PIC::ParticleBuffer::GetV(vInit,ParticleData);
+	      PIC::ParticleBuffer::GetX(xInit,ParticleData);
+              LocalParticleWeight=block->GetLocalParticleWeight(spec);
+              LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+              
+              ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+              printf("particleId:%d, x:%e,%e,%e, v:%e,%e,%e, spec:%d, weight:%e\n",ptr,xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],spec,LocalParticleWeight);
+
+              if (ptrNext!=-1) {
+                ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+                PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
+              }
+            }
+
+          }//if (ptr!=-1) 
+          
+          }
+        }// for (int i=0;i<_BLOCK_CELLS_X_;i++)
+      }// for (int j=0;j<_BLOCK_CELLS_Y_;j++)
+    }// for (int k=0;k<_BLOCK_CELLS_Z_;k++)
+  }// for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++)
+
+}
+
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   // update J and MassMatrix 
@@ -1726,6 +1852,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ )
     PIC::CPLR::FLUID::fix_plasma_node_boundary();
+
 }
 
 
@@ -2705,7 +2832,6 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double fourPiDtTheta=4*Pi*dtTotal*theta;
    
- 
   for (int ii=0;ii<27;ii++) {
     double * tempPtr = (double*)(RhsSupportTable_CornerNodes[ii].AssociatedDataPointer+CurrentEOffset);
 
@@ -2713,7 +2839,7 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
       tempPtr[EyOffsetIndex]*RhsSupportTable_CornerNodes[ii+27].Coefficient+
       tempPtr[EzOffsetIndex]*RhsSupportTable_CornerNodes[ii+54].Coefficient)*E_conv;
    }
-
+ 
    double * tempMassMatrixPtr = ((double*)RhsSupportTable_CornerNodes[0].AssociatedDataPointer)+MassMatrixOffsetIndex;
     
   //mass matrix part
@@ -2724,23 +2850,21 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
       tempPtr[EyOffsetIndex]*tempMassMatrixPtr[MassMatrixOffsetTable[iVar][ii+27]]+
       tempPtr[EzOffsetIndex]*tempMassMatrixPtr[MassMatrixOffsetTable[iVar][ii+54]])*(-fourPiDtTheta)*E_conv;
   }
-    
-    
+
   // current effect
   res+=((double*)(RhsSupportTable_CornerNodes[81].AssociatedDataPointer))[JxOffsetIndex+iVar]*
     RhsSupportTable_CornerNodes[81].Coefficient;
-    
+
   //contribution from center nodes
   for (i=0; i<8;i++){
     res+=((double*)(RhsSupportTable_CenterNodes[i].AssociatedDataPointer+CurrentBOffset))[(iVar+2)%3]*RhsSupportTable_CenterNodes[i].Coefficient*B_conv;
   }//E=iVar,B=((iVar+2)%3) Ex:Bz, Ey:Bx, Ez:By
-    
+  
   for (i=8; i<16;i++){
     res+=((double*)(RhsSupportTable_CenterNodes[i].AssociatedDataPointer+CurrentBOffset))[(iVar+4)%3]*RhsSupportTable_CenterNodes[i].Coefficient*B_conv;
   }//E=iVar,B=((iVar+4)%3)  Ex:By, Ey:Bz, Ez:Bx
     
-  //if (fabs(res)>1e-3) printf("rhs:%f\n",res);
-
+ 
   return res;
 }
 
@@ -2768,7 +2892,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   static int nMeshCounter=-1;
   
   if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_){
-    if (PIC::CPLR::FLUID::iCycle==0){  
+    if (PIC::CPLR::FLUID::iCycle==0 || PIC::CPLR::FLUID::IsRestart){
+ 
       UpdateJMassMatrix();
       
       if (DoDivECorrection){
@@ -2777,29 +2902,31 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       }
       
       {// Output
-      double timeNow = 0.0;  
-      if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
+        double timeNow = PIC::CPLR::FLUID::iCycle*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];  
+      if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
       PIC::CPLR::FLUID::write_output(timeNow);
-      PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
-      nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
-
       }    
-    }
+
+      //set the init value of mesh counter
+      PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
+      nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+      }
   }else{
     if (cnt==0){
       UpdateJMassMatrix();
       cnt++;
       PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
-      nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
+      nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
     }    
   }
+  
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ){
     setB_center_BC();
     setB_corner_BC();
     setE_curr_BC();
   }
-
+  
 
   //  PIC::BC::ExternalBoundary::UpdateData();
   if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
@@ -2808,6 +2935,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
     nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
   }
   
+  /*
+  {// Output
+    double timeNow = (PIC::CPLR::FLUID::iCycle+10000)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];  
+    if (PIC::ThisThread==0) printf("pic_field.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle+10000);
+    PIC::CPLR::FLUID::write_output(timeNow,true);
+  }
+  */
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
