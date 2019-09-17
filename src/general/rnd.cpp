@@ -36,6 +36,8 @@ void rnd_seed(int seed) {
 
         if (RandomNumberGenerator::rndLastSeedArray==NULL) RandomNumberGenerator::rndLastSeedArray=new unsigned long int[nThreadsOpenMP];
         for (i=0;i<nThreadsOpenMP;i++) RandomNumberGenerator::rndLastSeedArray[i]=abs(seed)+i+thread*nThreadsOpenMP;
+
+        RandomNumberGenerator::rndLastSeedArray[0]=seed;
       }
     }
   #endif //_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
