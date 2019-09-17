@@ -865,7 +865,7 @@ Check=
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTphoton-test-openmpDIR)/PT/plots/test_photon.dat.Reduced.Step=10 \
 >>>output/test_photon/test_photon.Reduced.Step=10.ref_np`ls $(TESTphoton-test-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff)
 
->>>@ls -l test_photon-test$(TESTphoton-test-openmp-REF).diff
+>>>@ls -l test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff
 >>>@echo Test test_photon-test-openmp has finished: `date`
 
 <#
