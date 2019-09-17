@@ -842,6 +842,34 @@ Check=
 >>>@echo Test test_photon-test has finished: `date`
 
 <#
+
+
+#>
+Name=photon-test-openmp 
+Time=3
+
+Compile=
+>>>@echo "test_photon-test-openmp_compile..." > test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff
+>>>./Config.pl -application=photon-test -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/photon-test  -amps-test=on $(TESTphoton-testKEYS)
+>>>./Config.pl -openmp=on
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_photon-test-openmp_compile... done" >> test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff
+
+Check=
+>>>@echo "test_photon-test-openmp_check..." >> test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff
+>>>cd $(TESTphoton-test-openmpDIR)/PT/plots; cat pic.25THELECTRON.s=1.out=0.dat pic.25THELECTRON.s=1.out=1.dat pic.25THELECTRON.s=1.out=2.dat pic.H_PLUS.s=0.out=0.dat pic.H_PLUS.s=0.out=1.dat pic.H_PLUS.s=0.out=2.dat > test_photon.dat
+>>>@${TESTphoton-test-openmpDIR}/../utility/ReduceFile.pl ${TESTphoton-test-openmpDIR}/PT/plots/test_photon.dat 10
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTphoton-test-openmpDIR)/PT/plots/test_photon.dat.Reduced.Step=10 \
+>>>output/test_photon/test_photon.Reduced.Step=10.ref_np`ls $(TESTphoton-test-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon-test-openmp$(TESTphoton-test-openmp-REF).diff)
+
+>>>@ls -l test_photon-test$(TESTphoton-test-openmp-REF).diff
+>>>@echo Test test_photon-test-openmp has finished: `date`
+
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=test/lightwave-current-off 
