@@ -148,10 +148,13 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   FirstPBufferParticle=GetNext(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  int thread; //=omp_get_thread_num();
+  static int thread=-1; //=omp_get_thread_num();
 
-  thread=(RandomThreadOpenMP==false) ? omp_get_thread_num() : (int)(rnd()*Thread::NTotalThreads);
-
+  if (RandomThreadOpenMP==false) thread=omp_get_thread_num();
+  else {
+    if (++thread>=Thread::NTotalThreads) thread=0;
+  }
+    
   if (Thread::AvailableParticleListLength[thread]==0) {
     bool found=false;
 
@@ -212,24 +215,17 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   FirstPBufferParticle=GetNext(pdataptr);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  int thread; //=omp_get_thread_num();
+  static int thread=-1; //=omp_get_thread_num();
 
   if (RandomThreadOpenMP==false) {
     thread=omp_get_thread_num();
   }
   else {
     bool found=false;
+
+   if (++thread>=Thread::NTotalThreads) thread=0;
+   found=(Thread::AvailableParticleListLength[thread]!=0) ? true : false;
     
-    //random search for a thread
-    for (int i=0;i<Thread::NTotalThreads;i++) {  
-      thread=(RandomThreadOpenMP==false) ? omp_get_thread_num() : (int)(rnd()*Thread::NTotalThreads);
-
-      if (Thread::AvailableParticleListLength[thread]!=0) {
-        found=true;
-        break;
-      }
-    }
-
     //go through each thread
     if (found==false) for (thread=0;thread<Thread::NTotalThreads;thread++) if (Thread::AvailableParticleListLength[thread]!=0) {
       found=true;
