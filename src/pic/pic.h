@@ -188,6 +188,8 @@ namespace PIC {
         memcpy(name,v.name,_MAX_STRING_LENGTH_PIC_);
         type=v.type;
         doPrint=v.doPrint;
+
+        return *this;
       }
       
       // print variables' name to file
@@ -555,7 +557,7 @@ namespace PIC {
       }
 
       inline double GetDatumCumulative(Datum::cDatumSampled Datum, int spec) {
-        if (Datum.offset>=0) return *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
+        return (Datum.offset>=0) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) : 0.0;
       }
 
       //get data averaged over time
