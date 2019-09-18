@@ -947,6 +947,43 @@ Check=
 
 <#
 
+#>
+Name=test/lightwave-current-off-openmp 
+Time=2
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
+
+Compile=
+>>>@echo "test_lightwave-current-off-openmp_compile..." > test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/lightwave-current-off ${TESTlightwave-current-off-openmpKEYS}
+>>>@rm -rf srcTemp
+>>>./Config.pl -openmp=on
+>>>-@($(MAKE) -j8 amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_lightwave-current-off-openmp_compile... done" >> test_lightwave-current-off-openmp.diff
+
+Check=
+>>>@echo "test_lightwave-current-off-openmp_check..." >> test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase0.out=19.dat \ 
+>>>output/test_lightwave-current-off/LightWave.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-off-openmp--degrees=0$(TESTlightwave-current-off-openmp-REF).diff;) 
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase1.out=19.dat \ 
+>>>output/test_lightwave-current-off/LightWaveCase1.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-off-openmp--degrees=45$(TESTlightwave-current-off-openmp-REF).diff;) 
+
+>>>@cat test_lightwave-current-off-openmp--degrees=0$(TESTlightwave-current-off-openmp-REF).diff test_lightwave-current-off-openmp--degrees=45$(TESTlightwave-current-off-openmp-REF).diff > test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
+
+>>>@ls -l test_lightwave-current-off-openmp--degrees=0$(TESTlightwave-current-off-openmp-REF).diff
+>>>@ls -l test_lightwave-current-off-openmp--degrees=45$(TESTlightwave-current-off-openmp-REF).diff
+>>>@ls -l test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
+>>>@echo Test test_lightwave-current-off-openmp has finished: `date`
+
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=test/Periodic-BC  
