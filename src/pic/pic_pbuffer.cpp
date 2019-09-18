@@ -537,7 +537,7 @@ void PIC::ParticleBuffer::CheckParticleList() {
                 if (node->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) exit(__LINE__,__FILE__,"Error: the temp list is not empty");
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                 for (thread_OpenMP=0;thread_OpenMP<nTotalThreads_OpenMP;thread_OpenMP++) {
-                  if (*(node->block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k))!=-1) exit(__LINE__,__FILE__,"Error: the temp list is not empty");
+                  if (node->block->GetTempParticleMovingListMultiThreadTable(thread_OpenMP,i,j,k)->first!=-1) exit(__LINE__,__FILE__,"Error: the temp list is not empty");
                 }
 #else
 #error The option is unknown
