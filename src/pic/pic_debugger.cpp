@@ -99,7 +99,7 @@ bool PIC::Debugger::InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startN
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       ptr=startNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-      ptr=*(startNode->block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k));
+      ptr=startNode->block->GetTempParticleMovingListMultiThreadTable(thread_OpenMP,i,j,k)->first;
 #else
 #error The option is unknown
 #endif
@@ -203,7 +203,7 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
         ptr=startNode->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-        ptr=(*startNode->block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k));
+        ptr=startNode->block->GetTempParticleMovingListMultiThreadTable(thread_OpenMP,i,j,k)->first;
 #endif
       }
 

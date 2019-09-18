@@ -52,8 +52,8 @@ int PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset=0;
 int PIC::Mesh::cDataCornerNode::totalAssociatedDataLength=0;
 
 //in case OpenMP is used: tempParticleMovingListTableThreadOffset is the offset in the associatedDataPointer vector to the position when the temporary particle list begins
-int PIC::Mesh::cDataBlockAMR::tempParticleMovingListTableThreadOffset=-1;
-int PIC::Mesh::cDataBlockAMR::tempParticleMovingListTableThreadLength=0;
+int PIC::Mesh::cDataBlockAMR::tempTempParticleMovingListMultiThreadTableOffset=-1;
+int PIC::Mesh::cDataBlockAMR::tempTempParticleMovingListMultiThreadTableLength=0;
 
 int PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset=0;
 
