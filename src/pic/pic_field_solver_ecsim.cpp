@@ -1494,7 +1494,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     //for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
     //for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
     //for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none) shared (block, ParticleEnergy, FirstCellParticleTable, B_conv,length_conv,node, B_corner,B_Center,charge_conv,mass_conv,dtTotal,LightSpeed,Rho_,RhoUx_,RhoUy_,RhoUz_,RhoUxUx_,RhoUyUy_,RhoUzUz_, RhoUxUy_, RhoUyUz_, RhoUxUz_, CellVolume, PIC::CPLR::DATAFILE::Offset::ElectricField, MassMatrixOffsetIndex,JxOffsetIndex,SpeciesDataIndex,IndexMatrix)
+#endif
     for (int iCell=0; iCell<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;iCell++){
       // long int ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
       int i = iCell%_BLOCK_CELLS_X_;
@@ -1776,14 +1778,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 #endif
             }
                 
+            #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
             #pragma omp atomic    
+            #endif
             ParticleEnergy += ParticleEnergyCell;
 
             //collect current
             for (int iCorner=0; iCorner<8; iCorner++){
               for (int ii=0; ii<3; ii++){
                 double & tempD = CornerJPtr[iCorner][ii];
+
+                 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                  #pragma omp atomic update
+                 #endif
                 tempD += (Jg[iCorner][ii])/CellVolume;   
                 //CornerJPtr[iCorner][ii] += (Jg[iCorner][ii])/CellVolume;
                 
@@ -1795,7 +1802,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             for (int iCorner=0; iCorner<8; iCorner++){
               for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
                 double & tempD = specDataPtr[iCorner][ii];
+
+                #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                 #pragma omp atomic update
+                #endif
                 tempD += SpeciesData_GI[iCorner][ii]/CellVolume;
                 //specDataPtr[iCorner][ii] += SpeciesData_GI[iCorner][ii]/CellVolume;
               }                  
@@ -1810,7 +1820,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                   for (int ii=0; ii<3; ii++){
                     for (int jj=0; jj<3; jj++){
                         double & tempD = CornerMassMatrixPtr[iCorner][3*ii+jj];
+
+                        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                         #pragma omp atomic update
+                        #endif
                         tempD += MassMatrix_GGD[iCorner][iCorner][3*ii+jj];   
                       
                       //CornerMassMatrixPtr[iCorner][3*ii+jj] += MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
@@ -1823,10 +1836,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                     for (int jj=0; jj<3; jj++){
                       double & tempD1 = CornerMassMatrixPtr[iCorner][9*IndexMatrix[iCorner][jCorner]+3*ii+jj];
                       double & tempD2 = CornerMassMatrixPtr[jCorner][9*IndexMatrix[jCorner][iCorner]+3*ii+jj];
+
+                      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                       #pragma omp atomic update
+                      #endif
                       tempD1 += MassMatrix_GGD[iCorner][jCorner][3*ii+jj];  
                       //CornerMassMatrixPtr[iCorner][9*IndexMatrix[iCorner][jCorner]+3*ii+jj] += MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+
+                      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
                       #pragma omp atomic update
+                      #endif
+
                       tempD2 += MassMatrix_GGD[iCorner][jCorner][3*ii+jj]; 
                       //CornerMassMatrixPtr[jCorner][9*IndexMatrix[jCorner][iCorner]+3*ii+jj] += MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
                       //MassMatrix_GGD[iCorner][jCorner][3*ii+jj] +=tmp;
