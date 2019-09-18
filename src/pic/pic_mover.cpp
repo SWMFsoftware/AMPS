@@ -470,22 +470,16 @@ void PIC::Mover::MoveParticles() {
       memcpy(block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
       //link the lists created by each OpenMP threads
-      long int FirstParticle,LastParticle=-1,pNext,*LastParticlePtr;
+      long int FirstParticle,LastParticle=-1;
+      PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData;
 
       for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
         for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-          LastParticlePtr=block->GetTempParticleMovingListTableThread(thread_OpenMP,i,j,k);
-
-          LastParticle=(*LastParticlePtr);
+          ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(thread_OpenMP,i,j,k);
+          LastParticle=ThreadTempParticleMovingData->last;
 
           if (LastParticle!=-1) {
-            FirstParticle=LastParticle;
-            pNext=PIC::ParticleBuffer::GetNext(LastParticle);
-
-            while (pNext!=-1) {
-              LastParticle=pNext;
-              pNext=PIC::ParticleBuffer::GetNext(LastParticle);
-            }
+            FirstParticle=ThreadTempParticleMovingData->first;
 
             //link patricle list
             long int *FirstCellParticlePtr=block->FirstCellParticleTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
@@ -496,7 +490,8 @@ void PIC::Mover::MoveParticles() {
             *FirstCellParticlePtr=FirstParticle;
           }
 
-          *LastParticlePtr=-1;
+          ThreadTempParticleMovingData->first=-1;
+          ThreadTempParticleMovingData->last=-1;
         }
       }
 
@@ -1168,22 +1163,32 @@ int iTemp,jTemp,kTemp;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),i,j,k);
-#else
-#error The option is unknown
-#endif
-
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
-
-  PIC::ParticleBuffer::SetV(v,ParticleData);
-  PIC::ParticleBuffer::SetX(x,ParticleData);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  PIC::ParticleBuffer::SetV(v,ParticleData);
+  PIC::ParticleBuffer::SetX(x,ParticleData);
+
+
 
 
 
@@ -1542,22 +1547,33 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),i,j,k);
-#else
-#error The option is unknown
-#endif
-
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
-
-  PIC::ParticleBuffer::SetV(v,ParticleData);
-  PIC::ParticleBuffer::SetX(x,ParticleData);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   *tempFirstCellParticlePtr=ptr;
+
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  PIC::ParticleBuffer::SetV(v,ParticleData);
+  PIC::ParticleBuffer::SetX(x,ParticleData);
+
+
 
 
 
@@ -1794,22 +1810,32 @@ exit(__LINE__,__FILE__,"not implemented");
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),i,j,k);
-#else
-#error The option is unknown
-#endif
-
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
-
-  PIC::ParticleBuffer::SetV(vInit,ParticleData);
-  PIC::ParticleBuffer::SetX(xInit,ParticleData);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  PIC::ParticleBuffer::SetV(vInit,ParticleData);
+  PIC::ParticleBuffer::SetX(xInit,ParticleData);
+
+
 
 
   //=====================  DEBUG =========================
@@ -3478,13 +3504,28 @@ ProcessPhotoChemistry:
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),i,j,k);
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  ThreadTempParticleMovingData->first=ptr;
+
 #else
 #error The option is unknown
 #endif
 
-  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
 
   //save the trajectory point
   #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
@@ -3497,11 +3538,7 @@ ProcessPhotoChemistry:
 #endif
 #endif
 
-  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
-  *tempFirstCellParticlePtr=ptr;
 
 
 

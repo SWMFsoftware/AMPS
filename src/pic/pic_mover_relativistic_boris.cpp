@@ -398,22 +398,32 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  tempFirstCellParticlePtr=block->GetTempParticleMovingListTableThread(omp_get_thread_num(),i,j,k);
-#else
-#error The option is unknown
-#endif
-
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
-
-  PIC::ParticleBuffer::SetV(vFinal,ParticleData);
-  PIC::ParticleBuffer::SetX(xFinal,ParticleData);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  PIC::ParticleBuffer::SetV(vFinal,ParticleData);
+  PIC::ParticleBuffer::SetX(xFinal,ParticleData);
+
+
 
   return _PARTICLE_MOTION_FINISHED_;
 }
