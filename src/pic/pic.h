@@ -2610,7 +2610,7 @@ namespace PIC {
       static fPackBlockData PackBlockData,UnpackBlockData;
 
     private:
-      static int tempParticleMovingListTableThreadOffset,tempParticleMovingListTableThreadLength; //the offset and length of the tempParticleMovingListTable for each
+      static int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
 
     public:
       static int LoadBalancingMeasureOffset;
@@ -2624,10 +2624,17 @@ namespace PIC {
 
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
-      long int *GetTempParticleMovingListTableThread(int thread,int i,int j,int k) {
-        return ((long int*) (associatedDataPointer+tempParticleMovingListTableThreadOffset))+
+
+      struct cTempParticleMovingListMultiThreadTable {
+        long int first,last;
+      };
+
+      //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
+      cTempParticleMovingListMultiThreadTable *GetTempParticleMovingListMultiThreadTable(int thread,int i,int j,int k) {
+        return ((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))+
             thread*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
       }
+
 
       //tempParticleMovingListTable is used only when _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       //when _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_ tempParticleMovingListTableThreadOffset is used instead
@@ -2665,11 +2672,12 @@ namespace PIC {
             }
           }
 
-          tempParticleMovingListTableThreadOffset=totalAssociatedDataLength;
-          tempParticleMovingListTableThreadLength=nThreadsOpenMP*sizeof(long int)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+          tempTempParticleMovingListMultiThreadTableOffset=totalAssociatedDataLength;
+          tempTempParticleMovingListMultiThreadTableLength=nThreadsOpenMP*sizeof(cTempParticleMovingListMultiThreadTable)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
-          totalAssociatedDataLength+=tempParticleMovingListTableThreadLength;
-          UserAssociatedDataOffset+=tempParticleMovingListTableThreadLength;
+          totalAssociatedDataLength+=tempTempParticleMovingListMultiThreadTableLength;
+          UserAssociatedDataOffset+=tempTempParticleMovingListMultiThreadTableLength;
+
 
           LoadBalancingMeasureOffset=totalAssociatedDataLength;
           totalAssociatedDataLength+=nThreadsOpenMP*sizeof(double);
@@ -2724,7 +2732,12 @@ namespace PIC {
         for (i=0;i<length;i++) tempParticleMovingListTable[i]=-1;
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
         length*=omp_get_max_threads();
-        for (i=0;i<length;i++) *(i+(long int *)(associatedDataPointer+tempParticleMovingListTableThreadOffset))=-1;
+
+        for (i=0;i<length;i++) {
+          (i+(cTempParticleMovingListMultiThreadTable*)(associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))->first=-1;
+          (i+(cTempParticleMovingListMultiThreadTable*)(associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))->last=-1;
+        }
+
 #else
 #error The option is unknown
 #endif
