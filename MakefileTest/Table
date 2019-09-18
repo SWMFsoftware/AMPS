@@ -825,6 +825,47 @@ Check=
 
 <#
 
+
+#>
+Name=test/fast-wave-openmp
+Time=3
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_fast-wave-openmp_compile..." > test_fast-wave-openmp$(TESTfast-wave-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/fast-wave ${TESTfast-wave-openmpKEYS} 
+>>>./Config.pl -openmp=on
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_fast-wave-openmp_compile... done" >> test_fast-wave-openmp.diff
+
+
+Check=
+>>>@echo "test_fast-wave-openmp_check..." >> test_fast-wave$(TESTfast-wave-openmp-REF).diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
+>>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave-openmp--protons$(TESTfast-wave-REF).diff;)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave-openmpDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
+>>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave-openmp--electrons$(TESTfast-wave-REF).diff)
+
+>>>@cat test_fast-wave-openmp--protons$(TESTfast-wave-REF).diff  test_fast-wave-openmp--electrons$(TESTfast-wave-REF).diff > test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff 
+
+>>>@ls -l test_fast-wave-openmp--protons$(TESTfast-wave-openmp-REF).diff
+>>>@ls -l test_fast-wave-openmp--electrons$(TESTfast-wave-openmp-REF).diff
+>>>@ls -l test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff
+>>>@echo Test test_fast-wave-openmp has finished: `date`
+
+<#
+
+
+
 -------------------------------------------------------------------------------
 #>
 Name=photon-test
