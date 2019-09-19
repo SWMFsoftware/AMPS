@@ -110,9 +110,15 @@ endif
 
 #when OpenMP is used add the appropriate compiler flag and library
 ifeq ($(OPENMP),on)
+ifeq ($(COMPILE.c),pgcc)
+	SEARCH_C+=-mp
+	SEARCH_C_GENERAL+=-mp
+	AMPSLINKLIB+=-mp
+else
 	SEARCH_C+=-fopenmp
 	SEARCH_C_GENERAL+=-fopenmp
 	AMPSLINKLIB+=-fopenmp
+endif
 endif
 
 
