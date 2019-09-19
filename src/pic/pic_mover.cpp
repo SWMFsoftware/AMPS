@@ -142,6 +142,8 @@ void PIC::Mover::MoveParticles() {
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   //the total number of the particle moving procedure calls
   static unsigned long int nTotalCalls=0;
+    
+  nTotalCalls++;
   #endif
 
 
@@ -1153,7 +1155,6 @@ int iTemp,jTemp,kTemp;
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -1162,6 +1163,8 @@ int iTemp,jTemp,kTemp;
   }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -1537,8 +1540,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
-
+  
   if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
@@ -1546,6 +1548,8 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -1800,7 +1804,6 @@ exit(__LINE__,__FILE__,"not implemented");
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xInit,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -1809,6 +1812,8 @@ exit(__LINE__,__FILE__,"not implemented");
   }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -3496,13 +3501,14 @@ ProcessPhotoChemistry:
   PIC::ParticleBuffer::SetX(xFinal,ParticleData);
 
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
