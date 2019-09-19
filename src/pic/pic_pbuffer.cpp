@@ -169,7 +169,7 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
       printf("$PREFIX: The particle buffer is full (thread=%i)\nParticle allocation report:\nOpenMP thread\tAvailable Particles\n",PIC::ThisThread);
 
       for (int tt=0;tt<Thread::NTotalThreads;tt++) {
-        printf("$PREFIX: %i\t%i\n",tt,Thread::AvailableParticleListLength[tt]);
+        printf("$PREFIX: %i\t%ld\n",tt,Thread::AvailableParticleListLength[tt]);
       }
 
       exit(__LINE__,__FILE__,"The particle buffer is full");
@@ -243,7 +243,7 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
         printf("$PREFIX:RandomThreadOpenMP==false\nThread\tThe number of the available particles\n");
       }
 
-      for (thread=0;thread<Thread::NTotalThreads;thread++) printf("$PREFIX: %i\t%i\n",thread,Thread::AvailableParticleListLength[thread]);
+      for (thread=0;thread<Thread::NTotalThreads;thread++) printf("$PREFIX: %i\t%ld\n",thread,Thread::AvailableParticleListLength[thread]);
 
       exit(__LINE__,__FILE__,"The particle buffer is full");
     }
@@ -260,7 +260,7 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
     }
 
     printf("$PREFIX: The particle buffer is full [MPI process=%i,OpenMP thread=%i]\nThread\tThe number of the available particles\n",PIC::ThisThread,thread);
-    for (thread=0;thread<Thread::NTotalThreads;thread++) printf("$PREFIX: %i\t%i\n",thread,Thread::AvailableParticleListLength[thread]);
+    for (thread=0;thread<Thread::NTotalThreads;thread++) printf("$PREFIX: %i\t%ld\n",thread,Thread::AvailableParticleListLength[thread]);
 
     exit(__LINE__,__FILE__,"The particle buffer is full");
   }
