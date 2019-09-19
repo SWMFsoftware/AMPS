@@ -10215,7 +10215,6 @@ if (TmpAllocationCounter==2437) {
     double LoadMeasureNormal;
     long int nTotalBlocks,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
     int i,nLevel;
-    cTreeNodeAMR<cBlockAMR> *ptr;
 
     static cTreeNodeAMR<cBlockAMR> *startNodeFillingCurve=NULL;
 
@@ -10481,7 +10480,6 @@ if (TmpAllocationCounter==2437) {
     };
 
     auto VerifyDomainDecomposistionConsistency = [&] () {
-      int thread;
       CRC32 checksum;
       cTreeNodeAMR<cBlockAMR> *ptr;
       cAMRnodeID id;
@@ -11163,7 +11161,6 @@ if (TmpAllocationCounter==2437) {
     cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable=new cTreeNodeAMR<cBlockAMR>** [nTotalThreads];
     int *MoveInNodeTableSize=new int [nTotalThreads];
     int *MoveOutNodeTableSize=new int [nTotalThreads];
-    int From,To;
 
     for (thread=0;thread<nTotalThreads;thread++) {
       MoveOutNodeTable[thread]=NULL;
