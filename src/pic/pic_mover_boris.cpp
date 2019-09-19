@@ -449,7 +449,6 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -458,6 +457,8 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   }
   
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -712,7 +713,6 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -721,6 +721,8 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   }
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -1071,7 +1073,6 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -1095,6 +1096,8 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   }
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
