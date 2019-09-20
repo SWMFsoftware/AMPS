@@ -762,6 +762,45 @@ unsigned long int PIC::ParticleBuffer::GetParticleSignature(long int ptr,CRC32* 
   return sig->checksum();
 }
 
+//==================================================================================================
+//create and populate a table containing all particles located in a cell; the return value is the number of elements in the cell
+int PIC::ParticleBuffer::GetCellParticleTable(long int* &ParticleIndexTable,int& ParticleIndexTableLength,long int first_particle_index) {
+  bool flag=true;
+  int cnt;
+  long int ptr;
+
+  //pack the particle indexes in the array
+  if (first_particle_index==-1) return 0;
+  else {
+    do {
+      ptr=first_particle_index;
+      flag=true,cnt=0;
+
+      while (ptr!=-1) {
+        if (cnt<ParticleIndexTableLength) {
+          ParticleIndexTable[cnt++]=ptr;
+        }
+        else {
+          if (ParticleIndexTableLength!=0) {
+            delete [] ParticleIndexTable;
+            ParticleIndexTableLength*=1.2;
+          }
+          else ParticleIndexTableLength=100;
+
+          ParticleIndexTable=new long int [ParticleIndexTableLength];
+
+          flag=false;
+          break;
+        }
+
+        ptr=GetNext(ptr);
+      }
+    }
+    while (flag==false);
+  }
+
+  return cnt;
+}
 
 
 

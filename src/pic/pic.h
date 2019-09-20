@@ -1576,6 +1576,9 @@ namespace PIC {
     //check the total particles number
     void CheckParticleList();
 
+    //create and populate a table containing all particles located in a cell; the return value is the number of elements in the cell
+    int GetCellParticleTable(long int* &ParticleIndexTable,int &ParticleIndexTableLength,long int first_particle_index);
+
     //get signature of an particle
     unsigned long int GetParticleSignature(long int ptr,CRC32* sig,bool IncludeListInfo=false);
     unsigned long int GetParticleSignature(long int ptr,bool IncludeListInfo=false);
