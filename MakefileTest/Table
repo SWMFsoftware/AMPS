@@ -146,7 +146,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=CG-Rosina-Liouville--Trajectory@@(0+valeriy) 
+Name=CG-Rosina-Liouville--Trajectory@@(0+) 
 Time=3
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
@@ -210,7 +210,7 @@ Check=
 
 
 #>
-Name=CG-Rosina-Liouville
+Name=CG-Rosina-Liouville@@(0+) 
 Time=3
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
