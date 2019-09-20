@@ -323,7 +323,6 @@ void PIC::Parallel::ExchangeParticleData() {
       //there is something to send => pack the data and send it
       bool CommunicationInitialed_BLOCK_;
       int iCell,jCell,kCell;
-      bool CellParticleTableModified;
 
       if (SendParticleDataBufferLengthTable[To]<SendMessageLengthTable[To]) {
         if (SendParticleDataBufferLengthTable[To]!=0) delete [] SendParticleDataBuffer[To];
@@ -341,7 +340,6 @@ void PIC::Parallel::ExchangeParticleData() {
         CommunicationInitialed_BLOCK_=false;
         if (!sendNode->block) continue;
         FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
-        CellParticleTableModified=false;
 
         for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
           Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
@@ -387,7 +385,6 @@ void PIC::Parallel::ExchangeParticleData() {
             }
 
             FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]=-1;
-            CellParticleTableModified=true;
           }
         }
 
@@ -1009,7 +1006,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes_old() {
     for (iStencil=0,node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
       if ((_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_)||(PIC::Mesh::mesh.ExternalBoundaryBlock(node)!=_EXTERNAL_BOUNDARY_BLOCK_)) {
         int flag;
-        bool TemporaralyAllocatedBlock=false;
         cAMRnodeID nodeid=node->AMRnodeID;
 
         //for (int i=0;i<_BLOCK_CELLS_X_+1;i++) for (int j=0;j<_BLOCK_CELLS_Y_+1;j++)  for (int k=0;k<_BLOCK_CELLS_Z_+1;k++) {
@@ -1089,7 +1085,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes_old() {
           if (PIC::Mesh::mesh.ExternalBoundaryBlock(node)==_EXTERNAL_BOUNDARY_BLOCK_)  {
             for (iface=0;iface<6;iface++) if (TestRealBoundaryFace(iface,node)==true) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
               //the analysis will be performed by the MPI process that the block belongs to
-              int ii,jj,kk,ff,iNeighbour,BoundaryNodeFlag=false;
+              int ii,jj,kk,BoundaryNodeFlag=false;
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* neibNode;
               PIC::Mesh::cDataBlockAMR *neibBlock;
               bool found;
@@ -1293,7 +1289,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes_old() {
                 //determine whether a corner node descrived by 'Set' exist in the current MPI process
                 //if the corner node exists -> set the processed flag state "true"
                 int CornerNodeExistFlag;
-                int CornerNodeRecvFlagTable[PIC::nTotalThreads],CornerNodeSendFlagTable[PIC::nTotalThreads];
+                int CornerNodeRecvFlagTable[PIC::nTotalThreads];
                 PIC::Mesh::cDataCornerNode *CornerNode;
                 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* NodeOut;
 
@@ -1635,9 +1631,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
   if (globalMeshChangeFlag!=0) {
     //the mesh or the domain decomposition has been modified. Need to create a new communucation table
-    int NewTableLength=0;
-    int iNode,jNode,kNode,FlagSum;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* ActualNode;
     bool meshModifiedFlag_CountMeshElements=PIC::Mesh::mesh.meshModifiedFlag_CountMeshElements;
     double StartTime=MPI_Wtime();
 
