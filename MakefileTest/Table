@@ -1392,7 +1392,7 @@ Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
-Ref=1{pgcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
 
 Ref=7{pgcc}@@(0+pleiades)
 Ref=5{gcc}@@(0+pleiades)
