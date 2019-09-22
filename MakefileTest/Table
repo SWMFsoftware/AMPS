@@ -690,6 +690,35 @@ Check=
 
 <#
 
+
+#>
+Name=test/linear-system-solver-openmp 
+Time=10
+
+Outs=Diffusion.out=190
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/
+
+Compile=
+>>>@echo "test_linear-system-solver-openmp_compile..." >> test_linear-system-solver-openmp.diff
+>>>./Config.pl -openmp=on
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/linear-system-solver ${TESTlinear-system-solverKEYS}
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_linear-system-solver-openmp_compile... done" >> test_linear-system-solver-openmp.diff
+
+Check=
+>>>@echo "test_linear-system-solver-openmp_check..." >> test_linear-system-solver-openmp$(TESTlinear-system-solver-openmp-REF).diff
+>>>-@$(foreach OUT,$(TESTlinear-system-solver-openmpOUTFILES),                                 \
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=1.0E-6 $(TESTlinear-system-solver-openmpDIR)/PT/plots/$(OUT).dat         \
+>>>output/test_linear-system-solver/$(OUT)$(TESTlinear-system-solver-openmp-REF).ref_np`ls $(TESTlinear-system-solver-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_linear-system-solver-openmp$(TESTlinear-system-solver-openmp-REF).diff);)
+>>>@ls -l test_linear-system-solver-openmp$(TESTlinear-system-solver-openmp-REF).diff
+>>>@echo Test test_linear-system-solver-openmp has finished: `date`
+
+<#
+
 #>
 Name=test/periodic-bc-gmres 
 Time=3
