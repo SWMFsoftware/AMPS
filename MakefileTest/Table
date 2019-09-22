@@ -2209,7 +2209,7 @@ Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/VENUS@@(0+stampede)
 
 Compile=
 >>>@echo "test_Venus-Hot-Oxygen_compile..." > test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
->>>./Config.pl -application=Venus-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTVenus-Hot-OxygenKEYS}
+>>>./Config.pl -application=test/Venus-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTVenus-Hot-OxygenKEYS}
 >>>-@($(MAKE) -j8 amps)
 >>>@echo "test_Venus-Hot-Oxygen_compile... done" >> test_Venus-Hot-Oxygen$(TESTVenus-Hot-Oxygen-REF).diff
 
