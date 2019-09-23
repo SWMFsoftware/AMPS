@@ -179,6 +179,9 @@ while (@Table) {
 push(@Final,"\n\n");
 push(@Final,@FinalApps);
 
+
+splice @Final,0,0,"SHELL=/bin/bash\n";
+
 #write it
 write_content($fFinal,"include");
 &write_content($fFinal,@Final);
