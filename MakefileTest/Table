@@ -68,8 +68,8 @@ Check=
 >>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_Saturn-MOP/pic.H2O.s=0.out=1.dat.Reduced.Step=100$(TESTSaturn-MOP-REF).ref_np`ls $(TESTSaturn-MOPDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 ${TESTSaturn-MOPDIR}/PT/plots/pic.H2O.s=0.out=1.dat
 >>>-@${TESTSaturn-MOPDIR}/../utility/ReduceFile.pl ${TESTSaturn-MOPDIR}/PT/plots/pic.H2O.s=0.out=1.dat 100
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 ${TESTSaturn-MOPDIR}/PT/plots/pic.H2O.s=0.out=1.dat.Reduced.Step=100 
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTSaturn-MOPDIR}/PT/plots/pic.H2O.s=0.out=1.dat.Reduced.Step=100 output/test_Saturn-MOP/pic.H2O.s=0.out=1.dat.Reduced.Step=100$(TESTSaturn-MOP-REF).ref_np`ls $(TESTSaturn-MOPDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Saturn-MOP$(TESTSaturn-MOP-REF).diff
 
 >>>@ls -l test_Saturn-MOP$(TESTSaturn-MOP-REF).diff 
