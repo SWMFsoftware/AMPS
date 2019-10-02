@@ -4512,7 +4512,11 @@ namespace PIC {
       double CellInterpolatedVar(std::string var,PIC::InterpolationRoutines::CellCentered::cStencil * centerStencilPtr,int iSp);
       double GetCornerVar(std::string var,char * DataPtr,int iSp);
       void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin);
-    }
+      
+      void check_max_mem_usage(std::string tag="");
+      double read_mem_usage();
+
+      }
 
 
     //coupling thrugh a file

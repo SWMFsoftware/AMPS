@@ -19,6 +19,7 @@
 #include <iostream>
 #include <fstream>
 #include <signal.h>
+#include <unistd.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -1327,9 +1328,55 @@ double PIC::CPLR::FLUID::GetCornerVar(std::string var,char * DataPtr,int iSp){
 
 
 void PIC::CPLR::FLUID::GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
-  
   index[0] = round((x[0]-xmin[0])/dx[0]);
   index[1] = round((x[1]-xmin[1])/dx[1]);
   index[2] = round((x[2]-xmin[2])/dx[2]);
-
 }
+
+void PIC::CPLR::FLUID::check_max_mem_usage(string tag) {
+  double memLocal = read_mem_usage();
+  double memMax = memLocal; 
+
+  MPI_Allreduce(&memLocal, &memMax, 1, MPI_DOUBLE, MPI_MAX, MPI_GLOBAL_COMMUNICATOR);
+  if (fabs(memLocal - memMax) < 1e-6) {
+    cout << tag << " Maximum memory usage = " << memLocal
+	 << "MB on thread = " << PIC::ThisThread << endl;
+  } 
+}
+
+double PIC::CPLR::FLUID::read_mem_usage(){  
+  // This function returns the resident set size (RSS) of
+  // this processor in unit MB. This function works for most
+  // Linux distributions, but not Mac OS X. 
+  
+  // From wiki: 
+  // RSS is the portion of memory occupied by a process that is 
+  // held in main memory (RAM).
+
+  double rssMB = 0.0;                              
+
+  ifstream stat_stream("/proc/self/stat", ios_base::in);
+
+  if (!stat_stream.fail()) {
+    // Dummy vars for leading entries in stat that we don't care about         
+    string pid, comm, state, ppid, pgrp, session, tty_nr;
+    string tpgid, flags, minflt, cminflt, majflt, cmajflt;
+    string utime, stime, cutime, cstime, priority, nice;
+    string O, itrealvalue, starttime;
+                            
+    // Two values we want                                                       
+    unsigned long vsize;                
+    unsigned long rss;
+
+    stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
+      tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
+      stime >> cutime >> cstime >> priority >> nice >> O >> itrealvalue >> 
+      starttime >> vsize >> rss; // Ignore the rest       
+    stat_stream.close(); 
+
+    rssMB = rss*sysconf(_SC_PAGE_SIZE)/1024.0/1024.0;
+  }
+
+  return rssMB; 
+}
+
