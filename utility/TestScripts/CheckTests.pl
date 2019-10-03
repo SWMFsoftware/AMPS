@@ -31,7 +31,7 @@ foreach $pair (@TestTable) {
     if ($size!=0) {
       print "Found nont-zero diff file ($fname) - recheck it\n";
        
-      if (-e "test_amps_check") {
+      if (-e "test_amps.check") {
         $cmd="make ".$target." >> test_amps.check";
       }
       else {
