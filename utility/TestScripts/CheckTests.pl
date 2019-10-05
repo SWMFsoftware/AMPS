@@ -27,6 +27,10 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 
 my ($fname,$target,$pair,$size,$cmd);
 
+if (-e "test_amps.check") {
+  system("rm -rf test_amps.check");
+}
+
 foreach $pair (@TestTable) {
   ($fname,$target) = split /\//, $pair, 2;
 
@@ -35,19 +39,20 @@ foreach $pair (@TestTable) {
   foreach $fname (@files) {
     $size = -s "$fname"; 
    
-    if ($size!=0) {
-      print "Found nont-zero diff file ($fname) - recheck it\n";
+    if (defined $size) {
+      if ($size!=0) {
+        print "Found nont-zero diff file ($fname) - recheck it\n";
        
-      if (-e "test_amps.check") {
-        $cmd="make ".$target." >> test_amps.check";
-      }
-      else {
-        $cmd="make ".$target." > test_amps.check";
-      }
+        if (-e "test_amps.check") {
+          $cmd="make ".$target." >> test_amps.check";
+        }
+        else {
+          $cmd="make ".$target." > test_amps.check";
+        }
 
-      print "$cmd\n";
-     
-      system($cmd); 
+        print "$cmd\n";
+        system($cmd); 
+      }
     }
   }
 }
