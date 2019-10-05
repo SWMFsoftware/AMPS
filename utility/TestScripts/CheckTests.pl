@@ -23,7 +23,9 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_Individual_Trajectories--Boris\\[?\\].diff/test_Individual_Trajectories--Boris_check",
 "test_Individual_Trajectories--Boris-relativistic\\[?\\].diff/test_Individual_Trajectories--Boris-relativistic_check",
 "test_Individual_Trajectories--Markidis2010\\[?\\].diff/test_Individual_Trajectories--Markidis2010_check",
-"test_Individual_Trajectories--guiding-center\\[?\\].diff/test_Individual_Trajectories--guiding-center_check");  
+"test_Individual_Trajectories--guiding-center\\[?\\].diff/test_Individual_Trajectories--guiding-center_check",
+"test_Drag-Coefficient--Specular-Reflection\\[?\\].diff/test_Drag-Coefficient--Specular-Reflection_check",
+"test_Mars-Hot-Carbon.diff/test_Mars-Hot-Carbon_check");  
 
 my ($fname,$target,$pair,$size,$cmd);
 
