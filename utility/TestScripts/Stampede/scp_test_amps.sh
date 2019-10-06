@@ -34,6 +34,7 @@ cd $WorkDir/Tmp_AMPS_test
 #combine multiple log filed into a signle log file
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS 
 cp test_amps.log test_amps.log.bak
+./utility/TestScripts/CheckTests.pl
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
@@ -45,6 +46,7 @@ endif
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS
 cp test_amps.log test_amps.log.bak
+./utility/TestScripts/CheckTests.pl
 
 foreach f (test_amps_OVERTIME*.log) #
   cat $f >> test_amps.log
