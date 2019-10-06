@@ -114,19 +114,19 @@ cp -r BATL PGI/AMPS/
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
-./utility/TestScripts/BuildTest.pl -test-run-time=90
+./utility/TestScripts/BuildTest.pl -test-run-time=60
 
 #>IntelAll #################################################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                      #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=ifortmpif90,iccmpicxx >>& test_amps.log    
-./utility/TestScripts/BuildTest.pl -test-run-time=90
+./utility/TestScripts/BuildTest.pl -test-run-time=60
 
 #>PGIAll ###################################################################
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                        #
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=pgf90,pgccmpicxx -cpp-compiler=pgc++ -link-option=-L/nasa/sgi/mpt/2.15r20/lib,-lmpi++,-lmpi       >>& test_amps.log    
-./utility/TestScripts/BuildTest.pl -test-run-time=90
+./utility/TestScripts/BuildTest.pl -test-run-time=60
 
 # copy job files to the AMPS directory on supercomputers
 #>Pleiades ###############################################

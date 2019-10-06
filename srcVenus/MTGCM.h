@@ -227,7 +227,7 @@ public:
 
           ifile.CutInputStr(str1,str);
           DataBuffer[iAlt][iLat][iLon]=strtod(str1,&endptr);
-          if (isinf(DataBuffer[iAlt][iLat][iLon])) printf("infinity:%e\n",DataBuffer[iAlt][iLat][iLon]);
+          if (!isfinite(DataBuffer[iAlt][iLat][iLon])) printf("infinity:%e\n",DataBuffer[iAlt][iLat][iLon]);
         }
 
         ++iAlt;

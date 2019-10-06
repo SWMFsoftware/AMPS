@@ -10207,8 +10207,8 @@ if (TmpAllocationCounter==2437) {
         printf("Domain Decomposition Signature is 0x%lx\n",Signature.checksum());
       }
 
-      printf("Thread\tNumber of Blocks:\n");
-      for (thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\n",thread,nTotalBlocks[thread]);
+      //printf("Thread\tNumber of Blocks:\n");
+      //for (thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\n",thread,nTotalBlocks[thread]);
     }
 
     //get the total number of bloks
