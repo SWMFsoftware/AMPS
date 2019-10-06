@@ -502,7 +502,7 @@ inline double ProductionRateCaluclation_HotO(double *x) {
         
     }
 
-    if (isnan(production_rate) || isinf(production_rate)){
+    if ((!isfinite(production_rate)) || (!isfinite(production_rate))){
       
       printf("Altitude:%e, production rate:%e\n",Altitude,production_rate);
       double temp1= Te.Interpolate(x);
@@ -618,11 +618,11 @@ inline double ProductionRateCaluclation_HotC(double *x) {
         else if (Altitude>=Altitude2){t=(COp.Interpolate(vectop)*exp((Altitude2-z0)/localH))*exp(-(Altitude-Altitude2)/COpScaleHeight);}
         
         //	if (nz>100E3){exit(__LINE__,__FILE__,"Error");}
-        bool isnan(t);
-        bool isinf(t);
+      //  bool isnan(t);
+       // bool isinf(t);
         
         double nz=1E3,tt=0.0;
-        while (isnan(t)==true) {
+        while (isfinite(t)!=true) {
             if (nz>=Altitude) {t=1.0;}
             for (idim=0;idim<DIM;idim++) {vectop2[idim]= (3388.25E3+(Altitude-nz))*(x[idim]/r);}
             t=COp.Interpolate(vectop2);
