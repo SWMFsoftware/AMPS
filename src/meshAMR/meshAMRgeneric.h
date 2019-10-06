@@ -229,6 +229,38 @@ public:
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
   }
 
+  unsigned int MemUsage() {
+    return sizeof(int)+Length();
+  }
+
+  void Pack(unsigned char* buffer) {
+    int i,length,offset=0;
+    unsigned char *p;
+
+    //pack the resolution level
+    for (i=0,p=(unsigned char*)(&ResolutionLevel);i<sizeof(int);i++) buffer[i]=*p;
+    offset=sizeof(int);
+
+    //pack the id vector
+    length=Length();
+
+    for (i=0;i<length;i++) buffer[i+offset]=id[i];
+  }
+
+  void Unpack(unsigned char* buffer) {
+    int i,length,offset=0;
+    unsigned char *p;
+
+    //unpack the resolution level
+    for (i=0,p=(unsigned char*)(&ResolutionLevel);i<sizeof(int);i++) *p=buffer[i];
+    offset=sizeof(int);
+
+    //unpack the id vector
+    length=Length();
+
+    for (i=0;i<length;i++) id[i]=buffer[i+offset];
+  }
+
   bool operator == (cAMRnodeID ID) {
     if (ResolutionLevel!=ID.ResolutionLevel) return false;
 
