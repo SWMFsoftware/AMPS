@@ -20,18 +20,20 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_photon-test.diff/test_photon-test_check",
 "test_X-Wing.diff/test_X-Wing_check",
 "test_Moon.diff/test_Moon_check",
+"test_Moon-restart.diff/test_Moon-restart_check",
 "test_Individual_Trajectories--Boris\\[?\\].diff/test_Individual_Trajectories--Boris_check",
 "test_Individual_Trajectories--Boris-relativistic\\[?\\].diff/test_Individual_Trajectories--Boris-relativistic_check",
 "test_Individual_Trajectories--Markidis2010\\[?\\].diff/test_Individual_Trajectories--Markidis2010_check",
 "test_Individual_Trajectories--guiding-center\\[?\\].diff/test_Individual_Trajectories--guiding-center_check",
 "test_Drag-Coefficient--Specular-Reflection\\[?\\].diff/test_Drag-Coefficient--Specular-Reflection_check",
-"test_Mars-Hot-Carbon.diff/test_Mars-Hot-Carbon_check");  
+"test_Mars-Hot-Carbon.diff/test_Mars-Hot-Carbon_check", 
+"test_Earth-Impulse-Source.diff/test_Earth-Impulse-Source_check",  
+"test_InterpolateAMR-AMPS-CenterBased-test.diff/test_InterpolateAMR-AMPS-test_check", 
+"test_InterpolateAMR-AMPS-CornerBased-test.diff/test_InterpolateAMR-AMPS-test_check", 
+"test_InterpolateAMR-AMPS-test/test_InterpolateAMR-AMPS-test_check",
+"test_Periodic-BC-NonUniform.diff/test_Periodic-BC-NonUniform_check"); 
 
 my ($fname,$target,$pair,$size,$cmd);
-
-if (-e "test_amps.check") {
-  system("rm -rf test_amps.check");
-}
 
 foreach $pair (@TestTable) {
   ($fname,$target) = split /\//, $pair, 2;
