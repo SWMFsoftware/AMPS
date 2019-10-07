@@ -1604,7 +1604,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   };
   
   static int StencilTableLength=0;
-  static cStencilElement *StencilTable=NULL;
+  static cStencilElement *St,**StencilTable=NULL;
+
+  static cStack<cStencilElement> StencilElementStack;
 
   //generate a new stencil table
   static int nMeshModificationCounter=-1;
@@ -1885,11 +1887,17 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     }
 
     //allocate the new Stencile Table
-    if (StencilTableLength!=0) delete [] StencilTable;
+    if (StencilTableLength!=0) {
+      delete [] StencilTable;
+      StencilElementStack.clear();
+    }
 
     StencilTableLength=totalStencil;
-    StencilTable=new cStencilElement[totalStencil];
+    StencilTable=new cStencilElement*[totalStencil];
     //printf("totalStencil:%d, thisthread:%d\n", totalStencil, PIC::ThisThread);
+
+    for (int i=0;i<totalStencil;i++) StencilTable[i]=NULL;
+
 
     int totalNodes=0;
     int iSt =0;
@@ -1901,13 +1909,17 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           std::list<PIC::Parallel::XYZTree::leafNode*>::iterator itLeaf;
           int iTh=0;
           if ((*itZ)->leafList.size()<2) continue;
+
+          StencilTable[iSt]=StencilElementStack.newElement();
+          St=StencilTable[iSt];
+
           /*
           if (fabs((*itX)->x)<1e-3 && fabs((*itY)->y)<1e-3 && fabs((*itZ)->z)<1e-3)
             printf("test ist:%d,x:%e,y:%e,z:%e,StencilLength:%d\n",iSt,(*itX)->x,(*itY)->y,(*itZ)->z,StencilTable[iSt].StencilLength);
           */
           int tempThreadId=-1;
-          StencilTable[iSt].StencilLength=0;
-          StencilTable[iSt].AssociatedDataPointer=NULL;
+          St->StencilLength=0;
+          St->AssociatedDataPointer=NULL;
           for (itLeaf=(*itZ)->leafList.begin(); itLeaf!=(*itZ)->leafList.end(); itLeaf++){            
             /*
             if (fabs((*itX)->x)<1e-3 && fabs((*itY)->y)<1e-3 && fabs((*itZ)->z)<1e-3){
@@ -1915,31 +1927,31 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
             }
             */            
             if (tempThreadId!=(*itLeaf)->iThread) {
-              StencilTable[iSt].StencilLength++;
-              StencilTable[iSt].StencilThreadTable[iTh]=(*itLeaf)->iThread;
+              St->StencilLength++;
+              St->StencilThreadTable[iTh]=(*itLeaf)->iThread;
               tempThreadId = (*itLeaf)->iThread;
               iTh++;
             }
 
             if ((*itLeaf)->iThread==PIC::ThisThread) {
-              if (StencilTable[iSt].AssociatedDataPointer==NULL) {
-                StencilTable[iSt].AssociatedDataPointer=(*itLeaf)->DataBuffer;
+              if (St->AssociatedDataPointer==NULL) {
+                St->AssociatedDataPointer=(*itLeaf)->DataBuffer;
                 if ((*itLeaf)->DataBuffer==NULL) exit(__LINE__,__FILE__,"Error: NULL pointer");
               }
               else{
                 //more than 1 data buffer for one point
-                StencilTable[iSt].localDataPntArr.push_back((*itLeaf)->DataBuffer);
+                St->localDataPntArr.push_back((*itLeaf)->DataBuffer);
                 if ((*itLeaf)->DataBuffer==NULL) exit(__LINE__,__FILE__,"Error: NULL pointer");
               }
             }
         
           }
           //determine the center-processing thread
-          int t = iSt%StencilTable[iSt].StencilLength;
-          int temp = StencilTable[iSt].StencilThreadTable[0];
-          StencilTable[iSt].StencilThreadTable[0]=StencilTable[iSt].StencilThreadTable[t];
-          StencilTable[iSt].StencilThreadTable[t]=temp;         
-          totalNodes+=StencilTable[iSt].StencilLength;
+          int t = iSt%St->StencilLength;
+          int temp = St->StencilThreadTable[0];
+          St->StencilThreadTable[0]=St->StencilThreadTable[t];
+          St->StencilThreadTable[t]=temp;
+          totalNodes+=St->StencilLength;
           /*
           if (PIC::ThisThread==0){
             printf("iSt:%d, stencilLength:%d, threadtable:",iSt, StencilTable[iSt].StencilLength);
@@ -2015,11 +2027,11 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     
     sumProcessBufferNumber = 0;
     //print out the thread distribution of process stencils 
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) {
+    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
       //if (StencilTable[iStencil].StencilLength>1) {
-      int center=StencilTable[iStencil].StencilThreadTable[0];
-      if (StencilTable[iStencil].StencilLength>1) LoadList[center]++;
-      if (center==PIC::ThisThread) sumProcessBufferNumber += StencilTable[iStencil].StencilLength-1;
+      int center=St->StencilThreadTable[0];
+      if (St->StencilLength>1) LoadList[center]++;
+      if (center==PIC::ThisThread) sumProcessBufferNumber += St->StencilLength-1;
       //}
     }
     
@@ -2044,22 +2056,23 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     CopyDataBufferDest.clear();
     CopyDataBufferStencilIndex.clear();
     WholeIndexOfProcessStencil.clear();
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) {        
-      if (StencilTable[iStencil].AssociatedDataPointer){// means this thread is involved
-        if (StencilTable[iStencil].StencilThreadTable[0]==PIC::ThisThread) {
-          if (StencilTable[iStencil].StencilLength>1){
+
+    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
+      if (St->AssociatedDataPointer){// means this thread is involved
+        if (St->StencilThreadTable[0]==PIC::ThisThread) {
+          if (St->StencilLength>1){
             
-            ProcessStencilBufferNumber.push_back(StencilTable[iStencil].StencilLength-1);
+            ProcessStencilBufferNumber.push_back(St->StencilLength-1);
             WholeIndexOfProcessStencil.push_back(iStencil);
           }
-          for (int iThread=0; iThread<StencilTable[iStencil].StencilLength-1;iThread++){
+          for (int iThread=0; iThread<St->StencilLength-1;iThread++){
             //process buffer number equals StencilLength-1
             wholeStencilIndexOfBuffer[processBufferIndex]=iStencil; //index in the whole stensil list
             processStencilIndexOfBuffer[processBufferIndex]=ProcessStencilBufferNumber.size()-1; 
             processBufferIndex++;
           }
         }else{ 
-          CopyDataBufferDest.push_back(StencilTable[iStencil].AssociatedDataPointer);
+          CopyDataBufferDest.push_back(St->AssociatedDataPointer);
           CopyDataBufferStencilIndex.push_back(iStencil);
         }//else    
       }
@@ -2121,22 +2134,22 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
 
 
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) {//loop through stencil table
-      if (StencilTable[iStencil].AssociatedDataPointer) { // this thread is involved
+    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {//loop through stencil table
+      if (St->AssociatedDataPointer) { // this thread is involved
         int iThread;
         //there are more that one MPI processes that contributed to the state vector of the corner node
       
-        if (PIC::ThisThread==StencilTable[iStencil].StencilThreadTable[0]) {
+        if (PIC::ThisThread==St->StencilThreadTable[0]) {
           //if this thread will do the center processing role and  combine data from all other MPI processes
           //recv data request start
           //process local points
           std::vector<char *>::iterator it;
-          for (it=StencilTable[iStencil].localDataPntArr.begin();it!=StencilTable[iStencil].localDataPntArr.end();it++){
-            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[iStencil].AssociatedDataPointer,*it);
+          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++){
+            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(St->AssociatedDataPointer,*it);
           }
         
-          for (iThread=1;iThread<StencilTable[iStencil].StencilLength;iThread++) {
-            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
+          for (iThread=1;iThread<St->StencilLength;iThread++) {
+            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
             iProcessBuffer++;
           }
           
@@ -2144,16 +2157,16 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
           //this thread will be copyThread, send data to the processThread, 
           //and recv the processed data from the processThread
           std::vector<char *>::iterator it;
-          for (it=StencilTable[iStencil].localDataPntArr.begin();it!=StencilTable[iStencil].localDataPntArr.end();it++){
-            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[iStencil].AssociatedDataPointer,*it);                  
+          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++){
+            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(St->AssociatedDataPointer,*it);
           }
-          MPI_Isend(StencilTable[iStencil].AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
+          MPI_Isend(St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
             
           //start the recv data request
           if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
-            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
           }else{
-            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
           }
           iCopyBuffer++;
           // }//for
@@ -2178,14 +2191,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
             //printf("thread id:%d,bufferid:%d processed, nProcessBufferDone:%d/total buffer:%d,\n",PIC::ThisThread,q,nProcessBufferDone,sumProcessBufferNumber);
 
-            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[wholeStencilIndex].AssociatedDataPointer,processRecvDataBuffer[q]);
+            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[wholeStencilIndex]->AssociatedDataPointer,processRecvDataBuffer[q]);
           
             nProcessBufferDone++;
             StencilFinishedBufferNumber[processStencilIndex]++;
             //if  finished one stencil processing, send it back
             if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
-              for (iThread=1;iThread<StencilTable[wholeStencilIndex].StencilLength;iThread++) {        
-                MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+              for (iThread=1;iThread<StencilTable[wholeStencilIndex]->StencilLength;iThread++) {
+                MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
                 iProcessSendBuffer++;
               }
               nProcessStencilDone++;
@@ -2239,14 +2252,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
             printf("ist:%d,in processing thread id: %d, size:%d, (while) before Jx:%e\n",wholeStencilIndex,PIC::ThisThread,StencilTable[wholeStencilIndex].localDataPntArr.size(), ((double *)(StencilTable[wholeStencilIndex].AssociatedDataPointer+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))[6]);
             }
           */
-          PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[wholeStencilIndex].AssociatedDataPointer,processRecvDataBuffer[q]);
+          PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(StencilTable[wholeStencilIndex]->AssociatedDataPointer,processRecvDataBuffer[q]);
           
           nProcessBufferDone++;
           StencilFinishedBufferNumber[processStencilIndex]++;
                 
           if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
-            for (iThread=1;iThread<StencilTable[wholeStencilIndex].StencilLength;iThread++) {        
-              MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+            for (iThread=1;iThread<StencilTable[wholeStencilIndex]->StencilLength;iThread++) {
+              MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
               iProcessSendBuffer++;
             }
             nProcessStencilDone++;
@@ -2273,17 +2286,17 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     }//while (nProcessStencilDone<totalProcessStencil||nCopyBufferDone<totalCopyStencil)
     
     //sync the local data buffers 
-    for (int iSt=0;iSt<StencilTableLength;iSt++) {
-      if (StencilTable[iSt].AssociatedDataPointer) {
+    for (int iSt=0;iSt<StencilTableLength;iSt++) if ((St=StencilTable[iSt])!=NULL) {
+      if (St->AssociatedDataPointer) {
         
         std::vector<char *>::iterator it;
         if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
-          for (it=StencilTable[iSt].localDataPntArr.begin();it!=StencilTable[iSt].localDataPntArr.end();it++){
-            PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(*it,StencilTable[iSt].AssociatedDataPointer);  
+          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++){
+            PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(*it,St->AssociatedDataPointer);
           }
         }else{
-          for (it=StencilTable[iSt].localDataPntArr.begin();it!=StencilTable[iSt].localDataPntArr.end();it++)
-            memcpy(*it,StencilTable[iSt].AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++)
+            memcpy(*it,St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
         }
       }
     }
