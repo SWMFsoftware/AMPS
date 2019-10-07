@@ -2019,7 +2019,17 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   static MPI_Request * processRecvList=NULL, * copyRecvList=NULL;
   static MPI_Request * processSendList=NULL, * copySendList=NULL;
 
-  if (globalMeshChangeFlag!=0 && PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL){
+
+  //==============================================   BEGINING OF THE DATA EXCHANGE LOOP ========================
+
+  int iStencilStep=1000;
+  int iStencilStart=0,iStencilFinish=iStencilStep;
+
+  for (iStencilStart=0;iStencilStart<StencilTableLength;iStencilStart=((iStencilStart+iStencilStep<StencilTableLength) ? (iStencilStart+iStencilStep) : StencilTableLength)) {
+    iStencilFinish=iStencilStart+iStencilStep;
+    if (iStencilFinish>StencilTableLength) iStencilFinish=StencilTableLength;
+
+  if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL) {
 
     if (LoadList!=NULL) delete [] LoadList;
     LoadList=new int [PIC::Mesh::mesh.nTotalThreads];
@@ -2027,7 +2037,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     
     sumProcessBufferNumber = 0;
     //print out the thread distribution of process stencils 
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
+    for (int iStencil=iStencilStart;iStencil<iStencilFinish;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
       //if (StencilTable[iStencil].StencilLength>1) {
       int center=St->StencilThreadTable[0];
       if (St->StencilLength>1) LoadList[center]++;
@@ -2057,7 +2067,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     CopyDataBufferStencilIndex.clear();
     WholeIndexOfProcessStencil.clear();
 
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
+    for (int iStencil=iStencilStart;iStencil<iStencilFinish;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {
       if (St->AssociatedDataPointer){// means this thread is involved
         if (St->StencilThreadTable[0]==PIC::ThisThread) {
           if (St->StencilLength>1){
@@ -2134,7 +2144,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
 
 
-    for (int iStencil=0;iStencil<StencilTableLength;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {//loop through stencil table
+    for (int iStencil=iStencilStart;iStencil<iStencilFinish;iStencil++) if ((St=StencilTable[iStencil])!=NULL) {//loop through stencil table
       if (St->AssociatedDataPointer) { // this thread is involved
         int iThread;
         //there are more that one MPI processes that contributed to the state vector of the corner node
@@ -2285,8 +2295,10 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       }//for (int i=nCopyBufferDone; i<iCopyBuffer;i++)
     }//while (nProcessStencilDone<totalProcessStencil||nCopyBufferDone<totalCopyStencil)
     
+
+
     //sync the local data buffers 
-    for (int iSt=0;iSt<StencilTableLength;iSt++) if ((St=StencilTable[iSt])!=NULL) {
+    for (int iSt=iStencilStart;iSt<iStencilFinish;iSt++) if ((St=StencilTable[iSt])!=NULL) {
       if (St->AssociatedDataPointer) {
         
         std::vector<char *>::iterator it;
@@ -2308,6 +2320,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
     }//if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL)
   
+  }
+  //===================================  END OF THE DATA EXCHANGE LOOP ========================================================
+
 }
 
 
