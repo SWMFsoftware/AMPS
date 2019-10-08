@@ -32,7 +32,13 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_InterpolateAMR-AMPS-CornerBased-test.diff/test_InterpolateAMR-AMPS-test_check", 
 "test_InterpolateAMR-AMPS-test/test_InterpolateAMR-AMPS-test_check",
 "test_Periodic-BC-NonUniform.diff/test_Periodic-BC-NonUniform_check",
-"test_Mars-ions.diff/test_Mars-ions_check"); 
+"test_Mars-ions.diff/test_Mars-ions_check",
+"test_Saturn-MOP\\[?\\].diff/test_Saturn-MOP_check",
+"test_Mover-Boris.diff/test_Mover-Boris_check",
+"test_Mover-Boris\\[?\\]/test_Mover-Boris_check",
+"test_Mover-Boris-relativistic.diff/test_Mover-Boris-relativistic_check",
+"test_Mover-Boris-relativistic\\[?\\].diff/test_Mover-Boris-relativistic_check",
+"test_Chemistry-Test.diff/test_Chemistry-Test_check"); 
 
 my ($fname,$target,$pair,$size,$cmd);
 
