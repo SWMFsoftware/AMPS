@@ -37,6 +37,9 @@ namespace PIC {
   }
 }
 
+template <typename T>
+unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0; 
+
 //init the block's global data
 int PIC::Mesh::cDataBlockAMR::LocalTimeStepOffset=0;
 int PIC::Mesh::cDataBlockAMR::LocalParticleWeightOffset=0;
