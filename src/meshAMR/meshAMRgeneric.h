@@ -344,6 +344,56 @@ public:
   cBlockAMR *block;
   cAMRnodeID AMRnodeID;
 
+  static unsigned char FlagTableStatusVector;
+  unsigned char FlagTable;
+
+      //reserve and release flag
+      static bool CheckoutFlag(int ibit) {
+        unsigned char mask=1<<ibit;
+        bool res=false;
+
+        if ((FlagTableStatusVector&mask)==0) {
+          FlagTableStatusVector|=mask;
+          res=true;
+        }
+
+        return res;
+      }
+
+      static int CheckoutFlag() {
+        for (int i=0;i<8;i++) if (CheckoutFlag(i)==true) return i;
+
+        return -1;
+      }
+
+      static void ReleaseFlag(int ibit) {
+        unsigned char mask=1<<ibit;
+
+        mask=~mask;
+        FlagTableStatusVector&=mask;
+      }
+
+      //set and test the flags
+      bool TestFlag(int ibit) {
+        unsigned char mask=1<<ibit;
+
+        mask=FlagTable&mask;
+        return (mask!=0) ? true : false;
+      }
+
+      void SetFlag(bool flag,int ibit) {
+        unsigned char mask=1<<ibit;
+
+        if (flag==true) {
+          FlagTable|=mask;
+        }
+        else {
+          mask=~mask;
+          FlagTable&=mask;
+        }
+      }
+
+
   //Neighbors of the nodes
   #if _MESH_DIMENSION_ == 1
   cTreeNodeAMR *neibNodeFace[2];
