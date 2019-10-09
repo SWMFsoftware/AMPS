@@ -38,7 +38,13 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_Mover-Boris\\[?\\]/test_Mover-Boris_check",
 "test_Mover-Boris-relativistic.diff/test_Mover-Boris-relativistic_check",
 "test_Mover-Boris-relativistic\\[?\\].diff/test_Mover-Boris-relativistic_check",
-"test_Chemistry-Test.diff/test_Chemistry-Test_check"); 
+"test_Chemistry-Test.diff/test_Chemistry-Test_check",
+"test_Earth-T96.diff/test_Earth-T96_check",
+"test_InterpolateAMR-test.diff/test_InterpolateAMR-test_check",
+"test_SC-Cont.diff/test_SC-Cont_check", 
+"test_SC-Cont\\[?\\].diff/test_SC-Cont_check",
+"test_Titan.diff/test_Titan_check");
+
 
 my ($fname,$target,$pair,$size,$cmd);
 
