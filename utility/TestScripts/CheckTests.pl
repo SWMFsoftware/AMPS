@@ -43,7 +43,10 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_InterpolateAMR-test.diff/test_InterpolateAMR-test_check",
 "test_SC-Cont.diff/test_SC-Cont_check", 
 "test_SC-Cont\\[?\\].diff/test_SC-Cont_check",
-"test_Titan.diff/test_Titan_check");
+"test_Titan.diff/test_Titan_check",
+"test_Collision-Test-NTC.diff/test_Collision-Test-NTC_check",
+"test_Enceladus.diff/test_Enceladus_check",
+"test_linear-system-solver-openmp.diff/test_linear-system-solver-openmp_check");
 
 
 my ($fname,$target,$pair,$size,$cmd);
