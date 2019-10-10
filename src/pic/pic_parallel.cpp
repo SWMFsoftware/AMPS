@@ -1938,20 +1938,27 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
 void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   static int nTotalStencils=0;
   
+  static char **GlobalCornerNodeAssociatedDataPointerTable=NULL;
+  int GlobalCornerNodeAssociatedDataPointerTableLength=0;
+  
+  static MPI_Status *GlobalMPI_StatusTable=NULL;
+  static MPI_Request *GlobalMPI_RequestTable=NULL;
+  static int *GlobalContributingThreadTable=NULL;
+  int GlobalContributingThreadTableLength=0;
   
   class cStencilData {
   public:
-    char *CornerNodeAssociatedDataPointerTable[64];
+    char **CornerNodeAssociatedDataPointerTable;
     int CornerNodeAssociatedDataPointerTableLength;
     int iStencil;
     
     int ProcessingThread;
-    int ContributingThreadTable[64];
+    int *ContributingThreadTable;
     int ContributingThreadTableLength;
     
     bool SendCompleted,RecvCompleted;
-    MPI_Request Request[64];
-    MPI_Status Status[64];
+    MPI_Request *Request;
+    MPI_Status *Status;
     char **RecvDataBuffer;
     char *Accumulator;
     
@@ -1965,8 +1972,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       iStencil=-1;
       SendCompleted=false,RecvCompleted=false;
       CornerNodeAssociatedDataPointerTableLength=0,ContributingThreadTableLength=0,ProcessingThread=-1;
-      CornerNodeAssociatedDataPointerTable[0]=NULL;
-      Accumulator=NULL;
+      Accumulator=NULL,ContributingThreadTable=NULL,Request=NULL,Status=NULL;
     }
   };
   
@@ -2046,9 +2052,12 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   };
   
   
-  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> BuildStencilTable;
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,bool)> BuildStencilTable;
   
-  BuildStencilTable = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void {
+  char **LocalCornerNodeAssociatedDataPointerTable=NULL;
+  int *LocalContributingThreadTable=NULL;
+  
+  BuildStencilTable = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,bool AllocateStencilFlag) -> void {
     cStencilData StencilData;
     static cStencilData *StencilList_last;
     int cntStencilData=0;
@@ -2058,7 +2067,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       nTotalStencils=0;
       StencilList=NULL,StencilList_last=NULL;
       StencilElementStack.clear();
+      
+      LocalCornerNodeAssociatedDataPointerTable=new char* [100];
+      LocalContributingThreadTable=new int[100];
     }
+    
+    StencilData.CornerNodeAssociatedDataPointerTable=LocalCornerNodeAssociatedDataPointerTable;
+    StencilData.ContributingThreadTable=LocalContributingThreadTable;
+    
     
     if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
       int BlockAllocated;
@@ -2246,7 +2262,6 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                 StencilList=StencilElementStack.newElement();
                 StencilList_last=StencilList;
                 
-                *StencilList=StencilData;
                 StencilList_last->next=NULL;
                 StencilList_last->RecvDataBuffer=NULL;
               }
@@ -2254,10 +2269,30 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                 StencilList_last->next=StencilElementStack.newElement();
                 StencilList_last=StencilList_last->next;
                 
-                *StencilList_last=StencilData;
                 StencilList_last->next=NULL;
                 StencilList_last->RecvDataBuffer=NULL;
               }
+           
+              //Initializa Stencil data
+              if (AllocateStencilFlag==true) {
+                StencilList_last->ProcessingThread=StencilData.ProcessingThread;
+                StencilList_last->ContributingThreadTableLength=StencilData.ContributingThreadTableLength;
+                StencilList_last->CornerNodeAssociatedDataPointerTableLength=cntStencilData;
+                StencilList_last->iStencil=StencilData.iStencil;
+                
+                StencilList_last->ContributingThreadTable=GlobalContributingThreadTable+GlobalContributingThreadTableLength;
+                StencilList_last->Request=GlobalMPI_RequestTable+GlobalContributingThreadTableLength;
+                StencilList_last->Status=GlobalMPI_StatusTable+GlobalContributingThreadTableLength;
+                
+                StencilList_last->CornerNodeAssociatedDataPointerTable=GlobalCornerNodeAssociatedDataPointerTable+GlobalCornerNodeAssociatedDataPointerTableLength;
+                
+                for (int i=0;i<StencilData.ContributingThreadTableLength;i++) StencilList_last->ContributingThreadTable[i]=StencilData.ContributingThreadTable[i];
+                for (int i=0;i<cntStencilData;i++) StencilList_last->CornerNodeAssociatedDataPointerTable[i]=StencilData.CornerNodeAssociatedDataPointerTable[i];
+              }
+              
+              //increment the global table size counters
+              GlobalContributingThreadTableLength+=StencilData.ContributingThreadTableLength;
+              GlobalCornerNodeAssociatedDataPointerTableLength+=cntStencilData;
             }
           }
         }
@@ -2268,8 +2303,16 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
       
       for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
-        BuildStencilTable(downNode);
+        BuildStencilTable(downNode,AllocateStencilFlag);
       }
+    }
+    
+    
+    if (startNode==PIC::Mesh::mesh.rootTree) {
+      delete [] LocalCornerNodeAssociatedDataPointerTable;
+      delete [] LocalContributingThreadTable;
+      
+      LocalCornerNodeAssociatedDataPointerTable=NULL,LocalContributingThreadTable=NULL;
     }
   };
   
@@ -2460,8 +2503,34 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   
     ReservePeriodicBCFlags();
     ResetPeriodicBCFlags(PIC::Mesh::mesh.rootTree);
+    
+    //evalaute the size of the global data buffers
+    GlobalContributingThreadTableLength=0;
+    GlobalCornerNodeAssociatedDataPointerTableLength=0;
+    
+    if (GlobalCornerNodeAssociatedDataPointerTable!=NULL) {
+      delete [] GlobalCornerNodeAssociatedDataPointerTable;
+      delete [] GlobalContributingThreadTable;
+      delete [] GlobalMPI_StatusTable;
+      delete [] GlobalMPI_RequestTable;
+      
+      GlobalCornerNodeAssociatedDataPointerTable=NULL,GlobalContributingThreadTable=NULL,GlobalMPI_StatusTable=NULL,GlobalMPI_RequestTable=NULL;
+    }
 
-    BuildStencilTable(PIC::Mesh::mesh.rootTree);
+    BuildStencilTable(PIC::Mesh::mesh.rootTree,false);
+    
+    //allocate the global data buffers
+    GlobalCornerNodeAssociatedDataPointerTable=new char* [GlobalCornerNodeAssociatedDataPointerTableLength];
+    GlobalContributingThreadTable=new int [GlobalContributingThreadTableLength];
+    GlobalMPI_StatusTable=new MPI_Status [GlobalContributingThreadTableLength];
+    GlobalMPI_RequestTable=new MPI_Request [GlobalContributingThreadTableLength];
+    
+    //generate the stencil table
+    GlobalContributingThreadTableLength=0;
+    GlobalCornerNodeAssociatedDataPointerTableLength=0;
+    
+    ResetCornerNodeProcessedFlag();
+    BuildStencilTable(PIC::Mesh::mesh.rootTree,true);
     ReleasePeriodicBCFlags();
   }
   
