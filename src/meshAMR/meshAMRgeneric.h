@@ -12651,7 +12651,8 @@ if (TmpAllocationCounter==2437) {
 
 
 
-
+template <typename T>
+unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0;
 
 
 
