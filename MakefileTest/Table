@@ -785,6 +785,52 @@ Check=
 >>>@echo Test test_lightwave-current-on has finished: `date`
 
 <#
+
+#>
+Name=test/lightwave-current-on-openmp 
+Time=3
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_lightwave-current-on-openmp_compile..." > test_lightwave-current-on-openmp$(TESTlightwave-current-on--openmpREF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/lightwave-current-on ${TESTlightwave-current-on-openmpKEYS}
+>>>./Config.pl -openmp=on
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_lightwave-current-on-openmp_compile... done" >> test_lightwave-current-on-openmp$(TESTlightwave-current-on--openmpREF).diff
+
+Check=
+>>>@echo "test_lightwave-current-on-openmp_check..." >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat \
+>>>output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff;)
+
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat \
+>>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff;)
+
+
+>>>@cat test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff > test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
+
+>>>@ls -l test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff
+>>>@ls -l test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff
+>>>@ls -l test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
+>>>@echo Test test_lightwave-current-on-openmp has finished: `date`
+
+<#
+
+
+
 -------------------------------------------------------------------------------
 #>
 Name=test/magnetic-reconnection
@@ -816,6 +862,41 @@ Check=
 
 >>>@ls -l test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 >>>@echo Test test_magnetic-reconnection has finished: `date`
+
+<#
+
+#>
+Name=test/magnetic-reconnection-openmp 
+Time=10
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_magnetic-reconnection-openmp_compile..." > test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnection-openmpKEYS}
+>>>./Config.pl -openmp=on
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>./Config.pl -openmp=off
+>>>@echo "test_magnetic-reconnection-openmp_compile... done" >> test_magnetic-reconnection-openmp.diff
+
+Check=
+>>>@echo "test_magnetic-reconnection-openmp_check..." >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
+>>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection-openmpDIR}/PIC_reconnect_out=200.dat 10
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
+>>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff;)
+
+>>>@ls -l test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
+>>>@echo Test test_magnetic-reconnection-openmp has finished: `date`
 
 <#
 
