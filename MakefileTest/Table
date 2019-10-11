@@ -799,7 +799,7 @@ Outs=
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
 
 Compile=
->>>@echo "test_lightwave-current-on-openmp_compile..." > test_lightwave-current-on-openmp$(TESTlightwave-current-on--openmpREF).diff
+>>>@echo "test_lightwave-current-on-openmp_compile..." > test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/lightwave-current-on ${TESTlightwave-current-on-openmpKEYS}
@@ -807,7 +807,7 @@ Compile=
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>./Config.pl -openmp=off
->>>@echo "test_lightwave-current-on-openmp_compile... done" >> test_lightwave-current-on-openmp$(TESTlightwave-current-on--openmpREF).diff
+>>>@echo "test_lightwave-current-on-openmp_compile... done" >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 
 Check=
 >>>@echo "test_lightwave-current-on-openmp_check..." >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
