@@ -851,7 +851,7 @@ Compile=
 >>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnectionKEYS}
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
->>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection.diff
+>>>@echo "test_magnetic-reconnection_compile... done" >> test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 
 Check=
 >>>@echo "test_magnetic-reconnection_check..." >> test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
@@ -886,7 +886,7 @@ Compile=
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>./Config.pl -openmp=off
->>>@echo "test_magnetic-reconnection-openmp_compile... done" >> test_magnetic-reconnection-openmp.diff
+>>>@echo "test_magnetic-reconnection-openmp_compile... done" >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
 
 Check=
 >>>@echo "test_magnetic-reconnection-openmp_check..." >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
