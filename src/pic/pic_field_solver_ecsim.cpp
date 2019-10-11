@@ -1377,7 +1377,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
               LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
               
               ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
-              printf("particleId:%d, x:%e,%e,%e, v:%e,%e,%e, spec:%d, weight:%e\n",ptr,xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],spec,LocalParticleWeight);
+              printf("particleId:%ld, x:%e,%e,%e, v:%e,%e,%e, spec:%d, weight:%e\n",ptr,xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],spec,LocalParticleWeight);
 
               if (ptrNext!=-1) {
                 ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
@@ -2869,7 +2869,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       
       {// Output
         double timeNow = PIC::CPLR::FLUID::iCycle*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];  
-      if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
+      if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%ld\n",timeNow,PIC::CPLR::FLUID::iCycle);
       PIC::CPLR::FLUID::write_output(timeNow);
       }    
 
