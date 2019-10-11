@@ -46,7 +46,11 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_Titan.diff/test_Titan_check",
 "test_Collision-Test-NTC.diff/test_Collision-Test-NTC_check",
 "test_Enceladus.diff/test_Enceladus_check",
-"test_linear-system-solver-openmp.diff/test_linear-system-solver-openmp_check");
+"test_linear-system-solver-openmp.diff/test_linear-system-solver-openmp_check",
+"test_CG-PostProcess--Read-Trajectories--off.diff/test_CG-PostProcess--Read-Trajectories--off_check",
+"test_Earth.diff/test_Earth_check",
+"test_Europa-test1.diff/test_Europa-test1_check",
+"test_Individual_Trajectories--Lapenta2017\\[?\\].diff/test_Individual_Trajectories--Lapenta2017_check");
 
 
 my ($fname,$target,$pair,$size,$cmd);
