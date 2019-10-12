@@ -326,6 +326,8 @@ res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
     }
   }
+
+  return res;
 }
 
 
