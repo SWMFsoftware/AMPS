@@ -722,7 +722,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         fprintf(fout2d,"VARIABLES=\"Lon\", \"Lat\"");
         for (int spec=0;spec<PIC::nTotalSpecies;spec++) fprintf(fout2d,"\"Cutoff Rigidity (s=%i)\"",spec);
 
-        fprintf(fout2d,"\nZONE I=%ld, J=%ld, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+        fprintf(fout2d,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
       }
       else {
         pipe.openSend(0);
