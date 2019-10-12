@@ -221,11 +221,11 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::RegisterParticleProp
       iTable=(x[1]-PIC::Mesh::mesh.xGlobalMin[1])/dX[iface][1];
       jTable=(x[2]-PIC::Mesh::mesh.xGlobalMin[2])/dX[iface][2];
       break;
-    case 2:case3:
+    case 2:case 3:
       iTable=(x[0]-PIC::Mesh::mesh.xGlobalMin[0])/dX[iface][0];
       jTable=(x[2]-PIC::Mesh::mesh.xGlobalMin[2])/dX[iface][2];
       break;
-    case 4:case5:
+    case 4:case 5:
       iTable=(x[0]-PIC::Mesh::mesh.xGlobalMin[0])/dX[iface][0];
       jTable=(x[1]-PIC::Mesh::mesh.xGlobalMin[1])/dX[iface][1];
       break;
@@ -260,11 +260,11 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::TestInjectedParticle
     iTable=(x[1]-PIC::Mesh::mesh.xGlobalMin[1])/dX[iface][1];
     jTable=(x[2]-PIC::Mesh::mesh.xGlobalMin[2])/dX[iface][2];
     break;
-  case 2:case3:
+  case 2:case 3:
     iTable=(x[0]-PIC::Mesh::mesh.xGlobalMin[0])/dX[iface][0];
     jTable=(x[2]-PIC::Mesh::mesh.xGlobalMin[2])/dX[iface][2];
     break;
-  case 4:case5:
+  case 4:case 5:
     iTable=(x[0]-PIC::Mesh::mesh.xGlobalMin[0])/dX[iface][0];
     jTable=(x[1]-PIC::Mesh::mesh.xGlobalMin[1])/dX[iface][1];
     break;
