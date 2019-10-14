@@ -1798,6 +1798,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+  PIC::Parallel::BPManager.isCorner = true; 
+  PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+  PIC::Parallel::BPManager.copy_node_to_buffer = PIC::Parallel::copy_plasma_to_buffer;
+  PIC::Parallel::BPManager.add_buffer_to_node = PIC::Parallel::add_plasma_to_node;
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrixSpeciesData,UnpackBlockData_JMassMatrixSpeciesData);
 #elif  _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_OFF_
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
@@ -2281,6 +2285,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
   PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge;
   
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(true);
+  PIC::Parallel::BPManager.isCorner = false; 
+  PIC::Parallel::BPManager.pointBufferSize = sizeof(double); 
+  PIC::Parallel::BPManager.copy_node_to_buffer = PIC::Parallel::copy_net_charge_to_buffer;
+  PIC::Parallel::BPManager.add_buffer_to_node = PIC::Parallel::add_net_charge_to_node;
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_netCharge,UnpackBlockData_netCharge);
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
   

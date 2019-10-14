@@ -3842,10 +3842,40 @@ namespace PIC {
      void ExchangeParticleData();
 
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
-     void ProcessCornerBlockBoundaryNodes();
+     void ProcessCornerBlockBoundaryNodes();     
      void ProcessCornerBlockBoundaryNodes_old(); 
-
      void ProcessCenterBlockBoundaryNodes();
+
+     struct BoundaryProcessManager{
+       bool isCorner; 
+       int pointBufferSize; // The length in byte;
+       void (*copy_node_to_buffer)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+				  const int i, const int j, const int k, char *bufferPtr);
+       void (*add_buffer_to_node)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+				  const int i, const int j, const int k, char *bufferPtr, double coef);
+     };
+
+     extern BoundaryProcessManager BPManager;
+
+     void copy_plasma_to_buffer(
+			       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+			       const int i, const int j, const int k, char *bufferPtr);
+     void copy_net_charge_to_buffer(
+				   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+				   const int i, const int j, const int k, char *bufferPtr);
+     
+     void add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+			     const int i, const int j, const int k, 
+			     char *bufferPtr, double coef);
+
+     void add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+			     const int i, const int j, const int k, 
+			     char *bufferPtr, double coef);
+
+
+     void ProcessCornerBlockBoundaryNodes_new();
+     void ProcessCenterBlockBoundaryNodes_new();
+     void ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr);
    
      //Latency of the run
      extern double Latency;
