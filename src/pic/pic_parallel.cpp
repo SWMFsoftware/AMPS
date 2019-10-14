@@ -1270,6 +1270,9 @@ void PIC::Parallel::add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 void PIC::Parallel::ProcessCornerBlockBoundaryNodes_new() {
   if (CornerBlockBoundaryNodes::ActiveFlag==false) return;
+  // Creating a BPManager for each type of communications and passing
+  // it as an argument to this function would be a better choice,
+  // instead of using BPManager as a global variable. --Yuxi
   ProcessBlockBoundaryNodes(BPManager);
 }
 //-------------------------------------
@@ -1281,6 +1284,27 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes_new() {
 //-------------------------------------
 
 void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
+
+  /*
+    1. The algorithm:
+    On each MPI, this function 1) loops through all the local blocks, counts
+    the corner/center that will be sent to other MPIs, 2) allocates the send
+    and receive buffer, 3) packs the data, 4) sends the data, 5) receives the
+    data and 6) adds the data to local corners/centers.
+
+    2. If the nearby blocks are on the same MPI, they share the edge/corner 
+    memory. This function 'pretend' they do not share the memory. The 
+    information of these points may be sent/received several times. Function
+    get_n_share() is used to counts how many times the information is sent
+    and received, and the data is 'split' before they are added to 
+    the local nodes. 
+
+    3. The data in the buffer:
+    receive_node_ID, iDir, jDir, kDir, coef, data.. iDir, jDir, kDir, 
+    coef, data... receive_node_ID, iDir....
+
+   */
+  
   const bool isCorner = mgr.isCorner;
   const int pointBufferSize = mgr.pointBufferSize;
   const int nByteID = sizeof(cAMRnodeID) + 3*sizeof(int);
@@ -1394,8 +1418,20 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 			     int& jMin, int& kMin, int& iMax, int& jMax, int& kMax, 
 			     bool isCorner=true, bool isRecv = true, 
 			     int const iNeib=-2, int const jNeib=-2, int const kNeib=-2){
-    // Find the loop range for the 'pure' faces, 'pure' edges and corners.
-    
+   /* Find the loop range for the 'pure' faces, 'pure' edges and corners.
+      
+      1. For the cell centers, the indices for send and receive are different. 
+      For example, for i=1, j=0, and k=0, (a) iMin = iMax = _BLOCK_CELL_X_, which
+      represents the ghost cells, for send, (b) but iMin = iMax = _BLOCK_CELL_X_-1
+      for receive. 
+
+      2. Case 1: i=1, j=1, k=0; iNeib=1, jNeib=1, kNeib=0
+         Case 2: i=1, j=1, k=0; iNeib=1, jNeib=0, kNeib=0
+	 The send indices for the two cases above are different. Case 1 sends
+	 the 'real edges' of the sending block, while case 2 actually sends the
+	 face ghost cells of the sending block. 	 
+   */
+			   
     bool isCenterSend = (!isCorner) && (!isRecv);
 
     iMin = 0;
@@ -1614,10 +1650,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	      neibNode = get_neib_node(node, iNeib, jNeib, kNeib);
 	      if(neibNode != NULL){
 		int neibThread = neibNode->Thread; 		
-		if(neibThread == iTarget){
-		  // Data in the buffer:
-		  // nodeID, iDir, jDir, kDir, coef, data.. iDir, jDir, kDir, coef, data...|nodeID, ......
-		  
+		if(neibThread == iTarget){		  
 		  *((cAMRnodeID*)(sendBuffer[ii]+offset)) = neibNode->AMRnodeID;
 		  offset += sizeof(cAMRnodeID);		  
 
@@ -1698,7 +1731,9 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	for(int jDir=jNeibMin; jDir<=jNeibMax; jDir++)
 	  for(int kDir=kNeibMin; kDir<=kNeibMax; kDir++){
 	    coef = *((double*)(recvBuffer[ii]+offset)); offset +=sizeof(double);
-      
+
+	    // For cell centers, the receive cells are all physical cells, and
+	    // they can NOT be shared by nearby blocks. 
 	    if(isCorner) coef = coef/get_n_share(node, iDir, jDir, kDir);	    
       
 	    const bool isRecv=true;
