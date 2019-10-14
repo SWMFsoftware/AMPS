@@ -233,15 +233,9 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
   //exchange particle data
   ExchangeParticles();
 
-  #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   //update associated data accounting for the periodic boundary conditions
   PIC::Parallel::ProcessCornerBlockBoundaryNodes();
   PIC::Parallel::ProcessCenterBlockBoundaryNodes();
-  #else
-  PIC::Parallel::ProcessCornerBlockBoundaryNodes_new();
-  PIC::Parallel::ProcessCenterBlockBoundaryNodes_new();
-  #endif
-  
 
 #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   int iBlockPair,RealBlockThread,GhostBlockThread;  
