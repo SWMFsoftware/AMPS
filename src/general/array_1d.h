@@ -29,7 +29,7 @@ public:
 
 
 //===================================================
-  void init(long int n) {
+  void init(int n) {
   if (data.size()!=0) {
     printf("Error: initialization of allocated array_1d object\n");
     exit(__LINE__,__FILE__);
@@ -46,14 +46,14 @@ public:
 //===================================================
   T sum() const {
     T f = (T)0;
-    for (long int i=0; i<data.size();i++)
+    for (int i=0; i<data.size();i++)
       f=f+data[i];
     return f;
   };
 //===================================================
   T abs() const {
     T f = (T)0;
-    for (long int i=0; i<data.size();i++)
+    for (int i=0; i<data.size();i++)
       f=f+data[i]*data[i];
     return (T)sqrt(f);
   };
@@ -61,29 +61,29 @@ public:
 //===================================================
   void normalize() {
     T m=abs();
-    for (long int i=0;i<data.size();i++)
+    for (int i=0;i<data.size();i++)
       data[i]/=m;
   };
 
 //===================================================
   void clear() {
-    for (long int i=0;i<data.size();i++) data[i]=0.0;
+    for (int i=0;i<data.size();i++) data[i]=0.0;
   };
 
 //===================================================
 
-  T   operator () (long int i) const { return data[i]; };
-  T & operator () (long int i)       { return data[i]; };
+  T   operator () (int i) const { return data[i]; };
+  T & operator () (int i)       { return data[i]; };
 
 //===================================================
   array_1d<T>& operator = (const array_1d<T>& v) {
-    for(long int i=0;i<data.size();i++) data[i]=v.data[i];
+    for(int i=0;i<data.size();i++) data[i]=v.data[i];
     return *this;
   };
 
 //===================================================
   array_1d<T>& operator = (T f) {
-    for (long int i=0; i<data.size();i++) data[i]=f;
+    for (int i=0; i<data.size();i++) data[i]=f;
     return *this;
   };
 //===================================================
@@ -93,7 +93,7 @@ public:
       exit(__LINE__,__FILE__);
     }
     array_1d<T> v3(v1.data.size());
-    for (long int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]+v2.data[i];
+    for (int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]+v2.data[i];
     return v3;
   };
 //===================================================
@@ -104,14 +104,14 @@ public:
       exit(__LINE__,__FILE__);
     }
     array_1d<T> v3(v1.data.size());
-    for (long int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]-v2.data[i];
+    for (int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]-v2.data[i];
     return v3;
   };
 
 //===================================================
   friend array_1d<T> operator * (const array_1d<T> &v1, const T t) {
     array_1d<T> v3(v1.data.size());
-    for (long int i=0;i<v1.data.size();i++) v3.data[i]=t*v1.data[i];
+    for (int i=0;i<v1.data.size();i++) v3.data[i]=t*v1.data[i];
     return v3;
   };
 
@@ -122,7 +122,7 @@ public:
       exit(__LINE__,__FILE__);
     }
     array_1d<T> v3(v1.data.size());
-    for (long int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]/t;
+    for (int i=0;i<v1.data.size();i++) v3.data[i]=v1.data[i]/t;
     return v3;
   };
 
@@ -132,7 +132,7 @@ public:
       printf("Error: add two vectors of different length.\n");
       exit(__LINE__,__FILE__);
     }
-    for (long int i=0;i<v1.data.size();i++) v1.data[i]+=v2.data[i];
+    for (int i=0;i<v1.data.size();i++) v1.data[i]+=v2.data[i];
     return v1;
   };
 //===================================================
@@ -142,13 +142,13 @@ public:
       printf("Error: subtract two vectors of different length.\n");
       exit(__LINE__,__FILE__);
     }
-    for (long int i=0;i<v1.data.size();i++) v1.data[i]-=v2.data[i];
+    for (int i=0;i<v1.data.size();i++) v1.data[i]-=v2.data[i];
     return v1;
   };
 //===================================================
 
   friend array_1d<T>& operator *= (array_1d<T> &v1,const T t) {
-    for (long int i=0;i<v1.data.size();i++) v1.data[i]*=t;
+    for (int i=0;i<v1.data.size();i++) v1.data[i]*=t;
     return v1;
   };
 //===================================================
@@ -158,7 +158,7 @@ public:
       printf("Error: divide vector by 0.\n");
       exit(__LINE__,__FILE__);
     }
-    for (long int i=0;i<v1.data.size();i++) v1.data[i]/=t;
+    for (int i=0;i<v1.data.size();i++) v1.data[i]/=t;
     return v1;
   };
 //===================================================
@@ -168,7 +168,7 @@ public:
       exit(__LINE__,__FILE__);
     }
     T d=0;
-    for (long int i=0;i<v1.data.size();i++) d+=v1.data[i]*v2.data[i];
+    for (int i=0;i<v1.data.size();i++) d+=v1.data[i]*v2.data[i];
     return d;
   };
 //===================================================
@@ -206,24 +206,24 @@ public:
 
   friend void printf (const array_1d<T> &v) {
     if (v.data.size()<4) { 
-      for (long int i=0;i<v.data.size();i++)
+      for (int i=0;i<v.data.size();i++)
         if (v.data[i]<0) printf("  %e",(double)v.data[i]);
         else printf("   %e",(double)v.data[i]);
       printf("\n");
     }
     else
-      for (long int i=0;i<v.data.size();i++) printf(" %e\n",(double)v.data[i]);
+      for (int i=0;i<v.data.size();i++) printf(" %e\n",(double)v.data[i]);
   }
 
   friend void fprintf (FILE* fout,const array_1d<T> &v) {
     if (v.data.size()<4) {
-      for (long int i=0;i<v.data.size();i++)
+      for (int i=0;i<v.data.size();i++)
         if (v.data[i]<0) fprintf(fout,"  %e",(double)v.data[i]);
         else fprintf(fout,"   %e",(double)v.data[i]);
       fprintf(fout,"\n");
     }
     else
-      for (long int i=0;i<v.data.size();i++) fprintf(fout," %e\n",(double)v.data[i]);
+      for (int i=0;i<v.data.size();i++) fprintf(fout," %e\n",(double)v.data[i]);
   }
 //===================================================
 };

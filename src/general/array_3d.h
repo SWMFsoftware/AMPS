@@ -16,8 +16,8 @@ template <class T>
 class array_3d {
 protected:
   T* data;
-  long int size_dim0,size_dim1,size_dim2;
-  long int ndim0_ndim1;
+  int size_dim0,size_dim1,size_dim2;
+  int ndim0_ndim1;
 
 public:
 
@@ -35,7 +35,7 @@ public:
  };
 
 //===================================================
-  array_3d(long int n0,long int n1,long int n2) {
+  array_3d(int n0,int n1,int n2) {
     if ((n0<=0)||(n1<=0)||(n2<=0)) {
       printf("Error: allocation of array_3d object\n");
       printf("with negative number of elemens\n");
@@ -58,14 +58,14 @@ public:
   };
 
 //===================================================
-  long int size() const {
+  int size() const {
     return size_dim0*size_dim1*size_dim2;
   }
 
   bool IsAllocated() {return (data!=NULL);}
 //===================================================
-  long int size(int idim) {
-    long int res=0;
+  int size(int idim) {
+    int res=0;
 
     switch(idim) {
     case 0:
@@ -83,7 +83,7 @@ public:
   }
 
 //===================================================
-  int init(long int n0,long int n1,long int n2) {
+  int init(int n0,int n1,int n2) {
     if ((n0<=0)||(n1<=0)||(n2<=0)) {
       printf("Error: allocation of array_3d object\n");
       printf("with negative number of elemens\n");
@@ -112,7 +112,7 @@ public:
   };
 
 //===================================================
-  int reinit(long int n0,long int n1,long int n2) {
+  int reinit(int n0,int n1,int n2) {
    if (data!=NULL) delete [] data;
 
     if ((n0<=0)||(n1<=0)||(n2<=0)) {
@@ -138,21 +138,21 @@ public:
   };
   
 //===================================================
-  inline T operator () (long int i0,long int i1,long int i2) const { 
+  inline T operator () (int i0,int i1,int i2) const {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
 
     return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
   };
 
 //===================================================
-  inline T & operator () (long int i0,long int i1,long int i2) { 
+  inline T & operator () (int i0,int i1,int i2) {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
   };
 
 //===================================================
   array_3d<T>& operator = (const array_3d<T>& v) {
-    long int i,imax;
+    int i,imax;
 
     imax=size_dim0*size_dim1*size_dim2;
     for (i=0;i<imax;i++) data[i]=v.data[i];
@@ -162,7 +162,7 @@ public:
 
 //===================================================
   array_3d<T>& operator = (T f) {
-    long int i,imax;
+    int i,imax;
 
     imax=size_dim0*size_dim1*size_dim2;
     for (i=0;i<imax;i++) data[i]=f;
@@ -178,7 +178,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
@@ -195,7 +195,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
@@ -206,7 +206,7 @@ public:
 
 //===================================================
   friend array_3d<T> operator * (const array_3d<T> &v1, const T t) {
-    long int i,imax;
+    int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
@@ -222,7 +222,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
     array_3d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
@@ -239,7 +239,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
@@ -255,7 +255,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
@@ -265,7 +265,7 @@ public:
 
 //===================================================
   friend array_3d<T>& operator *= (array_3d<T> &v1,const T t) {
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
     for (i=0;i<imax;i++) v1.data[i]*=t;
@@ -280,7 +280,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2;
     for (i=0;i<imax;i++) v1.data[i]/=t;
@@ -305,7 +305,7 @@ public:
 
   //===================================================
   //get pointer to an element of the array
-  T* GetPtr(long int i0,long int i1,long int i2) {
+  T* GetPtr(int i0,int i1,int i2) {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
     return data+i0+size_dim0*i1+ndim0_ndim1*i2;
   }

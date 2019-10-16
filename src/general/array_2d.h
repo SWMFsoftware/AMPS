@@ -16,7 +16,7 @@ template <class T>
 class array_2d {
 protected:
   T* data;
-  long int size_dim0,size_dim1;
+  int size_dim0,size_dim1;
 
 public:
 
@@ -33,7 +33,7 @@ public:
   };
 
 //===================================================
-  array_2d(long int n0,long int n1) {
+  array_2d(int n0,int n1) {
     if ((n0<=0)||(n1<=0)) {
       printf("Error: allocation of array_2d object\n");
       printf("with negative number of elemens\n");
@@ -46,7 +46,7 @@ public:
   };
 
 //===================================================
-  void init(long int n0,long int n1) {
+  void init(int n0,int n1) {
     if ((n0<=0)||(n1<=0)) {
       printf("Error: allocation of array_2d object\n");
       printf("with negative number of elemens\n");
@@ -64,18 +64,18 @@ public:
   };
   
 //===================================================
-  T   operator () (long int i0,long int i1) const { 
+  T   operator () (int i0,int i1) const {
     return data[i0+size_dim0*i1]; 
   };
 
 //===================================================
-  T & operator () (long int i0,long int i1) { 
+  T & operator () (int i0,int i1) {
     return data[i0+size_dim0*i1]; 
   };
 
 //===================================================
   array_2d<T>& operator = (const array_2d<T>& v) {
-    long int i,imax;
+    int i,imax;
   
     imax=size_dim0*size_dim1;
     for (i=0;i<imax;i++) data[i]=v.data[i];
@@ -85,7 +85,7 @@ public:
 
 //===================================================
   array_2d<T>& operator = (T f) {
-    long int i,imax;
+    int i,imax;
 
     imax=size_dim0*size_dim1;
     for (i=0;i<imax;i++) data[i]=f;
@@ -101,7 +101,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
     imax=v1.size_dim0*v1.size_dim1;
@@ -118,7 +118,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax; 
+    int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
     imax=v1.size_dim0*v1.size_dim1;
@@ -129,7 +129,7 @@ public:
 
 //===================================================
   friend array_2d<T> operator * (const array_2d<T> &v1, const T t) {
-    long int i,imax;
+    int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
     imax=v1.size_dim0*v1.size_dim1;
@@ -144,7 +144,7 @@ public:
       printf("Error: divide vector by 0.\n");
       exit(__LINE__,__FILE__);
     }
-    long int i,imax;
+    int i,imax;
     array_2d<T> v3(v1.size_dim0,v1.size_dim1);
 
     imax=v1.size_dim0*v1.size_dim1;
@@ -161,7 +161,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
@@ -177,7 +177,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
@@ -187,7 +187,7 @@ public:
 
 //===================================================
   friend array_2d<T>& operator *= (array_2d<T> &v1,const T t) {
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1;
     for (i=0;i<imax;i++) v1.data[i]*=t;
@@ -202,7 +202,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1;
     for (i=0;i<imax;i++) v1.data[i]/=t;
