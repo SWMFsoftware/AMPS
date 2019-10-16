@@ -219,7 +219,11 @@ public:
   //===================================================
     //get pointer to an element of the array
     T* GetPtr(int i0,int i1) {
-      if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+      if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) {
+        printf("i0=%i, i1=%i; size_dim0=%i, size_dim1=%i\n",i0,i1,size_dim0,size_dim1);
+
+        exit(__LINE__,__FILE__,"Error: out of range");
+      }
 
       return data+i0+size_dim0*i1;
     }
