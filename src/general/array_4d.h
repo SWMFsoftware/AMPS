@@ -80,13 +80,13 @@ public:
 
 //===================================================
   T   operator () (int i0,int i1,int i2,int i3) const {
-    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
 //===================================================
   T & operator () (int i0,int i1,int i2,int i3) {
-    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
@@ -234,7 +234,7 @@ public:
   //===================================================
   //get pointer to an element of the array
   T* GetPtr(int i0,int i1,int i2,int i3) {
-    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data+i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3;
   }
 

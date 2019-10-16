@@ -45,6 +45,8 @@ public:
    size_dim1=n1;
   };
 
+  bool IsAllocated() {return (data!=NULL);}
+
 //===================================================
   void init(int n0,int n1) {
     if ((n0<=0)||(n1<=0)) {
@@ -65,11 +67,15 @@ public:
   
 //===================================================
   T   operator () (int i0,int i1) const {
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+
     return data[i0+size_dim0*i1]; 
   };
 
 //===================================================
   T & operator () (int i0,int i1) {
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+
     return data[i0+size_dim0*i1]; 
   };
 
@@ -209,6 +215,14 @@ public:
 
     return v1;
   };
+
+  //===================================================
+    //get pointer to an element of the array
+    T* GetPtr(int i0,int i1) {
+      if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+
+      return data+i0+size_dim0*i1;
+    }
 
 };
 
