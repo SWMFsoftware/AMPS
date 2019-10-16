@@ -16,8 +16,8 @@ template <class T>
 class array_4d {
 protected:
   T* data;
-  long int size_dim0,size_dim1,size_dim2,size_dim3;
-  long int ndim0_ndim1,ndim0_ndim1_ndim2;
+  int size_dim0,size_dim1,size_dim2,size_dim3;
+  int ndim0_ndim1,ndim0_ndim1_ndim2;
 
 public:
 
@@ -35,26 +35,10 @@ public:
     data=NULL; 
   };
 
-//===================================================
-  array_4d(long int n0,long int n1,long int n2,long int n3) {
-    if ((n0<=0)||(n1<=0)||(n2<=0)||(n3<=0)) {
-      printf("Error: allocation of array_4d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    } 
 
-   data=new T[n0*n1*n2*n3];
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-   size_dim3=n3;
-
-   ndim0_ndim1=n0*n1; 
-   ndim0_ndim1_ndim2=n0*n1*n2;
-  };
 
 //===================================================
-  void init(long int n0,long int n1,long int n2,long int n3) {
+  void init(int n0,int n1,int n2,int n3) {
     if ((n0<=0)||(n1<=0)||(n2<=0)||(n3<=0)) {
       printf("Error: allocation of array_4d object\n");
       printf("with negative number of elemens\n");
@@ -66,31 +50,49 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-   data=new T[n0*n1*n2*n3];
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-   size_dim3=n3;
+    try {
+      data=new T[n0*n1*n2*n3];
+    }
+    catch (bad_alloc) {
+      printf("Memory Error: array_4d() cannot allocate %i bytes\n", n0*n1*n2*n3*sizeof(T));
+      exit(__LINE__,__FILE__);
+    }
 
-   ndim0_ndim1=n0*n1;
-   ndim0_ndim1_ndim2=n0*n1*n2;
+
+    size_dim0=n0;
+    size_dim1=n1;
+    size_dim2=n2;
+    size_dim3=n3;
+
+    ndim0_ndim1=n0*n1;
+    ndim0_ndim1_ndim2=n0*n1*n2;
   };
   
+  array_4d(int n0,int n1,int n2,int n3) {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+    size_dim2=0;
+    size_dim3=0;
+
+    init(n0,n1,n2,n3);
+  }
+
 //===================================================
-  T   operator () (long int i0,long int i1,long int i2,long int i3) const { 
+  T   operator () (int i0,int i1,int i2,int i3) const {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
 //===================================================
-  T & operator () (long int i0,long int i1,long int i2,long int i3) { 
+  T & operator () (int i0,int i1,int i2,int i3) {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
 //===================================================
   array_4d<T>& operator = (const array_4d<T>& v) {
-    long int i,imax;
+    int i,imax;
   
     imax=size_dim0*size_dim1*size_dim2*size_dim3;
     for (i=0;i<imax;i++) data[i]=v.data[i];
@@ -100,7 +102,7 @@ public:
 
 //===================================================
   array_4d<T>& operator = (T f) {
-    long int i,imax;
+    int i,imax;
 
     imax=size_dim0*size_dim1*size_dim2*size_dim3;
     for (i=0;i<imax;i++) data[i]=f;
@@ -117,7 +119,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
@@ -135,7 +137,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax; 
+    int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim1);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
@@ -146,7 +148,7 @@ public:
 
 //===================================================
   friend array_4d<T> operator * (const array_4d<T> &v1, const T t) {
-    long int i,imax;
+    int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
@@ -161,7 +163,7 @@ public:
       printf("Error: divide vector by 0.\n");
       exit(__LINE__,__FILE__);
     }
-    long int i,imax;
+    int i,imax;
     array_4d<T> v3(v1.size_dim0,v1.size_dim1,v1.size_dim2,v1.size_dim3);
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
@@ -179,7 +181,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
     for (i=0;i<imax;i++) v1.data[i]+=v2.data[i];
@@ -196,7 +198,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
     for (i=0;i<imax;i++) v1.data[i]-=v2.data[i];
@@ -206,7 +208,7 @@ public:
 
 //===================================================
   friend array_4d<T>& operator *= (array_4d<T> &v1,const T t) {
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
     for (i=0;i<imax;i++) v1.data[i]*=t;
@@ -221,7 +223,7 @@ public:
       exit(__LINE__,__FILE__);
     }
 
-    long int i,imax;
+    int i,imax;
 
     imax=v1.size_dim0*v1.size_dim1*v1.size_dim2*v1.size_dim3;
     for (i=0;i<imax;i++) v1.data[i]/=t;
@@ -231,7 +233,7 @@ public:
 
   //===================================================
   //get pointer to an element of the array
-  T* GetPtr(long int i0,long int i1,long int i2,long int i3) {
+  T* GetPtr(int i0,int i1,int i2,int i3) {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data+i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3;
   }
