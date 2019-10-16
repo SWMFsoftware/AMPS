@@ -21,21 +21,15 @@ protected:
 
 public:
 
-  array_3d() {
+
+
+
+  void Deallocate() {
+    if (data!=NULL) delete [] data;
     data=NULL;
-    size_dim0=0;
-    size_dim1=0;
-    size_dim2=0;
-  };
+  }
 
-//===================================================
- ~array_3d() {
-   if (data!=NULL) delete [] data;
-   data=NULL;
- };
-
-//===================================================
-  array_3d(int n0,int n1,int n2) {
+  void init (int n0,int n1,int n2) {
     if ((n0<=0)||(n1<=0)||(n2<=0)) {
       printf("Error: allocation of array_3d object\n");
       printf("with negative number of elemens\n");
@@ -55,6 +49,28 @@ public:
    size_dim2=n2;
 
    ndim0_ndim1=n0*n1; 
+  }
+
+  array_3d() {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+    size_dim2=0;
+  };
+
+//===================================================
+ ~array_3d() {
+   Deallocate();
+ };
+
+//===================================================
+  array_3d(int n0,int n1,int n2) {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+    size_dim2=0;
+
+    init(n0,n1,n2);
   };
 
 //===================================================
