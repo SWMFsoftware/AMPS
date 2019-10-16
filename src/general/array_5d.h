@@ -31,28 +31,22 @@ public:
   };
 
 //===================================================
- ~array_5d() {
+  void remove() {
     if (data!=NULL) delete [] data;
+
     data=NULL; 
+    size_dim0=0;
+    size_dim1=0;
+    size_dim2=0;
+    size_dim3=0;
+    size_dim4=0;
+  }
+
+  ~array_5d() {
+    remove();
   };
 
-//===================================================
-  array_5d(int n0,int n1,int n2,int n3,int n4) {
-    if ((n0<=0)||(n1<=0)||(n2<=0)||(n3<=0)||(n4<=0)) {
-      exit(__LINE__,__FILE__,"Error: allocation of array_4d object with negative number of elemens");
-    } 
 
-   data=new T[n0*n1*n2*n3*n4];
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-   size_dim3=n3;
-   size_dim4=n4;
-
-   ndim0_ndim1=n0*n1; 
-   ndim0_ndim1_ndim2=n0*n1*n2;
-   ndim0_ndim1_ndim2_ndim3=n0*n1*n2*n3;
-  };
 
 //===================================================
   void init(int n0,int n1,int n2,int n3,int n4) {
@@ -61,10 +55,17 @@ public:
     }
    
     if (size_dim0!=0) {
-      exit(__LINE__,__FILE__,"Error: initialization of allocated of array_4d object");
+      exit(__LINE__,__FILE__,"Error: initialization of allocated of array_5d object");
     }
 
-   data=new T[n0*n1*n2*n3*n4];
+    try {
+      data=new T[n0*n1*n2*n3*n4];
+    }
+    catch (bad_alloc) {
+      printf("Memory Error: array_5d() cannot allocate %i bytes\n", n0*n1*n2*sizeof(T));
+      exit(__LINE__,__FILE__);
+    }
+
    size_dim0=n0;
    size_dim1=n1;
    size_dim2=n2;
@@ -76,6 +77,17 @@ public:
    ndim0_ndim1_ndim2_ndim3=n0*n1*n2*n3;
   };
   
+  array_5d(int n0,int n1,int n2,int n3,int n4) {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+    size_dim2=0;
+    size_dim3=0;
+    size_dim4=0;
+
+    init(n0,n1,n2,n3,n4);
+  };
+
 //===================================================
   T   operator () (int i0,int i1,int i2,int i3,int i4) const {
     if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)||(i4<0)||(i4>size_dim4)) exit(__LINE__,__FILE__,"Error: out of range");
