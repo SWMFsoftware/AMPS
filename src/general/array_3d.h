@@ -62,6 +62,7 @@ public:
     return size_dim0*size_dim1*size_dim2;
   }
 
+  bool IsAllocated() {return (data!=NULL);}
 //===================================================
   long int size(int idim) {
     long int res=0;
@@ -69,10 +70,13 @@ public:
     switch(idim) {
     case 0:
       res=size_dim0;
+      break;
     case 1:
       res=size_dim1;
+      break;
     case 2:
       res=size_dim2;
+      break;
     } 
 
     return res;
@@ -135,11 +139,14 @@ public:
   
 //===================================================
   inline T operator () (long int i0,long int i1,long int i2) const { 
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
+
     return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
   };
 
 //===================================================
   inline T & operator () (long int i0,long int i1,long int i2) { 
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
   };
 
@@ -296,6 +303,12 @@ public:
     v2.data=t; 
   };  
 
+  //===================================================
+  //get pointer to an element of the array
+  T* GetPtr(long int i0,long int i1,long int i2) {
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
+    return data+i0+size_dim0*i1+ndim0_ndim1*i2;
+  }
 };
 
 #endif
