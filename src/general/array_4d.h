@@ -78,11 +78,13 @@ public:
   
 //===================================================
   T   operator () (long int i0,long int i1,long int i2,long int i3) const { 
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
 //===================================================
   T & operator () (long int i0,long int i1,long int i2,long int i3) { 
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3]; 
   };
 
@@ -226,6 +228,13 @@ public:
 
     return v1;
   };
+
+  //===================================================
+  //get pointer to an element of the array
+  T* GetPtr(long int i0,long int i1,long int i2,long int i3) {
+    if ((i0<0)||(i0>size_dim0)||(i1<0)||(i1>size_dim1)||(i2<0)||(i2>size_dim2)||(i3<0)||(i3>size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");
+    return data+i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3;
+  }
 
 //===================================================
 };
