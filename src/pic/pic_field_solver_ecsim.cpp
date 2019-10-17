@@ -1798,6 +1798,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+  PIC::Parallel::BPManager.isCorner = true; 
+  PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+  PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
+  PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrixSpeciesData,UnpackBlockData_JMassMatrixSpeciesData);
 #elif  _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_OFF_
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
@@ -2281,6 +2285,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
   PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge;
   
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(true);
+  PIC::Parallel::BPManager.isCorner = false; 
+  PIC::Parallel::BPManager.pointBufferSize = sizeof(double); 
+  PIC::Parallel::BPManager.copy_node_to_buffer = copy_net_charge_to_buffer;
+  PIC::Parallel::BPManager.add_buffer_to_node = add_net_charge_to_node;
   PIC::BC::ExternalBoundary::UpdateData(PackBlockData_netCharge,UnpackBlockData_netCharge);
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
   
@@ -3753,14 +3761,73 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
 }
 
 
-
-
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
   for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
       if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
         return true;
     }  
-  return false;
-  
+  return false;  
 }
+
+//-------------------------------------
+void PIC::FieldSolver::Electromagnetic::ECSIM::
+copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+		      const int i, const int j, const int k, char *bufferPtr) {
+  char *nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+  const int pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+  memcpy(bufferPtr, nodePtr, pointBufferSize);
+}
+//-------------------------------------
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::
+copy_net_charge_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+			  const int i, const int j, const int k, char *bufferPtr) {
+  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+  
+  nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset + 
+    sizeof(double)*PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
+
+  memcpy(bufferPtr, nodePtr, sizeof(double));
+}
+//-------------------------------------
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::
+add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+		   const int i, const int j, const int k, 
+		   char *bufferPtr, double coef){
+  char *nodePtr;
+  nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))
+    ->GetAssociatedDataBufferPointer();
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
+  nodePtr+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  bufferPtr+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+  for (int ii=0;ii<3;ii++)   {
+    ((double*)nodePtr)[JxOffsetIndex+ii]+=coef*((double*)bufferPtr)[JxOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<243;ii++) {
+    ((double*)nodePtr)[MassMatrixOffsetIndex+ii]+=coef*((double*)bufferPtr)[MassMatrixOffsetIndex+ii];
+  }
+
+  for (int ii=0;ii<10*PIC::nTotalSpecies;ii++) {
+    ((double*)nodePtr)[SpeciesDataIndex[0]+ii]+=coef*((double*)bufferPtr)[SpeciesDataIndex[0]+ii];
+  }
+
+}
+//-------------------------------------
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::
+add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
+		       const int i, const int j, const int k, 
+		       char *bufferPtr, double coef){
+  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))
+    ->GetAssociatedDataBufferPointer();
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  ((double*)nodePtr)[netChargeNewIndex]+=coef*((double*)bufferPtr)[0];
+}
+//-------------------------------------
+
