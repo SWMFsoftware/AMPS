@@ -548,14 +548,6 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   while ((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations));
 
 
-
-
-  //////////////////////////////////////////////////////
-
-
-
-
-
   //calculate the flux and energey spectrum
   /*
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -613,7 +605,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   //output the calculated map
   CMPI_channel pipe(1000000);
-  FILE *fout2d;
+  FILE *fout2d_total_flux,*fout2d_rigidity,**fout2d_spectrum;
 
   if (PIC::ThisThread==0) {
     //sampled energy spectrum
@@ -622,22 +614,37 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
     pipe.openRecvAll();
 
+    fout2d_spectrum=new FILE* [PIC::nTotalSpecies];
+
     //open the output file
     sprintf(fname,"%s/CutoffRigidityMap[R=%e].dat",PIC::OutputDataFileDirectory,Radius);
-    fout2d=fopen(fname,"w");
+    fout2d_rigidity=fopen(fname,"w");
+    fprintf(fout2d_rigidity,"VARIABLES=\"Lon\", \"Lat\"");
 
-    fprintf(fout2d,"VARIABLES=\"Lon\", \"Lat\"");
+    sprintf(fname,"%s/TotalFluxMap[R=%e].dat",PIC::OutputDataFileDirectory,Radius);
+    fout2d_total_flux=fopen(fname,"w");
+    fprintf(fout2d_total_flux,"VARIABLES=\"Lon\", \"Lat\"");
 
-
-    for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
-      fprintf(fout2d,",  \"Cutoff Rigidity (s=%i)\", \"Total Flux [1/(s*m^2)] (s=%i)\"",spec,spec);
-
-      for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) {
-        fprintf(fout2d,",  \"Energy Spectrum (s=%i, %e[MeV]<E<%e[MeV])\"",spec,pow(iE*dE+logMinEnergyLimit,10)*J2MeV,pow((iE+1)*dE+logMinEnergyLimit,10)*J2MeV);
-      }
+    for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+      fprintf(fout2d_rigidity,",  \"Cutoff Rigidity (s=%i)\"",spec);
+      fprintf(fout2d_total_flux,",  \"Total Flux [1/(s*m^2)] (s=%i)\"",spec);
     }
 
-    fprintf(fout2d,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+    fprintf(fout2d_rigidity,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+    fprintf(fout2d_total_flux,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+
+    //files to output the energy spectrum
+    for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+      sprintf(fname,"%s/EnergySpectrumMap[R=%e].s=%i.dat",PIC::OutputDataFileDirectory,Radius,spec);
+      fout2d_spectrum[spec]=fopen(fname,"w");
+      fprintf(fout2d_spectrum[spec],"VARIABLES=\"Lon\", \"Lat\"");
+
+      for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) {
+        fprintf(fout2d_spectrum[spec],",  \"(%e[MeV]<E<%e[MeV])\"",spec,pow(iE*dE+logMinEnergyLimit,10),pow((iE+1)*dE+logMinEnergyLimit,10));
+      }
+
+      fprintf(fout2d_spectrum[spec],"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+    }
   }
   else {
     pipe.openSend(0);
@@ -652,7 +659,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
     if (PIC::ThisThread==0) {
       double lon,lat;
       Sphere.GetSurfaceLonLatNormal(lon,lat,iZenith,iAzimuthal);
-      fprintf(fout2d,"%e %e ",lon,lat);
+
+      fprintf(fout2d_rigidity,"%e %e ",lon,lat);
+      fprintf(fout2d_total_flux,"%e %e ",lon,lat);
+
+      for (int spec=0;spec<PIC::nTotalSpecies;spec++) fprintf(fout2d_spectrum[spec],"%e %e ",lon,lat);
     }
 
 
@@ -733,18 +744,29 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) LocalEnergySpectrum(iE)/=norm;
 
 
-        fprintf(fout2d,"  %e  %e",minElementRigidity,flux_total/sum_area);
-        for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) fprintf(fout2d,"  %e",LocalEnergySpectrum(iE));
+        fprintf(fout2d_rigidity,"  %e",minElementRigidity);
+        fprintf(fout2d_total_flux,"  %e",flux_total/sum_area);
+
+        for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) fprintf(fout2d_spectrum[spec],"  %e",LocalEnergySpectrum(iE));
       }
     }
 
     //the cutoff rigidity is computed for all speces at the given point in the map
-    if (PIC::ThisThread==0) fprintf(fout2d,"\n");
+    if (PIC::ThisThread==0) {
+      fprintf(fout2d_rigidity,"\n");
+      fprintf(fout2d_total_flux,"\n");
+
+      for (spec=0;spec<PIC::nTotalSpecies;spec++) fprintf(fout2d_spectrum[spec],"\n");
+    }
   }
 
   //close the pipe nad the file
   if (ThisThread==0) {
-    fclose(fout2d);
+    fclose(fout2d_rigidity);
+    fclose(fout2d_total_flux);
+
+    for (spec=0;spec<PIC::nTotalSpecies;spec++) fclose(fout2d_spectrum[spec]);
+
     pipe.closeRecvAll();
   }
   else pipe.closeSend();
