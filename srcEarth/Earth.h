@@ -11,6 +11,11 @@ using namespace std;
 
 
 #include "Exosphere.h"
+#include "array_3d.h"
+#include "array_4d.h"
+#include "array_5d.h"
+#include "array_2d.h"
+#include "array_1d.h"
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
 #include "SpiceUsr.h"
@@ -148,7 +153,7 @@ namespace Earth {
     namespace IndividualLocations {
       extern int xTestLocationTableLength;
       extern double** xTestLocationTable;
-      extern double **CutoffRigidityTable; //[spec][location];
+      extern array_2d<double> CutoffRigidityTable; //[spec][location];
       extern double MaxEnergyLimit;
       extern double MinEnergyLimit;
 
@@ -188,7 +193,7 @@ namespace Earth {
     extern bool SampleRigidityMode;
 
     //sphere for sampling of the cutoff regidity
-    extern double ***CutoffRigidityTable;
+    extern array_2d<double> CutoffRigidityTable;
 
     //process particles that leaves that computational domain
     int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
@@ -228,7 +233,7 @@ namespace Earth {
       void ConvertVelocityVectorIndex2Velocity(int spec,double *v,int iface,int Index);
 
       const int SampleMaskNumberPerSpatialDirection=5;
-      extern cBitwiseFlagTable *****SampleTable;//[PIC::nTotalSpecies][6][SampleMaskNumberPerSpatialDirection][SampleMaskNumberPerSpatialDirection];
+      extern array_5d<cBitwiseFlagTable> SampleTable;//[PIC::nTotalSpecies][6][SampleMaskNumberPerSpatialDirection][SampleMaskNumberPerSpatialDirection];
       extern double dX[6][2]; //spatial size corresponding to SampleTable
 
       //exchange the table among all processors
