@@ -20,41 +20,16 @@ protected:
 
 public:
 
-  array_2d() {
-    data=NULL;
-    size_dim0=0;
-    size_dim1=0;
-  };
 
 //===================================================
- ~array_2d() { 
-   if (data!=NULL) delete [] data;
-   data=NULL;
-  };
 
-//===================================================
-  array_2d(int n0,int n1) {
-    if ((n0<=0)||(n1<=0)) {
-      printf("Error: allocation of array_2d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    } 
-
-   data=new T[n0*n1];
-   size_dim0=n0;
-   size_dim1=n1;
-  };
-
-  bool IsAllocated() {return (data!=NULL);}
-
-//===================================================
   void init(int n0,int n1) {
     if ((n0<=0)||(n1<=0)) {
       printf("Error: allocation of array_2d object\n");
       printf("with negative number of elemens\n");
       exit(__LINE__,__FILE__);
     }
-   
+
     if (size_dim0!=0) {
       printf("Error: initialization of allocated of array_2d object\n");
       exit(__LINE__,__FILE__);
@@ -64,7 +39,36 @@ public:
    size_dim0=n0;
    size_dim1=n1;
   };
-  
+
+  void Deallocate() {
+    if (data!=NULL) delete [] data;
+
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+  }
+
+//===================================================
+  array_2d() {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+  };
+
+ ~array_2d() { 
+   Deallocate();
+  };
+
+  array_2d(int n0,int n1) {
+    data=NULL;
+    size_dim0=0;
+    size_dim1=0;
+
+    init(n0,n1);
+  };
+
+  bool IsAllocated() {return (data!=NULL);}
+
 //===================================================
   T   operator () (int i0,int i1) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
