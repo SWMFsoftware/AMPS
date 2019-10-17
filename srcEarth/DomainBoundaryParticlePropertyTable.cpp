@@ -11,6 +11,9 @@
 
 #include "pic.h"
 #include "specfunc.h"
+#include "array_3d.h"
+#include "array_4d.h"
+#include "array_5d.h"
 
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmax=log(1.0E1*GeV2J);
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmin=log(1.0E1*MeV2J);
@@ -24,7 +27,7 @@ double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dAzimuthAngle=2.0*
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dLogE=(logEmax-logEmin)/Earth::CutoffRigidity::DomainBoundaryParticleProperty::nLogEnergyLevels;
 
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[6][2];
-cBitwiseFlagTable *****Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable=NULL;
+array_5d<cBitwiseFlagTable> Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable;
 //cBitwiseFlagTable Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable[PIC::nTotalSpecies][6][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection];
 
 //parameters of the phase space sampling procedure
@@ -41,15 +44,7 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticle
 
 //de-allocate sampling buffers
 void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate() {
-  if (SampleTable!=NULL) {
-    delete [] SampleTable[0][0][0][0];
-    delete [] SampleTable[0][0][0];
-    delete [] SampleTable[0][0];
-    delete [] SampleTable[0];
-    delete [] SampleTable;
-  }
-
-  SampleTable=NULL;
+  SampleTable.remove();
 }
 
 //allocate the particle property sample table
@@ -63,17 +58,22 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(int nlocs) 
   int offset;
 
   //de-allocate the sampling tables in case they have been allocated
-  if (SampleTable!=NULL) {
-    delete [] SampleTable[0][0][0][0];
-    delete [] SampleTable[0][0][0];
-    delete [] SampleTable[0][0];
-    delete [] SampleTable[0];
-    delete [] SampleTable;
-  }
+  SampleTable.remove();
 
   //allocate the sampling tables
-  SampleTable=new cBitwiseFlagTable**** [nlocs];
-  SampleTable[0]=new cBitwiseFlagTable*** [PIC::nTotalSpecies*nlocs];
+  SampleTable.init(PIC::nTotalSpecies,nlocs,6,SampleMaskNumberPerSpatialDirection,SampleMaskNumberPerSpatialDirection);
+
+
+  for (iTestLocation=0;iTestLocation<nlocs;iTestLocation++) {
+    for (s=0;s<PIC::nTotalSpecies;s++) for (iface=0;iface<6;iface++) for (i=0;i<SampleMaskNumberPerSpatialDirection;i++) for (j=0;j<SampleMaskNumberPerSpatialDirection;j++) {
+      for (iThreadOpenMP=0;iThreadOpenMP<SampleTable(s,iTestLocation,iface,i,j).nThreadsOpenMP;iThreadOpenMP++) {
+        SampleTable.GetPtr(s,iTestLocation,iface,i,j)->AllocateTable(nAzimuthIntervals*nCosZenithIntervals*nLogEnergyLevels,iThreadOpenMP);
+      }
+    }
+  }
+
+
+/*  SampleTable[0]=new cBitwiseFlagTable*** [PIC::nTotalSpecies*nlocs];
 
   for (offset=0,iTestLocation=0;iTestLocation<nlocs;iTestLocation++) {
     SampleTable[iTestLocation]=SampleTable[0]+offset;
@@ -107,7 +107,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(int nlocs) 
         SampleTable[iTestLocation][s][iface][i][j].AllocateTable(nAzimuthIntervals*nCosZenithIntervals*nLogEnergyLevels,iThreadOpenMP);
       }
     }
-  }
+  }*/
 }
 
 //get the global index that corresponds to the velocity vector
@@ -233,11 +233,16 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::RegisterParticleProp
 
     if (iTable>=SampleMaskNumberPerSpatialDirection) iTable=SampleMaskNumberPerSpatialDirection-1;
     if (jTable>=SampleMaskNumberPerSpatialDirection) jTable=SampleMaskNumberPerSpatialDirection-1;
+    if (iTable<0) iTable=0;
+    if (jTable<0) jTable=0;
 
 
     //register the particle velocity vector
     Index=GetVelocityVectorIndex(spec,v,iface);
-    SampleTable[iOriginLocation][spec][iface][iTable][jTable].SetFlag(true,Index);
+
+    if (Index<0) exit(__LINE__,__FILE__,"Error: Index must be positive");
+
+    SampleTable(spec,iOriginLocation,iface,iTable,jTable).SetFlag(true,Index);
   }
 }
 
@@ -245,7 +250,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::RegisterParticleProp
 void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Gather() {
   for (int iTestLocation=0;iTestLocation<std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength);iTestLocation++) for (int s=0;s<PIC::nTotalSpecies;s++) for (int iface=0;iface<6;iface++) {
     for (int i=0;i<SampleMaskNumberPerSpatialDirection;i++) for (int j=0;j<SampleMaskNumberPerSpatialDirection;j++) {
-      SampleTable[iTestLocation][s][iface][i][j].Gather();
+      SampleTable(s,iTestLocation,iface,i,j).Gather();
     }
   }
 }
@@ -275,7 +280,7 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::TestInjectedParticle
 
   //Test Particle Properties
   Index=GetVelocityVectorIndex(spec,v,iface);
-  return SampleTable[iTestLocation][spec][iface][iTable][jTable].Test(Index);
+  return SampleTable(spec,iTestLocation,iface,iTable,jTable).Test(Index);
 }
 
 //Smooth the sampled distribution
@@ -288,7 +293,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::SmoothSampleTable() 
     for (iTable=0;iTable<SampleMaskNumberPerSpatialDirection;iTable++) for (jTable=0;jTable<SampleMaskNumberPerSpatialDirection;jTable++) {
       //loop through all sampling tables
 
-      for (Index=0,nSetPoints=0;Index<IndexMax;Index++) if (SampleTable[iTestLocation][spec][iface][iTable][jTable].Test(Index)==true) nSetPoints++;
+      for (Index=0,nSetPoints=0;Index<IndexMax;Index++) if (SampleTable(spec,iTestLocation,iface,iTable,jTable).Test(Index)==true) nSetPoints++;
 
       if (nSetPoints!=0) {
         //expand the set of the sampled points so a given fraction of the points is occupied
@@ -309,7 +314,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::SmoothSampleTable() 
             for (iLogEnergyLevel=0;iLogEnergyLevel<nLogEnergyLevels;iLogEnergyLevel++) {
               Index=iAzimuthInterval+(iCosZenithInterval+iLogEnergyLevel*nCosZenithIntervals)*nAzimuthIntervals;
 
-              if ((SampleTable[iTestLocation][spec][iface][iTable][jTable].Test(Index)==true)&&(ProcessFlagTable[iCosZenithInterval][iAzimuthInterval][iLogEnergyLevel]==false)) {
+              if ((SampleTable(spec,iTestLocation,iface,iTable,jTable).Test(Index)==true)&&(ProcessFlagTable[iCosZenithInterval][iAzimuthInterval][iLogEnergyLevel]==false)) {
                 //check if the distribution souble be expanded
                 ProcessFlagTable[iCosZenithInterval][iAzimuthInterval][iLogEnergyLevel]=true;
                 nSetPoints++;
@@ -322,8 +327,8 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::SmoothSampleTable() 
                         ProcessFlagTable[iCosZenithInterval+i][iAzimuthInterval+j][iLogEnergyLevel+j]=true;
                         Index=(iAzimuthInterval+j)+((iCosZenithInterval+i)+(iLogEnergyLevel+k)*nCosZenithIntervals)*nAzimuthIntervals;
 
-                        if (SampleTable[iTestLocation][spec][iface][iTable][jTable].Test(Index)==false) {
-                          SampleTable[iTestLocation][spec][iface][iTable][jTable].SetFlag(true,Index);
+                        if (SampleTable(spec,iTestLocation,iface,iTable,jTable).Test(Index)==false) {
+                          SampleTable(spec,iTestLocation,iface,iTable,jTable).SetFlag(true,Index);
                         }
 
                         nSetPoints++;
