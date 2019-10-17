@@ -99,35 +99,6 @@ public:
   }
 
 //===================================================
-  int init(int n0,int n1,int n2) {
-    if ((n0<=0)||(n1<=0)||(n2<=0)) {
-      printf("Error: allocation of array_3d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    }
-   
-    if (size_dim0!=0) {
-      printf("Error: initialization of allocated of array_3d object\n");
-      exit(__LINE__,__FILE__);
-    }
-
-   try {
-     data=new T[n0*n1*n2];
-   }
-   catch (bad_alloc) {
-     printf("Memory Error: array_3d().init cannot allocate %ld bytes\n", n0*n1*n2*sizeof(T));
-     return 0;
-   } 
-
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-
-   ndim0_ndim1=n0*n1;
-   return 1;
-  };
-
-//===================================================
   int reinit(int n0,int n1,int n2) {
    if (data!=NULL) delete [] data;
 
