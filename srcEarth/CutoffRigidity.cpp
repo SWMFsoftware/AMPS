@@ -17,7 +17,7 @@ bool Earth::CutoffRigidity::SampleRigidityMode=false;
 long int Earth::CutoffRigidity::InitialRigidityOffset=-1;
 long int Earth::CutoffRigidity::InitialLocationOffset=-1;
 long int Earth::CutoffRigidity::IntegratedPathLengthOffset=-1;
-double*** Earth::CutoffRigidity::CutoffRigidityTable=NULL;
+array_2d<double> Earth::CutoffRigidity::CutoffRigidityTable;
 
 //enable/disable the particle injection procedure
 bool Earth::CutoffRigidity::ParticleInjector::ParticleInjectionMode=true;
@@ -27,7 +27,7 @@ int Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength=0;
 double** Earth::CutoffRigidity::IndividualLocations::xTestLocationTable=NULL;
 double Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit=0.0;
 double Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit=0.0;
-double **Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable=NULL;
+array_2d<double>  Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable;
 
 double CutoffRigidityTestLocationTable[][3]={{0.0,0.0,0.0}};
 int CutoffRigidityTestLocationTableLength=0;
@@ -53,9 +53,6 @@ void Earth::CutoffRigidity::Init_BeforeParser() {
     if (IndividualLocations::xTestLocationTable!=NULL) {
       delete [] IndividualLocations::xTestLocationTable[0];
       delete [] IndividualLocations::xTestLocationTable;
-
-      delete [] IndividualLocations::CutoffRigidityTable[0];
-      delete [] IndividualLocations::CutoffRigidityTable;
     }
 
 
@@ -67,16 +64,13 @@ void Earth::CutoffRigidity::Init_BeforeParser() {
 
     for (int i=1;i<CutoffRigidityTestLocationTableLength;i++) IndividualLocations::xTestLocationTable[i]=IndividualLocations::xTestLocationTable[i-1]+3;
 
-    IndividualLocations::CutoffRigidityTable=new double* [PIC::nTotalSpecies];
-    IndividualLocations::CutoffRigidityTable[0]=new double [PIC::nTotalSpecies*CutoffRigidityTestLocationTableLength];
+    if (IndividualLocations::CutoffRigidityTable.IsAllocated()==false) IndividualLocations::CutoffRigidityTable.init(PIC::nTotalSpecies,CutoffRigidityTestLocationTableLength);
 
-    for (int spec=1;spec<PIC::nTotalSpecies;spec++) IndividualLocations::CutoffRigidityTable[spec]=IndividualLocations::CutoffRigidityTable[spec-1]+CutoffRigidityTestLocationTableLength;
+    IndividualLocations::CutoffRigidityTable=-1.0;
 
 
     for (int i=0;i<CutoffRigidityTestLocationTableLength;i++) {
       for (int j=0;j<3;j++) IndividualLocations::xTestLocationTable[i][j]=CutoffRigidityTestLocationTable[i][j];
-
-      for (int spec=1;spec<PIC::nTotalSpecies;spec++) IndividualLocations::CutoffRigidityTable[spec][i]=-1.0;
     }
 
     //request particle storage if needed
@@ -90,27 +84,11 @@ void Earth::CutoffRigidity::Init_BeforeParser() {
 void Earth::CutoffRigidity::AllocateCutoffRigidityTable() {
   int i,j,k,offset;
 
-  if (CutoffRigidityTestLocationTableLength!=0) {
+  if ((CutoffRigidityTestLocationTableLength!=0)&&(CutoffRigidityTable.IsAllocated()==false)) {
     //allocate the cutoff rigidity table
     //access pattern CutoffRigidityTable[spec][iZenith][iAzimuthal]
-    CutoffRigidityTable=new double** [PIC::nTotalSpecies];
-    CutoffRigidityTable[0]=new double *[PIC::nTotalSpecies*Earth::Planet->nZenithSurfaceElements];
-    CutoffRigidityTable[0][0]=new double [PIC::nTotalSpecies*Earth::Planet->nZenithSurfaceElements*Earth::Planet->nAzimuthalSurfaceElements];
-
-    for (i=0,offset=0;i<PIC::nTotalSpecies;i++) {
-      CutoffRigidityTable[i]=CutoffRigidityTable[0]+offset;
-      offset+=Earth::Planet->nZenithSurfaceElements;
-    }
-
-    for (i=0,offset=0;i<PIC::nTotalSpecies;i++) for (j=0;j<Earth::Planet->nZenithSurfaceElements;j++) {
-      CutoffRigidityTable[i][j]=CutoffRigidityTable[0][0]+offset;
-      offset+=Earth::Planet->nAzimuthalSurfaceElements;
-    }
-
-    //init the default value of the cutoff rigidity table
-    for (i=0;i<PIC::nTotalSpecies;i++) for (j=0;j<Earth::Planet->nZenithSurfaceElements;j++) for (k=0;k<Earth::Planet->nAzimuthalSurfaceElements;k++) {
-      CutoffRigidityTable[i][j][k]=-1.0;
-    }
+    CutoffRigidityTable.init(PIC::nTotalSpecies,Earth::Planet->nZenithSurfaceElements*Earth::Planet->nAzimuthalSurfaceElements);
+    CutoffRigidityTable=-1.0;
   }
 }
 
@@ -124,6 +102,12 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
 
   spec=PIC::ParticleBuffer::GetI(ParticleData);
 
+  //register the particle velocity vector
+  int iOriginIndex=0;
+
+  iOriginIndex=*((int*)(ParticleData+Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex));
+  DomainBoundaryParticleProperty::RegisterParticleProperties(PIC::ParticleBuffer::GetI(ptr),xInit,vInit,iOriginIndex,nIntersectionFace);
+
   //update the rigidity data
   if (SampleRigidityMode==true) {
     x=(double*)(ParticleData+InitialLocationOffset);
@@ -131,25 +115,24 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
     Rigidity=*((double*)(ParticleData+InitialRigidityOffset));
 
     //get coordinates of the point of origin of the particle
-    if (Earth::Planet!=NULL) {
+    if ((Earth::Planet!=NULL)&&(CutoffRigidityTable.IsAllocated()==true)) {
       Earth::Planet->GetSurfaceElementProjectionIndex(x,iZenith,iAzimuth);
-      if ((CutoffRigidityTable[spec][iZenith][iAzimuth]<0.0)||(CutoffRigidityTable[spec][iZenith][iAzimuth]>Rigidity)) CutoffRigidityTable[spec][iZenith][iAzimuth]=Rigidity;
+
+      if ((iZenith<0)||(iZenith>=PIC::nTotalSpecies*Earth::Planet->nZenithSurfaceElements)||(iAzimuth<0)||(iAzimuth>=Earth::Planet->nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: out of range");
+
+      double *RigidityTableElement=CutoffRigidityTable.GetPtr(spec,iOriginIndex);
+
+      if ((*RigidityTableElement<0.0)||(*RigidityTableElement>Rigidity)) *RigidityTableElement=Rigidity;
     }
   }
 
-  //register the particle velocity vector
-  int iOriginIndex=0;
-
-  if (Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength!=0) {
-    iOriginIndex=*((int*)(ParticleData+Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex));
-
-    DomainBoundaryParticleProperty::RegisterParticleProperties(PIC::ParticleBuffer::GetI(ptr),xInit,vInit,iOriginIndex,nIntersectionFace);
-
+  //cutoff rigidity at individual locations
+  if ((Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength!=0)&&(IndividualLocations::CutoffRigidityTable.IsAllocated()==true)) {
     if (SampleRigidityMode==true) {
       //sample the cutoff rigidity
-      if ((IndividualLocations::CutoffRigidityTable[spec][iOriginIndex]<0.0)||(Rigidity<IndividualLocations::CutoffRigidityTable[spec][iOriginIndex])) {
-        IndividualLocations::CutoffRigidityTable[spec][iOriginIndex]=Rigidity;
-      }
+      double *RigidityTableElement=IndividualLocations::CutoffRigidityTable.GetPtr(spec,iOriginIndex);
+
+      if ((*RigidityTableElement<0.0)||(Rigidity<*RigidityTableElement)) *RigidityTableElement=Rigidity;
     }
   }
 
@@ -175,13 +158,13 @@ void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long
     Sphere->GetSurfaceElementIndex(iZenith,iAzimuth,nSurfaceElement);
 
     if (PIC::ThisThread!=0) {
-      pipe->send(CutoffRigidityTable[spec][iZenith][iAzimuth]);
+      pipe->send(CutoffRigidityTable(spec,nSurfaceElement));
     }
     else {
       double t;
       int thread;
 
-      SurfaceElementCutoffRigidity=CutoffRigidityTable[spec][iZenith][iAzimuth];
+      SurfaceElementCutoffRigidity=CutoffRigidityTable(spec,nSurfaceElement);
 
       for (thread=1;thread<PIC::nTotalThreads;thread++) {
         t=pipe->recv<double>(thread);
