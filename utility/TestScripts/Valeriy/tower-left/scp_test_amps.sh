@@ -66,6 +66,15 @@ rm -rf test_amps.res
 ls -ltr  *diff > test_amps.res                                              #
 echo '===============================================' >> test_amps.res     # 
 head -100 *diff >> test_amps.res                                            #
+
+cp test_amps.log test_amps.log.bak
+cat test_amps.run.thread1.log >> test_amps.log
+cat test_amps.run.thread2.log >> test_amps.log
+cat test_amps.run.thread3.log >> test_amps.log
+
 scp test_amps.res test_amps.log ${Server}:Sites/Current/valeriy_pgi/  #
+
+mv test_amps.log.bak test_amps.log
+
 cd ../..                                                                   
 
