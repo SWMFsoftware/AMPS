@@ -71,43 +71,6 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(int nlocs) 
       }
     }
   }
-
-
-/*  SampleTable[0]=new cBitwiseFlagTable*** [PIC::nTotalSpecies*nlocs];
-
-  for (offset=0,iTestLocation=0;iTestLocation<nlocs;iTestLocation++) {
-    SampleTable[iTestLocation]=SampleTable[0]+offset;
-    offset+=PIC::nTotalSpecies;
-  }
-
-  SampleTable[0][0]=new cBitwiseFlagTable** [6*PIC::nTotalSpecies*nlocs];
-
-  for (offset=0,iTestLocation=0;iTestLocation<nlocs;iTestLocation++) for (s=0;s<PIC::nTotalSpecies;s++) {
-    SampleTable[iTestLocation][s]=SampleTable[0][0]+offset;
-    offset+=6;
-  }
-
-  SampleTable[0][0][0]=new cBitwiseFlagTable* [6*SampleMaskNumberPerSpatialDirection*PIC::nTotalSpecies*nlocs];
-
-  for (offset=0,iTestLocation=0;iTestLocation<nlocs;iTestLocation++) for (s=0;s<PIC::nTotalSpecies;s++) for (iface=0;iface<6;iface++) {
-    SampleTable[iTestLocation][s][iface]=SampleTable[0][0][0]+offset;
-    offset+=SampleMaskNumberPerSpatialDirection;
-  }
-
-  SampleTable[0][0][0][0]=new cBitwiseFlagTable [6*SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*PIC::nTotalSpecies*nlocs];
-
-  for (offset=0,iTestLocation=0;iTestLocation<nlocs;iTestLocation++) for (s=0;s<PIC::nTotalSpecies;s++) for (iface=0;iface<6;iface++) for (i=0;i<SampleMaskNumberPerSpatialDirection;i++) {
-    SampleTable[iTestLocation][s][iface][i]=SampleTable[0][0][0][0]+offset;
-    offset+=SampleMaskNumberPerSpatialDirection;
-  }
-
-  for (iTestLocation=0;iTestLocation<nlocs;iTestLocation++) {
-    for (s=0;s<PIC::nTotalSpecies;s++) for (iface=0;iface<6;iface++) for (i=0;i<SampleMaskNumberPerSpatialDirection;i++) for (j=0;j<SampleMaskNumberPerSpatialDirection;j++) {
-      for (iThreadOpenMP=0;iThreadOpenMP<SampleTable[iTestLocation][s][iface][i][j].nThreadsOpenMP;iThreadOpenMP++) {
-        SampleTable[iTestLocation][s][iface][i][j].AllocateTable(nAzimuthIntervals*nCosZenithIntervals*nLogEnergyLevels,iThreadOpenMP);
-      }
-    }
-  }*/
 }
 
 //get the global index that corresponds to the velocity vector
@@ -155,12 +118,6 @@ int Earth::CutoffRigidity::DomainBoundaryParticleProperty::GetVelocityVectorInde
 
 void Earth::CutoffRigidity::DomainBoundaryParticleProperty::ConvertVelocityVectorIndex2Velocity(int spec,double *v,int iface,int Index) {
   int idim,iCosZenithInterval,iAzimuthInterval,iLogEnergyLevel;
-
-/*  iAzimuthInterval=Index%nAzimuthIntervals;
-  Index/=nAzimuthIntervals;
-
-  iCosZenithInterval=Index%nCosZenithIntervals;
-  iLogEnergyLevel=Index/nCosZenithIntervals;*/
 
   iLogEnergyLevel=Index/(nCosZenithIntervals*nAzimuthIntervals);
   Index=Index%(nCosZenithIntervals*nAzimuthIntervals);
@@ -348,11 +305,383 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::SmoothSampleTable() 
 }
 
 
+double Earth::CutoffRigidity::DomainBoundaryParticleProperty::GetTotalSourceRate(int spec,int iface,int iTable,int jTable,bool AccountReachabilityFactor) {
+  double lnEmax,lnEmin,f,mass;
+  int iTest;
 
 
+  const int nTotalTests=1000;
 
 
+  double c1=44;
+  double TotalInjectionRate=0.0;
 
+
+  for (iTest=0;iTest<nTotalTests;iTest++) {
+    double f,lnE,theta,phi;
+
+
+    phi=rnd()*2.0*Pi;
+    theta=rnd()*Pi;
+
+    lnE=rnd()*(lnEmax-lnEmin)+lnEmin;
+
+    f = 0.3141592654e1 * exp((double) (2 * lnE)) * (double) (c1 * c1) * (exp((double) lnE) + (double) (2 * c1)) / (exp((double) (5 * lnE)) +
+      0.5e1 * exp((double) (4 * lnE)) * (double) c1 + 0.10e2 * exp((double) (3 * lnE)) * (double) (c1 * c1) + 0.10e2 * exp((double) (2 * lnE)) *
+      (double) (int) pow((double) c1, (double) 3) + 0.5e1 * exp((double) lnE) * (double) (int) pow((double) c1, (double) 4) + (double) c1);
+
+
+    if (AccountReachabilityFactor==true) {
+      double E,speed,v[3];
+      int Index;
+
+      E=exp(lnE);
+      speed=Relativistic::E2Speed(E,mass);
+
+      switch (iface) {
+      case 0:
+        v[0]=speed*cos(theta);
+        v[1]=speed*sin(theta)*cos(phi);
+        v[2]=speed*sin(theta)*sin(phi);
+        break;
+
+      case 1:
+        v[0]=-speed*cos(theta);
+        v[1]=speed*sin(theta)*cos(phi);
+        v[2]=speed*sin(theta)*sin(phi);
+        break;
+
+
+      case 2:
+        v[0]=speed*sin(theta)*cos(phi);
+        v[1]=speed*cos(theta);
+        v[2]=speed*sin(theta)*sin(phi);
+        break;
+
+      case 3:
+        v[0]=speed*sin(theta)*cos(phi);
+        v[1]=-speed*cos(theta);
+        v[2]=speed*sin(theta)*sin(phi);
+        break;
+
+
+      case 4:
+        v[0]=speed*sin(theta)*cos(phi);
+        v[1]=speed*sin(theta)*sin(phi);
+        v[2]=speed*cos(theta);
+        break;
+
+      case 5:
+        v[0]=speed*sin(theta)*cos(phi);
+        v[1]=speed*sin(theta)*sin(phi);
+        v[2]=-speed*cos(theta);
+        break;
+      }
+
+      //convert velocity vector in a index and chack it in the table
+      Index=GetVelocityVectorIndex(spec,v,iface);
+
+      int i,size=SampleTable.size(1);
+      bool flag=false;
+
+
+      for (i=0;i<size;i++) if (SampleTable(spec,i,iface,iTable,jTable).Test(Index)==true) {
+        flag=true;
+        break;
+      }
+
+      if (flag==false) f=0.0;
+    }
+
+    TotalInjectionRate+=f;
+  }
+
+  return TotalInjectionRate/nTotalTests*(lnEmax-lnEmin);
+}
+
+
+bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticleProperty(double *x,double *v,double &WeightCorrectionFactor,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,int spec,int iface,int iTable,int jTable) {
+  double xmin[3],xmax[3],mass;
+  int idim;
+  int NormAxis=-1;
+  double NormAxisDirection=-1.0;
+
+  mass=PIC::MolecularData::GetMass(spec);
+
+  //generate location of the new particle
+  switch (iface) {
+  case 0:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMin[0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMin[0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMin[2]+jTable*dX[iface][2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMin[2]+(jTable+1)*dX[iface][2];
+
+    NormAxis=0,NormAxisDirection=1.0;
+    break;
+
+  case 1:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMax[0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMax[0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMin[2]+jTable*dX[iface][2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMin[2]+(jTable+1)*dX[iface][2];
+
+    NormAxis=0,NormAxisDirection=-1.0;
+    break;
+
+
+  case 2:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMin[2]+jTable*dX[iface][2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMin[2]+(jTable+1)*dX[iface][2];
+
+    NormAxis=1,NormAxisDirection=1.0;
+    break;
+
+  case 3:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMax[1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMax[1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMin[2]+jTable*dX[iface][2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMin[2]+(jTable+1)*dX[iface][2];
+
+    NormAxis=1,NormAxisDirection=-1.0;
+    break;
+
+
+  case 4:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMin[2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMin[2];
+
+    NormAxis=2,NormAxisDirection=1.0;
+    break;
+
+
+  case 5:
+    xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
+    xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
+
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+
+    xmin[2]=PIC::Mesh::mesh.xGlobalMax[2];
+    xmax[2]=PIC::Mesh::mesh.xGlobalMax[2];
+
+    NormAxis=2,NormAxisDirection=-1.0;
+    break;
+  }
+
+
+  for (idim=0;idim<DIM;idim++) x[idim]=xmin[idim]+rnd()*(xmax[idim]-xmin[idim]);
+
+  //determine if the particle belongs to this processor
+  startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+
+
+  //evaluate fmax
+  double f,fmax,E,Emin,Emax,speed,Index,t;
+  static array_4d<double> fMaxTable; //   [spec,iface,iTable,jTable],
+  static array_4d<bool> fMaxInitTable;
+  bool static InitFlag=false;
+
+  if (InitFlag==false) {
+    InitFlag=true;
+
+    fMaxTable.init(PIC::nTotalSpecies,6,SampleMaskNumberPerSpatialDirection,SampleMaskNumberPerSpatialDirection);
+    fMaxInitTable.init(PIC::nTotalSpecies,6,SampleMaskNumberPerSpatialDirection,SampleMaskNumberPerSpatialDirection);
+
+    fMaxTable=0.0;
+    fMaxInitTable=false;
+  }
+
+  if (fMaxInitTable(spec,iface,iTable,jTable)==false) {
+    //evaluate fmax for given spec,iface,iTable,jTable
+    double E,Emin,Emax,speed,Index,t,f;
+    int itest;
+    const int nTotalTests=100000;
+
+    fMaxInitTable(spec,iface,iTable,jTable)=true;
+
+
+    for (itest=0,fmax=0.0;itest<nTotalTests;itest++) {
+      E=Emin+rnd()*(Emax-Emin);
+      speed=Relativistic::E2Speed(E,mass);
+
+      Vector3D::Distribution::Uniform(v,speed);
+
+      if ((t=NormAxisDirection*v[NormAxis])<0.0) v[NormAxis]=t;
+
+      Index=GetVelocityVectorIndex(spec,v,iface);
+
+      int i,size=SampleTable.size(1);
+      bool flag=false;
+
+      for (i=0;i<size;i++) if (SampleTable(spec,i,iface,iTable,jTable).Test(Index)==true) {
+        flag=true;
+        break;
+      }
+
+      if (flag==false) continue;
+
+      f=v[NormAxis]/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+      if (f>fmax) fmax=f;
+    }
+
+    fMaxTable(spec,iface,iTable,jTable)=fmax;
+  }
+
+
+  //generate velocity of the new particle
+  fmax=fMaxTable(spec,iface,iTable,jTable);
+
+  do {
+    E=Emin+rnd()*(Emax-Emin);
+    speed=Relativistic::E2Speed(E,mass);
+
+    Vector3D::Distribution::Uniform(v,speed);
+
+    if ((t=NormAxisDirection*v[NormAxis])<0.0) v[NormAxis]=t;
+
+    Index=GetVelocityVectorIndex(spec,v,iface);
+
+    int i,size=SampleTable.size(1);
+    bool flag=false;
+
+    for (i=0;i<size;i++) if (SampleTable(spec,i,iface,iTable,jTable).Test(Index)==true) {
+      flag=true;
+      break;
+    }
+
+    if (flag==false) continue;
+
+    f=v[NormAxis]/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+  }
+  while (f/fmax<rnd());
+
+
+  WeightCorrectionFactor=1.0;
+}
+
+//=======================================================================================================================
+//inject particles from the boundary of the computational domain
+void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomainBoundary(int spec) {
+  int iTable,jTable,iface,index;
+
+
+  //estimate the total source rate
+
+  auto GetGlobalSampleMaskIndex = [](int iTable,int jTable,int iface) {
+    return iTable+SampleMaskNumberPerSpatialDirection*jTable+SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*iface;
+  };
+
+  auto ProcessGlobalSampleMaskIndex = [&]  (int& iTable,int& jTable,int& iface, int Index) {
+    iface=Index/(SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection);
+
+    Index-=iface*SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection;
+    jTable=Index/SampleMaskNumberPerSpatialDirection;
+    iTable=Index%SampleMaskNumberPerSpatialDirection;
+  };
+
+
+  static bool InitFlag=false;
+  static array_1d<bool> InitFlagTable;
+  static array_1d<cSingleVariableDiscreteDistribution<double> > SampleMaskInjectionProbabilityTable;
+  static array_1d<double> TotalSourceRate;
+
+
+  if (InitFlag==false) {
+    InitFlag=true;
+    InitFlagTable.init(PIC::nTotalSpecies);
+    SampleMaskInjectionProbabilityTable.init(PIC::nTotalSpecies);
+    TotalSourceRate.init(PIC::nTotalSpecies);
+
+    InitFlagTable=false;
+    TotalSourceRate=0.0;
+  }
+
+
+  if (InitFlagTable(spec)==false) {
+    //evaluate the source rate of the eneregetic particles and set up the random unjection face number generators
+    double *SourceRateTable=new double [SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*6];  //[iTable][jTable][iface] -> iTable+SampleMaskNumberPerSpatialDirection*jTable+SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*iface
+
+    InitFlagTable(spec)=true;
+
+    for (iface=0;iface<6;iface++) for (iTable=0;iTable<SampleMaskNumberPerSpatialDirection;iTable++) for (jTable=0;jTable<SampleMaskNumberPerSpatialDirection;jTable++) {
+      index=GetGlobalSampleMaskIndex(iTable,jTable,iface);
+
+      SourceRateTable[index]=GetTotalSourceRate(spec,iface,iTable,jTable,true);
+      TotalSourceRate(spec)+=SourceRateTable[index];
+    }
+
+    SampleMaskInjectionProbabilityTable(spec).InitArray(SourceRateTable,SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*6,SampleMaskNumberPerSpatialDirection*SampleMaskNumberPerSpatialDirection*60);
+
+    delete [] SourceRateTable;
+  }
+
+
+  double ModelParticlesInjectionRate=TotalSourceRate(spec)/PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+  double TimeCounter=0,LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+  double x[3],v[3],WeightCorrectionFactor;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode=NULL;
+
+  if (_SIMULATION_TIME_STEP_MODE_!=_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: the time step mode is not correct");
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_!=_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) exit(__LINE__,__FILE__,"Error: the particle weight mode is not correct");
+
+  //inject particles
+  while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+    index=SampleMaskInjectionProbabilityTable(spec).DistributeVariable();
+    ProcessGlobalSampleMaskIndex(iTable,jTable,iface,index);
+
+
+    if (GeneralParticleProperty(x,v,WeightCorrectionFactor,startNode,spec,iface,iTable,jTable)==true) {
+      //a new particle should be generated
+
+      long int newParticle=PIC::ParticleBuffer::GetNewParticle();
+      PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
+
+      //apply condition of tracking the particle
+      #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+      PIC::ParticleTracker::InitParticleID(newParticleData);
+      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,newParticleData,(void*)startNode);
+      #endif
+
+      //generate particles' velocity
+      PIC::ParticleBuffer::SetX(x,newParticleData);
+      PIC::ParticleBuffer::SetV(v,newParticleData);
+      PIC::ParticleBuffer::SetI(spec,newParticleData);
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+
+      //inject the particle into the system
+      PIC::Mover::Relativistic::Boris(newParticle,LocalTimeStep-TimeCounter,startNode);
+    }
+  }
+}
+
+void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomainBoundary() {
+  for (int spec=0;spec<PIC::nTotalSpecies;spec++) InjectParticlesDomainBoundary(spec);
+}
 
 
 
