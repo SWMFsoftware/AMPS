@@ -8,9 +8,14 @@ echo -n "Compiling PGI....."
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS  
 make test_compile >>& test_amps.log
 
-
 echo " done."
 
 echo -n "Executing tests PGI....."
-make TESTMPIRUN4="mpirun -np 4" MPIRUN="mpirun -np 4" test_run >>& test_amps.log
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=3
+mv Makefile.test.split Makefile.test
+
+make TESTMPIRUN4="mpirun -np 4" MPIRUN="mpirun -np 4" test_run_thread1  >& test_amps.run.thread1.log & 
+make TESTMPIRUN4="mpirun -np 4" MPIRUN="mpirun -np 4" test_run_thread2  >& test_amps.run.thread2.log & 
+make TESTMPIRUN4="mpirun -np 4" MPIRUN="mpirun -np 4" test_run_thread3  >& test_amps.run.thread3.log & 
+
 echo " done."

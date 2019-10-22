@@ -17,6 +17,10 @@ while ($line=<fIn>) {
 close (fIn);
 close (fOut);
 
+if ($nthreads==0) {
+  die "The number of threads is not defined (should be defined as -nthreads=\[\] in the argiment line\n"; 
+}
+
 print "The total number of test: $nTotalTests\n";
 print "Execution thread number: $nthreads\n"; 
 
@@ -34,7 +38,7 @@ my ($l0,$l1);
 $l0=<fIn>; 
 
 while ($l1=<fIn>) {
-  if ($l1=~m/test_run:/) {
+  if ($l1=~m/^test_run:/) {
     $l1="test_run_thread1:\n";
   }
 

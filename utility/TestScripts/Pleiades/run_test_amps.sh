@@ -144,7 +144,6 @@ echo -n "Set Exeptions....."
 
 #>Pleiades ##############################################
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                   #
-./Config.pl -install -compiler=ifort,icc
 ./Config.pl -cpp-link-option=-lmpi,-lmpi++,-lpthread 
 ./Config.pl -f-link-option=-lmpi,-lmpi++                     #
 ./Config.pl -cpplib-rm=-lmpi_cxx
