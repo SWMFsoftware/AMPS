@@ -640,7 +640,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
       fprintf(fout2d_spectrum[spec],"VARIABLES=\"Lon\", \"Lat\"");
 
       for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) {
-        fprintf(fout2d_spectrum[spec],",  \"(%e[MeV]<E<%e[MeV])\"",spec,pow(iE*dE+logMinEnergyLimit,10),pow((iE+1)*dE+logMinEnergyLimit,10));
+        fprintf(fout2d_spectrum[spec],",  \"(%e[MeV]<E<%e[MeV])\"",pow(iE*dE+logMinEnergyLimit,10),pow((iE+1)*dE+logMinEnergyLimit,10));
       }
 
       fprintf(fout2d_spectrum[spec],"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
