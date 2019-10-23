@@ -88,6 +88,30 @@ public:
     init(n0,n1,n2,n3,n4);
   };
 
+  int size(int i) {
+    int res;
+
+    switch (i) {
+    case 0:
+      res=size_dim0;
+      break;
+    case 1:
+      res=size_dim1;
+      break;
+    case 2:
+      res=size_dim2;
+      break;
+    case 3:
+      res=size_dim3;
+      break;
+    case 4:
+      res=size_dim4;
+      break;
+    }
+
+    return res;
+  }
+
 //===================================================
   T   operator () (int i0,int i1,int i2,int i3,int i4) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)||(i4<0)||(i4>=size_dim4)) exit(__LINE__,__FILE__,"Error: out of range");
