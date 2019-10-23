@@ -50,7 +50,10 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_CG-PostProcess--Read-Trajectories--off.diff/test_CG-PostProcess--Read-Trajectories--off_check",
 "test_Earth.diff/test_Earth_check",
 "test_Europa-test1.diff/test_Europa-test1_check",
-"test_Individual_Trajectories--Lapenta2017\\[?\\].diff/test_Individual_Trajectories--Lapenta2017_check");
+"test_Individual_Trajectories--Lapenta2017\\[?\\].diff/test_Individual_Trajectories--Lapenta2017_check",
+"test_Mover-Lapenta2017.diff/test_Mover-Lapenta2017_check",
+"test_Mars-Hot-Oxygen.diff/test_Mars-Hot-Oxygen_check",
+"test_Venus-Hot-Oxygen.diff/test_Venus-Hot-Oxygen_check");
 
 
 my ($fname,$target,$pair,$size,$cmd);
