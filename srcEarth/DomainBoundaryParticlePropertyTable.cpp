@@ -26,7 +26,7 @@ double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dCosZenithAngle=1.
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dAzimuthAngle=2.0*Pi/Earth::CutoffRigidity::DomainBoundaryParticleProperty::nAzimuthIntervals;
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dLogE=(logEmax-logEmin)/Earth::CutoffRigidity::DomainBoundaryParticleProperty::nLogEnergyLevels;
 
-double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[6][2];
+double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[6][3]={{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0}};
 array_5d<cBitwiseFlagTable> Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable;
 //cBitwiseFlagTable Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable[PIC::nTotalSpecies][6][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection];
 
@@ -150,16 +150,19 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Init() {
   for (iface=0;iface<6;iface++) {
     switch (iface) {
     case 0:case 1:
-      dX[iface][0]=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/SampleMaskNumberPerSpatialDirection;
-      dX[iface][1]=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
+      dX[iface][0]=0.0;
+      dX[iface][1]=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/SampleMaskNumberPerSpatialDirection;
+      dX[iface][2]=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
       break;
     case 2:case 3:
       dX[iface][0]=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/SampleMaskNumberPerSpatialDirection;
-      dX[iface][1]=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
+      dX[iface][1]=0.0;
+      dX[iface][2]=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
       break;
     case 4:case 5:
       dX[iface][0]=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/SampleMaskNumberPerSpatialDirection;
       dX[iface][1]=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/SampleMaskNumberPerSpatialDirection;
+      dX[iface][2]=0.0;
       break;
     }
   }
@@ -312,23 +315,65 @@ double Earth::CutoffRigidity::DomainBoundaryParticleProperty::GetTotalSourceRate
 
   const int nTotalTests=1000;
 
+  mass=PIC::MolecularData::GetMass(spec);
 
-  double c1=44;
+  double c1=mass*pow(SpeedOfLight,2);
   double TotalInjectionRate=0.0;
 
+  lnEmin=log(Earth::Sampling::Fluency::minSampledEnergy);
+  lnEmax=log(Earth::Sampling::Fluency::maxSampledEnergy);
+
+  //intefrate the differential flux to calcualte the total source rate
+  int nIntervals=10000;
+  double lx,ly,lz,dE=(Earth::Sampling::Fluency::maxSampledEnergy-Earth::Sampling::Fluency::minSampledEnergy)/nIntervals;
+  double TotalIntegral=0.0,LimitedIntegral=0.0;
+
+  for (int i=0;i<nIntervals;i++) {
+    double E,DiffFlux;
+
+    E=(i+0.5)*dE+Earth::Sampling::Fluency::minSampledEnergy;
+    DiffFlux=GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+
+    TotalInjectionRate+=DiffFlux*dE;
+  }
+
+  switch (iface) {
+  case 0:case 1:
+    ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/SampleMaskNumberPerSpatialDirection;
+    lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
+
+    TotalInjectionRate*=ly*lz;
+    break;
+  case 2:case 3:
+    lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/SampleMaskNumberPerSpatialDirection;
+    lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/SampleMaskNumberPerSpatialDirection;
+
+    TotalInjectionRate*=lx*lz;
+    break;
+  case 4:case 5:
+    lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/SampleMaskNumberPerSpatialDirection;
+    ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/SampleMaskNumberPerSpatialDirection;
+
+    TotalInjectionRate*=ly*lz;
+  }
 
   for (iTest=0;iTest<nTotalTests;iTest++) {
-    double f,lnE,theta,phi;
+    double f,lnE,theta,phi,E;
 
 
     phi=rnd()*2.0*Pi;
     theta=rnd()*Pi;
 
     lnE=rnd()*(lnEmax-lnEmin)+lnEmin;
+    E=exp(lnE);
 
-    f = 0.3141592654e1 * exp((double) (2 * lnE)) * (double) (c1 * c1) * (exp((double) lnE) + (double) (2 * c1)) / (exp((double) (5 * lnE)) +
-      0.5e1 * exp((double) (4 * lnE)) * (double) c1 + 0.10e2 * exp((double) (3 * lnE)) * (double) (c1 * c1) + 0.10e2 * exp((double) (2 * lnE)) *
-      (double) (int) pow((double) c1, (double) 3) + 0.5e1 * exp((double) lnE) * (double) (int) pow((double) c1, (double) 4) + (double) c1);
+
+    f = exp( (2 * lnE)) * 0.3141592654e1 *  (c1 * c1) * (exp( lnE) +  (2 * c1)) * pow(exp( lnE) * (exp( lnE) +  (2 * c1)),
+        -0.1e1 / 0.2e1) / (exp( (4 * lnE)) + 0.4e1 * exp( (3 * lnE)) *  c1 + 0.6e1 * exp( (2 * lnE)) *  (c1 * c1) +
+            0.4e1 * exp( lnE) *  pow( c1,  3) +  pow( c1,  4));
+
+    f*=GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+    TotalIntegral+=f;
 
 
     if (AccountReachabilityFactor==true) {
@@ -382,25 +427,25 @@ double Earth::CutoffRigidity::DomainBoundaryParticleProperty::GetTotalSourceRate
       Index=GetVelocityVectorIndex(spec,v,iface);
 
       int i,size=SampleTable.size(1);
-      bool flag=false;
-
 
       for (i=0;i<size;i++) if (SampleTable(spec,i,iface,iTable,jTable).Test(Index)==true) {
-        flag=true;
+        LimitedIntegral+=f;
         break;
       }
-
-      if (flag==false) f=0.0;
     }
-
-    TotalInjectionRate+=f;
   }
 
-  return TotalInjectionRate/nTotalTests*(lnEmax-lnEmin);
+
+  double GlobalTotalIntegral,GlobalLimitedIntegral;
+
+  MPI_Allreduce(&TotalIntegral,&GlobalTotalIntegral,1,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&LimitedIntegral,&GlobalLimitedIntegral,1,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  return TotalInjectionRate*GlobalLimitedIntegral/GlobalTotalIntegral;
 }
 
 
-bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticleProperty(double *x,double *v,double &WeightCorrectionFactor,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,int spec,int iface,int iTable,int jTable) {
+bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GenerateParticleProperty(double *x,double *v,double &WeightCorrectionFactor,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,int spec,int iface,int iTable,int jTable) {
   double xmin[3],xmax[3],mass;
   int idim;
   int NormAxis=-1;
@@ -468,8 +513,8 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
     xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
     xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
 
-    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
-    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+jTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(jTable+1)*dX[iface][1];
 
     xmin[2]=PIC::Mesh::mesh.xGlobalMin[2];
     xmax[2]=PIC::Mesh::mesh.xGlobalMin[2];
@@ -482,18 +527,20 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
     xmin[0]=PIC::Mesh::mesh.xGlobalMin[0]+iTable*dX[iface][0];
     xmax[0]=PIC::Mesh::mesh.xGlobalMin[0]+(iTable+1)*dX[iface][0];
 
-    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+iTable*dX[iface][1];
-    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(iTable+1)*dX[iface][1];
+    xmin[1]=PIC::Mesh::mesh.xGlobalMin[1]+jTable*dX[iface][1];
+    xmax[1]=PIC::Mesh::mesh.xGlobalMin[1]+(jTable+1)*dX[iface][1];
 
     xmin[2]=PIC::Mesh::mesh.xGlobalMax[2];
     xmax[2]=PIC::Mesh::mesh.xGlobalMax[2];
 
-    NormAxis=2,NormAxisDirection=-1.0;
+    NormAxis=2,NormAxisDirection=-1;
     break;
   }
 
 
   for (idim=0;idim<DIM;idim++) x[idim]=xmin[idim]+rnd()*(xmax[idim]-xmin[idim]);
+
+  x[NormAxis]+=NormAxisDirection*PIC::Mesh::mesh.EPS;
 
   //determine if the particle belongs to this processor
   startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
@@ -501,10 +548,13 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
 
 
   //evaluate fmax
-  double f,fmax,E,Emin,Emax,speed,Index,t;
+  double f,fmax,E,speed,Index,t;
   static array_4d<double> fMaxTable; //   [spec,iface,iTable,jTable],
   static array_4d<bool> fMaxInitTable;
   bool static InitFlag=false;
+
+  static double lnEmin=log(Earth::Sampling::Fluency::minSampledEnergy);
+  static double lnEmax=log(Earth::Sampling::Fluency::maxSampledEnergy);
 
   if (InitFlag==false) {
     InitFlag=true;
@@ -518,20 +568,18 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
 
   if (fMaxInitTable(spec,iface,iTable,jTable)==false) {
     //evaluate fmax for given spec,iface,iTable,jTable
-    double E,Emin,Emax,speed,Index,t,f;
     int itest;
-    const int nTotalTests=100000;
+    const int nTotalTests=1000000;
 
     fMaxInitTable(spec,iface,iTable,jTable)=true;
 
-
     for (itest=0,fmax=0.0;itest<nTotalTests;itest++) {
-      E=Emin+rnd()*(Emax-Emin);
+      E=exp(lnEmin+rnd()*(lnEmax-lnEmin));
       speed=Relativistic::E2Speed(E,mass);
 
       Vector3D::Distribution::Uniform(v,speed);
 
-      if ((t=NormAxisDirection*v[NormAxis])<0.0) v[NormAxis]=t;
+      if (NormAxisDirection*v[NormAxis]<0.0) v[NormAxis]=-v[NormAxis];
 
       Index=GetVelocityVectorIndex(spec,v,iface);
 
@@ -545,7 +593,7 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
 
       if (flag==false) continue;
 
-      f=v[NormAxis]/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+      f=fabs(v[NormAxis])/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
       if (f>fmax) fmax=f;
     }
 
@@ -556,13 +604,15 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
   //generate velocity of the new particle
   fmax=fMaxTable(spec,iface,iTable,jTable);
 
+  if (fmax==0.0) return false;
+
   do {
-    E=Emin+rnd()*(Emax-Emin);
+    E=exp(lnEmin+rnd()*(lnEmax-lnEmin));
     speed=Relativistic::E2Speed(E,mass);
 
     Vector3D::Distribution::Uniform(v,speed);
 
-    if ((t=NormAxisDirection*v[NormAxis])<0.0) v[NormAxis]=t;
+    if (NormAxisDirection*v[NormAxis]<0.0) v[NormAxis]=-v[NormAxis];
 
     Index=GetVelocityVectorIndex(spec,v,iface);
 
@@ -574,14 +624,13 @@ bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::GeneralParticlePrope
       break;
     }
 
-    if (flag==false) continue;
-
-    f=v[NormAxis]/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E);
+    f=(flag==true) ? fabs(v[NormAxis])/speed*GCR_BADAVI2011ASR::Hydrogen::GetDiffFlux(E) : 0.0;
   }
   while (f/fmax<rnd());
 
 
   WeightCorrectionFactor=1.0;
+  return true;
 }
 
 //=======================================================================================================================
@@ -650,12 +699,12 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_!=_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) exit(__LINE__,__FILE__,"Error: the particle weight mode is not correct");
 
   //inject particles
-  while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>0.0) while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
     index=SampleMaskInjectionProbabilityTable(spec).DistributeVariable();
     ProcessGlobalSampleMaskIndex(iTable,jTable,iface,index);
 
 
-    if (GeneralParticleProperty(x,v,WeightCorrectionFactor,startNode,spec,iface,iTable,jTable)==true) {
+    if (GenerateParticleProperty(x,v,WeightCorrectionFactor,startNode,spec,iface,iTable,jTable)==true) {
       //a new particle should be generated
 
       long int newParticle=PIC::ParticleBuffer::GetNewParticle();
@@ -671,7 +720,10 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
       PIC::ParticleBuffer::SetX(x,newParticleData);
       PIC::ParticleBuffer::SetV(v,newParticleData);
       PIC::ParticleBuffer::SetI(spec,newParticleData);
-      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+
+      if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_==_INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+        PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+      }
 
       //inject the particle into the system
       PIC::Mover::Relativistic::Boris(newParticle,LocalTimeStep-TimeCounter,startNode);
