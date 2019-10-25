@@ -808,12 +808,16 @@ int main(int argc,char **argv) {
 if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
   int nMaxIterations=10000; //000;
 
-  //estimate the total flux and rigidity in a set of the defined locations
-
+  //estimate the total flux and rigidity at a sphere
   SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
 
+  //start forward integration
+  Earth::ForwardParticleModeling(20000);
 
-  SampleIndividualLocations(nMaxIterations);
+
+
+
+ // SampleIndividualLocations(nMaxIterations);
 
 
 
