@@ -141,6 +141,9 @@ namespace Earth {
   //particle mover: call Boris-relativistic, and sample particles that intersects the sampling shells
   int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
+  //simulate proparatino of the energetic partilces starting from the boundary of the computational domain
+  //limiting the fistribution of these particles by those that can reach the point of observations
+  void ForwardParticleModeling(int nTotalInteractions);
 
 
   //calculation of the cutoff rigidity
@@ -234,11 +237,11 @@ namespace Earth {
 
       const int SampleMaskNumberPerSpatialDirection=5;
       extern array_5d<cBitwiseFlagTable> SampleTable;//[PIC::nTotalSpecies][6][SampleMaskNumberPerSpatialDirection][SampleMaskNumberPerSpatialDirection];
-      extern double dX[6][2]; //spatial size corresponding to SampleTable
+      extern double dX[6][3]; //spatial size corresponding to SampleTable
 
       //calculate the total source rate from the surface sampling elment
       double GetTotalSourceRate(int spec,int iface,int iTable,int jTable,bool AccountReachabilityFactor);
-      bool GeneralParticleProperty(double *x,double *v,double &WeightCorrectionFactor,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,int spec,int iface,int iTable,int jTable);
+      bool GenerateParticleProperty(double *x,double *v,double &WeightCorrectionFactor,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,int spec,int iface,int iTable,int jTable);
       void InjectParticlesDomainBoundary();
       void InjectParticlesDomainBoundary(int spec);
 
