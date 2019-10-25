@@ -12,6 +12,7 @@
 #include "pic.h"
 #include "Earth.h"
 
+void amps_time_step();
 
 
 char Earth::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
@@ -172,7 +173,7 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
   switch (PIC::ParticleBuffer::GetI(ptr)) {
   case _ELECTRON_SPEC_:
 //    res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
-res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
     break;
   default:
@@ -459,4 +460,63 @@ void Earth::Init() {
   if (_PIC_EARTH_ELECTRON__MODE_==_PIC_MODE_ON_) BoundingBoxInjection::Electrons::Init();
 }
 
+//forward integration of the energetic particles starting from the boundary of the computational domain
+void Earth::ForwardParticleModeling(int nTotalInteractions) {
+
+  //only forward modeling is allowed
+  PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
+
+
+  if (_SIMULATION_TIME_STEP_MODE_!=_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: the time step mode is not correct");
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_!=_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) exit(__LINE__,__FILE__,"Error: the particle weight mode is not correct");
+
+  //set the global particle weight
+  int spec,iface,iTable,jTable;
+
+  const int nInjectedParticlesPerIteration=1000;
+
+  for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+    double TotalSourceRate=0.0;
+
+    for (iface=0;iface<6;iface++) {
+      for (iTable=0;iTable<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;iTable++) {
+        for (jTable=0;jTable<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;jTable++) {
+          TotalSourceRate+=Earth::CutoffRigidity::DomainBoundaryParticleProperty::GetTotalSourceRate(spec,iface,iTable,jTable,true);
+        }
+      }
+    }
+
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=(TotalSourceRate>0.0) ? TotalSourceRate*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/nInjectedParticlesPerIteration : 0.0;
+  }
+
+
+  //perform particle transport modeling
+  int LastDataOutputFileNumber=0;
+
+  PIC::RequiredSampleLength=0.3*nTotalInteractions;
+
+  for (int niter=0;niter<nTotalInteractions;niter++) {
+    Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomainBoundary();
+    amps_time_step();
+
+    if (PIC::Mesh::mesh.ThisThread==0) {
+      time_t TimeValue=time(NULL);
+      tm *ct=localtime(&TimeValue);
+      printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
+       ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
+       PIC::RequiredSampleLength,
+       PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+    }
+
+     if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
+       PIC::RequiredSampleLength*=2;
+       if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
+
+
+       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
+       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+     }
+  }
+
+}
 
