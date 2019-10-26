@@ -25,7 +25,7 @@ if($hostname_full =~ m/yslogin(.*)/){
   $hostname = $Yellowstone;
 }
 
-if($hostname_full =~ m/srbwks2014-0079.engin.umich.edu/) {
+if($hostname_full =~ m/csrwks2014-0079.engin.umich.edu/) {
   $hostname = "valeriy";
 }
 
