@@ -4130,6 +4130,9 @@ namespace PIC {
     bool InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
     void FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
+    //verify that the number of particles in the lists is the same as the number of used particles in the buffer
+    void VerifyTotalParticleNumber(int line,const char* fname);
+
     //check is a variable value is within an allowed range
     const double minAllowedValue=1.0E-80;
     const double maxAllowedValue=1.0E80;
