@@ -3150,6 +3150,8 @@ namespace PIC {
     extern bool SupressOutputFlag,SupressRestartFilesFlag;
     extern int SkipOutputStep;
 
+    //switch to temporary disable/enable sampling procedure
+    extern bool RuntimeSamplingSwitch;
 
     void Sampling();
     void CatchOutLimitSampledValue();

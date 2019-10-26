@@ -59,4 +59,6 @@ vector<PIC::RunTimeSystemState::CumulativeTiming::fPrintTiming> PIC::RunTimeSyst
 bool PIC::Sampling::SupressOutputFlag=false,PIC::Sampling::SupressRestartFilesFlag=false;
 int PIC::Sampling::SkipOutputStep=1;
 
+//switch to temporary disable/enable sampling procedure
+bool PIC::Sampling::RuntimeSamplingSwitch=true;
 
