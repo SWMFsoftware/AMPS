@@ -1279,11 +1279,11 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
 
 //=======================================================================================
 //verify that the number of particles in the lists is the same as the number of used particles in the buffer
-void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname) {
+void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool CurrentThreadOnly) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int ptr,i,j,k,nTotalParticles=0;
 
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if ((node->block!=NULL) && ((CurrentThreadOnly==false)||(node->Thread==PIC::ThisThread)) ) {
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -1293,8 +1293,6 @@ void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname) {
             nTotalParticles++;
             ptr=PIC::ParticleBuffer::GetNext(ptr);
           }
-
-          node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
         }
       }
     }

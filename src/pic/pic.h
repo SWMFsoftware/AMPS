@@ -4131,7 +4131,7 @@ namespace PIC {
     void FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
     //verify that the number of particles in the lists is the same as the number of used particles in the buffer
-    void VerifyTotalParticleNumber(int line,const char* fname);
+    void VerifyTotalParticleNumber(int line,const char* fname,bool CurrentThreadOnly=false);
 
     //check is a variable value is within an allowed range
     const double minAllowedValue=1.0E-80;
