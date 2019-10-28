@@ -775,7 +775,8 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   //delete all particles that still present in the system
   PIC::ParticleBuffer::DeleteAllParticles();
-  Earth::CutoffRigidity::CutoffRigidityTable.Deallocate();
+//  Earth::CutoffRigidity::CutoffRigidityTable.Deallocate();
+  Earth::CutoffRigidity::CutoffRigidityTable=0.0;
 }
 
 
@@ -808,10 +809,16 @@ int main(int argc,char **argv) {
 if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
   int nMaxIterations=10000; //000;
 
+  //disable sampling
+  PIC::Sampling::RuntimeSamplingSwitch=false;
+
   //estimate the total flux and rigidity at a sphere
   SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
 
   //start forward integration
+  //enable sampling
+
+  PIC::Sampling::RuntimeSamplingSwitch=true;
   Earth::ForwardParticleModeling(20000);
 
 
