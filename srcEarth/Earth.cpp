@@ -466,6 +466,9 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
   //only forward modeling is allowed
   PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
 
+  //do not sample the cutoff rigidity when processing particles that cross boundary of the domain
+  Earth::CutoffRigidity::SampleRigidityMode=false;
+
 
   if (_SIMULATION_TIME_STEP_MODE_!=_SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: the time step mode is not correct");
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_!=_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) exit(__LINE__,__FILE__,"Error: the particle weight mode is not correct");
@@ -473,7 +476,7 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
   //set the global particle weight
   int spec,iface,iTable,jTable;
 
-  const int nInjectedParticlesPerIteration=1000;
+  const int nInjectedParticlesPerIteration=10;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {
     double TotalSourceRate=0.0;
@@ -491,9 +494,10 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
 
 
   //perform particle transport modeling
-  int LastDataOutputFileNumber=0;
+  int LastDataOutputFileNumber=PIC::DataOutputFileNumber;
 
   PIC::RequiredSampleLength=0.3*nTotalInteractions;
+  PIC::CollectingSampleCounter=0;
 
   for (int niter=0;niter<nTotalInteractions;niter++) {
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomainBoundary();
@@ -509,8 +513,8 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
     }
 
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-       PIC::RequiredSampleLength*=2;
-       if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
+//       PIC::RequiredSampleLength*=2;
+//       if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
