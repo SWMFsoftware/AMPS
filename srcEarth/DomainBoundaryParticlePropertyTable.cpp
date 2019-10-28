@@ -706,8 +706,12 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
 
     if (GenerateParticleProperty(x,v,WeightCorrectionFactor,startNode,spec,iface,iTable,jTable)==true) {
       //a new particle should be generated
+      int iCell,jCell,kCell;
+      long int newParticle;
 
-      long int newParticle=PIC::ParticleBuffer::GetNewParticle();
+      PIC::Mesh::mesh.fingCellIndex(x,iCell,jCell,kCell,startNode);
+
+      newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
       PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
       //apply condition of tracking the particle
@@ -725,8 +729,8 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
         PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
       }
 
-      //inject the particle into the system
-      PIC::Mover::Relativistic::Boris(newParticle,LocalTimeStep-TimeCounter,startNode);
+//      //inject the particle into the system
+//      Earth::ParticleMover(newParticle,LocalTimeStep-TimeCounter,startNode);
     }
   }
 }
