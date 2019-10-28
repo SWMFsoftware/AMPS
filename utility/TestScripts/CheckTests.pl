@@ -45,6 +45,7 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_SC-Cont\\[?\\].diff/test_SC-Cont_check",
 "test_Titan.diff/test_Titan_check",
 "test_Collision-Test-NTC.diff/test_Collision-Test-NTC_check",
+"test_Collision-Test-MF.diff/test_Collision-Test-MF_check",
 "test_Enceladus.diff/test_Enceladus_check",
 "test_linear-system-solver-openmp.diff/test_linear-system-solver-openmp_check",
 "test_CG-PostProcess--Read-Trajectories--off.diff/test_CG-PostProcess--Read-Trajectories--off_check",
@@ -53,7 +54,10 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_Individual_Trajectories--Lapenta2017\\[?\\].diff/test_Individual_Trajectories--Lapenta2017_check",
 "test_Mover-Lapenta2017.diff/test_Mover-Lapenta2017_check",
 "test_Mars-Hot-Oxygen.diff/test_Mars-Hot-Oxygen_check",
-"test_Venus-Hot-Oxygen.diff/test_Venus-Hot-Oxygen_check");
+"test_Venus-Hot-Oxygen.diff/test_Venus-Hot-Oxygen_check",
+"test_Mover-guiding-center.diff/test_Mover-guiding-center_check",
+"test_model-dust.diff/test_model-dust_check",
+"test_periodic-bc-gmres.diff/test_periodic-bc-gmres_check");
 
 
 my ($fname,$target,$pair,$size,$cmd);
