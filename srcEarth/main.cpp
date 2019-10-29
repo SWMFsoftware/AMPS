@@ -114,7 +114,7 @@ void SampleIndividualLocations(int nMaxIterations) {
               if (Earth::CutoffRigidity::InitialRigidityOffset!=-1) {
                 double momentum,charge,rigidity;
 
-                charge=PIC::MolecularData::GetElectricCharge(spec);
+                charge=fabs(PIC::MolecularData::GetElectricCharge(spec));
 
                 momentum=Relativistic::Speed2Momentum(speed,mass);
                 rigidity=(charge>0.0) ? momentum/charge : 0.0;
@@ -492,7 +492,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           if (Earth::CutoffRigidity::InitialRigidityOffset!=-1) {
             double momentum,charge,rigidity;
 
-            charge=PIC::MolecularData::GetElectricCharge(spec);
+            charge=fabs(PIC::MolecularData::GetElectricCharge(spec));
 
             momentum=Relativistic::Speed2Momentum(speed,mass);
             rigidity=(charge>0.0) ? momentum/charge : 0.0;

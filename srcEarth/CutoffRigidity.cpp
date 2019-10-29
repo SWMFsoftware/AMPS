@@ -220,7 +220,7 @@ bool Earth::CutoffRigidity::ParticleInjector::GenerateParticleProperties(int spe
   double mass,speed,energy,rigidity,momentum,charge;
 
   mass=PIC::MolecularData::GetMass(spec);
-  charge=PIC::MolecularData::GetElectricCharge(spec);
+  charge=fabs(PIC::MolecularData::GetElectricCharge(spec));
 
   static double logRigidityTestMinEnergy=log(RigidityTestMinEnergy);
   static double logRigidityTestMaxEnergy=log(RigidityTestMaxEnergy);
