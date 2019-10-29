@@ -782,7 +782,7 @@ void PIC::Sampling::Sampling() {
             for (i=0;i<_BLOCK_CELLS_X_;i++) {
               ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-              if (ptr!=-1) {
+              while (ptr!=-1) {
                 node->ParallelLoadMeasure++;
                 nTotalParticleNumber++;
                 ptr=PIC::ParticleBuffer::GetNext(ptr);
