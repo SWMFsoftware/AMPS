@@ -557,6 +557,13 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable,TotalFlux,EnergySpectrum)
 #endif
    */
+
+
+
+  TotalFlux=0.0;
+  EnergySpectrum=0.0;
+
+
   for (int iZenithElement=0;iZenithElement<nZenithElements;iZenithElement++) for (int iAzimutalElement=0;iAzimutalElement<nAzimuthalElements;iAzimutalElement++) {
     iLocation=Sphere.GetLocalSurfaceElementNumber(iZenithElement,iAzimutalElement);
 
@@ -564,6 +571,29 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
       for (iface=0;iface<6;iface++) {
         //surface area of the element of the surface mesh that covers the boundary of the computational domain
         dSurface=Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][0]*Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][1];
+
+        double lx,ly,lz;
+
+        switch (iface) {
+        case 0:case 1:
+          ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+          dSurface=ly*lz;
+          break;
+        case 2:case 3:
+          lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+          dSurface=lx*lz;
+          break;
+        case 4:case 5:
+          lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+          dSurface=ly*lz;
+        }
+
 
         //loop through the mesh that covers face 'iface' on the computational domain
         for (iTable=0;iTable<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;iTable++) {
@@ -741,7 +771,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
         //normalize the energy spectrum
         for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) norm+=LocalEnergySpectrum(iE)*(pow((iE+1)*dE+logMinEnergyLimit,10)-pow(iE*dE+logMinEnergyLimit,10));
-        for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) LocalEnergySpectrum(iE)/=norm;
+        if (norm>0.0) for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) LocalEnergySpectrum(iE)/=norm;
 
 
         fprintf(fout2d_rigidity,"  %e",minElementRigidity);
