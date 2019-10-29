@@ -52,13 +52,6 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
   PIC::CPLR::InitInterpolationStencil(x,startNode);
   PIC::CPLR::GetBackgroundElectricField(E);
   PIC::CPLR::GetBackgroundMagneticField(B);
-
-  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-  if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-    for (int idim=0;idim<3;idim++) B[idim]=-B[idim];
-  }
-  #endif
-
 #endif//_PIC_COUPLER_MODE_
   
   //......................................................................
@@ -122,12 +115,6 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   PIC::ParticleBuffer::GetX(xInit,ParticleData);
   spec=PIC::ParticleBuffer::GetI(ParticleData);
 
-#if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-  for (int idim=0;idim<3;idim++) vInit[idim]=-vInit[idim];
-}
-#endif
-
   //the description of the boundaries of the block faces
   struct cExternalBoundaryFace {
     double norm[3];
@@ -187,6 +174,18 @@ if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
    ****************************************************************/
   double u[3]={0.0,0.0,0.0}, U[3]={0.0,0.0,0.0},dtTempOverTwo,dtTemp;
 
+  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
+  switch (BackwardTimeIntegrationMode) {
+  case _PIC_MODE_ON_ :
+    dtTemp=-dtTotal,dtTempOverTwo=-dtTotal/2.0;
+    break;
+  default:
+    dtTemp=dtTotal,dtTempOverTwo=dtTotal/2.0;
+  }
+  #else
+  dtTemp=dtTotal,dtTempOverTwo=dtTotal/2.0;
+  #endif
+
   u[0]=vInit[0]+dtTempOverTwo*acclInit[0];
   u[1]=vInit[1]+dtTempOverTwo*acclInit[1];
   u[2]=vInit[2]+dtTempOverTwo*acclInit[2];
@@ -211,12 +210,6 @@ if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
   xFinal[1]=xInit[1]+dtTemp*vFinal[1];
   xFinal[2]=xInit[2]+dtTemp*vFinal[2];
   
-#if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-  for (int idim=0;idim<3;idim++) vInit[idim]=-vInit[idim];
-}
-#endif
-
   
 
   //rotate the final position
@@ -552,12 +545,6 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   PIC::CPLR::GetBackgroundElectricField(E);
   PIC::CPLR::GetBackgroundMagneticField(B);
 
-  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-  if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-    for (int idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
-  }
-  #endif
-
   double v_prime[3],QdT_over_m,QdT_over_2m;
 
   QdT_over_m=PIC::MolecularData::GetElectricCharge(spec)*dtTotal/PIC::MolecularData::GetMass(spec);
@@ -577,12 +564,6 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
     vFinal[idim]=Denominator*(v_prime[idim]+QdT_over_2m*n1[idim]+n2*B[idim]);
     xFinal[idim]=xInit[idim]+dtTotal*vFinal[idim];
   }
-
-  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-  if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-    for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim];
-  }
-  #endif
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
@@ -832,12 +813,6 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   PIC::CPLR::GetBackgroundElectricField(E);
   PIC::CPLR::GetBackgroundMagneticField(B);
 
-  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-  if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-    for (int idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
-  }
-  #endif
-
   #else //_PIC_FIELD_SOLVER_MODE__OFF_
 
   int threadId = 0;
@@ -947,13 +922,6 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   //advance the particle location
   for (idim=0;idim<3;idim++) xFinal[idim]=xInit[idim]+dtTotal*vFinal[idim];
-
-  #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-  if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-    for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim];
-  }
-  #endif
-
 
   newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
 
