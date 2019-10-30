@@ -1587,7 +1587,7 @@ Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
-Ref=6{icc}@@(0+stampede)
+Ref=4{icc}@@(0+stampede)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+pleiades)
@@ -1620,7 +1620,7 @@ Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
-Ref=6{icc}@@(0+stampede)
+Ref=4{icc}@@(0+stampede)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+pleiades)
@@ -1654,7 +1654,7 @@ Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
-Ref=6{icc}@@(0+stampede)
+Ref=4{icc}@@(0+stampede)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+pleiades)
@@ -1685,7 +1685,7 @@ Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
-Ref=6{icc}@@(0+stampede)
+Ref=4{icc}@@(0+stampede)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+pleiades)
