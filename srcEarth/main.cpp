@@ -329,7 +329,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
           //normalize the energy spectrum
           for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) norm+=EnergySpectrum(iTestsLocation,spec,iE)*dE;
-          if (norm>0) for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) EnergySpectrum(iTestsLocation,spec,iE)/=norm;
+          if (norm>0) for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) EnergySpectrum(iTestsLocation,spec,iE)/=norm;
         }
       }
 
