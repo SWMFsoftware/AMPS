@@ -42,14 +42,22 @@ void SampleIndividualLocations(int nMaxIterations) {
     int nIngectedParticlePerIteration=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations/Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations;
     int nTotalInjectedParticles=0;
 
-    cout << "nTotalTestParticlesPerLocations=" << Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
-    cout << "nParticleInjectionIterations=" << Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations << endl;
-    cout << "nIngectedParticlePerIteration=" << nIngectedParticlePerIteration << endl;
+    if (PIC::ThisThread==0) {
+      cout << "nTotalTestParticlesPerLocations=" << Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
+      cout << "nParticleInjectionIterations=" << Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations << endl;
+      cout << "nIngectedParticlePerIteration=" << nIngectedParticlePerIteration << endl;
+    }
 
     PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
 
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(std::max(1,Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations));
+
+    if (Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.IsAllocated()==false) {
+      Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.init(PIC::nTotalSpecies,std::max(1,Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations));
+    }
+
+    Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable=-1.0;
 
     do {
       //reset the partilce generation flag
@@ -134,7 +142,7 @@ void SampleIndividualLocations(int nMaxIterations) {
       }
 
 
-      //limit the integration time (remove particle moving in trapped orbits)
+/*      //limit the integration time (remove particle moving in trapped orbits)
       if ((true)&&(Earth::CutoffRigidity::InitialLocationOffset!=-1)) {
         //determine min altitude;
         static double rMax=-1.0;
@@ -196,7 +204,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
           }
         }
-      }
+      }*/
 
       //preform the next iteration
       amps_time_step();
@@ -261,7 +269,27 @@ void SampleIndividualLocations(int nMaxIterations) {
         for (spec=0;spec<PIC::nTotalSpecies;spec++) {
           for (iface=0;iface<6;iface++) {
             //surface area of the element of the surface mesh that covers the boundary of the computational domain
-            dSurface=Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][0]*Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][1];
+            double lx,ly,lz;
+
+            switch (iface) {
+            case 0:case 1:
+              ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+              dSurface=ly*lz;
+              break;
+            case 2:case 3:
+              lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+              dSurface=lx*lz;
+              break;
+            case 4:case 5:
+              lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+
+              dSurface=ly*lz;
+            }
 
             //loop through the mesh that covers face 'iface' on the computational domain
             for (iTable=0;iTable<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;iTable++) {
@@ -345,7 +373,7 @@ void SampleIndividualLocations(int nMaxIterations) {
   }
 
   //release sampling buffers
-  Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate();
+ // Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate();
 }
 
 
@@ -570,8 +598,6 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
     for (spec=0;spec<PIC::nTotalSpecies;spec++) {
       for (iface=0;iface<6;iface++) {
         //surface area of the element of the surface mesh that covers the boundary of the computational domain
-        dSurface=Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][0]*Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[iface][1];
-
         double lx,ly,lz;
 
         switch (iface) {
@@ -845,16 +871,14 @@ if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
   //estimate the total flux and rigidity at a sphere
   SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
 
+  //estimate the cutoff rigidity and energy spectrum in individual locations
+  SampleIndividualLocations(nMaxIterations);
+
   //start forward integration
   //enable sampling
 
   PIC::Sampling::RuntimeSamplingSwitch=true;
   Earth::ForwardParticleModeling(20000);
-
-
-
-
- // SampleIndividualLocations(nMaxIterations);
 
 
 
