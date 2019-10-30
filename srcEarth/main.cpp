@@ -237,6 +237,9 @@ void SampleIndividualLocations(int nMaxIterations) {
         IterationCounter++;
       }
 
+      if (PIC::ThisThread==0) {
+        cout << "IterationCounter=" << IterationCounter << ", GlobalParticleNumber=" << GlobalParticleNumber << endl;
+      }
 
     }
     while ((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations));
@@ -326,7 +329,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
           //normalize the energy spectrum
           for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) norm+=EnergySpectrum(iTestsLocation,spec,iE)*dE;
-          if (norm>0) EnergySpectrum(iTestsLocation,spec,iE)/=norm;
+          if (norm>0) for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++) EnergySpectrum(iTestsLocation,spec,iE)/=norm;
         }
       }
 
