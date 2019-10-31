@@ -433,10 +433,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   Earth::CutoffRigidity::CutoffRigidityTable=-1.0;
 
-
-  cout << "nIngectedParticlePerIteration=" << nIngectedParticlePerIteration << endl;
-  cout << "nTotalTestParticlesPerLocations=" << Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
-  cout << "nParticleInjectionIterations=" << Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations << endl;
+  if (PIC::ThisThread==0) {
+    cout << "nIngectedParticlePerIteration=" << nIngectedParticlePerIteration << endl;
+    cout << "nTotalTestParticlesPerLocations=" << Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
+    cout << "nParticleInjectionIterations=" << Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations << endl;
+  }
 
   //deallocate the individual location sampling buffer
   Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.Deallocate();

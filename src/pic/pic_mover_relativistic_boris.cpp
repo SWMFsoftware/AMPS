@@ -139,7 +139,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
 #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
     if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-      for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim];
+      for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
     }
 #endif
 
