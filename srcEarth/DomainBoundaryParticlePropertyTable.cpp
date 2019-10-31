@@ -15,8 +15,8 @@
 #include "array_4d.h"
 #include "array_5d.h"
 
-double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmax=log(1.0E1*GeV2J);
-double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmin=log(1.0E1*MeV2J);
+double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmax=log(Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit);
+double Earth::CutoffRigidity::DomainBoundaryParticleProperty::logEmin=log(Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit);
 
 int Earth::CutoffRigidity::DomainBoundaryParticleProperty::nAzimuthIntervals=50;
 int Earth::CutoffRigidity::DomainBoundaryParticleProperty::nCosZenithIntervals=50;
@@ -51,8 +51,8 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate() {
 void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(int nlocs) {
   int s,iface,i,j,iThreadOpenMP,iTestLocation;
 
-  logEmax=log(1.02*Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit);
-  logEmin=log(0.8*Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit);
+  logEmax=log(Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit);
+  logEmin=log(Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit);
   dLogE=(logEmax-logEmin)/nLogEnergyLevels;
 
   int offset;
