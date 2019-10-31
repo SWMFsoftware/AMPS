@@ -57,7 +57,8 @@ my @TestTable=("test_batl-reader.diff/test_batl-reader_check",
 "test_Venus-Hot-Oxygen.diff/test_Venus-Hot-Oxygen_check",
 "test_Mover-guiding-center.diff/test_Mover-guiding-center_check",
 "test_model-dust.diff/test_model-dust_check",
-"test_periodic-bc-gmres.diff/test_periodic-bc-gmres_check");
+"test_periodic-bc-gmres.diff/test_periodic-bc-gmres_check",
+"test_Mover-Markidis2010.diff/test_Mover-Markidis2010_check");
 
 
 my ($fname,$target,$pair,$size,$cmd);
