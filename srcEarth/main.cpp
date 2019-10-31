@@ -878,6 +878,9 @@ if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
   //estimate the cutoff rigidity and energy spectrum in individual locations
   SampleIndividualLocations(nMaxIterations);
 
+  //estimate the total flux and rigidity at a sphere
+  SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
+
   //start forward integration
   //enable sampling
 
