@@ -32,6 +32,13 @@ void amps_init();
 void amps_init_mesh();
 void amps_time_step();
 
+#define _NIGHTLY_TEST__CUTOFF_  0
+#define _NIGHTLY_TEST__LEGACY_ 1
+
+#ifndef _NIGHTLY_TEST_
+#define _NIGHTLY_TEST_ _NIGHTLY_TEST__CUTOFF_
+#endif
+
 
 void SampleIndividualLocations(int nMaxIterations) {
   int IterationCounter=0,localParticleGenerationFlag=0,globalParticleGenerationFlag;
@@ -840,35 +847,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 }
 
 
-
-int main(int argc,char **argv) {
-  static int LastDataOutputFileNumber=0;
-
-
-  Earth::CutoffRigidity::SampleRigidityMode=true;
-
-  amps_init_mesh();
-
-  Earth::CutoffRigidity::Init_BeforeParser();
-  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
-
-  amps_init();
-
-
-
-
-//  PIC::RequiredSampleLength=60;
-
-
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-  int nTotalIterations = 0;
-#else
-  int nTotalIterations = 100000001;
-#endif
-
-if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
-  int nMaxIterations=10000; //000;
-
+void CutoffRigidityCalculation(int nMaxIterations) {
   //disable sampling
   PIC::Sampling::RuntimeSamplingSwitch=false;
 
@@ -886,17 +865,11 @@ if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
 
   PIC::Sampling::RuntimeSamplingSwitch=true;
   Earth::ForwardParticleModeling(20000);
-
-
-
-  //finish the run
-  MPI_Finalize();
-  cout << "End of the run:" << PIC::nTotalSpecies << endl;
-
-  return EXIT_SUCCESS;
 }
 
-  //time step with the backward integration integration
+void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
+  int LastDataOutputFileNumber=PIC::DataOutputFileNumber;
+
   if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SamplingParameters::ActiveFlag==true) {
     PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
@@ -937,9 +910,9 @@ if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
       printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
-	     ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
-	     PIC::RequiredSampleLength,
-	     PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+       ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
+       PIC::RequiredSampleLength,
+       PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
     }
 
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
@@ -951,16 +924,52 @@ if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_) {
        if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
   }
-  
-  
-  //output the particle statistics of the test run
-#if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_
-  char fname[300];
-  sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
-  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
-#endif
-  
-  
+}
+
+
+int main(int argc,char **argv) {
+  static int LastDataOutputFileNumber=0;
+
+
+  Earth::CutoffRigidity::SampleRigidityMode=true;
+
+  amps_init_mesh();
+
+  Earth::CutoffRigidity::Init_BeforeParser();
+  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
+
+  amps_init();
+
+
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    //execute the nightly test routine
+
+    switch (_NIGHTLY_TEST_) {
+    case _NIGHTLY_TEST__CUTOFF_:
+      if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_" << endl;
+
+      CutoffRigidityCalculation(20000);
+      break;
+    case _NIGHTLY_TEST__LEGACY_:
+      if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_" << endl;
+
+      CutoffRigidityCalculation_Legacy(0);
+      break;
+    }
+
+    //output the particle statistics of the test run
+    char fname[300];
+    sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
+    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+
+  }
+  else {
+    int nTotalIterations = 100000001;
+  }
+
+
+
+
   //finish the run
   MPI_Finalize();
   cout << "End of the run:" << PIC::nTotalSpecies << endl;
