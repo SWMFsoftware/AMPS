@@ -561,42 +561,9 @@ Compile=
 <#
 -------------------------------------------------------------------------------
 
-#>
-Name=Earth@@(0+valeriy) 
-Time=2 
-
-Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy) 
-Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
-
-Compile=
->>>@echo "test_Earth_compile..." > test_Earth.diff
->>>echo "Installing BATL....."
-
-<<<ifeq ($(wildcard BATL/*),)
->>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
-<<<endif
-
->>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
->>>./Config.pl -application=test/Earth-test -spice-path=nospice -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS} 
->>>@($(MAKE) -j1 amps) 
->>>./Config.pl -batl-path=nobatl
->>>@echo "test_Earth_compile... done" >> test_Earth.diff
-
-
-Check=
->>>@echo "test_Earth_check..." >> test_Earth.diff
->>>@${TESTEarthDIR}/../utility/ReduceFile.pl ${TESTEarthDIR}/loaded.SavedCellData.dat 1000
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarthDIR}/loaded.SavedCellData.dat.Reduced.Step=1000         \
->>>${TESTEarthKEYS}/output-sig=0x103010036592e5d/test_Earth_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarthDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth--Background_Magnetosphere.diff
->>>@ls -l test_Earth--Background_Magnetosphere.diff
-
->>>@cat test_Earth--Background_Magnetosphere.diff > test_Earth.diff
->>>@ls -l test_Earth.diff
->>>@echo Test test_Earth has finished: `date`
-<#
 
 #>
-Name=Earth@@(0+stampede+pleiades)
+Name=Earth@@(0+stampede+pleiades+valeriy)
 Time=2
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
@@ -612,7 +579,14 @@ Compile=
 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
 >>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
->>>@($(MAKE) -j1 amps)
+
+>>>cp Makefile.local Makefile.local.bak
+>>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
+
+>>>-@($(MAKE) -j1 amps)
+
+>>>mv Makefile.local.bak Makefile.local 
+
 >>>./Config.pl -batl-path=nobatl
 >>>@echo "test_Earth_compile... done" >> test_Earth.diff
 
@@ -628,6 +602,53 @@ Check=
 >>>@ls -l test_Earth.diff
 >>>@echo Test test_Earth has finished: `date`
 <#
+
+
+#>
+Name=Earth-cutoff-rigidity
+Time=2
+
+Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity_compile..." > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>echo "Installing BATL....."
+
+<<<ifeq ($(wildcard BATL/*),)
+>>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+<<<endif
+
+>>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
+>>>./Config.pl -application=test/earth-cutoff-rigidity  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
+
+>>>cp Makefile.local Makefile.local.bak
+>>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_
+
+>>>-@($(MAKE) -j1 amps)
+
+>>>mv Makefile.local.bak Makefile.local 
+
+>>>./Config.pl -batl-path=nobatl
+>>>@echo "test_Earth-cutoff-rigidity_compile... done" >> test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity_check..." >> test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/CutoffRigidityMap\[R=6.871000e+06\].s=0.dat         
+>>>${TESTEarth-cutoff-rigidityKEYS}/CutoffRigidityMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/EnergySpectrumMap\[R=6.871000e+06\].s=0.dat         
+>>>${TESTEarth-cutoff-rigidityKEYS}/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
+
+>>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity has finished: `date`
+<#
+
 
 -------------------------------------------------------------------------------
 #> 
