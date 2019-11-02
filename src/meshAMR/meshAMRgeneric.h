@@ -1005,6 +1005,11 @@ public:
   }
 
 
+  inline cCenterNode *GetCenterNode(int i,int j,int k) {
+    return GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+  }
+
+
   inline void SetCenterNode(cCenterNode* nodeptr,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1054,6 +1059,9 @@ public:
     return cornerNodes[nd];
   }
 
+  inline cCornerNode *GetCornerNode(int i,int j,int k) {
+    return GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+  }
 
   inline void SetCornerNode(cCornerNode* nodeptr,long int nd) {
     #if _MESH_DIMENSION_ == 1
@@ -8445,14 +8453,113 @@ nMPIops++;
     //count the number of tree nodes for each refinment level 
     countTreeNodes(rootTree,Counter,0);
 
+    //count the number of allocated corner and center nodes
+    int nLeafAllBlocks=0,nLeafThisThreadBlocks=0,nAllocatedAllCenterNodes=0,nAllocatedAllCornerNodes=0,nAllocatedThisThreadCenterNodes=0,nAllocatedThisThreadCornerNodes=0;
+
+    std::function<void(int&,int&,int&,cTreeNodeAMR<cBlockAMR>*,bool,int&)> CountThreadTree;
+
+    CountThreadTree = [&] (int &nLeafBlocks,int &nAllocatedCenterNodes, int &nAllocatedCornerNodes,cTreeNodeAMR<cBlockAMR> *node,bool ThisThreadOnly,int &nTotalTreeNodes) -> void {
+      nTotalTreeNodes++;
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        if ((node->Thread==ThisThread)||(ThisThreadOnly==false)) {
+          nLeafBlocks++;
+
+          cBlockAMR *block=node->block;
+          cCornerNode *CornerNode;
+
+          if (block!=NULL) {
+            int i,j,k;
+
+            for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+              if (block->GetCenterNode(i,j,k)!=NULL) nAllocatedCenterNodes++;
+            }
+
+            for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+              for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
+                for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+                  if ((CornerNode=block->GetCornerNode(i,j,k))!=NULL) if (CornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) {
+                    CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+                    nAllocatedCornerNodes++;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      else {
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (int i=0;i<(1<<DIM);i++) if ((downNode=node->downNode[i])!=NULL) {
+          CountThreadTree(nLeafBlocks,nAllocatedCenterNodes,nAllocatedCornerNodes,downNode,ThisThreadOnly,nTotalTreeNodes);
+        }
+      }
+    };
+
+
+    int nTotalTreeNodes;
+    int *nLeafThisThreadBlocksTable=new int [nTotalThreads];
+    int *nAllocatedThisThreadCenterNodesTable=new int [nTotalThreads];
+    int *nAllocatedThisThreadCornerNodesTable=new int [nTotalThreads];
+    int *nLeafAllBlocksTable=new int [nTotalThreads];
+    int *nAllocatedAllCenterNodesTable=new int [nTotalThreads];
+    int *nAllocatedAllCornerNodesTable=new int [nTotalThreads];
+    int *nGhostLayerBlockTable=new int [nTotalThreads];
+
+    int nGhostLayerBlocks=0;
+
+    for (thread=0;thread<nTotalThreads;thread++) {
+      for (cTreeNodeAMR<cBlockAMR> *node=DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) nGhostLayerBlocks++;
+    }
+
+    nTotalTreeNodes=0;
+    resetNodeProcessedFlag(false);
+    CountThreadTree(nLeafThisThreadBlocks,nAllocatedThisThreadCenterNodes,nAllocatedThisThreadCornerNodes,rootTree,true,nTotalTreeNodes);
+
+    nTotalTreeNodes=0;
+    resetNodeProcessedFlag(false);
+    CountThreadTree(nLeafAllBlocks,nAllocatedAllCenterNodes,nAllocatedAllCornerNodes,rootTree,false,nTotalTreeNodes);
+
+    treeNodes.PrintAllocationInformation("Nodes");
+    blocks.PrintAllocationInformation("Blocks");
+    CornerNodes.PrintAllocationInformation("CornerNodes");
+    CenterNodes.PrintAllocationInformation("CenterNodes");
+
+    MPI_Gather(&nLeafThisThreadBlocks,1,MPI_INT,nLeafThisThreadBlocksTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nAllocatedThisThreadCenterNodes,1,MPI_INT,nAllocatedThisThreadCenterNodesTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nAllocatedThisThreadCornerNodes,1,MPI_INT,nAllocatedThisThreadCornerNodesTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nLeafAllBlocks,1,MPI_INT,nLeafAllBlocksTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nAllocatedAllCenterNodes,1,MPI_INT,nAllocatedAllCenterNodesTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nAllocatedAllCornerNodes,1,MPI_INT,nAllocatedAllCornerNodesTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nGhostLayerBlocks,1,MPI_INT,nGhostLayerBlockTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+
     if (ThisThread==0) {
-/*      *DiagnospticMessageStream << "$PREFIX:Mesh blocks report:" << std::endl;
-      for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) *DiagnospticMessageStream << "$PREFIX:refinment level=" << level << ", blocks=" << Counter[level] << std::endl;
-
-      *DiagnospticMessageStream << "$PREFIX:Memory usage:" << std::endl;
-      *DiagnospticMessageStream << "$PREFIX:Thread \t Tree \t Blocks \t Nodes" << std::endl;*/
+      printf("Mesh Allocation Info: (%i total tree nodes)\n",nTotalTreeNodes);
+      printf("_BLOCK_CELLS_X_=%i\n_BLOCK_CELLS_Y_=%i\n_BLOCK_CELLS_Z_=%i\n",_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_);
+      printf("_GHOST_CELLS_X_=%i\n_GHOST_CELLS_Y_=%i\n_GHOST_CELLS_Z_=%i\n",_GHOST_CELLS_X_,_GHOST_CELLS_Y_,_GHOST_CELLS_Z_);
 
 
+      printf("|1 thread\t|2 nLeafThisThreadBlocks\t|3 nAllocatedThisThreadCenterNodes\t|4 nAllocatedThisThreadCornerNodes\t|5 nLeafAllBlocks\t|6 nAllocatedAllCenterNodes\t|7 nAllocatedAllCornerNodes\t|8 GhostLayerBlocks\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) {
+        printf("%i\t%i\t\t%i\t\t%i\t\t%i\t\t%i\t\t%i\t\t%i\n",thread,nLeafThisThreadBlocksTable[thread],nAllocatedThisThreadCenterNodesTable[thread],nAllocatedThisThreadCornerNodesTable[thread],nLeafAllBlocksTable[thread],
+          nAllocatedAllCenterNodesTable[thread],nAllocatedAllCornerNodesTable[thread],nGhostLayerBlockTable[thread]);
+      }
+    }
+
+    delete [] nLeafThisThreadBlocksTable;
+    delete [] nAllocatedThisThreadCenterNodesTable;
+    delete [] nAllocatedThisThreadCornerNodesTable;
+    delete [] nLeafAllBlocksTable;
+    delete [] nAllocatedAllCenterNodesTable;
+    delete [] nAllocatedAllCornerNodesTable;
+    delete [] nGhostLayerBlockTable;
+
+
+
+    if (ThisThread==0) {
       fprintf(DiagnospticMessageStream,"$PREFIX:Mesh blocks report:\n");
       for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) fprintf(DiagnospticMessageStream,"$PREFIX:refinment level=%i, blocks=%ld\n",level,Counter[level]);
 
@@ -8463,11 +8570,13 @@ nMPIops++;
     }
     else pipe.openSend(0);
 
-    long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation;
+
+    long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;
 
     TreeNodesAllocation=treeNodes.getAllocatedMemory();
     BlocksAllocation=blocks.getAllocatedMemory();
     CornerNodesAllocation=CornerNodes.getAllocatedMemory();
+    CenterNodesAllocation=CenterNodes.getAllocatedMemory();
 
     for (thread=0;thread<nTotalThreads;thread++) {
       if (thread!=0) {
@@ -8475,11 +8584,13 @@ nMPIops++;
           pipe.recv(TreeNodesAllocation,thread);
           pipe.recv(BlocksAllocation,thread);
           pipe.recv(CornerNodesAllocation,thread);
+          pipe.recv(CenterNodesAllocation,thread);
         }
         else if (ThisThread==thread) {
           pipe.send(TreeNodesAllocation);
           pipe.send(BlocksAllocation);
           pipe.send(CornerNodesAllocation);
+          pipe.send(CenterNodesAllocation);
         }
       }
 
