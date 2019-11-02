@@ -297,6 +297,33 @@ public:
     dataBufferListPointer++;
   }
 
+  void PrintAllocationInformation(const char *msg) {
+    int size,rank;
+
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
+
+    long int *MemAllocationTable=new long int [size];
+    long int *dataBufferListPointerTable=new long int [size];
+    long int *elementStackPointerTable=new long int [size];
+
+    MPI_Gather(&MemoryAllocation,1,MPI_LONG,MemAllocationTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&dataBufferListPointer,1,MPI_LONG,dataBufferListPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&elementStackPointer,1,MPI_LONG,elementStackPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (rank==0) {
+      printf("%s:\nsizeof(T)=%i\n",msg,sizeof(T));
+      printf("|1thread:\t|2 MemoryAllocation\t|3 dataBufferListPointer\t|4 elementStackPointer\n");
+
+      for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread]);
+    }
+
+    delete [] MemAllocationTable;
+    delete [] dataBufferListPointerTable;
+    delete [] elementStackPointerTable;
+  }
+
+
   void resetStack() {
     long int databank,offset;
 
@@ -505,6 +532,35 @@ public:
 
     return BaseElementStack.dataBufferListSize*(sizeof(T)+sizeof(T*)+sizeof(char)*t.AssociatedDataLength());
   }
+
+
+  void PrintAllocationInformation(const char *msg) {
+    int size,rank;
+    T t;
+
+    MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&size);
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
+
+    long int *MemAllocationTable=new long int [size];
+    long int *dataBufferListPointerTable=new long int [size];
+    long int *elementStackPointerTable=new long int [size];
+
+    MPI_Gather(&BaseElementStack.MemoryAllocation,1,MPI_LONG,MemAllocationTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.dataBufferListPointer,1,MPI_LONG,dataBufferListPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.elementStackPointer,1,MPI_LONG,elementStackPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (rank==0) {
+      printf("%s:\nsizeof(T)=%i\nAssociatedDataLength=%i\n",msg,sizeof(T),t.AssociatedDataLength());
+      printf("|1thread:\t|2 MemoryAllocation\t|3 dataBufferListPointer\t|4 elementStackPointer\n");
+
+      for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread]);
+    }
+
+    delete [] MemAllocationTable;
+    delete [] dataBufferListPointerTable;
+    delete [] elementStackPointerTable;
+  }
+
 
   void initMemoryBlock() {
     T t;
