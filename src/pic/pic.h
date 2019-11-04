@@ -23,6 +23,11 @@
 #include <fstream>
 #include <signal.h>
 
+#include <iostream>
+#include <ctime>
+#include <ratio>
+#include <chrono>
+
 #include <sys/time.h>
 #include <sys/resource.h>
 
@@ -4106,6 +4111,112 @@ namespace PIC {
 
   namespace Debugger {
     //contains functions that are used for debugging the code
+
+    //time exdcution of the code
+#define _PIC_TIMER_MODE_CLOCK_  0
+#define _PIC_TIMER_MODE_HRES_   1
+
+  class cTimer {
+  protected:
+    char fname_start[2000];
+    int  line_start;
+
+    clock_t time_clock_start;
+    chrono::high_resolution_clock::time_point time_hres_start;
+
+    double dT;
+    int mode;
+
+  public:
+
+    cTimer() {
+      dT=0.0,mode=_PIC_TIMER_MODE_CLOCK_,line_start=-1;
+      time_clock_start=clock();
+      time_hres_start=chrono::high_resolution_clock::now();
+    }
+
+    cTimer(int ModeIn) {
+      dT=0.0,mode=ModeIn,line_start=-1;
+      time_clock_start=clock();
+      time_hres_start=chrono::high_resolution_clock::now();
+
+      if ((ModeIn!=_PIC_TIMER_MODE_HRES_)&&(ModeIn!=_PIC_TIMER_MODE_CLOCK_)) exit(__LINE__,__FILE__,"Error: the mode is not recognized");
+    }
+
+    cTimer(int ModeIn,int lineIn,const char* fnameIn) {
+      dT=0.0,mode=ModeIn,line_start=lineIn;
+      sprintf(fname_start,"%s",fnameIn);
+
+      time_clock_start=clock();
+      time_hres_start=chrono::high_resolution_clock::now();
+
+      if ((ModeIn!=_PIC_TIMER_MODE_HRES_)&&(ModeIn!=_PIC_TIMER_MODE_CLOCK_)) exit(__LINE__,__FILE__,"Error: the mode is not recognized");
+
+    }
+
+    void clear() {dT=0.0;}
+    double counter() {return dT;}
+
+    void Start() {
+      switch (mode) {
+      case _PIC_TIMER_MODE_CLOCK_:
+        time_clock_start=clock();
+        break;
+      case _PIC_TIMER_MODE_HRES_:
+        time_hres_start=chrono::high_resolution_clock::now();
+      }
+    }
+
+    void UpdateTimer() {
+      clock_t time_clock_now;
+      chrono::high_resolution_clock::time_point time_now;
+      chrono::duration<double> time_span;
+
+      switch (mode) {
+      case _PIC_TIMER_MODE_CLOCK_:
+        time_clock_now=clock();
+        dT+=((double)(clock()-time_clock_start))/CLOCKS_PER_SEC;
+        time_clock_start=time_clock_now;
+        break;
+      case _PIC_TIMER_MODE_HRES_:
+        time_now=chrono::high_resolution_clock::now();
+        time_span=chrono::duration_cast<chrono::duration<double>>(time_now-time_hres_start);
+        dT+=time_span.count();
+        time_hres_start=time_now;
+      }
+    }
+
+
+    void Print(const char *msg=NULL) {
+      UpdateTimer();
+
+      printf("Timing (thread=%i): time=%e\n",PIC::ThisThread,dT);
+      if (msg!=NULL) printf("Message: %s\n",msg);
+      if (line_start>0) printf("Timer defined at %s@%ld \n",fname_start,line_start);
+    }
+
+    void PrintMPI(const char *msg=NULL) {
+      double *dtTable=new double [PIC::nTotalThreads];
+
+      UpdateTimer();
+      MPI_Gather(&dT,1,MPI_DOUBLE,dtTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+
+      if (PIC::ThisThread==0) {
+        printf("Timing:\n");
+        if (msg!=NULL) printf("Message: %s\n",msg);
+        if (line_start>0) printf("Timer defined at %s@%ld \n",fname_start,line_start);
+
+        printf("thread\ttime\n");
+
+        for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+          printf("%i\t%e\n",thread,dtTable[thread]);
+        }
+      }
+
+      delete [] dtTable;
+    }
+  };
+
 
     //catch variation of a variable located at a particular address
     //MatchMode == true -> print when the match is found; MatchMode == false -> print when the variables are not match
