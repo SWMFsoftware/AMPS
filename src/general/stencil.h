@@ -17,6 +17,12 @@
 #ifndef _GENERAL_STENCIL_H_
 #define _GENERAL_STENCIL_H_
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <list>
+
+using namespace std;
+
 class cStencil {
 public:
 
@@ -39,30 +45,50 @@ public:
     StencilData.clear();
   }
 
+  void Print() {
+    for (list<cStencilElement>::iterator it=StencilData.begin();it!=StencilData.end();it++) {
+      printf("%i %i %i \t%e\n",it->i,it->j,it->k,it->a);
+    }
+  }
+  
   //remove elements of the list that have the same combination of i,j, and k
   void Simplify() {
     int i,k,j;
     list<cStencilElement>::iterator l0,l1;
-
+    
     for (l0=StencilData.begin();l0!=StencilData.end();l0++) {
       list<list<cStencilElement>::iterator> CleaningList;
-
+      
       i=l0->i,j=l0->j,k=l0->k;
       l1=l0;
-
+      
       for (l1++;l1!=StencilData.end();l1++) {
         if ((i==l1->i)&&(j==l1->j)&&(k==l1->k)) {
           //found another element in the list that point to the point with the same combination of i,j, and k
           //combine l0 and l1
           l0->a+=l1->a;
-
+          
           CleaningList.push_back(l1);
         }
       }
-
+      
       for (list<list<cStencilElement>::iterator>::iterator t=CleaningList.begin();t!=CleaningList.end();t++) StencilData.erase(*t);
-
+      
       CleaningList.clear();
+    }
+    
+    //remove those elements from the list that have zero coefficients
+    l0=StencilData.begin();
+    
+    while (l0!=StencilData.end()) {
+      l1=l0;
+      l1++;
+      
+      if (l0->a==0.0) {
+        StencilData.erase(l0);
+      }
+      
+      l0=l1;
     }
   }
 
@@ -86,7 +112,7 @@ public:
 
     //copy the contant of the list into the array
     int i;
-    std::list<cStencilElement>::iterator l0;
+    list<cStencilElement>::iterator l0;
 
     for (i=0,l0=StencilData.begin();l0!=StencilData.end();i++,l0++) Stencil[i]=*l0;
 
@@ -95,7 +121,7 @@ public:
 
   //multiply the entire stencil by a constatnt
   friend cStencil& operator *= (cStencil &v1,const double t) {
-    for (std::list<cStencilElement>::iterator l0=v1.StencilData.begin();l0!=v1.StencilData.end();l0++) l0->a*=t;
+    for (list<cStencilElement>::iterator l0=v1.StencilData.begin();l0!=v1.StencilData.end();l0++) l0->a*=t;
     return v1;
   };
 
@@ -114,7 +140,7 @@ public:
 
   //shift the entire stencil
   void shift(int di,int dj,int dk) {
-    for (std::list<cStencilElement>::iterator l0=StencilData.begin();l0!=StencilData.end();l0++) {
+    for (list<cStencilElement>::iterator l0=StencilData.begin();l0!=StencilData.end();l0++) {
       l0->i+=di;
       l0->j+=dj;
       l0->k+=dk;
