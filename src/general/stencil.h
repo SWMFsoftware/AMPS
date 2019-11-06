@@ -53,11 +53,24 @@ public:
   cFrac() {nominator=0,denominator=0;}
   
   void Set(int n,int d) {nominator=n,denominator=d;}
+
+  int Convert2Int() {
+    if (nominator%denominator!=0) exit(__LINE__,__FILE__,"Error: cannot be converted");
+
+    return nominator/denominator;
+  }
   
   cFrac& operator = (const cFrac& v) {
     nominator=v.nominator;
     denominator=v.denominator;
     
+    return *this;
+  }
+
+  cFrac& operator = (const int& v) {
+    nominator=v;
+    denominator=1;
+
     return *this;
   }
   
@@ -166,6 +179,10 @@ public:
     StencilData.clear();
   }
 
+  void SetSymbol(const char* s) {
+    sprintf(symbol,"%s",s);
+  }
+  
   void SetBase(cFrac iIn,cFrac jIn,cFrac kIn) {
     cFrac di,dj,dk;
     
@@ -315,6 +332,13 @@ public:
     Simplify();
   }
 
+  void add(double a,int i,int j,int k) {
+    cFrac iIn,jIn,kIn;
+
+    iIn=i,jIn=j;kIn=k;
+    add(a,iIn,jIn,kIn);
+  }
+
   //shift the entire stencil
   void shift(cFrac di,cFrac dj,cFrac dk) {
     i+=di;
@@ -367,6 +391,23 @@ public:
     }
   }
 
+  void AddShifled(cStencil& v,int di,int dj,int dk,double c=1.0) {
+    cFrac diIn,djIn,dkIn;
+
+    diIn=di;
+    djIn=dj;
+    dkIn=dk; 
+
+    AddShifled(v,diIn,djIn,dkIn,c);
+  } 
+
+  void SubstractShifted(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
+    AddShifled(v,di,dj,dk,-c); 
+  }
+
+  void SubstractShifted(cStencil& v,int di,int dj,int dk,double c=1.0) {
+    AddShifled(v,di,dj,dk,-c);
+  }
 
 
 };
