@@ -84,6 +84,18 @@ public:
     return v1;
   }
   
+  friend cFrac& operator -= (cFrac &v1,const cFrac &v2) {
+    cFrac v3;
+    
+    v3.nominator=v1.nominator*v2.denominator-v2.nominator*v1.denominator;
+    v3.denominator=v1.denominator*v2.denominator;
+    
+    v1=v3;
+    v1.Simplify();
+    
+    return v1;
+  }
+  
   friend cFrac operator - (const cFrac &v1,const cFrac &v2) {
     cFrac v3;
     
@@ -96,12 +108,15 @@ public:
   }
   
   bool operator == (const cFrac& rhs) {
-    Simplify();
-    
-    cFrac v=rhs;
-    v.Simplify();
-    
-    return ((nominator==v.nominator)&&(denominator==v.denominator));
+    return (nominator*rhs.denominator==denominator*rhs.nominator);
+  }
+  
+  friend bool operator < (const cFrac& l,const cFrac& r) {
+    return (l.nominator*r.denominator<l.denominator*r.nominator);
+  }
+  
+  friend bool operator > (const cFrac& l,const cFrac& r) {
+    return (l.nominator*r.denominator>l.denominator*r.nominator);
   }
 };
 
@@ -152,6 +167,18 @@ public:
   }
 
   void SetBase(cFrac iIn,cFrac jIn,cFrac kIn) {
+    cFrac di,dj,dk;
+    
+    di=iIn-i;
+    dj=jIn-j;
+    dk=kIn-k;
+    
+    for (list<cStencilElement>::iterator it=StencilData.begin();it!=StencilData.end();it++) {
+      it->i-=di;
+      it->j-=dj;
+      it->k-=dk;
+    }
+    
     i=iIn,j=jIn,k=kIn;
   }
   
@@ -162,10 +189,32 @@ public:
     printf("\n");
   }
   
+  
+  static bool SortList(const cStencilElement& first, cStencilElement& second) {
+    if (first.i<second.i) return true;
+    else if (first.i>second.i) return false;
+    
+    if (first.j<second.j) return true;
+    else if (first.j>second.j) return false;
+    
+    if (first.k<second.k) return true;
+    else if (first.k>second.k) return false;
+    
+    return true;
+  }
+  
   void Print() {
     cFrac t;
+    int cnt=0;
     
+    //sort the list
+    StencilData.sort(SortList);
+    
+    //print the list
     for (list<cStencilElement>::iterator it=StencilData.begin();it!=StencilData.end();it++) {
+      printf("%i ", cnt);
+      cnt++;
+      
       t=i+it->i;
       t.Print();
       
