@@ -55,7 +55,10 @@ public:
   void Set(int n,int d) {nominator=n,denominator=d;}
 
   int Convert2Int() {
-    if (nominator%denominator!=0) exit(__LINE__,__FILE__,"Error: cannot be converted");
+    if (nominator%denominator!=0) {
+      printf("Error: cannot be converted (%s@%ld\n",__FILE__,__LINE__);
+      exit(0);
+    }
 
     return nominator/denominator;
   }
@@ -183,7 +186,7 @@ public:
     sprintf(symbol,"%s",s);
   }
   
-  void SetBase(cFrac iIn,cFrac jIn,cFrac kIn) {
+  void MoveBase(cFrac iIn,cFrac jIn,cFrac kIn) {
     cFrac di,dj,dk;
     
     di=iIn-i;
@@ -196,6 +199,10 @@ public:
       it->k-=dk;
     }
     
+    i=iIn,j=jIn,k=kIn;
+  }
+
+  void SetBase(cFrac iIn,cFrac jIn,cFrac kIn) {
     i=iIn,j=jIn,k=kIn;
   }
   
@@ -345,6 +352,16 @@ public:
     j+=dj;
     k+=dk;
   }
+
+  void shift(int di,int dj,int dk) {
+   cFrac diIn,djIn,dkIn; 
+
+   diIn=di; 
+   djIn=dj;
+   dkIn=dk;
+
+   shift(diIn,djIn,dkIn);
+ }  
 
   //copy the stencil
   cStencil& operator = (const cStencil& v) {
