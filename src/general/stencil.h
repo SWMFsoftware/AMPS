@@ -23,11 +23,96 @@
 
 using namespace std;
 
+
+class cFrac {
+public:
+  int nominator,denominator;
+  
+  void Simplify() {
+    int i=2;
+    
+    while (i<=denominator) {
+      if ((nominator%i==0)&&(denominator%i==0)) {
+        nominator/=i;
+        denominator/=i;
+      }
+      else i++;
+    }
+  }
+  
+  void Print() {
+    if (nominator%denominator==0) {
+      printf(" %i ",nominator/denominator);
+    }
+    else{
+      printf(" %i/%i ",nominator,denominator);
+    }
+  }
+  
+  cFrac(int n,int d) {nominator=n,denominator=d;}
+  cFrac() {nominator=0,denominator=0;}
+  
+  void Set(int n,int d) {nominator=n,denominator=d;}
+  
+  cFrac& operator = (const cFrac& v) {
+    nominator=v.nominator;
+    denominator=v.denominator;
+    
+    return *this;
+  }
+  
+  friend cFrac operator + (const cFrac &v1,const cFrac &v2) {
+    cFrac v3;
+    
+    v3.nominator=v1.nominator*v2.denominator+v2.nominator*v1.denominator;
+    v3.denominator=v1.denominator*v2.denominator;
+    
+    v3.Simplify();
+    
+    return v3;
+  }
+  
+  friend cFrac& operator += (cFrac &v1,const cFrac &v2) {
+    cFrac v3;
+    
+    v3.nominator=v1.nominator*v2.denominator+v2.nominator*v1.denominator;
+    v3.denominator=v1.denominator*v2.denominator;
+    
+    v1=v3;
+    v1.Simplify();
+    
+    return v1;
+  }
+  
+  friend cFrac operator - (const cFrac &v1,const cFrac &v2) {
+    cFrac v3;
+    
+    v3.nominator=v1.nominator*v2.denominator-v2.nominator*v1.denominator;
+    v3.denominator=v1.denominator*v2.denominator;
+    
+    v3.Simplify();
+    
+    return v3;
+  }
+  
+  bool operator == (const cFrac& rhs) {
+    Simplify();
+    
+    cFrac v=rhs;
+    v.Simplify();
+    
+    return ((nominator==v.nominator)&&(denominator==v.denominator));
+  }
+};
+
+
 class cStencil {
 public:
-
+  cFrac i,j,k;
+  char symbol[100];
+  
   struct cStencilElement {
-    int i,j,k;
+    cFrac i,j,k;
     double a; //coefficient used in the stencil
   };
 
@@ -38,22 +123,65 @@ public:
   cStencil() {
     Stencil=NULL;
     StencilLength=0,AllocatedStencilLength=0;
+    
+    cFrac d(0,1);
+    i=d,j=d,k=d;
+    sprintf(symbol,"");
   }
 
+  cStencil(const char* s) {
+    Stencil=NULL;
+    StencilLength=0,AllocatedStencilLength=0;
+    
+    cFrac d(0,1);
+    i=d,j=d,k=d;
+    sprintf(symbol,"%s",s);
+  }
+  
+  cStencil(const char* s,cFrac iIn,cFrac jIn,cFrac kIn) {
+    Stencil=NULL;
+    StencilLength=0,AllocatedStencilLength=0;
+    
+    i=iIn,j=jIn,k=kIn;
+    sprintf(symbol,"%s",s);
+  }
+  
   ~cStencil() {
     if (Stencil!=NULL) delete [] Stencil;
     StencilData.clear();
   }
 
+  void SetBase(cFrac iIn,cFrac jIn,cFrac kIn) {
+    i=iIn,j=jIn,k=kIn;
+  }
+  
+  void PrintBase() {
+    i.Print();
+    j.Print();
+    k.Print();
+    printf("\n");
+  }
+  
   void Print() {
+    cFrac t;
+    
     for (list<cStencilElement>::iterator it=StencilData.begin();it!=StencilData.end();it++) {
-      printf("%i %i %i \t%e\n",it->i,it->j,it->k,it->a);
+      t=i+it->i;
+      t.Print();
+      
+      t=j+it->j;
+      t.Print();
+      
+      t=k+it->k;
+      t.Print();
+      
+      printf(" %e\n",it->a);
     }
   }
   
   //remove elements of the list that have the same combination of i,j, and k
   void Simplify() {
-    int i,k,j;
+    cFrac i,k,j;
     list<cStencilElement>::iterator l0,l1;
     
     for (l0=StencilData.begin();l0!=StencilData.end();l0++) {
@@ -126,7 +254,7 @@ public:
   };
 
   //add a new element to the stencil
-  void add(double a,int i,int j,int k) {
+  void add(double a,cFrac i,cFrac j,cFrac k) {
     cStencilElement NewElement;
 
     NewElement.a=a;
@@ -139,16 +267,18 @@ public:
   }
 
   //shift the entire stencil
-  void shift(int di,int dj,int dk) {
-    for (list<cStencilElement>::iterator l0=StencilData.begin();l0!=StencilData.end();l0++) {
-      l0->i+=di;
-      l0->j+=dj;
-      l0->k+=dk;
-    }
+  void shift(cFrac di,cFrac dj,cFrac dk) {
+    i+=di;
+    j+=dj;
+    k+=dk;
   }
 
   //copy the stencil
   cStencil& operator = (const cStencil& v) {
+    i=v.i;
+    j=v.j;
+    k=v.k;
+    
     for (list<cStencilElement>::const_iterator l0=v.StencilData.begin();l0!=v.StencilData.end();l0++) StencilData.push_back(*l0);
     return *this;
   };
@@ -159,40 +289,36 @@ public:
 
     for (list<cStencilElement>::const_iterator l0=v2.StencilData.begin();l0!=v2.StencilData.end();l0++) {
       NewElement=*l0;
+      
+      NewElement.i+=v2.i-v1.i;
+      NewElement.j+=v2.i-v1.j;
+      NewElement.k+=v2.i-v1.k;
+  
       v1.StencilData.push_back(NewElement);
     }
 
     return v1;
   };
 
-  friend cStencil& operator -= (cStencil &v1,const cStencil &v2) {
-    cStencilElement NewElement;
 
-    for (list<cStencilElement>::const_iterator l0=v2.StencilData.begin();l0!=v2.StencilData.end();l0++) {
-      NewElement=*l0;
-      NewElement.a*=-1.0;
-      v1.StencilData.push_back(NewElement);
-    }
 
-    return v1;
-  };
-
-  void AddShifled(cStencil& v,int di,int dj,int dk,double c=1.0) {
+  void AddShifled(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
     cStencilElement NewElement;
 
     for (std::list<cStencilElement>::iterator l0=v.StencilData.begin();l0!=v.StencilData.end();l0++) {
       NewElement=*l0;
 
       NewElement.a*=c;
-      NewElement.i+=di,NewElement.j+=dj,NewElement.k+=dk;
+      
+      NewElement.i+=v.i-i+di;
+      NewElement.j+=v.j-j+dj;
+      NewElement.k+=v.k-k+dk;
 
       StencilData.push_back(NewElement);
     }
   }
 
-  void SubstractShifted(cStencil& v,int di,int dj,int dk,double c=1.0) {
-    AddShifled(v,di,dj,dk,-c);
-  }
+
 
 };
 
