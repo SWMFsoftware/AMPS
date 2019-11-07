@@ -658,6 +658,19 @@ Time=3
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
+Compile=
+>>>@echo "test_Earth-T96_compile..." > test_Earth-T96$(TESTEarth-T96-REF).diff
+>>>./Config.pl -application=test/Earth-T96 -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Earth-T96  -amps-test=on $(TESTEarth-T96KEYS)
+>>>rm -rf srcTemp
+
+>>>cp Makefile.local Makefile.local.bak
+>>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
+
+>>>-@($(MAKE) -j8 amps)
+
+>>>mv Makefile.local.bak Makefile.local
+>>>@echo "test_Earth-T96_compile... done" >> test_Earth-T96$(TESTEarth-T96-REF).diff
+
 Check=
 >>>@echo "test_Earth-T96_check..." >> test_Earth-T96.diff
 >>>@${TESTEarth-T96DIR}/../utility/ReduceFile.pl ${TESTEarth-T96DIR}/loaded.SavedCellData.dat 1000
@@ -679,6 +692,19 @@ Outs=test_Earth
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2  -cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+
+Compile=
+>>>@echo "test_Earth-Impulse-Source_compile..." > test_Earth-Impulse-Source$(TESTEarth-Impulse-Source-REF).diff
+>>>./Config.pl -application=test/Earth-Impulse-Source -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Earth-Impulse-Source  -amps-test=on $(TESTEarth-Impulse-SourceKEYS)
+>>>rm -rf srcTemp
+
+>>>cp Makefile.local Makefile.local.bak
+>>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
+
+>>>-@($(MAKE) -j8 amps)
+
+>>>mv Makefile.local.bak Makefile.local
+>>>@echo "test_Earth-Impulse-Source_compile... done" >> test_Earth-Impulse-Source$(TESTEarth-Impulse-Source-REF).diff
 <#
 
 
