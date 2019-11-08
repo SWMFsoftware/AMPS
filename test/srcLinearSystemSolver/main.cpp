@@ -885,9 +885,9 @@ return;
   }
   else {
     for (int ii=0;ii<StencilTableLength;ii++) {
-      MatrixRowNonZeroElementTable[ii].i=i+StencilTable[ii].i;
-      MatrixRowNonZeroElementTable[ii].j=j+StencilTable[ii].j;
-      MatrixRowNonZeroElementTable[ii].k=k+StencilTable[ii].k;
+      MatrixRowNonZeroElementTable[ii].i=i+StencilTable[ii].i.Convert2Int();
+      MatrixRowNonZeroElementTable[ii].j=j+StencilTable[ii].j.Convert2Int();
+      MatrixRowNonZeroElementTable[ii].k=k+StencilTable[ii].k.Convert2Int();
       MatrixRowNonZeroElementTable[ii].MatrixElementValue=StencilTable[ii].a;
       MatrixRowNonZeroElementTable[ii].iVar=iVar;
     }
