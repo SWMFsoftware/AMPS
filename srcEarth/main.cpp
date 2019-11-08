@@ -854,17 +854,13 @@ void CutoffRigidityCalculation(int nMaxIterations) {
   //estimate the total flux and rigidity at a sphere
   SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
 
-  //estimate the cutoff rigidity and energy spectrum in individual locations
-  SampleIndividualLocations(nMaxIterations);
-
-  //estimate the total flux and rigidity at a sphere
-  SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
-
   //start forward integration
   //enable sampling
-
   PIC::Sampling::RuntimeSamplingSwitch=true;
-  Earth::ForwardParticleModeling(20000);
+  Earth::ForwardParticleModeling(nMaxIterations);
+
+  //estimate the cutoff rigidity and energy spectrum in individual locations
+  SampleIndividualLocations(nMaxIterations);
 }
 
 void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
@@ -948,7 +944,7 @@ int main(int argc,char **argv) {
     case _NIGHTLY_TEST__CUTOFF_:
       if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_" << endl;
 
-      CutoffRigidityCalculation(20000);
+      CutoffRigidityCalculation(10000);
       break;
     case _NIGHTLY_TEST__LEGACY_:
       if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_" << endl;
