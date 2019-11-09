@@ -40,12 +40,12 @@ public:
     }
   }
   
-  void Print() {
+  void Print(FILE* fout=stdout) {
     if (nominator%denominator==0) {
-      printf(" %i ",nominator/denominator);
+      fprintf(fout," %i ",nominator/denominator);
     }
     else{
-      printf(" %i/%i ",nominator,denominator);
+      fprintf(fout," %i/%i ",nominator,denominator);
     }
   }
   
@@ -155,8 +155,7 @@ public:
     Stencil=NULL;
     StencilLength=0,AllocatedStencilLength=0;
     
-    cFrac d(0,1);
-    i=d,j=d,k=d;
+    i=0,j=0,k=0;
     sprintf(symbol,"");
   }
 
@@ -164,8 +163,10 @@ public:
     Stencil=NULL;
     StencilLength=0,AllocatedStencilLength=0;
     
-    cFrac d(0,1);
-    i=d,j=d,k=d;
+    i=0.0;
+    j=0.0;
+    k=0.0;
+
     sprintf(symbol,"%s",s);
   }
   
@@ -227,29 +228,36 @@ public:
     return true;
   }
   
-  void Print() {
+  void Print(const char *fname=NULL) {
     cFrac t;
     int cnt=0;
+    FILE* fout=NULL;
+
+    fout=(fname!=NULL) ? fopen(fname,"w") : stdout;
+
+    Simplify();
     
     //sort the list
     StencilData.sort(SortList);
     
     //print the list
     for (list<cStencilElement>::iterator it=StencilData.begin();it!=StencilData.end();it++) {
-      printf("%i ", cnt);
+      fprintf(fout,"%i ", cnt);
       cnt++;
       
       t=i+it->i;
-      t.Print();
+      t.Print(fout);
       
       t=j+it->j;
-      t.Print();
+      t.Print(fout);
       
       t=k+it->k;
-      t.Print();
+      t.Print(fout);
       
-      printf(" %e\n",it->a);
+      fprintf(fout," %e\n",it->a);
     }
+
+    if (fname!=NULL) fclose(fout);
   }
   
   //remove elements of the list that have the same combination of i,j, and k
@@ -392,7 +400,7 @@ public:
 
 
 
-  void AddShifled(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
+  void AddShifted(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
     cStencilElement NewElement;
 
     for (std::list<cStencilElement>::iterator l0=v.StencilData.begin();l0!=v.StencilData.end();l0++) {
@@ -408,22 +416,52 @@ public:
     }
   }
 
-  void AddShifled(cStencil& v,int di,int dj,int dk,double c=1.0) {
+  void AddShifted(cStencil& v,int di,int dj,int dk,double c=1.0) {
     cFrac diIn,djIn,dkIn;
 
     diIn=di;
     djIn=dj;
     dkIn=dk; 
 
-    AddShifled(v,diIn,djIn,dkIn,c);
+    AddShifted(v,diIn,djIn,dkIn,c);
   } 
 
+  friend cStencil operator * (cStencil &v1,double t) {
+    cStencil v3;
+
+    v3=v1;
+
+    for (std::list<cStencilElement>::iterator it=v3.StencilData.begin();it!=v3.StencilData.end();it++) {
+      it->a*=t;
+    } 
+
+    return v3;
+  }
+
+  friend cStencil operator + (cStencil &v1,cStencil &v2) {
+    cStencil v3;
+
+    v3=v1;
+    v3.AddShifted(v2,0,0,0,1);
+
+    return v3;
+  }
+
+  friend cStencil operator - (cStencil &v1,cStencil &v2) {
+    cStencil v3;
+
+    v3=v1;
+    v3.AddShifted(v2,0,0,0,-1);
+
+    return v3;
+  }
+
   void SubstractShifted(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
-    AddShifled(v,di,dj,dk,-c); 
+    AddShifted(v,di,dj,dk,-c); 
   }
 
   void SubstractShifted(cStencil& v,int di,int dj,int dk,double c=1.0) {
-    AddShifled(v,di,dj,dk,-c);
+    AddShifted(v,di,dj,dk,-c);
   }
 
 
