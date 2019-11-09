@@ -19,6 +19,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include<functional>
+
 
 #include <string>
 #include <iterator>
