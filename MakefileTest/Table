@@ -808,7 +808,7 @@ Compile=
 >>>@echo "test_lightwave-current-on_compile..." > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
->>>./Config.pl -application=test/lightwave-current-on ${TESTlightwave-current-onKEYS}
+>>>./Config.pl -application=test/lightwave-current-on -amps-test=on ${TESTlightwave-current-onKEYS}
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>@echo "test_lightwave-current-on_compile... done" >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
