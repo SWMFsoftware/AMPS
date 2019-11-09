@@ -85,6 +85,7 @@ $MARKER:SPECIES-MACRO-DEFINIETION-USED-IN-SIMULATION$
 #include "constants.h"
 #include "rnd.h"
 #include "stack.h"
+#include "stencil.h"
 
 //include the appropriate mesh header
 #if DIM == 3
@@ -6313,28 +6314,22 @@ namespace FieldSolver {
             void BuildMatrix();
             void TimeStep();
 
-	    void copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-				       const int i, const int j, const int k, char *bufferPtr);
+            //init the discritization stencil
+            void InitDiscritizationStencil();
 
-	    void copy_net_charge_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-					   const int i, const int j, const int k, char *bufferPtr);
-     
-	    void add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-				    const int i, const int j, const int k, 
-				    char *bufferPtr, double coef);
-
-	    void add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-					const int i, const int j, const int k, 
-					char *bufferPtr, double coef);
+	          void copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr);
+	          void copy_net_charge_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr);
+	          void add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef);
+	          void add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef);
 	    
-            namespace output {
-                void PrintCenterNodeVariableList(FILE* fout,int DataSetNumber);
-                void PrintCornerNodeVariableList(FILE* fout,int DataSetNumber);
-                void InterpolateCenterNode(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
-                
-                void PrintCenterNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
-                void PrintCornerNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode);
-            }
+	          namespace output {
+	            void PrintCenterNodeVariableList(FILE* fout,int DataSetNumber);
+	            void PrintCornerNodeVariableList(FILE* fout,int DataSetNumber);
+	            void InterpolateCenterNode(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
+
+	            void PrintCenterNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
+	            void PrintCornerNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode);
+	          }
             //set initiall conditions for the electric and magnetic fields
             typedef void (*fSetIC)();
             extern fSetIC SetIC;

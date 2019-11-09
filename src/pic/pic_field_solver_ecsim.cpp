@@ -325,6 +325,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   //Electric field is in the corner nodes
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
 
+  InitDiscritizationStencil();
+
   CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
 
   //register the linear system solver with the core 
@@ -3830,4 +3832,175 @@ add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
   ((double*)nodePtr)[netChargeNewIndex]+=coef*((double*)bufferPtr)[0];
 }
 //-------------------------------------
+//init the discritization stencil
+void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
+  int i,j,k,l,m;
+
+  struct {
+    cStencil Ex,Ey,Ez;
+  } GradDivE[3],LaplacianE[3],GradDivEcompact[3];
+
+
+  cStencil Ex("Ex"),Ey("Ey"),Ez("Ez");
+  cFrac dp(1,2);
+
+  for (i=0;i<2;i++) for (j=0;j<2;j++) for (k=0;k<2;k++) Ex.add(1.0/8.0,i,j,k);
+
+  Ex.MoveBase(dp,dp,dp);
+  Ey=Ex;
+  Ez=Ex;
+
+  cStencil t,dExdx_ppp("dExdx",dp,dp,dp),dEydy_ppp("dEydy",dp,dp,dp),dEzdz_ppp("dEzdz",dp,dp,dp);
+
+  for (l=-1;l<=1;l++) for (m=-1;m<=1;m++) {
+     dExdx_ppp.AddShifted(Ex,1,l,m,1.0/18.0);
+     dExdx_ppp.SubstractShifted(Ex,-1,l,m,1.0/18.0);
+
+     dEydy_ppp.AddShifted(Ey,l,1,m,1.0/18.0);
+     dEydy_ppp.SubstractShifted(Ey,l,-1,m,1.0/18.0);
+
+     dEzdz_ppp.AddShifted(Ez,l,m,1,1.0/18.0);
+     dEzdz_ppp.SubstractShifted(Ez,l,m,-1,1.0/18.0);
+  }
+
+  for (l=-1;l<=0;l++) for (m=-1;m<=0;m++) {
+     GradDivE[0].Ex.AddShifted(dExdx_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ex.SubstractShifted(dExdx_ppp,-1,l,m,1.0/4.0);
+
+     GradDivE[0].Ey.AddShifted(dEydy_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ey.SubstractShifted(dEydy_ppp,-1,l,m,1.0/4.0);
+
+     GradDivE[0].Ez.AddShifted(dEzdz_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ez.SubstractShifted(dEzdz_ppp,-1,l,m,1.0/4.0);
+
+
+
+     GradDivE[1].Ex.AddShifted(dExdx_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ex.SubstractShifted(dExdx_ppp,l,-1,m,1.0/4.0);
+
+     GradDivE[1].Ey.AddShifted(dEydy_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ey.SubstractShifted(dEydy_ppp,l,-1,m,1.0/4.0);
+
+     GradDivE[1].Ez.AddShifted(dEzdz_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ez.SubstractShifted(dEzdz_ppp,l,-1,m,1.0/4.0);
+
+
+
+     GradDivE[2].Ex.AddShifted(dExdx_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ex.SubstractShifted(dExdx_ppp,l,m,-1,1.0/4.0);
+
+     GradDivE[2].Ey.AddShifted(dEydy_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ey.SubstractShifted(dEydy_ppp,l,m,-1,1.0/4.0);
+
+     GradDivE[2].Ez.AddShifted(dEzdz_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ez.SubstractShifted(dEzdz_ppp,l,m,-1,1.0/4.0);
+  }
+
+  LaplacianE[0].Ex.add(1.0,1,0,0);
+  LaplacianE[0].Ex.add(1.0,-1,0,0);
+
+  LaplacianE[0].Ex.add(1.0,0,1,0);
+  LaplacianE[0].Ex.add(1.0,0,-1,0);
+
+  LaplacianE[0].Ex.add(1.0,0,0,1);
+  LaplacianE[0].Ex.add(1.0,0,0,-1);
+
+  LaplacianE[0].Ex.add(-6.0,0,0,0);
+
+  LaplacianE[1].Ey=LaplacianE[0].Ex;
+  LaplacianE[2].Ez=LaplacianE[0].Ex;
+
+
+  cStencil dx,dy,dz,dxx,dyy,dzz;
+
+  dx.add(0.5,1,0,0);
+  dx.add(-0.5,-1,0,0);
+
+  dy.add(0.5,0,1,0);
+  dy.add(-0.5,0,-1,0);
+
+  dz.add(0.5,0,0,1);
+  dz.add(-0.5,0,0,-1);
+
+  dxx.add(1.0,1,0,0);
+  dxx.add(1.0,-1,0,0);
+  dxx.add(-2.0,0,0,0);
+
+  dyy.add(1.0,0,1,0);
+  dyy.add(1.0,0,-1,0);
+  dyy.add(-2.0,0,0,0);
+
+  dzz.add(1.0,0,0,1);
+  dzz.add(1.0,0,0,-1);
+  dzz.add(-2.0,0,0,0);
+
+  GradDivEcompact[0].Ex=dxx;
+
+  GradDivEcompact[0].Ey.AddShifted(dy,1,0,0,1.0/2.0);
+  GradDivEcompact[0].Ey.AddShifted(dy,-1,0,0,-1.0/2.0);
+
+  GradDivEcompact[0].Ez.AddShifted(dz,1,0,0,1.0/2.0);
+  GradDivEcompact[0].Ez.AddShifted(dz,-1,0,0,-1.0/2.0);
+
+
+  GradDivEcompact[1].Ex.AddShifted(dx,0,1,0,1.0/2.0);
+  GradDivEcompact[1].Ex.AddShifted(dx,0,-1,0,-1.0/2.0);
+
+  GradDivEcompact[1].Ey=dyy;
+
+  GradDivEcompact[1].Ez.AddShifted(dz,0,1,0,1.0/2.0);
+  GradDivEcompact[1].Ez.AddShifted(dz,0,-1,0,-1.0/2.0);
+
+  //curl of the magnetic field
+  cStencil xp,xm,yp,ym,zp,zm;
+
+  struct {
+    cStencil Bx,By,Bz;
+  } CurlB[3];
+
+
+  for (l=0;l<2;l++) for (m=0;m<2;m++) {
+    xp.add(1.0/4.0,1,l,m);
+    xm.add(1.0/4.0,0,l,m);
+
+    yp.add(1.0/4.0,l,1,m);
+    ym.add(1.0/4.0,l,0,m);
+
+    zp.add(1.0/4.0,l,m,1);
+    zm.add(1.0/4.0,l,m,0);
+  }
+
+
+  CurlB[0].Bz=yp-ym;
+  CurlB[0].By=zm-zp;
+
+  CurlB[1].Bx=zp-zm;
+  CurlB[1].Bz=xm-xp;
+
+  CurlB[2].By=xp-xm;
+  CurlB[2].Bx=ym-yp;
+
+  for (l=0;l<3;l++) {
+    CurlB[l].Bx.Simplify();
+    CurlB[l].By.Simplify();
+    CurlB[l].Bz.Simplify();
+  }
+
+  //output stencil coefficients to compere with a reference stencil
+  if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(PIC::ThisThread==0)) {
+    GradDivE[0].Ex.Print("GradDivE_0_Ex.dat");
+    GradDivE[0].Ey.Print("GradDivE_0_Ey.dat");
+    GradDivE[0].Ez.Print("GradDivE_0_Ez.dat");
+
+    GradDivE[1].Ex.Print("GradDivE_1_Ex.dat");
+    GradDivE[1].Ey.Print("GradDivE_1_Ey.dat");
+    GradDivE[1].Ez.Print("GradDivE_1_Ez.dat");
+
+    GradDivE[2].Ex.Print("GradDivE_2_Ex.dat");
+    GradDivE[2].Ey.Print("GradDivE_2_Ey.dat");
+    GradDivE[2].Ez.Print("GradDivE_2_Ez.dat");
+  }
+}
+
+
 
