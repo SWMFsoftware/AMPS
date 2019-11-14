@@ -650,9 +650,6 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
 
-  CMPI_channel pipe;
-  pipe.init(1000000);
-
   //init the particle buffer
   for (i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleBuffer[i]=0;
 
@@ -660,13 +657,21 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
   const int ParticleDataSend_SIGNAL=1;
   const int BockDataStarted_SIGNAL=2;
 
-  if (PIC::ThisThread==0) pipe.openRecvAll();
-  else pipe.openSend(0);
-
   //loop through all blocks
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    if ((node->Thread==0)&&(PIC::ThisThread==0)) {
-      //the block belongs to the root
+    if ((node->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
+
+      if (node->Thread!=0) {
+        //recieve the checksum object
+        if (PIC::ThisThread==0) {
+          MPI_Send(&Checksum,sizeof(Checksum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+        }
+        else {
+          MPI_Status status;
+
+          MPI_Recv(&Checksum,sizeof(Checksum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        }
+      }
 
       if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
         ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
@@ -682,78 +687,30 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
           ptr=PIC::ParticleBuffer::GetNext(ptr);
         }
       }
-    }
-    else if (PIC::ThisThread==0) {
-      //this is the root BUT the block belongs to another MPI process
-      int Signal;
 
-      pipe.recv(Signal,node->Thread);
-
-      switch (Signal) {
-      case BockDataStarted_SIGNAL:
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-          pipe.recv(Signal,node->Thread);
-
-          //collect signatures
-          while (Signal!=CommunicationCompleted_SIGNAL) {
-            pipe.recv(ParticleBuffer,PIC::ParticleBuffer::ParticleDataLength,node->Thread);
-            Checksum.add(ParticleBuffer,PIC::ParticleBuffer::ParticleDataLength);
-
-            pipe.recv(Signal,node->Thread);
-          }
+      //send the checksum object back to the root
+      if (node->Thread!=0) {
+        //recieve the checksum object
+        if (PIC::ThisThread!=0) {
+          MPI_Send(&Checksum,sizeof(Checksum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR);
         }
+        else {
+          MPI_Status status;
 
-        break;
-      case CommunicationCompleted_SIGNAL:
-        break;
-      default:
-        exit(__LINE__,__FILE__,"Error: the sigmal is not recognized");
-      }
-
-
-    }
-    else if (node->Thread==PIC::ThisThread) {
-      //this is NOT the root BUT the block belongs to the current MPI process
-      //loop through all cells and particles
-
-      if (node->block!=NULL) {
-        pipe.send(BockDataStarted_SIGNAL);
-
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-          ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-          while (ptr!=-1) {
-            pipe.send(ParticleDataSend_SIGNAL);
-
-            //copy the state vector of the particle without 'next' and 'prev'
-            ParticleDataPtr=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-            PIC::ParticleBuffer::CloneParticle(ParticleBuffer,ParticleDataPtr);
-            pipe.send(ParticleBuffer,PIC::ParticleBuffer::ParticleDataLength);
-
-            ptr=PIC::ParticleBuffer::GetNext(ptr);
-          }
-
-          pipe.send(CommunicationCompleted_SIGNAL);
+          MPI_Recv(&Checksum,sizeof(Checksum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
         }
-
       }
-      else {
-        pipe.send(CommunicationCompleted_SIGNAL);
-      }
-
     }
   }
+
 
   //output the checksum
   if (PIC::ThisThread==0) {
     char msg[500];
 
-    pipe.closeRecvAll();
-
     sprintf(msg," line=%ld, file=%s",nline,fname);
     Checksum.PrintChecksumSingleThread(msg);
   }
-  else pipe.closeSend();
 
   return Checksum.checksum();
 }
