@@ -653,10 +653,6 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
   //init the particle buffer
   for (i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleBuffer[i]=0;
 
-  const int CommunicationCompleted_SIGNAL=0;
-  const int ParticleDataSend_SIGNAL=1;
-  const int BockDataStarted_SIGNAL=2;
-
   //loop through all blocks
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     if ((node->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
@@ -1259,7 +1255,171 @@ void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool Cu
 }
 
 
+//=======================================================================================
+//ger check summs of the corner abd center nodes in all blocks excluding the ghost blocks
 
+void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nline,const char* fname) {
+  CRC32 CenterNodeCheckSum,CornerNodeCheckSum;
+
+
+  //reserve/release the flags
+  int periodic_bc_pair_real_block=-1;
+  int periodic_bc_pair_ghost_block=-1;
+
+  auto ReleasePeriodicBCFlags = [&] () {
+    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_real_block);
+    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_ghost_block);
+  };
+
+
+  auto ReservePeriodicBCFlags = [&] () {
+    periodic_bc_pair_real_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
+    periodic_bc_pair_ghost_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
+
+    if ((periodic_bc_pair_real_block==-1)||(periodic_bc_pair_ghost_block==-1)) exit(__LINE__,__FILE__,"Error: cannot reserve a flag");
+  };
+
+
+  //set the flag
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> ResetPeriodicBCFlags;
+
+  ResetPeriodicBCFlags = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void {
+    startNode->SetFlag(false,periodic_bc_pair_real_block);
+    startNode->SetFlag(false,periodic_bc_pair_ghost_block);
+
+    int i;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) {
+      ResetPeriodicBCFlags(downNode);
+    }
+
+    if (startNode==PIC::Mesh::mesh.rootTree) {
+      //loop throught the list of the block pairs used to impose the periodic BC
+      int iBlockPair,RealBlockThread,GhostBlockThread;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *RealBlock,*GhostBlock;
+
+      //loop through all block pairs
+      for (iBlockPair=0;iBlockPair<PIC::BC::ExternalBoundary::Periodic::BlockPairTableLength;iBlockPair++) {
+        GhostBlock=PIC::BC::ExternalBoundary::Periodic::BlockPairTable[iBlockPair].GhostBlock;
+        RealBlock=PIC::BC::ExternalBoundary::Periodic::BlockPairTable[iBlockPair].RealBlock;
+
+        GhostBlock->SetFlag(true,periodic_bc_pair_ghost_block);
+        RealBlock->SetFlag(true,periodic_bc_pair_real_block);
+      }
+    }
+  };
+
+
+  //get the checksum of a blocks
+  auto CenterNodeBlockCheckSum = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    int i,j,k;
+    PIC::Mesh::cDataBlockAMR *block=node->block;
+
+    if (node->Thread!=0) {
+      if (PIC::ThisThread==0) {
+        MPI_Send(&CenterNodeCheckSum,sizeof(CenterNodeCheckSum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+      }
+      else if (PIC::ThisThread==node->Thread) {
+        MPI_Status status;
+
+        MPI_Recv(&CenterNodeCheckSum,sizeof(CenterNodeCheckSum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+    }
+
+
+    if ((node->Thread==PIC::ThisThread)&&(block!=NULL)) {
+      for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+        PIC::Mesh::cDataCenterNode *CenterNode;
+
+        CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+        if (CenterNode!=NULL) CenterNodeCheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+      }
+    }
+
+    if (node->Thread!=0) {
+      if (PIC::ThisThread==node->Thread) {
+        MPI_Send(&CenterNodeCheckSum,sizeof(CenterNodeCheckSum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR);
+      }
+      else if (PIC::ThisThread==0) {
+        MPI_Status status;
+
+        MPI_Recv(&CenterNodeCheckSum,sizeof(CenterNodeCheckSum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+    }
+  };
+
+  auto CornerNodeBlockCheckSum = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    int i,j,k;
+    PIC::Mesh::cDataBlockAMR *block=node->block;
+
+    if (node->Thread!=0) {
+      if (PIC::ThisThread==0) {
+        MPI_Send(&CornerNodeCheckSum,sizeof(CornerNodeCheckSum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+      }
+      else if (PIC::ThisThread==node->Thread) {
+        MPI_Status status;
+
+        MPI_Recv(&CornerNodeCheckSum,sizeof(CornerNodeCheckSum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+    }
+
+
+    if ((node->Thread==PIC::ThisThread)&&(block!=NULL)) {
+      for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) {
+        PIC::Mesh::cDataCornerNode *CornerNode;
+
+        CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+        if (CornerNode!=NULL) CornerNodeCheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+      }
+    }
+
+    if (node->Thread!=0) {
+      if (PIC::ThisThread==node->Thread)  {
+        MPI_Send(&CornerNodeCheckSum,sizeof(CornerNodeCheckSum),MPI_CHAR,0,0,MPI_GLOBAL_COMMUNICATOR);
+      }
+      else if (PIC::ThisThread==0) {
+        MPI_Status status;
+
+        MPI_Recv(&CornerNodeCheckSum,sizeof(CornerNodeCheckSum),MPI_CHAR,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+    }
+  };
+
+
+
+
+  //loop through all blocks
+  ReservePeriodicBCFlags();
+  ResetPeriodicBCFlags(PIC::Mesh::mesh.rootTree);
+
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    if (node->TestFlag(periodic_bc_pair_ghost_block)==false) {
+      CenterNodeBlockCheckSum(node);
+      CornerNodeBlockCheckSum(node);
+    }
+  }
+
+
+  ReleasePeriodicBCFlags();
+
+
+  //output the checksum
+  if (PIC::ThisThread==0) {
+    char msg[1000];
+
+    static int cnt=0;
+
+    sprintf(msg,"CenterNode CheckSum (%s@%ld, cnt=%i)",fname,nline,cnt);
+    CenterNodeCheckSum.PrintChecksumSingleThread(msg);
+
+    sprintf(msg,"CornerNode CheckSum (%s@%ld, cnt=%i)",fname,nline,cnt);
+    CornerNodeCheckSum.PrintChecksumSingleThread(msg);
+
+    cnt++;
+  }
+}
 
 
 

@@ -4273,6 +4273,8 @@ namespace PIC {
     unsigned long int SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
     unsigned long int SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
+    void GetBlockAssociatedDataSignature_no_ghost_blocks(long int nline,const char* fname);
+
     unsigned long int SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
     unsigned long int SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
