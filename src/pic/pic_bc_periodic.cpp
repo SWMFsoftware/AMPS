@@ -144,12 +144,13 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
   const int NewParticelDataSignal=1;
   const int ParticleSendCompleteSignal=2;
   int Signal;
+  
+  CMPI_channel pipe(1000000);
 
   //send the particles associated with the block
   if (GhostBlockThread==PIC::ThisThread) {
     //send out all particles
-    //redirect the send pipe buffers
-    pipe.RedirectSendBuffer(RealBlockThread);
+    pipe.openSend(RealBlockThread);
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
       pipe.send(NewCellCoordinatesSignal);
@@ -157,26 +158,35 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
       pipe.send(j);
       pipe.send(k);
 
-      while (ptr!=-1) {
-        pipe.send(NewParticelDataSignal);
-        pipe.send((char*)PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
-
-        NextPtr=PIC::ParticleBuffer::GetNext(ptr);
-        PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr,true);
-        ptr=NextPtr;
+      if (ptr!=-1) {
+        while (PIC::ParticleBuffer::GetNext(ptr)!=-1) {
+          ptr=PIC::ParticleBuffer::GetNext(ptr);
+        }
+        
+        while (ptr!=-1) {
+          long int t;
+          
+          pipe.send(NewParticelDataSignal);
+          pipe.send((char*)PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
+          
+          t=PIC::ParticleBuffer::GetPrev(ptr);
+          PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr,true);
+          ptr=t;
+        }
       }
 
       GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
     }
 
     pipe.send(ParticleSendCompleteSignal);
+    pipe.closeSend();
   }
   else {
     //recieve particles
     char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
     double *x;
 
-    pipe.RedirectRecvBuffer(GhostBlockThread);
+    pipe.openRecv(GhostBlockThread);
     Signal=pipe.recv<int>(GhostBlockThread);
 
     if (Signal!=ParticleSendCompleteSignal) {
@@ -214,10 +224,9 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
       }
       while (Signal!=ParticleSendCompleteSignal);
     }
+    
+    pipe.closeRecv(GhostBlockThread);
   }
-
-  //flush the pipe
-  pipe.flush();
 }
 
 
@@ -246,20 +255,46 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
 #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   int iBlockPair,RealBlockThread,GhostBlockThread;  
 
+
+  int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+
+  char *TargetDataBuffer=new char [BlockDataLength];
+  char *SourceDataBuffer=new char [BlockDataLength];
+
   //loop through all blocks
   for (iBlockPair=0;iBlockPair<BlockPairTableLength;iBlockPair++) {
     GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
     RealBlockThread=BlockPairTable[iBlockPair].RealBlock->Thread;
 
-    if ((GhostBlockThread==PIC::ThisThread)||(RealBlockThread==PIC::ThisThread)) {
-      if (GhostBlockThread==RealBlockThread) {
-        ExchangeBlockDataLocal(BlockPairTable[iBlockPair]);
-      }
-      else {
-        ExchangeBlockDataMPI(BlockPairTable[iBlockPair]);
+    //prepare the data
+    if (RealBlockThread==PIC::ThisThread) {
+      ExchangeBlockDataLocal(BlockPairTable[iBlockPair],TargetDataBuffer,NULL);
+     
+      //send the data
+      if (RealBlockThread!=GhostBlockThread) {
+        MPI_Send(TargetDataBuffer,BlockDataLength,MPI_CHAR,GhostBlockThread,0,MPI_GLOBAL_COMMUNICATOR);
       }
     }
+
+   //read the data
+    if (GhostBlockThread==PIC::ThisThread) {
+
+      //recive the data
+      if (RealBlockThread!=GhostBlockThread) {
+        MPI_Status status;
+        
+        MPI_Recv(SourceDataBuffer,BlockDataLength,MPI_CHAR,RealBlockThread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+      else memcpy(SourceDataBuffer,TargetDataBuffer,BlockDataLength);
+      
+      ExchangeBlockDataLocal(BlockPairTable[iBlockPair],NULL,SourceDataBuffer);
+    }
   }
+
+  delete [] TargetDataBuffer;
+  delete [] SourceDataBuffer;
+
 
 #endif
   //update the associated data in the subdomain 'boundary layer' of blocks
@@ -267,7 +302,7 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
 }
 
 //process the data update for the 'ghost' block
-void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable& BlockPair) {
+void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable& BlockPair,char *TargetDataBuffer,char *SourceDataBuffer) {
   int i,j,k;
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPair.GhostBlock;
@@ -277,40 +312,76 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable
   PIC::Mesh::cDataCenterNode *CenterNodeGhostBlock,*CenterNodeRealBlock;
   PIC::Mesh::cDataCornerNode *CornerNodeGhostBlock,*CornerNodeRealBlock;
 
+  bool TargetBufferIsInput=(TargetDataBuffer!=NULL) ? true : false;
+  bool SourceBufferIsInput=(SourceDataBuffer!=NULL) ? true : false;
 
+
+  //process corner nodes
   for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-    CornerNodeGhostBlock=GhostBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-    CornerNodeRealBlock=RealBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
+    CornerNodeGhostBlock=(TargetBufferIsInput==false) ? GhostBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)) : NULL;
+    CornerNodeRealBlock=(SourceBufferIsInput==false) ? RealBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)) : NULL;
 
-    if ((CornerNodeGhostBlock!=NULL)&&(CornerNodeGhostBlock!=NULL)) {
-      if (CopyCornerNodeAssociatedData!=NULL) {
-        CopyCornerNodeAssociatedData(CornerNodeGhostBlock->GetAssociatedDataBufferPointer(),CornerNodeRealBlock->GetAssociatedDataBufferPointer());
+    if (TargetBufferIsInput==false) {
+      if (CornerNodeGhostBlock!=NULL) {
+        TargetDataBuffer=CornerNodeGhostBlock->GetAssociatedDataBufferPointer();
       }
       else{
-        memcpy(CornerNodeGhostBlock->GetAssociatedDataBufferPointer(),CornerNodeRealBlock->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+        exit(__LINE__,__FILE__,"Error: corner node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
       }
     }
-    else if ( ((CornerNodeGhostBlock!=NULL)&&(CornerNodeRealBlock==NULL)) || ((CornerNodeGhostBlock==NULL)&&(CornerNodeRealBlock!=NULL)) ) {
-      exit(__LINE__,__FILE__,"Error: corner node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
+
+    if (SourceBufferIsInput==false) {
+      if (CornerNodeRealBlock!=NULL) {
+        SourceDataBuffer=CornerNodeRealBlock->GetAssociatedDataBufferPointer();
+      }
+      else{
+        exit(__LINE__,__FILE__,"Error: corner node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
+      }
     }
+
+    if (CopyCornerNodeAssociatedData!=NULL) {
+      CopyCornerNodeAssociatedData(TargetDataBuffer,SourceDataBuffer);
+    }
+    else{
+      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+    }
+
+    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
   }
 
   //copy content of the "center" nodes
   for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-    CenterNodeGhostBlock=GhostBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-    CenterNodeRealBlock=RealBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+    CenterNodeGhostBlock=(TargetBufferIsInput==false) ? GhostBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)) : NULL;
+    CenterNodeRealBlock=(SourceBufferIsInput==false) ? RealBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)) : NULL;
 
-    if ((CenterNodeGhostBlock!=NULL)&&(CenterNodeGhostBlock!=NULL)) {
-      if (CopyCenterNodeAssociatedData!=NULL) {
-        CopyCenterNodeAssociatedData(CenterNodeGhostBlock->GetAssociatedDataBufferPointer(),CenterNodeRealBlock->GetAssociatedDataBufferPointer());
+    if (TargetBufferIsInput==false) {
+      if (CenterNodeGhostBlock!=NULL) {
+        TargetDataBuffer=CenterNodeGhostBlock->GetAssociatedDataBufferPointer();
       }
-      else {
-        memcpy(CenterNodeGhostBlock->GetAssociatedDataBufferPointer(),CenterNodeRealBlock->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+      else{
+        exit(__LINE__,__FILE__,"Error: corner node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
       }
     }
-    else if ( ((CenterNodeGhostBlock!=NULL)&&(CenterNodeRealBlock==NULL)) || ((CenterNodeGhostBlock==NULL)&&(CenterNodeRealBlock!=NULL)) ) {
-      exit(__LINE__,__FILE__,"Error: center node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
+
+    if (SourceBufferIsInput==false) {
+      if (CenterNodeRealBlock!=NULL) {
+        SourceDataBuffer=CenterNodeRealBlock->GetAssociatedDataBufferPointer();
+      }
+      else{
+        exit(__LINE__,__FILE__,"Error: corner node distribution in the \"ghost\" and \"real\" blocks is inconsistent");
+      }
     }
+
+    if (CopyCenterNodeAssociatedData!=NULL) {
+      CopyCenterNodeAssociatedData(TargetDataBuffer,SourceDataBuffer);
+    }
+    else {
+      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+    }
+
+    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
   }
 }
 
@@ -445,6 +516,11 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
   std::map<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *,int> GhostTrueBlockMap;
 
   InitBlockPairTable();
+
+/* Setting of the "ghost" block with the "real" block at the same thread is removed. Because the "ghost" blocks topologycally separated
+ from the "real" ones, the procexdure it causes creating a block layer around the "ghost" blocks. that increase the memory consumption as well as the communication time
+ to syncronize the layer blocks.
+ 
   for (int i=0; i<PIC::nTotalThreads;i++) countMovingBlocks[i]=0;
   
   for (int iPair=0; iPair<BlockPairTableLength; iPair++) {
@@ -503,30 +579,12 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
         }
 
         if (nextNode!=NULL) nextNode->prevNodeThisThread = prevNode;
-        /*
-        if (PIC::ThisThread==0){
-          printf("move nodeid:%d from thread:%d to thread:%d\n",node?node->Temp_ID:-1, iThread, destThread);
-
-          int prevId=prevNode?prevNode->Temp_ID:-1;
-          int prevNextId=-1;
-          if (prevNode) prevNextId= prevNode->nextNodeThisThread?prevNode->nextNodeThisThread->Temp_ID:-1;
-          int nextId=nextNode?nextNode->Temp_ID:-1;
-          int nextPrevId =-1;
-          
-          if (nextNode) nextPrevId=nextNode->prevNodeThisThread?nextNode->prevNodeThisThread->Temp_ID:-1;
-          int currId = node?node->Temp_ID:-1;
-          int currNextId= node->nextNodeThisThread?node->nextNodeThisThread->Temp_ID:-1;
-          printf("prevId:%d, prev.nextId:%d\n",prevId,prevNextId);     
-          printf("nextId:%d, next.prevId:%d\n",nextId,nextPrevId);
-          int headId = ParallelNodesDistributionList[destThread]?ParallelNodesDistributionList[destThread]->Temp_ID:-1;
-          printf("after destThread:%d, headnode:%d\n", destThread,headId);
-          printf("currentId:%d,currentid.nextId:%d\n",currId, currNextId);
-        }*/
       }
 
       node = nextNode;
     }
   }
+ */
   
 
 }

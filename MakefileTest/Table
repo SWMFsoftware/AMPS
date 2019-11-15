@@ -783,9 +783,17 @@ Compile=
 
 Check=
 >>>@echo "test_periodic-bc-gmres_check..." >> test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff
+
+<<<ifeq ($(wildcard output/test_periodic-bc-gmres/*.tmp),)
 >>>-@$(foreach OUT,$(TESTperiodic-bc-gmresOUTFILES),                                 \
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-7 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat         \
->>>output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '` > test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff);) 
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '`)
+<<<endif
+
+>>>-@$(foreach OUT,$(TESTperiodic-bc-gmresOUTFILES),                                 \
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat; \ 
+>>>${SCRIPTDIR}/DiffNum.pl -a=2.0E-7 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat         \
+>>>output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '` > test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff; \
+>>>mv $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat.tmp $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat) 
 >>>@ls -l test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff
 >>>@echo Test test_periodic-bc-gmres has finished: `date`
 
@@ -992,11 +1000,22 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_check..." >> test_fast-wave$(TESTfast-wave-REF).diff
 
+<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '` 
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
 >>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave--protons$(TESTfast-wave-REF).diff;)
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave--electrons$(TESTfast-wave-REF).diff)
+
+>>>mv $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>mv $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
 
 >>>@cat test_fast-wave--protons$(TESTfast-wave-REF).diff  test_fast-wave--electrons$(TESTfast-wave-REF).diff > test_fast-wave$(TESTfast-wave-REF).diff 
 

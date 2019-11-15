@@ -5866,7 +5866,7 @@ namespace PIC {
         void InitBlockPairTable(bool RebuildBlockPairTable=false);
 
         void ExchangeBlockDataMPI(cBlockPairTable& BlockPair);
-        void ExchangeBlockDataLocal(cBlockPairTable& BlockPair);
+        void ExchangeBlockDataLocal(cBlockPairTable& BlockPair,char* TargetDataBuffer,char *SourceDataBuffer);
         
         //modify the newly created 'ParallelNodesDistributionList' to ensure that a 'ghost' and corresponding 'real' blocks are assigned to the same MPI process
         void AssignGhostBlockThreads(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>**  ParallelNodesDistributionList);
