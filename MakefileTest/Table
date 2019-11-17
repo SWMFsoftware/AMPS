@@ -1288,32 +1288,50 @@ Check=
 >>>@echo "test_Periodic-BC-NonUniform_check..." >> test_Periodic-BC-NonUniform.diff
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat.Reduced.Step=10 
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test0-wave50.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test0-wave50.dat.Reduced.Step=10  
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test0-wave50.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test0-wave50.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test1-wave-init-updated.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test1-wave-init-updated.dat.Reduced.Step=10 
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test1-wave-init-updated.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test1-wave-init-updated.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test1-wave50.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test1-wave50.dat.Reduced.Step=10  
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test1-wave50.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test1-wave50.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test2-wave-init-updated.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test2-wave-init-updated.dat.Reduced.Step=10  
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test2-wave-init-updated.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test2-wave-init-updated.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test2-wave50.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test2-wave50.dat.Reduced.Step=10  
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test2-wave50.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test2-wave50.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test3-wave-init-updated.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave-init-updated.dat.Reduced.Step=10  
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test3-wave-init-updated.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave-init-updated.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat 10
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat.Reduced.Step=10 
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat.Reduced.Step=10.dat
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat 10
 >>>@mv ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10.dat
 
+<<<ifeq ($(wildcard output/test_Periodic-BC-NonUniform/*.tmp),)
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test0-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test1-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test2-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test3-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test0-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test1-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test2-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test3-wave50.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
+<<<endif
 
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTPeriodic-BC-NonUniformDIR}/test0-wave-init-updated.dat.Reduced.Step=10.dat      \
 >>>output/test_Periodic-BC-NonUniform/test0-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`  > test_Periodic-BC-NonUniform-test=0-wave.diff
