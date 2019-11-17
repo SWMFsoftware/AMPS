@@ -1227,7 +1227,7 @@ Check=
 >>>-@${TESTPeriodic-BCDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BCDIR}/test3-wave50.dat.Reduced.Step=10 
 
 >>>@${TESTPeriodic-BCDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat 10
->>>@mv ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BCDIR}/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10.dat
+>>>@mv ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BCDIR}
 
 
 <<<ifeq ($(wildcard output/test_Periodic-BC/*.tmp),)
@@ -1313,6 +1313,7 @@ Check=
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat.Reduced.Step=10 
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat 10
+>>>@mv ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}
 
 <<<ifeq ($(wildcard output/test_Periodic-BC-NonUniform/*.tmp),)
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test0-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
