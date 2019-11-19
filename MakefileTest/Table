@@ -1205,11 +1205,21 @@ Compile=
 Check=
 >>>@echo "test_lightwave-current-off-openmp_check..." >> test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
 
+<<<ifeq ($(wildcard output/test_lightwave-current-off/*.tmp),)
+>>>-@${TESTlightwave-current-off-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-off/LightWave.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '` 
+>>>-@${TESTlightwave-current-off-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-off/LightWaveCase1.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTlightwave-current-off-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase0.out=19.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase0.out=19.dat \ 
 >>>output/test_lightwave-current-off/LightWave.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-off-openmp--degrees=0$(TESTlightwave-current-off-openmp-REF).diff;) 
+>>>mv $(TESTlightwave-current-off-openmpDIR)/LightWaveCase0.out=19.dat.tmp $(TESTlightwave-current-off-openmpDIR)/LightWaveCase0.out=19.dat
 
+
+>>>-@${TESTlightwave-current-off-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase1.out=19.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-off-openmpDIR)/LightWaveCase1.out=19.dat \ 
 >>>output/test_lightwave-current-off/LightWaveCase1.out=19.ref_np`ls $(TESTlightwave-current-off-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-off-openmp--degrees=45$(TESTlightwave-current-off-openmp-REF).diff;) 
+>>>mv $(TESTlightwave-current-off-openmpDIR)/LightWaveCase1.out=19.dat.tmp $(TESTlightwave-current-off-openmpDIR)/LightWaveCase1.out=19.dat
 
 >>>@cat test_lightwave-current-off-openmp--degrees=0$(TESTlightwave-current-off-openmp-REF).diff test_lightwave-current-off-openmp--degrees=45$(TESTlightwave-current-off-openmp-REF).diff > test_lightwave-current-off-openmp$(TESTlightwave-current-off-openmp-REF).diff
 
