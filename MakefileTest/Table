@@ -608,9 +608,6 @@ Check=
 Name=Earth-cutoff-rigidity 
 Time=2
 
-Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
-Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
-
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity_compile..." > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>echo "Installing BATL....."
@@ -636,12 +633,12 @@ Compile=
 Check=
 >>>@echo "test_Earth-cutoff-rigidity_check..." >> test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/CutoffRigidityMap\[R=6.871000e+06\].s=0.dat         
->>>${TESTEarth-cutoff-rigidityKEYS}/CutoffRigidityMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/CutoffRigidityMap\[R=6.871000e+06\].dat \ 
+>>>output/test_Earth-cutoff-rigidity/CutoffRigidityMap\[R=6.871000e+06\].ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/EnergySpectrumMap\[R=6.871000e+06\].s=0.dat         
->>>${TESTEarth-cutoff-rigidityKEYS}/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/EnergySpectrumMap\[R=6.871000e+06\].s=0.dat \        
+>>>output/test_Earth-cutoff-rigidity/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
 
 >>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
