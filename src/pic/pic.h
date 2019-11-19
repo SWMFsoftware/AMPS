@@ -4244,6 +4244,7 @@ namespace PIC {
 
     //verify that the number of particles in the lists is the same as the number of used particles in the buffer
     void VerifyTotalParticleNumber(int line,const char* fname,bool CurrentThreadOnly=false);
+    int GetParticleNumberInLists(bool CurrentThreadOnly=false);
 
     //check is a variable value is within an allowed range
     const double minAllowedValue=1.0E-80;

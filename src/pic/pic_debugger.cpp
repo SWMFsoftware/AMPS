@@ -1232,7 +1232,8 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
 
 //=======================================================================================
 //verify that the number of particles in the lists is the same as the number of used particles in the buffer
-void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool CurrentThreadOnly) {
+
+int PIC::Debugger::GetParticleNumberInLists(bool CurrentThreadOnly) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int ptr,i,j,k,nTotalParticles=0;
 
@@ -1251,7 +1252,20 @@ void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool Cu
     }
   }
 
-  if (nTotalParticles!=PIC::ParticleBuffer::GetAllPartNum()) exit(line,fname,"Error: the particle number is inconsistent");
+  return nTotalParticles;
+}
+
+
+void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool CurrentThreadOnly) {
+  int nTotalParticles=GetParticleNumberInLists(CurrentThreadOnly);
+
+
+  if (nTotalParticles!=PIC::ParticleBuffer::GetAllPartNum()) {
+    char msg[1000];
+
+    sprintf(msg,"Error: the particle number is inconsistent (particles in the lists: %i, particle buffer: %ld",nTotalParticles,PIC::ParticleBuffer::GetAllPartNum());
+    exit(line,fname,msg);
+  }
 }
 
 
