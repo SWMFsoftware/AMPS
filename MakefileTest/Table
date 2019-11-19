@@ -982,6 +982,11 @@ Compile=
 Check=
 >>>@echo "test_magnetic-reconnection-openmp_check..." >> test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff
 >>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection-openmpDIR}/PIC_reconnect_out=200.dat 10
+>>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
+
+<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>-@${TESTmagnetic-reconnection-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection-openmpDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-openmp-REF).ref_np`ls $(TESTmagnetic-reconnection-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection-openmp$(TESTmagnetic-reconnection-openmp-REF).diff;)
