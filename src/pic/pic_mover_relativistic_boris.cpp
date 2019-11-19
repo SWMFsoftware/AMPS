@@ -405,6 +405,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown

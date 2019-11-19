@@ -475,6 +475,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown
@@ -739,6 +740,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
   #else
   #error The option is unknown
@@ -1114,6 +1116,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
   #else
   #error The option is unknown

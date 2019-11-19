@@ -539,6 +539,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown

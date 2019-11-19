@@ -1181,6 +1181,7 @@ int iTemp,jTemp,kTemp;
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown
@@ -1567,6 +1568,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown
@@ -1830,6 +1832,7 @@ exit(__LINE__,__FILE__,"not implemented");
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 #else
 #error The option is unknown
@@ -3525,6 +3528,7 @@ ProcessPhotoChemistry:
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
 
 #else
