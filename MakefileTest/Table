@@ -824,12 +824,20 @@ Compile=
 Check=
 >>>@echo "test_lightwave-current-on_check..." >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
+<<<ifeq ($(wildcard output/test_lightwave-current-on/*.tmp),)
+>>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  
+>>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '` 
+<<<endif
+
+>>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat \ 
 >>>output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff;) 
+>>>mv $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat.tmp $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat
 
-
+>>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat \ 
 >>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff;) 
+>>>mv $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat.tmp $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ex.dat output/test_lightwave-current-on/GradDivE_0_Ex.ref  > test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff;) 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ey.dat output/test_lightwave-current-on/GradDivE_0_Ey.ref  > test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff;)
@@ -934,6 +942,11 @@ Compile=
 Check=
 >>>@echo "test_magnetic-reconnection_check..." >> test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnectionDIR}/PIC_reconnect_out=200.dat 10
+>>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
+
+<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '` 
+<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \ 
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff;)
@@ -1001,12 +1014,12 @@ Check=
 >>>@echo "test_fast-wave_check..." >> test_fast-wave$(TESTfast-wave-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '` 
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '` 
+>>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+>>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
 >>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave--protons$(TESTfast-wave-REF).diff;)
@@ -1227,7 +1240,7 @@ Check=
 >>>-@${TESTPeriodic-BCDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BCDIR}/test3-wave50.dat.Reduced.Step=10 
 
 >>>@${TESTPeriodic-BCDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat 10
->>>@mv ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BCDIR}/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10.dat
+>>>@mv ${TESTPeriodic-BCDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BCDIR}
 
 
 <<<ifeq ($(wildcard output/test_Periodic-BC/*.tmp),)
@@ -1313,6 +1326,7 @@ Check=
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 ${TESTPeriodic-BC-NonUniformDIR}/test3-wave50.dat.Reduced.Step=10 
 
 >>>@${TESTPeriodic-BC-NonUniformDIR}/../utility/ReduceFile.pl ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat 10
+>>>@mv ${TESTPeriodic-BC-NonUniformDIR}/PT/plots/amps.TrajectoryTracking.out=19.s=0.H2O.dat.Reduced.Step=10 ${TESTPeriodic-BC-NonUniformDIR}
 
 <<<ifeq ($(wildcard output/test_Periodic-BC-NonUniform/*.tmp),)
 >>>-@${TESTPeriodic-BC-NonUniformDIR}/../utility/RemoveColumn.pl -c=5 output/test_Periodic-BC-NonUniform/test0-wave-init-updated.dat.Reduced.Step=10.ref_np`ls ${TESTPeriodic-BC-NonUniformDIR}/PT/thread* |wc -l |tr -d ' '`
