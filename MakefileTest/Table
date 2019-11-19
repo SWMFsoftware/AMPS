@@ -1063,6 +1063,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave-openmp_check..." >> test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff
 
+<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave-openmpDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
 >>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave-openmp--protons$(TESTfast-wave-openmp-REF).diff;)
 
