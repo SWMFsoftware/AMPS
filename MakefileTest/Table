@@ -1079,6 +1079,9 @@ Check=
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave-openmpDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave-openmp--electrons$(TESTfast-wave-openmp-REF).diff)
 
+>>>mv $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>mv $(TESTfast-wave-openmpDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave-openmpDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
 >>>@cat test_fast-wave-openmp--protons$(TESTfast-wave-openmp-REF).diff  test_fast-wave-openmp--electrons$(TESTfast-wave-openmp-REF).diff > test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff 
 
 >>>@ls -l test_fast-wave-openmp--protons$(TESTfast-wave-openmp-REF).diff
