@@ -21,10 +21,10 @@
 
 #include "Exosphere.dfn"
 
-
-
-
-
+#ifdef _NO_SPICE_CALLS_
+#undef _EXOSPHERE__ORBIT_CALCUALTION__MODE_
+#define _EXOSPHERE__ORBIT_CALCUALTION__MODE_  _PIC_MODE_OFF_
+#endif
 
 //user defined settings of the exospheric model
 //#include "UserDefinition.Exosphere.h"

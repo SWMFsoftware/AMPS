@@ -54,6 +54,9 @@ ifeq ($(SPICE),nospice)
 	SEARCH_C+=-D _NO_SPICE_CALLS_
 endif
 
+ifeq ($(SPICE),)
+	SEARCH_C+=-D _NO_SPICE_CALLS_
+endif
 
 #the additional argument string for the fortran compiler
 SEARCH_F=
