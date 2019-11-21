@@ -606,7 +606,7 @@ Check=
 
 #>
 Name=Earth-cutoff-rigidity 
-Time=2
+Time=15 
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
