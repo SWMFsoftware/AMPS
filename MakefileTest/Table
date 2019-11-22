@@ -644,7 +644,7 @@ Check=
 >>>output/test_Earth-cutoff-rigidity/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity has finished: `date`
 <#
