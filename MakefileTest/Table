@@ -2751,3 +2751,160 @@ Check=
 <#
 
 
+-------------------------------------------------------------------------------
+#>
+Name=test/AMPS-BATSRUS-PIC-coupling
+Time=30 
+
+ExeptionCode=SKIP{pgcc}
+
+Compile=
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_compile..." > test_AMPS-BATSRUS-PIC-coupling.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF 
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx 
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_compile... done" > test_AMPS-BATSRUS-PIC-coupling.diff
+
+Rundir=
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_rundir..." >> test_AMPS-BATSRUS-PIC-coupling.diff
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_rundir... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
+
+Run=
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_run..." >> test_AMPS-BATSRUS-PIC-coupling.diff
+>>>@echo Test test_AMPS-BATSRUS-PIC-coupling has started: `date`
+
+>>>-cd SWMF;$(MAKE) test12_aniso_AMPS
+>>>-cd SWMF;$(MAKE) test12_aniso_AMPS_dynamic -j 
+>>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
+>>>-cd SWMF;./Config.pl -noopenmp -o=PC:openmp=off
+
+>>>-@mv SWMF/test12_aniso_AMPS_dynamic_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff
+>>>-@mv SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
+>>>-@mv SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
+
+>>>-@cat test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-opemp.diff > test_AMPS-BATSRUS-PIC-coupling.diff 
+
+>>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff 
+>>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
+>>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
+>>>-@ls -l test_AMPS-BATSRUS-PIC-coupling.diff
+
+
+Check=
+>>>@echo Test test_AMPS-BATSRUS-PIC-coupling has finished: `date`
+
+<#
+
+
+#>
+Name=test/AMPS-BATSRUS-Europa 
+Time=15 
+
+ExeptionCode=SKIP{pgcc}
+
+Compile=
+>>>@echo "test_AMPS-BATSRUS-Europa_compile..." > test_AMPS-BATSRUS-Europa.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_AMPS-BATSRUS-Europa_compile... done" > test_AMPS-BATSRUS-Europa.diff
+
+
+Rundir=
+>>>@echo "test_AMPS-BATSRUS-Europa_rundir..." >> test_AMPS-BATSRUS-Europa.diff
+>>>@echo "test_AMPS-BATSRUS-Europa_rundir... done" >> test_AMPS-BATSRUS-Europa.diff
+
+Run=
+>>>@echo "test_AMPS-BATSRUS-Europa_run..." >> test_AMPS-BATSRUS-Europa.diff
+>>>@echo Test test_AMPS-BATSRUS-Europa has started: `date`
+
+>>>-cd SWMF;$(MAKE) test13
+
+>>>-@ls -l test_AMPS-BATSRUS-Europa.diff 
+
+
+Check=
+>>>@echo Test test_AMPS-BATSRUS-Europa has finished: `date`
+
+<#
+
+
+#>
+Name=test/AMPS-BATSRUS-OH  
+Time=15 
+
+ExeptionCode=SKIP{pgcc}
+
+Compile=
+>>>@echo "test_AMPS-BATSRUS-OH_compile..." > test_AMPS-BATSRUS-OH.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_AMPS-BATSRUS-OH_compile... done" > test_AMPS-BATSRUS-OH.diff
+
+
+Rundir=
+>>>@echo "test_AMPS-BATSRUS-OH_rundir..." >> test_AMPS-BATSRUS-OH.diff
+>>>@echo "test_AMPS-BATSRUS-OH_rundir... done" >> test_AMPS-BATSRUS-OH.diff
+
+Run=
+>>>@echo "test_AMPS-BATSRUS-OH_run..." >> test_AMPS-BATSRUS-OH.diff
+>>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
+
+>>>-cd SWMF;$(MAKE) test14
+>>>-@mv SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff 
+>>>-@ls -l test_AMPS-BATSRUS-OH.diff
+
+
+Check=
+>>>@echo Test test_AMPS-BATSRUS-OH has finished: `date`
+
+<#
+
+
+
