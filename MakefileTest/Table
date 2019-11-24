@@ -2803,8 +2803,8 @@ Run=
 >>>-@cp SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
 >>>-@cp SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
 
-<<<ifneq ($(wildcard test_AMPS-BATSRUS-PIC-coupling--gmpc*),)
->>>-@cat test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-opemp.diff > test_AMPS-BATSRUS-PIC-coupling.diff 
+<<<ifneq ($(wildcard test_AMPS-BATSRUS-PIC-coupling--gmpc*.diff),)
+>>>-@cat test_AMPS-BATSRUS-PIC-coupling--gmpc*.diff > test_AMPS-BATSRUS-PIC-coupling.diff 
 <<<endif
 
 >>>-@ls -l test_AMPS-BATSRUS-PIC-coupling*.diff 
