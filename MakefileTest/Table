@@ -2789,20 +2789,25 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-PIC-coupling has started: `date`
 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS
+>>>-head -n 10000 SWMF/run_test/runlog
+
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_dynamic -j 
+>>>-head -n 10000 SWMF/run_test/runlog
+
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
+>>>-head -n 10000 SWMF/run_test/runlog
+
 >>>-cd SWMF;./Config.pl -noopenmp -o=PC:openmp=off
 
->>>-@mv SWMF/test12_aniso_AMPS_dynamic_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff
->>>-@mv SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
->>>-@mv SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
+>>>-@cp SWMF/test12_aniso_AMPS_dynamic_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff
+>>>-@cp SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
+>>>-@cp SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
 
+<<<ifneq ($(wildcard test_AMPS-BATSRUS-PIC-coupling--gmpc*),)
 >>>-@cat test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-opemp.diff > test_AMPS-BATSRUS-PIC-coupling.diff 
+<<<endif
 
->>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff 
->>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
->>>-@ls -l test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
->>>-@ls -l test_AMPS-BATSRUS-PIC-coupling.diff
+>>>-@ls -l test_AMPS-BATSRUS-PIC-coupling*.diff 
 
 
 Check=
@@ -2897,7 +2902,11 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
 >>>-cd SWMF;$(MAKE) test14
->>>-@mv SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff 
+
+<<<ifeq ($(wildcard SWMF/test14_ohpt.diff),SWMF/test14_ohpt.diff)
+>>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff 
+<<<endif
+
 >>>-@ls -l test_AMPS-BATSRUS-OH.diff
 
 
