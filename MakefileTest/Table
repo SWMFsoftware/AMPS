@@ -2764,6 +2764,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF/*),)
 >>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF 
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx 
@@ -2833,7 +2834,7 @@ Check=
 
 
 #>
-Name=test/AMPS-BATSRUS-Europa 
+Name=test/AMPS-BATSRUS-Europa@@(0+) 
 Time=15 
 
 ExeptionCode=SKIP{pgcc}
@@ -2844,6 +2845,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF/*),)
 >>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
@@ -2893,6 +2895,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF/*),)
 >>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
