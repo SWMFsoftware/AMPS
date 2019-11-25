@@ -2854,6 +2854,7 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-Europa has started: `date`
 
 >>>-cd SWMF;$(MAKE) test13
+>>>-head -n 10000 SWMF/run_test/runlog
 
 >>>-@ls -l test_AMPS-BATSRUS-Europa.diff 
 
@@ -2902,6 +2903,7 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
 >>>-cd SWMF;$(MAKE) test14
+>>>-head -n 10000 SWMF/run_test/runlog
 
 <<<ifeq ($(wildcard SWMF/test14_ohpt.diff),SWMF/test14_ohpt.diff)
 >>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff 
