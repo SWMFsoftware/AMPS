@@ -2903,16 +2903,14 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
 >>>-cd SWMF;$(MAKE) test14
->>>-head -n 10000 SWMF/run_test/runlog
+>>>-head -n 10000 SWMF/run_test/RESULTS/runlog
 
-<<<ifeq ($(wildcard SWMF/test14_ohpt.diff),SWMF/test14_ohpt.diff)
->>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff 
+Check=
+<<<ifneq ($(wildcard SWMF/test14_ohpt.diff),)
+>>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff
 <<<endif
 
 >>>-@ls -l test_AMPS-BATSRUS-OH.diff
-
-
-Check=
 >>>@echo Test test_AMPS-BATSRUS-OH has finished: `date`
 
 <#
