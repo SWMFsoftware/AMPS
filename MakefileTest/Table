@@ -2790,27 +2790,43 @@ Run=
 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS
 >>>-head -n 10000 SWMF/run_test/runlog
+>>>-head -n 10000 SWMF/run_test/RESULTS/2restart/runlog
+>>>-head -n 10000 SWMF/run_test/RESULTS/2step/runlog
+>>>-head -n 10000 SWMF/run_test/RESULTS/5step/runlog
+>>>-rm -rf SWMF/run_test
 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_dynamic -j 
 >>>-head -n 10000 SWMF/run_test/runlog
+>>>-rm -rf SWMF/run_test
 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
->>>-head -n 10000 SWMF/run_test/runlog
+>>>-head -n 10000 SWMF/run_test/RESULTS/runlog
+>>>-rm -rf SWMF/run_test
 
 >>>-cd SWMF;./Config.pl -noopenmp -o=PC:openmp=off
-
->>>-@cp SWMF/test12_aniso_AMPS_dynamic_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff
->>>-@cp SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
->>>-@cp SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
-
-<<<ifneq ($(wildcard test_AMPS-BATSRUS-PIC-coupling--gmpc*.diff),)
->>>-@cat test_AMPS-BATSRUS-PIC-coupling--gmpc*.diff > test_AMPS-BATSRUS-PIC-coupling.diff 
-<<<endif
-
->>>-@ls -l test_AMPS-BATSRUS-PIC-coupling*.diff 
-
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_run... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
 
 Check=
+>>>@echo "test_AMPS-BATSRUS-PIC-coupling_check..." >> test_AMPS-BATSRUS-PIC-coupling.diff
+
+<<<ifneq ($(wildcard SWMF/test12_aniso_AMPS_dynamic_gmpc.diff),)
+>>>@cp SWMF/test12_aniso_AMPS_dynamic_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-dynamics.diff
+<<<endif
+
+<<<ifneq ($(wildcard SWMF/test12_aniso_AMPS_gmpc.diff),)
+>>>@cp SWMF/test12_aniso_AMPS_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc.diff
+<<<endif
+
+<<<ifneq ($(wildcard SWMF/test12_aniso_AMPS_openmp_gmpc.diff),)
+>>>@cp SWMF/test12_aniso_AMPS_openmp_gmpc.diff test_AMPS-BATSRUS-PIC-coupling--gmpc-openmp.diff
+<<<endif
+
+<<<ifneq ($(wildcard SWMF/test12_aniso_AMPS*.diff),)
+>>>@cat test_AMPS-BATSRUS-PIC-coupling--gmpc*.diff > test_AMPS-BATSRUS-PIC-coupling.diff
+<<<endif
+
+>>>@ls -l test_AMPS-BATSRUS-PIC-coupling*.diff
+
 >>>@echo Test test_AMPS-BATSRUS-PIC-coupling has finished: `date`
 
 <#
@@ -2856,10 +2872,10 @@ Run=
 >>>-cd SWMF;$(MAKE) test13
 >>>-head -n 10000 SWMF/run_test/runlog
 
->>>-@ls -l test_AMPS-BATSRUS-Europa.diff 
 
 
 Check=
+>>>-@ls -l test_AMPS-BATSRUS-Europa.diff
 >>>@echo Test test_AMPS-BATSRUS-Europa has finished: `date`
 
 <#
