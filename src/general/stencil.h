@@ -56,7 +56,7 @@ public:
 
   int Convert2Int() {
     if (nominator%denominator!=0) {
-      printf("Error: cannot be converted (%s@%ld\n",__FILE__,__LINE__);
+      printf("Error: cannot be converted (%s@%i\n",__FILE__,__LINE__);
       exit(0);
     }
 
