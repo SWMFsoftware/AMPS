@@ -898,12 +898,20 @@ Compile=
 Check=
 >>>@echo "test_lightwave-current-on-openmp_check..." >> test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat \
+<<<ifeq ($(wildcard output/test_lightwave-current-on/*.tmp),)
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat
+>>>-@(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat \
 >>>output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff;)
+>>>@mv $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat.tmp $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case0.out=6.dat
 
-
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat \
+>>>-@${TESTlightwave-current-on-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat
+>>>-@(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat \
 >>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-openmp-REF).ref_np`ls $(TESTlightwave-current-on-openmpDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff;)
+>>>@mv $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat.tmp $(TESTlightwave-current-on-openmpDIR)/PIC_particle_case1.out=6.dat
 
 
 >>>@cat test_lightwave-current-on-openmp--particle_energy$(TESTlightwave-current-on-openmp-REF).diff test_lightwave-current-on-openmp--langmuir_wave$(TESTlightwave-current-on-openmp-REF).diff > test_lightwave-current-on-openmp$(TESTlightwave-current-on-openmp-REF).diff
