@@ -4193,7 +4193,7 @@ namespace PIC {
 
       printf("Timing (thread=%i): time=%e\n",PIC::ThisThread,dT);
       if (msg!=NULL) printf("Message: %s\n",msg);
-      if (line_start>0) printf("Timer defined at %s@%ld \n",fname_start,line_start);
+      if (line_start>0) printf("Timer defined at %s@%i \n",fname_start,line_start);
     }
 
     void PrintMPI(const char *msg=NULL) {
@@ -4205,7 +4205,7 @@ namespace PIC {
       if (PIC::ThisThread==0) {
         printf("Timing:\n");
         if (msg!=NULL) printf("Message: %s\n",msg);
-        if (line_start>0) printf("Timer defined at %s@%ld \n",fname_start,line_start);
+        if (line_start>0) printf("Timer defined at %s@%i \n",fname_start,line_start);
 
         printf("thread\ttime\n");
 
