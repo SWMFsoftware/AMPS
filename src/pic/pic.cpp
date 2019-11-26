@@ -188,6 +188,11 @@ int PIC::TimeStep() {
    nInteractionsAfterRunStatisticExchange++;
    PIC::Parallel::IterationNumberAfterRebalancing++;
 
+   //get the memory usage report
+   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+      PIC::Debugger::GetMemoryUsageStatus(__LINE__,__FILE__,false);
+   }
+
   //sampling of the particle data
    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__Sampling_;
    SamplingTime=MPI_Wtime();
