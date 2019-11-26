@@ -1218,12 +1218,12 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
         printf("$PREFIX: %i\t%e [MB]\n",thread,MemoryUsageTable[thread]);
       }
 
-      printf("$PREFIX: Total=%e MB\n",GlobalMemoryUsage);
+      printf("$PREFIX: Total=%e [MB], %e [MB per MPI Process]\n",GlobalMemoryUsage,GlobalMemoryUsage/PIC::nTotalThreads);
     }
     else {
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
 
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld): Total Memory Used=%e [MB]\n",fname,nline,GlobalMemoryUsage);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld): Total Memory Used=%e [MB], %e [MB per MPI Process]\n",fname,nline,GlobalMemoryUsage,GlobalMemoryUsage/PIC::nTotalThreads);
     }
 
     delete [] MemoryUsageTable;
