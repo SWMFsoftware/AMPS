@@ -4117,6 +4117,8 @@ namespace PIC {
 #define _PIC_TIMER_MODE_CLOCK_  0
 #define _PIC_TIMER_MODE_HRES_   1
 
+  //_PIC_TIMER_MODE_CLOCK_ -> CPU Time
+
   class cTimer {
   protected:
     char fname_start[2000];
@@ -4419,9 +4421,14 @@ namespace PIC {
       }
 
       void print() {
+        double x[3];
+
         printf("Length=%i, weight:",Length);
-        for (int i=0;i<Length;i++) printf (" %e[%i]",Weight[i],i);
-        printf("\n");
+
+        for (int i=0;i<Length;i++) {
+          cell[i]->GetX(x);
+          printf ("%i: x=%e %e %e, Weight=%e \n",i,x[0],x[1],x[2],Weight[i]);
+        }
       }
 
       void AddCell(double w,T* c,int id) {
