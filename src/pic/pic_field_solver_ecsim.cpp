@@ -1452,9 +1452,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  auto ProcessCell = [&] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData) {
+  auto ProcessCell = [&] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) {
     double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
     double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+    bool res=false;
 
 
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
@@ -1498,7 +1499,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
     double ParticleEnergyCell=0;
+
     if (ptr!=-1) {
+      res=true;
 
       // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
       double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
@@ -1546,6 +1549,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       offset[6]=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
       offset[7]=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
+      for (int ii=0; ii<8; ii++) {
+        CellData->CornerMassMatrixPtr[ii] = ((double*)offset[ii])+MassMatrixOffsetIndex;
+        CellData->CornerJPtr[ii]=((double*)offset[ii])+JxOffsetIndex;
+
+        #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+        CellData->specDataPtr[ii]=((double*)offset[ii])+SpeciesDataIndex[0];
+        #endif
+      }
+
+      int cnt=0;
+
       while (ptrNext!=-1) {
         double LocalParticleWeight;
         ptr=ptrNext;
@@ -1564,147 +1578,168 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
         }
 
-        double temp[3], B[3]={0.0,0.0,0.0};
+        if (cnt%size_pack==id_pack) {
+          double temp[3], B[3]={0.0,0.0,0.0};
 
-        #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-        PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil(false);
-        //interpolate the magnetic field from center nodes to particle location
-        MagneticFieldStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node));
-
-        #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-        PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil(false);
-        //interpolate the magnetic field from center nodes to particle location
-        MagneticFieldStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node));
-        #endif
-
-        for (int iStencil=0;iStencil<MagneticFieldStencil.Length;iStencil++) {
           #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          double * B_temp = B_Center[MagneticFieldStencil.LocalCellID[iStencil]];
+          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil(false);
+          //interpolate the magnetic field from center nodes to particle location
+          MagneticFieldStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node));
+
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          double * B_temp = B_corner[MagneticFieldStencil.LocalCellID[iStencil]];
+          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil(false);
+          //interpolate the magnetic field from center nodes to particle location
+          MagneticFieldStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node));
           #endif
 
-          for (int idim=0;idim<3;idim++) B[idim]+=MagneticFieldStencil.Weight[iStencil]*B_temp[idim];
-        }
+          for (int iStencil=0;iStencil<MagneticFieldStencil.Length;iStencil++) {
+            #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+            double * B_temp = B_Center[MagneticFieldStencil.LocalCellID[iStencil]];
+            #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+            double * B_temp = B_corner[MagneticFieldStencil.LocalCellID[iStencil]];
+            #endif
 
-        //convert from SI to cgs
-        for (int idim=0; idim<3; idim++){
-          B[idim] *= B_conv;
-          vInit[idim] *= length_conv;
-        }
-
-        double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
-        double * WeightPG;
-        double c0,QdT_over_2m_squared;
-        double mass;
-
-        chargeQ = PIC::MolecularData::GetElectricCharge(spec)*charge_conv;
-        mass= PIC::MolecularData::GetMass(spec)*mass_conv;
-        //effect of particle weight
-
-        chargeQ *= LocalParticleWeight;
-        mass *= LocalParticleWeight;
-
-        QdT_over_m=chargeQ*dtTotal/mass;
-        QdT_over_2m=0.5*QdT_over_m;
-        QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
-
-
-        //to calculate alpha, mdv/dt = q(E+v cross B/c)
-        for (int idim=0; idim<3; idim++){
-          B[idim] /= LightSpeed; //divided by the speed of light
-        }
-
-
-        double BB[3][3],P[3];
-
-        for (int ii=0;ii<3;ii++) {
-          P[ii]=-QdT_over_2m*B[ii];
-
-          for (int jj=0;jj<=ii;jj++) {
-            BB[ii][jj]=QdT_over_2m_squared*B[ii]*B[jj];
-            BB[jj][ii]=BB[ii][jj];
+            for (int idim=0;idim<3;idim++) B[idim]+=MagneticFieldStencil.Weight[iStencil]*B_temp[idim];
           }
-        }
 
-        c0=1.0/(1.0+QdT_over_2m_squared*(B[0]*B[0]+B[1]*B[1]+B[2]*B[2]));
-
-        alpha[0]=c0*(1.0+BB[0][0]);
-        alpha[1]=c0*(-P[2]+BB[0][1]);
-        alpha[2]=c0*(P[1]+BB[0][2]);
-
-        alpha[3]=c0*(P[2]+BB[1][0]);
-        alpha[4]=c0*(1.0+BB[1][1]);
-        alpha[5]=c0*(-P[0]+BB[1][2]);
-
-        alpha[6]=c0*(-P[1]+BB[2][0]);
-        alpha[7]=c0*(P[0]+BB[2][1]);
-        alpha[8]=c0*(1.0+BB[2][2]);
-
-        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-
-        WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
-
-        ParticleEnergyCell += 0.5*mass*(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]);
-
-        //compute alpha*vInit
-        double vRot[3]={0.0,0.0,0.0};
-
-        for (int iDim =0; iDim<3; iDim++){
-          for (int jj=0; jj<3; jj++){
-            vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
+          //convert from SI to cgs
+          for (int idim=0; idim<3; idim++){
+            B[idim] *= B_conv;
+            vInit[idim] *= length_conv;
           }
-        }
 
-        for (int iCorner=0; iCorner<8; iCorner++){
-          for (int iDim=0; iDim<3; iDim++){
-            Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
+          double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
+          double * WeightPG;
+          double c0,QdT_over_2m_squared;
+          double mass;
+
+          chargeQ = PIC::MolecularData::GetElectricCharge(spec)*charge_conv;
+          mass= PIC::MolecularData::GetMass(spec)*mass_conv;
+          //effect of particle weight
+
+          chargeQ *= LocalParticleWeight;
+          mass *= LocalParticleWeight;
+
+          QdT_over_m=chargeQ*dtTotal/mass;
+          QdT_over_2m=0.5*QdT_over_m;
+          QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
+
+
+          //to calculate alpha, mdv/dt = q(E+v cross B/c)
+          for (int idim=0; idim<3; idim++){
+            B[idim] /= LightSpeed; //divided by the speed of light
           }
-        }
 
-        if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-          for (int ii=0; ii<8; ii++){
-            int tempOffset = 10*spec;
-            SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUz_]+=mass*vInit[2]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=mass*vInit[0]*vInit[0]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=mass*vInit[1]*vInit[1]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=mass*vInit[2]*vInit[2]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=mass*vInit[0]*vInit[1]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=mass*vInit[1]*vInit[2]*WeightPG[ii];
-            SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
-          }
-        }
 
-        double matrixConst = chargeQ*QdT_over_2m/CellVolume;
-        for (int iCorner=0; iCorner<8; iCorner++){
-          double tempWeightConst = matrixConst*WeightPG[iCorner];
-          for (int jCorner=0; jCorner<=iCorner; jCorner++){
-            double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
-            double * tmpPtr =MassMatrix_GGD[iCorner][jCorner];
-            for (int ii=0; ii<9; ii++){
-              double tmp = alpha[ii]*tempWeightProduct;
-              tmpPtr[ii] +=tmp;
+          double BB[3][3],P[3];
+
+          for (int ii=0;ii<3;ii++) {
+            P[ii]=-QdT_over_2m*B[ii];
+
+            for (int jj=0;jj<=ii;jj++) {
+              BB[ii][jj]=QdT_over_2m_squared*B[ii]*B[jj];
+              BB[jj][ii]=BB[ii][jj];
             }
-          }//jCorner
-        }//iCorner
+          }
 
+          c0=1.0/(1.0+QdT_over_2m_squared*(B[0]*B[0]+B[1]*B[1]+B[2]*B[2]));
+
+          alpha[0]=c0*(1.0+BB[0][0]);
+          alpha[1]=c0*(-P[2]+BB[0][1]);
+          alpha[2]=c0*(P[1]+BB[0][2]);
+
+          alpha[3]=c0*(P[2]+BB[1][0]);
+          alpha[4]=c0*(1.0+BB[1][1]);
+          alpha[5]=c0*(-P[0]+BB[1][2]);
+
+          alpha[6]=c0*(-P[1]+BB[2][0]);
+          alpha[7]=c0*(P[0]+BB[2][1]);
+          alpha[8]=c0*(1.0+BB[2][2]);
+
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+
+          WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+
+          ParticleEnergyCell += 0.5*mass*(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]);
+
+          //compute alpha*vInit
+          double vRot[3]={0.0,0.0,0.0};
+
+          for (int iDim =0; iDim<3; iDim++){
+            for (int jj=0; jj<3; jj++){
+              vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
+            }
+          }
+
+          for (int iCorner=0; iCorner<8; iCorner++){
+            double t=chargeQ*WeightPG[iCorner];
+
+            for (int iDim=0; iDim<3; iDim++){
+              //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
+              Jg[iCorner][iDim]+=t*vRot[iDim];
+            }
+          }
+
+          if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+            for (int ii=0; ii<8; ii++){
+              int tempOffset = 10*spec;
+//              SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUz_]+=mass*vInit[2]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=mass*vInit[0]*vInit[0]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=mass*vInit[1]*vInit[1]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=mass*vInit[2]*vInit[2]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=mass*vInit[0]*vInit[1]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=mass*vInit[1]*vInit[2]*WeightPG[ii];
+//              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
+
+
+              double t=mass*WeightPG[ii];
+              double t0=t*vInit[0];
+              double t1=t*vInit[1];
+              double t2=t*vInit[2];
+
+              SpeciesData_GI[ii][tempOffset+Rho_]+=t;
+              SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
+              SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
+              SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
+              SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
+              SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
+              SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
+              SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
+              SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
+              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
+
+            }
+          }
+
+          double matrixConst = chargeQ*QdT_over_2m/CellVolume;
+
+          for (int iCorner=0; iCorner<8; iCorner++){
+            double tempWeightConst = matrixConst*WeightPG[iCorner];
+
+            for (int jCorner=0; jCorner<=iCorner; jCorner++){
+              double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
+              double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+
+              for (int ii=0; ii<9; ii++){
+                double tmp = alpha[ii]*tempWeightProduct;
+
+                tmpPtr[ii] +=tmp;
+              }
+            }//jCorner
+          }//iCorner
+        }
+
+        cnt++;
 
         if (ptrNext!=-1) {
           // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
         } else {
 
 
-          for (int ii=0; ii<8; ii++) {
-            CellData->CornerMassMatrixPtr[ii] = ((double*)offset[ii])+MassMatrixOffsetIndex;
-            CellData->CornerJPtr[ii]=((double*)offset[ii])+JxOffsetIndex;
 
-            #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
-            CellData->specDataPtr[ii]=((double*)offset[ii])+SpeciesDataIndex[0];
-            #endif
-          }
 
           CellData->ParticleEnergy += ParticleEnergyCell;
 
@@ -1750,9 +1785,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       }// while (ptrNext!=-1)
     }//if (ptr!=-1)
+
+    return res;
   };
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+  cCellData CellDataTable[PIC::nTotalThreadsOpenMP];
+  bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
 
   // Loop through all blocks. 
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
@@ -1779,19 +1818,52 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-          cCellData CellData;
 
-          ProcessCell(i,j,k,node,&CellData);
-          ParticleEnergy+=CellData.ParticleEnergy;
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          #pragma omp parallel
+          #endif
+           {
+             #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+             int this_thread_id=omp_get_thread_num();
+             #else
+             int this_thread_id=0;
+             #endif
 
-          for (int icor=0;icor<8;icor++) {
-            for (int idim=0;idim<3;idim++) CellData.CornerJPtr[icor][idim]+=CellData.CornerJ[icor][idim];
-            for (int ii=0;ii<243;ii++) CellData.CornerMassMatrixPtr[icor][ii]+=CellData.CornerMassMatrix[icor][ii];
+             CellDataTable[this_thread_id].clean();
+             CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,this_thread_id,PIC::nTotalThreadsOpenMP);
+           }
 
-            if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) CellData.specDataPtr[icor][ii]+=CellData.specData[icor][ii];
-            }
-          }
+
+           for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) if (CellProcessingFlagTable[thread]==true) {
+             cCellData *CellData=CellDataTable+thread;
+             double *target;
+             int idim,ii;
+
+
+             ParticleEnergy+=CellData->ParticleEnergy;
+
+             for (int icor=0;icor<8;icor++) {
+               for (idim=0,target=CellData->CornerJPtr[icor];idim<3;idim++) target[idim]+=CellData->CornerJ[icor][idim];
+
+               target=CellData->CornerMassMatrixPtr[icor];
+
+//               #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+//               #pragma omp parallel
+//               {
+//               #endif
+//               #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+//               #pragma omp parallel for schedule(static, 2)
+//               #endif
+               for (int ii=0;ii<243;ii++) {
+                 target[ii]+=CellData->CornerMassMatrix[icor][ii];
+               }
+
+               if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+                 for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) CellData->specDataPtr[icor][ii]+=CellData->specData[icor][ii];
+               }
+//               }
+             }
+           }
 
         }
       }
