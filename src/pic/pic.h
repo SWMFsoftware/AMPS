@@ -4423,7 +4423,7 @@ namespace PIC {
       void print() {
         double x[3];
 
-        printf("Length=%i, weight:",Length);
+        printf("Length=%i:\n",Length);
 
         for (int i=0;i<Length;i++) {
           cell[i]->GetX(x);
@@ -4459,11 +4459,7 @@ namespace PIC {
       extern cStencil* StencilTable;
 
       //The table contains weight for each node and the order of local is enforced.
-      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
-      #else
-      extern double InterpolationCoefficientTable_LocalNodeOrder[8];
-      #endif //_COMPILATION_MODE_
 
       //interpolation functions
       cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
