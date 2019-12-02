@@ -18,11 +18,7 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::last=NULL;
 
 //the locally ordered interpolation coeffcients for the corner based interpolation procedure
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 thread_local double PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder[8]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
-#else
-double PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder[8]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
-#endif
 
 // macro switch is needed in the case some other interpolation is used
 // and interface function is not compiled
