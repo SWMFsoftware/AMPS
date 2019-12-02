@@ -1849,7 +1849,31 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
 
   // Loop through all blocks. 
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
+    ParticleEnergy,ProcessCell,PIC::DomainBlockDecomposition::BlockTable)
+#endif
+  for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
+    int nLocalNode,ii=CellCounter;
+    int i,j,k;
+
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+
+    i=ii;
+
+
+
+
+ // for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
 
@@ -1871,11 +1895,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     if (node->Thread!=PIC::ThisThread) continue;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for
+//#pragma omp parallel for
 #endif
-    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
-        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+    { //  for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      { //  for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+        { //  for (int i=0;i<_BLOCK_CELLS_X_;i++) {
 
 
 
