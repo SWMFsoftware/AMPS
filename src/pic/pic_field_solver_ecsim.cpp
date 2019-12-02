@@ -1423,24 +1423,70 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   class cCellData {
   public:
-    double *CornerJPtr[8];
-    double CornerJ[8][3];
-    double *CornerMassMatrixPtr[8];
-    double CornerMassMatrix[8][243];
-    double *specDataPtr[8];
-    double specData[8][10*_TOTAL_SPECIES_NUMBER_];
+
+    class cCornerData {
+    public:
+      double *CornerJPtr;
+      double CornerJ[3];
+      double *CornerMassMatrixPtr;
+      double CornerMassMatrix[243];
+      double *specDataPtr;
+      double specData[10*_TOTAL_SPECIES_NUMBER_];
+
+      void clean() {
+        int i;
+
+        for (i=0;i<3;i++) CornerJ[i]=0.0;
+        for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
+        for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) specData[i]=0.0;
+      }
+
+      void add(cCornerData* p) {
+        int i;
+        double *ptr;
+
+        for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
+        for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
+        for (i=0,ptr=p->specData;i<10*_TOTAL_SPECIES_NUMBER_;i++) specData[i]+=ptr[i];
+      }
+    };
+
+
+    cCornerData CornerData[8];
     double ParticleEnergy;
 
 
     void clean() {
-      int i,j;
-
       ParticleEnergy=0.0;
 
-      for (i=0;i<8;i++) {
-        for (j=0;j<3;j++) CornerJ[i][j]=0.0;
-        for (j=0;j<243;j++) CornerMassMatrix[i][j]=0.0;
-        for (j=0;j<10*_TOTAL_SPECIES_NUMBER_;j++) specData[i][j]=0.0;
+      for (int i=0;i<8;i++) CornerData[i].clean();
+    }
+
+    void Add(cCellData *p) {
+      ParticleEnergy+=p->ParticleEnergy;
+
+      class cSumData {
+      public:
+        cCornerData *target,*source;
+
+        void sum() {
+          target->add(source);
+        }
+      };
+
+      cSumData DataTable[8];
+      std::thread tTable[8];
+      int icor;
+
+      for (icor=0;icor<8;icor++) {
+        DataTable[icor].source=p->CornerData+icor;
+        DataTable[icor].target=this->CornerData+icor;
+
+        tTable[icor]=std::thread(&cSumData::sum,DataTable+icor);
+      }
+
+      for (icor=0;icor<8;icor++) {
+        tTable[icor].join();
       }
     }
 
@@ -1452,7 +1498,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  auto ProcessCell = [&] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) {
+  auto ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) {
     double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
     double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
     bool res=false;
@@ -1489,9 +1535,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
-    block=node->block;
+    PIC::Mesh::cDataBlockAMR *block=node->block;
 
-    FirstCellParticleTable=block->FirstCellParticleTable;
+    long int *FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
     for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
@@ -1550,11 +1596,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       offset[7]=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
       for (int ii=0; ii<8; ii++) {
-        CellData->CornerMassMatrixPtr[ii] = ((double*)offset[ii])+MassMatrixOffsetIndex;
-        CellData->CornerJPtr[ii]=((double*)offset[ii])+JxOffsetIndex;
+        CellData->CornerData[ii].CornerMassMatrixPtr = ((double*)offset[ii])+MassMatrixOffsetIndex;
+        CellData->CornerData[ii].CornerJPtr=((double*)offset[ii])+JxOffsetIndex;
 
         #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
-        CellData->specDataPtr[ii]=((double*)offset[ii])+SpeciesDataIndex[0];
+        CellData->CornerData[ii].specDataPtr=((double*)offset[ii])+SpeciesDataIndex[0];
         #endif
       }
 
@@ -1745,16 +1791,20 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           //collect current
           for (int iCorner=0; iCorner<8; iCorner++){
+            double *CornerJ=CellData->CornerData[iCorner].CornerJ;
+
             for (int ii=0; ii<3; ii++){
-              CellData->CornerJ[iCorner][ii] += (Jg[iCorner][ii])/CellVolume;
+              CornerJ[ii] += (Jg[iCorner][ii])/CellVolume;
             }
           }
 
           if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
             //collect species data
             for (int iCorner=0; iCorner<8; iCorner++){
+              double *specData=CellData->CornerData[iCorner].specData;
+
               for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
-                CellData->specData[iCorner][ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
+                specData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
               }
             }
           }
@@ -1764,16 +1814,21 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             for (int jCorner=0; jCorner<=iCorner; jCorner++){
 
               if (iCorner==jCorner){
+                double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
+
                 for (int ii=0; ii<3; ii++){
                   for (int jj=0; jj<3; jj++){
-                    CellData->CornerMassMatrix[iCorner][3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
+                    CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
                   }
                 }
               } else {
+                double *CornerMassMatrix_iCorner=CellData->CornerData[iCorner].CornerMassMatrix;
+                double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
+
                 for (int ii=0; ii<3; ii++){
                   for (int jj=0; jj<3; jj++){
-                    CellData->CornerMassMatrix[iCorner][9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
-                    CellData->CornerMassMatrix[jCorner][9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                    CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                    CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
                   }
                 }
               }
@@ -1815,54 +1870,73 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     if (node->Thread!=PIC::ThisThread) continue;
 
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for
+#endif
     for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (int i=0;i<_BLOCK_CELLS_X_;i++) {
 
-          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-          #pragma omp parallel
-          #endif
-           {
+
+
              #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
              int this_thread_id=omp_get_thread_num();
              #else
              int this_thread_id=0;
              #endif
 
+
              CellDataTable[this_thread_id].clean();
-             CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,this_thread_id,PIC::nTotalThreadsOpenMP);
-           }
+             //CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,this_thread_id,PIC::nTotalThreadsOpenMP);
+
+             CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,0,1);
 
 
-           for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) if (CellProcessingFlagTable[thread]==true) {
-             cCellData *CellData=CellDataTable+thread;
+           cCellData *CellData=NULL;
+
+
+/*           for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) if (CellProcessingFlagTable[thread]==true) {
              double *target;
              int idim,ii;
 
+             if (CellData==NULL) CellData=CellDataTable+thread;
+             else {
+               CellData->Add(CellDataTable+thread);
+             }
+           }*/
 
+           if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
+             double *target,*source;
+             int idim,ii;
+
+#pragma omp critical (j_martix)
+             {
+
+             CellData=CellDataTable+this_thread_id;
              ParticleEnergy+=CellData->ParticleEnergy;
 
              for (int icor=0;icor<8;icor++) {
-               for (idim=0,target=CellData->CornerJPtr[icor];idim<3;idim++) target[idim]+=CellData->CornerJ[icor][idim];
+               target=CellData->CornerData[icor].CornerJPtr;
+               source=CellData->CornerData[icor].CornerJ;
 
-               target=CellData->CornerMassMatrixPtr[icor];
+               for (idim=0;idim<3;idim++) target[idim]+=source[idim];
 
-//               #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-//               #pragma omp parallel
-//               {
-//               #endif
-//               #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-//               #pragma omp parallel for schedule(static, 2)
-//               #endif
-               for (int ii=0;ii<243;ii++) {
-                 target[ii]+=CellData->CornerMassMatrix[icor][ii];
-               }
+               target=CellData->CornerData[icor].CornerMassMatrixPtr;
+               source=CellData->CornerData[icor].CornerMassMatrix;
+
+               for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
 
                if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-                 for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) CellData->specDataPtr[icor][ii]+=CellData->specData[icor][ii];
+                 target=CellData->CornerData[icor].specDataPtr;
+                 source=CellData->CornerData[icor].specData;
+
+                 for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
                }
-//               }
+
              }
+             }
+
+
            }
 
         }
