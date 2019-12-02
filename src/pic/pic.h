@@ -2570,9 +2570,7 @@ namespace PIC {
 
 
        //atomic flag used for syncronization of the threads when reducing the corner data by the filed solvers' PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix()
-       #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-       std::atomic_flag lock_corner_data__ecsim;
-       #endif
+       std::atomic_flag lock_associated_data;
 
 //       #if _PIC_LINEAR_SOLVER_MODE_ == _PIC_MODE_ON_
        //the local index of the variables saved in the cornes state vector. Used only with the linear equation solver
@@ -2610,10 +2608,7 @@ namespace PIC {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
         SetSubDomainModifiableFlag(false);
-
-        #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-        lock_corner_data__ecsim.clear(std::memory_order_release);
-        #endif
+        lock_associated_data.clear(std::memory_order_release);
       }
     };
   

@@ -1426,12 +1426,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     class cCornerData {
     public:
-      double *CornerJPtr;
+      double *CornerJ_ptr;
       double CornerJ[3];
-      double *CornerMassMatrixPtr;
+      double *CornerMassMatrix_ptr;
       double CornerMassMatrix[243];
-      double *specDataPtr;
-      double specData[10*_TOTAL_SPECIES_NUMBER_];
+      double *SpecData_ptr;
+      double SpecData[10*_TOTAL_SPECIES_NUMBER_];
       PIC::Mesh::cDataCornerNode *CornerNode;
 
       void clean() {
@@ -1439,7 +1439,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
         for (i=0;i<3;i++) CornerJ[i]=0.0;
         for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
-        for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) specData[i]=0.0;
+        for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
       }
 
       void add(cCornerData* p) {
@@ -1448,7 +1448,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
         for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
         for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
-        for (i=0,ptr=p->specData;i<10*_TOTAL_SPECIES_NUMBER_;i++) specData[i]+=ptr[i];
+        for (i=0,ptr=p->SpecData;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]+=ptr[i];
       }
     };
 
@@ -1597,11 +1597,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
       for (int ii=0; ii<8; ii++) {
-        CellData->CornerData[ii].CornerMassMatrixPtr = ((double*)offset[ii])+MassMatrixOffsetIndex;
-        CellData->CornerData[ii].CornerJPtr=((double*)offset[ii])+JxOffsetIndex;
+        CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
+        CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
 
         #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
-        CellData->CornerData[ii].specDataPtr=((double*)offset[ii])+SpeciesDataIndex[0];
+        CellData->CornerData[ii].SpecData_ptr=((double*)offset[ii])+SpeciesDataIndex[0];
         #endif
       }
 
@@ -1802,10 +1802,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
             //collect species data
             for (int iCorner=0; iCorner<8; iCorner++){
-              double *specData=CellData->CornerData[iCorner].specData;
+              double *SpecData=CellData->CornerData[iCorner].SpecData;
 
               for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
-                specData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
+                SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
               }
             }
           }
@@ -1934,30 +1934,30 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
        for (int it=0;it<CornerUpdateTableLength;it++) {
          int icor=CornerUpdateTable[it];
 
-         if (CellData->CornerData[icor].CornerNode->lock_corner_data__ecsim.test_and_set(std::memory_order_acquire)==false) {
+         if (CellData->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false) {
            //the corner can be processes. access to the corner's data is locked for other threads
 
            ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
 
-           target=CellData->CornerData[icor].CornerJPtr;
+           target=CellData->CornerData[icor].CornerJ_ptr;
            source=CellData->CornerData[icor].CornerJ;
 
            for (idim=0;idim<3;idim++) target[idim]+=source[idim];
 
-           target=CellData->CornerData[icor].CornerMassMatrixPtr;
+           target=CellData->CornerData[icor].CornerMassMatrix_ptr;
            source=CellData->CornerData[icor].CornerMassMatrix;
 
            for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
 
            if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-             target=CellData->CornerData[icor].specDataPtr;
-             source=CellData->CornerData[icor].specData;
+             target=CellData->CornerData[icor].SpecData_ptr;
+             source=CellData->CornerData[icor].SpecData;
 
              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
            }
 
            //reset the flag
-           CellData->CornerData[icor].CornerNode->lock_corner_data__ecsim.clear(std::memory_order_release);
+           CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
 
            //decrease the length of the table
            CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
