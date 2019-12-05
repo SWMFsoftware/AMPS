@@ -10,7 +10,7 @@ module unload gcc
 module unload comp-intel
 
 module use -a /nasa/modulefiles/testing
-module load comp-pgi/18.4 mpi-hpe/mpt.2.18r160
+module load comp-pgi/19.5 mpi-hpe/mpt.2.18r160
 
 echo -n "Compiling PGI....."                 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS           
