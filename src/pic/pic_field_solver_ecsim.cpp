@@ -1956,12 +1956,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
            }
 
-           //reset the flag
-           CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
 
            //decrease the length of the table
            CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
            CornerUpdateTableLength--;
+
+           //reset the flag
+           CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
          }
        }
      }
