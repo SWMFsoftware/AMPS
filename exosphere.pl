@@ -8,7 +8,9 @@ use strict;
 use warnings;
 use POSIX qw(strftime);
 use List::Util qw(first);
+use Cwd qw(cwd);
 
+use lib cwd;
 use ampsConfigLib;
 
 
@@ -55,10 +57,10 @@ my @SourceProcessesSymbolicID;
 my @SourceModifySurfaceSpeciesAbundance;
 
 #markers
-my $MARKER__CALCULATE_SOURCE_FLUX_WITH_USER_DEFINED_FUNCTIONS; #substitude marker for calculation of the source rates for the user defined  source processes in the Exospehre.cpp % $MARKER:CALCULATE-SOURCE-FLUX-WITH-USER-DEFINED-FUNCTIONS$
-my $MARKER__GENERATE_PARTICLE_PROPERTIES_WITH_USER_DEFINED_FUNCTIONS;#substitute marker $MARKER:GENERATE-PARTICLE-PROPERTIES-WITH-USER-DEFINED-FUNCTIONS$ for generation of the properties of the injected particles
-my $MARKER__RESERVE_CELL_SAMPLING_DATA_BUFFER;#reserve space for sampling local density that is due to the user defined source process (Exosphere.cpp)
-my $MARKER__USER_DEFINED_TOTAL_SOURCE_RATE;#calculate the total injection rate with the user defined source processes (Exosphere.cpp);
+my $MARKER__CALCULATE_SOURCE_FLUX_WITH_USER_DEFINED_FUNCTIONS=""; #substitude marker for calculation of the source rates for the user defined  source processes in the Exospehre.cpp % $MARKER:CALCULATE-SOURCE-FLUX-WITH-USER-DEFINED-FUNCTIONS$
+my $MARKER__GENERATE_PARTICLE_PROPERTIES_WITH_USER_DEFINED_FUNCTIONS="";#substitute marker $MARKER:GENERATE-PARTICLE-PROPERTIES-WITH-USER-DEFINED-FUNCTIONS$ for generation of the properties of the injected particles
+my $MARKER__RESERVE_CELL_SAMPLING_DATA_BUFFER="";#reserve space for sampling local density that is due to the user defined source process (Exosphere.cpp)
+my $MARKER__USER_DEFINED_TOTAL_SOURCE_RATE="";#calculate the total injection rate with the user defined source processes (Exosphere.cpp);
 
 
 #The location of the definition of the exisphere model surface data structure
@@ -300,7 +302,8 @@ while ($line=<InputFile>) {
   elsif ($InputLine eq "SPICEKERNELS") {
     my @Kernels;
     my $nKernels=0;
-    my ($KernelList,$cnt,$s0);
+    my $KernelList="";
+    my ($cnt,$s0);
     
     $line =~s/[",()=]/ /g;
     ($s0,$line)=split(' ',$line,2);
@@ -323,7 +326,8 @@ while ($line=<InputFile>) {
   elsif ($InputLine eq "REFERENCEGROUNDBASEDOBSERVATIONTIME") {
     my @ObservationTime;
     my $nObservationTime=0;
-    my ($ObservationTimeList,$cnt,$s0);
+    my $ObservationTimeList="";
+    my ($cnt,$s0);
     
     
     $LineOriginal =~s/[",()=]/ /g;

@@ -2,6 +2,7 @@
 #  Copyright (C) 2002 Regents of the University of Michigan, portions used with permission 
 #  For more information, see http://csem.engin.umich.edu/tools/swmf
 use strict;
+use Cwd qw(cwd);
 
 our $Component       = 'PT';
 our $Code            = 'AMPS';
@@ -18,7 +19,7 @@ our $TestName;
 our @Compilers;
 
 
-my $config     = "share/Scripts/Config.pl";
+my $config     = cwd."/share/Scripts/Config.pl";
 #check util and share
 my $GITCLONE = "git clone"; my $GITDIR = "herot.engin.umich.edu:/GIT/FRAMEWORK/";
 

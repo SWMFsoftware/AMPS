@@ -7,7 +7,9 @@ use strict;
 use warnings;
 use Cwd;
 use Scalar::Util qw/looks_like_number/;
+use Cwd qw(cwd);
 
+use lib cwd;
 use ampsConfigLib;
 use constant {true => 1, false =>0};
 use constant {GasSpecieType => 0, DustSpecieType => 1};
@@ -236,7 +238,7 @@ if ($CompileProcessedCodeFlag==1) {
   close (MAKEFILEFILE);
         
   foreach (@makefilelines) {
-    if ($_=~/\${CC} -o \${EXE}/) {
+    if ($_=~m/\$\{CC\} -o \$\{EXE\}/) {
       $_=~s/^#/\t/;
         
       if ($CompilationMode ne "AMPS") {
@@ -1366,7 +1368,9 @@ sub ReadGeneralBlock {
             ($s0,$line)=split(' ',$line,2);
             ampsConfigLib::ChangeValueOfVariable("int PIC::Restart::ParticleRestartAutosaveIterationInterval",$s0,"pic/pic_restart.cpp");
           
-            $line=~s/(=)/ /;
+	    if (defined $line) {
+              $line=~s/(=)/ /;
+	    }
           }
           else {
             warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
@@ -3036,7 +3040,7 @@ sub ReadBackgroundAtmosphereBlock {
       close (BACKGROUNDSPECIES);
       
       #add definitions of the background species to the code
-      my $BackgroundSpeciesDefinitionString;
+      my $BackgroundSpeciesDefinitionString="";
       my $cnt=0;
             
       foreach (@BackgroundSpeciesList) {
