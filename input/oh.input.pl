@@ -7,7 +7,9 @@ use warnings;
 use POSIX qw(strftime);
 use List::Util qw(first);
 use Scalar::Util qw/looks_like_number/;
+use Cwd qw(cwd);
 
+use lib cwd;
 use ampsConfigLib;
 
 
