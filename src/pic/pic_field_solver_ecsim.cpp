@@ -1629,24 +1629,31 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           double temp[3], B[3]={0.0,0.0,0.0};
 
           #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil(false);
+          PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=*(PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node));
+          MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
 
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil(false);
+          PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node));
+          MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
           #endif
 
-          for (int iStencil=0;iStencil<MagneticFieldStencil.Length;iStencil++) {
+	  int Length=MagneticFieldStencil->Length;
+	  double *Weight_table=MagneticFieldStencil->Weight;
+	  int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
+
+          for (int iStencil=0;iStencil<Length;iStencil++) {
+            double Weight=Weight_table[iStencil];
+	    int LocalCellID=LocalCellID_table[iStencil];
+
             #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-            double * B_temp = B_Center[MagneticFieldStencil.LocalCellID[iStencil]];
+            double * B_temp = B_Center[LocalCellID];
             #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-            double * B_temp = B_corner[MagneticFieldStencil.LocalCellID[iStencil]];
+            double * B_temp = B_corner[LocalCellID];
             #endif
 
-            for (int idim=0;idim<3;idim++) B[idim]+=MagneticFieldStencil.Weight[iStencil]*B_temp[idim];
+            for (int idim=0;idim<3;idim++) B[idim]+=Weight*B_temp[idim];
           }
 
           //convert from SI to cgs
@@ -1770,11 +1777,23 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
               double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
+	      tmpPtr[0]+=alpha[0]*tempWeightProduct;
+	      tmpPtr[1]+=alpha[1]*tempWeightProduct;
+	      tmpPtr[2]+=alpha[2]*tempWeightProduct;
+	      tmpPtr[3]+=alpha[3]*tempWeightProduct;
+	      tmpPtr[4]+=alpha[4]*tempWeightProduct;
+	      tmpPtr[5]+=alpha[5]*tempWeightProduct;
+	      tmpPtr[6]+=alpha[6]*tempWeightProduct;
+	      tmpPtr[7]+=alpha[7]*tempWeightProduct;
+	      tmpPtr[8]+=alpha[8]*tempWeightProduct;
+
+              /*
               for (int ii=0; ii<9; ii++){
                 double tmp = alpha[ii]*tempWeightProduct;
 
                 tmpPtr[ii] +=tmp;
               }
+	      */
             }//jCorner
           }//iCorner
         }
