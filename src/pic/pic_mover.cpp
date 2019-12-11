@@ -17,14 +17,12 @@ PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFa
 int PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_OFF_;
 
 
-#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 double ** PIC::Mover::E_Corner = NULL;
 double ** PIC::Mover::B_Corner = NULL;
 double ** PIC::Mover::B_Center = NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_E_corner=NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_B_center=NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_B_corner=NULL;
-#endif
 
 //====================================================
 //init the particle mover
@@ -70,12 +68,15 @@ void PIC::Mover::TotalParticleAcceleration_default(double *accl,int spec,long in
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
+
   if (!node->block) return;
   int threadId = 0;
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   threadId = omp_get_thread_num();
-#endif 
-#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
+  #endif 
+
+  #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
   if (node == PIC::Mover::lastNode_B_center[threadId]) return;
   for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
     for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
@@ -88,9 +89,8 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
       }
     }
   }
-#endif
 
-#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
+  #elif  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
   if (node == PIC::Mover::lastNode_B_corner[threadId]) return;
   for (int k=0;k<=_BLOCK_CELLS_Z_;k++) {
     for (int j=0;j<=_BLOCK_CELLS_Y_;j++)  {
@@ -103,9 +103,9 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
       }
     }
   }
-  
-#endif
-
+  #else 
+  exit(__LINE__,__FILE__,"Error: with the given configutaion the function should not be called at all");
+  #endif
 } 
 //====================================================
 //Set E for E_Corner
@@ -113,10 +113,14 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   if (!node->block) return;
   int threadId = 0;
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   threadId = omp_get_thread_num();
-#endif
+  #endif
+
+  #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   if (node == PIC::Mover::lastNode_E_corner[threadId]) return;
+
   for (int k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
     for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
       for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
@@ -128,6 +132,9 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
       }
     }
   }
+  #else 
+  exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
+  #endif
 } 
 
 #endif
