@@ -429,7 +429,6 @@ void PIC::Mover::MoveParticles() {
   //************************** MPI ONLY  *********************************
   auto mpi_only = [&] () {
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
       block=node->block;
       if (!block) continue;
@@ -444,29 +443,22 @@ void PIC::Mover::MoveParticles() {
       #endif
 
       //block=node->block;
-      memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      long int *FirstCellParticleTable=block->FirstCellParticleTable; 
+      int imax=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
-      for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-        for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-          for (i=0;i<_BLOCK_CELLS_X_;i++) {
-            /*LocalCellNumber=*/  PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
-            ParticleList=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+      for (i=0;i<imax;i++,FirstCellParticleTable++) {
+         while (*FirstCellParticleTable!=-1) {
+           ptr=*FirstCellParticleTable;
+           *FirstCellParticleTable=PIC::ParticleBuffer::GetNext(ptr);
+           s=PIC::ParticleBuffer::GetI(ptr);
+           LocalTimeStep=block->GetLocalTimeStep(s);
 
-            while (ParticleList!=-1) {
-              ptr=ParticleList;
-              ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
-              s=PIC::ParticleBuffer::GetI(ptr);
-              LocalTimeStep=block->GetLocalTimeStep(s);
+           _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
 
-              _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
-
-              #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-              nTotalCalls++;
-              #endif
-            }
-
-          }
-        }
+           #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+           nTotalCalls++;
+           #endif
+         }
       }
 
       #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
