@@ -99,7 +99,7 @@ foreach (@Arguments) {
      print "-amps-test=[on,off]\t\ttells the code that a nightly test is executed\n";
      print "-openmp=[on,off]\t\twhen \"on\" use OpenMP and MPI libraries for compiling AMPS\n";
      print "-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker\n";
-     print "-compiler-option=opt\t\tadd option \'opt\' into the compiler argument line\n";
+     print "-compiler-option=opt1,opt2\t\tadd option \'opt\' into the compiler argument line\n";
      print "-f-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe fortran compiler is used as a linker \n";
      print "-cpp-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe c++ compiler is used as a linker \n";
      print "-cpp-compiler=opt\t\treplace C++ compiler name defined by the variable COMPILE.mpicxx in Makefile.conf\n";
