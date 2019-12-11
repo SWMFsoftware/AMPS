@@ -1,3 +1,4 @@
+rm -rf Makefile.local
 ./Config.pl -install -compiler=gfortran,gcc_mpicc -f-link-option=-lmpi_cxx
 ./Config.pl -compiler-option=-I/opt/openmpi-4.0.2-gcc/include/ 
 ./Config.pl -compiler-option=-ccbin,g++ 
