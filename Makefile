@@ -36,11 +36,11 @@ include Makefile.def
 include Makefile.local
 
 #the default value of the c++ compiler flags
-SEARCH_C=-DMPI_ON -LANG:std -std=c++11 -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
+SEARCH_C=-DMPI_ON -LANG:std -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
 
 SEARCH_C+=${EXTRACOMPILEROPTIONS}
 
-SEARCH_C_GENERAL=-LANG:std -std=c++11 
+SEARCH_C_GENERAL=-LANG:std ${EXTRACOMPILEROPTIONS} 
 
 #define the "compile kameleon' flag only when KAMELEON is used (to exclude including of the KAMELEON headers on machimes where KAMELEON is not installed) 
 ifneq ($(KAMELEON),nokameleon)   
@@ -104,6 +104,11 @@ else ifeq  ($(COMPILE.f90),nagfor)
 	SEARCH_F+= -I${BATL}/share/include
 endif
 
+endif
+
+#set linker when nvcc is used to compile the code 
+ifeq ($(COMPILE.mpicxx),nvcc)
+	AMPSLINKER=mpicxx
 endif
 
 # include interface with external FORTRAN subroutines
