@@ -2981,9 +2981,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystem
 
   for (int iElement=0; iElement<row->nNonZeroElements;iElement++){
     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cStencilElement* el=row->Elements+iElement;
-    el->MatrixElementValue=el->MatrixElementParameterTable[0];
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cStencilElementData* el_data=row->ElementDataTable+iElement;
+
+    el_data->MatrixElementValue=el->MatrixElementParameterTable[0];
+
     if (el->MatrixElementSupportTable[0]!=NULL)
-      el->MatrixElementValue+=*((double *)el->MatrixElementSupportTable[0])*fourPiDtTheta;
+      el_data->MatrixElementValue+=*((double *)el->MatrixElementSupportTable[0])*fourPiDtTheta;
     
     //printf("iElement:%d,const:%f,matrixvalue:%f\n",iElement,el->MatrixElementParameterTable[0],el->MatrixElementValue);
   }  
@@ -2999,12 +3002,10 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::PoissonUpdateRhs(int iVar,
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double res=0.0;
 
-  double * CenterOffset = ((double*)(RhsSupportTable_CenterNodes[0].AssociatedDataPointer+
-             PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
+  double * CenterOffset = ((double*)(RhsSupportTable_CenterNodes[0].AssociatedDataPointer+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
   double gammaTmp =0.51;
-  res = (-4*Pi*(gammaTmp*CenterOffset[netChargeNewIndex]+
-               (1-gammaTmp)*CenterOffset[netChargeOldIndex])
-         +CenterOffset[divEIndex])/gammaTmp;
+
+  res = (-4*Pi*(gammaTmp*CenterOffset[netChargeNewIndex]+(1-gammaTmp)*CenterOffset[netChargeOldIndex])+CenterOffset[divEIndex])/gammaTmp;
 
   //the equation solves phi/gammaTmp
   return res;
