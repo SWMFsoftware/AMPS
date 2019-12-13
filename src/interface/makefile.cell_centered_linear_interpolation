@@ -20,7 +20,7 @@ cell_centered_linear_interpolation :
 	cp ${CELL_CENTERED_LINEAR_INTERPOLATION_SRC}/${FILE} .;)
 	cp ../../share/include/*.mod .
 	${COMPILE.f90} ${Cflag3}  cell_centered_linear_interpolation_f90.f90
-	${COMPILE.mpicxx} ${FLAGC} cell_centered_linear_interpolation_cpp.cpp -o cell_centered_linear_interpolation_cpp.o
+	${COMPILE.mpicxx} ${FLAGCC} cell_centered_linear_interpolation_cpp.cpp -o cell_centered_linear_interpolation_cpp.o
 	ar -src cell_centered_linear_interpolation_amr.a          \
                ${CELL_CENTERED_LINEAR_INTERPOLATION_OBJ_EXTERNAL} \
                ${CELL_CENTERED_LINEAR_INTERPOLATION_OBJ_LOCAL}
