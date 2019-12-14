@@ -903,6 +903,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   for (i=0;i<3;i++) {
     P[i]=-QdT_over_2m*B[i];
 
+    #pragma ivdep
     for (j=0;j<=i;j++) {
       BB[i][j]=QdT_over_2m_squared*B[i]*B[j];
       BB[j][i]=BB[i][j];
@@ -925,6 +926,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   alpha[2][2]=c0*(1.0+BB[2][2]);
 
   //Eq. D.8
+  #pragma ivdep
   for (idim=0;idim<3;idim++) {
     double vp=0.0;
 
@@ -934,6 +936,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   }
 
   //advance the particle location
+  #pragma ivdep
   for (idim=0;idim<3;idim++) xFinal[idim]=xInit[idim]+dtTotal*vFinal[idim];
 
   newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);

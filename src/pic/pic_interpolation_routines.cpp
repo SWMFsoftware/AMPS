@@ -160,6 +160,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         dxCell[1]=(xmax[1]-xmin[1])/_BLOCK_CELLS_Y_;
         dxCell[2]=(xmax[2]-xmin[2])/_BLOCK_CELLS_Z_;
 
+        #pragma ivdep
         for (int idim=0;idim<3;idim++) {
           int iInterval;
 
@@ -182,6 +183,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
       dxCell[1]=(xmax[1]-xmin[1])/_BLOCK_CELLS_Y_;
       dxCell[2]=(xmax[2]-xmin[2])/_BLOCK_CELLS_Z_;
 
+      #pragma ivdep
       for (idim=0;idim<3;idim++) if (CoarserBlock==NULL) {
         switch (idim) {
         case 0:
@@ -267,6 +269,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         dxCell[1]=(CoarserBlock->xmax[1]-CoarserBlock->xmin[1])/_BLOCK_CELLS_Y_;
         dxCell[2]=(CoarserBlock->xmax[2]-CoarserBlock->xmin[2])/_BLOCK_CELLS_Z_;
 
+        #pragma ivdep
         for (idim=0;idim<3;idim++) {
           int iInterval;
 
@@ -286,6 +289,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
       dxCell[1]=(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
       dxCell[2]=(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
 
+      #pragma ivdep
       for (idim=0;idim<3;idim++) {
         int iInterval;
 
@@ -473,6 +477,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
   }
   else if (StencilTable->Length!=8) {
     //the interpolated stencil containes less that 8 elements -> the interpolation weights have to be renormalized
+    #pragma ivdep
     for (int i=0;i<StencilTable->Length;i++) {
       StencilTable->Weight[i]/=totalInterpolationWeight;
     }
@@ -496,6 +501,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=node;
 
   //calculate the local coordinates of the point where the stancil is constructed
+  #pragma ivdep
   for (idim=0;idim<3;idim++) {
     xLoc[idim]=(x[idim]-xStencilMin[idim])/(xStencilMax[idim]-xStencilMin[idim]);
 
@@ -532,6 +538,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
           //verify that the point is inside the domain, and return a "constant" ctencil
           double xTest[3];
 
+          #pragma ivdep
           for (int idim=0;idim<3;idim++) {
             xTest[idim]=x[idim];
 
@@ -662,6 +669,7 @@ PIC::InterpolationRoutines::CornerBased::cStencil *PIC::InterpolationRoutines::C
   dx[2]=(xMaxNode[2]-xMinNode[2])/_BLOCK_CELLS_Z_;
 
   //get the local coordinate for the interpolation point location
+  #pragma ivdep
   for (idim=0;idim<3;idim++) {
     if ((x[idim]<xMinNode[idim])||(x[idim]>xMaxNode[idim])) exit(__LINE__,__FILE__,"Error: the point is out of block");
     if (fabs(x[idim]-xMaxNode[idim])<1e-10*dx[idim]) x[idim]= xMaxNode[idim]-1e-10*dx[idim];    

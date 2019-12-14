@@ -1508,6 +1508,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
       for (int k=kCellIn-1;k<=kCellIn+1;k++) {
         for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+
+          #pragma ivdep
           for (int i=-iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
@@ -1523,6 +1525,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
       for (int k=kCellIn-1;k<=kCellIn+1;k++) {
         for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+
+          #pragma ivdep
           for (int i=-iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
@@ -1541,7 +1545,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     long int *FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
+
+    #pragma ivdep
     for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
@@ -1556,6 +1563,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       double Jg[8][3];
 
       for (int ii=0; ii<8; ii++){
+
+        #pragma ivdep
         for (int jj=0; jj<3; jj++){
           Jg[ii][jj]=0.0;
         }
@@ -1564,6 +1573,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       double MassMatrix_GGD[8][8][9];
       for (int iCorner=0;iCorner<8;iCorner++){
         for(int jCorner=0;jCorner<8;jCorner++){
+
+          #pragma ivdep
           for (int idim=0;idim<9;idim++){
             MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
           }
@@ -1596,6 +1607,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
       offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
+      #pragma ivdep
       for (int ii=0; ii<8; ii++) {
         CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
         CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
@@ -1653,10 +1665,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             double * B_temp = B_corner[LocalCellID];
             #endif
 
+            #pragma ivdep
             for (int idim=0;idim<3;idim++) B[idim]+=Weight*B_temp[idim];
           }
 
           //convert from SI to cgs
+          #pragma ivdep
           for (int idim=0; idim<3; idim++){
             B[idim] *= B_conv;
             vInit[idim] *= length_conv;
@@ -1680,6 +1694,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
           //to calculate alpha, mdv/dt = q(E+v cross B/c)
+          #pragma ivdep
           for (int idim=0; idim<3; idim++){
             B[idim] /= LightSpeed; //divided by the speed of light
           }
@@ -1690,6 +1705,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int ii=0;ii<3;ii++) {
             P[ii]=-QdT_over_2m*B[ii];
 
+            #pragma ivdep
             for (int jj=0;jj<=ii;jj++) {
               BB[ii][jj]=QdT_over_2m_squared*B[ii]*B[jj];
               BB[jj][ii]=BB[ii][jj];
@@ -1720,6 +1736,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           double vRot[3]={0.0,0.0,0.0};
 
           for (int iDim =0; iDim<3; iDim++){
+            #pragma ivdep
             for (int jj=0; jj<3; jj++){
               vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
             }
@@ -1728,6 +1745,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int iCorner=0; iCorner<8; iCorner++){
             double t=chargeQ*WeightPG[iCorner];
 
+            #pragma ivdep
             for (int iDim=0; iDim<3; iDim++){
               //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
               Jg[iCorner][iDim]+=t*vRot[iDim];
@@ -1735,6 +1753,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           }
 
           if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+            #pragma ivdep
             for (int ii=0; ii<8; ii++){
               int tempOffset = 10*spec;
 //              SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
@@ -1813,6 +1832,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int iCorner=0; iCorner<8; iCorner++){
             double *CornerJ=CellData->CornerData[iCorner].CornerJ;
 
+            #pragma ivdep
             for (int ii=0; ii<3; ii++){
               CornerJ[ii] += (Jg[iCorner][ii])/CellVolume;
             }
@@ -1823,6 +1843,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             for (int iCorner=0; iCorner<8; iCorner++){
               double *SpecData=CellData->CornerData[iCorner].SpecData;
 
+              #pragma ivdep
               for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
                 SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
               }
@@ -1837,6 +1858,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                 double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
 
                 for (int ii=0; ii<3; ii++){
+
+                  #pragma ivdep
                   for (int jj=0; jj<3; jj++){
                     CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
                   }
@@ -1846,6 +1869,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                 double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
 
                 for (int ii=0; ii<3; ii++){
+
+                  #pragma ivdep
                   for (int jj=0; jj<3; jj++){
                     CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
                     CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
