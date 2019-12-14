@@ -697,61 +697,73 @@ int PIC::TimeStep() {
     }
 
     //redistribute the processor load and check the mesh afterward
-#if _PIC_EMERGENCY_LOAD_REBALANCING_MODE_ == _PIC_MODE_ON_
     int EmergencyLoadRebalancingFlag=false;
 
-    if (PIC::Mesh::mesh.ThisThread==0) if (PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime) EmergencyLoadRebalancingFlag=true;
-
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
-    EmergencyLoadRebalancingFlag=true;
-#endif
-#endif
-
-    //check if the number of iterations between the load rebalancing exeeds the minimum number '_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_'
-#ifdef _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_
-    if (PIC::Parallel::IterationNumberAfterRebalancing<_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) EmergencyLoadRebalancingFlag=false;
-#endif
-
-    MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-
-    if (EmergencyLoadRebalancingFlag==true) {
-      if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
-
-      //correct the node's load balancing measure
-      #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      if (summIterationExecutionTime>0.0)  {
-        //normalize the load to the summ of the execution time
-        double c,norm=0.0;
-        int nLocalNode;
-
-        for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) norm+=DomainBlockDecomposition::BlockTable[nLocalNode]->ParallelLoadMeasure;
-
-        for (nLocalNode=0,c=summIterationExecutionTime/norm;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-          DomainBlockDecomposition::BlockTable[nLocalNode]->ParallelLoadMeasure*=c;
+    switch (_PIC_EMERGENCY_LOAD_REBALANCING_MODE_) {
+    case _PIC_MODE_ON_: 
+      if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime) {
+          EmergencyLoadRebalancingFlag=true;
         }
       }
 
-      summIterationExecutionTime=0.0;
-      #endif //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+      if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_)) { 
+        EmergencyLoadRebalancingFlag=true;
+      }
 
-      //start the rebalancing procedure
-      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Parallel::RebalancingTime=MPI_Wtime();
+      //check if the number of iterations between the load rebalancing exeeds 
+      //the minimum number '_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_'
+      #ifdef _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_
+      if (PIC::Parallel::IterationNumberAfterRebalancing<_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) {
+        EmergencyLoadRebalancingFlag=false;
+      }
+      #endif
 
-      PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
-      PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
-      PIC::DomainBlockDecomposition::UpdateBlockTable();
+      MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
-      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
-      if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
-    }
-#elif _PIC_EMERGENCY_LOAD_REBALANCING_MODE_ == _PIC_MODE_OFF_
-    //do nothing
-#else
-    exit(__LINE__,__FILE__,"Error: the option is not recognized");
-#endif
+      if (EmergencyLoadRebalancingFlag==true) {
+        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
+
+        //correct the node's load balancing measure
+        if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) { 
+          if (summIterationExecutionTime>0.0)  {
+            //normalize the load to the summ of the execution time
+            double c,norm=0.0;
+            int nLocalNode;
+
+            for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+              norm+=DomainBlockDecomposition::BlockTable[nLocalNode]->ParallelLoadMeasure;
+            }
+
+            for (nLocalNode=0,c=summIterationExecutionTime/norm;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+              DomainBlockDecomposition::BlockTable[nLocalNode]->ParallelLoadMeasure*=c;
+            }
+          }
+
+          summIterationExecutionTime=0.0;
+        }
+
+        //start the rebalancing procedure
+        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+        PIC::Parallel::RebalancingTime=MPI_Wtime();
+
+        PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+        PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
+        PIC::DomainBlockDecomposition::UpdateBlockTable();
+
+        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+        PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
+
+        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
+      }
+    
+      break;
+      case _PIC_MODE_OFF_: 
+        //do nothing
+        break;
+      default: 
+        exit(__LINE__,__FILE__,"Error: the option is not recognized");
+      }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     nInteractionsAfterRunStatisticExchange=0;
