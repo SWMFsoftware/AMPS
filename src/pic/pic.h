@@ -2015,7 +2015,7 @@ namespace PIC {
       int iPrefetch,iPrefetchMax=1+(int)(_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
+        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_NTA);
       }
       #endif
     }
@@ -2025,7 +2025,7 @@ namespace PIC {
       int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_T1);
+        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_NTA);
       }
       #endif
     }
