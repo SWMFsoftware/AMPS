@@ -2012,11 +2012,8 @@ namespace PIC {
 
     inline void PrefertchParticleData_Basic(byte* ParticleDataStart) {
       #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
-      int iPrefetch,iPrefetchMax=1+(int)(_PIC_PARTICLE_DATA__BASIC_DATA_LENGTH_/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
-
-      for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_NTA);
-      }
+      _mm_prefetch((char*)ParticleDataStart,_MM_HINT_NTA);
+      _mm_prefetch(_PIC_PARTICLE_DATA__POSITION_OFFSET_+3*sizeof(double)+(char*)ParticleDataStart,_MM_HINT_NTA);
       #endif
     }
 
