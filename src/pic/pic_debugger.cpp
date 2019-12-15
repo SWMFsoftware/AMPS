@@ -379,10 +379,10 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
 
   //add the associated node data
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if ((startNode->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
-      EntryCounter++;
-      CheckSum.add(EntryCounter);
+    EntryCounter++;
+    CheckSum.add(EntryCounter);
 
+    if ((startNode->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
       block=startNode->block;
 
       for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_+1;k++) {
@@ -408,45 +408,33 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
             }
             else {
               if (PIC::ThisThread==0) {
-                //recieve the data vector
-                bool DataSendMode;
+                MPI_Status status;
 
-                pipe.recv(DataSendMode,startNode->Thread);
-
-                if (DataSendMode==true) {
-                  char *ptr;
-
-                  ptr=pipe.recvPointer<char>(SampleVectorLength,startNode->Thread);
-                  CheckSum.add(ptr,SampleVectorLength);
-
-                  if (fnameOutput!=NULL) {
-                    SingleVectorCheckSum.add(ptr,SampleVectorLength);
-                  }
-                }
+                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
                 if (fnameOutput!=NULL) {
+                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+
                   fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
-                //send the data vector
-                bool DataSendMode;
+                MPI_Status status;
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-                if (block!=NULL) {
-                  if ((CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)))!=NULL) {
-                    DataSendMode=true;
-                    pipe.send(DataSendMode);
+                if (block!=NULL) if ((CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)))!=NULL) {
+                  CheckSum.add(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
 
-                    pipe.send(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
-                  }
-                  else {
-                    DataSendMode=false;
-                    pipe.send(DataSendMode);
+                  if (fnameOutput!=NULL) {
+                    SingleVectorCheckSum.add(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                   }
                 }
-                else {
-                  DataSendMode=false;
-                  pipe.send(DataSendMode);
+
+                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+
+                if (fnameOutput!=NULL) {
+                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
                 }
 
               }
@@ -535,10 +523,10 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
 
   //add the associated node data
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if ((startNode->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
-      EntryCounter++;
-      CheckSum.add(EntryCounter);
+    EntryCounter++;
+    CheckSum.add(EntryCounter);
 
+    if ((startNode->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
       block=startNode->block;
 
       for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -565,45 +553,34 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
             }
             else {
               if (PIC::ThisThread==0) {
-                //recieve the data vector
-                bool DataSendMode;
+                MPI_Status status;
 
-                pipe.recv(DataSendMode,startNode->Thread);
+                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-                if (DataSendMode==true) {
-                  char *ptr;
-
-                  ptr=pipe.recvPointer<char>(SampleVectorLength,startNode->Thread);
-                  CheckSum.add(ptr,SampleVectorLength);
-
-                  if (fnameOutput!=NULL) {
-                    SingleVectorCheckSum.add(ptr,SampleVectorLength);
-                  }
-                }
 
                 if (fnameOutput!=NULL) {
+                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+
                   fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
-                //send the data vector
-                bool DataSendMode;
+                MPI_Status status;
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-                if (block!=NULL) {
-                  if ((CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)))!=NULL) {
-                    DataSendMode=true;
-                    pipe.send(DataSendMode);
+                if (block!=NULL) if ((CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)))!=NULL) {
+                  CheckSum.add(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
 
-                    pipe.send(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
-                  }
-                  else {
-                    DataSendMode=false;
-                    pipe.send(DataSendMode);
+                  if (fnameOutput!=NULL) {
+                    SingleVectorCheckSum.add(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
                   }
                 }
-                else {
-                  DataSendMode=false;
-                  pipe.send(DataSendMode);
+
+                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+
+                if (fnameOutput!=NULL) {
+                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
                 }
 
               }
