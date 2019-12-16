@@ -140,8 +140,11 @@ bool GetGradient(double* gradQ,double cellQ,double* Q,long int ncell,TMesh &grid
 //=========================================================
 //calculation of CRC-32
 class CRC32 {
+public:
+  unsigned long crc_accum;
+
 private:
-  unsigned long crc_accum,crc_table[256];
+  unsigned long crc_table[256];
 
   //generate the table of CRC remainders for all possible bytes 
   void generare_crc_table() { 
