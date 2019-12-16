@@ -10388,6 +10388,15 @@ if (TmpAllocationCounter==2437) {
 
       for (thread=1;thread<nTotalThreads;thread++) {
         for (int t=0;t<nTotalThreads;t++) if (CheckSumVector[t]!=GlobalCheckSumTable[t+thread*nTotalThreads]) {
+
+          for (int i=0;i<nTotalThreads;i++) {
+            printf("%i:\t",i);
+
+            for (int j=0;j<nTotalThreads;j++) printf("0x%lx\t",GlobalCheckSumTable[j+i*nTotalThreads]);
+
+            printf("\n");
+          }
+
           exit(__LINE__,__FILE__,"Error: the domain decomposition list 'ParallelNodesDistributionList' is not consistent");
         }
       }
