@@ -19,15 +19,13 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-#include<functional>
-
-
 #include <string>
 #include <iterator>
 #include <utility>
 #include <algorithm>
 #include <list>
 #include <vector>
+#include<functional>
 
 
 #include "meshAMRdef.h"
@@ -10339,19 +10337,34 @@ if (TmpAllocationCounter==2437) {
     CRC32 checksum[nTotalThreads],Signature;
     int nTotalBlocks[nTotalThreads];
 
-    for (thread=0;thread<nTotalThreads;thread++) {
-      nTotalBlocks[thread]=0;
+    std::function<void(CRC32*,CRC32*,int*,cTreeNodeAMR<cBlockAMR>*)> GetChecksumTable;
 
-      for (node=ParallelNodesDistributionList[thread];node!=NULL;node=node->nextNodeThisThread) {
+    GetChecksumTable = [&] (CRC32* ChecksumTable,CRC32* Signature,int *BlockCounterTable,cTreeNodeAMR<cBlockAMR>* node) -> void {
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        int thread=node->Thread;
+
         checksum[thread].add(node->xmin,3);
         checksum[thread].add(node->xmax,3);
 
-        Signature.add(node->xmin,3);
-        Signature.add(node->xmax,3);
+        Signature->add(thread);
+        Signature->add(node->xmin,3);
+        Signature->add(node->xmax,3);
 
         nTotalBlocks[thread]++;
       }
-    }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          GetChecksumTable(ChecksumTable,Signature,BlockCounterTable,downNode);
+        }
+      }
+    };  
+
+    for (int thread=0;thread<nTotalThreads;thread++) nTotalBlocks[thread]=0; 
+    
+    GetChecksumTable(checksum,&Signature,nTotalBlocks,rootTree); 
 
     //compare the checksums of the domain decompositions
     int GlobalTotalBlocksTable[nTotalThreads];
