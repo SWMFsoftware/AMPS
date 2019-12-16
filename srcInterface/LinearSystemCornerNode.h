@@ -218,6 +218,31 @@ public:
     if (RecvExchangeBuffer!=NULL) DeleteDataBuffers();
   }
 
+  //calculate signature of the matrix 
+  void GetSignature(long int nline,const char* fname) {
+    CRC32 Signature; 
+    cMatrixRow* row;
+    int cnt,iElementMax,iElement;
+    cStencilElementData *data,*ElementDataTable;
+
+    for (row=MatrixRowTable,cnt=0;row!=NULL;row=row->next,cnt++) {
+      Signature.add(cnt);
+
+      iElementMax=row->nNonZeroElements;
+      ElementDataTable=row->ElementDataTable; 
+
+      for (iElement=0;iElement<iElementMax;iElement++) { 
+        data=ElementDataTable+iElement;
+
+        Signature.add(data->MatrixElementValue);
+        Signature.add(data->Thread); 
+        Signature.add(data->iVar); 
+        Signature.add(data->UnknownVectorIndex); 
+      }
+    }
+  
+    Signature.PrintChecksum(nline,fname);
+  }
 
 };
 
@@ -1055,9 +1080,22 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     #endif
 
     //add the rest of the vector
-    for (;iElement<iElementMax;iElement++) {
-      data=ElementDataTable+iElement;
+    cStencilElementData *data_next;
+    double *u_vect,*u_vect_next;
 
+    data_next=ElementDataTable+iElement;
+    u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex); 
+
+    for (;iElement<iElementMax;iElement++) {
+      data=data_next;
+      u_vect=u_vect_next;
+
+      if (iElement+1<iElementMax) {
+        data_next++;
+        u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
+      }
+
+      //res+=data->MatrixElementValue*(*u_vect); 
       res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
 
