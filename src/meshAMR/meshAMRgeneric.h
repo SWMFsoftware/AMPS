@@ -10343,14 +10343,14 @@ if (TmpAllocationCounter==2437) {
       if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
         int thread=node->Thread;
 
-        checksum[thread].add(node->xmin,3);
-        checksum[thread].add(node->xmax,3);
+        ChecksumTable[thread].add(node->xmin,3);
+        ChecksumTable[thread].add(node->xmax,3);
 
         Signature->add(thread);
         Signature->add(node->xmin,3);
         Signature->add(node->xmax,3);
 
-        nTotalBlocks[thread]++;
+        BlockCounterTable[thread]++;
       }
       else {
         int iDownNode;
