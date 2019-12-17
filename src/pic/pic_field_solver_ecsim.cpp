@@ -11,6 +11,18 @@
 
 #include "pic.h"
 
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
+#include <immintrin.h>
+#endif
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+#include <immintrin.h>
+#endif
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+#include <immintrin.h>
+#endif
+
 //using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
@@ -1789,6 +1801,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
+           #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+          __m512d alpha_v=_mm512_loadu_pd(alpha);
+
+          #elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+
+          __m256d alpha_vl=_mm256_loadu_pd(alpha);
+          __m256d alpha_vu=_mm256_loadu_pd(alpha+4);
+          #endif
+
           for (int iCorner=0; iCorner<8; iCorner++){
             double tempWeightConst = matrixConst*WeightPG[iCorner];
 
@@ -1796,15 +1817,63 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
               double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
-	      tmpPtr[0]+=alpha[0]*tempWeightProduct;
-	      tmpPtr[1]+=alpha[1]*tempWeightProduct;
-	      tmpPtr[2]+=alpha[2]*tempWeightProduct;
-	      tmpPtr[3]+=alpha[3]*tempWeightProduct;
-	      tmpPtr[4]+=alpha[4]*tempWeightProduct;
-	      tmpPtr[5]+=alpha[5]*tempWeightProduct;
-	      tmpPtr[6]+=alpha[6]*tempWeightProduct;
-	      tmpPtr[7]+=alpha[7]*tempWeightProduct;
-	      tmpPtr[8]+=alpha[8]*tempWeightProduct;
+              #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+              __m512d tmpPtr_v=_mm512_loadu_pd(tmpPtr);
+              __m512d tempWeightProduct_x=_mm512_set1_pd(tempWeightProduct);
+
+
+              tmpPtr_v=_mm512_fmadd_pd(alpha_v,tempWeightProduct_x,tmpPtr_v);
+
+              double *res=(double*)&tmpPtr_v;
+
+              tmpPtr[0]=res[0];
+              tmpPtr[1]=res[1];
+              tmpPtr[2]=res[2];
+              tmpPtr[3]=res[3];
+              tmpPtr[4]=res[4];
+              tmpPtr[5]=res[5];
+              tmpPtr[6]=res[6];
+              tmpPtr[7]=res[7];
+
+              tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__512d has only 8 double -> operation for tmpPtr[8] has to be done separatly
+              #elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+
+              __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
+              __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
+
+              __m256d tempWeightProduct_x=_mm256_set1_pd(tempWeightProduct);
+
+              tmpPtr_vl=_mm256_fmadd_pd(alpha_vl,tempWeightProduct_x,tmpPtr_vl);
+              tmpPtr_vu=_mm256_fmadd_pd(alpha_vu,tempWeightProduct_x,tmpPtr_vu);
+
+
+              double *res=(double*)&tmpPtr_vl;
+
+              tmpPtr[0]=res[0];
+              tmpPtr[1]=res[1];
+              tmpPtr[2]=res[2];
+              tmpPtr[3]=res[3];
+
+
+              res=(double*)&tmpPtr_vu;
+
+              tmpPtr[4]=res[0];
+              tmpPtr[5]=res[1];
+              tmpPtr[6]=res[2];
+              tmpPtr[7]=res[3];
+
+              tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
+              #else
+
+	            tmpPtr[0]+=alpha[0]*tempWeightProduct;
+	            tmpPtr[1]+=alpha[1]*tempWeightProduct;
+	            tmpPtr[2]+=alpha[2]*tempWeightProduct;
+	            tmpPtr[3]+=alpha[3]*tempWeightProduct;
+	            tmpPtr[4]+=alpha[4]*tempWeightProduct;
+	            tmpPtr[5]+=alpha[5]*tempWeightProduct;
+	            tmpPtr[6]+=alpha[6]*tempWeightProduct;
+	            tmpPtr[7]+=alpha[7]*tempWeightProduct;
+	            tmpPtr[8]+=alpha[8]*tempWeightProduct;
 
               /*
               for (int ii=0; ii<9; ii++){
@@ -1812,7 +1881,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
                 tmpPtr[ii] +=tmp;
               }
-	      */
+              */
+              #endif
+
+
             }//jCorner
           }//iCorner
         }
