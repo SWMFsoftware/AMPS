@@ -1307,7 +1307,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
       if(k == -1) nodeNeib = node->GetNeibFace(4,0,0);
       if(k ==  1) nodeNeib = node->GetNeibFace(5,0,0);
     }else{
-      nodeNeib == NULL; 
+      nodeNeib = NULL; 
     }
 
     return nodeNeib; 
