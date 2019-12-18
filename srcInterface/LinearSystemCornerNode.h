@@ -117,10 +117,7 @@ public:
   cMatrixRow *MatrixRowTable,*MatrixRowLast;
 
   //exchange buffers
-  double** RecvExchangeBuffer;  //the actual recv data buffer
   int* RecvExchangeBufferLength;  //the number of elementf in the recv list
-
-  double** SendExchangeBuffer;
   int* SendExchangeBufferLength;
   int **SendExchangeBufferElementIndex;
 
@@ -185,8 +182,8 @@ public:
     MatrixRowTable=NULL,MatrixRowLast=NULL;
 
     //exchange buffers
-    RecvExchangeBuffer=NULL,RecvExchangeBufferLength=NULL;
-    SendExchangeBuffer=NULL,SendExchangeBufferLength=NULL,SendExchangeBufferElementIndex=NULL;
+    RecvExchangeBufferLength=NULL;
+    SendExchangeBufferLength=NULL,SendExchangeBufferElementIndex=NULL;
 
     //partial data of the linear system to be solved
     SubdomainPartialRHS=NULL,SubdomainPartialUnknownsVector=NULL;
@@ -197,7 +194,7 @@ public:
   }
 
   //exchange the data
-  void ExchangeIntermediateUnknownsData(double *x);
+  void ExchangeIntermediateUnknownsData(double *x,double** &);
 
   //matrix/vector multiplication
   void MultiplyVector(double *p,double *x,int length);
@@ -215,7 +212,6 @@ public:
 
   //destructor
   ~cLinearSystemCornerNode() {
-    if (RecvExchangeBuffer!=NULL) DeleteDataBuffers();
   }
 
 
@@ -791,16 +787,14 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   MPI_Allgather(DataExchangeTableCounter,PIC::nTotalThreads,MPI_INT,nGlobalDataPointTable,PIC::nTotalThreads,MPI_INT,MPI_GLOBAL_COMMUNICATOR);
 
-  SendExchangeBuffer=new double* [PIC::nTotalThreads];
   SendExchangeBufferLength=new int [PIC::nTotalThreads];
   SendExchangeBufferElementIndex=new int* [PIC::nTotalThreads];
 
-  RecvExchangeBuffer=new double* [PIC::nTotalThreads];
   RecvExchangeBufferLength=new int [PIC::nTotalThreads];
 
   for (thread=0;thread<PIC::nTotalThreads;thread++) {
-    SendExchangeBuffer[thread]=NULL,SendExchangeBufferLength[thread]=0,SendExchangeBufferElementIndex[thread]=0;
-    RecvExchangeBuffer[thread]=NULL,RecvExchangeBufferLength[thread]=0;
+    SendExchangeBufferLength[thread]=0,SendExchangeBufferElementIndex[thread]=0;
+    RecvExchangeBufferLength[thread]=0;
   }
 
 
@@ -816,7 +810,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
       //create the recv list
       RecvExchangeBufferLength[From]=nGlobalDataPointTable[From+To*PIC::nTotalThreads];
-      RecvExchangeBuffer[From]=new double[NodeUnknownVariableVectorLength*RecvExchangeBufferLength[From]];
     }
     else {
       MPI_Status status;
@@ -825,7 +818,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
       //unpack the SendDataList
       SendExchangeBufferLength[To]=nGlobalDataPointTable[From+To*PIC::nTotalThreads];
-      SendExchangeBuffer[To]=new double[NodeUnknownVariableVectorLength*SendExchangeBufferLength[To]];
       SendExchangeBufferElementIndex[To]=new int[SendExchangeBufferLength[To]];
 
       for (int ii=0;ii<SendExchangeBufferLength[To];ii++) {
@@ -849,7 +841,82 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
-void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x) {
+void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x,double** &LocalRecvExchangeBufferTable) {
+
+  int To,From;
+  MPI_Request SendRequest[PIC::nTotalThreads],RecvRequest[PIC::nTotalThreads];
+  MPI_Status SendStatus[PIC::nTotalThreads],RecvStatus[PIC::nTotalThreads];
+  int RecvThreadCounter=0,SendThreadCounter=0;
+
+
+  //for (int i=0;i<PIC::nTotalThreads;i++) printf("%i->%i:%i\t%i<-%i:%i\n",PIC::ThisThread,i,SendExchangeBufferLength[i],ThisThread,i,RecvExchangeBufferLength[i]);
+
+
+  //CRC32 buffer_cs,index_cs;
+
+  double **LocalSendBuffer=new double *[PIC::nTotalThreads];
+
+  LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads];
+  
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    if (NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]>0) {
+       LocalSendBuffer[thread]=new double [NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]];
+    }
+    else {
+      LocalSendBuffer[thread]=NULL;
+    }
+
+    if (NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]>0) {
+      LocalRecvExchangeBufferTable[thread]=new double [NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]];
+    }
+    else {
+      LocalRecvExchangeBufferTable[thread]=NULL;
+    }  
+
+  } 
+
+  for (From=0;From<PIC::nTotalThreads;From++) for (To=0;To<PIC::nTotalThreads;To++)
+    if ( (From!=To) && ( ((From==PIC::ThisThread)&&(SendExchangeBufferLength[To]!=0)) || ((To==PIC::ThisThread)&&(RecvExchangeBufferLength[From]!=0)) ) ) {
+
+
+    //do blocked send/recv
+
+    if (PIC::ThisThread==From) {
+      //this if the sending thread
+      int i,offset=0;
+      int Length=SendExchangeBufferLength[To];
+      int *IndexTable=SendExchangeBufferElementIndex[To];
+
+
+      for (i=0;i<Length;i++) {
+        memcpy(LocalSendBuffer[To]+offset,x+NodeUnknownVariableVectorLength*IndexTable[i],NodeUnknownVariableVectorLength*sizeof(double));
+        offset+=NodeUnknownVariableVectorLength;
+      }
+
+      if (offset!=NodeUnknownVariableVectorLength*SendExchangeBufferLength[To]) exit(__LINE__,__FILE__,"Error: out of limit");
+
+  //    buffer_cs.add(Buffer,offset);
+   //   index_cs.add(IndexTable,Length);
+
+      MPI_Send(LocalSendBuffer[To],NodeUnknownVariableVectorLength*SendExchangeBufferLength[To],MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR);
+    }
+    else {
+      //this is the recieving thread
+      MPI_Status status;
+
+      MPI_Recv(LocalRecvExchangeBufferTable[From],NodeUnknownVariableVectorLength*RecvExchangeBufferLength[From],MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,&status);
+    }
+  }
+
+ // buffer_cs.PrintChecksum(__LINE__,__FILE__);
+ // index_cs.PrintChecksum(__LINE__,__FILE__);
+
+   for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalSendBuffer[thread]!=NULL) delete [] LocalSendBuffer[thread];
+
+   delete [] LocalSendBuffer;
+
+/*
   int To,From;
   MPI_Request SendRequest[PIC::nTotalThreads],RecvRequest[PIC::nTotalThreads];
   MPI_Status SendStatus[PIC::nTotalThreads],RecvStatus[PIC::nTotalThreads];
@@ -865,7 +932,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   //prepare data to send and initiate the non-blocked send
   for (To=0;To<PIC::nTotalThreads;To++) if ((To!=PIC::ThisThread)&&(SendExchangeBufferLength[To]!=0)) {
     int i,offset=0;
-    double *Buffer=SendExchangeBuffer[To];
     int Length=SendExchangeBufferLength[To];
     int *IndexTable=SendExchangeBufferElementIndex[To];
 
@@ -882,42 +948,37 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   //finalize send and recieve
   if (RecvThreadCounter!=0)  MPI_Waitall(RecvThreadCounter,RecvRequest,RecvStatus);
   if (SendThreadCounter!=0)  MPI_Waitall(SendThreadCounter,SendRequest,SendStatus);
+*/
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::DeleteDataBuffers() {
-  if (RecvExchangeBuffer!=NULL) {
+  if (RecvExchangeBufferLength!=NULL) {
     //clear the row stack
     MatrixRowStack.resetStack();
 
     //deallocate the allocated data buffers
     for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-      if (RecvExchangeBuffer!=NULL) if (RecvExchangeBuffer[thread]!=NULL) {
-        delete [] RecvExchangeBuffer[thread];
-      }
 
       if (SendExchangeBufferElementIndex!=NULL) if (SendExchangeBufferElementIndex[thread]!=NULL) {
         delete [] SendExchangeBufferElementIndex[thread];
-        delete [] SendExchangeBuffer[thread];
       }
     }
 
-    if (RecvExchangeBuffer!=NULL) {
-      delete [] RecvExchangeBuffer;
+    if (RecvExchangeBufferLength!=NULL) {
       delete [] RecvExchangeBufferLength;
     }
 
-    RecvExchangeBuffer=NULL,RecvExchangeBufferLength=NULL;
+    RecvExchangeBufferLength=NULL;
 
     if (SendExchangeBufferElementIndex!=NULL) {
-      delete [] SendExchangeBuffer;
       delete [] SendExchangeBufferLength;
       delete [] SendExchangeBufferElementIndex;
     }
 
-    SendExchangeBuffer=NULL,SendExchangeBufferLength=NULL,SendExchangeBufferElementIndex=NULL;
+    SendExchangeBufferLength=NULL,SendExchangeBufferElementIndex=NULL;
 
     if (SubdomainPartialRHS!=NULL) {
       delete [] SubdomainPartialRHS;
@@ -941,7 +1002,7 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Reset(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)&&(RecvExchangeBuffer!=NULL)) DeleteDataBuffers();
+  if ((startNode==PIC::Mesh::mesh.rootTree)&&(RecvExchangeBufferLength!=NULL)) DeleteDataBuffers();
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     PIC::Mesh::cDataBlockAMR *block=NULL;
@@ -1003,16 +1064,16 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   int cnt,iElement,iElementMax;
   double res;
 
-  ExchangeIntermediateUnknownsData(x);
+  double **LocalRecvExchangeBufferTable;
 
-  RecvExchangeBuffer[PIC::ThisThread]=x;
+  ExchangeIntermediateUnknownsData(x,LocalRecvExchangeBufferTable);
 
-  double* LocalRecvExchangeBufferTable[PIC::nTotalThreads];
+  LocalRecvExchangeBufferTable[PIC::ThisThread]=x;
 
-  for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBuffer[thread];
+//  for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBuffer[thread];
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none)  shared(p,PIC::nTotalThreadsOpenMP) private (iElement,iElementMax,res,row,cnt) shared (ElementDataTable,LocalRecvExchangeBufferTable) 
+#pragma omp parallel default(none)  shared(p,PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) shared (LocalRecvExchangeBufferTable,PIC::ThisThread,length) 
    {
    int ThisOpenMPThread=omp_get_thread_num();
 #else
@@ -1024,7 +1085,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     ElementDataTable=row->ElementDataTable;
     
     res=0.0,iElement=0;
-    cStencilElementData *data;
+    cStencilElementData *data,*data_next;
 
     #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
     alignas(32) double a[4],b[4],*r;
@@ -1054,21 +1115,43 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     }
     #endif
 
+    data_next=ElementDataTable+iElement;
+
     //add the rest of the vector
     for (;iElement<iElementMax;iElement++) {
       data=ElementDataTable+iElement;
 
+      if (iElement+1<iElementMax) {
+        data_next=ElementDataTable+iElement+1;
+      }
+
+      if (data->Thread==PIC::ThisThread){
+        if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=length) if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
+      }
+      else {
+        if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=NodeUnknownVariableVectorLength*RecvExchangeBufferLength[data->Thread]) exit(__LINE__,__FILE__,"Error: out of bound");  
+      }
+
       res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
+
+     if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
 
      p[cnt]=res;
   }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp barrier
   }
 #endif
 
-  RecvExchangeBuffer[PIC::ThisThread]=NULL;
+  LocalRecvExchangeBufferTable[PIC::ThisThread]=NULL;
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalRecvExchangeBufferTable[thread]!=NULL) { 
+    delete [] LocalRecvExchangeBufferTable[thread]; 
+  }
+
+  delete [] LocalRecvExchangeBufferTable;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
