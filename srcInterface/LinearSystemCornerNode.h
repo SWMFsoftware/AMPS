@@ -214,6 +214,31 @@ public:
   ~cLinearSystemCornerNode() {
   }
 
+  //calculate signature of the matrix
+  void GetSignature(long int nline,const char* fname) {
+    CRC32 Signature;
+    cMatrixRow* row;
+    int cnt,iElementMax,iElement;
+    cStencilElementData *data,*ElementDataTable;
+
+    for (row=MatrixRowTable,cnt=0;row!=NULL;row=row->next,cnt++) {
+      Signature.add(cnt);
+
+      iElementMax=row->nNonZeroElements;
+      ElementDataTable=row->ElementDataTable;
+
+      for (iElement=0;iElement<iElementMax;iElement++) {
+        data=ElementDataTable+iElement;
+
+        Signature.add(data->MatrixElementValue);
+        Signature.add(data->Thread);
+        Signature.add(data->iVar);
+        Signature.add(data->UnknownVectorIndex);
+      }
+    }
+
+    Signature.PrintChecksum(nline,fname);
+  }
 
 };
 
