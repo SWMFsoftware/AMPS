@@ -104,7 +104,7 @@ foreach (@Arguments) {
      print "-cpp-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe c++ compiler is used as a linker \n";
      print "-cpp-compiler=opt\t\treplace C++ compiler name defined by the variable COMPILE.mpicxx in Makefile.conf\n";
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
-     print "-avx=[on,off]\t\t\tsettings for using AVX instructions\n";
+     print "-avx=[256,512,off]\t\t\tsettings for using AVX instructions\n";
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      exit;
    }
@@ -276,8 +276,12 @@ foreach (@Arguments) {
 
     $t=lc($1);
         
-    if ($t eq "on") {
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__ON_");
+    if ($t eq "256") {
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
+      `echo AVXMODE=on >> Makefile.local`;
+    }
+    elsif ($t eq "512") {
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__512_");
       `echo AVXMODE=on >> Makefile.local`;
     }
     elsif ($t eq "off") {
