@@ -1111,6 +1111,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     
     res=0.0,iElement=0;
     cStencilElementData *data,*data_next;
+    double *u_vect,*u_vect_next;
 
     #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
     alignas(32) double a[4],b[4],*r;
@@ -1141,26 +1142,35 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     #endif
 
     data_next=ElementDataTable+iElement;
+    u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
 
     //add the rest of the vector
     for (;iElement<iElementMax;iElement++) {
       data=ElementDataTable+iElement;
+      u_vect=u_vect_next;
 
       if (iElement+1<iElementMax) {
         data_next=ElementDataTable+iElement+1;
+        u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
+
+        _mm_prefetch((char*)u_vect_next,_MM_HINT_NTA);
       }
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
       if (data->Thread==PIC::ThisThread){
         if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=length) if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
       }
       else {
         if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=NodeUnknownVariableVectorLength*RecvExchangeBufferLength[data->Thread]) exit(__LINE__,__FILE__,"Error: out of bound");  
       }
+      #endif
 
-      res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+      res+=data->MatrixElementValue*(*u_vect);
     }
 
+     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
      if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
+     #endif
 
      p[cnt]=res;
   }
