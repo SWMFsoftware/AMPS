@@ -378,4 +378,7 @@ at the end of each time step
 //use the cell-related randome number generator
 #define _PIC_CELL_RELATED_RND__MODE_ _PIC_MODE_OFF_
 
+//keep temporary cell based particle lists unique for each thread or shred between the threads 
+#define  _PIC_TEMP_PARTICLE_LIST_MODE_ _PIC_TEMP_PARTICLE_LIST_MODE__UNIQUE_ 
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

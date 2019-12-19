@@ -307,4 +307,8 @@ species number (between reactions). Each segment is saved in the trajectory file
 #define _PIC_FIELD_SOLVER_B_CENTER_BASED_ 0
 #define _PIC_FIELD_SOLVER_B_CORNER_BASED_ 1
 
+//keep temporary cell based particle lists unique for each thread or shred between the threads 
+#define _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_  0
+#define _PIC_TEMP_PARTICLE_LIST_MODE__UNIQUE_  1
+
 
