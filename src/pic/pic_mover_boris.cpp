@@ -1126,12 +1126,26 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
 
+
+  #if _PIC_TEMP_PARTICLE_LIST_MODE_ == _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_
+  PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(i,j,k);
+
+  while (CenterNode->lock_associated_data.test_and_set(std::memory_order_acquire)==true);
+  #endif
+
+
   PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
   if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
+
+  #if _PIC_TEMP_PARTICLE_LIST_MODE_ == _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_
+  CenterNode->lock_associated_data.clear(std::memory_order_release);
+  #endif
+
+
   #else
   #error The option is unknown
   #endif
