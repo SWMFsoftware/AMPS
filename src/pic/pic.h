@@ -2219,6 +2219,9 @@ namespace PIC {
       bool TestProcessedFlag() {return TestFlag(1);}
       void SetProcessedFlag(bool flag) {SetFlag(flag,1);}
 
+      //atomic flag used for syncronization of the threads
+      std::atomic_flag lock_associated_data;
+
       inline int AssociatedDataLength() {
         return totalAssociatedDataLength;
       }
@@ -2248,6 +2251,8 @@ namespace PIC {
       cDataCenterNode() : cBasicCenterNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
+
+        lock_associated_data.clear(std::memory_order_release);
       }
         
       // access sampled macroscopic parameters;
@@ -2643,8 +2648,18 @@ namespace PIC {
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
       cTempParticleMovingListMultiThreadTable *GetTempParticleMovingListMultiThreadTable(int thread,int i,int j,int k) {
-        return ((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))+
-            thread*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+        cTempParticleMovingListMultiThreadTable* res;
+
+        switch (_PIC_TEMP_PARTICLE_LIST_MODE_) {
+        case _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_:
+          res=((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+          break;
+        default:
+          res=((cTempParticleMovingListMultiThreadTable*) (associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))+
+          thread*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+        }
+
+        return res;
       }
 
 
@@ -2685,7 +2700,13 @@ namespace PIC {
           }
 
           tempTempParticleMovingListMultiThreadTableOffset=totalAssociatedDataLength;
-          tempTempParticleMovingListMultiThreadTableLength=nThreadsOpenMP*sizeof(cTempParticleMovingListMultiThreadTable)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+          if (_PIC_TEMP_PARTICLE_LIST_MODE_ ==_PIC_TEMP_PARTICLE_LIST_MODE__UNIQUE_) {
+            tempTempParticleMovingListMultiThreadTableLength=nThreadsOpenMP*sizeof(cTempParticleMovingListMultiThreadTable)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+          }
+          else {
+            tempTempParticleMovingListMultiThreadTableLength=sizeof(cTempParticleMovingListMultiThreadTable)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+          }
 
           totalAssociatedDataLength+=tempTempParticleMovingListMultiThreadTableLength;
           UserAssociatedDataOffset+=tempTempParticleMovingListMultiThreadTableLength;
@@ -2743,7 +2764,10 @@ namespace PIC {
  #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
         for (i=0;i<length;i++) tempParticleMovingListTable[i]=-1;
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-        length*=omp_get_max_threads();
+
+        if (_PIC_TEMP_PARTICLE_LIST_MODE_==_PIC_TEMP_PARTICLE_LIST_MODE__UNIQUE_) {
+          length*=omp_get_max_threads();
+        }
 
         for (i=0;i<length;i++) {
           (i+(cTempParticleMovingListMultiThreadTable*)(associatedDataPointer+tempTempParticleMovingListMultiThreadTableOffset))->first=-1;
