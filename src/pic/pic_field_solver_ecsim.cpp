@@ -1821,19 +1821,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               __m512d tmpPtr_v=_mm512_loadu_pd(tmpPtr);
               __m512d tempWeightProduct_x=_mm512_set1_pd(tempWeightProduct);
 
-
               tmpPtr_v=_mm512_fmadd_pd(alpha_v,tempWeightProduct_x,tmpPtr_v);
 
               double *res=(double*)&tmpPtr_v;
-
-              tmpPtr[0]=res[0];
-              tmpPtr[1]=res[1];
-              tmpPtr[2]=res[2];
-              tmpPtr[3]=res[3];
-              tmpPtr[4]=res[4];
-              tmpPtr[5]=res[5];
-              tmpPtr[6]=res[6];
-              tmpPtr[7]=res[7];
+	      memcpy(tmpPtr,res,8*sizeof(double));
 
               tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__512d has only 8 double -> operation for tmpPtr[8] has to be done separatly
               #elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
