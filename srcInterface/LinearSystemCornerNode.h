@@ -1149,9 +1149,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       //prefetch data vectors
       #ifndef __PGI
       if (iElement+15<iElementMax) {
-        int imax=1+(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CHACHE_LINE_; 
+        int imax=1+(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_; 
 
-	for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)(iElement+8),_MM_HINT_NTA);
+	for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)(iElement+8),_MM_HINT_NTA);
       }
       #endif
 
@@ -1196,9 +1196,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
        //prefetch data vectors
       #ifndef __PGI
       if (iElement+7<iElementMax) {
-        int imax=1+(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CHACHE_LINE_;
+        int imax=1+(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
-        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)(iElement+4),_MM_HINT_NTA);
+        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)(iElement+4),_MM_HINT_NTA);
       }
       #endif
 

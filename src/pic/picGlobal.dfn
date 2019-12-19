@@ -203,7 +203,7 @@ at the end of each time step
 
 //allow prefetch of memory buffers
 #define _PIC_MEMORY_PREFETCH_MODE_ _PIC_MEMORY_PREFETCH_MODE__OFF_
-#define _PIC_MEMORY_PREFETCH__CHACHE_LINE_ 64
+#define _PIC_MEMORY_PREFETCH__CACHE_LINE_ 64
 
 //execute user defined MPI data exchange function after the syncronizatino point at the particle exchange routine
 #define _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__OFF_ 

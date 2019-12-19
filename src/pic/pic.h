@@ -2019,10 +2019,10 @@ namespace PIC {
 
     inline void PreferchParticleData_Full(byte* ParticleDataStart) {
       #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
-      int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
+      int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_NTA);
+        _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)ParticleDataStart,_MM_HINT_NTA);
       }
       #endif
     }

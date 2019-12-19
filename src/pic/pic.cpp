@@ -963,11 +963,11 @@ void PIC::Sampling::Sampling() {
                   ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
 
                   #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
-                  int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CHACHE_LINE_);
+                  int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CACHE_LINE_);
 
                   for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
                     #ifndef __PGI
-                    _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CHACHE_LINE_+(char*)ptrNext,_MM_HINT_NTA);
+                    _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)ptrNext,_MM_HINT_NTA);
                     #endif
                   }
                   #endif
