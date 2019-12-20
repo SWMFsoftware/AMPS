@@ -82,10 +82,9 @@ ifeq ($(AVXMODE),on)
 ifeq ($(COMPILE.c),icc)
 	SEARCH_C+= -march=core-avx2  
 else ifeq ($(COMPILE.c),gcc)
+	SEARCH_C+= -mavx2 -mfma
 
-ifeq ($(AVXTYPE),256)
-	SEARCH_C+= -mavx2 -mfma 
-else
+ifeq ($(AVXTYPE),512)
 	SEARCH_C+= -mavx512f
 endif
 endif
