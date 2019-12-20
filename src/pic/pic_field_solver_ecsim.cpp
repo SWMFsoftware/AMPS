@@ -1663,19 +1663,25 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
           #endif
 
-	  int Length=MagneticFieldStencil->Length;
-	  double *Weight_table=MagneticFieldStencil->Weight;
-	  int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
+	        int Length=MagneticFieldStencil->Length;
+          double *Weight_table=MagneticFieldStencil->Weight;
+          int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
 
+          #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
           for (int iStencil=0;iStencil<Length;iStencil++) {
-            double Weight=Weight_table[iStencil];
-	    int LocalCellID=LocalCellID_table[iStencil];
+            double *B_temp,Weight=Weight_table[iStencil];
+	          int LocalCellID=LocalCellID_table[iStencil];
 
-            #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-            double * B_temp = B_Center[LocalCellID];
-            #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-            double * B_temp = B_corner[LocalCellID];
-            #endif
+            switch(_PIC_FIELD_SOLVER_B_MODE_) {
+            case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
+              B_temp=B_Center[LocalCellID];
+              break;
+            case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
+               B_temp = B_corner[LocalCellID];
+               break;
+            defaut:
+               exit(__LINE__,__FILE__,"Error: the mode is unknown");
+            }
 
             #pragma ivdep
             for (int idim=0;idim<3;idim++) B[idim]+=Weight*B_temp[idim];
@@ -1687,6 +1693,34 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             B[idim] *= B_conv;
             vInit[idim] *= length_conv;
           }
+          
+          #else //_AVX_INSTRUCTIONS_USAGE_MODE_
+          __m256d B_v=_mm256_set1_pd(0.0);
+          
+          for (int iStencil=0;iStencil<Length;iStencil++) {
+            int LocalCellID=LocalCellID_table[iStencil];
+            
+            switch(_PIC_FIELD_SOLVER_B_MODE_) {
+              case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
+                B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_Center[LocalCellID]),B_v);
+                break;
+              case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
+                B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_corner[LocalCellID]),B_v);
+                break;
+              defaut:
+                exit(__LINE__,__FILE__,"Error: the mode is unknown");
+            }
+          }
+          
+          //convert from SI to cgs
+          B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
+          memcpy(B,&B_v,3*sizeof(double));
+          
+          #pragma ivdep
+          for (int idim=0; idim<3; idim++){
+            vInit[idim] *= length_conv;
+          }
+          #endif//_AVX_INSTRUCTIONS_USAGE_MODE_
 
           double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
           double * WeightPG;
@@ -1819,12 +1853,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
               #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
               __m512d tmpPtr_v=_mm512_loadu_pd(tmpPtr);
-              __m512d tempWeightProduct_x=_mm512_set1_pd(tempWeightProduct);
 
-              tmpPtr_v=_mm512_fmadd_pd(alpha_v,tempWeightProduct_x,tmpPtr_v);
-
-              double *res=(double*)&tmpPtr_v;
-	      memcpy(tmpPtr,res,8*sizeof(double));
+              tmpPtr_v=_mm512_fmadd_pd(alpha_v,_mm512_set1_pd(tempWeightProduct),tmpPtr_v);
+              memcpy(tmpPtr,&tmpPtr_v,8*sizeof(double));
 
               tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__512d has only 8 double -> operation for tmpPtr[8] has to be done separatly
               #elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
@@ -1832,26 +1863,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
               __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
 
-              __m256d tempWeightProduct_x=_mm256_set1_pd(tempWeightProduct);
+              tmpPtr_vl=_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl);
+              tmpPtr_vu=_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu);
 
-              tmpPtr_vl=_mm256_fmadd_pd(alpha_vl,tempWeightProduct_x,tmpPtr_vl);
-              tmpPtr_vu=_mm256_fmadd_pd(alpha_vu,tempWeightProduct_x,tmpPtr_vu);
-
-
-              double *res=(double*)&tmpPtr_vl;
-
-              tmpPtr[0]=res[0];
-              tmpPtr[1]=res[1];
-              tmpPtr[2]=res[2];
-              tmpPtr[3]=res[3];
-
-
-              res=(double*)&tmpPtr_vu;
-
-              tmpPtr[4]=res[0];
-              tmpPtr[5]=res[1];
-              tmpPtr[6]=res[2];
-              tmpPtr[7]=res[3];
+              memcpy(tmpPtr,&tmpPtr_vl,4*sizeof(double));
+              memcpy(tmpPtr+4,&tmpPtr_vu,4*sizeof(double));
 
               tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
               #else
