@@ -1775,6 +1775,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
 
           WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+	  _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
 
           ParticleEnergyCell += 0.5*mass*(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]);
 
@@ -1790,11 +1791,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           for (int iCorner=0; iCorner<8; iCorner++){
             double t=chargeQ*WeightPG[iCorner];
+	    double *Jg_iCorner=Jg[iCorner];
 
             #pragma ivdep
             for (int iDim=0; iDim<3; iDim++){
               //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
-              Jg[iCorner][iDim]+=t*vRot[iDim];
+              Jg_iCorner[iDim]+=t*vRot[iDim];
             }
           }
 
@@ -1850,6 +1852,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             for (int jCorner=0; jCorner<=iCorner; jCorner++){
               double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
               double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+
+	      if (jCorner+1<=iCorner) {
+                 char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
+
+                 _mm_prefetch(ptr,_MM_HINT_NTA);
+                 _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
+	      }
 
               #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
               __m512d tmpPtr_v=_mm512_loadu_pd(tmpPtr);
