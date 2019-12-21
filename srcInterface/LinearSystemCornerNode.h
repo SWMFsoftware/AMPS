@@ -115,8 +115,8 @@ public:
 
   //Table of the rows local to the current MPI process
   cMatrixRow *MatrixRowTable,*MatrixRowLast;
-  cMatrixRow **MatrixThreadDecomosition_start,**MatrixThreadDecomosition_end;
-  int *MatrixThreadDecomosition_first_index;
+  cMatrixRow **MatrixThreadDecompositionFirstRow,**MatrixThreadDecompositionLastRow;
+  int *MatrixThreadDecompositionFirstIndex;
 
   //exchange buffers
   int* RecvExchangeBufferLength;  //the number of elementf in the recv list
@@ -195,24 +195,24 @@ public:
       }
     }
 
-    MatrixThreadDecomosition_start=new cMatrixRow* [nThreadsOpenMP];
-    MatrixThreadDecomosition_end=new cMatrixRow* [nThreadsOpenMP];
-    MatrixThreadDecomosition_first_index=new int [nThreadsOpenMP];
+    MatrixThreadDecompositionFirstRow=new cMatrixRow* [nThreadsOpenMP];
+    MatrixThreadDecompositionLastRow=new cMatrixRow* [nThreadsOpenMP];
+    MatrixThreadDecompositionFirstIndex=new int [nThreadsOpenMP];
 
     for (int i=0;i<nThreadsOpenMP;i++) {
-      MatrixThreadDecomosition_start[i]=NULL;
-      MatrixThreadDecomosition_end[i]=NULL;
-      MatrixThreadDecomosition_first_index[i]=-1;
+      MatrixThreadDecompositionFirstRow[i]=NULL;
+      MatrixThreadDecompositionLastRow[i]=NULL;
+      MatrixThreadDecompositionFirstIndex[i]=-1;
     }
 
 #else
-    MatrixThreadDecomosition_start=new cMatrixRow* [1];
-    MatrixThreadDecomosition_end=new cMatrixRow* [1];
-    MatrixThreadDecomosition_first_index=new int [1];
+    MatrixThreadDecompositionFirstRow=new cMatrixRow* [1];
+    MatrixThreadDecompositionLastRow=new cMatrixRow* [1];
+    MatrixThreadDecompositionFirstIndex=new int [1];
 
-    MatrixThreadDecomosition_start[0]=NULL;
-    MatrixThreadDecomosition_end[0]=NULL;
-    MatrixThreadDecomosition_first_index[0]=0;
+    MatrixThreadDecompositionFirstRow[0]=NULL;
+    MatrixThreadDecompositionLastRow[0]=NULL;
+    MatrixThreadDecompositionFirstIndex[0]=0;
 #endif
 
     //exchange buffers
@@ -246,9 +246,9 @@ public:
 
   //destructor
   ~cLinearSystemCornerNode() {
-    delete [] MatrixThreadDecomosition_start;
-    delete [] MatrixThreadDecomosition_end;
-    delete [] MatrixThreadDecomosition_first_index;
+    delete [] MatrixThreadDecompositionFirstRow;
+    delete [] MatrixThreadDecompositionLastRow;
+    delete [] MatrixThreadDecompositionFirstIndex;
   }
 
   //calculate signature of the matrix
@@ -905,19 +905,19 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
     for (Row=MatrixRowTable;Row!=NULL;Row=Row->next,nTotalRows++);
 
-    MatrixThreadDecomosition_start[0]=MatrixRowTable;
-    MatrixThreadDecomosition_first_index[0]=0;
+    MatrixThreadDecompositionFirstRow[0]=MatrixRowTable;
+    MatrixThreadDecompositionFirstIndex[0]=0;
     nRowsPerThread=nTotalRows/PIC::nTotalThreadsOpenMP;
 
     for (index=0,cnt=1,Row=MatrixRowTable;Row!=NULL;Row=Row->next,cnt++,index++) {
       if (iThread!=PIC::nTotalThreadsOpenMP-1) {
         if (cnt==nRowsPerThread) {
           //this is the last row to be processed by the thread
-          MatrixThreadDecomosition_end[iThread]=Row;
+          MatrixThreadDecompositionLastRow[iThread]=Row;
 
           iThread++;
-          MatrixThreadDecomosition_start[iThread]=Row;
-          MatrixThreadDecomosition_first_index[iThread]=index;
+          MatrixThreadDecompositionFirstRow[iThread]=Row;
+          MatrixThreadDecompositionFirstIndex[iThread]=index;
           cnt=1;
         }
       }
@@ -925,8 +925,8 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
 #else
-    MatrixThreadDecomosition_start[0]=MatrixRowTable;
-    MatrixThreadDecomosition_end[0]=NULL;
+    MatrixThreadDecompositionFirstRow[0]=MatrixRowTable;
+    MatrixThreadDecompositionLastRow[0]=NULL;
 #endif
 }
 
@@ -1159,20 +1159,18 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   double **RecvExchangeBufferTable;
 
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
-
   RecvExchangeBufferTable[PIC::ThisThread]=x;
 
-//  for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBuffer[thread];
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel default(none)  shared(p) firstprivate(PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) firstprivate (RecvExchangeBufferTable,PIC::ThisThread,length,PIC::nTotalThreads) 
    {
    int ThisOpenMPThread=omp_get_thread_num();
 
-   cMatrixRow* RowStart=MatrixThreadDecomosition_start[ThisOpenMPThread];
-   cMatrixRow* RowEnd=MatrixThreadDecomosition_end[ThisOpenMPThread];
+   cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
+   cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
 
-   cnt=MatrixThreadDecomosition_first_index[ThisOpenMPThread];
+   cnt=MatrixThreadDecompositionFirstIndex[ThisOpenMPThread];
 
 #else
    const int ThisOpenMPThread=0;
@@ -1199,11 +1197,22 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     double *u_vect,*u_vect_next;
 
     #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
-    alignas(32) double a[4],b[4],*r;
-    __m256d av,bv,cv,rv;
-
     //add most of the vector
     for (;iElement+3<iElementMax;iElement+=4) {
+      alignas(32) double a[4],b[4],*r;
+      __m256d av,bv,cv,rv;
+
+      //prefetch data vectors
+      #ifndef __PGI
+      if (iElement+7<iElementMax) {
+        char *ptr=(char*)(ElementDataTable+4)+sizeof(cStencilElementData)/2;
+        int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
+
+        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
+      }
+      #endif
+
+
       data=ElementDataTable+iElement;
       a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
 
@@ -1234,9 +1243,10 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       //prefetch data vectors
       #ifndef __PGI
       if (iElement+15<iElementMax) {
-        int imax=1+(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_; 
+        char *ptr=(char*)(ElementDataTable+8)+sizeof(cStencilElementData)/2;
+        int imax=(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
-	for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)(iElement+8),_MM_HINT_NTA);
+        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
       }
       #endif
 
@@ -1278,12 +1288,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
        alignas(32) double a[4],b[4],*r;
       __m256d av,bv,cv,rv;
 
-       //prefetch data vectors
+      //prefetch data vectors
       #ifndef __PGI
       if (iElement+7<iElementMax) {
-        int imax=1+(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
+        char *ptr=(char*)(ElementDataTable+4)+sizeof(cStencilElementData)/2;
+        int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
-        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)(iElement+4),_MM_HINT_NTA);
+        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
       }
       #endif
 
@@ -1327,7 +1338,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
         _mm_prefetch((char*)u_vect_next,_MM_HINT_NTA);
         #endif
 
-	if (iElement+2<iElementMax) { 
+       if (iElement+2<iElementMax) {
           data_next_next++;
 
           #ifndef __PGI
