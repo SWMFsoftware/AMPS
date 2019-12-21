@@ -115,6 +115,8 @@ public:
 
   //Table of the rows local to the current MPI process
   cMatrixRow *MatrixRowTable,*MatrixRowLast;
+  cMatrixRow **MatrixThreadDecomosition_start,**MatrixThreadDecomosition_end;
+  int *MatrixThreadDecomosition_first_index;
 
   //exchange buffers
   int* RecvExchangeBufferLength;  //the number of elementf in the recv list
@@ -181,6 +183,38 @@ public:
   cLinearSystemCornerNode() {
     MatrixRowTable=NULL,MatrixRowLast=NULL;
 
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    int nThreadsOpenMP=0;
+
+    #pragma omp parallel shared(nThreadsOpenMP)
+    {
+      #pragma omp single
+      {
+        nThreadsOpenMP=omp_get_num_threads();
+      }
+    }
+
+    MatrixThreadDecomosition_start=new cMatrixRow* [nThreadsOpenMP];
+    MatrixThreadDecomosition_end=new cMatrixRow* [nThreadsOpenMP];
+    MatrixThreadDecomosition_first_index=new int [nThreadsOpenMP];
+
+    for (int i=0;i<nThreadsOpenMP;i++) {
+      MatrixThreadDecomosition_start[i]=NULL;
+      MatrixThreadDecomosition_end[i]=NULL;
+      MatrixThreadDecomosition_first_index[i]=-1;
+    }
+
+#else
+    MatrixThreadDecomosition_start=new cMatrixRow* [1];
+    MatrixThreadDecomosition_end=new cMatrixRow* [1];
+    MatrixThreadDecomosition_first_index=new int [1];
+
+    MatrixThreadDecomosition_start[0]=NULL;
+    MatrixThreadDecomosition_end[0]=NULL;
+    MatrixThreadDecomosition_first_index[0]=0;
+#endif
+
     //exchange buffers
     RecvExchangeBufferLength=NULL;
     SendExchangeBufferLength=NULL,SendExchangeBufferElementIndex=NULL;
@@ -212,6 +246,9 @@ public:
 
   //destructor
   ~cLinearSystemCornerNode() {
+    delete [] MatrixThreadDecomosition_start;
+    delete [] MatrixThreadDecomosition_end;
+    delete [] MatrixThreadDecomosition_first_index;
   }
 
   //calculate signature of the matrix
@@ -861,6 +898,36 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   delete [] DataExchangeTableCounter;
 
   delete [] DataRequestList;
+
+  //define the thread decomposition of the matrix
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    int nTotalRows=0,nRowsPerThread,cnt,iThread=0,index;
+
+    for (Row=MatrixRowTable;Row!=NULL;Row=Row->next,nTotalRows++);
+
+    MatrixThreadDecomosition_start[0]=MatrixRowTable;
+    MatrixThreadDecomosition_first_index[0]=0;
+    nRowsPerThread=nTotalRows/PIC::nTotalThreadsOpenMP;
+
+    for (index=0,cnt=1,Row=MatrixRowTable;Row!=NULL;Row=Row->next,cnt++,index++) {
+      if (iThread!=PIC::nTotalThreadsOpenMP-1) {
+        if (cnt==nRowsPerThread) {
+          //this is the last row to be processed by the thread
+          MatrixThreadDecomosition_end[iThread]=Row;
+
+          iThread++;
+          MatrixThreadDecomosition_start[iThread]=Row;
+          MatrixThreadDecomosition_first_index[iThread]=index;
+          cnt=1;
+        }
+      }
+    }
+
+
+#else
+    MatrixThreadDecomosition_start[0]=MatrixRowTable;
+    MatrixThreadDecomosition_end[0]=NULL;
+#endif
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
@@ -1101,11 +1168,23 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 #pragma omp parallel default(none)  shared(p,PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) shared (LocalRecvExchangeBufferTable,PIC::ThisThread,length) 
    {
    int ThisOpenMPThread=omp_get_thread_num();
+
+   cMatrixRow* RowStart=MatrixThreadDecomosition_start[ThisOpenMPThread];
+   cMatrixRow* RowEnd=MatrixThreadDecomosition_end[ThisOpenMPThread];
+
+   cnt=MatrixThreadDecomosition_first_index[ThisOpenMPThread];
+
 #else
    const int ThisOpenMPThread=0;
+
+   cMatrixRow* RowStart=MatrixRowTable;
+   cMatrixRow* RowEnd=NULL;
+
+   cnt=0;
+
 #endif //_COMPILATION_MODE_
 
-  for (row=MatrixRowTable,cnt=0;row!=NULL;row=row->next,cnt++) if ((cnt%PIC::nTotalThreadsOpenMP)==ThisOpenMPThread) {
+  for (row=RowStart;row!=RowEnd;row=row->next,cnt++) {
     iElementMax=row->nNonZeroElements;
     ElementDataTable=row->ElementDataTable;
     
