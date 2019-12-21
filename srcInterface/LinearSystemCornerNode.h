@@ -1156,16 +1156,16 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   int cnt,iElement,iElementMax;
   double res;
 
-  double **LocalRecvExchangeBufferTable;
+  double **RecvExchangeBufferTable;
 
-  ExchangeIntermediateUnknownsData(x,LocalRecvExchangeBufferTable);
+  ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
 
-  LocalRecvExchangeBufferTable[PIC::ThisThread]=x;
+  RecvExchangeBufferTable[PIC::ThisThread]=x;
 
 //  for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBuffer[thread];
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none)  shared(p,PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) shared (LocalRecvExchangeBufferTable,PIC::ThisThread,length) 
+#pragma omp parallel default(none)  shared(p) firstprivate(PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) firstprivate (RecvExchangeBufferTable,PIC::ThisThread,length,PIC::nTotalThreads) 
    {
    int ThisOpenMPThread=omp_get_thread_num();
 
@@ -1184,12 +1184,18 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 #endif //_COMPILATION_MODE_
 
+  double **LocalRecvExchangeBufferTable;
+ 
+  LocalRecvExchangeBufferTable=new double*[PIC::nTotalThreads];
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBufferTable[thread];
+
+
   for (row=RowStart;row!=RowEnd;row=row->next,cnt++) {
     iElementMax=row->nNonZeroElements;
     ElementDataTable=row->ElementDataTable;
     
     res=0.0,iElement=0;
-    cStencilElementData *data,*data_next;
+    cStencilElementData *data,*data_next,*data_next_next=NULL;
     double *u_vect,*u_vect_next;
 
     #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
@@ -1304,20 +1310,31 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     #endif
 
     data_next=ElementDataTable+iElement;
+    data_next_next=(iElement+1<iElementMax) ? data_next_next=data_next+1 : NULL;
+
     u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
 
     //add the rest of the vector
     for (;iElement<iElementMax;iElement++) {
-      data=ElementDataTable+iElement;
+      data=data_next;
       u_vect=u_vect_next;
 
       if (iElement+1<iElementMax) {
-        data_next=ElementDataTable+iElement+1;
+        data_next=data_next_next;
         u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
 
         #ifndef __PGI
         _mm_prefetch((char*)u_vect_next,_MM_HINT_NTA);
         #endif
+
+	if (iElement+2<iElementMax) { 
+          data_next_next++;
+
+          #ifndef __PGI
+          _mm_prefetch((char*)data_next_next,_MM_HINT_NTA);
+          #endif
+        }
+
       }
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -1339,18 +1356,20 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
      p[cnt]=res;
   }
 
+  delete [] LocalRecvExchangeBufferTable;
+
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp barrier
   }
 #endif
 
-  LocalRecvExchangeBufferTable[PIC::ThisThread]=NULL;
+  RecvExchangeBufferTable[PIC::ThisThread]=NULL;
 
-  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalRecvExchangeBufferTable[thread]!=NULL) { 
-    delete [] LocalRecvExchangeBufferTable[thread]; 
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) { 
+    delete [] RecvExchangeBufferTable[thread]; 
   }
 
-  delete [] LocalRecvExchangeBufferTable;
+  delete [] RecvExchangeBufferTable;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
