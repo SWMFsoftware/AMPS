@@ -4264,9 +4264,10 @@ namespace PIC {
           if (dTmin>dtTable[thread]) dTmin=dtTable[thread]; 
         }
 
-        printf("Time Range: %e to %e \nTime Averaged for MPI Process: %e",dTmin,dTmax,dTtotal/PIC::nTotalThreads);
-        if (_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_) printf("\tTime Averaged for OpenMP thread: %e",dTtotal/(PIC::nTotalThreads*PIC::nTotalThreadsOpenMP));
-	printf("\n");
+        printf("Time Range: %e to %e,  Time Averaged: %e\n",dTmin,dTmax,dTtotal/PIC::nTotalThreads);
+        printf("Time summed over MPI Processes: %e\n",dTtotal);
+
+        if (_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_) printf("\tAveraged Time times the total execution thread: %e",dTtotal*PIC::nTotalThreadsOpenMP);
       }
 
       delete [] dtTable;
