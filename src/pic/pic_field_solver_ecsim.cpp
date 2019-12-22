@@ -74,21 +74,20 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int * PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 
-double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateETime=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalRunTime=0.0;
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateETime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalRunTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalMatvecTime(_PIC_TIMER_MODE_HRES_);
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
-  if (PIC::ThisThread==0) {
-    printf("\n$PREFIX: Electromagnetic::ECSIM timing:\n");
-    printf("$PREFIX: SolveTime=%e\n",SolveTime);
-    printf("$PREFIX: UpdateBTime=%e\n",UpdateBTime);
-    printf("$PREFIX: UpdateETime=%e\n",UpdateETime);
-    printf("$PREFIX: UpdateJMassMatrixTime=%e\n",UpdateJMassMatrixTime);
-    printf("$PREFIX: TotalRunTime=%e\n",TotalRunTime);
-  }
+  SolveTime.PrintMeanMPI("Electromagnetic::ECSIM timing - SolveTime"); 
+  UpdateBTime.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateBTime");
+  UpdateETime .PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateETime=");
+  UpdateJMassMatrixTime.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateJMassMatrixTime");
+  TotalMatvecTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalMatvecTime");
+  TotalRunTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalRunTime"); 
 }
 
 
@@ -1421,6 +1420,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;    
 
+  CumulativeTiming::UpdateJMassMatrixTime.Start();
+
   double ParticleEnergy=0.0;
 
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
@@ -1663,14 +1664,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
           #endif
 
-	        int Length=MagneticFieldStencil->Length;
+          int Length=MagneticFieldStencil->Length;
           double *Weight_table=MagneticFieldStencil->Weight;
           int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
 
           #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
           for (int iStencil=0;iStencil<Length;iStencil++) {
             double *B_temp,Weight=Weight_table[iStencil];
-	          int LocalCellID=LocalCellID_table[iStencil];
+            int LocalCellID=LocalCellID_table[iStencil];
 
             switch(_PIC_FIELD_SOLVER_B_MODE_) {
             case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
@@ -1881,15 +1882,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               tmpPtr[8]+=alpha[8]*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
               #else
 
-	            tmpPtr[0]+=alpha[0]*tempWeightProduct;
-	            tmpPtr[1]+=alpha[1]*tempWeightProduct;
-	            tmpPtr[2]+=alpha[2]*tempWeightProduct;
-	            tmpPtr[3]+=alpha[3]*tempWeightProduct;
-	            tmpPtr[4]+=alpha[4]*tempWeightProduct;
-	            tmpPtr[5]+=alpha[5]*tempWeightProduct;
-	            tmpPtr[6]+=alpha[6]*tempWeightProduct;
-	            tmpPtr[7]+=alpha[7]*tempWeightProduct;
-	            tmpPtr[8]+=alpha[8]*tempWeightProduct;
+              tmpPtr[0]+=alpha[0]*tempWeightProduct;
+              tmpPtr[1]+=alpha[1]*tempWeightProduct;
+              tmpPtr[2]+=alpha[2]*tempWeightProduct;
+              tmpPtr[3]+=alpha[3]*tempWeightProduct;
+              tmpPtr[4]+=alpha[4]*tempWeightProduct;
+              tmpPtr[5]+=alpha[5]*tempWeightProduct;
+              tmpPtr[6]+=alpha[6]*tempWeightProduct;
+              tmpPtr[7]+=alpha[7]*tempWeightProduct;
+              tmpPtr[8]+=alpha[8]*tempWeightProduct;
 
               /*
               for (int ii=0; ii<9; ii++){
@@ -1909,11 +1910,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
         if (ptrNext!=-1) {
           // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
-        } else {
-
-
-
-
+        } 
+	else {
           CellData->ParticleEnergy += ParticleEnergyCell;
 
           //collect current
@@ -1973,6 +1971,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       }// while (ptrNext!=-1)
     }//if (ptr!=-1)
+
+    CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
 
     return res;
   };
@@ -3188,6 +3188,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+
+  CumulativeTiming::TotalRunTime.Start();
   
   //perform the rest of the field solver calculstions
   double t0,t1,StartTime=MPI_Wtime();
@@ -3248,15 +3250,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   Solver.UpdateRhs(UpdateRhs); 
   Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
-  t0=MPI_Wtime();
+  CumulativeTiming::SolveTime.Start();
   linear_solver_matvec_c = matvec;
   if (PIC::ThisThread==0) printf("---------------Solving E field-----------\n");
-  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,
-	       PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E);
-  t1=MPI_Wtime();
-  CumulativeTiming::SolveTime+=t1-t0;
+  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
 
-  t0=t1;
+  CumulativeTiming::SolveTime.UpdateTimer();
+  CumulativeTiming::UpdateBTime.Start();
+  
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setE_half_BC();
@@ -3270,18 +3271,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setB_corner_BC();
   
-  t1=MPI_Wtime();
-  CumulativeTiming::UpdateBTime+=t1-t0;
+  CumulativeTiming::UpdateBTime.UpdateTimer();
+  CumulativeTiming::UpdateETime.Start();
 
-  t0=t1;
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setE_half_BC();
   UpdateE();
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
     setE_curr_BC();
   t1=MPI_Wtime();
-  CumulativeTiming::UpdateETime+=t1-t0;
-  CumulativeTiming::TotalRunTime+=MPI_Wtime()-StartTime;
+
+  CumulativeTiming::UpdateETime.UpdateTimer();
+  CumulativeTiming::TotalRunTime.UpdateTimer();
  }
 
 
@@ -3384,13 +3385,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
+  CumulativeTiming::TotalMatvecTime.Start();
   Solver.MultiplyVector(VecOut,VecIn,n);
+  CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
+  CumulativeTiming::TotalMatvecTime.Start();
   PoissonSolver.MultiplyVector(VecOut,VecIn,n);
+  CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
 int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){

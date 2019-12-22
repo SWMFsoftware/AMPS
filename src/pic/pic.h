@@ -4243,8 +4243,35 @@ namespace PIC {
 
       delete [] dtTable;
     }
-  };
 
+    void PrintMeanMPI(const char *msg=NULL) {
+      double *dtTable=new double [PIC::nTotalThreads];
+
+      UpdateTimer();
+      MPI_Gather(&dT,1,MPI_DOUBLE,dtTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+
+      if (PIC::ThisThread==0) {
+        printf("Timing:\n");
+        if (msg!=NULL) printf("Message: %s\n",msg);
+        if (line_start>0) printf("Timer defined at %s@%i \n",fname_start,line_start);
+
+        double dTtotal=0,dTmax=dtTable[0],dTmin=dtTable[0];
+
+	for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+          dTtotal+=dtTable[thread];
+
+          if (dTmax<dtTable[thread]) dTmax=dtTable[thread];
+          if (dTmin>dtTable[thread]) dTmin=dtTable[thread]; 
+        }
+
+        printf("Time Range: %e to %e \nTime Averaged for MPI Process: %e",dTmin,dTmax,dTtotal/PIC::nTotalThreads);
+        if (_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_) printf("\tTime Averaged for OpenMP thread: %e",dTtotal/(PIC::nTotalThreads*PIC::nTotalThreadsOpenMP));
+	printf("\n");
+      }
+
+      delete [] dtTable;
+    }
+  };
 
     //catch variation of a variable located at a particular address
     //MatchMode == true -> print when the match is found; MatchMode == false -> print when the variables are not match
@@ -6258,11 +6285,12 @@ namespace FieldSolver {
 
             //timing of the solver execution
             namespace CumulativeTiming {
-              extern double UpdateJMassMatrixTime;
-              extern double SolveTime;
-              extern double UpdateBTime;
-              extern double UpdateETime;
-              extern double TotalRunTime;
+              extern Debugger::cTimer UpdateJMassMatrixTime;
+              extern Debugger::cTimer SolveTime; 
+              extern Debugger::cTimer UpdateBTime; 
+              extern Debugger::cTimer UpdateETime; 
+              extern Debugger::cTimer TotalRunTime; 
+	      extern Debugger::cTimer TotalMatvecTime;
 
               void Print();
             }
