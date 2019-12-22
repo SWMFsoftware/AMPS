@@ -306,11 +306,10 @@ void PIC::RunTimeSystemState::CumulativeTiming::Print() {
     printf("$PREFIX: SamplingTime=%e\n",SamplingTime);
     printf("$PREFIX: IterationExecutionTime=%e\n",IterationExecutionTime);
     printf("$PREFIX: TotalRunTime=%e\n",TotalRunTime);
+  } 
 
-
-    //call other function used for timing
-    for (auto& it : PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable) it();
-  }
+  //call other function used for timing
+  for (auto& it : PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable) it();
 }
 
 
