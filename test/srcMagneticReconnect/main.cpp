@@ -682,6 +682,10 @@ int main(int argc,char **argv) {
     PIC::Sampling::Sampling();
     PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
     PIC::RequiredSampleLength = 100;
+
+    PIC::Debugger::cTimer Timer(_PIC_TIMER_MODE_HRES_);
+
+    Timer.Start();
   
     for (int niter=0;niter<totalIter;niter++) {
       
@@ -715,6 +719,8 @@ int main(int argc,char **argv) {
       if (niter%100==0) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,0);
     }
  
+  Timer.PrintMeanMPI("The total execution time of the reconnection test");
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print();
 
   MPI_Finalize();
   TimeValue=time(NULL);
