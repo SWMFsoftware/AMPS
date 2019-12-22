@@ -809,88 +809,84 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   double E[3]={0.0,0.0,0.0},B[3]={0.0,0.0,0.0};
   PIC::InterpolationRoutines::CornerBased::cStencil *ElectricFieldStencil;
   PIC::InterpolationRoutines::CellCentered::cStencil *MagneticFieldStencil;
-
-  #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__OFF_
-  PIC::CPLR::InitInterpolationStencil(xInit,startNode);
-  PIC::CPLR::GetBackgroundElectricField(E);
-  PIC::CPLR::GetBackgroundMagneticField(B);
-
-  #else //_PIC_FIELD_SOLVER_MODE__OFF_
-
-  int threadId = 0;
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  threadId = omp_get_thread_num();
-#endif
+  int threadId=0;
 
   int *LocalCellID,Length;
   double *Weight;
 
-  switch ( _PIC_FIELD_SOLVER_MODE_) {
-  case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
-    //interpolate the elecric field (corner nodes)
-    ElectricFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,startNode);
+  switch (_PIC_FIELD_SOLVER_MODE_) {
+  case _PIC_FIELD_SOLVER_MODE__OFF_:
+    PIC::CPLR::InitInterpolationStencil(xInit,startNode);
+    PIC::CPLR::GetBackgroundElectricField(E);
+    PIC::CPLR::GetBackgroundMagneticField(B);
 
-    Length=ElectricFieldStencil->Length;
-    LocalCellID=ElectricFieldStencil->LocalCellID;
-    Weight=ElectricFieldStencil->Weight;
-
-    for (int iStencil=0;iStencil<Length;iStencil++) {
-   
-       double * tempE1=&PIC::Mover::E_Corner[threadId][3*LocalCellID[iStencil]]; 
-#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
-       double * tempB1=&PIC::Mover::B_Corner[threadId][3*LocalCellID[iStencil]];
-#endif
-       //    char * tempoffset = startNode->block->GetCornerNode(LocaCellID[iStencil])->GetAssociatedDataBufferPointer();
-       //double * tempE =(double *)(ElectricFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep);
-       //double * tempE2 =(double*)(tempoffset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep);
-       
-       for (idim=0;idim<3;idim++) {
-         E[idim]+=Weight[iStencil]*tempE1[idim];
-#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_           
-         B[idim]+=Weight[iStencil]*tempB1[idim];
-#endif
-       }
-    }
-
-#if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_  
-    //interpolate the magnetic field (center nodes)
-    MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,startNode);
-
-    Length=MagneticFieldStencil->Length;
-    LocalCellID=MagneticFieldStencil->LocalCellID;
-    Weight=MagneticFieldStencil->Weight;
-
-    for (int iStencil=0;iStencil<Length;iStencil++) {
-      //      memcpy(t,MagneticFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,3*sizeof(double));
-      double * tempB1 = &PIC::Mover::B_Center[threadId][3*LocalCellID[iStencil]];
-      //double * tempB =(double *)(MagneticFieldStencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset);
-      for (idim=0;idim<3;idim++) {
-        B[idim]+=Weight[iStencil]*tempB1[idim];
-        //if (fabs(tempB1[idim]-tempB[idim])>1e-5) printf("B different, local id:%d, Btest:%e, B_corr:%e\n",MagneticFieldStencil.LocaCellID[iStencil],tempB1[idim],tempB[idim]);
-      }
-    }
-#endif
     break;
+
   default:
-    exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    threadId = omp_get_thread_num();
+    #endif
+
+    switch ( _PIC_FIELD_SOLVER_MODE_) {
+    case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
+      //interpolate the elecric field (corner nodes)
+      ElectricFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,startNode);
+
+      Length=ElectricFieldStencil->Length;
+      LocalCellID=ElectricFieldStencil->LocalCellID;
+      Weight=ElectricFieldStencil->Weight;
+
+      for (int iStencil=0;iStencil<Length;iStencil++) {
+        double *tempE1=&PIC::Mover::E_Corner[threadId][3*LocalCellID[iStencil]];
+
+        #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+        double *tempB1=&PIC::Mover::B_Corner[threadId][3*LocalCellID[iStencil]];
+        #endif
+       
+        #pragma ivdep
+        for (idim=0;idim<3;idim++) {
+          E[idim]+=Weight[iStencil]*tempE1[idim];
+
+          #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+          B[idim]+=Weight[iStencil]*tempB1[idim];
+          #endif
+        }
+      }
+
+      #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+      //interpolate the magnetic field (center nodes)
+      MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,startNode);
+
+      Length=MagneticFieldStencil->Length;
+      LocalCellID=MagneticFieldStencil->LocalCellID;
+      Weight=MagneticFieldStencil->Weight;
+
+      for (int iStencil=0;iStencil<Length;iStencil++) {
+        double *tempB1 = &PIC::Mover::B_Center[threadId][3*LocalCellID[iStencil]];
+
+        #pragma ivdep
+        for (idim=0;idim<3;idim++) {
+          B[idim]+=Weight[iStencil]*tempB1[idim];
+        }
+      }
+      #endif
+
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
+    }
   }
-  #endif //_PIC_FIELD_SOLVER_MODE__OFF_
 
   //advance the particle velocity
   double QdT_over_m,QdT_over_2m,alpha[3][3];
   double c0,QdT_over_2m_squared,mass,chargeQ;
+  double mass_conv=1.0,charge_conv=1.0;
   
+  if (_PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_) {
+    mass_conv =1.0/_AMU_;
+    charge_conv=1.0/ElectronCharge;
+  }
   
- 
-#if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
-  double mass_conv =1.0/_AMU_;
-  double charge_conv=1.0/ElectronCharge;
-#elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-  double mass_conv =1.0;
-  double charge_conv=1.0;
-#endif
-
-
   chargeQ = PIC::MolecularData::GetElectricCharge(spec)*charge_conv; 
   mass= PIC::MolecularData::GetMass(spec)*mass_conv;
   QdT_over_m=chargeQ*dtTotal/mass;
