@@ -4251,9 +4251,10 @@ namespace PIC {
       MPI_Gather(&dT,1,MPI_DOUBLE,dtTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (PIC::ThisThread==0) {
-        printf("Timing:\n");
-        if (msg!=NULL) printf("Message: %s\n",msg);
-        if (line_start>0) printf("Timer defined at %s@%i \n",fname_start,line_start);
+        printf("Timing: ");
+
+        if (msg!=NULL) printf("%s",msg);
+        if (line_start>0) printf("\nTimer defined at %s@%i",fname_start,line_start);
 
         double dTtotal=0,dTmax=dtTable[0],dTmin=dtTable[0];
 
@@ -4264,10 +4265,12 @@ namespace PIC {
           if (dTmin>dtTable[thread]) dTmin=dtTable[thread]; 
         }
 
-        printf("Time Range: %e to %e,  Time Averaged: %e\n",dTmin,dTmax,dTtotal/PIC::nTotalThreads);
+        printf("\nTime Range: %e to %e,  Time Averaged: %e\n",dTmin,dTmax,dTtotal/PIC::nTotalThreads);
         printf("Time summed over MPI Processes: %e\n",dTtotal);
 
-        if (_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_) printf("\tAveraged Time times the total execution thread: %e",dTtotal*PIC::nTotalThreadsOpenMP);
+        if (_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_) printf("Averaged Time times the total execution thread: %e\n",dTtotal*PIC::nTotalThreadsOpenMP);
+      
+        printf("\n");
       }
 
       delete [] dtTable;
