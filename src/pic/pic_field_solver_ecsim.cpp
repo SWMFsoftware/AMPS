@@ -2824,71 +2824,94 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
 
 
 
-//void UpdateBWrong(){ 
+//compute B^(n+1) from B^(n) and E^(n+theta)
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
   
-  //compute B^(n+1) from B^(n) and E^(n+theta)
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+
+  int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  double dx[3],coeff[3],coeff4[3],x[3];
+
+
+  int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv,PrevBOffset,CurrentBOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread,length_conv,cDt,PIC::CPLR::DATAFILE::Offset::ElectricField,OffsetE_HalfTimeStep,PIC::CPLR::DATAFILE::Offset::MagneticField,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,E_conv) firstprivate(node_last) private (dx,coeff,coeff4,x)
+#endif
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
+    int nLocalNode,i,j,k,ii,jj,kk;
+
+    ii=CellCounter;
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+
+    i=ii;
+
       
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-    if (node->block==NULL) continue;
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      bool BoundaryBlock=false;
-      
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-        BoundaryBlock=true;
-        break;
-      }
-      
-      if (BoundaryBlock==true) continue;
-    }
-    
-    if (node->Thread!=PIC::ThisThread) continue;
-     
-    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-    double dx[3],coeff[3],coeff4[3],x[3]; 
-    for (int iDim=0; iDim<3; iDim++){
-      dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
-      dx[iDim]*=length_conv;
-     
-      coeff[iDim] = cDt/dx[iDim];
-      coeff4[iDim] = coeff[iDim]*0.25; //coefficients for curl calculation
-    }
-    
-    for (int k=0;k<_BLOCK_CELLS_Z_;k++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-      char * offset;
-      double Ex[2][2][2], Ey[2][2][2], Ez[2][2][2];
-      //	  int index[3]={i,j,k};
 
-      for (int kk=0;kk<2;kk++) for (int jj=0;jj<2;jj++) for (int ii=0;ii<2;ii++){
-        offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-        double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
-        Ex[ii][jj][kk]=ptr[ExOffsetIndex]*E_conv;
-        Ey[ii][jj][kk]=ptr[EyOffsetIndex]*E_conv;
-        Ez[ii][jj][kk]=ptr[EzOffsetIndex]*E_conv;
-      }
+    if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
 
-      offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    if (node!=node_last) {
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
 
-      double * CurrentPtr = (double*)(offset+CurrentBOffset);
-      double * PrevPtr = (double*)(offset+PrevBOffset);
-      //store next B at prevptr
-      double tempB[3]={0.0,0.0,0.0};
-
-      for (int ii=0;ii<2;ii++){
-        for (int jj=0; jj<2;jj++){
-          tempB[BxOffsetIndex] += (-coeff4[1]*(Ez[ii][1][jj]-Ez[ii][0][jj])+coeff4[2]*(Ey[ii][jj][1]-Ey[ii][jj][0]));
-          tempB[ByOffsetIndex] += (-coeff4[2]*(Ex[ii][jj][1]-Ex[ii][jj][0])+coeff4[0]*(Ez[1][ii][jj]-Ez[0][ii][jj]));
-          tempB[BzOffsetIndex] += (-coeff4[0]*(Ey[1][ii][jj]-Ey[0][ii][jj])+coeff4[1]*(Ex[ii][1][jj]-Ex[ii][0][jj]));
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
         }
+
+        if (BoundaryBlock==true) continue;
+      }
+      
+      for (int iDim=0; iDim<3; iDim++){
+        dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
+        dx[iDim]*=length_conv;
+
+        coeff[iDim] = cDt/dx[iDim];
+        coeff4[iDim] = coeff[iDim]*0.25; //coefficients for curl calculation
       }
 
-      PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex]+tempB[BxOffsetIndex]/B_conv;
-      PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex]+tempB[ByOffsetIndex]/B_conv;
-      PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex]+tempB[BzOffsetIndex]/B_conv;
+      node_last=node;
     }
+    
+    char *offset;
+    double Ex[2][2][2], Ey[2][2][2], Ez[2][2][2];
+
+    for (int kk=0;kk<2;kk++) for (int jj=0;jj<2;jj++) for (int ii=0;ii<2;ii++){
+      offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+      double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
+      Ex[ii][jj][kk]=ptr[ExOffsetIndex]*E_conv;
+      Ey[ii][jj][kk]=ptr[EyOffsetIndex]*E_conv;
+      Ez[ii][jj][kk]=ptr[EzOffsetIndex]*E_conv;
+    }
+
+    offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+
+    double *CurrentPtr = (double*)(offset+CurrentBOffset);
+    double *PrevPtr = (double*)(offset+PrevBOffset);
+    //store next B at prevptr
+    double tempB[3]={0.0,0.0,0.0};
+
+    for (int ii=0;ii<2;ii++){
+      for (int jj=0; jj<2;jj++){
+        tempB[BxOffsetIndex] += (-coeff4[1]*(Ez[ii][1][jj]-Ez[ii][0][jj])+coeff4[2]*(Ey[ii][jj][1]-Ey[ii][jj][0]));
+        tempB[ByOffsetIndex] += (-coeff4[2]*(Ex[ii][jj][1]-Ex[ii][jj][0])+coeff4[0]*(Ez[1][ii][jj]-Ez[0][ii][jj]));
+        tempB[BzOffsetIndex] += (-coeff4[0]*(Ey[1][ii][jj]-Ey[0][ii][jj])+coeff4[1]*(Ex[ii][1][jj]-Ex[ii][0][jj]));
+      }
+    }
+
+    PrevPtr[BxOffsetIndex] = CurrentPtr[BxOffsetIndex]+tempB[BxOffsetIndex]/B_conv;
+    PrevPtr[ByOffsetIndex] = CurrentPtr[ByOffsetIndex]+tempB[ByOffsetIndex]/B_conv;
+    PrevPtr[BzOffsetIndex] = CurrentPtr[BzOffsetIndex]+tempB[BzOffsetIndex]/B_conv;
   }
 
 
