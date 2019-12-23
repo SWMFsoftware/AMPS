@@ -3042,59 +3042,82 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
 
 
 
-
+//compute E^(n+1)  from E^(n+theta) and E^n
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
-  //compute E^(n+1)  from E^(n+theta) and E^n
   
   double WaveEnergySum =0.0;
+  double CellVolume=1.0;
 
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+  int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+  shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField) \
+  firstprivate(node_last) private (CellVolume) reduction(+:WaveEnergySum)
+#endif
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
+    int nLocalNode,i,j,k,ii,jj,kk;
+
+    ii=CellCounter;
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+
+    i=ii;
+
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-    if (node->block==NULL) continue;
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      bool BoundaryBlock=false;
-      
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-        BoundaryBlock=true;
-        break;
+
+    if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
+
+    if (node!=node_last) {
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
+
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+
+        if (BoundaryBlock==true) continue;
       }
-      
-      if (BoundaryBlock==true) continue;
+
+      CellVolume=1.0;
+      int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+      for (int iDim=0; iDim<3;iDim++) CellVolume*=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+
+      node_last=node;
     }
-      
-    if (node->Thread!=PIC::ThisThread) continue;
-    
-    double CellVolume=1.0;
-    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-    for (int iDim=0; iDim<3;iDim++) CellVolume*=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv; 
-    
-    for (int k=0;k<_BLOCK_CELLS_Z_;k++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-      char * offset;
 
-      offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      char * centerOffset =node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+ PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-      double Bx0,By0,Bz0;
-      double * CurrentB_Ptr =  (double*)(centerOffset+CurrentBOffset);
-      double * HalfStepPtr = (double*)(offset+OffsetE_HalfTimeStep);
-      double * CurrentPtr = (double*)(offset+CurrentEOffset);
-      double Ex,Ey,Ez;
+    char *offset;
 
-      Ex = (HalfStepPtr[ExOffsetIndex]-(1.0-theta)*CurrentPtr[ExOffsetIndex])/theta;
-      Ey = (HalfStepPtr[EyOffsetIndex]-(1.0-theta)*CurrentPtr[EyOffsetIndex])/theta;
-      Ez = (HalfStepPtr[EzOffsetIndex]-(1.0-theta)*CurrentPtr[EzOffsetIndex])/theta;
+    offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+    char * centerOffset =node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+ PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    double Bx0,By0,Bz0;
+    double *CurrentB_Ptr =  (double*)(centerOffset+CurrentBOffset);
+    double *HalfStepPtr = (double*)(offset+OffsetE_HalfTimeStep);
+    double *CurrentPtr = (double*)(offset+CurrentEOffset);
+    double Ex,Ey,Ez;
 
-      CurrentPtr[ExOffsetIndex] = Ex;
-      CurrentPtr[EyOffsetIndex] = Ey;
-      CurrentPtr[EzOffsetIndex] = Ez;
+    Ex = (HalfStepPtr[ExOffsetIndex]-(1.0-theta)*CurrentPtr[ExOffsetIndex])/theta;
+    Ey = (HalfStepPtr[EyOffsetIndex]-(1.0-theta)*CurrentPtr[EyOffsetIndex])/theta;
+    Ez = (HalfStepPtr[EzOffsetIndex]-(1.0-theta)*CurrentPtr[EzOffsetIndex])/theta;
 
-      Bx0=CurrentB_Ptr[BxOffsetIndex];
-      By0=CurrentB_Ptr[ByOffsetIndex];
-      Bz0=CurrentB_Ptr[BzOffsetIndex];
-      WaveEnergySum += ((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
+    CurrentPtr[ExOffsetIndex] = Ex;
+    CurrentPtr[EyOffsetIndex] = Ey;
+    CurrentPtr[EzOffsetIndex] = Ez;
 
-    }
+    Bx0=CurrentB_Ptr[BxOffsetIndex];
+    By0=CurrentB_Ptr[ByOffsetIndex];
+    Bz0=CurrentB_Ptr[BzOffsetIndex];
+    WaveEnergySum += ((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
   }
     
   switch (_PIC_BC__PERIODIC_MODE_) {
@@ -3111,7 +3134,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
 
   if (PIC::ThisThread==0) {
     printf("Total Wave Energy:%f\n",TotalWaveEnergy);
-    // printf("Total Energy:%f\n",TotalParticleEnergy+TotalWaveEnergy);
   }
   
 }
@@ -3220,12 +3242,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   CumulativeTiming::TotalRunTime.Start();
   
   //perform the rest of the field solver calculstions
-  double t0,t1,StartTime=MPI_Wtime();
   static int cnt=0;
   static int nMeshCounter=-1;
   
-  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_){
-    if (PIC::CPLR::FLUID::iCycle==0 || PIC::CPLR::FLUID::IsRestart){
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) {
+    if (PIC::CPLR::FLUID::iCycle==0 || PIC::CPLR::FLUID::IsRestart) {
  
       UpdateJMassMatrix();
       
@@ -3236,15 +3257,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       
       {// Output
         double timeNow = PIC::CPLR::FLUID::iCycle*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];  
-      if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%ld\n",timeNow,PIC::CPLR::FLUID::iCycle);
-      PIC::CPLR::FLUID::write_output(timeNow);
+
+        if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%ld\n",timeNow,PIC::CPLR::FLUID::iCycle);
+        PIC::CPLR::FLUID::write_output(timeNow);
       }    
 
       //set the init value of mesh counter
       PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
       nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
-      }
-  }else{
+    }
+  }
+  else {
     if (cnt==0){
       UpdateJMassMatrix();
       cnt++;
@@ -3280,34 +3303,35 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
   CumulativeTiming::SolveTime.Start();
   linear_solver_matvec_c = matvec;
+
   if (PIC::ThisThread==0) printf("---------------Solving E field-----------\n");
+
   Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
 
   CumulativeTiming::SolveTime.UpdateTimer();
   CumulativeTiming::UpdateBTime.Start();
   
   
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    setE_half_BC();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setE_half_BC();
+
   UpdateB();
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    setB_center_BC();
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setB_center_BC();
+
   PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
-  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ || 
-      _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_ )
-    InterpolateB_C2N();
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    setB_corner_BC();
   
+  if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) || (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_))  InterpolateB_C2N();
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setB_corner_BC();
+
   CumulativeTiming::UpdateBTime.UpdateTimer();
   CumulativeTiming::UpdateETime.Start();
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    setE_half_BC();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setE_half_BC();
+
   UpdateE();
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    setE_curr_BC();
-  t1=MPI_Wtime();
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )  setE_curr_BC();
 
   CumulativeTiming::UpdateETime.UpdateTimer();
   CumulativeTiming::TotalRunTime.UpdateTimer();
