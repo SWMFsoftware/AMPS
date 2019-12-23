@@ -2936,50 +2936,69 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
 void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      
+  int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+  shared(OffsetB_corner,length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField) \
+  firstprivate(node_last) 
+#endif
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
+    int nLocalNode,i,j,k,ii,jj,kk;
+
+    ii=CellCounter;
+    nLocalNode=ii/((_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1));
+    ii-=nLocalNode*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
+
+    k=ii/((_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1));
+    ii-=k*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
+
+    j=ii/(_BLOCK_CELLS_X_+1);
+    ii-=j*(_BLOCK_CELLS_X_+1);
+
+    i=ii;
+
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-    if (!node->block) continue;
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      bool BoundaryBlock=false;
-      
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+
+    if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
+
+    if (node!=node_last) {
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
+
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
           //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
           BoundaryBlock=true;
           break;
         }
-      
-      if (BoundaryBlock==true) continue;
-    }
-    
-    if (node->Thread!=PIC::ThisThread) continue;
-    
-    for (int k=0;k<=_BLOCK_CELLS_Z_;k++) for (int j=0;j<=_BLOCK_CELLS_Y_;j++) for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
-          char * offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
-          
-          double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
-          for (int kk=-1;kk<=0; kk++) for (int jj=-1; jj<=0; jj++) for (int ii=-1; ii<=0; ii++){
-            char *  offsetTmp=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-            double * CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
-            //   double * PrevPtr = (double*)(offsetTmp+PrevBOffset);
-            
-            for (int idim=0;idim<3;idim++) {
-              tempB_curr[idim] += CurrentPtr[idim];
-              // tempB_prev[idim] += PrevPtr[idim];
-            }
-              }
 
-          double * nodeCurrPtr = (double*)(offset+CurrentBOffset);
-          // double * nodePrevPtr = (double*)(offset+PrevBOffset);
-          
-          for (int idim=0;idim<3;idim++) {
-            nodeCurrPtr[idim] = tempB_curr[idim]/8.0; 
-            // nodePrevPtr[idim] = tempB_prev[idim]/8.0;
-          }
-          
-        }
+        if (BoundaryBlock==true) continue;
+      }
+    }
+
+    char *offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+    double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
+
+    for (kk=-1;kk<=0; kk++) for (jj=-1; jj<=0; jj++) for (ii=-1; ii<=0; ii++) {
+      char *  offsetTmp=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+      double * CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
+      //   double * PrevPtr = (double*)(offsetTmp+PrevBOffset);
+
+      for (int idim=0;idim<3;idim++) {
+        tempB_curr[idim] += CurrentPtr[idim];
+        // tempB_prev[idim] += PrevPtr[idim];
+      }
+    }
+
+    double * nodeCurrPtr = (double*)(offset+CurrentBOffset);
+    // double * nodePrevPtr = (double*)(offset+PrevBOffset);
+
+    for (int idim=0;idim<3;idim++) {
+      nodeCurrPtr[idim] = tempB_curr[idim]/8.0;
+      // nodePrevPtr[idim] = tempB_prev[idim]/8.0;
+    }
   }
-  
 }
 
 
@@ -3950,9 +3969,7 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
     if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
   }
 
-  
   if (node==NULL || node->IsUsedInCalculationFlag==false) return 8;
-
 
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
@@ -3971,7 +3988,6 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
   int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
 
   return val;
-  
 }
 
 
@@ -3990,15 +4006,16 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
 
   for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->IsUsedInCalculationFlag==false) {
 
-      if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
-        return true;
-      }
+    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
+      return true;
     }
+  }
   
   for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
-        return true;
+    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) {
+      return true;
     }
+  }
 
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
@@ -4152,41 +4169,35 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
   for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-      if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
-        return true;
-    }  
+    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
+      return true;
+  }
+
   return false;  
 }
 
 //-------------------------------------
-void PIC::FieldSolver::Electromagnetic::ECSIM::
-copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-		      const int i, const int j, const int k, char *bufferPtr) {
+void PIC::FieldSolver::Electromagnetic::ECSIM::copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr) {
   char *nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
   const int pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+
   memcpy(bufferPtr, nodePtr, pointBufferSize);
 }
 //-------------------------------------
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::
-copy_net_charge_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-			  const int i, const int j, const int k, char *bufferPtr) {
+void PIC::FieldSolver::Electromagnetic::ECSIM::copy_net_charge_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr) {
   char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
   
-  nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset + 
-    sizeof(double)*PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
+  nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset + sizeof(double)*PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
 
   memcpy(bufferPtr, nodePtr, sizeof(double));
 }
 //-------------------------------------
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::
-add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-		   const int i, const int j, const int k, 
-		   char *bufferPtr, double coef){
+void PIC::FieldSolver::Electromagnetic::ECSIM::add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef){
   char *nodePtr;
-  nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))
-    ->GetAssociatedDataBufferPointer();
+
+  nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
   nodePtr+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -4207,13 +4218,11 @@ add_plasma_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,
 }
 //-------------------------------------
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::
-add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, 
-		       const int i, const int j, const int k, 
-		       char *bufferPtr, double coef){
+void PIC::FieldSolver::Electromagnetic::ECSIM::add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef){
   char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))
     ->GetAssociatedDataBufferPointer();
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
   nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   ((double*)nodePtr)[netChargeNewIndex]+=coef*((double*)bufferPtr)[0];
 }
