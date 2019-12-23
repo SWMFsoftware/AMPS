@@ -2837,7 +2837,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv,PrevBOffset,CurrentBOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread,length_conv,cDt,PIC::CPLR::DATAFILE::Offset::ElectricField,OffsetE_HalfTimeStep,PIC::CPLR::DATAFILE::Offset::MagneticField,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,E_conv) firstprivate(node_last) private (dx,coeff,coeff4,x)
+#pragma omp parallel for default(none) shared (CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv) \
+  shared(PrevBOffset,CurrentBOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread,length_conv,cDt) \
+  shared(PIC::CPLR::DATAFILE::Offset::ElectricField,OffsetE_HalfTimeStep,PIC::CPLR::DATAFILE::Offset::MagneticField) \
+  shared(ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,E_conv) firstprivate(node_last) private (dx,coeff,coeff4,x)
 #endif
   for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
     int nLocalNode,i,j,k,ii,jj,kk;
@@ -2859,19 +2862,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
 
     if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
 
-    if (node!=node_last) {
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        bool BoundaryBlock=false;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
 
-        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-          BoundaryBlock=true;
-          break;
-        }
-
-        if (BoundaryBlock==true) continue;
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
       }
+
+      if (BoundaryBlock==true) continue;
+    }
       
+    if (node!=node_last) {
       for (int iDim=0; iDim<3; iDim++){
         dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
         dx[iDim]*=length_conv;
@@ -2937,12 +2940,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
-  shared(OffsetB_corner,length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField) \
-  firstprivate(node_last) 
+  shared(OffsetB_corner,length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField)
 #endif
   for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
     int nLocalNode,i,j,k,ii,jj,kk;
@@ -2963,18 +2964,16 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
 
     if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
 
-    if (node!=node_last) {
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        bool BoundaryBlock=false;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
 
-        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-          BoundaryBlock=true;
-          break;
-        }
-
-        if (BoundaryBlock==true) continue;
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
       }
+
+      if (BoundaryBlock==true) continue;
     }
 
     char *offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
@@ -3005,58 +3004,67 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
 void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
-  for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      
+  int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+  shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset) \
+  shared(OffsetB_corner,PrevBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField)
+#endif
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
+    int nLocalNode,i,j,k,ii,jj,kk;
+
+    ii=CellCounter;
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+
+    i=ii;
+
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-    if (!node->block) continue;
+
+    if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
+
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
-      
+
       for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-          BoundaryBlock=true;
-          break;
-        }
-      
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+
       if (BoundaryBlock==true) continue;
     }
-    
-    if (node->Thread!=PIC::ThisThread) continue;
-    
-    for (int k=0;k<_BLOCK_CELLS_Z_;k++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-          //  char * offset=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
-          char * offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
-          double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
-          for (int kk=0;kk<=1; kk++) for (int jj=0; jj<=1; jj++) for (int ii=0; ii<=1; ii++){
-                //char *  offsetTmp=node->block->GetCenterNode(_getCenterNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-            char *  offsetTmp=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
-            
-            double * CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
-            double * PrevPtr = (double*)(offsetTmp+PrevBOffset);
-            
-            for (int idim=0;idim<3;idim++) {
-              tempB_curr[idim] += CurrentPtr[idim];
-              tempB_prev[idim] += PrevPtr[idim];
-            }
-              }
+    char *offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
 
-          double * nodeCurrPtr = (double*)(offset+CurrentBOffset);
-          double * nodePrevPtr = (double*)(offset+PrevBOffset);
-          
-          for (int idim=0;idim<3;idim++) {
-            nodeCurrPtr[idim] = tempB_curr[idim]/8.0; 
-            nodePrevPtr[idim] = tempB_prev[idim]/8.0;
-          }
-          /*
-          printf("interpolationB localnumber:%d, ind:%d,%d,%d,prev:%e,%e,%e,curr:%e,%e,%e\n",
-                 _getCornerNodeLocalNumber(i,j,k),i,j,k,nodePrevPtr[0],nodePrevPtr[1],nodePrevPtr[2],
-                 nodeCurrPtr[0],nodeCurrPtr[1],nodeCurrPtr[2]);
-          */
-        }
+    for (int kk=0;kk<=1; kk++) for (int jj=0; jj<=1; jj++) for (int ii=0; ii<=1; ii++){
+      char *offsetTmp=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+
+      double *CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
+      double *PrevPtr = (double*)(offsetTmp+PrevBOffset);
+
+      for (int idim=0;idim<3;idim++) {
+        tempB_curr[idim] += CurrentPtr[idim];
+        tempB_prev[idim] += PrevPtr[idim];
+      }
+    }
+
+    double *nodeCurrPtr = (double*)(offset+CurrentBOffset);
+    double *nodePrevPtr = (double*)(offset+PrevBOffset);
+
+    for (int idim=0;idim<3;idim++) {
+      nodeCurrPtr[idim] = tempB_curr[idim]/8.0;
+      nodePrevPtr[idim] = tempB_prev[idim]/8.0;
+    }
   }
-
-
 }
 
 
@@ -3095,19 +3103,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
 
     if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) continue;
 
-    if (node!=node_last) {
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        bool BoundaryBlock=false;
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
 
-        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
-          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-          BoundaryBlock=true;
-          break;
-        }
-
-        if (BoundaryBlock==true) continue;
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
       }
 
+      if (BoundaryBlock==true) continue;
+    }
+
+    if (node!=node_last) {
       CellVolume=1.0;
       int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
       for (int iDim=0; iDim<3;iDim++) CellVolume*=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
