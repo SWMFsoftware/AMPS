@@ -1120,7 +1120,25 @@ int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateMatrixNonZeroCoefficients(void (*UpdateMatrixRow)(cMatrixRow*)) {
   cMatrixRow* row;
 
-  for (row=MatrixRowTable;row!=NULL;row=row->next) UpdateMatrixRow(row);
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel default(none) shared(PIC::nTotalThreadsOpenMP,UpdateMatrixRow) private (row)
+   {
+     int ThisOpenMPThread=omp_get_thread_num();
+
+     cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
+     cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
+#else
+   {
+     const int ThisOpenMPThread=0;
+
+     cMatrixRow* RowStart=MatrixRowTable;
+     cMatrixRow* RowEnd=NULL;
+#endif //_COMPILATION_MODE_
+
+    for (row=RowStart;row!=RowEnd;row=row->next) {
+      UpdateMatrixRow(row);
+    }
+  }
 }
 
 
@@ -1129,22 +1147,26 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int)) {
   cMatrixRow* row;
-  int cnt;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none) shared(PIC::nTotalThreadsOpenMP,fSetRhs) private (row,cnt)
+#pragma omp parallel default(none) shared(PIC::nTotalThreadsOpenMP,fSetRhs) private (row)
    {
-   int ThisOpenMPThread=omp_get_thread_num();
+     int ThisOpenMPThread=omp_get_thread_num();
+
+     cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
+     cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
 #else
-   const int ThisOpenMPThread=0;
+   {
+     const int ThisOpenMPThread=0;
+
+     cMatrixRow* RowStart=MatrixRowTable;
+     cMatrixRow* RowEnd=NULL;
 #endif //_COMPILATION_MODE_
-   for (cnt=0,row=MatrixRowTable;row!=NULL;row=row->next,cnt++) { if ( ((cnt%PIC::nTotalThreadsOpenMP)==ThisOpenMPThread) && ((row->RhsSupportLength_CornerNodes!=0)||(row->RhsSupportLength_CenterNodes!=0)) ) {
-    row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes);    
-     }
-   }
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   }
-#endif
+
+    for (row=RowStart;row!=RowEnd;row=row->next) {
+      row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes);
+    }
+  }
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
