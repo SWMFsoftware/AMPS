@@ -224,7 +224,7 @@ LIB_after_build:
 ifeq ($(INTERFACE),on)
 	cd ${WSD}/interface; $(MAKE) SEARCH_C="${SEARCH_C}" SEARCH="${SEARCH_F}" 
 endif
-	cd ${WSD}/general;                     $(MAKE) SEARCH_C="${SEARCH_C_GENERAL}" 
+	cd ${WSD}/general;                     $(MAKE) SEARCH_C="${SEARCH_C}" 
 	cd ${WSD}/meshAMR;                     $(MAKE) SEARCH_C="${SEARCH_C}" 
 	cd ${WSD}/pic;                         $(MAKE) SEARCH_C="${SEARCH_C}" SEARCH="${SEARCH_F}" 
 	cd ${WSD}/species;                     $(MAKE) SEARCH_C="${SEARCH_C}"
