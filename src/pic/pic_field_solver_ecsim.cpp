@@ -23,8 +23,6 @@
 #include <immintrin.h>
 #endif
 
-//using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
 list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
@@ -330,11 +328,10 @@ void PIC::FieldSolver::Init() {
 }
 
 //Field Solver of IPIC3D
+//init the electric and magnetic field offsets
+//Magnetic field is in the center nodes
+//Electric field is in the corner nodes
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
-  //init the electric and magnetic field offsets
-  //Magnetic field is in the center nodes
-  //Electric field is in the corner nodes
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
 
   InitDiscritizationStencil();
 
@@ -412,9 +409,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   CornerNodeAssociatedDataOffsetLast=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength-1; //CornerNodeAssociatedDataOffsetLast still belongs to the solver
 }
 
+//set the initial conditions
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC() {
-  //set the initial conditions
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_)
     dtTotal=PIC::CPLR::FLUID::dt; 
   //global time step with deallocated blocks in fluid coupler mode will have some issue
@@ -434,7 +430,7 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
   PIC::Mesh::cDataCornerNode *CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
   double *E,*B;
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
+
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==false) exit(__LINE__,__FILE__,"Error: the electric field offset is not active");
   if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==false) exit(__LINE__,__FILE__,"Error: the magnetic field offset is not active");
 
@@ -540,7 +536,6 @@ static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double x[3];
   //power of 3 array created
   //for some pgi compilers that cannot convert result of pow() from double to int correctly
@@ -637,8 +632,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
 			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   
   // No.0-No.26  stencil Ex
   // No.27-No.53 stencil Ey
@@ -1096,9 +1089,6 @@ int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,2
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix(char * realData, char * ghostData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
@@ -1114,9 +1104,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix(char * realDat
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData(char * realData, char * ghostData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
@@ -1136,9 +1123,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData(cha
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessNetCharge(char * realData, char * ghostData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
@@ -1149,9 +1133,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessNetCharge(char * realData,
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge(char * ghostData, char * realData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
@@ -1164,9 +1145,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyNetCharge(char * ghostData, c
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix(char * ghostData, char * realData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
@@ -1183,9 +1161,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix(char * ghostData,
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData(char * ghostData, char * realData){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  
   realData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   ghostData+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
@@ -1205,10 +1180,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData(char *
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
-
-
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block==NULL) continue;
@@ -1282,9 +1253,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
   
 }
 
+// update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
-   // update J and MassMatrix 
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -1409,9 +1379,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
 }
 
 
+// update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
-  // update J and MassMatrix 
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -2159,7 +2128,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   ComputeNetCharge(true);
   ComputeDivE();
   SetBoundaryChargeDivE();
@@ -2248,8 +2216,6 @@ void exchangeParticleLocal(){
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
-  
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -2485,10 +2451,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
 }
 
 
-
+// update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld){
-  // update J and MassMatrix 
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -2629,8 +2593,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
-
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   long int *FirstCellParticleTable;
@@ -2682,14 +2644,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
-
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
-
-
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;    
 
-  
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block==NULL) continue;
@@ -2766,10 +2723,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
-
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM; 
-
-
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;    
 
@@ -2826,12 +2779,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
 
 //compute B^(n+1) from B^(n) and E^(n+theta)
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
-  
-
   int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
   double dx[3],coeff[3],coeff4[3],x[3];
-
 
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
@@ -2937,8 +2886,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -3002,8 +2949,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -3071,8 +3016,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
 
 //compute E^(n+1)  from E^(n+theta) and E^n
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
-  
   double WaveEnergySum =0.0;
   double CellVolume=1.0;
 
@@ -3188,8 +3131,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystem
 double PIC::FieldSolver::Electromagnetic::ECSIM::PoissonUpdateRhs(int iVar,
 			      cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
 			      cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
-
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double res=0.0;
 
   double * CenterOffset = ((double*)(RhsSupportTable_CenterNodes[0].AssociatedDataPointer+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset));
@@ -3208,8 +3149,6 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
 			      cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
   int i;
   double res=0.0;
-
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double fourPiDtTheta=4*Pi*dtTotal*theta;
    
   for (int ii=0;ii<27;ii++) {
@@ -3253,7 +3192,6 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   Solver.Reset();
   Solver.BuildMatrix(GetStencil);
   if (DoDivECorrection){
@@ -3264,8 +3202,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
-
   CumulativeTiming::TotalRunTime.Start();
   
   //perform the rest of the field solver calculstions
@@ -3382,7 +3318,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSetInitialGuess(double* x,
 
 //process the solution vector
 void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessFinalSolution(double* x,PIC::Mesh::cDataCornerNode* CornerNode) {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   char *offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
   ((double*)(offset+OffsetE_HalfTimeStep))[0] =x[0]/E_conv+((double*)(offset+CurrentEOffset))[0];
@@ -3393,7 +3328,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ProcessFinalSolution(double* x,PI
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonProcessFinalSolution(double* x,PIC::Mesh::cDataCenterNode* CenterNode) {
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   double *offset=(double *)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
 
   offset[phiIndex] = x[0];
@@ -3449,7 +3383,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeVariableLi
 void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode) {
   int idim;
   double * t;
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
 
   if (pipe->ThisThread==CornerNodeThread) {
     t= ((double*)(CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+CurrentEOffset));
@@ -3463,8 +3396,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
 }
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-
   CumulativeTiming::TotalMatvecTime.Start();
   Solver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
@@ -3472,8 +3403,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * Ve
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-
   CumulativeTiming::TotalMatvecTime.Start();
   PoissonSolver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
@@ -4207,7 +4136,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::add_plasma_to_node(cTreeNodeAMR<P
 
   nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
   nodePtr+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   bufferPtr+=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
@@ -4229,7 +4157,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::add_plasma_to_node(cTreeNodeAMR<P
 void PIC::FieldSolver::Electromagnetic::ECSIM::add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef){
   char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))
     ->GetAssociatedDataBufferPointer();
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
 
   nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   ((double*)nodePtr)[netChargeNewIndex]+=coef*((double*)bufferPtr)[0];
