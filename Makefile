@@ -79,14 +79,19 @@ endif
 
 #include AVX instruction flag when compile with Intel or GCC compilers
 ifeq ($(AVXMODE),on)
+#Intel compiler
 ifeq ($(COMPILE.c),icc)
-	SEARCH_C+= -march=core-avx2  
+	SEARCH_C+= -march=core-avx2
+#GCC compiler
 else ifeq ($(COMPILE.c),gcc)
 	SEARCH_C+= -mavx2 -mfma
 
 ifeq ($(AVXTYPE),512)
 	SEARCH_C+= -mavx512f
 endif
+#PGI compiler
+else ifeq ($(COMPILE.c),pgcc)
+	SEARCH_C+= -mavx2 -mfma
 endif
 endif
 
