@@ -1115,7 +1115,7 @@ Compile=
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-wave_AVX512KEYS} 
->>>./Config.pl -avx=256
+>>>./Config.pl -avx=512 
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
 >>>./Config.pl -avx=off
