@@ -4138,6 +4138,12 @@ namespace PIC {
   namespace Debugger {
     //contains functions that are used for debugging the code
 
+    //order particle list: order particle lists such that it would be the same for MPI only and MPI+OpenMP
+    void OrderParticleList(long int&);
+    void OrderParticleLists();
+
+
+
     //time exdcution of the code
 #define _PIC_TIMER_MODE_CLOCK_  0
 #define _PIC_TIMER_MODE_HRES_   1

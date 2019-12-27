@@ -1412,8 +1412,95 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
   }
 }
 
+//=======================================================================================================================================
+//order particle lists
+void PIC::Debugger::OrderParticleList(long int &first_particle) {
+  long int ptr=first_particle;
+
+  class cLocalParticleData {
+  public:
+    long int ptr;
+    unsigned long int checksum;
+
+    bool operator < (const cLocalParticleData& __y) const {return (checksum < __y.checksum);}
+  };
+
+  list <cLocalParticleData> ParticleData;
+  cLocalParticleData p_data;
+
+  CRC32 p_checksum;
+  PIC::ParticleBuffer::byte ParticleInternalData[PIC::ParticleBuffer::ParticleDataLength];
+  PIC::ParticleBuffer::byte *p_data_ptr;
+
+  if (first_particle==-1) return;
+
+  for (int i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleInternalData[i]=0;
+
+  //create the list
+  while (ptr!=-1) {
+    p_data_ptr=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+    p_checksum.clear();
 
 
+    PIC::ParticleBuffer::CloneParticle(ParticleInternalData,p_data_ptr);
+    p_checksum.add(ParticleInternalData,PIC::ParticleBuffer::ParticleDataLength);
+
+
+    p_data.ptr=ptr;
+    p_data.checksum=p_checksum.crc_accum;
+
+    ParticleData.push_front(p_data);
+    ptr=PIC::ParticleBuffer::GetNext(ptr);
+  }
+
+  //sort the list
+  ParticleData.sort();
+
+  //create the ordered particle list
+  first_particle=-1;
+
+  for (list <cLocalParticleData>::iterator it=ParticleData.begin();it!=ParticleData.end();it++) {
+    ptr=it->ptr;
+
+    PIC::ParticleBuffer::SetNext(first_particle,ptr);
+    PIC::ParticleBuffer::SetPrev(-1,ptr);
+
+    if (first_particle>=0) PIC::ParticleBuffer::SetPrev(ptr,first_particle);
+
+    first_particle=ptr;
+  }
+}
+
+
+void PIC::Debugger::OrderParticleLists() {
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> ProcessBlock;
+
+  ProcessBlock=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node) -> void {
+    if (Node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      PIC::Mesh::cDataBlockAMR *block=Node->block;
+
+      if (block!=NULL) {
+         for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+           for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+             for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+               if (block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+                 OrderParticleList(block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+               }
+             }
+           }
+         }
+      }
+    }
+    else {
+      //add daugher blocks
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *downNode;
+
+      for (int i=0;i<(1<<DIM);i++) if ((downNode=Node->downNode[i])!=NULL) ProcessBlock(downNode);
+    }
+  };
+
+  ProcessBlock(PIC::Mesh::mesh.rootTree);
+}
 
 
 
