@@ -253,13 +253,16 @@ public:
 
   //calculate signature of the matrix
   void GetSignature(long int nline,const char* fname) {
-    CRC32 Signature;
+    CRC32 Signature,SignatureRhs;
     cMatrixRow* row;
     int cnt,iElementMax,iElement;
     cStencilElementData *data,*ElementDataTable;
 
     for (row=MatrixRowTable,cnt=0;row!=NULL;row=row->next,cnt++) {
       Signature.add(cnt);
+
+      SignatureRhs.add(cnt);
+      SignatureRhs.add(row->Rhs);
 
       iElementMax=row->nNonZeroElements;
       ElementDataTable=row->ElementDataTable;
@@ -275,6 +278,7 @@ public:
     }
 
     Signature.PrintChecksum(nline,fname);
+    SignatureRhs.PrintChecksum(nline,fname);
   }
 
 };
