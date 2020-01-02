@@ -1961,7 +1961,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   // Loop through all blocks. 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for default(none) shared (CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-    ParticleEnergy,ProcessCell,PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable)
+    PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable) firstprivate (ProcessCell) 
 #endif
   for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
     int nLocalNode,ii=CellCounter;
@@ -2014,21 +2014,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
    cCellData *CellData=NULL;
 
-
-/*           for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) if (CellProcessingFlagTable[thread]==true) {
-   double *target;
-   int idim,ii;
-
-   if (CellData==NULL) CellData=CellDataTable+thread;
-   else {
-     CellData->Add(CellDataTable+thread);
-   }
- }*/
-
    if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
      double *target,*source;
      int idim,ii;
-
 
      int CornerUpdateTable[8]={0,1,2,3,4,5,6,7};
      int CornerUpdateTableLength=8;
