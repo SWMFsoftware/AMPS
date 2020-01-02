@@ -78,6 +78,7 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
 
   #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
   if (node == PIC::Mover::lastNode_B_center[threadId]) return;
+
   for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
     for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
       for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
@@ -92,6 +93,7 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
 
   #elif  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
   if (node == PIC::Mover::lastNode_B_corner[threadId]) return;
+
   for (int k=0;k<=_BLOCK_CELLS_Z_;k++) {
     for (int j=0;j<=_BLOCK_CELLS_Y_;j++)  {
       for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
@@ -237,17 +239,16 @@ void PIC::Mover::MoveParticles() {
   //**************************  OpenMP + MPI + block's splitting *********************************
   auto mpi_openmp__split_blocks =[&] () {
 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    PIC::Mesh::cDataBlockAMR *block;
-    int i,j,k,s;
-    long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-    long int ParticleList,ptr;
-    double LocalTimeStep;
-
-    #pragma omp parallel for schedule(dynamic,1) default (none) private (node,block,FirstCellParticleTable,i,j,k,s,ptr,LocalTimeStep,ParticleList) \
+    #pragma omp parallel for schedule(dynamic,1) default (none) \
     shared (DomainBlockDecomposition::BlockTable,DomainBlockDecomposition::nLocalBlocks,PIC::Mesh::mesh)
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
-      node=DomainBlockDecomposition::BlockTable[nLocalNode];
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
+      PIC::Mesh::cDataBlockAMR *block;
+      int i,j,k,s;
+      long int *FirstCellParticleTable;
+      long int ParticleList,ptr;
+      double LocalTimeStep;
 
       #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
       double StartTime=MPI_Wtime();
@@ -256,7 +257,7 @@ void PIC::Mover::MoveParticles() {
       block=node->block;
       if ((block=node->block)==NULL) continue;
 
-      memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      FirstCellParticleTable=block->FirstCellParticleTable;
 
       #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
       PIC::Mover::SetBlock_E(node);
