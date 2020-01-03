@@ -81,7 +81,7 @@ Check=
 Name=test/Mars-ions 
 Time=2
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
-Keys=-cplr-data-path=/Users/dborovik/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+srbwks73465-01)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+pleiades)
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+stampede)
 <#
@@ -90,7 +90,7 @@ Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_P
 Name=Titan
 Time=3
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+valeriy)
-Keys=-cplr-data-path=/Users/dborovik/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+srbwks73465-01)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+amps-gpu)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+pleiades)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+stampede)
 <#
@@ -111,6 +111,7 @@ Ref=7{pgcc}@@(0+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/COPS@@(0+valeriy)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/COPS@@(0+pleiades) 
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/COPS@@(0+stampede)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS@@(0+amps-gpu)
 
 Check=
 >>>@echo "test_COPS_check..." >> test_COPS$(TESTCOPS-REF).diff
@@ -274,6 +275,7 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=6{icc}@@(0+pleiades)
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+valeriy) 
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+amps-gpu)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+pleiades)
 
 Compile=
@@ -391,7 +393,7 @@ Check=
 Name=CCMC
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/dborovik/AMPS_DATA_TEST/CCMC@@(0+srbwks73465-01)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC@@(0+pleiades)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC@@(0+stampede)
 
@@ -568,6 +570,7 @@ Time=2
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
