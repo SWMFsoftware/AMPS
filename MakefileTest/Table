@@ -1056,6 +1056,7 @@ Check=
 #>
 Name=test/fast-wave_AVX256
 Time=3
+ExeptionCode=SKIP{pgcc}
 
 Outs=
 
@@ -1105,6 +1106,7 @@ Check=
 #>
 Name=test/fast-wave_AVX512
 Time=3
+ExeptionCode=SKIP{pgcc}
 
 Outs=
 
