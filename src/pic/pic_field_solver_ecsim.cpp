@@ -1481,7 +1481,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  auto ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) {
+  std::function<bool(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,cCellData*,int,int)> ProcessCell; 
+
+  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) -> bool {
     double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
     double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
     bool res=false;
