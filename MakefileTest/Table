@@ -794,12 +794,12 @@ Check=
 
 <<<ifeq ($(wildcard output/test_periodic-bc-gmres/*.tmp),)
 >>>-@$(foreach OUT,$(TESTperiodic-bc-gmresOUTFILES),                                 \
->>>-@${TESTSaturn-MOPDIR}/../utility/RemoveColumn.pl -c=5 output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '`)
+>>>-@${TESTperiodic-bc-gmresDIR}/../utility/RemoveColumn.pl -c=5 output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '`)
 <<<endif
 
 >>>-@$(foreach OUT,$(TESTperiodic-bc-gmresOUTFILES),                                 \
 >>>-@${TESTperiodic-bc-gmresDIR}/../utility/RemoveColumn.pl -c=5 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat; \ 
->>>${SCRIPTDIR}/DiffNum.pl -a=2.0E-7 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat         \
+>>>-${SCRIPTDIR}/DiffNum.pl -a=2.0E-7 $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat         \
 >>>output/test_periodic-bc-gmres/$(OUT)$(TESTperiodic-bc-gmres-REF).ref_np`ls $(TESTperiodic-bc-gmresDIR)/PT/thread* |wc -l |tr -d ' '` > test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff; \
 >>>mv $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat.tmp $(TESTperiodic-bc-gmresDIR)/PT/plots/$(OUT).dat) 
 >>>@ls -l test_periodic-bc-gmres$(TESTperiodic-bc-gmres-REF).diff
