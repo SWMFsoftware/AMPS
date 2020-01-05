@@ -2203,7 +2203,7 @@ Check=
 
 
 #>
-Name=test/Mover-guiding-center@@(0+stampede+pleiades)
+Name=test/Mover-guiding-center@@(0+stampede+pleiades+amps-gpu)
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -2212,6 +2212,7 @@ Ref=8{pgcc}@@(0+valeriy)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+pleiades)
+Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Mover-guiding-center_compile..." > test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
@@ -2290,7 +2291,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/Mover-Boris@@(0+valeriy+amps-gpu)
+Name=test/Mover-Boris@@(0+valeriy)
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -2313,13 +2314,15 @@ Check=
 
 
 #>
-Name=test/Mover-Boris@@(0+stampede+pleiades)
+Name=test/Mover-Boris@@(0+stampede+pleiades+amps-gpu)
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+
 
 Compile=
 >>>@echo "test_Mover-Boris_compile..." > test_Mover-Boris${TESTMover-Boris-REF}.diff
@@ -2338,7 +2341,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/Mover-Boris-relativistic@@(0+valeriy+amps-gpu)
+Name=test/Mover-Boris-relativistic@@(0+valeriy)
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
@@ -2361,13 +2364,14 @@ Check=
 
 
 #>
-Name=test/Mover-Boris-relativistic@@(0+stampede+pleiades)
+Name=test/Mover-Boris-relativistic@@(0+stampede+pleiades+amps-gpu)
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Mover-Boris-relativistic_compile..." > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
