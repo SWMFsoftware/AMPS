@@ -511,6 +511,8 @@ Ref=7{pgcc}@@(0+pleiades)
 Ref=5{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+stampede)
 
+Ref=5{gcc}@@(0+amps-gpu)
+
 <#
 -------------------------------------------------------------------------------
 #>
@@ -2723,6 +2725,8 @@ Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
+Ref=3{gcc}@@(0+amps-gpu)
+
 
 Keys=-model-data-path=${PTDIR}/data/input/DragCoefficient
 
@@ -2775,6 +2779,8 @@ Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+stampede)
+
+Ref=5{gcc}@@(0+amps-gpu)
 
 Check=
 >>>@echo "test_Sphere-drag-coefficient_check..." >> test_Sphere-drag-coefficient$(TESTSphere-drag-coefficient-REF).diff
