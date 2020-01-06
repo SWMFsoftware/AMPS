@@ -69,6 +69,10 @@ rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/; 
 cp -r BATL GNU/AMPS/
 
+rm -rf NVCC 
+mkdir -p NVCC;   cp -r AMPS NVCC/;
+cp -r BATL NVCC/AMPS/
+
 #rm -rf Intel
 #mkdir -p Intel; cp -r AMPS Intel/; 
 #cp -r BATL Intel/AMPS/
@@ -82,6 +86,15 @@ cd $WorkDir/Tmp_AMPS_test/GNU/AMPS
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 
+cd $WorkDir/Tmp_AMPS_test/NVCC/AMPS
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log
+./Config.pl -compiler-option=-I/opt/openmpi-4.0.2-gcc/include/
+./Config.pl -compiler-option=-ccbin,g++
+./Config.pl -compiler-option=-x,cu
+./Config.pl -cpp-compiler=nvcc
+./Config.pl -cpp-link-option=-lcudart
+
 #cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
 #echo AMPS was checked out on $CheckoutTime > test_amps.log
 #./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
@@ -92,6 +105,7 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 
 #Execute the tests
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllGNU.sh & 
+$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllNVCC.sh &
 #$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllIntel.sh &   
 #$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllPGI.sh &
 

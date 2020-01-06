@@ -44,6 +44,19 @@ if (-e GNU) then
   cd ../..                                                                   
 endif
 
+# GNU compiled test
+#>GNUAll #####################################################################
+if (-e NVCC) then
+  cd NVCC/AMPS                                                                 #
+  rm -rf test_amps.res
+  ls -ltr  *diff > test_amps.res                                              #
+  echo '===============================================' >> test_amps.res     #
+  head -100 *diff >> test_amps.res                                            #
+  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_nvcc/  #
+  cd ../..
+endif
+
+
 # Intel compiled test
 #>IntelAll ###################################################################
 if (-e Intel) then
