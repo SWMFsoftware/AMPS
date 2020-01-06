@@ -62,8 +62,6 @@ else
   cd ../
 endif
 
-cp ~/bin/Config.pl AMPS
-
 #Create separate folders for different compilers
 rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/; 
