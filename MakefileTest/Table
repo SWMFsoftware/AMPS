@@ -1112,7 +1112,7 @@ Check=
 <#
 
 #>
-Name=test/fast-wave_AVX512@@(0-pleiades) 
+Name=test/fast-wave_AVX512@@(-pleiades) 
 Time=3
 ExeptionCode=SKIP{pgcc}
 
@@ -2630,6 +2630,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/VENUS@@(0+amps-gpu)
 Keys=-model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/VENUS@@(0+pleiades)
 Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/VENUS@@(0+stampede)
 
