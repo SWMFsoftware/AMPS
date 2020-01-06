@@ -6,7 +6,9 @@ use strict;
 use warnings;
 use POSIX qw(strftime);
 use List::Util qw(first);
+use Cwd qw(cwd);
 
+use lib cwd;
 use ampsConfigLib;
 
 
