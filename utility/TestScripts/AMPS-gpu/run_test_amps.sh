@@ -92,6 +92,7 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -compiler-option=-x,cu
 ./Config.pl -cpp-compiler=nvcc
 ./Config.pl -cpp-link-option=-lcudart
+./Config.pl -f-link-option=-lcudart
 
 #cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
 #echo AMPS was checked out on $CheckoutTime > test_amps.log
