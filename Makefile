@@ -66,6 +66,11 @@ SEARCH_F=
 CC=${COMPILE.mpicxx}
 AMPSLINKER=${CC}
 
+#set linker when nvcc is used to compile the code
+ifeq ($(COMPILE.mpicxx),nvcc)
+	AMPSLINKER=mpicxx
+endif
+
 CWD=${MYDIR}
 
 AMPSLINKLIB= 
@@ -124,11 +129,6 @@ else ifeq  ($(COMPILE.f90),nagfor)
 	SEARCH_F+= -I${BATL}/share/include
 endif
 
-endif
-
-#set linker when nvcc is used to compile the code 
-ifeq ($(COMPILE.mpicxx),nvcc)
-	AMPSLINKER=mpicxx
 endif
 
 # include interface with external FORTRAN subroutines
