@@ -2603,6 +2603,7 @@ Ref=2{pgcc}@@(0+valeriy)
 
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/MARS@@(0+stampede+pleiades) 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS@@(0+valeriy)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS@@(0+amps-gpu)
 
 
 Compile=
