@@ -79,6 +79,12 @@ endif
 
 #include AVX instruction flag when compile with Intel or GCC compilers
 ifeq ($(AVXMODE),on)
+
+#NVCC: pass the AVX flags to the host compiler 
+ifeq ($(COMPILE.mpicxx),nvcc)
+	SEARCH_C+=-Xcompiler \"
+endif
+
 #Intel compiler
 ifeq ($(COMPILE.c),icc)
 	SEARCH_C+= -march=core-avx2
@@ -92,6 +98,11 @@ endif
 #PGI compiler
 else ifeq ($(COMPILE.c),pgcc)
 	SEARCH_C+= -mavx2 -mfma
+endif
+
+#NVCC: pass the AVX flags to the host compiler
+ifeq ($(COMPILE.mpicxx),nvcc)
+	SEARCH_C+=\"
 endif
 endif
 
