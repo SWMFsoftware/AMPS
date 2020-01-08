@@ -353,7 +353,7 @@ void initNewBlocks() {
 
   PIC::BC::ExternalBoundary::UpdateData();
   InterpolateB_N2C(); 
-  //  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   
 }
 
