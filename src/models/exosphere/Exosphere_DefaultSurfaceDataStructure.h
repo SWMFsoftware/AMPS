@@ -89,6 +89,9 @@ public :
   //the flag indicating that the boundary prosidure associated with the sphere is already executed
   bool ProcessedBCflag;
 
+  //the data with which the sphere was allocated
+  int nTotalSpecies,TotalSurfaceElementNumber,EXOSPHERE__SOURCE_MAX_ID_VALUE;
+
   cInternalSphericalData_UserDefined () {
     faceat=-1,SamplingBuffer=NULL,ProcessedBCflag=false;
     InjectionRate=NULL,InjectionBoundaryCondition=NULL,ParticleSphereInteraction=NULL;
@@ -101,6 +104,8 @@ public :
 
     SampleSpeciesSurfaceSourceRate=NULL,SampleSpeciesSurfaceAreaDensity=NULL,SampleSpeciesSurfaceReturnFlux=NULL,SampleSpeciesSurfaceInjectionFlux=NULL,SampleReturnFluxBulkSpeed=NULL,SampleInjectedFluxBulkSpeed=NULL;
     SolarWindSurfaceFlux=NULL,TotalSolarWindSurfaceFlux=0.0;
+
+    nTotalSpecies=0,TotalSurfaceElementNumber=0,EXOSPHERE__SOURCE_MAX_ID_VALUE=0;
 
 #if _INTERNAL_SPHERE__EXTRA_DATA__0__MODE_ == _INTERNAL_SPHERE_DATA__ON_
     SurfaceData0=NULL;
@@ -125,9 +130,6 @@ public :
 
     fclose(fout);
   }
-
-  //the data with which the sphere was allocated
-  int nTotalSpecies,TotalSurfaceElementNumber,EXOSPHERE__SOURCE_MAX_ID_VALUE;
 
   void flush() {
     int s,el,i;
