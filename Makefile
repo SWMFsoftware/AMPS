@@ -138,6 +138,12 @@ endif
 
 #when OpenMP is used add the appropriate compiler flag and library
 ifeq ($(OPENMP),on)
+
+#NVCC: pass the OpenMP flags to the host compiler
+ifeq ($(COMPILE.mpicxx),nvcc)
+	SEARCH_C+=-Xcompiler \"
+endif
+
 ifeq ($(COMPILE.c),pgcc)
 	SEARCH_C+=-mp
 	SEARCH_C_GENERAL+=-mp
@@ -146,6 +152,11 @@ else
 	SEARCH_C+=-fopenmp
 	SEARCH_C_GENERAL+=-fopenmp
 	AMPSLINKLIB+=-fopenmp
+endif
+
+#NVCC: pass the OpenMP flags to the host compiler
+ifeq ($(COMPILE.mpicxx),nvcc)
+	SEARCH_C+=\"
 endif
 endif
 
