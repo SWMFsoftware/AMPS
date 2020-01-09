@@ -939,15 +939,10 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x,double** &LocalRecvExchangeBufferTable) {
   int To,From;
-  MPI_Request SendRequest[PIC::nTotalThreads],RecvRequest[PIC::nTotalThreads];
-  MPI_Status SendStatus[PIC::nTotalThreads],RecvStatus[PIC::nTotalThreads];
-  int RecvThreadCounter=0,SendThreadCounter=0;
 
   double **LocalSendBuffer=new double *[PIC::nTotalThreads];
-
   LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads];
   
-
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
     if (NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]>0) {
        LocalSendBuffer[thread]=new double [NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]];
