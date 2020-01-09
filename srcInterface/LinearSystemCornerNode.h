@@ -938,17 +938,10 @@ template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilL
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x,double** &LocalRecvExchangeBufferTable) {
-
   int To,From;
   MPI_Request SendRequest[PIC::nTotalThreads],RecvRequest[PIC::nTotalThreads];
   MPI_Status SendStatus[PIC::nTotalThreads],RecvStatus[PIC::nTotalThreads];
   int RecvThreadCounter=0,SendThreadCounter=0;
-
-
-  //for (int i=0;i<PIC::nTotalThreads;i++) printf("%i->%i:%i\t%i<-%i:%i\n",PIC::ThisThread,i,SendExchangeBufferLength[i],ThisThread,i,RecvExchangeBufferLength[i]);
-
-
-  //CRC32 buffer_cs,index_cs;
 
   double **LocalSendBuffer=new double *[PIC::nTotalThreads];
 
@@ -969,82 +962,46 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     else {
       LocalRecvExchangeBufferTable[thread]=NULL;
     }  
-
   } 
 
-  for (From=0;From<PIC::nTotalThreads;From++) for (To=0;To<PIC::nTotalThreads;To++)
-    if ( (From!=To) && ( ((From==PIC::ThisThread)&&(SendExchangeBufferLength[To]!=0)) || ((To==PIC::ThisThread)&&(RecvExchangeBufferLength[From]!=0)) ) ) {
 
+  MPI_Request RecvRequestTable[PIC::nTotalThreads],SendRequestTable[PIC::nTotalThreads];
+  int RecvRequestTableLength=0,SendRequestTableLength=0;
 
-    //do blocked send/recv
-
-    if (PIC::ThisThread==From) {
-      //this if the sending thread
-      int i,offset=0;
-      int Length=SendExchangeBufferLength[To];
-      int *IndexTable=SendExchangeBufferElementIndex[To];
-
-
-      for (i=0;i<Length;i++) {
-        memcpy(LocalSendBuffer[To]+offset,x+NodeUnknownVariableVectorLength*IndexTable[i],NodeUnknownVariableVectorLength*sizeof(double));
-        offset+=NodeUnknownVariableVectorLength;
-      }
-
-      if (offset!=NodeUnknownVariableVectorLength*SendExchangeBufferLength[To]) exit(__LINE__,__FILE__,"Error: out of limit");
-
-  //    buffer_cs.add(Buffer,offset);
-   //   index_cs.add(IndexTable,Length);
-
-      MPI_Send(LocalSendBuffer[To],NodeUnknownVariableVectorLength*SendExchangeBufferLength[To],MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR);
-    }
-    else {
-      //this is the recieving thread
-      MPI_Status status;
-
-      MPI_Recv(LocalRecvExchangeBufferTable[From],NodeUnknownVariableVectorLength*RecvExchangeBufferLength[From],MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,&status);
-    }
+  //Initiate Recv operations
+  for (From=0;From<PIC::nTotalThreads;From++) if ((From!=PIC::ThisThread)&&(RecvExchangeBufferLength[From]!=0)) {
+    MPI_Irecv(LocalRecvExchangeBufferTable[From],NodeUnknownVariableVectorLength*RecvExchangeBufferLength[From],MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvRequestTableLength);
+    RecvRequestTableLength++;
   }
 
- // buffer_cs.PrintChecksum(__LINE__,__FILE__);
- // index_cs.PrintChecksum(__LINE__,__FILE__);
-
-   for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalSendBuffer[thread]!=NULL) delete [] LocalSendBuffer[thread];
-
-   delete [] LocalSendBuffer;
-
-/*
-  int To,From;
-  MPI_Request SendRequest[PIC::nTotalThreads],RecvRequest[PIC::nTotalThreads];
-  MPI_Status SendStatus[PIC::nTotalThreads],RecvStatus[PIC::nTotalThreads];
-  int RecvThreadCounter=0,SendThreadCounter=0;
-
-
-  //initiate the non-blocked recieve
-  for (From=0;From<PIC::nTotalThreads;From++) if (RecvExchangeBufferLength[From]!=0) {
-    MPI_Irecv(RecvExchangeBuffer[From],NodeUnknownVariableVectorLength*RecvExchangeBufferLength[From],MPI_DOUBLE,From,0,MPI_GLOBAL_COMMUNICATOR,RecvRequest+RecvThreadCounter);
-    RecvThreadCounter++;
-  }
-
-  //prepare data to send and initiate the non-blocked send
+  //Init Send operations
   for (To=0;To<PIC::nTotalThreads;To++) if ((To!=PIC::ThisThread)&&(SendExchangeBufferLength[To]!=0)) {
+    //this if the sending thread
     int i,offset=0;
     int Length=SendExchangeBufferLength[To];
     int *IndexTable=SendExchangeBufferElementIndex[To];
 
 
     for (i=0;i<Length;i++) {
-      memcpy(Buffer+offset,x+NodeUnknownVariableVectorLength*IndexTable[i],NodeUnknownVariableVectorLength*sizeof(double));
+      memcpy(LocalSendBuffer[To]+offset,x+NodeUnknownVariableVectorLength*IndexTable[i],NodeUnknownVariableVectorLength*sizeof(double));
       offset+=NodeUnknownVariableVectorLength;
     }
 
-    MPI_Isend(Buffer,NodeUnknownVariableVectorLength*SendExchangeBufferLength[To],MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequest+SendThreadCounter);
-    SendThreadCounter++;
+    if (offset!=NodeUnknownVariableVectorLength*SendExchangeBufferLength[To]) exit(__LINE__,__FILE__,"Error: out of limit");
+
+    MPI_Isend(LocalSendBuffer[To],NodeUnknownVariableVectorLength*SendExchangeBufferLength[To],MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+    SendRequestTableLength++;
   }
 
-  //finalize send and recieve
-  if (RecvThreadCounter!=0)  MPI_Waitall(RecvThreadCounter,RecvRequest,RecvStatus);
-  if (SendThreadCounter!=0)  MPI_Waitall(SendThreadCounter,SendRequest,SendStatus);
-*/
+  //wait for completing the send/rect operations
+  MPI_Waitall(RecvRequestTableLength,RecvRequestTable,MPI_STATUSES_IGNORE);
+  MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
+
+
+   //delete temporary buffers
+   for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalSendBuffer[thread]!=NULL) delete [] LocalSendBuffer[thread];
+
+   delete [] LocalSendBuffer;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
