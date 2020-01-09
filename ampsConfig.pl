@@ -1461,6 +1461,26 @@ sub ReadGeneralBlock {
       ampsConfigLib::RedefineMacro("_GHOST_CELLS_Y_",$s1,"meshAMR/meshAMRdef.h");
       ampsConfigLib::RedefineMacro("_GHOST_CELLS_Z_",$s2,"meshAMR/meshAMRdef.h");
     }
+    
+    ### DIVE discretization ###
+    elsif ($InputLine eq "DIVEDISCRETIZATION") {
+	($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+	#($InputLine,$InputComment)=split('!',$line,2);
+	#chomp($InputLine);
+	#$InputLine=~s/[,=();]/ /g;
+	
+	if ($InputLine eq "YUXI") {
+	    ampsConfigLib::RedefineMacro("_PIC_STENCIL_NUMBER_","375","pic/picGlobal.dfn");
+	}
+	elsif($InputLine eq "DEFAULT"){
+	    ampsConfigLib::RedefineMacro("_PIC_STENCIL_NUMBER_","81","pic/picGlobal.dfn");
+	}
+	else {
+	    die "UNRECOGNIZED/UNDEFINED discretization type $InputLine!\n";
+	}
+
+    }
 
     ### ENFORCEREQUESTEDMESHRESOLUTION ###
     elsif ($InputLine eq "ENFORCEREQUESTEDMESHRESOLUTION") {

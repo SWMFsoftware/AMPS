@@ -375,6 +375,7 @@ at the end of each time step
 
 #define _PIC_DYNAMIC_ALLOCATING_BLOCKS_ _PIC_MODE_OFF_
 
+#define _PIC_STENCIL_NUMBER_ 81
 //use the cell-related randome number generator
 #define _PIC_CELL_RELATED_RND__MODE_ _PIC_MODE_OFF_
 

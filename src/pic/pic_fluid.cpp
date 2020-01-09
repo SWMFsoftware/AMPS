@@ -393,12 +393,18 @@ void PIC::CPLR::FLUID::read_param(){
       readParam.read_var("qom", qom[0]);
     } else if (command == "#DISCRETIZATION") {
       //isDisParamSet = true;
-      double th; 
+      double th,gradRhoRatio,cDiff,ratioDivC2C; 
       readParam.read_var("th", th);
-      //readParam.read_var("gradRhoRatio", gradRhoRatio);
-      //readParam.read_var("cDiff", cDiff);
-      //readParam.read_var("ratioDivC2C", ratioDivC2C);
+      readParam.read_var("gradRhoRatio", gradRhoRatio);
+      readParam.read_var("cDiff", cDiff);
+      readParam.read_var("ratioDivC2C", ratioDivC2C);
 
+      if (ratioDivC2C>1.0 || ratioDivC2C<0.0)
+	exit(__LINE__,__FILE__,"Error: the range of ratioDivC2C is [0,1]!");
+
+      if (ratioDivC2C>1e-6 && _PIC_STENCIL_NUMBER_!=375)
+	exit(__LINE__,__FILE__,"Error: please set the right divE discretization type in input file!");
+      PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff = ratioDivC2C;
       PIC::FieldSolver::Electromagnetic::ECSIM::theta = th;
     } else if (command == "#DIVE") {
       /*

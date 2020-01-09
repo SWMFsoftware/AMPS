@@ -23,6 +23,7 @@
 #include <immintrin.h>
 #endif
 
+double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
 list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
@@ -33,7 +34,7 @@ PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::
   PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
   PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
-cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
+cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
 cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false;
@@ -533,6 +534,249 @@ static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,
 
 
 
+static const double graddivNew[3][3][125] = {
+
+{{-1/18.0,0.0,0.0,-1/24.0,0.0,
+0.0,-1/24.0,0.0,0.0,-1/24.0,
+0.0,0.0,-1/32.0,0.0,0.0,
+-1/32.0,0.0,0.0,-1/24.0,0.0,
+0.0,-1/32.0,0.0,0.0,-1/32.0,
+0.0,0.0,1/36.0,1/36.0,1/48.0,
+1/48.0,1/48.0,1/48.0,-1/72.0,0.0,
+0.0,1/144.0,1/144.0,-1/72.0,0.0,
+0.0,1/144.0,1/144.0,1/48.0,1/48.0,
+1/64.0,1/64.0,1/64.0,1/64.0,-1/96.0,
+0.0,0.0,1/192.0,1/192.0,-1/96.0,
+0.0,0.0,1/192.0,1/192.0,1/48.0,
+1/48.0,1/64.0,1/64.0,1/64.0,1/64.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/72.0,0.0,0.0,1/144.0,1/144.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/288.0,0.0,0.0,1/576.0,1/576.0,
+-1/288.0,0.0,0.0,1/576.0,1/576.0,
+-1/72.0,0.0,0.0,1/144.0,1/144.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/96.0,0.0,0.0,1/192.0,1/192.0,
+-1/288.0,0.0,0.0,1/576.0,1/576.0,
+-1/288.0,0.0,0.0,1/576.0,1/576.0
+  },
+{0.0,0.0,0.0,0.0,1/72.0,
+-1/72.0,0.0,-1/72.0,1/72.0,0.0,
+0.0,0.0,0.0,1/96.0,-1/96.0,
+0.0,-1/96.0,1/96.0,0.0,0.0,
+0.0,0.0,1/96.0,-1/96.0,0.0,
+-1/96.0,1/96.0,0.0,0.0,1/72.0,
+-1/72.0,-1/72.0,1/72.0,0.0,1/144.0,
+-1/144.0,1/144.0,-1/144.0,0.0,-1/144.0,
+1/144.0,-1/144.0,1/144.0,0.0,0.0,
+1/96.0,-1/96.0,-1/96.0,1/96.0,0.0,
+1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
+-1/192.0,1/192.0,-1/192.0,1/192.0,0.0,
+0.0,1/96.0,-1/96.0,-1/96.0,1/96.0,
+0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
+0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
+0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
+0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
+0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
+0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
+0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
+0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
+},
+{0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
+0.0,1/96.0,-1/96.0,0.0,-1/72.0,
+1/72.0,0.0,-1/96.0,1/96.0,0.0,
+-1/96.0,1/96.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,1/72.0,-1/72.0,
+1/96.0,-1/96.0,1/96.0,-1/96.0,0.0,
+1/288.0,-1/288.0,1/288.0,-1/288.0,0.0,
+1/288.0,-1/288.0,1/288.0,-1/288.0,-1/72.0,
+1/72.0,-1/96.0,1/96.0,-1/96.0,1/96.0,
+0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
+0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
+0.0,1/144.0,-1/144.0,1/144.0,-1/144.0,
+0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
+0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
+0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
+0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
+0.0,-1/144.0,1/144.0,-1/144.0,1/144.0,
+0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
+0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
+0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
+0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
+}
+},
+{{0.0,0.0,0.0,0.0,1/72.0,
+-1/72.0,0.0,-1/72.0,1/72.0,0.0,
+0.0,0.0,0.0,1/96.0,-1/96.0,
+0.0,-1/96.0,1/96.0,0.0,0.0,
+0.0,0.0,1/96.0,-1/96.0,0.0,
+-1/96.0,1/96.0,0.0,0.0,1/144.0,
+-1/144.0,-1/144.0,1/144.0,0.0,1/72.0,
+-1/72.0,1/144.0,-1/144.0,0.0,-1/72.0,
+1/72.0,-1/144.0,1/144.0,0.0,0.0,
+1/192.0,-1/192.0,-1/192.0,1/192.0,0.0,
+1/96.0,-1/96.0,1/192.0,-1/192.0,0.0,
+-1/96.0,1/96.0,-1/192.0,1/192.0,0.0,
+0.0,1/192.0,-1/192.0,-1/192.0,1/192.0,
+0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
+0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
+  },
+{-1/18.0,-1/24.0,-1/24.0,0.0,0.0,
+0.0,0.0,0.0,0.0,-1/24.0,
+-1/32.0,-1/32.0,0.0,0.0,0.0,
+0.0,0.0,0.0,-1/24.0,-1/32.0,
+-1/32.0,0.0,0.0,0.0,0.0,
+0.0,0.0,-1/72.0,-1/72.0,0.0,
+0.0,0.0,0.0,1/36.0,1/48.0,
+1/48.0,1/144.0,1/144.0,1/36.0,1/48.0,
+1/48.0,1/144.0,1/144.0,-1/96.0,-1/96.0,
+0.0,0.0,0.0,0.0,1/48.0,
+1/64.0,1/64.0,1/192.0,1/192.0,1/48.0,
+1/64.0,1/64.0,1/192.0,1/192.0,-1/96.0,
+-1/96.0,0.0,0.0,0.0,0.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+-1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+-1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
+},
+{0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,1/72.0,1/96.0,1/96.0,
+-1/72.0,-1/96.0,-1/96.0,0.0,0.0,
+0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
+1/96.0,1/96.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/288.0,1/288.0,-1/288.0,-1/288.0,1/72.0,
+1/96.0,1/96.0,1/288.0,1/288.0,-1/72.0,
+-1/96.0,-1/96.0,-1/288.0,-1/288.0,0.0,
+0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
+-1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
+1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
+0.0,0.0,0.0,0.0,0.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+0.0,0.0,0.0,0.0,0.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
+}
+},
+{{0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
+0.0,1/96.0,-1/96.0,0.0,-1/72.0,
+1/72.0,0.0,-1/96.0,1/96.0,0.0,
+-1/96.0,1/96.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,1/144.0,-1/144.0,
+1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
+1/288.0,-1/288.0,1/576.0,-1/576.0,0.0,
+1/288.0,-1/288.0,1/576.0,-1/576.0,-1/144.0,
+1/144.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,1/72.0,-1/72.0,1/144.0,-1/144.0,
+0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
+0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
+0.0,-1/72.0,1/72.0,-1/144.0,1/144.0,
+0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
+0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
+0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
+  },
+{0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,1/72.0,1/96.0,1/96.0,
+-1/72.0,-1/96.0,-1/96.0,0.0,0.0,
+0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
+1/96.0,1/96.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/288.0,1/288.0,-1/288.0,-1/288.0,1/144.0,
+1/192.0,1/192.0,1/576.0,1/576.0,-1/144.0,
+-1/192.0,-1/192.0,-1/576.0,-1/576.0,0.0,
+0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+0.0,0.0,0.0,0.0,0.0,
+1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
+-1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+0.0,0.0,0.0,0.0,0.0,
+-1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
+1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
+-1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
+},
+{-1/18.0,-1/24.0,-1/24.0,-1/24.0,-1/32.0,
+-1/32.0,-1/24.0,-1/32.0,-1/32.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,-1/72.0,-1/72.0,-1/96.0,
+-1/96.0,-1/96.0,-1/96.0,-1/72.0,-1/96.0,
+-1/96.0,-1/288.0,-1/288.0,-1/72.0,-1/96.0,
+-1/96.0,-1/288.0,-1/288.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+0.0,0.0,0.0,0.0,0.0,
+1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
+1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
+}
+}
+};
+
+
+
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
  
@@ -628,10 +872,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, i
 }
 
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
-			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
-			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
+void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int iVar,cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
+			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
+			     cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, 
 			     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;    
   
   // No.0-No.26  stencil Ex
   // No.27-No.53 stencil Ey
@@ -641,8 +887,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   // index number: ii+3*jj+9*kk 
   // No.0: i,j,k No.1 i-1,j,k No.2 i+1,j,k
   // No.3: i,j-1,k No.4:i-1,j-1,k No.5 i+1,j-1,k 
-
-  
+ 
   // double cLighgt, dt;
   double x[3];
   //power of 3 array created
@@ -720,6 +965,38 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
     
+
+#if _PIC_STENCIL_NUMBER_==375  
+  int indexOffset[5] = {0,-1,1,-2,2};
+  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
+    int cntTemp =0;
+    
+    for (int kk=0;kk<5;kk++){
+      for (int jj=0;jj<5;jj++){	
+	for (int ii=0;ii<5;ii++){       
+	  
+	  if (ii<3 && jj<3 && kk<3) continue;
+          int iNode = i+indexOffset[ii];
+          int jNode = j+indexOffset[jj];
+          int kNode = k+indexOffset[kk];
+          int iElement = 81+iVarIndex*98+cntTemp;
+	  cntTemp++;
+          MatrixRowNonZeroElementTable[iElement].i=iNode;
+          MatrixRowNonZeroElementTable[iElement].j=jNode;
+          MatrixRowNonZeroElementTable[iElement].k=kNode;
+
+          MatrixRowNonZeroElementTable[iElement].MatrixElementValue=0.0;
+          MatrixRowNonZeroElementTable[iElement].iVar=iVarIndex;
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]=0.0;
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTableLength=1;
+          MatrixRowNonZeroElementTable[iElement].MatrixElementSupportTableLength = 0;
+        }
+      }
+    }
+  }
+#endif
+
+
   //laplacian
   
   for (int ii=0;ii<3;ii++){
@@ -749,17 +1026,39 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
           int nodeIndex=ii+jj*3+kk*9;
           int iElement = nodeIndex + iVarIndex*27;
           MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex]+
+	    corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
         }
       }
     }
   }
   
+
+#if _PIC_STENCIL_NUMBER_==375   
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    int cntTemp = 0;
+    for (int kk=0;kk<5;kk++){
+      for (int jj=0;jj<5;jj++){	
+	for (int ii=0;ii<5;ii++){       
+	  if (ii<3 && jj<3 && kk<3) continue;
+	  int iElement = 81+iVarIndex*98+cntTemp;	  
+	  int nodeIndex= 27+cntTemp;
+	  cntTemp++;
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+        }
+      }
+    }
+  }
+
+#endif
+
+
     
   //find corners outside the boundary
   vector<int> pointLeft;
   int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
-  for (int ii=0;ii<81;ii++) {
+  for (int ii=0;ii<_PIC_STENCIL_NUMBER_;ii++) {
     MatrixRowNonZeroElementTable[ii].Node=node;
 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeTemp = node;
@@ -861,11 +1160,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   for (int ii=0;ii<3;ii++){
     for (int jj=0;jj<3;jj++){
       for (int kk=0;kk<3;kk++){
-        int iNode = i+indexAddition[ii];
-        int jNode = j+indexAddition[jj];
-        int kNode = k+indexAddition[kk];
         int iElement = ii+jj*3+kk*9;
-
+	int iNode = i+indexAddition[ii];
+	int jNode = j+indexAddition[jj];
+	int kNode = k+indexAddition[kk];
+        
         RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
         RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
       }
@@ -878,9 +1177,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
         for (int kk=0;kk<3;kk++){
-          int iNode = i+indexAddition[ii];
-          int jNode = j+indexAddition[jj];
-          int kNode = k+indexAddition[kk];
+
           int iElement = iVarIndex*27+ii+jj*3+kk*9;
           int jOldElement = ii+jj*3+kk*9;
 
@@ -891,6 +1188,63 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
 
+
+  //  bool isTest=false;
+  //if (fabs(x[0]-1.0)<0.1 && fabs(x[1]-1.0)<0.1 && fabs(x[2]-1.0)<0.1)
+  //  isTest = true;
+#if _PIC_STENCIL_NUMBER_==375  
+    for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
+      int cntTemp = 0;
+      for (int kk=0; kk<5; kk++){
+	for (int jj=0; jj<5; jj++){
+	  for (int ii=0; ii<5; ii++){
+	    
+	    if (ii<3 && jj<3 && kk<3) continue;
+	    
+	    int iNode = i+indexOffset[ii];
+	    int jNode = j+indexOffset[jj];
+	    int kNode = k+indexOffset[kk];
+
+	    int iElement = 81+iVarIndex*98+cntTemp;
+	    cntTemp++;
+	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+	    char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
+	    if (pntTemp) {
+	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+	    }else{
+	      RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
+	    }
+	    //if (isTest){
+	      // printf("test 1,1,1:%d, %d, %d, pntTemp:%p\n", iNode,jNode,kNode, pntTemp);
+	    //}
+
+	  }
+	}
+      }
+    }
+    
+       
+    for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
+      int cntTemp = 0;
+      for (int kk=0; kk<5; kk++){
+	for (int jj=0; jj<5; jj++){
+	  for (int ii=0; ii<5; ii++){
+	    
+	    if (ii<3 && jj<3 && kk<3) continue;
+	    int iElement = 81+iVarIndex*98+cntTemp;	  
+	    int iElementOld = 81+cntTemp;
+	    cntTemp++;
+	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=
+			   RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
+	    
+	  }
+	}
+      }
+    }
+#endif
+    
+
   //laplacian
   for (int ii=0;ii<3;ii++){
     for (int jj=0;jj<3;jj++){
@@ -898,9 +1252,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
         int index=ii+jj*3+kk*9;
         int iElement = index + iVar*27;
         //plus laplacian
+	
         RhsSupportTable_CornerNodes[iElement].Coefficient +=
           LaplacianCoeff[0][index]*coeffSqr[0]+LaplacianCoeff[1][index]*coeffSqr[1]+
           LaplacianCoeff[2][index]*coeffSqr[2];
+	
       }
     }
   }
@@ -914,18 +1270,64 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
           int nodeIndex=ii+jj*3+kk*9;
           int iElement = nodeIndex + iVarIndex*27;
           RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+        }
+      }
+    }
+  }
+
+#if _PIC_STENCIL_NUMBER_==375
+  
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    for (int ii=0;ii<3;ii++){
+      for (int jj=0;jj<3;jj++){
+        for (int kk=0;kk<3;kk++){
+          int nodeIndex=ii+jj*3+kk*9;
+          int iElement = nodeIndex + iVarIndex*27;
+          RhsSupportTable_CornerNodes[iElement].Coefficient -=
+            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+	  //  printf("test1 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
+
         }
       }
     }
   }
 
 
+  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
+    int cntTemp = 0;
 
-  RhsSupportTable_CornerNodes[81].AssociatedDataPointer=RhsSupportTable_CornerNodes[iVar*27].AssociatedDataPointer;
-  RhsSupportTable_CornerNodes[81].Coefficient=-4*Pi*dtTotal*theta;
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+	for (int ii=0; ii<5; ii++){
+
+	  if (ii<3 && jj<3 && kk<3) continue;
+	  int iElement = 81+iVarIndex*98+cntTemp;	  
+	  int nodeIndex = 27+cntTemp;
+	  
+	  cntTemp++;	  
+	  //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
+	  RhsSupportTable_CornerNodes[iElement].Coefficient -=
+			 corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+	  //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
+	  // if (iElement==336) {
+
+	  //printf("test3, corrCoeff:%e, graddivNew:%e, coeff:%e,%e\n", corrCoeff,
+	  //graddivNew[iVar][iVarIndex][nodeIndex], coeff[iVar], coeff[iVarIndex]);
+	    //}
+  
+	}
+      }
+    }
+  }
+  
+#endif
+
+
+  RhsSupportTable_CornerNodes[_PIC_STENCIL_NUMBER_].AssociatedDataPointer=RhsSupportTable_CornerNodes[iVar*27].AssociatedDataPointer;
+  RhsSupportTable_CornerNodes[_PIC_STENCIL_NUMBER_].Coefficient=-4*Pi*dtTotal*theta;
  
-  RhsSupportLength_CornerNodes=82;
+  RhsSupportLength_CornerNodes=_PIC_STENCIL_NUMBER_+1;
 
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
@@ -3099,12 +3501,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
 }
  
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cMatrixRow* row){
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRow* row){
   double fourPiDtTheta=4*Pi*dtTotal*theta;
 
   for (int iElement=0; iElement<row->nNonZeroElements;iElement++){
-    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cStencilElement* el=row->Elements+iElement;
-    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cStencilElementData* el_data=row->ElementDataTable+iElement;
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cStencilElement* el=row->Elements+iElement;
+    cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cStencilElementData* el_data=row->ElementDataTable+iElement;
 
     el_data->MatrixElementValue=el->MatrixElementParameterTable[0];
 
@@ -3133,12 +3535,15 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::PoissonUpdateRhs(int iVar,
 }
  
 
+
  //update the RHS vector
 double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
-			      cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
-			      cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,81,82,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
+			      cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int RhsSupportLength_CornerNodes,
+							   cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int RhsSupportLength_CenterNodes) {
   int i;
   double res=0.0;
+
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   double fourPiDtTheta=4*Pi*dtTotal*theta;
    
   for (int ii=0;ii<27;ii++) {
@@ -3147,9 +3552,67 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
     res+=(tempPtr[ExOffsetIndex]*RhsSupportTable_CornerNodes[ii].Coefficient+
       tempPtr[EyOffsetIndex]*RhsSupportTable_CornerNodes[ii+27].Coefficient+
       tempPtr[EzOffsetIndex]*RhsSupportTable_CornerNodes[ii+54].Coefficient)*E_conv;
-   }
- 
-   double * tempMassMatrixPtr = ((double*)RhsSupportTable_CornerNodes[0].AssociatedDataPointer)+MassMatrixOffsetIndex;
+    
+    /*
+    if (isTest){
+      if (iVar==0){
+	
+	printf("No.%d, E:%e,%e,%e, coeff:%e,%e,%e\n", ii, 
+	       tempPtr[ExOffsetIndex],tempPtr[EyOffsetIndex],tempPtr[EzOffsetIndex],
+	       RhsSupportTable_CornerNodes[ii].Coefficient*4.0, RhsSupportTable_CornerNodes[ii+27].Coefficient*4.0,
+	       RhsSupportTable_CornerNodes[ii+54].Coefficient*4.0
+	       );	
+      }
+    }
+    */
+
+  }
+  
+#if _PIC_STENCIL_NUMBER_==375
+  //add another 98*3
+  
+  for (int ii=0;ii<98;ii++) {
+    char * tempChar = RhsSupportTable_CornerNodes[ii+81].AssociatedDataPointer;
+    if (!tempChar) continue;
+    double * tempPtr = (double*)(tempChar+CurrentEOffset);
+    
+    //printf("ii:%d,tempChar:%p, E:%e,%e,%e, res:%e\n",ii, tempChar, tempPtr[ExOffsetIndex], tempPtr[EyOffsetIndex],tempPtr[EzOffsetIndex],res);
+
+    
+    res+=(tempPtr[ExOffsetIndex]*RhsSupportTable_CornerNodes[ii+81].Coefficient+
+	  tempPtr[EyOffsetIndex]*RhsSupportTable_CornerNodes[ii+81+98].Coefficient+
+	  tempPtr[EzOffsetIndex]*RhsSupportTable_CornerNodes[ii+81+196].Coefficient)*E_conv;
+    
+    /*
+    if (isTest){
+      if (iVar==0){
+	
+	printf("No.%d, E:%e,%e,%e, coeff:%e,%e,%e\n", ii+27, 
+	       tempPtr[ExOffsetIndex],tempPtr[EyOffsetIndex],tempPtr[EzOffsetIndex],
+	       RhsSupportTable_CornerNodes[ii+81].Coefficient*4.0, RhsSupportTable_CornerNodes[ii+81+98].Coefficient*4.0,
+	       RhsSupportTable_CornerNodes[ii+81+196].Coefficient*4.0
+	       );	
+      }
+    }
+    */
+     
+    //printf("ii:%d, coeff:%e,%e,%e; res:%e\n", ii, RhsSupportTable_CornerNodes[ii+81].Coefficient,RhsSupportTable_CornerNodes[ii+81+98].Coefficient, RhsSupportTable_CornerNodes[ii+81+196].Coefficient,res);
+
+  }
+#endif  
+  /*
+  if (isTest){
+    //if (iVar==0){
+      char * tempChar = RhsSupportTable_CornerNodes[0].AssociatedDataPointer;
+      double * tempPtr = (double*)(tempChar+CurrentEOffset);
+
+      //printf("update rhs E:%e,%e,%e, res:%e\n", tempPtr[ExOffsetIndex],tempPtr[EyOffsetIndex],tempPtr[EzOffsetIndex],res);
+      //}
+  }
+  */
+  
+  //double res1 = res;
+  double * tempMassMatrixPtr = ((double*)RhsSupportTable_CornerNodes[0].AssociatedDataPointer)+MassMatrixOffsetIndex;
     
   //mass matrix part
   for (int ii=0;ii<27;ii++) {
@@ -3159,10 +3622,14 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
       tempPtr[EyOffsetIndex]*tempMassMatrixPtr[MassMatrixOffsetTable[iVar][ii+27]]+
       tempPtr[EzOffsetIndex]*tempMassMatrixPtr[MassMatrixOffsetTable[iVar][ii+54]])*(-fourPiDtTheta)*E_conv;
   }
+  
+  //double res2 = res;
 
   // current effect
-  res+=((double*)(RhsSupportTable_CornerNodes[81].AssociatedDataPointer))[JxOffsetIndex+iVar]*
-    RhsSupportTable_CornerNodes[81].Coefficient;
+  res+=((double*)(RhsSupportTable_CornerNodes[_PIC_STENCIL_NUMBER_].AssociatedDataPointer))[JxOffsetIndex+iVar]*
+    RhsSupportTable_CornerNodes[_PIC_STENCIL_NUMBER_].Coefficient;
+
+  //double res3 =res;
 
   //contribution from center nodes
   for (i=0; i<8;i++){
@@ -3173,12 +3640,20 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
     res+=((double*)(RhsSupportTable_CenterNodes[i].AssociatedDataPointer+CurrentBOffset))[(iVar+4)%3]*RhsSupportTable_CenterNodes[i].Coefficient*B_conv;
   }//E=iVar,B=((iVar+4)%3)  Ex:By, Ey:Bz, Ez:Bx
     
- 
+  //double res4 =res;
+  
+  /*
+  if (isTest){
+    if (iVar==0){  
+
+      printf("grad+div:%e, massmatrix:%e, current:%e, mag b:%e\n", res1, res2-res1, res3-res2, res4-res3);
+
+    }
+  }
+  */
+
   return res;
 }
-
-
-
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
