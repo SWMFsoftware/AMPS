@@ -40,7 +40,7 @@ public:
      data=new T[n0*n1*n2];
    }
    catch (bad_alloc) {
-     printf("Memory Error: array_3d() cannot allocate %i bytes\n", n0*n1*n2*sizeof(T));
+     printf("Memory Error: array_3d() cannot allocate %ld bytes\n", n0*n1*n2*sizeof(T));
      exit(__LINE__,__FILE__);
    }
 
