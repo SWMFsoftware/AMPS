@@ -26,7 +26,7 @@ our $TestName;
 our @Compilers;
 
 
-my $config     = "/share/Scripts/Config.pl";
+my $config     = "share/Scripts/Config.pl";
 #check util and share
 my $GITCLONE = "git clone"; my $GITDIR = "herot:/GIT/FRAMEWORK/";
 
