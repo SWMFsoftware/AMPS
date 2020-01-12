@@ -62,6 +62,7 @@ CouplerMode=fluid !!file(tecplot) !!off, file,  swmf
   
   BlockCells=16,8,4
   GhostCells=2,2,1
+  CommunicationDepth=2,2
 
   NastranSurfaceUserData=on !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
