@@ -1461,6 +1461,28 @@ sub ReadGeneralBlock {
       ampsConfigLib::RedefineMacro("_GHOST_CELLS_Y_",$s1,"meshAMR/meshAMRdef.h");
       ampsConfigLib::RedefineMacro("_GHOST_CELLS_Z_",$s2,"meshAMR/meshAMRdef.h");
     }
+
+    ####Set the communication depth 
+    elsif ($InputLine eq "COMMUNICATIONDEPTH") {
+      ($InputLine,$InputComment)=split('!',$line,2);
+      chomp($InputLine);
+      $InputLine=~s/[,=();]/ /g;    
+
+      ($InputLine,$s0,$s1,$InputComment)=split(' ',$InputLine,5);
+
+      if (!defined $s0) {
+        warn("Communication depth with a block of the same or lower resolution level is not defined"); 
+        die "Line $InputFileLineNumber ($line) in $InputFileName.Assembled\n"; 
+      }
+
+      if (!defined $s1) {
+        warn("Communication depth with a block of the higher resolution level is not defined");
+        die "Line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+
+      ampsConfigLib::ChangeValueOfVariable("int PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall",$s0,"pic/pic_block_send_mask.cpp");
+      ampsConfigLib::ChangeValueOfVariable("int PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge",$s1,"pic/pic_block_send_mask.cpp");
+    }
     
     ### DIVE discretization ###
     elsif ($InputLine eq "DIVEDISCRETIZATION") {
