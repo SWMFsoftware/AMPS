@@ -54,7 +54,7 @@ Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
-Ref=5{gcc}@@(0+stampede)
+Ref=5{gcc}@@(0+stampede+amps-gpu)
 Ref=6{icc}@@(0+stampede)
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels  @@(0+valeriy)
