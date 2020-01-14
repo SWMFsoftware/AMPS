@@ -58,10 +58,10 @@ void SampleIndividualLocations(int nMaxIterations) {
     PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
 
-    Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(std::max(1,Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations));
+    Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength));
 
     if (Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.IsAllocated()==false) {
-      Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.init(PIC::nTotalSpecies,std::max(1,Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations));
+      Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.init(PIC::nTotalSpecies,std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength));
     }
 
     Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable=-1.0;
@@ -857,9 +857,11 @@ void CutoffRigidityCalculation(int nMaxIterations) {
   //start forward integration
   //enable sampling
   PIC::Sampling::RuntimeSamplingSwitch=true;
+  PIC::ParticleBuffer::DeleteAllParticles();
   Earth::ForwardParticleModeling(nMaxIterations);
 
   //estimate the cutoff rigidity and energy spectrum in individual locations
+  PIC::ParticleBuffer::DeleteAllParticles();
   SampleIndividualLocations(nMaxIterations);
 }
 
