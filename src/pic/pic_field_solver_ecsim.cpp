@@ -31,8 +31,8 @@ PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedDynamicAllocateBlocks PIC:
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedInitNewBlocks PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedParticleBC  PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::Electromagnetic::ECSIM::setE_half_BC, 
-  PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
-  PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
+PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
+PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
 cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
 cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
@@ -70,8 +70,9 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
-int * PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
+int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -4620,8 +4621,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::add_plasma_to_node(cTreeNodeAMR<P
 //-------------------------------------
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::add_net_charge_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef){
-  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))
-    ->GetAssociatedDataBufferPointer();
+  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer(); 
 
   nodePtr += PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   ((double*)nodePtr)[netChargeNewIndex]+=coef*((double*)bufferPtr)[0];
@@ -4705,6 +4705,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   LaplacianE[1].Ey=LaplacianE[0].Ex;
   LaplacianE[2].Ez=LaplacianE[0].Ex;
 
+  LaplacianE[0].Ex.ExportStencil(LaplacianStencil+0);
+  LaplacianE[1].Ex.ExportStencil(LaplacianStencil+1);
+  LaplacianE[2].Ex.ExportStencil(LaplacianStencil+2);
 
   cStencil dx,dy,dz,dxx,dyy,dzz;
 
