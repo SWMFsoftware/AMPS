@@ -149,7 +149,16 @@ public:
 
   class cStencilData {
   public:
-    cStencilElement *Data;
+
+    class cElementData {
+    public:
+      int i,j,k;
+      double a;
+
+      cElementData() {i=0,j=0,k=0,a=0.0;}
+    };
+
+    cElementData *Data;
     int Length;
 
     cStencilData() {
@@ -355,9 +364,15 @@ public:
     s->remove();
 
     s->Length=StencilLength;
-    s->Data=new cStencilElement[StencilLength];
+    s->Data=new cStencilData::cElementData[StencilLength];
 
-    for (i=0;i<StencilLength;i++) s->Data[i]=Stencil[i];
+    for (i=0;i<StencilLength;i++) {
+      s->Data[i].a=Stencil[i].a;
+
+      s->Data[i].i=Stencil[i].i.Convert2Int();
+      s->Data[i].j=Stencil[i].j.Convert2Int();
+      s->Data[i].k=Stencil[i].k.Convert2Int();
+    }
   }
 
   //multiply the entire stencil by a constatnt
