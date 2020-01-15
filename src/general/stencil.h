@@ -147,6 +147,27 @@ public:
     double a; //coefficient used in the stencil
   };
 
+  class cStencilData {
+  public:
+    cStencilElement *Data;
+    int Length;
+
+    cStencilData() {
+      Length=0,Data=NULL;
+    }
+
+    void remove() {
+      if (Data!=NULL) {
+        delete [] Data;
+        Length=0,Data=NULL;
+      }
+    }
+
+    ~cStencilData() {
+      remove();
+    }
+  };
+
   list<cStencilElement> StencilData;
   cStencilElement *Stencil;
   int StencilLength,AllocatedStencilLength;
@@ -326,6 +347,17 @@ public:
     for (i=0,l0=StencilData.begin();l0!=StencilData.end();i++,l0++) Stencil[i]=*l0;
 
     return this->Stencil;
+  }
+
+  void ExportStencil(cStencilData* s) {
+    int i;
+
+    s->remove();
+
+    s->Length=StencilLength;
+    s->Data=new cStencilElement[StencilLength];
+
+    for (i=0;i<StencilLength;i++) s->Data[i]=Stencil[i];
   }
 
   //multiply the entire stencil by a constatnt
