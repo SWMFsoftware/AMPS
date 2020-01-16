@@ -75,9 +75,9 @@ cp -r BATL NVCC/AMPS/
 #mkdir -p Intel; cp -r AMPS Intel/; 
 #cp -r BATL Intel/AMPS/
 
-#rm -rf PGI
-#mkdir -p PGI;   cp -r AMPS PGI/; 
-#cp -r BATL  PGI/AMPS
+rm -rf PGI
+mkdir -p PGI;   cp -r AMPS PGI/; 
+cp -r BATL  PGI/AMPS
 
 #Install AMPS
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
@@ -98,14 +98,14 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 #echo AMPS was checked out on $CheckoutTime > test_amps.log
 #./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
 
-#cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
-#echo AMPS was checked out on $CheckoutTime > test_amps.log
-#./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >>& test_amps.log    
+cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -f-link-option=-lmpi_cxx -install -compiler=pgf90,pgccmpicxx    >>& test_amps.log    
 
 #Execute the tests
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllGNU.sh & 
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllNVCC.sh &
 #$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllIntel.sh &   
-#$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllPGI.sh &
+$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllPGI.sh &
 
 
