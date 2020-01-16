@@ -175,6 +175,18 @@ public:
     ~cStencilData() {
       remove();
     }
+
+    double GetElementValue(int i,int j,int k,bool *SucessFlag=NULL) {
+      for (int it=0;it<Length;it++) if ((i==Data[it].i)&&(j==Data[it].j)&&(k==Data[it].k)) {
+        if (SucessFlag!=NULL) *SucessFlag=true;
+        return Data[it].a;
+      }
+
+      if (SucessFlag!=NULL) *SucessFlag=false;
+
+      return 0.0;
+    }
+ 
   };
 
   list<cStencilElement> StencilData;
