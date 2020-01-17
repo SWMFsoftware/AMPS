@@ -72,7 +72,7 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
-cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil;
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -4633,7 +4633,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
 
   struct {
     cStencil Ex,Ey,Ez;
-  } GradDivE[3],LaplacianE[3],GradDivEcompact[3];
+  } GradDivE[3],GradDivEcompact[3];
+
+  cStencil Laplacian;
 
 
   cStencil Ex("Ex"),Ey("Ey"),Ez("Ez");
@@ -4691,23 +4693,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
      GradDivE[2].Ez.SubstractShifted(dEzdz_ppp,l,m,-1,1.0/4.0);
   }
 
-  LaplacianE[0].Ex.add(1.0,1,0,0);
-  LaplacianE[0].Ex.add(1.0,-1,0,0);
+  Laplacian.add(1.0,1,0,0);
+  Laplacian.add(1.0,-1,0,0);
 
-  LaplacianE[0].Ex.add(1.0,0,1,0);
-  LaplacianE[0].Ex.add(1.0,0,-1,0);
+  Laplacian.add(1.0,0,1,0);
+  Laplacian.add(1.0,0,-1,0);
 
-  LaplacianE[0].Ex.add(1.0,0,0,1);
-  LaplacianE[0].Ex.add(1.0,0,0,-1);
+  Laplacian.add(1.0,0,0,1);
+  Laplacian.add(1.0,0,0,-1);
 
-  LaplacianE[0].Ex.add(-6.0,0,0,0);
+  Laplacian.add(-6.0,0,0,0);
 
-  LaplacianE[1].Ey=LaplacianE[0].Ex;
-  LaplacianE[2].Ez=LaplacianE[0].Ex;
-
-  LaplacianE[0].Ex.ExportStencil(LaplacianStencil+0);
-  LaplacianE[1].Ex.ExportStencil(LaplacianStencil+1);
-  LaplacianE[2].Ex.ExportStencil(LaplacianStencil+2);
+  Laplacian.ExportStencil(&LaplacianStencil);
 
   cStencil dx,dy,dz,dxx,dyy,dzz;
 
