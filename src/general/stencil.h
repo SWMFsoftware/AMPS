@@ -372,18 +372,21 @@ public:
 
   void ExportStencil(cStencilData* s) {
     int i;
+    list<cStencilElement>::iterator l0;
+
+    Simplify();
+    StencilLength=StencilData.size();
 
     s->remove();
-
     s->Length=StencilLength;
     s->Data=new cStencilData::cElementData[StencilLength];
 
-    for (i=0;i<StencilLength;i++) {
-      s->Data[i].a=Stencil[i].a;
+    for (i=0,l0=StencilData.begin();l0!=StencilData.end();i++,l0++) { 
+      s->Data[i].a=l0->a;
 
-      s->Data[i].i=Stencil[i].i.Convert2Int();
-      s->Data[i].j=Stencil[i].j.Convert2Int();
-      s->Data[i].k=Stencil[i].k.Convert2Int();
+      s->Data[i].i=l0->i.Convert2Int();
+      s->Data[i].j=l0->j.Convert2Int();
+      s->Data[i].k=l0->k.Convert2Int();
     }
   }
 
