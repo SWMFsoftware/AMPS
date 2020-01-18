@@ -161,6 +161,15 @@ public:
     cElementData *Data;
     int Length;
 
+    void print(const char* msg=NULL) {
+      if (msg!=NULL) printf("%s:\n",msg); 
+      printf("Stencil length=%i\ni\tj\tk\ta\n",Length);
+
+      for (int it=0;it<Length;it++) {
+        printf("%i\t%i\t%i\t%e\n",Data[it].i,Data[it].j,Data[it].k,Data[it].a); 
+      }
+    }
+
     cStencilData() {
       Length=0,Data=NULL;
     }
@@ -525,8 +534,6 @@ public:
   void SubstractShifted(cStencil& v,int di,int dj,int dk,double c=1.0) {
     AddShifted(v,di,dj,dk,-c);
   }
-
-
 };
 
 
