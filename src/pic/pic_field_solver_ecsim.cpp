@@ -2433,7 +2433,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
        for (int it=0;it<CornerUpdateTableLength;it++) {
          int icor=CornerUpdateTable[it];
 
-         if (CellData->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false) {
+	 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+         if (CellData->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false) 
+         #endif
+	 {
            //the corner can be processes. access to the corner's data is locked for other threads
 
            ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
@@ -2461,7 +2464,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
            CornerUpdateTableLength--;
 
            //reset the flag
-           CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
+	   if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
+             CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
+	   }
          }
        }
      }
