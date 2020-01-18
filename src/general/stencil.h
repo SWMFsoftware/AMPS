@@ -509,6 +509,10 @@ public:
     return v3;
   }
 
+  friend cStencil operator * (double t,cStencil &v1) {
+    return v1*t;
+  }
+
   friend cStencil operator + (cStencil &v1,cStencil &v2) {
     cStencil v3;
 
