@@ -148,6 +148,7 @@ cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                   #
 ./Config.pl -f-link-option=-lmpi,-lmpi++                     #
 ./Config.pl -cpplib-rm=-lmpi_cxx
 ./Config.pl -noopenmp
+./Config.pl -cpp-compiler=icpc
 
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                     #
 ./Config.pl -cpplib-rm=-lmpi_cxx
