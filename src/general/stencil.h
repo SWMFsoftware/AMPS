@@ -469,6 +469,43 @@ public:
     return v1;
   };
 
+  void SwitchAxes(int Axis0,int Axis1) {  
+    cFrac t;
+
+    for (list<cStencilElement>::iterator l0=StencilData.begin();l0!=StencilData.end();l0++) {
+      switch (3*Axis0+Axis1) {
+      case 3*0+1:
+        t=l0->i;
+        l0->i=l0->j;
+        l0->j=t;
+        break;
+
+      case 3*0+2:
+        t=l0->i;
+        l0->i=l0->k;
+        l0->k=t;
+
+        break;
+      case 3*1+0:
+        SwitchAxes(0,1);
+
+        break;
+      case 3*1+2:
+        t=l0->j;
+        l0->j=l0->k;
+        l0->k=t;
+
+        break; 
+      case 3*2+0:
+        SwitchAxes(0,2);
+
+        break;
+      case 3*2+1:
+        SwitchAxes(1,2);
+        break;
+      }
+    }
+  }  
 
 
   void AddShifted(cStencil& v,cFrac di,cFrac dj,cFrac dk,double c=1.0) {
