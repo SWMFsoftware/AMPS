@@ -1847,7 +1847,7 @@ Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CG-dust-test@@(0+valeriy+pleiades+stampede)
+Name=CG-dust-test@@(0+valeriy+pleiades+stampede+amps-gpu)
 Time=3
 
 Ref=1{gcc}@@(0+valeriy)
@@ -1861,6 +1861,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu)
 Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+pleiades)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
 
