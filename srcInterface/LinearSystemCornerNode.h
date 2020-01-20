@@ -1323,6 +1323,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
           #ifndef __PGI
           _mm_prefetch((char*)data_next_next,_MM_HINT_NTA);
+          _mm_prefetch(_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)data_next_next,_MM_HINT_NTA);
           #endif
         }
 
