@@ -501,6 +501,7 @@ void computeMassMatrixOffsetTable(){
   initMassMatrixOffsetTable=true;
 }
 
+/*
 static const double LaplacianCoeff[3][27]={{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
 			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
 			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
@@ -510,6 +511,7 @@ static const double LaplacianCoeff[3][27]={{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.
 			      {-0.5,-0.25,-0.25,-0.25,-0.125,-0.125,-0.25,-0.125,-0.125,
 			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,
 			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625}};
+*/
 
 static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
 				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
@@ -939,8 +941,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
   if (!initMassMatrixOffsetTable) computeMassMatrixOffsetTable(); 
 
-  int indexAddition[3] = {0,-1,1};
+  const int indexAddition[3] = {0,-1,1};
+  const int reversed_indexAddition[3] = {1,0,2};  //table to determine ii,jj,kk from i,j,k 
+
   char * NodeDataOffset = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
@@ -999,7 +1004,24 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
 
   //laplacian
+
+  for (int idim=0;idim<3;idim++) {
+    cStencil::cStencilData *st=LaplacianStencil+idim;
+
+    for (int it=0;it<st->Length;it++) {
+      int ii=reversed_indexAddition[st->Data[it].i+1]; 
+      int jj=reversed_indexAddition[st->Data[it].j+1];
+      int kk=reversed_indexAddition[st->Data[it].k+1];
+
+      int index=ii+jj*3+kk*9;
+      int iElement = index + iVar*27;
+
+      //minus laplacian
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]-=st->Data[it].a*coeffSqr[idim]; 
+    }
+  }
   
+/*
   for (int ii=0;ii<3;ii++){
     for (int jj=0;jj<3;jj++){
       for (int kk=0;kk<3;kk++){
@@ -1012,6 +1034,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
+*/
   
 
   //plus self
@@ -1247,6 +1270,24 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     
 
   //laplacian
+  for (int idim=0;idim<3;idim++) {
+    cStencil::cStencilData *st=LaplacianStencil+idim;
+
+    for (int it=0;it<st->Length;it++) {
+      int ii=reversed_indexAddition[st->Data[it].i+1];
+      int jj=reversed_indexAddition[st->Data[it].j+1];
+      int kk=reversed_indexAddition[st->Data[it].k+1];
+
+      int index=ii+jj*3+kk*9;
+      int iElement = index + iVar*27;
+
+      //plus laplacian
+      RhsSupportTable_CornerNodes[iElement].Coefficient+=st->Data[it].a*coeffSqr[idim];
+    }
+  }
+
+
+/* 
   for (int ii=0;ii<3;ii++){
     for (int jj=0;jj<3;jj++){
       for (int kk=0;kk<3;kk++){
@@ -1261,6 +1302,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
+*/
 
   
   //minus graddiv E
