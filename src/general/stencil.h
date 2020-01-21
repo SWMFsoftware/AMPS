@@ -452,6 +452,11 @@ public:
     return *this;
   };
 
+  friend void copy_shifted(cStencil *target,cStencil *source,int di,int dj,int dk) {
+    *target=*source;
+    target->shift(di,dj,dk);    
+  }
+
   //add and substract another stencil
   friend cStencil& operator += (cStencil &v1,const cStencil &v2) {
     cStencilElement NewElement;
