@@ -4694,46 +4694,46 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   cStencil t,dExdx_ppp("dExdx",dp,dp,dp),dEydy_ppp("dEydy",dp,dp,dp),dEzdz_ppp("dEzdz",dp,dp,dp);
 
   for (l=-1;l<=1;l++) for (m=-1;m<=1;m++) {
-     dExdx_ppp.AddShifted(Ex,1,l,m,1.0/18.0);
+     dExdx_ppp.AddShifted      (Ex,1,l,m,1.0/18.0);
      dExdx_ppp.SubstractShifted(Ex,-1,l,m,1.0/18.0);
-
-     dEydy_ppp.AddShifted(Ey,l,1,m,1.0/18.0);
-     dEydy_ppp.SubstractShifted(Ey,l,-1,m,1.0/18.0);
-
-     dEzdz_ppp.AddShifted(Ez,l,m,1,1.0/18.0);
-     dEzdz_ppp.SubstractShifted(Ez,l,m,-1,1.0/18.0);
   }
 
+  dEydy_ppp=dExdx_ppp;
+  dEydy_ppp.SwitchAxes(0,1);
+
+  dEzdz_ppp=dExdx_ppp;
+  dEzdz_ppp.SwitchAxes(0,2);
+
   for (l=-1;l<=0;l++) for (m=-1;m<=0;m++) {
-     GradDivE[0].Ex.AddShifted(dExdx_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ex.AddShifted      (dExdx_ppp,0,l,m,1.0/4.0);
      GradDivE[0].Ex.SubstractShifted(dExdx_ppp,-1,l,m,1.0/4.0);
 
-     GradDivE[0].Ey.AddShifted(dEydy_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ey.AddShifted      (dEydy_ppp,0,l,m,1.0/4.0);
      GradDivE[0].Ey.SubstractShifted(dEydy_ppp,-1,l,m,1.0/4.0);
 
-     GradDivE[0].Ez.AddShifted(dEzdz_ppp,0,l,m,1.0/4.0);
+     GradDivE[0].Ez.AddShifted      (dEzdz_ppp,0,l,m,1.0/4.0);
      GradDivE[0].Ez.SubstractShifted(dEzdz_ppp,-1,l,m,1.0/4.0);
 
 
 
-     GradDivE[1].Ex.AddShifted(dExdx_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ex.AddShifted      (dExdx_ppp,l,0,m,1.0/4.0);
      GradDivE[1].Ex.SubstractShifted(dExdx_ppp,l,-1,m,1.0/4.0);
 
-     GradDivE[1].Ey.AddShifted(dEydy_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ey.AddShifted      (dEydy_ppp,l,0,m,1.0/4.0);
      GradDivE[1].Ey.SubstractShifted(dEydy_ppp,l,-1,m,1.0/4.0);
 
-     GradDivE[1].Ez.AddShifted(dEzdz_ppp,l,0,m,1.0/4.0);
+     GradDivE[1].Ez.AddShifted      (dEzdz_ppp,l,0,m,1.0/4.0);
      GradDivE[1].Ez.SubstractShifted(dEzdz_ppp,l,-1,m,1.0/4.0);
 
 
 
-     GradDivE[2].Ex.AddShifted(dExdx_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ex.AddShifted      (dExdx_ppp,l,m,0,1.0/4.0);
      GradDivE[2].Ex.SubstractShifted(dExdx_ppp,l,m,-1,1.0/4.0);
 
-     GradDivE[2].Ey.AddShifted(dEydy_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ey.AddShifted      (dEydy_ppp,l,m,0,1.0/4.0);
      GradDivE[2].Ey.SubstractShifted(dEydy_ppp,l,m,-1,1.0/4.0);
 
-     GradDivE[2].Ez.AddShifted(dEzdz_ppp,l,m,0,1.0/4.0);
+     GradDivE[2].Ez.AddShifted      (dEzdz_ppp,l,m,0,1.0/4.0);
      GradDivE[2].Ez.SubstractShifted(dEzdz_ppp,l,m,-1,1.0/4.0);
   }
 
