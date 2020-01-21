@@ -4640,9 +4640,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
     cStencil Ex,Ey,Ez;
   } GradDivE[3],GradDivEcompact[3];
 
-  cStencil Laplacian;
-
-
   cStencil Ex("Ex"),Ey("Ey"),Ez("Ez");
   cFrac dp(1,2);
 
@@ -4699,9 +4696,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   }
 
 
-  {
-
-///E_i+1,j+1/2,k+1/2
+  //Get a Laplacial stencil coefficients
+  ///E_i+1,j+1/2,k+1/2
   cStencil e_p1_phalf_phalf,e_p0_phalf_phalf;
   cStencil dedx_phalf_phalf_phalf,dedx_mhalf_phalf_phalf;
   cStencil d2edx2_p0_phalf_phalf,d2edx2,d2edy2,d2edz2;
@@ -4709,106 +4705,28 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   ///second devivative along the x-direction
   for (int j=0;j<2;j++) for (int k=0;k<2;k++) e_p1_phalf_phalf.add(1.0/4.0,1,j,k);
 
-  e_p1_phalf_phalf.Simplify();
-//  e_p1_phalf_phalf.ExportStencil(&LaplacianStencil);
-
-  e_p0_phalf_phalf=e_p1_phalf_phalf;
-  e_p0_phalf_phalf.shift(-1,0,0);
-
-e_p0_phalf_phalf.Simplify();
-//e_p0_phalf_phalf.ExportStencil(&LaplacianStencil);
-
+  copy_shifted(&e_p0_phalf_phalf,&e_p1_phalf_phalf,-1,0,0);
   dedx_phalf_phalf_phalf=e_p1_phalf_phalf-e_p0_phalf_phalf;
   
-  dedx_mhalf_phalf_phalf=dedx_phalf_phalf_phalf;
-  dedx_mhalf_phalf_phalf.shift(-1,0,0);
+  copy_shifted(&dedx_mhalf_phalf_phalf,&dedx_phalf_phalf_phalf,-1,0,0);
   d2edx2_p0_phalf_phalf=dedx_phalf_phalf_phalf-dedx_mhalf_phalf_phalf;
-
-d2edx2_p0_phalf_phalf.Simplify();
-//d2edx2_p0_phalf_phalf.ExportStencil(&LaplacianStencil);
 
   for (int j=0;j<2;j++) for (int k=0;k<2;k++) d2edx2.AddShifted(d2edx2_p0_phalf_phalf,0,-j,-k,1.0/4.0);
 
-
-//second dirivative along the y-direction
-  cStencil e_phalf_p1_phalf,e_phalf_p0_phalf,d2edy2_phalf_p0_phalf,dedy_phalf_phalf_phalf,dedy_phalf_mhalf_phalf;
-
-  for (int i=0;i<2;i++) for (int k=0;k<2;k++) e_phalf_p1_phalf.add(1.0/4.0,i,1,k);  
-  
-  e_phalf_p0_phalf=e_phalf_p1_phalf;
-  e_phalf_p0_phalf.shift(0,-1,0);
-
-  dedy_phalf_phalf_phalf=e_phalf_p1_phalf-e_phalf_p0_phalf;
-  
-  dedy_phalf_mhalf_phalf=dedy_phalf_phalf_phalf;
-  dedy_phalf_mhalf_phalf.shift(0,-1,0);
-  d2edy2_phalf_p0_phalf=dedy_phalf_phalf_phalf-dedy_phalf_mhalf_phalf;
-  
-  
-  for (int i=0;i<2;i++) for (k=0;k<2;k++) d2edy2.AddShifted(d2edy2_phalf_p0_phalf,-i,0,-k,1.0/4.0);
-
-//second dirivarive in the z-direction
-  cStencil e_phalf_phalf_p1,e_phalf_phalf_p0,d2edz2_phalf_phalf_p0,dedz_phalf_phalf_phalf,dedz_phalf_phalf_mhalf;
-  
-  for (int i=0;i<2;i++) for (int j=0;j<2;j++) e_phalf_phalf_p1.add(1.0/4.0,i,j,1);
-
-  e_phalf_phalf_p0=e_phalf_phalf_p1;
-  e_phalf_phalf_p0.shift(0,0,-1);
-
-  dedz_phalf_phalf_phalf=e_phalf_phalf_p1-e_phalf_phalf_p0;
-
-  dedz_phalf_phalf_mhalf=dedz_phalf_phalf_phalf;
-  dedz_phalf_phalf_mhalf.shift(0,0,-1);
-  d2edz2_phalf_phalf_p0=dedz_phalf_phalf_phalf-dedz_phalf_phalf_mhalf;
-
-  for (int i=0;i<2;i++) for (int j=0;j<2;j++) d2edz2.AddShifted(d2edz2_phalf_phalf_p0,-i,-j,0,1.0/4.0);
-
-d2edx2.Print();
-d2edy2.Print();
-d2edz2.Print();
-  
-  Laplacian=d2edx2;
-  Laplacian+=d2edy2;
-  Laplacian+=d2edz2;
-
-  Laplacian.Print();
-
-  Laplacian.Simplify();
-//  Laplacian.ExportStencil(&LaplacianStencil);
-//  LaplacianStencil.print();
-
-d2edx2.ExportStencil(LaplacianStencil+0);
-d2edy2.ExportStencil(LaplacianStencil+1);
-d2edz2.ExportStencil(LaplacianStencil+2);
-
-  //exit(__LINE__,__FILE__);
-
-
+  d2edx2.Simplify(); 
+  d2edx2.Print();
 
   d2edy2=d2edx2;
   d2edy2.SwitchAxes(0,1);
+  d2edy2.Print(); 
 
-cStencil::cStencilData ddd;
-
-d2edy2.ExportStencil(&ddd);
-
-  d2edz2=d2edx2; 
+  d2edz2=d2edx2;
   d2edz2.SwitchAxes(0,2);
+  d2edz2.Print();
 
-//d2edx2.ExportStencil(&LaplacianStencil); 
-d2edz2.ExportStencil(&ddd);
-
-//  Laplacian=d2edx2;
-//  Laplacian+=d2edy2;
-//  Laplacian+=d2edz2;
-
- // Laplacian.Simplify();
- // Laplacian.ExportStencil(&LaplacianStencil);
-  //LaplacianStencil.print();
-
- // exit(__LINE__,__FILE__);
-
-  }
+  d2edx2.ExportStencil(LaplacianStencil+0);
+  d2edy2.ExportStencil(LaplacianStencil+1);
+  d2edz2.ExportStencil(LaplacianStencil+2);
 
 
   cStencil dx,dy,dz,dxx,dyy,dzz;
