@@ -6299,7 +6299,7 @@ namespace FieldSolver {
               extern Debugger::cTimer UpdateBTime; 
               extern Debugger::cTimer UpdateETime; 
               extern Debugger::cTimer TotalRunTime; 
-	      extern Debugger::cTimer TotalMatvecTime;
+	            extern Debugger::cTimer TotalMatvecTime;
 
               void Print();
             }
@@ -6309,6 +6309,7 @@ namespace FieldSolver {
 
             //stencils used for building the matrix
             extern cStencil::cStencilData LaplacianStencil[3];
+            extern cStencil::cStencilData GradDivStencil[3][3];
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
@@ -6357,7 +6358,7 @@ namespace FieldSolver {
             void UpdateOldNetCharge();
             void ComputeDivE();
 	    
-	    extern double corrCoeff;
+            extern double corrCoeff;
 
             //update the matrix element
             void UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRow* row);
