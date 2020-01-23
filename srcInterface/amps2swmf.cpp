@@ -294,7 +294,7 @@ extern "C" {
     PIC::CPLR::FLUID::FluidInterface.mhd_to_Pic_Vec(x, pic_D);
     node=PIC::Mesh::mesh.findTreeNode(pic_D,node);
     *thread=(node!=NULL) ? node->Thread : -2;
-    if (node->IsUsedInCalculationFlag==false) *thread=-1;
+    if (!node && node->IsUsedInCalculationFlag==false) *thread=-1;
    
     if (*thread==-2) printf("cannot find x:%e,%e,%e\n",x[0],x[1],x[2]);
 #endif
