@@ -468,8 +468,12 @@ int PIC::TimeStep() {
     bool WallTimeExeedsLimit;
   };
 
+  bool testRebalancing=false;
+  #ifdef TEST_REBALANCING
+  testRebalancing=true;
+  #endif
 
-  if (nInteractionsAfterRunStatisticExchange==nExchangeStatisticsIterationNumberSteps) { //collect and exchenge the statistical data of the run
+  if (nInteractionsAfterRunStatisticExchange==nExchangeStatisticsIterationNumberSteps || testRebalancing) { //collect and exchenge the statistical data of the run
     cExchangeStatisticData localRunStatisticData;
     int thread;
     cExchangeStatisticData *ExchangeBuffer=NULL;
@@ -698,7 +702,6 @@ int PIC::TimeStep() {
 
     //redistribute the processor load and check the mesh afterward
     int EmergencyLoadRebalancingFlag=false;
-
     switch (_PIC_EMERGENCY_LOAD_REBALANCING_MODE_) {
     case _PIC_MODE_ON_: 
       if (PIC::Mesh::mesh.ThisThread==0) {
@@ -721,7 +724,7 @@ int PIC::TimeStep() {
 
       MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
-      if (EmergencyLoadRebalancingFlag==true) {
+      if (EmergencyLoadRebalancingFlag==true || testRebalancing) {
         if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
 
         //correct the node's load balancing measure
@@ -742,6 +745,12 @@ int PIC::TimeStep() {
 
           summIterationExecutionTime=0.0;
         }
+
+	if (testRebalancing){
+	     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+	       DomainBlockDecomposition::BlockTable[nLocalNode]->ParallelLoadMeasure=100*rnd();
+            }
+	}
 
         //start the rebalancing procedure
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
