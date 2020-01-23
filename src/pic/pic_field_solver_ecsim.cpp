@@ -73,6 +73,7 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[3][3];
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -4740,35 +4741,112 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
 
   //Get a Laplacial stencil coefficients
   ///E_i+1,j+1/2,k+1/2
-  cStencil e_p1_phalf_phalf,e_p0_phalf_phalf;
-  cStencil dedx_phalf_phalf_phalf,dedx_mhalf_phalf_phalf;
-  cStencil d2edx2_p0_phalf_phalf,d2edx2,d2edy2,d2edz2;
+  cStencil xCorner[3][3][3];
+  cStencil xEdge[12];
 
-  ///second devivative along the x-direction
-  for (int j=0;j<2;j++) for (int k=0;k<2;k++) e_p1_phalf_phalf.add(1.0/4.0,1,j,k);
+  auto xCornerInit = [&] (cStencil *st,int i,int j,int k) {
+    for (int di=-1;di<=0;di++) for (int dj=-1;dj<=0;dj++) for (int dk=-1;dk<=0;dk++) {
+      st->add(1.0/8.0,i+di,j+dj,k+dk);
+    }
+  };
 
-  copy_shifted(&e_p0_phalf_phalf,&e_p1_phalf_phalf,-1,0,0);
-  dedx_phalf_phalf_phalf=e_p1_phalf_phalf-e_p0_phalf_phalf;
-  
-  copy_shifted(&dedx_mhalf_phalf_phalf,&dedx_phalf_phalf_phalf,-1,0,0);
-  d2edx2_p0_phalf_phalf=dedx_phalf_phalf_phalf-dedx_mhalf_phalf_phalf;
+  auto xCornerInitAll = [&] () {
+    for (int i=0;i<2;i++) for (int j=0;j<2;j++) for (int k=0;k<2;k++) {
+      xCornerInit(&xCorner[i][j][k],i,j,k);
+    }
+  };
 
-  for (int j=0;j<2;j++) for (int k=0;k<2;k++) d2edx2.AddShifted(d2edx2_p0_phalf_phalf,0,-j,-k,1.0/4.0);
+  auto xEdgeInit = [&] (cStencil *st,int iface) {
+    struct cEdgeStencilPointTable {
+      int imin,imax,jmin,jmax,kmin,kmax;
+    };
 
-  d2edx2.Simplify(); 
-  d2edx2.Print();
+    static cEdgeStencilPointTable EdgeStencilPointTable[12]={
+        {0,0,-1,0,-1,0},{0,0,0,1,-1,0},{0,0,0,1,0,1},{0,0,-1,0,0,1},
+        {-1,0,0,0,-1,0},{0,1,0,0,-1,0},{0,1,0,0,0,1},{-1,0,0,0,0,1},
+        {-1,0,-1,0,0,0},{0,1,-1,0,0,0},{0,1,0,1,0,0},{-1,0,0,1,0,0}
+    };
+
+    for (int i=EdgeStencilPointTable[iface].imin;i<=EdgeStencilPointTable[iface].imax;i++) {
+      for (int j=EdgeStencilPointTable[iface].jmin;j<=EdgeStencilPointTable[iface].jmax;j++) {
+        for (int k=EdgeStencilPointTable[iface].kmin;k<=EdgeStencilPointTable[iface].kmax;k++) {
+          st->add(1.0/4.0,i,j,k);
+        }
+      }
+    }
+  };
+
+  auto xEdgeInitAll = [&] () {
+    for (int i=0;i<12;i++) {
+      xEdgeInit(xEdge+i,i);
+    }
+  };
+
+  xCornerInitAll();
+  xEdgeInitAll();
+
+
+  cStencil d2edx2_face0,d2edx2,d2edy2,d2edz2;
+
+  d2edx2_face0.AddShifted(xEdge[0],1,0,0);
+  d2edx2_face0.SubstractShifted(xEdge[0],0,0,0,2.0);
+  d2edx2_face0.AddShifted(xEdge[0],-1,0,0);
+
+  for (int i=0;i<2;i++) for (int j=0;j<2;j++) d2edx2.AddShifted(d2edx2_face0,0,i,j,1.0/4.0);
 
   d2edy2=d2edx2;
   d2edy2.SwitchAxes(0,1);
-  d2edy2.Print(); 
 
   d2edz2=d2edx2;
   d2edz2.SwitchAxes(0,2);
-  d2edz2.Print();
 
   d2edx2.ExportStencil(LaplacianStencil+0);
   d2edy2.ExportStencil(LaplacianStencil+1);
   d2edz2.ExportStencil(LaplacianStencil+2);
+
+
+  //init GradDiv
+  cStencil dedx_face0,dedy_face4,dedz_face8;
+
+  dedx_face0=xCorner[1][0][0]-xCorner[0][0][0];
+  dedy_face4=xCorner[0][1][0]-xCorner[0][0][0];
+  dedz_face8=xCorner[0][0][1]-xCorner[0][0][0];
+
+  cStencil d2edxdy,d2edxdz,d2edydz;
+
+  d2edxdy.AddShifted(dedy_face4,1,0,0,1.0/2.0);
+  d2edxdy.AddShifted(dedy_face4,1,0,1,1.0/2.0);
+  d2edxdy.SubstractShifted(dedy_face4,0,0,0,1.0/2.0);
+  d2edxdy.SubstractShifted(dedy_face4,0,0,1,1.0/2.0);
+
+  d2edxdz.AddShifted(dedz_face8,1,0,0,1.0/2.0);
+  d2edxdz.AddShifted(dedz_face8,1,1,0,1.0/2.0);
+  d2edxdz.SubstractShifted(dedz_face8,0,0,0,1.0/2.0);
+  d2edxdz.SubstractShifted(dedz_face8,0,1,0,1.0/2.0);
+
+  d2edydz.AddShifted(dedz_face8,0,1,0,1.0/2.0);
+  d2edydz.AddShifted(dedz_face8,1,1,0,1.0/2.0);
+  d2edydz.SubstractShifted(dedz_face8,0,0,0,1.0/2.0);
+  d2edydz.SubstractShifted(dedz_face8,1,0,0,1.0/2.0);
+
+  d2edxdy.Simplify();
+  d2edxdz.Simplify();
+  d2edydz.Simplify();
+
+
+  d2edx2.ExportStencil(&GradDivStencil[0][0]);
+  d2edxdy.ExportStencil(&GradDivStencil[0][1]);
+  d2edxdz.ExportStencil(&GradDivStencil[0][2]);
+
+  d2edxdy.ExportStencil(&GradDivStencil[1][0]);
+  d2edy2.ExportStencil(&GradDivStencil[1][1]);
+  d2edydz.ExportStencil(&GradDivStencil[1][2]);
+
+  d2edxdz.ExportStencil(&GradDivStencil[2][0]);
+  d2edydz.ExportStencil(&GradDivStencil[2][1]);
+  d2edz2.ExportStencil(&GradDivStencil[2][2]);
+
+
 
 
   cStencil dx,dy,dz,dxx,dyy,dzz;
