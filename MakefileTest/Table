@@ -1075,9 +1075,13 @@ Compile=
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/fast-wave ${TESTfast-wave_rebalancingKEYS}
+
+>>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-DTEST_REBALANCING 
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
+>>>mv Makefile.local.bak Makefile.local
+
 >>>@echo "test_fast-wave_rebalancing_compile... done" >> test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
 
 
