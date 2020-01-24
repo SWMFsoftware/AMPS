@@ -11068,9 +11068,11 @@ if (TmpAllocationCounter==2437) {
             if (MaxSize<MoveInDataSizeTable[thread][inode]) MaxSize=MoveInDataSizeTable[thread][inode];
           }
 
-          if (TotalSize<MessageSizeLimit) RecvBlockMaxMessageSize[thread]=TotalSize;
+          if (TotalSize<MessageSizeLimit) {
+            RecvBlockMaxMessageSize[thread]=TotalSize;
+          }
           else {
-            RecvBlockMaxMessageSize[thread]=(MaxSize<MessageSizeLimit) ? MaxSize : MessageSizeLimit;
+            RecvBlockMaxMessageSize[thread]=(MaxSize>MessageSizeLimit) ? MaxSize : MessageSizeLimit;
 
             if (MaxSize>TotalBufferSize) TotalBufferSize=1.03*MaxSize;
           }
@@ -11084,9 +11086,11 @@ if (TmpAllocationCounter==2437) {
             if (MaxSize<MoveOutDataSizeTable[thread][inode]) MaxSize=MoveOutDataSizeTable[thread][inode];
           }
 
-          if (TotalSize<MessageSizeLimit) SendBlockMaxMessageSize[thread]=TotalSize;
+          if (TotalSize<MessageSizeLimit) {
+            SendBlockMaxMessageSize[thread]=TotalSize;
+          }
           else {
-            SendBlockMaxMessageSize[thread]=(MaxSize<MessageSizeLimit) ? MaxSize : MessageSizeLimit;
+            SendBlockMaxMessageSize[thread]=(MaxSize>MessageSizeLimit) ? MaxSize : MessageSizeLimit;
 
             if (MaxSize>TotalBufferSize) TotalBufferSize=1.03*MaxSize;
           }
