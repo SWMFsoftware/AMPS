@@ -279,12 +279,9 @@ public:
     return true;
   }
   
-  void Print(const char *fname=NULL) {
+  void Print(FILE* fout) {
     cFrac t;
     int cnt=0;
-    FILE* fout=NULL;
-
-    fout=(fname!=NULL) ? fopen(fname,"w") : stdout;
 
     Simplify();
     
@@ -307,9 +304,20 @@ public:
       
       fprintf(fout," %e\n",it->a);
     }
-
-    if (fname!=NULL) fclose(fout);
   }
+
+  void Print(const char *fname=NULL) {
+    if (fname==NULL) {
+      Print(stdout);
+    }
+    else {
+      FILE* fout=NULL;
+
+      fout=fopen(fname,"w");
+      Print(fout);
+      fclose(fout);
+    } 
+  } 
   
   //remove elements of the list that have the same combination of i,j, and k
   void Simplify() {
