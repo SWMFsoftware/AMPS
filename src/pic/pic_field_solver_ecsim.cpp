@@ -514,6 +514,7 @@ static const double LaplacianCoeff[3][27]={{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.
 			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625}};
 */
 
+/*
 static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
 				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
 				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
@@ -536,7 +537,7 @@ static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,
 				0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,0.25,0.125,0.125,0.125,
 				0.0625,0.0625,0.125,0.0625,0.0625}}};
 
-
+*/
 
 static const double graddivNew[3][3][125] = {
 
@@ -1043,7 +1044,26 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
 
   //plus graddiv E
-  
+ 
+    for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+
+
+      for (int it=0;it<st->Length;it++) {
+      int ii=reversed_indexAddition[st->Data[it].i+1];
+      int jj=reversed_indexAddition[st->Data[it].j+1];
+      int kk=reversed_indexAddition[st->Data[it].k+1];
+
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
+
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
+            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+      }
+    }
+
+/*
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
@@ -1057,7 +1077,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
-  
+ 
+*/
 
 #if _PIC_STENCIL_NUMBER_==375   
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
@@ -1307,6 +1328,26 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
   
   //minus graddiv E
+
+
+      for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+
+
+      for (int it=0;it<st->Length;it++) {
+      int ii=reversed_indexAddition[st->Data[it].i+1];
+      int jj=reversed_indexAddition[st->Data[it].j+1];
+      int kk=reversed_indexAddition[st->Data[it].k+1];
+
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
+
+          RhsSupportTable_CornerNodes[iElement].Coefficient -=
+            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+
+      }
+    }
+/*
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
@@ -1319,6 +1360,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
+  */
 
 #if _PIC_STENCIL_NUMBER_==375
   
@@ -4812,27 +4854,33 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   dedy_face4=xCorner[0][1][0]-xCorner[0][0][0];
   dedz_face8=xCorner[0][0][1]-xCorner[0][0][0];
 
+
+
+  cStencil dedx000,dedy000,dedz000;
   cStencil d2edxdy,d2edxdz,d2edydz;
 
-  d2edxdy.AddShifted(dedy_face4,1,0,0,1.0/2.0);
-  d2edxdy.AddShifted(dedy_face4,1,0,1,1.0/2.0);
-  d2edxdy.SubstractShifted(dedy_face4,0,0,0,1.0/2.0);
-  d2edxdy.SubstractShifted(dedy_face4,0,0,1,1.0/2.0);
+  dedx000=xEdge[0];
+  dedx000.SubstractShifted(xEdge[0],-1,0,0);
 
-  d2edxdz.AddShifted(dedz_face8,1,0,0,1.0/2.0);
-  d2edxdz.AddShifted(dedz_face8,1,1,0,1.0/2.0);
-  d2edxdz.SubstractShifted(dedz_face8,0,0,0,1.0/2.0);
-  d2edxdz.SubstractShifted(dedz_face8,0,1,0,1.0/2.0);
+  dedy000=xEdge[4];
+  dedy000.SubstractShifted(xEdge[4],0,-1,0);
 
-  d2edydz.AddShifted(dedz_face8,0,1,0,1.0/2.0);
-  d2edydz.AddShifted(dedz_face8,1,1,0,1.0/2.0);
-  d2edydz.SubstractShifted(dedz_face8,0,0,0,1.0/2.0);
-  d2edydz.SubstractShifted(dedz_face8,1,0,0,1.0/2.0);
+  dedz000=xEdge[8];
+  dedz000.SubstractShifted(xEdge[8],0,0,-1);
 
-  d2edxdy.Simplify();
-  d2edxdz.Simplify();
-  d2edydz.Simplify();
+  for (int l=0;l<2;l++) for (m=0;m<2;m++) {
+    //d/dx (dE/dy)
+    d2edxdy.AddShifted(dedy000,1,l,m,1.0/4.0);
+    d2edxdy.SubstractShifted(dedy000,0,l,m,1.0/4.0);
 
+    //d/dx (dE/dz)
+    d2edxdz.AddShifted(dedz000,1,l,m,1.0/4.0);
+    d2edxdz.SubstractShifted(dedz000,0,l,m,1.0/4.0);
+
+    //d/dy (dE/dz)
+    d2edydz.AddShifted(dedz000,l,1,m,1.0/4.0);
+    d2edydz.SubstractShifted(dedz000,l,0,m,1.0/4.0);
+  }
 
   d2edx2.ExportStencil(&GradDivStencil[0][0]);
   d2edxdy.ExportStencil(&GradDivStencil[0][1]);
@@ -4845,6 +4893,35 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   d2edxdz.ExportStencil(&GradDivStencil[2][0]);
   d2edydz.ExportStencil(&GradDivStencil[2][1]);
   d2edz2.ExportStencil(&GradDivStencil[2][2]);
+
+  if (PIC::ThisThread==0) {
+    printf("d2edx2:\n");
+    d2edx2.Print();
+
+    printf("d2edxdy:\n");
+    d2edxdy.Print();
+
+    printf("d2edxdz:\n");
+    d2edxdz.Print();
+
+    printf("d2edxdy:\n");
+    d2edxdy.Print();
+
+    printf("d2edy2:\n");
+    d2edy2.Print();
+
+    printf("d2edydz:\n");
+    d2edydz.Print();
+
+    printf("d2edxdz:\n");
+    d2edxdz.Print();
+
+    printf("d2edydz:\n");
+    d2edydz.Print();
+
+    printf("d2edz2:\n");
+    d2edz2.Print();
+  }
 
 
 
