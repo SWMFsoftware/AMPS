@@ -2830,6 +2830,8 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     if (Stencil->RecvDataBuffer==NULL) {
       Stencil->Accumulator=new char [PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
 
+      if (Stencil->ContributingThreadTableLength<=0) exit(__LINE__,__FILE__,"Size error");
+
       Stencil->RecvDataBuffer=new char* [Stencil->ContributingThreadTableLength];
       Stencil->RecvDataBuffer[0]=new char [Stencil->ContributingThreadTableLength*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
       
