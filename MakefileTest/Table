@@ -1063,6 +1063,53 @@ Check=
 
 
 #>
+Name=test/fast-wave__correction
+Time=3
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_fast-wave__correction_compile..." > test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/fast-wave__correction ${TESTfast-wave__correctionKEYS} 
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>@echo "test_fast-wave__correction_compile... done" >> test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
+
+
+Check=
+>>>@echo "test_fast-wave__correction_check..." >> test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
+
+<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave__correction/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '` 
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave__correction/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
+>>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave__correction--protons$(TESTfast-wave__correction-REF).diff;)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
+>>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave__correction--electrons$(TESTfast-wave__correction-REF).diff)
+
+>>>mv $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>mv $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
+>>>@cat test_fast-wave__correction--protons$(TESTfast-wave__correction-REF).diff  test_fast-wave__correction--electrons$(TESTfast-wave__correction-REF).diff > test_fast-wave__correction$(TESTfast-wave__correction-REF).diff 
+
+>>>@ls -l test_fast-wave__correction--protons$(TESTfast-wave__correction-REF).diff
+>>>@ls -l test_fast-wave__correction--electrons$(TESTfast-wave__correction-REF).diff
+>>>@ls -l test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
+>>>@echo Test test_fast-wave__correction has finished: `date`
+
+<#
+
+#>
 Name=test/fast-wave_rebalancing
 Time=3
 
