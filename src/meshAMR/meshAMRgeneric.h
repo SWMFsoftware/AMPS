@@ -1829,18 +1829,18 @@ public:
     if ((_MESH_DIMENSION_<1)||(_MESH_DIMENSION_>3)) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
 
     xGlobalMin[0]=xMin[0],xGlobalMax[0]=xMax[0],dxRootBlock[0]=(xMax[0]-xMin[0]);
-    if (2*_GHOST_CELLS_X_>=_BLOCK_CELLS_X_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+    if (2*_GHOST_CELLS_X_>_BLOCK_CELLS_X_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
     EPS=0.0001*dxRootBlock[0]/double(_BLOCK_CELLS_X_)/(1<<_MAX_REFINMENT_LEVEL_); 
 
     if (_MESH_DIMENSION_>1) {
       xGlobalMin[1]=xMin[1],xGlobalMax[1]=xMax[1],dxRootBlock[1]=(xMax[1]-xMin[1]); 
-      if (2*_GHOST_CELLS_Y_>=_BLOCK_CELLS_Y_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+      if (2*_GHOST_CELLS_Y_>_BLOCK_CELLS_Y_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
       if (EPS>0.0001*dxRootBlock[1]/double(_BLOCK_CELLS_Y_)/(1<<_MAX_REFINMENT_LEVEL_)) EPS=0.0001*dxRootBlock[1]/double(_BLOCK_CELLS_Y_)/(1<<_MAX_REFINMENT_LEVEL_); 
     }
 
     if (_MESH_DIMENSION_>2) {
       xGlobalMin[2]=xMin[2],xGlobalMax[2]=xMax[2],dxRootBlock[2]=(xMax[2]-xMin[2]);
-      if (2*_GHOST_CELLS_Z_>=_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+      if (2*_GHOST_CELLS_Z_>_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
       if (EPS>0.0001*dxRootBlock[2]/double(_BLOCK_CELLS_Z_)/(1<<_MAX_REFINMENT_LEVEL_)) EPS=0.0001*dxRootBlock[2]/double(_BLOCK_CELLS_Z_)/(1<<_MAX_REFINMENT_LEVEL_);
     }
 
