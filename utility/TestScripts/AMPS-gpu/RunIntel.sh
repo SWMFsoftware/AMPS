@@ -4,6 +4,8 @@ set WorkDir = $HOME
 source $WorkDir/module/intel 
 
 echo -n "Executing tests Intel....."
+
+cd $WorkDir/Tmp_AMPS_test/Intel/AMPS
 make TESTMPIRUN4="mpirun -np 4"  MPIRUN="mpirun -np 8" TESTMPIRUN1="mpirun -np 1" test_run >>& test_amps.log
 
 echo " done."
