@@ -63,6 +63,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   GhostCells=2,2,2
   CommunicationDepth=2,2
   divediscretization=yuxi
+  CorrectionFactorDivE=0.9
 
   NastranSurfaceUserData=on !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
