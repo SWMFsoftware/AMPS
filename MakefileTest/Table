@@ -552,10 +552,24 @@ Ref=1{gcc}@@(0+pleiades)
 
 Compile=
 >>>@echo "test_batl-reader_compile..." > test_batl-reader.diff 
->>>echo "Installing BATL....." 
 
 <<<ifeq ($(wildcard BATL/*),)
->>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+>>>echo "Installing BATL....."
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=4,4,4 -r=2,2,2 -ng=0 
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd BATL;./Config.pl -install -compiler=gfortran,gcc_mpicc -g=4,4,4 -r=2,2,2 -ng=0  
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd BATL;./Config.pl -install -compiler=pgf90,pgccmpicxx -g=4,4,4 -r=2,2,2 -ng=0  
+<<<endif
+
+>>>cd BATL;make READAMRLIB
 <<<endif
 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=4,4,4 -r=2,2,2 -ng=0; make READAMRLIB 
