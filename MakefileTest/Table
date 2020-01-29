@@ -591,13 +591,26 @@ Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
->>>echo "Installing BATL....."
 
 <<<ifeq ($(wildcard BATL/*),)
->>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+>>>echo "Installing BATL....."
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
 <<<endif
 
->>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd BATL;./Config.pl -install -compiler=gfortran,gcc_mpicc -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd BATL;./Config.pl -install -compiler=pgf90,pgccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+>>>cd BATL;make READAMRLIB
+<<<endif
+
 >>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
@@ -634,13 +647,26 @@ Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity_compile..." > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
->>>echo "Installing BATL....."
 
 <<<ifeq ($(wildcard BATL/*),)
->>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+>>>echo "Installing BATL....."
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
 <<<endif
 
->>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd BATL;./Config.pl -install -compiler=gfortran,gcc_mpicc -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd BATL;./Config.pl -install -compiler=pgf90,pgccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+>>>cd BATL;make READAMRLIB
+<<<endif
+
 >>>./Config.pl -application=test/earth-cutoff-rigidity  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
@@ -3031,13 +3057,26 @@ Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02
 
 Compile=
 >>>@echo "test_CG-BATSRUS-dust-coupling_compile..." > test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.diff
->>>echo "Installing BATL....."
 
 <<<ifeq ($(wildcard BATL/*),)
->>>git clone herot.engin.umich.edu:/GIT/FRAMEWORK/BATL  
+>>>echo "Installing BATL....."
+>>>git clone --depth 1 herot.engin.umich.edu:/GIT/FRAMEWORK/BATL
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
 <<<endif
 
->>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=8,8,8 -r=2,2,2 -ng=0; make READAMRLIB;
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd BATL;./Config.pl -install -compiler=gfortran,gcc_mpicc -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd BATL;./Config.pl -install -compiler=pgf90,pgccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
+<<<endif
+
+>>>cd BATL;make READAMRLIB
+<<<endif
+
 >>>./Config.pl  -application=CG-BATSRUS-dust-coupling-test  -batl-path=${PTDIR}/BATL -swmf-path=${PTDIR}/SWMF -amps-test=on  $(TESTCG-BATSRUS-dust-couplingKEYS)
 >>>rm -rf srcTemp
 >>>make amps
