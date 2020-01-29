@@ -1504,6 +1504,12 @@ sub ReadGeneralBlock {
 
     }
 
+    ## Div E correction factor
+    elsif ($InputLine eq "CORRECTIONFACTORDIVE") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+      ampsConfigLib::ChangeValueOfVariable("double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff",$InputLine,"pic/pic_field_solver_ecsim.cpp");
+    }
+
     ### ENFORCEREQUESTEDMESHRESOLUTION ###
     elsif ($InputLine eq "ENFORCEREQUESTEDMESHRESOLUTION") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
