@@ -1184,6 +1184,9 @@ Check=
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>mkdir -p output/test_fast-wave/temp_files
