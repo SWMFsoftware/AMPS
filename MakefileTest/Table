@@ -1183,25 +1183,38 @@ Check=
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wav_rebalancingeDIR)/PT/thread* |wc -l |tr -d ' '`
-
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
+
+>>>mkdir -p output/test_fast-wave/temp_files
+>>>-cp output/test_fast-wave/*ref_np? output/test_fast-wave/temp_files
+
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+
+>>>mkdir -p $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files
+>>>-cp $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files
+>>>-cp $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files
 
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \ 
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \
 >>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_rebalancing--protons$(TESTfast-wave_rebalancing-REF).diff;)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_rebalancing--electrons$(TESTfast-wave_rebalancing-REF).diff)
 
->>>mv $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
->>>mv $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+>>>-mv $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files/* $(TESTfast-wave_rebalancingDIR)/PT/plots/
+>>>-rm -rf $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files
 
->>>@cat test_fast-wave_rebalancing--protons$(TESTfast-wave_rebalancing-REF).diff  test_fast-wave_rebalancing--electrons$(TESTfast-wave_rebalancing-REF).diff > test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff 
+>>>-mv output/test_fast-wave/temp_files/* output/test_fast-wave/
+>>>-rm -rf output/test_fast-wave/temp_files
+
+>>>@cat test_fast-wave_rebalancing--protons$(TESTfast-wave_rebalancing-REF).diff  test_fast-wave_rebalancing--electrons$(TESTfast-wave_rebalancing-REF).diff > test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
 
 >>>@ls -l test_fast-wave_rebalancing--protons$(TESTfast-wave_rebalancing-REF).diff
 >>>@ls -l test_fast-wave_rebalancing--electrons$(TESTfast-wave_rebalancing-REF).diff
