@@ -71,9 +71,9 @@ rm -rf NVCC
 mkdir -p NVCC;   cp -r AMPS NVCC/;
 cp -r BATL NVCC/AMPS/
 
-#rm -rf Intel
-#mkdir -p Intel; cp -r AMPS Intel/; 
-#cp -r BATL Intel/AMPS/
+rm -rf Intel
+mkdir -p Intel; cp -r AMPS Intel/; 
+cp -r BATL Intel/AMPS/
 
 rm -rf PGI
 mkdir -p PGI;   cp -r AMPS PGI/; 
@@ -94,18 +94,31 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -cpp-link-option=-lcudart
 ./Config.pl -f-link-option=-lcudart
 
-#cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
-#echo AMPS was checked out on $CheckoutTime > test_amps.log
-#./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
+cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
+echo AMPS was checked out on $CheckoutTime > test_amps.log
+./Config.pl -install -compiler=ifort,iccmpicxx   >>& test_amps.log
 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -f-link-option=-lmpi_cxx -install -compiler=pgf90,pgccmpicxx    >>& test_amps.log    
 
 #Execute the tests
+cd $WorkDir/Tmp_AMPS_test
+rm Amps*Complete
+
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllGNU.sh & 
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllNVCC.sh &
-#$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllIntel.sh &   
 $WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllPGI.sh &
+
+$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/CompileIntel.sh &
+
+while (! -f AmpsTestGNUComplete) 
+  sleep 60
+end
+
+$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/RunIntel.sh &
+
+
+
 
 
