@@ -189,37 +189,37 @@ inline void ReadMTGCM() {
     
 		Te.PlanetRadius=_RADIUS_(_TARGET_);
 		Te.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		Te.ReadDataFile(_Te_MGITM_,fname);
 		
 		Tn.PlanetRadius=_RADIUS_(_TARGET_);
 		Tn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		Tn.ReadDataFile(_Tn_MGITM_,fname);
 				
 		Ti.PlanetRadius=_RADIUS_(_TARGET_);
 		Ti.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		Ti.ReadDataFile(_Ti_MGITM_,fname);
 		
 		O2p.PlanetRadius=_RADIUS_(_TARGET_);
 		O2p.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		O2p.ReadDataFile(_nO2P_MGITM_,fname);
 				
 		E.PlanetRadius=_RADIUS_(_TARGET_);
 		E.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		E.ReadDataFile(_Ne_MGITM_,fname);
 		
 		O.PlanetRadius=_RADIUS_(_TARGET_);
 		O.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		O.ReadDataFile(_nO_MGITM_,fname);
 		
 		CO2.PlanetRadius=_RADIUS_(_TARGET_);
 		CO2.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/PROXIMA_B_PtotMin-ThermoIonosphere-600km-10292018.dat",PIC::UserModelInputDataPath);
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMED-SDC.dat",PIC::UserModelInputDataPath);
 		CO2.ReadDataFile(_nCO2_MGITM_,fname);
 	
 	
