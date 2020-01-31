@@ -1127,11 +1127,11 @@ Check=
 >>>@echo "test_fast-wave__correction_check..." >> test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
@@ -1182,15 +1182,12 @@ Check=
 >>>@echo "test_fast-wave_rebalancing_check..." >> test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wav_rebalancingeDIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
-
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
->>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
 
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -1238,11 +1235,11 @@ Check=
 >>>@echo "test_fast-wave_AVX256_check..." >> test_fast-wave_AVX256$(TESTfast-wave_AVX256-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_AVX256DIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_AVX256DIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_AVX256DIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave_AVX256DIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>-@${TESTfast-wave_AVX256DIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_AVX256DIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
@@ -1292,11 +1289,11 @@ Check=
 >>>@echo "test_fast-wave_AVX512_check..." >> test_fast-wave_AVX512$(TESTfast-wave_AVX512-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_AVX512DIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_AVX512DIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_AVX512DIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave_AVX512DIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>-@${TESTfast-wave_AVX512DIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_AVX512DIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
@@ -1345,11 +1342,11 @@ Check=
 >>>@echo "test_fast-wave-openmp_check..." >> test_fast-wave-openmp$(TESTfast-wave-openmp-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave-openmpDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>-@${TESTfast-wave-openmpDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave-openmpDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
@@ -1398,11 +1395,11 @@ Check=
 >>>@echo "test_fast-wave-openmp__shared_temp_list_check..." >> test_fast-wave-openmp__shared_temp_list$(TESTfast-wave-openmp__shared_temp_list-REF).diff
 
 <<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
->>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave-openmp__shared_temp_listDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave-openmp__shared_temp_listDIR)/PT/thread* |wc -l |tr -d ' '`
 
->>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
->>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave-openmp__shared_temp_listDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.CorrectionDivE.out=2.ref_np`ls $(TESTfast-wave-openmp__shared_temp_listDIR)/PT/thread* |wc -l |tr -d ' '`
 <<<endif
 
 >>>-@${TESTfast-wave-openmp__shared_temp_listDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave-openmp__shared_temp_listDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
