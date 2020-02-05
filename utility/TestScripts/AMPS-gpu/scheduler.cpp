@@ -3,7 +3,17 @@
  *
  *  Created on: Feb 4, 2020
  *      Author: vtenishe
+ *
+
+Important: the utility does not run on Mac OS correctly because the function system() 
+cannot be executed by multiple threads concurrently. 
+In Max OS, a mutex is used somewhere inside system(). 
+In Linux, system() can be executed concurrently by multiple threads.
+In case the utility is needed on Mac OS, the implemented concurrent 
+execution via threads need to be replaced with a concurrent 
+execution via processes started with a fork() and communicated via a pipe.
  */
+
 
 
 
@@ -117,7 +127,7 @@ int main(int argc, char* argv[]) {
     index_pgi_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; utility/TestScripts/AMPS-gpu/RunPGI.sh %i",test_dir,i);
       index_pgi_max=index++;
     }
   }
@@ -126,7 +136,7 @@ int main(int argc, char* argv[]) {
     index_gcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
       index_gcc_max=index++;
     }
   }
@@ -135,7 +145,7 @@ int main(int argc, char* argv[]) {
     index_intel_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; utility/TestScripts/AMPS-gpu/RunIntel.sh %i",test_dir,i);
       index_intel_max=index++;
     }
   }
