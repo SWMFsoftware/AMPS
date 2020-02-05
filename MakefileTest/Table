@@ -3184,19 +3184,8 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-PIC-coupling has started: `date`
 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS
->>>-head -n 10000 SWMF/run_test/runlog
->>>-head -n 10000 SWMF/run_test/RESULTS/2restart/runlog
->>>-head -n 10000 SWMF/run_test/RESULTS/2step/runlog
->>>-head -n 10000 SWMF/run_test/RESULTS/5step/runlog
->>>-rm -rf SWMF/run_test
-
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_dynamic -j 
->>>-head -n 10000 SWMF/run_test/runlog
->>>-rm -rf SWMF/run_test
-
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
->>>-head -n 10000 SWMF/run_test/RESULTS/runlog
->>>-rm -rf SWMF/run_test
 
 >>>-cd SWMF;./Config.pl -noopenmp -o=PC:openmp=off
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_run... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
@@ -3266,8 +3255,7 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-Europa has started: `date`
 
 >>>-cd SWMF;$(MAKE) test13
->>>-head -n 10000 SWMF/run_test/runlog
-
+>>>@echo "test_AMPS-BATSRUS-Europa_run... done" >> test_AMPS-BATSRUS-Europa.dif
 
 
 Check=
@@ -3316,7 +3304,7 @@ Run=
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
 >>>-cd SWMF;$(MAKE) test14
->>>-head -n 10000 SWMF/run_test/RESULTS/runlog
+>>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
 <<<ifneq ($(wildcard SWMF/test14_ohpt.diff),)
