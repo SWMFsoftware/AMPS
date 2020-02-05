@@ -25,7 +25,7 @@
 #include <fstream>
 #include <signal.h>
 
-#include <iostream>       // std::cout
+#include <iostream>   
 #include <thread>
 
 #include <iostream>
@@ -55,41 +55,6 @@ public:
   }
 };
 
-class cJobTable {
-public:
-  cJobTableElement *Table;
-  int TableLength=0;
-
-  bool GetNextJob(cJobTableElement* &job) {
-    int default_job_cnt=0;
-    int compiled_job_index=-1;
-
-    do {
-      for (int i=0;i<TableLength;i++) {
-        if (Table[i].status==status_default) default_job_cnt++;
-
-        if (Table[i].status==status_compiled) {
-          compiled_job_index=i;
-          Table[i].status=status_launched;
-          break;
-        }
-      }
-    }
-    while (default_job_cnt!=0);
-
-    if (compiled_job_index==-1) return false;
-
-    job=Table+compiled_job_index;
-    return true;
-  }
-
-  void Allocate(int TotalLength) {
-    Table=new cJobTableElement[TotalLength];
-  }
-};
-
-
-
 
 
 int main(int argc, char* argv[]) {
@@ -105,7 +70,8 @@ int main(int argc, char* argv[]) {
 
   /*
   parse command line parameters:
-  argument line parameter: -pgi -gcc -intel -test-dir [directory where testing is performed] -nthread [the number of threads for executing each set of tests]
+  argument line parameter: -pgi -gcc -intel -path [directory that containes installations of AMPS for 
+  each compiler, e.g. path/Intel/AMPS, path/GNU/AMPS, path/PGI/AMPS, etc] -threads [the number of threads for executing each set of tests]
   */
 
   for (i=1;i<argc;i++) {
@@ -140,20 +106,18 @@ int main(int argc, char* argv[]) {
 
 
   //populate the job table
-  cJobTable JobTable;
   int index=0;
   int index_pgi_min=-1,index_pgi_max=-1;
   int index_gcc_min=-1,index_gcc_max=-1;
   int index_intel_min=-1,index_intel_max=-1;
 
-
-  JobTable.Allocate(nTotalCompilerCases*nTestRoutineThreads);
+  cJobTableElement* JobTable=new cJobTableElement[nTotalCompilerCases*nTestRoutineThreads];
 
   if (status_pgi_test==true) {
     index_pgi_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable.Table[index].cmd,"cd %s/PGI/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
       index_pgi_max=index++;
     }
   }
@@ -162,7 +126,7 @@ int main(int argc, char* argv[]) {
     index_gcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable.Table[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
       index_gcc_max=index++;
     }
   }
@@ -171,7 +135,7 @@ int main(int argc, char* argv[]) {
     index_intel_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable.Table[index].cmd,"cd %s/Intel/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
+      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; make TESTMPIRUN4=\"mpirun -np 4\" MPIRUN=\"mpirun -np 4\" test_run_thread%i   >& test_amps.run.thread%i.log",test_dir,i,i);
       index_intel_max=index++;
     }
   }
@@ -182,23 +146,21 @@ int main(int argc, char* argv[]) {
 
   class cCompileThread {
   public:
-    bool status_compled;
     char cmd[500];
     int job_index_min,job_index_max;
-    cJobTable *job_table_ptr;
+    cJobTableElement *JobTable;
 
     void run() {
       system(cmd);
-      status_compled=true;
 
-      for (int i=job_index_min;i<=job_index_max;i++) job_table_ptr->Table[i].status=status_compiled;
+      for (int i=job_index_min;i<=job_index_max;i++) JobTable[i].status=status_compiled;
     }
   } CompileThreadTable[3];
 
   if (status_pgi_test==true) {
     sprintf(CompileThreadTable[index].cmd,"cd %s; PGI/AMPS/utility/TestScripts/AMPS-gpu/CompilePGI.sh",test_dir);
     CompileThreadTable[index].job_index_min=index_pgi_min,CompileThreadTable[index].job_index_max=index_pgi_max;
-    CompileThreadTable[index].job_table_ptr=&JobTable;
+    CompileThreadTable[index].JobTable=JobTable;
 
     CompilingThreadTable[index]=std::thread(&cCompileThread::run,CompileThreadTable+index);
     index++;
@@ -207,7 +169,7 @@ int main(int argc, char* argv[]) {
   if (status_gcc_test==true) {
     sprintf(CompileThreadTable[index].cmd,"cd %s; GNU/AMPS/utility/TestScripts/AMPS-gpu/CompileGNU.sh",test_dir);
     CompileThreadTable[index].job_index_min=index_gcc_min,CompileThreadTable[index].job_index_max=index_gcc_max;
-    CompileThreadTable[index].job_table_ptr=&JobTable;
+    CompileThreadTable[index].JobTable=JobTable;
 
     CompilingThreadTable[index]=std::thread(&cCompileThread::run,CompileThreadTable+index);
     index++;
@@ -216,7 +178,7 @@ int main(int argc, char* argv[]) {
   if (status_intel_test==true) {
     sprintf(CompileThreadTable[index].cmd,"cd %s; Intel/AMPS/utility/TestScripts/AMPS-gpu/CompileIntel.sh",test_dir);
     CompileThreadTable[index].job_index_min=index_intel_min,CompileThreadTable[index].job_index_max=index_intel_max;
-    CompileThreadTable[index].job_table_ptr=&JobTable;
+    CompileThreadTable[index].JobTable=JobTable;
 
 
     CompilingThreadTable[index]=std::thread(&cCompileThread::run,CompileThreadTable+index);
@@ -228,20 +190,21 @@ int main(int argc, char* argv[]) {
 
   class cExecutionThread {
   public:
-    cJobTableElement *job_ptr;
-    bool status_complete;
+    cJobTableElement *job;
     std::thread thread;
+    bool status_complete;
+    int call_cnt;
 
     cExecutionThread() {
       status_complete=true;
-      job_ptr=NULL;
+      job=NULL;
+      call_cnt=0;
     }
 
     void run() {
-      system(job_ptr->cmd);
-
+      system(job->cmd);
+      job->status=status_completed;
       status_complete=true;
-      job_ptr->status=status_completed;
     }
 
   } ExecutionThreadTable[nParallelTestExecutionThreads];
@@ -253,15 +216,15 @@ int main(int argc, char* argv[]) {
 
     //find a new job to execute
     for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
-      if (JobTable.Table[i].status!=status_launched) {
+      if (JobTable[i].status!=status_launched) {
         status_all_launched=false;
       }
 
-      if (JobTable.Table[i].status==status_compiled) {
+      if (JobTable[i].status==status_compiled) {
         status_all_launched=false;
 
         id_job_execute=i;
-        JobTable.Table[i].status=status_launched;
+        JobTable[i].status=status_launched;
 
         break;
       }
@@ -283,9 +246,14 @@ int main(int argc, char* argv[]) {
           //found thread to execute the test
           thread_found=true;
           ExecutionThreadTable[i].status_complete=false;
-          ExecutionThreadTable[i].job_ptr=JobTable.Table+id_job_execute;
+          ExecutionThreadTable[i].job=JobTable+id_job_execute;
 
+	  //join threads used before
+	  if (ExecutionThreadTable[i].call_cnt!=0) ExecutionThreadTable[i].thread.join();
+
+	  ExecutionThreadTable[i].call_cnt++;
           ExecutionThreadTable[i].thread=std::thread(&cExecutionThread::run,ExecutionThreadTable+i);
+	  break;
         }
       }
 
@@ -297,14 +265,14 @@ int main(int argc, char* argv[]) {
   while (status_all_launched==false);
 
 
-  //waite for dompleting the test execution
+  //wait for completing all test execution
   bool execution_completed;
 
   do {
     execution_completed=true;
 
     for (int i=0;i<nParallelTestExecutionThreads;i++) {
-      if (JobTable.Table[i].status!=status_completed) {
+      if (JobTable[i].status!=status_completed) {
         execution_completed=false;
         sleep(1);
         break;
@@ -312,6 +280,9 @@ int main(int argc, char* argv[]) {
     }
   }
   while (execution_completed==false);
+
+  //join compiling threads
+  for (int i=0;i<nTotalCompilerCases;i++) CompilingThreadTable[i].join(); 
 
   return 0;
 }
