@@ -3217,7 +3217,7 @@ Check=
 
 
 #>
-Name=test/AMPS-BATSRUS-Europa@@(0+) 
+Name=test/AMPS-BATSRUS-Europa 
 Time=15 
 
 ExeptionCode=SKIP{pgcc}
@@ -3254,14 +3254,19 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-Europa_run..." >> test_AMPS-BATSRUS-Europa.diff
 >>>@echo Test test_AMPS-BATSRUS-Europa has started: `date`
 
->>>-cd SWMF;$(MAKE) test13
->>>@echo "test_AMPS-BATSRUS-Europa_run... done" >> test_AMPS-BATSRUS-Europa.dif
+>>>cd SWMF;$(MAKE) test13
+>>>@echo "test_AMPS-BATSRUS-Europa_run... done" >> test_AMPS-BATSRUS-Europa.diff
 
 
 Check=
+>>>@echo "test_AMPS-BATSRUS-Europa_check..." >> test_AMPS-BATSRUS-Europa.diff 
+
+<<<ifneq ($(wildcard SWMF/test13_pt.diff),)
+>>>-@cp SWMF/test13_pt.diff test_AMPS-BATSRUS-Europa.diff
+<<<endif
+
 >>>-@ls -l test_AMPS-BATSRUS-Europa.diff
 >>>@echo Test test_AMPS-BATSRUS-Europa has finished: `date`
-
 <#
 
 
@@ -3303,7 +3308,7 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-OH_run..." >> test_AMPS-BATSRUS-OH.diff
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
->>>-cd SWMF;$(MAKE) test14
+>>>cd SWMF;$(MAKE) test14
 >>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
