@@ -1880,6 +1880,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   CumulativeTiming::UpdateJMassMatrixTime.Start();
 
   double ParticleEnergy=0.0;
+  double cfl_process =0.0;
 
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
@@ -1925,10 +1926,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     cCornerData CornerData[8];
     double ParticleEnergy;
-
+    double cflCell;
 
     void clean() {
       ParticleEnergy=0.0;
+      cflCell=0.0;
 
       for (int i=0;i<8;i++) CornerData[i].clean();
     }
@@ -2024,7 +2026,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
-    double ParticleEnergyCell=0;
+    double ParticleEnergyCell=0, vsqr_cell=0;
 
     if (ptr!=-1) {
       res=true;
@@ -2089,7 +2091,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         #endif
       }
 
-      int cnt=0;
+      int cnt=0, particleNumber=0;
 
       while (ptrNext!=-1) {
         double LocalParticleWeight;
@@ -2239,8 +2241,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           #ifndef __PGI
 	  _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
           #endif
-
-          ParticleEnergyCell += 0.5*mass*(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]);
+	  
+	  double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]; 
+	  vsqr_cell += vsqr_par;
+          ParticleEnergyCell += 0.5*mass*vsqr_par;
 
           //compute alpha*vInit
           double vRot[3]={0.0,0.0,0.0};
@@ -2368,6 +2372,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
             }//jCorner
           }//iCorner
+	  particleNumber++;
         }
 
         cnt++;
@@ -2377,7 +2382,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         } 
 	else {
           CellData->ParticleEnergy += ParticleEnergyCell;
-
+	  CellData->cflCell  = sqrt(vsqr_cell/particleNumber)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]/
+	    sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
           //collect current
           for (int iCorner=0; iCorner<8; iCorner++){
             double *CornerJ=CellData->CornerData[iCorner].CornerJ;
@@ -2445,8 +2451,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   cCellData CellDataTable[PIC::nTotalThreadsOpenMP];
   bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
   double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
+  double cflTable[PIC::nTotalThreadsOpenMP];
 
-  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) ParticleEnergyTable[i]=0.0;
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+    cflTable[i]=0.0;
+  }		 		 
 
   // Loop through all blocks. 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -2525,6 +2535,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
            //the corner can be processes. access to the corner's data is locked for other threads
 
            ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
+	   if (CellData->cflCell>cflTable[this_thread_id]) cflTable[this_thread_id]=CellData->cflCell;
 
            target=CellData->CornerData[icor].CornerJ_ptr;
            source=CellData->CornerData[icor].CornerJ;
@@ -2566,6 +2577,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   //reduce the particle energy table
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) ParticleEnergy+=ParticleEnergyTable[i];
 
+  //find the max cfl among all threads
+  cfl_process = *max_element(cflTable, cflTable+PIC::nTotalThreadsOpenMP);
 
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:
@@ -2594,13 +2607,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
   
   MPI_Reduce(&ParticleEnergy, &TotalParticleEnergy, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_GLOBAL_COMMUNICATOR);
+  // get max cfl over all mpi process 	
+  double cfl_all;
+  MPI_Reduce(&cfl_process, &cfl_all, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_GLOBAL_COMMUNICATOR);
 
   // TotalParticleEnergy *= 1e-7; //in SI
   if (PIC::ThisThread==0) {
     printf("Total Particle Energy:%e\n",TotalParticleEnergy); 
     printf("Total Energy:%.20e,%f\n",TotalParticleEnergy+TotalWaveEnergy,TotalParticleEnergy+TotalWaveEnergy);
     std::cout.precision(20);
-    std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;  
+    std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;
+    std::cout<<"max cfl number: " << cfl_all << std::endl;
   }
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ ) {
