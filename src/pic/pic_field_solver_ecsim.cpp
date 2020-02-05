@@ -1982,7 +1982,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
           #pragma ivdep
-          for (int i=-iCellIn-1;i<=iCellIn+1;i++) {
+          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
             char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
@@ -1999,7 +1999,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
           #pragma ivdep
-          for (int i=-iCellIn-1;i<=iCellIn+1;i++) {
+          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
             char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
