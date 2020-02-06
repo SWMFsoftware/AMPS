@@ -2026,7 +2026,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
-    double ParticleEnergyCell=0, vsqr_cell=0;
+    double ParticleEnergyCell=0, vmean_cell=0;
 
     if (ptr!=-1) {
       res=true;
@@ -2239,11 +2239,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
    
           #ifndef __PGI
-	  _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
+          _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
           #endif
 	  
-	  double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2]; 
-	  vsqr_cell += vsqr_par;
+          double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
+
+          vmean_cell += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
           ParticleEnergyCell += 0.5*mass*vsqr_par;
 
           //compute alpha*vInit
@@ -2258,7 +2259,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           for (int iCorner=0; iCorner<8; iCorner++){
             double t=chargeQ*WeightPG[iCorner];
-	    double *Jg_iCorner=Jg[iCorner];
+            double *Jg_iCorner=Jg[iCorner];
 
             #pragma ivdep
             for (int iDim=0; iDim<3; iDim++){
@@ -2321,12 +2322,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
               #ifndef __PGI
-	      if (jCorner+1<=iCorner) {
+              if (jCorner+1<=iCorner) {
                  char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
 
                  _mm_prefetch(ptr,_MM_HINT_NTA);
                  _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
-	      }
+              }
               #endif
 
               #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
@@ -2372,7 +2373,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
             }//jCorner
           }//iCorner
-	  particleNumber++;
+
+          particleNumber++;
         }
 
         cnt++;
@@ -2380,10 +2382,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         if (ptrNext!=-1) {
           // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
         } 
-	else {
-          CellData->ParticleEnergy += ParticleEnergyCell;
-	  CellData->cflCell  = sqrt(vsqr_cell/particleNumber)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]/
-	    sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
+        else {
+          CellData->ParticleEnergy+=ParticleEnergyCell;
+          CellData->cflCell=vmean_cell/(particleNumber*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+
           //collect current
           for (int iCorner=0; iCorner<8; iCorner++){
             double *CornerJ=CellData->CornerData[iCorner].CornerJ;
@@ -2461,7 +2463,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   // Loop through all blocks. 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for default(none) shared (CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-    PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable) firstprivate (ProcessCell) 
+    PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable,cflTable) firstprivate (ProcessCell)
 #endif
   for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
     int nLocalNode,ii=CellCounter;
@@ -2528,14 +2530,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
        for (int it=0;it<CornerUpdateTableLength;it++) {
          int icor=CornerUpdateTable[it];
 
-	 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+         #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
          if (CellData->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false) 
          #endif
-	 {
+         {
            //the corner can be processes. access to the corner's data is locked for other threads
 
            ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
-	   if (CellData->cflCell>cflTable[this_thread_id]) cflTable[this_thread_id]=CellData->cflCell;
+           if (CellData->cflCell>cflTable[this_thread_id]) cflTable[this_thread_id]=CellData->cflCell;
 
            target=CellData->CornerData[icor].CornerJ_ptr;
            source=CellData->CornerData[icor].CornerJ;
@@ -2560,9 +2562,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
            CornerUpdateTableLength--;
 
            //reset the flag
-	   if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
+           if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
              CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
-	   }
+           }
          }
        }
      }
