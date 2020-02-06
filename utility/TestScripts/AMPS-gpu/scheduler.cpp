@@ -197,6 +197,7 @@ int main(int argc, char* argv[]) {
 
   bool status_all_launched=false;
   int id_job_execute;
+  bool status_compiling_completed=true;
 
   class cExecutionThread {
   public:
@@ -223,6 +224,14 @@ int main(int argc, char* argv[]) {
   do {
     status_all_launched=true;
     id_job_execute=-1;
+    status_compiling_completed=true;
+
+    for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
+      if (JobTable[i].status==status_default) {
+        status_compiling_completed=false; //not all compiling completed
+        break;
+      }
+    }
 
     //find a new job to execute
     for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
@@ -252,6 +261,10 @@ int main(int argc, char* argv[]) {
 
     do {
       for (int i=0;i<nParallelTestExecutionThreads;i++) {
+        if ((status_compiling_completed==false)&&(i==nParallelTestExecutionThreads-1)) {
+          continue; //in case compling is not completed - do not use one of the test execution threads to hove more available resources for accelarating compiling of the tests 
+        }
+
         if (ExecutionThreadTable[i].status_complete==true) {
           //found thread to execute the test
           thread_found=true;
