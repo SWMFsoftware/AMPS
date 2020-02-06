@@ -294,16 +294,29 @@ int main(int argc, char* argv[]) {
           ExecutionThreadTable[i].status_complete=false;
           ExecutionThreadTable[i].job=JobTable+id_job_execute;
 
-	  //join threads used before
-	  if (ExecutionThreadTable[i].call_cnt!=0) ExecutionThreadTable[i].thread.join();
+          //join threads used before
+          if (ExecutionThreadTable[i].call_cnt!=0) ExecutionThreadTable[i].thread.join();
 
-	  ExecutionThreadTable[i].call_cnt++;
+          ExecutionThreadTable[i].call_cnt++;
           ExecutionThreadTable[i].thread=std::thread(&cExecutionThread::run,ExecutionThreadTable+i);
-	  break;
+          break;
         }
       }
 
       sleep(1);
+      
+      //check whether all tests are compiled
+      if (status_compiling_completed==false) {
+        status_compiling_completed=true;
+      
+        for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
+          if (JobTable[i].status==status_default) {
+            status_compiling_completed=false; //not all compiling completed
+            break;
+          }
+        }
+      }
+      
     }
     while (thread_found==false);
 
