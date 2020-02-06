@@ -72,6 +72,7 @@ int main(int argc, char* argv[]) {
   bool status_pgi_test=false;
   bool status_intel_test=false;
   bool status_gcc_test=false;
+  bool status_nvcc_test=false;
   char test_dir[500];
   int nTestRoutineThreads=1;
   int nTotalCompilerCases=0;
@@ -99,6 +100,10 @@ int main(int argc, char* argv[]) {
       status_intel_test=true;
       nTotalCompilerCases++;
     }
+    else if (strcmp("-nvcc",argv[i])==0) {
+      status_nvcc_test=true;
+      nTotalCompilerCases++;
+    }
     else if (strcmp("-path",argv[i])==0) {
       if (++i>=argc) break;
       sprintf(test_dir,"%s",argv[i]);
@@ -120,6 +125,7 @@ int main(int argc, char* argv[]) {
   int index_pgi_min=-1,index_pgi_max=-1;
   int index_gcc_min=-1,index_gcc_max=-1;
   int index_intel_min=-1,index_intel_max=-1;
+  int index_nvcc_min=-1,index_nvcc_max=-1;
 
   cJobTableElement* JobTable=new cJobTableElement[nTotalCompilerCases*nTestRoutineThreads];
 
@@ -150,6 +156,15 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  if (status_nvcc_test==true) {
+    index_nvcc_min=index;
+
+    for (i=1;i<=nTestRoutineThreads;i++) {
+      sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; utility/TestScripts/AMPS-gpu/RunNVCC.sh %i",test_dir,i);
+      index_nvcc_max=index++;
+    }
+  }
+
   //launch compiling threads
   std::thread CompilingThreadTable[nTotalCompilerCases];
   index=0;
@@ -165,7 +180,7 @@ int main(int argc, char* argv[]) {
 
       for (int i=job_index_min;i<=job_index_max;i++) JobTable[i].status=status_compiled;
     }
-  } CompileThreadTable[3];
+  } CompileThreadTable[4];
 
   if (status_pgi_test==true) {
     sprintf(CompileThreadTable[index].cmd,"cd %s; PGI/AMPS/utility/TestScripts/AMPS-gpu/CompilePGI.sh",test_dir);
@@ -190,6 +205,14 @@ int main(int argc, char* argv[]) {
     CompileThreadTable[index].job_index_min=index_intel_min,CompileThreadTable[index].job_index_max=index_intel_max;
     CompileThreadTable[index].JobTable=JobTable;
 
+    CompilingThreadTable[index]=std::thread(&cCompileThread::run,CompileThreadTable+index);
+    index++;
+  }
+
+  if (status_nvcc_test==true) {
+    sprintf(CompileThreadTable[index].cmd,"cd %s; NVCC/AMPS/utility/TestScripts/AMPS-gpu/CompileNVCC.sh",test_dir);
+    CompileThreadTable[index].job_index_min=index_nvcc_min,CompileThreadTable[index].job_index_max=index_nvcc_max;
+    CompileThreadTable[index].JobTable=JobTable;
 
     CompilingThreadTable[index]=std::thread(&cCompileThread::run,CompileThreadTable+index);
     index++;
