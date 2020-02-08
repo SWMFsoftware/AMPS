@@ -258,7 +258,7 @@ int main(int argc, char* argv[]) {
 
     //find a new job to execute
     for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
-      if (JobTable[i].status!=status_launched) {
+      if ((JobTable[i].status==status_default)||(JobTable[i].status==status_compiled)) {
         status_all_launched=false;
       }
 
@@ -330,7 +330,7 @@ int main(int argc, char* argv[]) {
   do {
     execution_completed=true;
 
-    for (int i=0;i<nParallelTestExecutionThreads;i++) {
+    for (int i=0;i<nTotalCompilerCases*nTestRoutineThreads;i++) {
       if (JobTable[i].status!=status_completed) {
         execution_completed=false;
         sleep(1);
