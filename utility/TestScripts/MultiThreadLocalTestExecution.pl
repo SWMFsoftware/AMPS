@@ -4,6 +4,10 @@
 my $nTotalTests=0;
 my ($line,$TestSetSize,$CurrentTestSetSize,$iTestSet);
 
+open(fMkfile,">>Makefile.def");
+print fMkfile "include \$\{PTDIR\}/Makefile.test.split\n"; 
+close(fMkfile); 
+
 open(fIn,"<Makefile.test");
 open(fOut,">Makefile.test.bak");
 
