@@ -4,9 +4,9 @@
 my $nTotalTests=0;
 my ($line,$TestSetSize,$CurrentTestSetSize,$iTestSet);
 
-open(fMkfile,">>Makefile.def");
-print fMkfile "include \$\{PTDIR\}/Makefile.test.split\n"; 
-close(fMkfile); 
+if (-e Makefile.test.bak) {
+  `mv Makefile.test.bak Makefile.test`;
+}
 
 open(fIn,"<Makefile.test");
 open(fOut,">Makefile.test.bak");
@@ -34,8 +34,8 @@ print "Test Set Size: $TestSetSize\n";
 $iTestSet=1;
 $CurrentTestSetSize=0;
 
-open(fIn,"<Makefile.test");
-open(fOut,">Makefile.test.split");
+open(fIn,"<Makefile.test.bak");
+open(fOut,">Makefile.test");
 
 my ($l0,$l1);
 
