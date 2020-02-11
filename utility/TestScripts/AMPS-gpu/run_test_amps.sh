@@ -83,6 +83,7 @@ cp -r BATL  PGI/AMPS
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 cd $WorkDir/Tmp_AMPS_test/NVCC/AMPS
 echo AMPS was checked out on $CheckoutTime > test_amps.log
@@ -93,32 +94,25 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -cpp-compiler=nvcc
 ./Config.pl -cpp-link-option=-lcudart
 ./Config.pl -f-link-option=-lcudart
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=ifort,iccmpicxx   >>& test_amps.log
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -f-link-option=-lmpi_cxx -install -compiler=pgf90,pgccmpicxx    >>& test_amps.log    
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 #Execute the tests
 cd $WorkDir/Tmp_AMPS_test
-rm Amps*Complete
+rm -rf Amps*Complete
+rm -rf runlog scheduler 
 
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllGNU.sh & 
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllNVCC.sh &
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/AllPGI.sh &
-
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/CompileIntel.sh &
-
-while (! -f AmpsTestGNUComplete) 
-  sleep 60
-end
-
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/AMPS-gpu/RunIntel.sh &
-
-
-
+cp AMPS/utility/TestScripts/AMPS-gpu/scheduler.cpp .
+g++ ./scheduler.cpp -o scheduler -lpthread
+./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -intel -gcc -pgi -nvcc > runlog 
 
 

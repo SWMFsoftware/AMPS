@@ -36,11 +36,19 @@ cd $WorkDir/Tmp_AMPS_test
 #>GNUAll #####################################################################
 if (-e GNU) then 
   cd GNU/AMPS                                                                 #
+  cp test_amps.log test_amps.log.bak
+
+  foreach f (test_amps_thread*.log) #
+    cat $f >> test_amps.log
+  end
+
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
   echo '===============================================' >> test_amps.res     # 
   head -100 *diff >> test_amps.res                                            #
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_gnu/  #
+
+  mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
 endif
 
@@ -48,11 +56,19 @@ endif
 #>GNUAll #####################################################################
 if (-e NVCC) then
   cd NVCC/AMPS                                                                 #
+  cp test_amps.log test_amps.log.bak
+
+  foreach f (test_amps_thread*.log) #
+    cat $f >> test_amps.log
+  end
+
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
   echo '===============================================' >> test_amps.res     #
   head -100 *diff >> test_amps.res                                            #
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_nvcc/  #
+
+  mv test_amps.log.bak test_amps.log
   cd ../..
 endif
 
@@ -61,11 +77,19 @@ endif
 #>IntelAll ###################################################################
 if (-e Intel) then
   cd Intel/AMPS                                                               #
+  cp test_amps.log test_amps.log.bak
+
+  foreach f (test_amps_thread*.log) #
+    cat $f >> test_amps.log
+  end
+
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
   echo '===============================================' >> test_amps.res     # 
   head -100 *diff >> test_amps.res                                            #
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_intel/#
+
+  mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
 endif 
 
@@ -73,10 +97,18 @@ endif
 #>PGIAll #####################################################################
 if (-e PGI) then
   cd PGI/AMPS                                                                 #
+  cp test_amps.log test_amps.log.bak
+
+  foreach f (test_amps_thread*.log) #
+    cat $f >> test_amps.log
+  end
+
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
   echo '===============================================' >> test_amps.res     # 
   head -100 *diff >> test_amps.res                                            #
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_pgi/  #
+
+  mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
 endif
