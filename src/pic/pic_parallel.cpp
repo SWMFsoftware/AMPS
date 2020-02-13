@@ -1449,7 +1449,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
     bool isOn = false; 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neibNode; 
     neibNode = get_neib_node(node, i, j, k);
-    if(neibNode != NULL){
+    if(neibNode != NULL && neibNode->IsUsedInCalculationFlag ){
       int neibThread = neibNode->Thread; 		
       if(neibThread == PIC::ThisThread){
 	isOn = true;
@@ -1512,7 +1512,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	for(int jNeib = -1; jNeib <= 1; jNeib++)
 	  for(int kNeib = -1; kNeib <= 1; kNeib++){
 	    neibNode = get_neib_node(node, iNeib, jNeib, kNeib);
-	    if(neibNode != NULL){
+	    if(neibNode != NULL && neibNode->IsUsedInCalculationFlag){
 	      int neibThread = neibNode->Thread; 		
 	      if(neibThread != PIC::ThisThread){
 		// At most 2 zeros. 
@@ -1589,7 +1589,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	  for(int jNeib = -1; jNeib <= 1; jNeib++)
 	    for(int kNeib = -1; kNeib <= 1; kNeib++){
 	      neibNode = get_neib_node(node, iNeib, jNeib, kNeib);
-	      if(neibNode != NULL){
+	      if(neibNode != NULL && neibNode->IsUsedInCalculationFlag){
 		int neibThread = neibNode->Thread; 		
 		if(neibThread == iTarget){		  
 		  *((cAMRnodeID*)(sendBuffer[ii]+offset)) = neibNode->AMRnodeID;
