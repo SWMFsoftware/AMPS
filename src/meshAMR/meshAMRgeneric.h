@@ -12789,6 +12789,119 @@ if (TmpAllocationCounter==2437) {
     
   }
 
+
+  //Count the number of blocks, center and corner nodes and compare those with the sizes of the corresponding stackes
+  void GetMeshElementInfo() {
+    int nCenterNodes=0,nCornerNodes=0,nAllocatedBlocks=0,nTotalTreeNodes=0;
+
+    //count blocks
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> CountBlocks;
+
+    CountBlocks = [&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      nTotalTreeNodes++;
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        if (node->block!=NULL) {
+          nAllocatedBlocks++;
+
+          for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+            for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+              for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+                cCenterNode* CenterNode;
+
+                if ((CenterNode=node->block->GetCenterNode(i,j,k))!=NULL) if (CenterNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) {
+                  nCenterNodes++;
+                  CenterNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+                }
+              }
+            }
+          }
+
+          for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_+1;i++) {
+            for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_+1;j++) {
+              for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_+1;k++) {
+                cCornerNode* CornerNode;
+
+                if ((CornerNode=node->block->GetCornerNode(i,j,k))!=NULL) if (CornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) {
+                  nCornerNodes++;
+                  CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+                }
+              }
+            }
+          }
+        }
+      }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          CountBlocks(downNode);
+        }
+      }
+
+    };
+
+
+    resetNodeProcessedFlag();
+    CountBlocks(rootTree);
+
+    //assemble intormation across all MPI processes
+    int t,CountedTable[nTotalThreads],StackAllocatinoTable[nTotalThreads];
+
+    //the total number of tree nodes
+    t=nTotalTreeNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=treeNodes.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of tree nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+
+    //the total number of allocated blocks
+    t=nAllocatedBlocks;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=blocks.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of allocated blocs:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+    //the total number of center nodes
+    t=nCenterNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=CenterNodes.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of center nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+    //the total number of center nodes
+    t=nCornerNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=CornerNodes.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of corner nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+  }
 };
 
 
