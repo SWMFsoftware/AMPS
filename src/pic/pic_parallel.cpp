@@ -64,58 +64,47 @@ void PIC::Parallel::ExchangeParticleData() {
   long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
 
-  static MPI_Request *SendMessageSizeRequestTable=NULL,*RecvMessageSizeRequestTable=NULL;
-  static int *SendMessageLengthTable=NULL,*RecvMessageLengthTable=NULL,*SendMessageLengthProcessTable=NULL,*RecvMessageLengthProcessTable=NULL;
+  MPI_Request *SendMessageSizeRequestTable=NULL,*RecvMessageSizeRequestTable=NULL;
+  int *SendMessageLengthTable=NULL,*RecvMessageLengthTable=NULL,*SendMessageLengthProcessTable=NULL,*RecvMessageLengthProcessTable=NULL;
   int RecvMessageSizeRequestTableLength=0;
-  static int SendMessageSizeRequestTableLength=0;
+  int SendMessageSizeRequestTableLength=0;
 
-  static char **RecvParticleDataBuffer=NULL;
-  static int *RecvParticleDataBufferLengthTable=NULL;
+  char **RecvParticleDataBuffer=NULL;
+  int *RecvParticleDataBufferLengthTable=NULL;
 
   MPI_Request RecvPaticleDataRequestTable[PIC::nTotalThreads];
   int RecvPaticleDataRequestTableLength=0;
   int RecvPaticleDataProcessTable[PIC::nTotalThreads];
 
-  static char **SendParticleDataBuffer=NULL;
-  static int *SendParticleDataBufferLengthTable=NULL;
+  char **SendParticleDataBuffer=NULL;
+  int *SendParticleDataBufferLengthTable=NULL;
 
-  static MPI_Request *SendParticleDataRequestTable=NULL;
-  static int SendParticleDataRequestTableLength=0;
+  MPI_Request *SendParticleDataRequestTable=NULL;
+  int SendParticleDataRequestTableLength=0;
 
 
-  if (SendMessageSizeRequestTable==NULL) {
-    SendParticleDataRequestTable=new MPI_Request[PIC::nTotalThreads];
+  SendParticleDataRequestTable=new MPI_Request[PIC::nTotalThreads];
 
-    SendMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
-    RecvMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
+  SendMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
+  RecvMessageSizeRequestTable=new MPI_Request[PIC::nTotalThreads];
 
-    SendMessageLengthTable=new int [PIC::nTotalThreads];
-    RecvMessageLengthTable=new int [PIC::nTotalThreads];
+  SendMessageLengthTable=new int [PIC::nTotalThreads];
+  RecvMessageLengthTable=new int [PIC::nTotalThreads];
 
-    SendMessageLengthProcessTable=new int [PIC::nTotalThreads];
-    RecvMessageLengthProcessTable=new int [PIC::nTotalThreads];
+  SendMessageLengthProcessTable=new int [PIC::nTotalThreads];
+  RecvMessageLengthProcessTable=new int [PIC::nTotalThreads];
 
-    RecvParticleDataBuffer=new char* [PIC::nTotalThreads];
-    RecvParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
+  RecvParticleDataBuffer=new char* [PIC::nTotalThreads];
+  RecvParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
 
-    SendParticleDataBuffer=new char* [PIC::nTotalThreads];
-    SendParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
+  SendParticleDataBuffer=new char* [PIC::nTotalThreads];
+  SendParticleDataBufferLengthTable=new int [PIC::nTotalThreads];
 
-    for (int thread=0;thread<PIC::nTotalThreads;thread++) RecvParticleDataBufferLengthTable[thread]=0,SendParticleDataBufferLengthTable[thread]=0;
-
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    RecvParticleDataBufferLengthTable[thread]=0,SendParticleDataBufferLengthTable[thread]=0;
+    RecvParticleDataBuffer[thread]=NULL,SendParticleDataBuffer[thread]=NULL;
   }
 
-
-  //finish previous send operations in case nor finished yet
-  if (SendParticleDataRequestTableLength!=0) {
-    MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
-    SendParticleDataRequestTableLength=0;
-  }
-  
-  if (SendMessageSizeRequestTableLength!=0){
-    MPI_Waitall(SendMessageSizeRequestTableLength,SendMessageSizeRequestTable,MPI_STATUSES_IGNORE);
-    SendMessageSizeRequestTableLength=0;    
-  }
   //set the default value inthe counters
   for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
 
@@ -217,7 +206,7 @@ void PIC::Parallel::ExchangeParticleData() {
       //check whether sise of the incoming message has been recieved
       MPI_Testany(RecvMessageSizeRequestTableLength,RecvMessageSizeRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
-      if (flag==true) {
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
         //release memoty used by MPI
         MPI_Wait(RecvMessageSizeRequestTable+iFrom,MPI_STATUS_IGNORE);
 
@@ -254,7 +243,7 @@ void PIC::Parallel::ExchangeParticleData() {
       //check whether new particle data has been recieved
       MPI_Testany(RecvPaticleDataRequestTableLength,RecvPaticleDataRequestTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
-      if (flag==true) {
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
         //release memoty used by MPI
         MPI_Wait(RecvPaticleDataRequestTable+iFrom,MPI_STATUS_IGNORE);
 
@@ -461,6 +450,43 @@ void PIC::Parallel::ExchangeParticleData() {
        if (offset!=RecvMessageLengthTable[From]) exit(__LINE__,__FILE__,"Error: the amount of recieved data is not consistent");
     }
   }
+
+
+  //finish previous send operations in case nor finished yet
+  if (SendParticleDataRequestTableLength!=0) {
+    MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
+    SendParticleDataRequestTableLength=0;
+  }
+
+  if (SendMessageSizeRequestTableLength!=0){
+    MPI_Waitall(SendMessageSizeRequestTableLength,SendMessageSizeRequestTable,MPI_STATUSES_IGNORE);
+    SendMessageSizeRequestTableLength=0;
+  }
+
+  //delete temporary buffers
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    if (RecvParticleDataBuffer[thread]!=NULL) delete [] RecvParticleDataBuffer[thread];
+    if (SendParticleDataBuffer[thread]!=NULL) delete [] SendParticleDataBuffer[thread];
+  }
+
+
+
+  delete [] SendParticleDataRequestTable;
+
+  delete [] SendMessageSizeRequestTable;
+  delete [] RecvMessageSizeRequestTable;
+
+  delete [] SendMessageLengthTable;
+  delete [] RecvMessageLengthTable;
+
+  delete [] SendMessageLengthProcessTable;
+  delete [] RecvMessageLengthProcessTable;
+
+  delete [] RecvParticleDataBuffer;
+  delete [] RecvParticleDataBufferLengthTable;
+
+  delete [] SendParticleDataBuffer;
+  delete [] SendParticleDataBufferLengthTable;
 }
 
 
@@ -1918,7 +1944,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       int q, flag, iProc;
       MPI_Testany(PIC::nTotalThreads-1, RecvPntNumberList, &q, &flag, MPI_STATUS_IGNORE);
 
-      if (flag!=0){
+      if ((flag!=0)&&(q!=MPI_UNDEFINED)) {
         //release memoty used by MPI
         MPI_Wait(RecvPntNumberList+q,MPI_STATUS_IGNORE);
 
