@@ -2600,7 +2600,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     if (startNode==PIC::Mesh::mesh.rootTree) {
       nTotalStencils=0;
       StencilList=NULL,StencilList_last=NULL;
-      StencilElementStack.clear();
+      StencilElementStack.resetStack();
       
       LocalCornerNodeAssociatedDataPointerTable=new char* [100];
       LocalContributingThreadTable=new int[100];
