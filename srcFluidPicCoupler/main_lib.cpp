@@ -235,7 +235,12 @@ void  dynamicAllocateBlocks(){
   int nAllocatedBlocks = allocatedBlockIndexArr.size();
   
   //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nAllocatedBlocks];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = NULL;
+  
+  if (nAllocatedBlocks!=0) nodeTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nAllocatedBlocks];
+
+
+
   iBlock=0;
   int iAllocatedBlock=0;
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
