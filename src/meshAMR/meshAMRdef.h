@@ -524,9 +524,9 @@ private:
   char*** associatedDataStackList;
   char** associatedDataBufferList;
 
+public:
   cAMRstack<T> BaseElementStack;
 
-public:
   long int getAllocatedMemory() {
     T t;
 
