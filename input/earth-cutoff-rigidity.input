@@ -59,6 +59,11 @@ MoverIntegratorMode=Boris-relativistic
   Mesh=on ! on, off
 #endUserDefinitions
 
+
+#Mesh 
+  define _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
+#endMesh
+
 #General
   ReferenceInjectionParticleNumber=10 
   MaxMeshRefinmentLevel=12
