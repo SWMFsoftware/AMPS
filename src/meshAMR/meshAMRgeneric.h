@@ -12789,6 +12789,279 @@ if (TmpAllocationCounter==2437) {
     
   }
 
+
+  //Count the number of blocks, center and corner nodes and compare those with the sizes of the corresponding stackes
+  void GetMeshElementInfo() {
+    int nCenterNodes=0,nCornerNodes=0,nAllocatedBlocks=0,nAllocatedLayerBlocks=0,nTotalTreeNodes=0;
+
+    //count blocks
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> CountBlocks;
+
+    CountBlocks = [&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      nTotalTreeNodes++;
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        if (node->block!=NULL) {
+          nAllocatedBlocks++;
+          if (node->Thread!=ThisThread) nAllocatedLayerBlocks++;
+
+          for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+            for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+              for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+                cCenterNode* CenterNode;
+
+                if ((CenterNode=node->block->GetCenterNode(i,j,k))!=NULL) if (CenterNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) {
+                  nCenterNodes++;
+                  CenterNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+                }
+              }
+            }
+          }
+
+          for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_+1;i++) {
+            for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_+1;j++) {
+              for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_+1;k++) {
+                cCornerNode* CornerNode;
+
+                if ((CornerNode=node->block->GetCornerNode(i,j,k))!=NULL) if (CornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) {
+                  nCornerNodes++;
+                  CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+                }
+              }
+            }
+          }
+        }
+      }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          CountBlocks(downNode);
+        }
+      }
+
+    };
+
+
+    resetNodeProcessedFlag();
+    CountBlocks(rootTree);
+
+    //assemble intormation across all MPI processes
+    int t,CountedTable[nTotalThreads],StackAllocatinoTable[nTotalThreads];
+
+    //the total number of tree nodes
+    t=nTotalTreeNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=treeNodes.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of tree nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+
+    //the total number of allocated blocks
+    t=nAllocatedBlocks;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=blocks.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of allocated blocs:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+    //the total number of allocated Layer blocks
+    t=nAllocatedLayerBlocks;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of allocated Layer blocs:\nthread\tcnt\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\n",thread,CountedTable[thread]);
+    }
+
+
+    //the total number of center nodes
+    t=nCenterNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=CenterNodes.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of center nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+
+    //the total number of center nodes
+    t=nCornerNodes;
+    MPI_Gather(&t,1,MPI_INT,CountedTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    t=CornerNodes.BaseElementStack.elementStackPointer;
+    MPI_Gather(&t,1,MPI_INT,StackAllocatinoTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      printf("The TotalNumber of corner nodes:\nthread\tcnt\tstack\tdiff\n");
+
+      for (int thread=0;thread<nTotalThreads;thread++) printf("%i\t%i\t%i\t%i\n",thread,CountedTable[thread],StackAllocatinoTable[thread],CountedTable[thread]-StackAllocatinoTable[thread]);
+    }
+  }
+
+
+
+  //output location of the "layer nodes"
+  void OutputLayerNodeMap(const char *fname_base) {
+    char fname[500];
+
+    //set "layer node flag"
+    int this_thread_node_offset,layer_thread_node_offset;
+
+    //set the default value of the flags
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> SetDefaultFlag;
+
+    SetDefaultFlag = [&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      node->SetFlag(false,this_thread_node_offset);
+      node->SetFlag(false,layer_thread_node_offset);
+
+      if (node->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          SetDefaultFlag(downNode);
+        }
+      }
+    };
+
+
+    //init the this_thread_node_offset and other_thread_node_offset flags
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> SetDecompositionFlag;
+    int nTotalNodes=0;
+
+    SetDecompositionFlag =[&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        nTotalNodes++;
+
+       if (node->Thread==ThisThread) {
+         node->SetFlag(true,this_thread_node_offset);
+       }
+       else {
+         if (node->block!=NULL) {
+           node->SetFlag(true,layer_thread_node_offset);
+         }
+       }
+      }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          SetDecompositionFlag(downNode);
+        }
+      }
+    };
+
+    //output the mesh points
+    std::function<void(cTreeNodeAMR<cBlockAMR>*,FILE*)> OutputMeshPoints;
+    const int BlockCornerOrder[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0}, {0,0,1},{1,0,1},{1,1,1},{0,1,1}};
+
+
+    OutputMeshPoints = [&] (cTreeNodeAMR<cBlockAMR>* node,FILE* fout) -> void {
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        double dx[3];
+        int i,j,k,idim,code;
+
+        for (idim=0;idim<3;idim++) dx[idim]=node->xmax[idim]-node->xmin[idim];
+
+        if (node->TestFlag(this_thread_node_offset)==true) {
+          code=1;
+        }
+        else if (node->TestFlag(layer_thread_node_offset)==true) {
+          code=0;
+        }
+        else {
+          code=-1;
+        }
+
+	for (int icorn=0;icorn<8;icorn++) {
+          i=BlockCornerOrder[icorn][0];
+	  j=BlockCornerOrder[icorn][1]; 
+	  k=BlockCornerOrder[icorn][2];
+
+          fprintf(fout,"%e  %e  %e  %i\n",node->xmin[0]+i*dx[0],node->xmin[1]+j*dx[1],node->xmin[2]+k*dx[2],code);
+        }
+      }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          OutputMeshPoints(downNode,fout);
+        }
+      }
+
+    };
+
+
+    //output the connectvity list
+    std::function<void(cTreeNodeAMR<cBlockAMR>*,FILE*)> OutputConnectivyList;
+    int node_counter=1;
+
+    OutputConnectivyList = [&]  (cTreeNodeAMR<cBlockAMR>* node,FILE* fout) -> void {
+
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        for (int i=0;i<8;i++) {
+          fprintf(fout,"%i  ",node_counter);
+          node_counter++; 
+        }
+
+        fprintf(fout,"\n");
+      }
+      else {
+        int iDownNode;
+        cTreeNodeAMR<cBlockAMR> *downNode;
+
+        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+          OutputConnectivyList(downNode,fout);
+        }
+      }
+
+    };
+
+
+    this_thread_node_offset=cTreeNodeAMR<cBlockAMR>::CheckoutFlag();
+    layer_thread_node_offset=cTreeNodeAMR<cBlockAMR>::CheckoutFlag();
+
+    SetDefaultFlag(rootTree);
+    SetDecompositionFlag(rootTree);
+
+    if ((this_thread_node_offset<0)||(layer_thread_node_offset<0)) {
+      exit(__LINE__,__FILE__,"Error: cannot checkout a flag");
+    }
+
+    sprintf(fname,"%s.thread=%i.dat",fname_base,ThisThread);
+
+    FILE *f=fopen(fname,"w");
+    fprintf(f,"VARIABLES=\"X\", \"Y\", \"Z\", \"code\"");
+    fprintf(f,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*nTotalNodes,nTotalNodes);
+
+    OutputMeshPoints(rootTree,f);
+    OutputConnectivyList(rootTree,f);
+
+    cTreeNodeAMR<cBlockAMR>::ReleaseFlag(this_thread_node_offset);
+    cTreeNodeAMR<cBlockAMR>::ReleaseFlag(layer_thread_node_offset);
+
+    fclose(f);
+  }
 };
 
 
