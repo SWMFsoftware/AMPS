@@ -37,6 +37,8 @@ double yMaxDomain=5; //the minimum size of the domain in the direction perpendic
 double dxMinSphere=0.5,dxMaxSphere=0.5;
 double dxMinGlobal=1,dxMaxGlobal=1;
 
+extern int nZenithElements,nAzimuthalElements;
+
 
 //sodium surface production
 double sodiumTotalProductionRate(int SourceProcessCode=-1) {
@@ -194,7 +196,7 @@ void amps_init_mesh() {
    long int ReserveSamplingSpace[PIC::nTotalSpecies];
    for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=0;
    
-   cInternalSphericalData::SetGeneralSurfaceMeshParameters(60,100);
+   cInternalSphericalData::SetGeneralSurfaceMeshParameters(nZenithElements,nAzimuthalElements);
    
    
    
