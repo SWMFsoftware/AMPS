@@ -27,6 +27,8 @@
 #include "constants.h"
 #include "Earth.h"
 
+int nZenithElements=200;
+int nAzimuthalElements=200;
 
 void amps_init();
 void amps_init_mesh();
@@ -58,7 +60,7 @@ void SampleIndividualLocations(int nMaxIterations) {
     PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
 
-    Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength));
+    if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength));
 
     if (Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.IsAllocated()==false) {
       Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.init(PIC::nTotalSpecies,std::max(1,Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength));
@@ -255,7 +257,7 @@ void SampleIndividualLocations(int nMaxIterations) {
     PIC::ParticleBuffer::DeleteAllParticles();
 
     //determine the flux and eneregy spectra of the energetic particles in the poins of the observation
-    if (true) {
+    if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) {
       double v[3],KineticEnergy,Speed,DiffFlux,dSurface,norm;
       int offset,iTestsLocation,spec,i,j,iface,iTable,jTable,Index,iBit,iByte,iE;
 
@@ -396,8 +398,6 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
 
 
-  int nZenithElements=5;
-  int nAzimuthalElements=5;
   int nTotalInjectedParticlePerPoint=25;
 
   Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000;
@@ -435,9 +435,13 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
 
   //allocate the sampling buffer
-  Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(nAzimuthalElements*nAzimuthalElements);
-  if (Earth::CutoffRigidity::CutoffRigidityTable.IsAllocated()==false) Earth::CutoffRigidity::CutoffRigidityTable.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
+  if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) {
+    Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(nAzimuthalElements*nAzimuthalElements);
+  }
 
+  if (Earth::CutoffRigidity::CutoffRigidityTable.IsAllocated()==true) Earth::CutoffRigidity::CutoffRigidityTable.Deallocate(); 
+
+  Earth::CutoffRigidity::CutoffRigidityTable.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
   Earth::CutoffRigidity::CutoffRigidityTable=-1.0;
 
   if (PIC::ThisThread==0) {
@@ -603,7 +607,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   EnergySpectrum=0.0;
 
 
-  for (int iZenithElement=0;iZenithElement<nZenithElements;iZenithElement++) for (int iAzimutalElement=0;iAzimutalElement<nAzimuthalElements;iAzimutalElement++) {
+  if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) for (int iZenithElement=0;iZenithElement<nZenithElements;iZenithElement++) for (int iAzimutalElement=0;iAzimutalElement<nAzimuthalElements;iAzimutalElement++) {
     iLocation=Sphere.GetLocalSurfaceElementNumber(iZenithElement,iAzimutalElement);
 
     for (spec=0;spec<PIC::nTotalSpecies;spec++) {
@@ -854,6 +858,7 @@ void CutoffRigidityCalculation(int nMaxIterations) {
   //estimate the total flux and rigidity at a sphere
   SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
 
+  /*
   //start forward integration
   //enable sampling
   PIC::Sampling::RuntimeSamplingSwitch=true;
@@ -863,6 +868,7 @@ void CutoffRigidityCalculation(int nMaxIterations) {
   //estimate the cutoff rigidity and energy spectrum in individual locations
   PIC::ParticleBuffer::DeleteAllParticles();
   SampleIndividualLocations(nMaxIterations);
+  */
 }
 
 void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
