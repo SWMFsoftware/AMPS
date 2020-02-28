@@ -211,6 +211,8 @@ namespace Earth {
       extern int nLogEnergyLevels,nAzimuthIntervals,nCosZenithIntervals;
       extern double dCosZenithAngle,dAzimuthAngle,dLogE;
 
+      extern bool SampleDomainBoundaryParticleProperty; 
+
       //frame of reference related to the faces
       const static double e0FaceFrame[6][3]={{0.0,1.0,0.0},{0.0,1.0,0.0}, {1.0,0.0,0.0},{1.0,0.0,0.0}, {1.0,0.0,0.0},{1.0,0.0,0.0}};
       const static double e1FaceFrame[6][3]={{0.0,0.0,1.0},{0.0,0.0,1.0}, {0.0,0.0,1.0},{0.0,0.0,1.0}, {0.0,1.0,0.0},{0.0,1.0,0.0}};
