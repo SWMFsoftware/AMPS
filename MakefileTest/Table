@@ -3243,7 +3243,7 @@ Compile=
 <<<endif
 <<<endif
 
->>>@echo "test_AMPS-BATSRUS-Europa_compile... done" > test_AMPS-BATSRUS-Europa.diff
+>>>@echo "test_AMPS-BATSRUS-Europa_compile... done" >> test_AMPS-BATSRUS-Europa.diff
 
 
 Rundir=
@@ -3297,7 +3297,7 @@ Compile=
 <<<endif
 <<<endif
 
->>>@echo "test_AMPS-BATSRUS-OH_compile... done" > test_AMPS-BATSRUS-OH.diff
+>>>@echo "test_AMPS-BATSRUS-OH_compile... done" >> test_AMPS-BATSRUS-OH.diff
 
 
 Rundir=
@@ -3312,6 +3312,8 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
+>>>@echo "test_AMPS-BATSRUS-OH_check..." >> test_AMPS-BATSRUS-OH.diff
+
 <<<ifneq ($(wildcard SWMF/test14_ohpt.diff),)
 >>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff
 <<<endif
