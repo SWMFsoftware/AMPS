@@ -59,8 +59,7 @@ MoverIntegratorMode=Boris-relativistic
   Mesh=on ! on, off
 #endUserDefinitions
 
-
-#Mesh 
+#Mesh
   define _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
 #endMesh
 
@@ -72,6 +71,11 @@ MoverIntegratorMode=Boris-relativistic
   FirstPrintedOutputFile=100 
 
   RequestedParticleBufferLength=15000000
+
+  define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+
+  define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
 
   BlockCells=4,4,4
   GhostCells=1,1,1
