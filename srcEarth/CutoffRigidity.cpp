@@ -106,7 +106,7 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
   int iOriginIndex=0;
 
   iOriginIndex=*((int*)(ParticleData+Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex));
-  DomainBoundaryParticleProperty::RegisterParticleProperties(PIC::ParticleBuffer::GetI(ptr),xInit,vInit,iOriginIndex,nIntersectionFace);
+  if (DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) DomainBoundaryParticleProperty::RegisterParticleProperties(PIC::ParticleBuffer::GetI(ptr),xInit,vInit,iOriginIndex,nIntersectionFace);
 
   //update the rigidity data
   if (SampleRigidityMode==true) {
@@ -122,6 +122,7 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
 
       double *RigidityTableElement=CutoffRigidityTable.GetPtr(spec,iOriginIndex);
 
+      #pragma omp critical
       if ((*RigidityTableElement<0.0)||(*RigidityTableElement>Rigidity)) *RigidityTableElement=Rigidity;
     }
   }
