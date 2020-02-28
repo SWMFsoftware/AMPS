@@ -26,6 +26,8 @@ double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dCosZenithAngle=1.
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dAzimuthAngle=2.0*Pi/Earth::CutoffRigidity::DomainBoundaryParticleProperty::nAzimuthIntervals;
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dLogE=(logEmax-logEmin)/Earth::CutoffRigidity::DomainBoundaryParticleProperty::nLogEnergyLevels;
 
+bool Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty=false;
+
 double Earth::CutoffRigidity::DomainBoundaryParticleProperty::dX[6][3]={{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0},{0.0,0.0}};
 array_5d<cBitwiseFlagTable> Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable;
 //cBitwiseFlagTable Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleTable[PIC::nTotalSpecies][6][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection][Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection];
@@ -50,6 +52,8 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate() {
 //allocate the particle property sample table
 void Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(int nlocs) {
   int s,iface,i,j,iThreadOpenMP,iTestLocation;
+
+  if (SampleDomainBoundaryParticleProperty==false) return;
 
   logEmax=log(Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit);
   logEmin=log(Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit);
