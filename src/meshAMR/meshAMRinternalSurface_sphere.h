@@ -15,6 +15,7 @@
 #include "meshAMRdef.h"
 #include "mpichannel.h"
 #include "rnd.h"
+#include "specfunc.h"
 
 
 //=======================================================================
@@ -31,11 +32,8 @@ public:
   static long int nZenithSurfaceElements,nAzimuthalSurfaceElements;
   static double dAzimuthalAngle;
 
-  #if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
   static double dCosZenithAngle;
-  #elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
   static double dZenithAngle;
-  #endif
 
   typedef void (*fPrintVariableList)(FILE*);
   fPrintVariableList PrintVariableList;
@@ -79,11 +77,16 @@ public:
 
     dAzimuthalAngle=2.0*Pi/nAzimuthalSurfaceElements;
 
-    #if  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    dCosZenithAngle=2.0/nZenithSurfaceElements;
-    #elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    dZenithAngle=Pi/nZenithSurfaceElements;
-    #endif
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      dCosZenithAngle=2.0/nZenithSurfaceElements;
+      break;
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      dZenithAngle=Pi/nZenithSurfaceElements;
+      break;
+    defaut:
+      ::exit(__LINE__,__FILE__,"Error: the option is not defiend");
+    }
   }
 
   void SetSphereGeometricalParameters(double *x0,double r) {
@@ -106,7 +109,7 @@ public:
 
   inline void GetSurfaceElementIndex(int &nZenithElement,int &nAzimuthalElement,int nSurfaceElement) {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    if ((nSurfaceElement<0)||(nSurfaceElement>=nZenithSurfaceElements*nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: 'nSurfaceElement' is out of range");
+    if ((nSurfaceElement<0)||(nSurfaceElement>=nZenithSurfaceElements*nAzimuthalSurfaceElements)) ::exit(__LINE__,__FILE__,"Error: 'nSurfaceElement' is out of range");
     #endif
 
     nAzimuthalElement=(int)(nSurfaceElement/nZenithSurfaceElements); 
@@ -123,15 +126,18 @@ public:
     if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range ");
     #endif
 
-#if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    cosZenithAngleMin=1.0-dCosZenithAngle*nZenithElement;
-    cosZenithAngleMax=1.0-dCosZenithAngle*(1+nZenithElement);
-#elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    cosZenithAngleMin=cos(nZenithElement*dZenithAngle);
-    cosZenithAngleMax=cos((1+nZenithElement)*dZenithAngle);
-#else
-    exit(__LINE__,__FILE__,"Error: wrong option");
-#endif
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      cosZenithAngleMin=1.0-dCosZenithAngle*nZenithElement;
+      cosZenithAngleMax=1.0-dCosZenithAngle*(1+nZenithElement);
+      break;
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      cosZenithAngleMin=cos(nZenithElement*dZenithAngle);
+      cosZenithAngleMax=cos((1+nZenithElement)*dZenithAngle);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
 
     return (cosZenithAngleMin-cosZenithAngleMax)*dAzimuthalAngle*pow(Radius,2);
   }
@@ -149,13 +155,16 @@ public:
 
     AzimuthalAngle=(nAzimuthalElement+0.5)*dAzimuthalAngle;
 
-#if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    ZenithAngle=acos(1.0-dCosZenithAngle*(nZenithElement+0.5));
-#elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    ZenithAngle=(0.5+nZenithElement)*dZenithAngle; 
-#else
-    exit(__LINE__,__FILE__,"Error: wrong option");
-#endif
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      ZenithAngle=acos(1.0-dCosZenithAngle*(nZenithElement+0.5));
+      break;
+    case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      ZenithAngle=(0.5+nZenithElement)*dZenithAngle; 
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
 
     norm[0]=sin(ZenithAngle)*cos(AzimuthalAngle);
     norm[1]=sin(ZenithAngle)*sin(AzimuthalAngle);
@@ -193,15 +202,18 @@ public:
 
     AzimuthalAngle=(nAzimuthalElement+rnd())*dAzimuthalAngle;
 
-#if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    c0=1.0-dCosZenithAngle*nZenithElement;
-    c1=1.0-dCosZenithAngle*(nZenithElement+1);
-#elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    c0=cos(nZenithElement*dZenithAngle);
-    c1=cos((1+nZenithElement)*dZenithAngle);
-#else
-    exit(__LINE__,__FILE__,"Error: wrong option");
-#endif
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      c0=1.0-dCosZenithAngle*nZenithElement;
+      c1=1.0-dCosZenithAngle*(nZenithElement+1);
+      break;
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      c0=cos(nZenithElement*dZenithAngle);
+      c1=cos((1+nZenithElement)*dZenithAngle);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
 
     ZenithAngle=acos(c0+rnd()*(c1-c0));
 
@@ -233,14 +245,16 @@ public:
 
     ZenithAngle=acos(xNormalized[2]);
 
-    #if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    nZenithElement=(long int)((1.0-xNormalized[2])/dCosZenithAngle);
-    #elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    nZenithElement=(long int)(ZenithAngle/dZenithAngle);
-    #else
-    exit(__LINE__,__FILE__,"Error: wrong option");
-    #endif
-
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      nZenithElement=(long int)((1.0-xNormalized[2])/dCosZenithAngle);
+      break;
+    case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      nZenithElement=(long int)(ZenithAngle/dZenithAngle);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
 
     nAzimuthalElement=(long int)(AzimuthalAngle/dAzimuthalAngle);
 
@@ -271,18 +285,22 @@ public:
   }
 
   inline void GetSurfaceNormal(double *x,double iZenithPoint,double  iAzimutalPoint) {
-    double cosZenithAngle,sinZenithAngle,AzimuthalAngle;
+    double ZenithAngle,cosZenithAngle,sinZenithAngle,AzimuthalAngle;
 
-    #if _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
-    cosZenithAngle=1.0-dCosZenithAngle*iZenithPoint;
-    sinZenithAngle=sqrt(1.0-cosZenithAngle*cosZenithAngle);
-    #elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
-    double ZenithAngle=dZenithAngle*iZenithPoint;
-    cosZenithAngle=cos(ZenithAngle);
-    sinZenithAngle=sin(ZenithAngle);
-    #else
-    exit(__LINE__,__FILE__,"Error: wrong option");
-    #endif
+    switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
+    case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
+      cosZenithAngle=1.0-dCosZenithAngle*iZenithPoint;
+      sinZenithAngle=sqrt(1.0-cosZenithAngle*cosZenithAngle);
+      break;
+    case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
+      ZenithAngle=dZenithAngle*iZenithPoint;
+
+      cosZenithAngle=cos(ZenithAngle);
+      sinZenithAngle=sin(ZenithAngle);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
 
     AzimuthalAngle=dAzimuthalAngle*iAzimutalPoint;
 
@@ -823,11 +841,8 @@ void inline SetGeneralSphereSurfaceMeshParameters(long int nZenithElements,long 
   cInternalSphericalData::nAzimuthalSurfaceElements=nAzimuthalElements,cInternalSphericalData::nZenithSurfaceElements=nZenithElements;
   cInternalSphericalData::dAzimuthalAngle=2.0*Pi/cInternalSphericalData::nAzimuthalSurfaceElements;
 
-#if  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_
   cInternalSphericalData::dCosZenithAngle=2.0/cInternalSphericalData::nZenithSurfaceElements;
-#elif _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_ == _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
   cInternalSphericalData::dZenithAngle=Pi/cInternalSphericalData::nZenithSurfaceElements;
-#endif
 }
 
 
