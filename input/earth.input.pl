@@ -270,6 +270,15 @@ while ($line=<InputFile>) {
     }  
   }
   
+  #parameters of the surface mesh when calcualting the cutoff rigidity
+  elsif ($InputLine eq "NZENITHELEMENTS") {
+   ($s0,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("int nZenithElements",$s0,"main/main.cpp");
+  }
+  elsif ($InputLine eq "NAZIMUTHALELEMENTS") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("int nAzimuthalElements",$s0,"main/main.cpp");
+  }
   
   #locations of points where the cutoff rigidity and the energetic particle flux are calculated
   elsif ($InputLine eq "CUTOFFTESTLOCATIONS") {
