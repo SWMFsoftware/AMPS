@@ -173,7 +173,7 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
 
   CutOffTestLocations=on \\
     emin=100.0*Mev2J \\
-    emax=10000.0*Mev2J \\
+    emax=30000.0*Mev2J \\
     nTotalParticles=5000000 \\
     nInjectionIterations=1000 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
