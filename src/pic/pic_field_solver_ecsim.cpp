@@ -1931,8 +1931,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     void clean() {
       ParticleEnergy=0.0;
-      for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-	cflCell[iSp]=0.0;
+
+      for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) cflCell[iSp]=0.0;
 
       for (int i=0;i<8;i++) CornerData[i].clean();
     }
@@ -2029,8 +2029,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
     double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
-    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++)
-      vmean_cell[iSp]=0.0;
+
+
+    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
 
     if (ptr!=-1) {
       res=true;
@@ -2096,8 +2097,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       }
 
       int cnt=0, particleNumber[PIC::nTotalSpecies];
-      for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++)
-	particleNumber[iSp]=0;
+
+      for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
 
       while (ptrNext!=-1) {
         double LocalParticleWeight;
@@ -2251,7 +2252,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
           vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-	  ParticleEnergyCell += 0.5*mass*vsqr_par;
+          ParticleEnergyCell += 0.5*mass*vsqr_par;
 
           //compute alpha*vInit
           double vRot[3]={0.0,0.0,0.0};
@@ -2390,8 +2391,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         } 
         else {
           CellData->ParticleEnergy+=ParticleEnergyCell;
-	  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++)
-          CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+
+          for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
+            CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+          }
 
           //collect current
           for (int iCorner=0; iCorner<8; iCorner++){
@@ -2545,8 +2548,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
            //the corner can be processes. access to the corner's data is locked for other threads
 
            ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
-	   for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-           if (CellData->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData->cflCell[iSp];
+
+           for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+             if (CellData->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData->cflCell[iSp];
+           }
 
            target=CellData->CornerData[icor].CornerJ_ptr;
            source=CellData->CornerData[icor].CornerJ;
