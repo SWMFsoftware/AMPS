@@ -3254,7 +3254,7 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-Europa_run..." >> test_AMPS-BATSRUS-Europa.diff
 >>>@echo Test test_AMPS-BATSRUS-Europa has started: `date`
 
->>>cd SWMF;$(MAKE) test13
+>>>cd SWMF;$(MAKE) MPIRUN="mpirun -np 2" test13
 >>>@echo "test_AMPS-BATSRUS-Europa_run... done" >> test_AMPS-BATSRUS-Europa.diff
 
 
@@ -3308,7 +3308,7 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-OH_run..." >> test_AMPS-BATSRUS-OH.diff
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
->>>cd SWMF;$(MAKE) test14
+>>>cd SWMF;$(MAKE) MPIRUN="mpirun -np 2" test14
 >>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
