@@ -5184,31 +5184,37 @@ namespace PIC {
 
     inline void GetBackgroundElectricField(double *E, double Time = NAN) {
       double t[3];
-      int idim,iStencil;
-      PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+      int idim,iStencil,Length;
+      PIC::InterpolationRoutines::CellCentered::cStencil* Stencil;
+      double *Weight;
+      PIC::Mesh::cDataCenterNode **cell;
 
       for (idim=0;idim<3;idim++) E[idim]=0.0;
 
       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-      memcpy(&Stencil,PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num(),sizeof(PIC::InterpolationRoutines::CellCentered::cStencil));
+      Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num();
       #else
-      memcpy(&Stencil,PIC::InterpolationRoutines::CellCentered::StencilTable,sizeof(PIC::InterpolationRoutines::CellCentered::cStencil));
+      Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable;
       #endif
+
+      Length=Stencil->Length;
+      Weight=Stencil->Weight;
+      cell=Stencil->cell;
 
       switch (_PIC_COUPLER_MODE_) {
       case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__KMAG_: 
         if (PIC::CPLR::DATAFILE::Offset::ElectricField.allocate==true) {
           double t[3];
 
-          for (iStencil=0;iStencil<Stencil.Length;iStencil++) {
-            DATAFILE::GetBackgroundElectricField(t,Stencil.cell[iStencil], Time);
-            for (idim=0;idim<3;idim++) E[idim]+=Stencil.Weight[iStencil]*t[idim];
+          for (iStencil=0;iStencil<Length;iStencil++) {
+            DATAFILE::GetBackgroundElectricField(t,cell[iStencil], Time);
+            for (idim=0;idim<3;idim++) E[idim]+=Weight[iStencil]*t[idim];
           }
         }           
 
         break;
       default :
-        for (iStencil=0;iStencil<Stencil.Length;iStencil++) {
+        for (iStencil=0;iStencil<Length;iStencil++) {
           #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
           SWMF::GetBackgroundElectricField(t,Stencil.cell[iStencil]);
           #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
@@ -5218,37 +5224,47 @@ namespace PIC {
           exit(__LINE__,__FILE__,"not implemented");
           #endif
 
-          for (idim=0;idim<3;idim++) E[idim]+=Stencil.Weight[iStencil]*t[idim];
+          for (idim=0;idim<3;idim++) E[idim]+=Weight[iStencil]*t[idim];
          }
        }
      }
 
      inline void GetBackgroundMagneticField(double *B, double Time = NAN) {
        double t[3];
-       int idim,iStencil;
-       PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+       int idim,iStencil,Length;
+       PIC::InterpolationRoutines::CellCentered::cStencil* Stencil;
+       double *Weight;
+       PIC::Mesh::cDataCenterNode **cell;
 
        for (idim=0;idim<3;idim++) B[idim]=0.0;
 
        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-       memcpy(&Stencil,PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num(),sizeof(PIC::InterpolationRoutines::CellCentered::cStencil));
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num();
        #else
-       memcpy(&Stencil,PIC::InterpolationRoutines::CellCentered::StencilTable,sizeof(PIC::InterpolationRoutines::CellCentered::cStencil));
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable;
        #endif
 
-       for (iStencil=0;iStencil<Stencil.Length;iStencil++) {
-         #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         SWMF::GetBackgroundMagneticField(t,Stencil.cell[iStencil]);
-         #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T96_ || _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__KMAG_ 
-         DATAFILE::GetBackgroundData(t,3,DATAFILE::Offset::MagneticField.RelativeOffset,Stencil.cell[iStencil]);
-         #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-         DATAFILE::GetBackgroundMagneticField(t,Stencil.cell[iStencil], Time);
-         #else
-         t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
-         exit(__LINE__,__FILE__,"not implemented");
-         #endif
+       Length=Stencil->Length;
+       Weight=Stencil->Weight;
+       cell=Stencil->cell;
 
-         for (idim=0;idim<3;idim++) B[idim]+=Stencil.Weight[iStencil]*t[idim];
+       for (iStencil=0;iStencil<Length;iStencil++) {
+	 switch (_PIC_COUPLER_MODE_) {
+	 case  _PIC_COUPLER_MODE__SWMF_: 
+           SWMF::GetBackgroundMagneticField(t,cell[iStencil]);
+	   break;
+	 case  _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__KMAG_: 
+           DATAFILE::GetBackgroundData(t,3,DATAFILE::Offset::MagneticField.RelativeOffset,cell[iStencil]);
+           break;
+	 case _PIC_COUPLER_MODE__DATAFILE_: 
+           DATAFILE::GetBackgroundMagneticField(t,cell[iStencil], Time);
+	   break;
+         default: 
+           t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
+           exit(__LINE__,__FILE__,"not implemented");
+         } 
+
+         for (idim=0;idim<3;idim++) B[idim]+=Weight[iStencil]*t[idim];
        }
      }
 
