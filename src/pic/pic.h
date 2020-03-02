@@ -5216,9 +5216,9 @@ namespace PIC {
       default :
         for (iStencil=0;iStencil<Length;iStencil++) {
           #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-          SWMF::GetBackgroundElectricField(t,Stencil.cell[iStencil]);
+          SWMF::GetBackgroundElectricField(t,cell[iStencil]);
           #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-          DATAFILE::GetBackgroundElectricField(t,Stencil.cell[iStencil], Time);
+          DATAFILE::GetBackgroundElectricField(t,cell[iStencil], Time);
           #else
           t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
           exit(__LINE__,__FILE__,"not implemented");
