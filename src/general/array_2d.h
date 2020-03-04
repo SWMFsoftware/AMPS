@@ -94,7 +94,7 @@ public:
   inline T* operator () (int i0) const {
     if ((i0<0)||(i0>=size_dim0)) exit(__LINE__,__FILE__,"Error: out of range");
 
-    return data[i0*size_dim1];
+    return data+i0*size_dim1;
   };
 //===================================================
   inline T & operator () (int i0,int i1) {
