@@ -17,6 +17,7 @@ class array_2d {
 protected:
   T* data;
   int size_dim0,size_dim1;
+  bool locally_allocated_data_buiffer;
 
 public:
 
@@ -36,16 +37,19 @@ public:
     }
 
    data=new T[n0*n1];
+   locally_allocated_data_buiffer=true;
+
    size_dim0=n0;
    size_dim1=n1;
   };
 
   void Deallocate() {
-    if (data!=NULL) delete [] data;
+    if ((data!=NULL)&&(locally_allocated_data_buiffer==true)) delete [] data;
 
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    locally_allocated_data_buiffer=false;
   }
 
 //===================================================
@@ -53,6 +57,7 @@ public:
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    locally_allocated_data_buiffer=false;
   };
 
  ~array_2d() { 
@@ -63,28 +68,43 @@ public:
     data=NULL;
     size_dim0=0;
     size_dim1=0;
+    locally_allocated_data_buiffer=false;
 
     init(n0,n1);
   };
 
+  //the object does not allocate its own data buffer but acts as a manager providing indexed access to anothe data buffer
+  array_2d(T* t,int n0,int n1) {
+    locally_allocated_data_buiffer=false;
+
+    data=t;
+    size_dim0=n0;
+    size_dim1=n1;
+  }
+
   bool IsAllocated() {return (data!=NULL);}
 
 //===================================================
-  T   operator () (int i0,int i1) const {
+  inline T operator () (int i0,int i1) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
 
-    return data[i0+size_dim0*i1]; 
+    return data[i0*size_dim1+i1];
+  };
+
+  inline T* operator () (int i0) const {
+    if ((i0<0)||(i0>=size_dim0)) exit(__LINE__,__FILE__,"Error: out of range");
+
+    return data[i0*size_dim1];
+  };
+//===================================================
+  inline T & operator () (int i0,int i1) {
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+
+    return data[i0*size_dim1+i1];
   };
 
 //===================================================
-  T & operator () (int i0,int i1) {
-    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
-
-    return data[i0+size_dim0*i1]; 
-  };
-
-//===================================================
-  array_2d<T>& operator = (const array_2d<T>& v) {
+  inline array_2d<T>& operator = (const array_2d<T>& v) {
     int i,imax;
   
     imax=size_dim0*size_dim1;
@@ -229,7 +249,7 @@ public:
         exit(__LINE__,__FILE__,"Error: out of range");
       }
 
-      return data+i0+size_dim0*i1;
+      return data+i0*size_dim1+i1;
     }
 
 };
