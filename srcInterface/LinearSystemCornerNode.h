@@ -1185,7 +1185,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       //prefetch data vectors
       #ifndef __PGI
       if (iElement+7<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+4)+sizeof(cStencilElementData)/2;
+        char *ptr=(char*)(ElementDataTable+iElement+4)+sizeof(cStencilElementData)/2;
         int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
         for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
@@ -1223,7 +1223,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       //prefetch data vectors
       #ifndef __PGI
       if (iElement+15<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+8)+sizeof(cStencilElementData)/2;
+        char *ptr=(char*)(ElementDataTable+iElement+8)+sizeof(cStencilElementData)/2;
         int imax=(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
         for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
@@ -1263,7 +1263,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       res+=_mm512_reduce_add_pd(cv);
     }
 
-    //add most of the vector
+    //add the rest of the vector
     for (;iElement+3<iElementMax;iElement+=4) {
        alignas(32) double a[4],b[4],*r;
       __m256d av,bv,cv,rv;
@@ -1271,7 +1271,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       //prefetch data vectors
       #ifndef __PGI
       if (iElement+7<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+4)+sizeof(cStencilElementData)/2;
+        char *ptr=(char*)(ElementDataTable+iElement+4)+sizeof(cStencilElementData)/2;
         int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
 
         for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
