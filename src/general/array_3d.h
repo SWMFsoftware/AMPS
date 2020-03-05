@@ -17,16 +17,17 @@ class array_3d {
 protected:
   T* data;
   int size_dim0,size_dim1,size_dim2;
-  int ndim0_ndim1;
+  int ndim1_ndim2;
+  bool locally_allocated_data_buiffer;
 
 public:
 
 
-
-
   void Deallocate() {
-    if (data!=NULL) delete [] data;
+    if ((data!=NULL)&&(locally_allocated_data_buiffer==true)) delete [] data;
+
     data=NULL;
+    locally_allocated_data_buiffer=false;
   }
 
   void init (int n0,int n1,int n2) {
@@ -44,18 +45,16 @@ public:
      exit(__LINE__,__FILE__);
    }
 
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-
-   ndim0_ndim1=n0*n1; 
+   size_dim0=n0,size_dim1=n1,size_dim2=n2;
+   ndim1_ndim2=n1*n2;
+   locally_allocated_data_buiffer=true;
   }
 
   array_3d() {
     data=NULL;
-    size_dim0=0;
-    size_dim1=0;
-    size_dim2=0;
+    size_dim0=0,size_dim1=0,size_dim2=0;
+    ndim1_ndim2=0;
+    locally_allocated_data_buiffer=false;
   };
 
 //===================================================
@@ -66,11 +65,20 @@ public:
 //===================================================
   array_3d(int n0,int n1,int n2) {
     data=NULL;
-    size_dim0=0;
-    size_dim1=0;
-    size_dim2=0;
+    size_dim0=0,size_dim1=0,size_dim2=0;
+    ndim1_ndim2=0;
+    locally_allocated_data_buiffer=false;
 
     init(n0,n1,n2);
+  };
+
+  array_3d(T* t,int n0,int n1,int n2) {
+    data=t;
+
+    size_dim0=n0,size_dim1=n1,size_dim2=n2;
+    ndim1_ndim2=n1*n2;
+
+    locally_allocated_data_buiffer=false;
   };
 
 //===================================================
@@ -97,44 +105,23 @@ public:
 
     return res;
   }
-
-//===================================================
-  int reinit(int n0,int n1,int n2) {
-   if (data!=NULL) delete [] data;
-
-    if ((n0<=0)||(n1<=0)||(n2<=0)) {
-      printf("Error: reallocation of array_3d object\n");
-      printf("with negative number of elemens\n");
-      exit(__LINE__,__FILE__);
-    }
-
-   try {
-     data=new T[n0*n1*n2];
-   }
-   catch (bad_alloc) {
-     printf("Memory Error: array_3d().reinit cannot allocate %i bytes\n", n0*n1*n2*sizeof(T));
-     return 0; 
-   }
-
-   size_dim0=n0;
-   size_dim1=n1;
-   size_dim2=n2;
-
-   ndim0_ndim1=n0*n1;
-   return 1;
-  };
   
 //===================================================
   inline T operator () (int i0,int i1,int i2) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
 
-    return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
+    return data[i0*ndim1_ndim2+size_dim2*i1+i2];
   };
 
 //===================================================
   inline T & operator () (int i0,int i1,int i2) {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
-    return data[i0+size_dim0*i1+ndim0_ndim1*i2]; 
+    return data[i0*ndim1_ndim2+size_dim2*i1+i2];
+  };
+
+  inline T* operator () (int i0,int i1) {
+    if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
+    return data+i0*ndim1_ndim2+size_dim2*i1;
   };
 
 //===================================================
@@ -159,10 +146,8 @@ public:
 
 //===================================================
   friend array_3d<T> operator + (const array_3d<T> &v1,const array_3d<T> &v2) {
-    if ((v1.size_dim0!=v2.size_dim0)||
-    (v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
-      printf("Error: add two array_3d<T> of different length.\n");
-      exit(__LINE__,__FILE__);
+    if ((v1.size_dim0!=v2.size_dim0)||(v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
+      exit(__LINE__,__FILE__,"Error: add two vectors of different length");
     }
 
     int i,imax;
@@ -176,10 +161,8 @@ public:
 
 //===================================================
   friend array_3d<T> operator - (const array_3d<T> &v1,const array_3d<T> &v2) {
-    if ((v1.size_dim0!=v2.size_dim0)||
-    (v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
-      printf("Error: add two array_3d<T> of different length.\n");
-      exit(__LINE__,__FILE__);
+    if ((v1.size_dim0!=v2.size_dim0)||(v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
+      exit(__LINE__,__FILE__,"Error: add two vectors of different length");
     }
 
     int i,imax;
@@ -205,8 +188,7 @@ public:
 //===================================================
   friend array_3d<T> operator / (const array_3d<T> &v1, const T t) {
     if (t == 0) {
-      printf("Error: divide vector by 0.\n");
-      exit(__LINE__,__FILE__);
+      exit(__LINE__,__FILE__,"Error: divide vector by 0");
     }
 
     int i,imax;
@@ -220,10 +202,8 @@ public:
 
 //===================================================
   friend array_3d<T>& operator += (array_3d<T> &v1,const array_3d<T> &v2) {
-    if ((v1.size_dim0!=v2.size_dim0)||
-    (v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
-      printf("Error: add two vectors of different length.\n");
-      exit(__LINE__,__FILE__);
+    if ((v1.size_dim0!=v2.size_dim0)||(v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
+      exit(__LINE__,__FILE__,"Error: add two vectors of different length");
     }
 
     int i,imax;
@@ -236,10 +216,8 @@ public:
 
 //===================================================
   friend array_3d<T>& operator -= (array_3d<T> &v1,const array_3d<T> &v2) {
-    if ((v1.size_dim0!=v2.size_dim0)||
-    (v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
-      printf("Error: add two vectors of different length.\n");
-      exit(__LINE__,__FILE__);
+    if ((v1.size_dim0!=v2.size_dim0)||(v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
+      exit(__LINE__,__FILE__,"Error: add two vectors of different length");
     }
 
     int i,imax;
@@ -277,10 +255,8 @@ public:
 
 //===================================================
   friend void swap(array_3d<T> &v1,array_3d<T> &v2) {
-    if ((v1.size_dim0!=v2.size_dim0)||
-    (v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
-      printf("Error: add two vectors of different length.\n");
-      exit(__LINE__,__FILE__);
+    if ((v1.size_dim0!=v2.size_dim0)||(v1.size_dim1!=v2.size_dim1)||(v1.size_dim2!=v2.size_dim2)) {
+      exit(__LINE__,__FILE__,"Error: add two vectors of different length");
     }
 
     T* t;
@@ -294,7 +270,7 @@ public:
   //get pointer to an element of the array
   T* GetPtr(int i0,int i1,int i2) {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
-    return data+i0+size_dim0*i1+ndim0_ndim1*i2;
+    return data+i0*ndim1_ndim2+size_dim2*i1+i2;
   }
 };
 
