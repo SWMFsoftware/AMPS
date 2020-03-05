@@ -1182,17 +1182,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       alignas(32) double a[4],b[4],*r;
       __m256d av,bv,cv,rv;
 
-      //prefetch data vectors
-      #ifndef __PGI
-      if (iElement+7<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+iElement+4)+sizeof(cStencilElementData)/2;
-        int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
-
-        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
-      }
-      #endif
-
-
       data=ElementDataTable+iElement;
       a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
 
@@ -1219,17 +1208,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     for (;iElement+7<iElementMax;iElement+=8) {
       alignas(64) double a[8],b[8];
       __m512d av,bv,cv,rv;
-
-      //prefetch data vectors
-      #ifndef __PGI
-      if (iElement+15<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+iElement+8)+sizeof(cStencilElementData)/2;
-        int imax=(8*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
-
-        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
-      }
-      #endif
-
 
       data=ElementDataTable+iElement;
       a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
@@ -1268,16 +1246,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
        alignas(32) double a[4],b[4],*r;
       __m256d av,bv,cv,rv;
 
-      //prefetch data vectors
-      #ifndef __PGI
-      if (iElement+7<iElementMax) {
-        char *ptr=(char*)(ElementDataTable+iElement+4)+sizeof(cStencilElementData)/2;
-        int imax=(4*sizeof(cStencilElementData))/_PIC_MEMORY_PREFETCH__CACHE_LINE_;
-
-        for (int i=0;i<imax;i++) _mm_prefetch(i*_PIC_MEMORY_PREFETCH__CACHE_LINE_+ptr,_MM_HINT_NTA);
-      }
-      #endif
-
       data=ElementDataTable+iElement;
       a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
 
@@ -1300,45 +1268,10 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     }  
     #endif
 
-    data_next=ElementDataTable+iElement;
-    data_next_next=(iElement+1<iElementMax) ? data_next_next=data_next+1 : NULL;
-
-    u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
-
     //add the rest of the vector
     for (;iElement<iElementMax;iElement++) {
-      data=data_next;
-      u_vect=u_vect_next;
-
-      if (iElement+1<iElementMax) {
-        data_next=data_next_next;
-        u_vect_next=LocalRecvExchangeBufferTable[data_next->Thread]+(data_next->iVar+NodeUnknownVariableVectorLength*data_next->UnknownVectorIndex);
-
-        #ifndef __PGI
-        _mm_prefetch((char*)u_vect_next,_MM_HINT_NTA);
-        #endif
-
-       if (iElement+2<iElementMax) {
-          data_next_next++;
-
-          #ifndef __PGI
-          _mm_prefetch((char*)data_next_next,_MM_HINT_NTA);
-          _mm_prefetch(_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)data_next_next,_MM_HINT_NTA);
-          #endif
-        }
-
-      }
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      if (data->Thread==PIC::ThisThread){
-        if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=length) if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
-      }
-      else {
-        if (data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex>=NodeUnknownVariableVectorLength*RecvExchangeBufferLength[data->Thread]) exit(__LINE__,__FILE__,"Error: out of bound");  
-      }
-      #endif
-
-      res+=data->MatrixElementValue*(*u_vect);
+      data=ElementDataTable+iElement;
+      res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
 
      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
