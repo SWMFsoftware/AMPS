@@ -759,8 +759,16 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
 int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
-  double vInit[3],xInit[3]={0.0,0.0,0.0},vFinal[3],xFinal[3];
   int idim,i,j,k,spec;
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+  double vInit[3],xInit[3],vFinal[3],xFinal[3];
+#else
+  union {__m256d vInit_v; double vInit[4];};
+  union {__m256d xInit_v; double xInit[4];};
+  union {__m256d vFinal_v; double vFinal[4];};
+  union {__m256d xFinal_v; double xFinal[4];};
+#endif
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   PIC::ParticleBuffer::GetV(vInit,ParticleData);
@@ -806,10 +814,20 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
 
   //interpolate the fields acting upon on the particle at the NEW location of the particle (Appendix D, Eq 2)
-  double E[3]={0.0,0.0,0.0},B[3]={0.0,0.0,0.0};
+
   PIC::InterpolationRoutines::CornerBased::cStencil *ElectricFieldStencil;
   PIC::InterpolationRoutines::CellCentered::cStencil *MagneticFieldStencil;
   int threadId=0;
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+  double E[4]={0.0,0.0,0.0,0.0},B[4]={0.0,0.0,0.0,0.0};
+#else
+  union {__m256d B_v; double B[4];};
+  union {__m256d E_v; double E[4];};
+
+  B_v=_mm256_setzero_pd();
+  E_v=_mm256_setzero_pd();
+#endif
 
   int *LocalCellID,Length;
   double *Weight;
@@ -843,6 +861,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
         double *tempB1=&PIC::Mover::B_Corner[threadId][3*LocalCellID[iStencil]];
         #endif
        
+        #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
         for (idim=0;idim<3;idim++) {
           E[idim]+=Weight[iStencil]*tempE1[idim];
@@ -851,6 +870,16 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
           B[idim]+=Weight[iStencil]*tempB1[idim];
           #endif
         }
+
+        #else //_AVX_INSTRUCTIONS_USAGE_MODE_
+        __m256d w=_mm256_set1_pd(Weight[iStencil]);
+
+        #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+        B_v=_mm256_fmadd_pd(w,_mm256_loadu_pd(tempB1),B_v);
+        #endif
+
+        E_v=_mm256_fmadd_pd(w,_mm256_loadu_pd(tempE1),E_v);
+        #endif //_AVX_INSTRUCTIONS_USAGE_MODE_
       }
 
       #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
@@ -864,10 +893,15 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
       for (int iStencil=0;iStencil<Length;iStencil++) {
         double *tempB1 = &PIC::Mover::B_Center[threadId][3*LocalCellID[iStencil]];
 
+        #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
         for (idim=0;idim<3;idim++) {
           B[idim]+=Weight[iStencil]*tempB1[idim];
         }
+        #else //_AVX_INSTRUCTIONS_USAGE_MODE_
+
+        B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight[iStencil]),_mm256_loadu_pd(tempB1),B_v);
+        #endif //_AVX_INSTRUCTIONS_USAGE_MODE_
       }
       #endif
 
@@ -876,6 +910,9 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
       exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
     }
   }
+
+
+  E[3]=0.0,B[3]=0.0;  //the line is important when AVX is used. The index [3] is correct since B and B are defined compatible with __m256d
 
   //advance the particle velocity
   double QdT_over_m,QdT_over_2m,alpha[3][3];
@@ -893,7 +930,8 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   QdT_over_2m=0.5*QdT_over_m;
   QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
 
-  
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   double BB[3][3],P[3];
 
   for (i=0;i<3;i++) {
@@ -934,6 +972,44 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   //advance the particle location
   #pragma ivdep
   for (idim=0;idim<3;idim++) xFinal[idim]=xInit[idim]+dtTotal*vFinal[idim];
+#else //_AVX_INSTRUCTIONS_USAGE_MODE_
+
+  union {__m256d P_v; double P[4];};
+  union {__m256d B2_v; double B2[4];};
+
+  P_v=_mm256_mul_pd(_mm256_set1_pd(-QdT_over_2m),B_v);
+  B2_v=_mm256_mul_pd(B_v,B_v);
+
+  c0=1.0/(1.0+QdT_over_2m_squared*(B2[0]+B2[1]+B2[2]));
+
+  //Eq. D.3
+  __m256d alpha_0v,alpha_1v,alpha_2v;
+  __m256d c0_v,t_v;
+
+  c0_v=_mm256_set1_pd(c0);
+  alpha_0v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[0]),B_v,_mm256_set_pd(0.0,P[1],-P[2],1.0)));
+  alpha_1v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[1]),B_v,_mm256_set_pd(0.0,-P[0],1.0,P[2])));
+  alpha_2v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
+
+
+  union {__m256d vp_v; double vp_v_ptr[4];};
+  union {__m256d tt_v; double tt_v_ptr[4];};
+
+  t_v=_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m),E_v,vInit_v);
+
+  tt_v=_mm256_mul_pd(alpha_0v,t_v);
+  vp_v_ptr[0]=tt_v_ptr[0]+tt_v_ptr[1]+tt_v_ptr[2];
+
+  tt_v=_mm256_mul_pd(alpha_1v,t_v);
+  vp_v_ptr[1]=tt_v_ptr[0]+tt_v_ptr[1]+tt_v_ptr[2];
+
+
+  tt_v=_mm256_mul_pd(alpha_2v,t_v);
+  vp_v_ptr[2]=tt_v_ptr[0]+tt_v_ptr[1]+tt_v_ptr[2];
+
+  vFinal_v=_mm256_fmsub_pd(_mm256_set1_pd(2.0),vp_v,vInit_v);
+  xFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dtTotal),vFinal_v,xInit_v);
+#endif //_AVX_INSTRUCTIONS_USAGE_MODE_
 
   newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
 
