@@ -285,11 +285,15 @@ foreach (@Arguments) {
         
     if ($t eq "256") {
       add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
+
       `echo AVXMODE=on >> Makefile.local`;
       `echo AVXTYPE=256 >> Makefile.local`;
     }
     elsif ($t eq "512") {
       add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__512_");
+      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__512_"); 
+
       `echo AVXMODE=on >> Makefile.local`;
       `echo AVXTYPE=512 >> Makefile.local`;
     }
