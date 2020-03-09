@@ -871,12 +871,12 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   delete [] DataRequestList;
 
   //cleate a RowTable;
-  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next,MatrixRowTableLength++);
+  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) MatrixRowTableLength++;
 
   if (MatrixRowTable!=NULL) delete [] MatrixRowTable;
   MatrixRowTable=new cMatrixRow *[MatrixRowTableLength];
 
-  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next,MatrixRowTableLength++) MatrixRowTable[MatrixRowTableLength]=Row;
+  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) MatrixRowTable[MatrixRowTableLength++]=Row;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
