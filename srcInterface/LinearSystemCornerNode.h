@@ -114,9 +114,9 @@ public:
   cStack<cMatrixRow> MatrixRowStack;
 
   //Table of the rows local to the current MPI process
-  cMatrixRow *MatrixRowTable,*MatrixRowLast;
-  cMatrixRow **MatrixThreadDecompositionFirstRow,**MatrixThreadDecompositionLastRow;
-  int *MatrixThreadDecompositionFirstIndex;
+  cMatrixRow *MatrixRowListFirst,*MatrixRowListLast;
+  cMatrixRow **MatrixRowTable;
+  int MatrixRowTableLength;
 
   //exchange buffers
   int* RecvExchangeBufferLength;  //the number of elementf in the recv list
@@ -181,39 +181,8 @@ public:
 
   //constructor
   cLinearSystemCornerNode() {
-    MatrixRowTable=NULL,MatrixRowLast=NULL;
-
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    int nThreadsOpenMP=0;
-
-    #pragma omp parallel shared(nThreadsOpenMP)
-    {
-      #pragma omp single
-      {
-        nThreadsOpenMP=omp_get_num_threads();
-      }
-    }
-
-    MatrixThreadDecompositionFirstRow=new cMatrixRow* [nThreadsOpenMP];
-    MatrixThreadDecompositionLastRow=new cMatrixRow* [nThreadsOpenMP];
-    MatrixThreadDecompositionFirstIndex=new int [nThreadsOpenMP];
-
-    for (int i=0;i<nThreadsOpenMP;i++) {
-      MatrixThreadDecompositionFirstRow[i]=NULL;
-      MatrixThreadDecompositionLastRow[i]=NULL;
-      MatrixThreadDecompositionFirstIndex[i]=-1;
-    }
-
-#else
-    MatrixThreadDecompositionFirstRow=new cMatrixRow* [1];
-    MatrixThreadDecompositionLastRow=new cMatrixRow* [1];
-    MatrixThreadDecompositionFirstIndex=new int [1];
-
-    MatrixThreadDecompositionFirstRow[0]=NULL;
-    MatrixThreadDecompositionLastRow[0]=NULL;
-    MatrixThreadDecompositionFirstIndex[0]=0;
-#endif
+    MatrixRowListFirst=NULL,MatrixRowListLast=NULL;
+    MatrixRowTable=NULL,MatrixRowTableLength=0;
 
     //exchange buffers
     RecvExchangeBufferLength=NULL;
@@ -246,9 +215,7 @@ public:
 
   //destructor
   ~cLinearSystemCornerNode() {
-    delete [] MatrixThreadDecompositionFirstRow;
-    delete [] MatrixThreadDecompositionLastRow;
-    delete [] MatrixThreadDecompositionFirstIndex;
+    if (MatrixRowTable!=NULL) delete [] MatrixRowTable;
   }
 
   //calculate signature of the matrix
@@ -258,7 +225,7 @@ public:
     int cnt,iElementMax,iElement;
     cStencilElementData *data,*ElementDataTable;
 
-    for (row=MatrixRowTable,cnt=0;row!=NULL;row=row->next,cnt++) {
+    for (row=MatrixRowListFirst,cnt=0;row!=NULL;row=row->next,cnt++) {
       Signature.add(cnt);
 
       SignatureRhs.add(cnt);
@@ -354,7 +321,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 //debug -> count the number of rows and blocks
 int ntotbl=0;
-for ( cMatrixRow* Row=MatrixRowTable;Row!=NULL;Row=Row->next) ntotbl++;*/
+for ( cMatrixRow* Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) ntotbl++;*/
 
     //the block has at least one face at the 'right' boundary of the domain
     //determine the combination of the faces that are at the boundary
@@ -437,14 +404,14 @@ for ( cMatrixRow* Row=MatrixRowTable;Row!=NULL;Row=Row->next) ntotbl++;*/
           NewRow->nNonZeroElements=NonZeroElementsFound;
 
           //add the new row to the matrix
-          if (MatrixRowTable==NULL) {
-            MatrixRowLast=NewRow;
-            MatrixRowTable=NewRow;
+          if (MatrixRowListFirst==NULL) {
+            MatrixRowListLast=NewRow;
+            MatrixRowListFirst=NewRow;
             NewRow->next=NULL;
           }
           else {
-            MatrixRowLast->next=NewRow;
-            MatrixRowLast=NewRow;
+            MatrixRowListLast->next=NewRow;
+            MatrixRowListLast=NewRow;
             NewRow->next=NULL;
           }
 
@@ -531,14 +498,14 @@ for ( cMatrixRow* Row=MatrixRowTable;Row!=NULL;Row=Row->next) ntotbl++;*/
           NewRow->ElementDataTable[0].iVar=iVar;
 
           //add the new row to the matrix
-          if (MatrixRowTable==NULL) {
-            MatrixRowLast=NewRow;
-            MatrixRowTable=NewRow;
+          if (MatrixRowListFirst==NULL) {
+            MatrixRowListLast=NewRow;
+            MatrixRowListFirst=NewRow;
             NewRow->next=NULL;
           }
           else {
-            MatrixRowLast->next=NewRow;
-            MatrixRowLast=NewRow;
+            MatrixRowListLast->next=NewRow;
+            MatrixRowListLast=NewRow;
             NewRow->next=NULL;
           }
 
@@ -698,14 +665,14 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
         NewRow->nNonZeroElements=NonZeroElementsFound;
 
 
-        if (MatrixRowTable==NULL) {
-          MatrixRowLast=NewRow;
-          MatrixRowTable=NewRow;
+        if (MatrixRowListFirst==NULL) {
+          MatrixRowListLast=NewRow;
+          MatrixRowListFirst=NewRow;
           NewRow->next=NULL;
         }
         else {
-          MatrixRowLast->next=NewRow;
-          MatrixRowLast=NewRow;
+          MatrixRowListLast->next=NewRow;
+          MatrixRowListLast=NewRow;
           NewRow->next=NULL;
         }
 
@@ -782,7 +749,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   int *DataExchangeTableCounter=new int [PIC::nTotalThreads];
   for (thread=0;thread<PIC::nTotalThreads;thread++) DataExchangeTableCounter[thread]=0;
 
-  for (iRow=0,Row=MatrixRowTable;Row!=NULL;iRow++,Row=Row->next) {
+  for (iRow=0,Row=MatrixRowListFirst;Row!=NULL;iRow++,Row=Row->next) {
 
     for (iElement=0;iElement<Row->nNonZeroElements;iElement++) {
       el=Row->Elements+iElement;
@@ -818,9 +785,9 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   //re-count the 'internal' corner nodes so they follow the i,j,k order as well as rows
-  for (Row=MatrixRowTable;Row!=NULL;Row=Row->next) if (Row->CornerNode!=NULL) Row->CornerNode->LinearSolverUnknownVectorIndex=-1;
+  for (Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) if (Row->CornerNode!=NULL) Row->CornerNode->LinearSolverUnknownVectorIndex=-1;
 
-  for (iRow=0,Row=MatrixRowTable;Row!=NULL;Row=Row->next) {
+  for (iRow=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) {
     if (Row->CornerNode!=NULL) {
       if (Row->iVar==0) {
         if (Row->CornerNode->LinearSolverUnknownVectorIndex>=0) exit(__LINE__,__FILE__,"Error: a courner node is double counted");
@@ -833,7 +800,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   //verify that all all corner nodes have been counted
-  for (Row=MatrixRowTable;Row!=NULL;iRow++,Row=Row->next) for (iElement=0;iElement<Row->nNonZeroElements;iElement++) {
+  for (Row=MatrixRowListFirst;Row!=NULL;iRow++,Row=Row->next) for (iElement=0;iElement<Row->nNonZeroElements;iElement++) {
     int n;
 
     if (Row->Elements[iElement].CornerNode!=NULL) {
@@ -903,35 +870,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   delete [] DataRequestList;
 
-  //define the thread decomposition of the matrix
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    int nTotalRows=0,nRowsPerThread,cnt,iThread=0,index;
+  //cleate a RowTable;
+  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next,MatrixRowTableLength++);
 
-    for (Row=MatrixRowTable;Row!=NULL;Row=Row->next,nTotalRows++);
+  if (MatrixRowTable!=NULL) delete [] MatrixRowTable;
+  MatrixRowTable=new cMatrixRow *[MatrixRowTableLength];
 
-    MatrixThreadDecompositionFirstRow[0]=MatrixRowTable;
-    MatrixThreadDecompositionFirstIndex[0]=0;
-    nRowsPerThread=nTotalRows/PIC::nTotalThreadsOpenMP;
-
-    for (index=0,cnt=1,Row=MatrixRowTable;Row!=NULL;Row=Row->next,cnt++,index++) {
-      if (iThread!=PIC::nTotalThreadsOpenMP-1) {
-        if (cnt==nRowsPerThread) {
-          //this is the last row to be processed by the thread
-          MatrixThreadDecompositionLastRow[iThread]=Row;
-
-          iThread++;
-          MatrixThreadDecompositionFirstRow[iThread]=Row;
-          MatrixThreadDecompositionFirstIndex[iThread]=index;
-          cnt=1;
-        }
-      }
-    }
-
-
-#else
-    MatrixThreadDecompositionFirstRow[0]=MatrixRowTable;
-    MatrixThreadDecompositionLastRow[0]=NULL;
-#endif
+  for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next,MatrixRowTableLength++) MatrixRowTable[MatrixRowTableLength]=Row;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
@@ -1033,7 +978,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       delete [] SubdomainPartialUnknownsVector;
     }
 
-    MatrixRowTable=NULL,MatrixRowLast=NULL;
+    MatrixRowListFirst=NULL,MatrixRowListLast=NULL;
     SubdomainPartialRHS=NULL,SubdomainPartialUnknownsVector=NULL;
   }
 }
@@ -1074,26 +1019,12 @@ template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilL
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateMatrixNonZeroCoefficients(void (*UpdateMatrixRow)(cMatrixRow*)) {
-  cMatrixRow* row;
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none) shared(PIC::nTotalThreadsOpenMP,UpdateMatrixRow) private (row)
-   {
-     int ThisOpenMPThread=omp_get_thread_num();
-
-     cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
-     cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
-#else
-   {
-     const int ThisOpenMPThread=0;
-
-     cMatrixRow* RowStart=MatrixRowTable;
-     cMatrixRow* RowEnd=NULL;
-#endif //_COMPILATION_MODE_
-
-    for (row=RowStart;row!=RowEnd;row=row->next) {
-      UpdateMatrixRow(row);
-    }
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp parallel for schedule(dynamic,1)
+  #endif
+  for (int irow=0;irow<MatrixRowTableLength;irow++) {
+    UpdateMatrixRow(MatrixRowTable[irow]);
   }
 }
 
@@ -1102,27 +1033,15 @@ template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilL
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::UpdateRhs(double (*fSetRhs)(int,cRhsSupportTable*,int,cRhsSupportTable*,int)) {
-  cMatrixRow* row;
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none) shared(PIC::nTotalThreadsOpenMP,fSetRhs) private (row)
-   {
-     int ThisOpenMPThread=omp_get_thread_num();
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp parallel for schedule(dynamic,1) default(none) shared(fSetRhs)
+  #endif
+  for (int irow=0;irow<MatrixRowTableLength;irow++) {
+    cMatrixRow* row=MatrixRowTable[irow];
 
-     cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
-     cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
-#else
-   {
-     const int ThisOpenMPThread=0;
-
-     cMatrixRow* RowStart=MatrixRowTable;
-     cMatrixRow* RowEnd=NULL;
-#endif //_COMPILATION_MODE_
-
-    for (row=RowStart;row!=RowEnd;row=row->next) {
-      if ((row->RhsSupportLength_CornerNodes!=0)||(row->RhsSupportLength_CenterNodes!=0)) {
-        row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes);
-      }
+    if ((row->RhsSupportLength_CornerNodes!=0)||(row->RhsSupportLength_CenterNodes!=0)) {
+      row->Rhs=fSetRhs(row->iVar,row->RhsSupportTable_CornerNodes,row->RhsSupportLength_CornerNodes,row->RhsSupportTable_CenterNodes,row->RhsSupportLength_CenterNodes);
     }
   }
 }
@@ -1131,10 +1050,7 @@ template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilL
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
-  cMatrixRow* row;
-  cStencilElementData *ElementDataTable;
-  int cnt,iElement,iElementMax;
-  double res;
+
 
   double **RecvExchangeBufferTable;
 
@@ -1142,37 +1058,22 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   RecvExchangeBufferTable[PIC::ThisThread]=x;
 
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none)  shared(p) firstprivate(PIC::nTotalThreadsOpenMP) private (ElementDataTable,iElement,iElementMax,res,row,cnt) firstprivate (RecvExchangeBufferTable,PIC::ThisThread,length,PIC::nTotalThreads) 
-   {
-   int ThisOpenMPThread=omp_get_thread_num();
-
-   cMatrixRow* RowStart=MatrixThreadDecompositionFirstRow[ThisOpenMPThread];
-   cMatrixRow* RowEnd=MatrixThreadDecompositionLastRow[ThisOpenMPThread];
-
-   cnt=MatrixThreadDecompositionFirstIndex[ThisOpenMPThread];
-
-#else
-   const int ThisOpenMPThread=0;
-
-   cMatrixRow* RowStart=MatrixRowTable;
-   cMatrixRow* RowEnd=NULL;
-
-   cnt=0;
-
-#endif //_COMPILATION_MODE_
-
   double **LocalRecvExchangeBufferTable;
  
   LocalRecvExchangeBufferTable=new double*[PIC::nTotalThreads];
   for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBufferTable[thread];
 
 
-  for (row=RowStart;row!=RowEnd;row=row->next,cnt++) {
-    iElementMax=row->nNonZeroElements;
-    ElementDataTable=row->ElementDataTable;
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for schedule(dynamic,1) default(none) firstprivate(length) shared(LocalRecvExchangeBufferTable,p)
+#endif
+  for (int irow=0;irow<MatrixRowTableLength;irow++) {
+
+    int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
+    cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
     
-    res=0.0,iElement=0;
+    double res=0.0;
+    int iElement=0;
     cStencilElementData *data,*data_next,*data_next_next=NULL;
     double *u_vect,*u_vect_next;
 
@@ -1275,18 +1176,15 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     }
 
      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-     if (cnt>=length) exit(__LINE__,__FILE__,"Error: out of bound");
+     if (irow>=length) exit(__LINE__,__FILE__,"Error: out of bound");
      #endif
 
-     p[cnt]=res;
+     p[irow]=res;
   }
 
   delete [] LocalRecvExchangeBufferTable;
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp barrier
-  }
-#endif
+
 
   RecvExchangeBufferTable[PIC::ThisThread]=NULL;
 
@@ -1312,7 +1210,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   //count the total number of the variables, and create the data buffers
   if (SubdomainPartialRHS==NULL) {
-    for (SubdomainPartialUnknownsVectorLength=0,row=MatrixRowTable;row!=NULL;row=row->next) SubdomainPartialUnknownsVectorLength+=NodeUnknownVariableVectorLength;
+    for (SubdomainPartialUnknownsVectorLength=0,row=MatrixRowListFirst;row!=NULL;row=row->next) SubdomainPartialUnknownsVectorLength+=NodeUnknownVariableVectorLength;
 
     SubdomainPartialRHS=new double [SubdomainPartialUnknownsVectorLength];
     SubdomainPartialUnknownsVector=new double [SubdomainPartialUnknownsVectorLength];
@@ -1325,7 +1223,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   for (i=0;i<NodeUnknownVariableVectorLength;i++) MeanRhs[i]=0.0,MeanRhsCounter[i]=0;
 
-  for (row=MatrixRowTable;row!=NULL;cnt++,row=row->next) if (row->CornerNode!=NULL) {
+  for (row=MatrixRowListFirst;row!=NULL;cnt++,row=row->next) if (row->CornerNode!=NULL) {
     MeanRhs[row->iVar]+=row->Rhs;
     MeanRhsCounter[row->iVar]++;
   }
@@ -1337,7 +1235,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
   //populate the buffers
-  for (cnt=0,row=MatrixRowTable;row!=NULL;cnt++,row=row->next) {
+  for (cnt=0,row=MatrixRowListFirst;row!=NULL;cnt++,row=row->next) {
     if (row->CornerNode!=NULL) {
       if (cnt%NodeUnknownVariableVectorLength==0) {
         fInitialUnknownValues(SubdomainPartialUnknownsVector+NodeUnknownVariableVectorLength*row->CornerNode->LinearSolverUnknownVectorIndex,row->CornerNode);
@@ -1373,7 +1271,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   linear_solver_wrapper("GMRES", &Tol,&nMaxIter, &nVar, &nDim,&nI, &nJ, &nK, &nBlock, &iComm, Rhs_I,Sol_I, &PrecondParam, NULL, &lTest);
 
   //unpack the solution
-  for (row=MatrixRowTable;row!=NULL;row=row->next) if (row->CornerNode!=NULL)  {
+  for (row=MatrixRowListFirst;row!=NULL;row=row->next) if (row->CornerNode!=NULL)  {
     fUnpackSolution(SubdomainPartialUnknownsVector+NodeUnknownVariableVectorLength*row->CornerNode->LinearSolverUnknownVectorIndex,row->CornerNode);
   }
 
