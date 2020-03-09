@@ -124,10 +124,10 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
 
     //check whether the point is located deep in the block -> use three linear interpolation
     double iLoc,jLoc,kLoc;
-    double xmin[3],xmax[3];
+    double *xmin,*xmax;
 
-    memcpy(xmin,node->xmin,3*sizeof(double));
-    memcpy(xmax,node->xmax,3*sizeof(double));
+    xmin=node->xmin;
+    xmax=node->xmax;
 
     iLoc=(XyzIn_D[0]-xmin[0])/(xmax[0]-xmin[0])*_BLOCK_CELLS_X_;
     jLoc=(XyzIn_D[1]-xmin[1])/(xmax[1]-xmin[1])*_BLOCK_CELLS_Y_;
@@ -654,14 +654,14 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
 //init stencil for the corner based interpolation
 PIC::InterpolationRoutines::CornerBased::cStencil *PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int iStencil,jStencil,kStencil,iX[3],nd,idim;
-  double w,xLoc[3],dx[3],xMinNode[3],xMaxNode[3];
+  double w,xLoc[3],dx[3],*xMinNode,*xMaxNode;
   PIC::Mesh::cDataCornerNode* CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
   
   if (node==NULL) node=PIC::Mesh::mesh.findTreeNode(x);
 
-  memcpy(xMinNode,node->xmin,3*sizeof(double));
-  memcpy(xMaxNode,node->xmax,3*sizeof(double));
+  xMinNode=node->xmin;
+  xMaxNode=node->xmax;
 
   //the size of the cells
   dx[0]=(xMaxNode[0]-xMinNode[0])/_BLOCK_CELLS_X_;
