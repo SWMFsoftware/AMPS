@@ -459,14 +459,13 @@ void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,i
 //====================================================
 //set global particle constant weight
 void PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if (startNode->block!=NULL) startNode->block->SetLocalParticleWeight(GlobalParticleWeight,spec);
+  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
   }
-  else {
-    int i;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
 
-    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) SetGlobalParticleWeight(spec,GlobalParticleWeight,downNode);
+  if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>GlobalParticleWeight)) {
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=GlobalParticleWeight;
   }
 }
 
