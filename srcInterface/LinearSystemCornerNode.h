@@ -1084,6 +1084,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       __m256d av,bv,cv,rv;
 
       data=ElementDataTable+iElement;
+      /*
       a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
 
       data=ElementDataTable+iElement+1;
@@ -1094,9 +1095,21 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
       data=ElementDataTable+iElement+3;
       a[3]=data->MatrixElementValue,b[3]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+      */
 
-      av=_mm256_load_pd(a);
-      bv=_mm256_load_pd(b);
+
+      av=_mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
+
+      bv=_mm256_set_pd(
+		      LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex], 
+		      LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex], 
+		      LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex], 
+		      LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+		      );
+
+
+   //   av=_mm256_load_pd(a);
+   //   bv=_mm256_load_pd(b);
       cv=_mm256_mul_pd(av,bv);
       rv=_mm256_hadd_pd(cv,cv);
 
