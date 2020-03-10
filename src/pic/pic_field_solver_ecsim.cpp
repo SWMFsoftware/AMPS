@@ -2802,10 +2802,55 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               _mm256_permute4x64_pd(alpha_2v,PermutationTable_vu_2v),
               BlendingTable_vu);
 
+	  //To convert the double loop (below) into a single loop, 
+	  //the double loop was replaced with a single loop that calls the lambda (below) 
+	  //with parameters that correspond to those in the removed inner loop. 
+          auto process_ij_corner = [&] (double& alpha, double& tempWeightConst, int iCorner, int jCorner) {
+            double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
+            double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+
+            #ifndef __PGI
+            if (jCorner>1) {
+               char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
+
+               _mm_prefetch(ptr,_MM_HINT_NTA);
+               _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
+            }
+            #endif
+
+            __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
+            __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
+
+            _mm256_storeu_pd(tmpPtr,_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl));
+            _mm256_storeu_pd(tmpPtr+4,_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu));
+
+            tmpPtr[8]+=alpha*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
+          };
 
           for (int iCorner=0; iCorner<8; iCorner++){
             double tempWeightConst = matrixConst*WeightPG[iCorner];
 
+            switch (iCorner) {
+            case 7:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,7);
+            case 6:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,6);
+            case 5:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,5);
+            case 4:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,4);
+            case 3:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,3);
+            case 2:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,2);
+            case 1:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,1);
+            case 0:
+              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,0);
+            }
+
+
+/*
             for (int jCorner=0; jCorner<=iCorner; jCorner++){
               double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
               double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
@@ -2828,6 +2873,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               tmpPtr[8]+=alpha_2[2]*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
 
             }//jCorner
+*/
           }//iCorner
 
           particleNumber[spec]++;
