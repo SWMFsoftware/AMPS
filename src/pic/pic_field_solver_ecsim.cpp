@@ -1977,8 +1977,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 #if  _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) -> bool {
-    double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
-    double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+    double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+    double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
 
 
@@ -1992,7 +1992,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
             char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
             double * ptr =  (double*)(offset+CurrentBOffset);
-            memcpy(B_Center[LocalCenterId],ptr,3*sizeof(double));
+            B_Center[LocalCenterId]=ptr;
           }
         }
       }
@@ -2009,7 +2009,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
             char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
             double * ptr =  (double*)(offset+CurrentBOffset);
-            memcpy(B_corner[LocalCornerId],ptr,3*sizeof(double));
+            B_corner[LocalCornerId]=ptr;
           }
         }
       }
@@ -2393,8 +2393,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 
   ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) -> bool {
-    double B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_][3];
-    double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)][3];
+    double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+    double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
 
 
@@ -2408,7 +2408,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
             char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
             double * ptr =  (double*)(offset+CurrentBOffset);
-            memcpy(B_Center[LocalCenterId],ptr,3*sizeof(double));
+            B_Center[LocalCenterId]=ptr;
           }
         }
       }
@@ -2425,7 +2425,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
             char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
             double * ptr =  (double*)(offset+CurrentBOffset);
-            memcpy(B_corner[LocalCornerId],ptr,3*sizeof(double));
+            B_corner[LocalCornerId]=ptr;
           }
         }
       }
