@@ -2802,6 +2802,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
               _mm256_permute4x64_pd(alpha_2v,PermutationTable_vu_2v),
               BlendingTable_vu);
 
+	  #if _AVX_INSTRUCTIONS_USAGE_MODE__ON_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+         __m512d alpha_v=_mm512_insertf64x4(_mm512_castpd256_pd512(alpha_vl), alpha_vu, 1);
+#endif
+
 	  //To convert the double loop (below) into a single loop, 
 	  //the double loop was replaced with a single loop that calls the lambda (below) 
 	  //with parameters that correspond to those in the removed inner loop. 
@@ -2818,11 +2822,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             }
             #endif
 
+#if _AVX_INSTRUCTIONS_USAGE_MODE__ON_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+	    __m512d tmpPtr_v=_mm512_loadu_pd(tmpPtr);
+         _mm512_storeu_pd(tmpPtr,_mm512_fmadd_pd(alpha_v,_mm512_set1_pd(tempWeightProduct),tmpPtr_v));
+#else
+
             __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
             __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
 
             _mm256_storeu_pd(tmpPtr,_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl));
             _mm256_storeu_pd(tmpPtr+4,_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu));
+#endif
 
             tmpPtr[8]+=alpha*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
           };
