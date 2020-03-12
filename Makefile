@@ -92,14 +92,19 @@ endif
 
 #Intel compiler
 ifeq ($(COMPILE.c),icc)
-	SEARCH_C+= -march=core-avx2
+ifeq ($(AVXTYPE),512)
+        SEARCH_C+= -march=skylake
+else
+        SEARCH_C+= -march=core-avx2
+endif
+
 #GCC compiler
 else ifeq ($(COMPILE.c),gcc)
 	SEARCH_C+= -mavx2 -mfma
-
 ifeq ($(AVXTYPE),512)
-	SEARCH_C+= -mavx512f
+	SEARCH_C+= -mavx512f -mavx512vl 
 endif
+
 #PGI compiler
 else ifeq ($(COMPILE.c),pgcc)
 	SEARCH_C+= -mavx2 -mfma
