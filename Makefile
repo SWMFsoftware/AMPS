@@ -100,9 +100,9 @@ endif
 
 #GCC compiler
 else ifeq ($(COMPILE.c),gcc)
-	SEARCH_C+= -mavx2 -mfma
+	SEARCH_C+= -mavx2 -mfma -march=native 
 ifeq ($(AVXTYPE),512)
-	SEARCH_C+= -mavx512f -mavx512vl 
+	SEARCH_C+= -march=skylake-avx512  
 endif
 
 #PGI compiler
