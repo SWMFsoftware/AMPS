@@ -93,7 +93,7 @@ endif
 #Intel compiler
 ifeq ($(COMPILE.c),icc)
 ifeq ($(AVXTYPE),512)
-        SEARCH_C+= -march=skylake
+        SEARCH_C+= -xCore-AVX512 -march=skylake-avx512 
 else
         SEARCH_C+= -march=core-avx2
 endif
