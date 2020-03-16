@@ -199,6 +199,7 @@ namespace Earth {
     extern array_2d<double> CutoffRigidityTable;
 
     extern array_2d<int> InjectedParticleMap;
+    extern array_2d<double> MaxEnergyInjectedParticles;
 
     //process particles that leaves that computational domain
     int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);

@@ -19,6 +19,7 @@ long int Earth::CutoffRigidity::InitialLocationOffset=-1;
 long int Earth::CutoffRigidity::IntegratedPathLengthOffset=-1;
 array_2d<double> Earth::CutoffRigidity::CutoffRigidityTable;
 array_2d<int> Earth::CutoffRigidity::InjectedParticleMap;
+array_2d<double> Earth::CutoffRigidity::MaxEnergyInjectedParticles;
 
 //enable/disable the particle injection procedure
 bool Earth::CutoffRigidity::ParticleInjector::ParticleInjectionMode=true;
@@ -121,10 +122,15 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
 
       if ((iZenith<0)||(iZenith>=PIC::nTotalSpecies*Earth::Planet->nZenithSurfaceElements)||(iAzimuth<0)||(iAzimuth>=Earth::Planet->nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: out of range");
 
+/*
       double *RigidityTableElement=CutoffRigidityTable.GetPtr(spec,iOriginIndex);
 
       #pragma omp critical
       if ((*RigidityTableElement<0.0)||(*RigidityTableElement>Rigidity)) *RigidityTableElement=Rigidity;
+*/
+
+if ((CutoffRigidityTable(spec,iOriginIndex)<0.0)||(CutoffRigidityTable(spec,iOriginIndex)>Rigidity)) CutoffRigidityTable(spec,iOriginIndex)=Rigidity; 
+
     }
   }
 

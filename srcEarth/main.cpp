@@ -442,7 +442,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   if (Earth::CutoffRigidity::CutoffRigidityTable.IsAllocated()==true) {
     Earth::CutoffRigidity::CutoffRigidityTable.Deallocate(); 
     Earth::CutoffRigidity::InjectedParticleMap.Deallocate();
+    Earth::CutoffRigidity::MaxEnergyInjectedParticles.Deallocate();
   }
+
+  Earth::CutoffRigidity::MaxEnergyInjectedParticles.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
+  Earth::CutoffRigidity::MaxEnergyInjectedParticles=0.0;
 
   Earth::CutoffRigidity::CutoffRigidityTable.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
   Earth::CutoffRigidity::CutoffRigidityTable=-1.0;
@@ -517,9 +521,13 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           nTotalInjectedParticles++;
           Earth::CutoffRigidity::InjectedParticleMap(spec,iLocation)=1+Earth::CutoffRigidity::InjectedParticleMap(spec,iLocation); 
 
+          if (x[0]*v[0]+x[1]*v[1]+x[2]*v[2]<0.0) v[0]=-v[0],v[1]=-v[1],v[2]=-v[2]; 
+
           PIC::ParticleBuffer::SetV(v,newParticleData);
           PIC::ParticleBuffer::SetX(x,newParticleData);
           PIC::ParticleBuffer::SetI(spec,newParticleData);
+
+          if (energy>Earth::CutoffRigidity::MaxEnergyInjectedParticles(spec,iLocation)) Earth::CutoffRigidity::MaxEnergyInjectedParticles(spec,iLocation)=energy*J2MeV;
 
           //set the particle generation flag
           localParticleGenerationFlag=1;
@@ -704,7 +712,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
     fprintf(fout2d_total_flux,"VARIABLES=\"Lon\", \"Lat\"");
 
     for (spec=0;spec<PIC::nTotalSpecies;spec++) {
-      fprintf(fout2d_rigidity,",  \"Cutoff Rigidity (s=%i)\"",spec);
+      fprintf(fout2d_rigidity,",  \"Cutoff Rigidity (s=%i)\", \"Injected Particle Number (s=%i)\", \"Max energy injected particles (s=%i)\"",spec,spec,spec);
       fprintf(fout2d_total_flux,",  \"Total Flux [1/(s*m^2)] (s=%i)\"",spec);
     }
 
@@ -775,6 +783,10 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
       double norm=0.0,flux_total=0.0,sum_area=0.0;
       array_1d<double> LocalEnergySpectrum(nTotalEnergySpectrumIntervals);
 
+      double interpolated_number_injected_partilces=0.0;
+      int number_injected_partilces=0;
+      double max_injected_particle_energy=0.0;
+
       LocalEnergySpectrum=0.0;
 
       for (int el=0;el<InterpolationListLength;el++) {
@@ -787,13 +799,22 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           //the totalsurface area
           sum_area+=Sphere.GetSurfaceElementArea(InterpolationList[el]);
           flux_total+=TotalFlux(InterpolationList[el],spec);
+          number_injected_partilces=Earth::CutoffRigidity::InjectedParticleMap(spec,InterpolationList[el]);
+
+          max_injected_particle_energy=Earth::CutoffRigidity::MaxEnergyInjectedParticles(spec,InterpolationList[el]);
 
           //collect cutoff regidiry from other MPI processes
           for (int thread=1;thread<PIC::nTotalThreads;thread++) {
-            pipe.recv(t,thread);
+            number_injected_partilces+=pipe.recv<int>(thread);
 
-            if ((t>0.0)&&(t<minElementRigidity)) minElementRigidity=t;
+            pipe.recv(t,thread);
+            if (t>max_injected_particle_energy) max_injected_particle_energy=t;
+
+            pipe.recv(t,thread);
+            if ( (t>0.0) && ((minElementRigidity<0.0)||(t<minElementRigidity)) )  minElementRigidity=t;
           }
+
+          interpolated_number_injected_partilces+=number_injected_partilces*Sphere.GetSurfaceElementArea(InterpolationList[el]);
 
           //recieve the energy specgtrum
           for (iE=0,norm=0.0;iE<nTotalEnergySpectrumIntervals;iE++)  LocalEnergySpectrum(iE)+=EnergySpectrum(InterpolationList[el],spec,iE);
@@ -805,6 +826,12 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           }
         }
         else {
+          //send the number of injected model particles 
+          pipe.send(Earth::CutoffRigidity::InjectedParticleMap(spec,InterpolationList[el]));
+
+          //send the max energy of the injected particles 
+          pipe.send(Earth::CutoffRigidity::MaxEnergyInjectedParticles(spec,InterpolationList[el]));
+
           //send cutoff rigidity to the "root" MPI process
           pipe.send(Earth::CutoffRigidity::CutoffRigidityTable(spec,InterpolationList[el]));
 
@@ -822,7 +849,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         if (norm>0.0) for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) LocalEnergySpectrum(iE)/=norm;
 
 
-        fprintf(fout2d_rigidity,"  %e",minElementRigidity);
+        fprintf(fout2d_rigidity,"  %e  %e  %e",minElementRigidity,interpolated_number_injected_partilces/sum_area,max_injected_particle_energy);
         fprintf(fout2d_total_flux,"  %e",flux_total/sum_area);
 
         for (iE=0;iE<nTotalEnergySpectrumIntervals;iE++) fprintf(fout2d_spectrum[spec],"  %e",LocalEnergySpectrum(iE));
