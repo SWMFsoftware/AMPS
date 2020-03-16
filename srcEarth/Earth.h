@@ -198,6 +198,8 @@ namespace Earth {
     //sphere for sampling of the cutoff regidity
     extern array_2d<double> CutoffRigidityTable;
 
+    extern array_2d<int> InjectedParticleMap;
+
     //process particles that leaves that computational domain
     int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 

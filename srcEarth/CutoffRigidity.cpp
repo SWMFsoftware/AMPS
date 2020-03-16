@@ -18,6 +18,7 @@ long int Earth::CutoffRigidity::InitialRigidityOffset=-1;
 long int Earth::CutoffRigidity::InitialLocationOffset=-1;
 long int Earth::CutoffRigidity::IntegratedPathLengthOffset=-1;
 array_2d<double> Earth::CutoffRigidity::CutoffRigidityTable;
+array_2d<int> Earth::CutoffRigidity::InjectedParticleMap;
 
 //enable/disable the particle injection procedure
 bool Earth::CutoffRigidity::ParticleInjector::ParticleInjectionMode=true;
@@ -143,7 +144,7 @@ int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xI
 
 //output sampled cutoff rigidity map
 void Earth::CutoffRigidity::OutputDataFile::PrintVariableList(FILE* fout) {
-  fprintf(fout,", \"Cutoff Rigidity\"");
+  fprintf(fout,", \"Cutoff Rigidity\", \"Injected Particle Number\"");
 }
 
 void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
@@ -151,6 +152,8 @@ void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 
   double CutoffRigidity=0.0,SurfaceElementCutoffRigidity;
+  double InterpolatedInjectedParticleNumber=0.0,normInterpolatedInjectedParticleNumber=0.0;
+  int InjectedParticleNumber;
 
   for (nInterpolationElement=0;nInterpolationElement<SurfaceElementsInterpolationListLength;nInterpolationElement++) {
     nSurfaceElement=SurfaceElementsInterpolationList[nInterpolationElement];
@@ -158,7 +161,10 @@ void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long
 
     Sphere->GetSurfaceElementIndex(iZenith,iAzimuth,nSurfaceElement);
 
+    InjectedParticleNumber=InjectedParticleMap(spec,nSurfaceElement); 
+
     if (PIC::ThisThread!=0) {
+      pipe->send(InjectedParticleNumber);
       pipe->send(CutoffRigidityTable(spec,nSurfaceElement));
     }
     else {
@@ -168,9 +174,14 @@ void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long
       SurfaceElementCutoffRigidity=CutoffRigidityTable(spec,nSurfaceElement);
 
       for (thread=1;thread<PIC::nTotalThreads;thread++) {
+        InjectedParticleNumber+=pipe->recv<int>(thread);        
+
         t=pipe->recv<double>(thread);
         if ((SurfaceElementCutoffRigidity<0.0)||(SurfaceElementCutoffRigidity>t)) SurfaceElementCutoffRigidity=t;
       }
+
+      InterpolatedInjectedParticleNumber+=InjectedParticleNumber*InterpolationCoefficient;
+      normInterpolatedInjectedParticleNumber+=InterpolationCoefficient; 
 
       if (SurfaceElementCutoffRigidity>0.0) {
         CutoffRigidity+=SurfaceElementCutoffRigidity*InterpolationCoefficient;
@@ -179,7 +190,7 @@ void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long
     }
   }
 
-  if (PIC::ThisThread==0) fprintf(fout," %e ",((InterpolationNormalization>0.0) ? CutoffRigidity/InterpolationNormalization : -1));
+  if (PIC::ThisThread==0) fprintf(fout," %e  %e ",((InterpolationNormalization>0.0) ? CutoffRigidity/InterpolationNormalization : -1),InterpolatedInjectedParticleNumber/normInterpolatedInjectedParticleNumber);
 }
 
 //injection rate of the test particles when calculate the cut-off rigidity

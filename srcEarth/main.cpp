@@ -439,10 +439,16 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::Allocate(nAzimuthalElements*nAzimuthalElements);
   }
 
-  if (Earth::CutoffRigidity::CutoffRigidityTable.IsAllocated()==true) Earth::CutoffRigidity::CutoffRigidityTable.Deallocate(); 
+  if (Earth::CutoffRigidity::CutoffRigidityTable.IsAllocated()==true) {
+    Earth::CutoffRigidity::CutoffRigidityTable.Deallocate(); 
+    Earth::CutoffRigidity::InjectedParticleMap.Deallocate();
+  }
 
   Earth::CutoffRigidity::CutoffRigidityTable.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
   Earth::CutoffRigidity::CutoffRigidityTable=-1.0;
+
+  Earth::CutoffRigidity::InjectedParticleMap.init(PIC::nTotalSpecies,nZenithElements*nAzimuthalElements);
+  Earth::CutoffRigidity::InjectedParticleMap=0;
 
   if (PIC::ThisThread==0) {
     cout << "nIngectedParticlePerIteration=" << nIngectedParticlePerIteration << endl;
@@ -509,6 +515,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
           nTotalInjectedParticles++;
+          Earth::CutoffRigidity::InjectedParticleMap(spec,iLocation)=1+Earth::CutoffRigidity::InjectedParticleMap(spec,iLocation); 
 
           PIC::ParticleBuffer::SetV(v,newParticleData);
           PIC::ParticleBuffer::SetX(x,newParticleData);
