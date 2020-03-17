@@ -318,6 +318,17 @@ namespace Vector3D {
 #endif
   }
 
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
+  inline void CrossProduct(__m256d& res,__m256d& av,__m256d& bv) {
+    const int PermutationTable=201;// 11 00 10 01 b
+
+    res=_mm256_permute4x64_pd(
+        _mm256_fmsub_pd (av,_mm256_permute4x64_pd(bv,PermutationTable),_mm256_mul_pd(_mm256_permute4x64_pd(av,PermutationTable),bv)),
+        PermutationTable);
+  }
+#endif
+
+
   inline double Length(double *x) {
     return sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   }
