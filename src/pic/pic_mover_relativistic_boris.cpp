@@ -16,9 +16,31 @@
 int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
-  double gamma,vInit[3],xInit[3]={0.0,0.0,0.0},vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
-  double mass,uMinus[3],ElectricCharge,E[3],B[3],QdT_over_twoM;
+  double gamma,*xminBlock,*xmaxBlock;
+  double mass,QdT_over_twoM,ElectricCharge;
   int idim,i,j,k,spec;
+
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+  double uMinus[3],E[3],B[3];
+  double vInit[3],xInit[3],xFinal[3],vFinal[4];
+#else
+  __m256d uMinus_v,vInit2_v;
+
+  union {__m256d B_v; double B[4];};
+  union {__m256d E_v; double E[4];};
+
+  union {__m256d vInit_v; double vInit[4];};
+  union {__m256d xInit_v; double xInit[4];};
+
+  union {__m256d xFinal_v; double xFinal[4];};
+  union {__m256d vFinal_v; double vFinal[4];};
+
+  vInit[3]=0.0,xInit[3]=0.0,E[3]=0.0,B[3]=0.0;
+
+#endif
+
+
 
   //the description of the boundaries of the block faces
   struct cExternalBoundaryFace {
@@ -74,10 +96,17 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
     memcpy(vFinal,vInit,3*sizeof(double));
   }
   else while (dtTotalIn>0.0) {
-    gamma=1.0/sqrt(1.0-(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2])/(SpeedOfLight*SpeedOfLight));
 
-    memcpy(xminBlock,startNode->xmin,DIM*sizeof(double));
-    memcpy(xmaxBlock,startNode->xmax,DIM*sizeof(double));
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+    gamma=1.0/sqrt(1.0-(vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2])/(SpeedOfLight*SpeedOfLight));
+#else //_AVX_INSTRUCTIONS_USAGE_MODE_
+    vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
+    gamma=1.0/sqrt(1.0-(vInit2_v[0]+vInit2_v[1]+vInit2_v[2])/(SpeedOfLight*SpeedOfLight));
+
+#endif //_AVX_INSTRUCTIONS_USAGE_MODE_
+
+    xminBlock=startNode->xmin;
+    xmaxBlock=startNode->xmax;
 
     //calculate fields acting upon the particle
     PIC::CPLR::InitInterpolationStencil(xInit,startNode);
@@ -96,6 +125,8 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
     dtTotalIn-=dt;
 
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
     #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
     if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
       for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
@@ -142,6 +173,98 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
       for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
     }
 #endif
+
+
+
+#else //_AVX_INSTRUCTIONS_USAGE_MODE_
+
+    #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
+//    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+//      for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
+//    }
+
+    vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
+    B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(-1.0));
+    #endif
+
+    //convert velocity into momentum and advance particle half time step
+    QdT_over_twoM=ElectricCharge*dt/(2.0*mass);
+ //   for (idim=0;idim<3;idim++) uMinus[idim]=gamma*vInit[idim]+QdT_over_twoM*E[idim];
+
+    uMinus_v=_mm256_add_pd( _mm256_mul_pd(_mm256_set1_pd(gamma),vInit_v), _mm256_mul_pd(_mm256_set1_pd(QdT_over_twoM),E_v));
+
+    //first rotation
+    double t[3],s[3],uPrime[3],uPlus[3],l=0.0;
+    __m256d uMinus2_v;
+
+    uMinus2_v=_mm256_mul_pd(uMinus_v,uMinus_v);
+    gamma=sqrt(1.0+(uMinus2_v[0]+uMinus2_v[1]+uMinus2_v[2])/(SpeedOfLight*SpeedOfLight));
+
+//    for (idim=0;idim<3;idim++) {
+//      t[idim]=QdT_over_twoM/gamma*B[idim];
+//      l+=pow(t[idim],2);
+//    }
+
+    __m256d t_v,t2_v,uPrime_v,s_v,uPlus_v;
+
+    t_v=_mm256_mul_pd(_mm256_set1_pd(QdT_over_twoM/gamma),B_v);
+    t2_v=_mm256_mul_pd(t_v,t_v);
+
+    l=t2_v[0]+t2_v[1]+t2_v[2];
+
+
+//    Vector3D::CrossProduct(uPrime,uMinus,t);
+//    for (idim=0;idim<3;idim++) uPrime[idim]+=uMinus[idim];
+
+    Vector3D::CrossProduct(uPrime_v,uMinus_v,t_v);
+    uPrime_v=_mm256_add_pd(uPrime_v,uMinus_v);
+
+
+    //second rotation
+//    for (idim=0;idim<3;idim++) s[idim]=2.0*t[idim]/(1.0+l);
+
+    s_v=_mm256_mul_pd(_mm256_set1_pd(2.0/(1.0+l)),t_v);
+
+//    Vector3D::CrossProduct(uPlus,uPrime,s);
+//    for (idim=0;idim<3;idim++) uPlus[idim]+=uMinus[idim];
+
+    Vector3D::CrossProduct(uPlus_v,uPrime_v,s_v);
+    uPlus_v=_mm256_add_pd(uPlus_v,uMinus_v);
+
+    //second half-time electric field acceleration
+//    double uFinal[3];
+//
+//    for (idim=0;idim<3;idim++) uFinal[idim]=uPlus[idim]+QdT_over_twoM*E[idim];
+//    gamma=sqrt(1.0+(uFinal[0]*uFinal[0]+uFinal[1]*uFinal[1]+uFinal[2]*uFinal[2])/(SpeedOfLight*SpeedOfLight));
+
+    __m256d uFinal_v,uFinal2_v;
+
+    uFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_twoM),E_v,uPlus_v);
+    uFinal2_v=_mm256_mul_pd(uFinal_v,uFinal_v);
+
+//    gamma=sqrt(1.0+(uFinal2_v[0]+uFinal2_v[1]+uFinal2_v[2])/(SpeedOfLight*SpeedOfLight));
+//
+//    for (idim=0;idim<3;idim++) {
+//      vFinal[idim]=uFinal[idim]/gamma;
+//      xFinal[idim]=xInit[idim]+vFinal[idim]*dt;
+//    }
+
+
+    vFinal_v=_mm256_div_pd(uFinal_v,_mm256_set1_pd(gamma));
+    xFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dt),vFinal_v,xInit_v);
+
+
+    #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
+    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+  //    for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
+
+      vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
+      vFinal_v=_mm256_mul_pd(vFinal_v,_mm256_set1_pd(-1.0));
+    }
+    #endif
+
+
+#endif //_AVX_INSTRUCTIONS_USAGE_MODE_
 
 
     //interaction with the faces of the block and internal surfaces
