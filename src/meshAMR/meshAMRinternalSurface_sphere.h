@@ -290,6 +290,10 @@ public:
     switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
     case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
       cosZenithAngle=1.0-dCosZenithAngle*iZenithPoint;
+
+      if (cosZenithAngle<-1.0) cosZenithAngle=-1.0;
+      if (cosZenithAngle>1.0) cosZenithAngle=1.0; 
+
       sinZenithAngle=sqrt(1.0-cosZenithAngle*cosZenithAngle);
       break;
     case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
@@ -318,7 +322,7 @@ public:
   }
 
   inline void GetSurfaceLonLatNormal(double &lon,double &lat,double iZenithPoint,double  iAzimutalPoint) {
-    double x[3],r;
+    double x[3],r,t;
     int idim;
 
     GetSurfaceCoordinate(x,iZenithPoint,iAzimutalPoint);
@@ -326,7 +330,20 @@ public:
     for (idim=0;idim<3;idim++) x[idim]-=OriginPosition[idim];
     r=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
 
-    lat=180.0/Pi*asin(x[2]/r);
+    t=x[2]/r;
+
+    if (t>=1.0) lat=90.0;
+    else if (t<=-1.0) lat=-90.0;
+    else lat=180.0/Pi*asin(t);
+
+    if (isfinite(lat)==false) {
+      char msg[1000];
+
+      sprintf(msg,"Error: something wrong with the surface coordinate(x=%e, %e, %e, r=%e, t=%e, lat=%e, iZenithPoint=%e,iAzimutalPoint=%e\n",
+             x[0],x[1],x[2],r,t,lat,iZenithPoint,iAzimutalPoint);
+      exit(__LINE__,__FILE__,msg);
+    }
+
     lon=180.0/Pi*dAzimuthalAngle*iAzimutalPoint;
   }
 
