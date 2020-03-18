@@ -4407,6 +4407,16 @@ namespace PIC {
     void check_max_mem_usage(string tag);
     double read_mem_usage();
     void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag=true);
+
+    namespace MemoryLeakCatch {
+      extern bool Active;
+      extern double Baseline;
+
+      void SetBaseline();
+      void SetActive(bool);
+      void Trap(int,const char*);
+      void Test(int,const char*);
+    }
   }
 
   namespace Alarm {
@@ -6315,7 +6325,7 @@ namespace FieldSolver {
               extern Debugger::cTimer UpdateBTime; 
               extern Debugger::cTimer UpdateETime; 
               extern Debugger::cTimer TotalRunTime; 
-	            extern Debugger::cTimer TotalMatvecTime;
+	      extern Debugger::cTimer TotalMatvecTime;
 
               void Print();
             }

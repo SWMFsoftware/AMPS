@@ -1163,6 +1163,31 @@ double PIC::Debugger::read_mem_usage() {
   return rssMB;
 }
 
+double PIC::Debugger::MemoryLeakCatch::Baseline=0.0;
+bool PIC::Debugger::MemoryLeakCatch::Active=false;
+
+void PIC::Debugger::MemoryLeakCatch::SetBaseline() {Baseline=PIC::Debugger::read_mem_usage();} 
+
+void PIC::Debugger::MemoryLeakCatch::SetActive(bool flag) {
+  Active=flag;
+  if (Active==true) SetBaseline();
+}
+
+void PIC::Debugger::MemoryLeakCatch::Trap(int nline,const char* fname) {
+   char msg[100];
+
+   sprintf(msg,"The size of the allocated  heap have increased by %e MB\n",PIC::Debugger::read_mem_usage()-Baseline);
+   printf(msg); //here the memory leack can be intersepted in a debugger
+}  
+
+void PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {
+  if (Active==true) {
+    if (PIC::Debugger::read_mem_usage()>Baseline) {
+      Trap(nline,fname);
+      SetBaseline();
+    }
+  }
+}
 
 
 void PIC::Debugger::check_max_mem_usage(string tag) {
