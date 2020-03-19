@@ -8,11 +8,6 @@ Prefix=AMPS
 DiagnosticStream=amps.log !!screen, filename 'something like amps.log' 
 OutputDirectory=out
 
-
-DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=on ! on,off 
-
-
 makefile  SOURCES=src
 makefile  RUNDIR=run
 makefile  MPIRUN=mpirun -np 4
