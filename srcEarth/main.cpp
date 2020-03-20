@@ -716,8 +716,8 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
       fprintf(fout2d_total_flux,",  \"Total Flux [1/(s*m^2)] (s=%i)\"",spec);
     }
 
-    fprintf(fout2d_rigidity,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
-    fprintf(fout2d_total_flux,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+    fprintf(fout2d_rigidity,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements+1,nZenithElements+1);
+    fprintf(fout2d_total_flux,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements+1,nZenithElements+1);
 
     //files to output the energy spectrum
     for (spec=0;spec<PIC::nTotalSpecies;spec++) {
@@ -729,7 +729,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         fprintf(fout2d_spectrum[spec],",  \"(%e[MeV]<E<%e[MeV])\"",pow(10.0,iE*dE+logMinEnergyLimit)*J2MeV,pow(10.0,(iE+1)*dE+logMinEnergyLimit)*J2MeV);
       }
 
-      fprintf(fout2d_spectrum[spec],"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements,nZenithElements+1);
+      fprintf(fout2d_spectrum[spec],"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalElements+1,nZenithElements+1);
     }
   }
   else {
@@ -738,13 +738,31 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   //interpolate and print the state vector
   long int InterpolationList[nZenithElements*nAzimuthalElements],InterpolationListLength=0;
+  int AzimuthalShift=nAzimuthalElements/2;
 
-  for (int iZenith=0;iZenith<nZenithElements+1;iZenith++) for (int iAzimuthal=0;iAzimuthal<nAzimuthalElements;iAzimuthal++) {
+  for (int iZenith=0;iZenith<nZenithElements+1;iZenith++) for (int iAzimuthalIn=0;iAzimuthalIn<nAzimuthalElements+1;iAzimuthalIn++) { 
+//for (int iAzimuthal=0;iAzimuthal<nAzimuthalElements;iAzimuthal++) {
+
+    int iAzimuthal=iAzimuthalIn+AzimuthalShift;
+    bool shft_flag=true;
+
+    if (iAzimuthal>=nAzimuthalElements) {
+      iAzimuthal-=nAzimuthalElements;
+      shft_flag=false;
+    }
+
+    if (iAzimuthalIn==nAzimuthalElements) {
+      shft_flag=false;
+      iAzimuthal=+AzimuthalShift;
+    } 
+   
     Sphere.GetSurfaceCoordinate(x,iZenith,iAzimuthal);
 
     if (PIC::ThisThread==0) {
       double lon,lat;
       Sphere.GetSurfaceLonLatNormal(lon,lat,iZenith,iAzimuthal);
+
+      if (shft_flag==true) lon-=360.0;
 
       fprintf(fout2d_rigidity,"%e %e ",lon,lat);
       fprintf(fout2d_total_flux,"%e %e ",lon,lat);
