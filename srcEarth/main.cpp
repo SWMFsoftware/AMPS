@@ -553,7 +553,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
             charge=fabs(PIC::MolecularData::GetElectricCharge(spec));
 
             momentum=Relativistic::Speed2Momentum(speed,mass);
-            rigidity=(charge>0.0) ? momentum/charge : 0.0;
+            rigidity=(charge>0.0) ? momentum*SpeedOfLight/charge/1.0E9 : 0.0; //cutoff rigidity in SI -> GV (Moraal-2013-SSR)  
 
             *((double*)(newParticleData+Earth::CutoffRigidity::InitialRigidityOffset))=rigidity;
           }
@@ -712,7 +712,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
     fprintf(fout2d_total_flux,"VARIABLES=\"Lon\", \"Lat\"");
 
     for (spec=0;spec<PIC::nTotalSpecies;spec++) {
-      fprintf(fout2d_rigidity,",  \"Cutoff Rigidity (s=%i)\", \"Injected Particle Number (s=%i)\", \"Max energy injected particles (s=%i)\"",spec,spec,spec);
+      fprintf(fout2d_rigidity,",  \"Cutoff Rigidity [GV] (s=%i)\", \"Injected Particle Number (s=%i)\", \"Max energy injected particles (s=%i)\"",spec,spec,spec);
       fprintf(fout2d_total_flux,",  \"Total Flux [1/(s*m^2)] (s=%i)\"",spec);
     }
 
