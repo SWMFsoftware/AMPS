@@ -391,7 +391,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CCMC
+Name=CCMC@@(0-pleiades) 
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
