@@ -1020,7 +1020,7 @@ int main(int argc,char **argv) {
 
   }
   else {
-    int nTotalIterations = 100000001;
+    CutoffRigidityCalculation(10000);
   }
 
 
