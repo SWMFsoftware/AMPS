@@ -279,6 +279,40 @@ while ($line=<InputFile>) {
     ($s0,$InputComment)=split(' ',$InputComment,2);
     ampsConfigLib::ChangeValueOfVariable("int nAzimuthalElements",$s0,"main/main.cpp");
   }
+
+  #parameters of the T96 model 
+  elsif ($InputLine eq "T96") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+
+    if ($s0 eq "ON") {
+      while (defined $InputComment) {
+        ($s0,$InputComment)=split(' ',$InputComment,2);
+
+        ampsConfigLib::ChangeValueOfVariable("bool Earth::T96::active_flag","true","main/Earth.cpp");
+
+        if ($s0 eq "SOLAR_WIND_PRESSURE") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T96::solar_wind_pressure",$s0,"main/Earth.cpp");
+        } 
+        elsif ($s0 eq "DST") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T96::dst",$s0,"main/Earth.cpp");
+        }
+        elsif ($s0 eq "BY") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T96::by",$s0,"main/Earth.cpp");
+        }
+        elsif ($s0 eq "BZ") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T96::bz",$s0,"main/Earth.cpp");
+        }
+        else {
+          die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+    }
+  }
+
   
   #locations of points where the cutoff rigidity and the energetic particle flux are calculated
   elsif ($InputLine eq "CUTOFFTESTLOCATIONS") {
