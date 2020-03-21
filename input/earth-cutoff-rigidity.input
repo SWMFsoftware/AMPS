@@ -172,18 +172,18 @@ MoverIntegratorMode=Boris-relativistic
   SEP=off
 
   !Before the storm on March 16, 2015, 0600 UT: 
-  T96=off \\
-   solar_wind_pressure=2.0  \\ !nPa 
-   DST=1.0 \\ !nT 
-   By=-0.08 \\ !nT  
-   Bz=2.0 !nT  
+  T96=off  \\
+   solar_wind_pressure=2.0*_NANO_  \\ !nPa 
+   DST=1.0*_NANO_ \\ !nT 
+   By=-0.08*_NANO_ \\ !nT  
+   Bz=2.0*_NANO_ !nT  
 
  !Storm on March 17, 2015, 2230 UT:
-  T96=off \\
-   solar_wind_pressure=10.0  \\ !nPa
-   DST=-200.0 \\ !nT 
-   By=-7.0 \\ !nT
-   Bz=-10.0 !nT
+  T96=on \\
+   solar_wind_pressure=10.0*_NANO_  \\ !nPa
+   DST=-200.0*_NANO_ \\ !nT 
+   By=-7.0*_NANO_ \\ !nT
+   Bz=-10.0*_NANO_ !nT
 
  
 
