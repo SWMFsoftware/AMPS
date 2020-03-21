@@ -11,6 +11,7 @@
 
 #include "pic.h"
 #include "Earth.h"
+#include "T96Interface.h"
 
 void amps_time_step();
 
@@ -18,6 +19,15 @@ void amps_time_step();
 char Earth::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
 char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="";
 char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="";
+
+//parameters of the T96 model
+bool Earth::T96::active_flag=false;
+double Earth::T96::solar_wind_pressure=0.0;
+double Earth::T96::dst=0.0;
+double Earth::T96::by=0.0;
+double Earth::T96::bz=0.0;
+
+
 
 //composition of the GCRs
 cCompositionGroupTable *Earth::CompositionGroupTable=NULL;
@@ -418,6 +428,15 @@ double Earth::BC::sphereInjectionRate(int spec,void *SphereDataPointer) {
 
 //init the Earth magnetosphere model
 void Earth::Init() {
+  //init the T96 model
+  if (T96::active_flag==true) {
+    ::T96::SetSolarWindPressure(T96::solar_wind_pressure);
+    ::T96::SetDST(T96::dst);
+    ::T96::SetBYIMF(T96::by);
+    ::T96::SetBZIMF(T96::bz); 
+  }
+
+
   //init the composition gourp tables
   //!!!!!!!!!!!!! For now only hydrogen is considered !!!!!!!!!!!!!!!!!
 

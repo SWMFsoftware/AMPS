@@ -80,6 +80,16 @@ namespace Earth {
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
 
+
+  //parameterd of the T96 model
+  namespace T96 {
+    extern bool active_flag;
+    extern double solar_wind_pressure;
+    extern double dst;
+    extern double by;
+    extern double bz;
+  } 
+
   //the mesh parameters
   namespace Mesh {
     extern char sign[_MAX_STRING_LENGTH_PIC_];
