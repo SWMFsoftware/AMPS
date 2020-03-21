@@ -101,7 +101,12 @@ public:
 
   inline long int GetLocalSurfaceElementNumber(long int nZenithElement,long int nAzimuthalElement) {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range ");
+    if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) {
+      char msg[1000];
+
+      sprintf(msg,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range\nnZenithElement=%o\nnAzimuthalElement=%i\n",nZenithElement,nAzimuthalElement);
+      exit(__LINE__,__FILE__,msg);
+    }
     #endif
 
     return nZenithElement+nZenithSurfaceElements*nAzimuthalElement;
