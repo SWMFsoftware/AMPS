@@ -364,9 +364,6 @@ at the end of each time step
 //input unit for the field solver
 #define _PIC_FIELD_SOLVER_INPUT_UNIT_ _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
 
-//enforce the recieving order of particles in the PIC::Parallel::ExchangeParticleData()
-#define _PIC_PARTICLE_EXCHANGE_ENFORCE_RECIEVING_ORDER_MODE_ _PIC_MODE_OFF_
-
 //default field solver uses B at the center
 #define _PIC_FIELD_SOLVER_B_MODE_  _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
 
