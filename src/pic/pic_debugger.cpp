@@ -1176,7 +1176,7 @@ void PIC::Debugger::MemoryLeakCatch::SetActive(bool flag) {
 void PIC::Debugger::MemoryLeakCatch::Trap(int nline,const char* fname) {
    char msg[100];
 
-   sprintf(msg,"The size of the allocated  heap have increased by %e MB\n",PIC::Debugger::read_mem_usage()-Baseline);
+   sprintf(msg,"The size of the allocated  heap have increased by %e MB (thread=%i,line=%i,file=%s)\n",PIC::Debugger::read_mem_usage()-Baseline,PIC::ThisThread,nline,fname);
    printf(msg); //here the memory leack can be intersepted in a debugger
 }  
 
