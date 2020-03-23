@@ -63,6 +63,8 @@ void PIC::Parallel::ExchangeParticleData() {
   int From,To,i,iFrom,flag;
   long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
+  long int *FirstCellParticleTable;
+  int thread;
 
   int RecvMessageSizeRequestTableLength=0;
   int SendMessageSizeRequestTableLength=0;
@@ -317,53 +319,82 @@ void PIC::Parallel::ExchangeParticleData() {
     return offset;
   };
 
+
+  auto SetMessageSizeTable = [&] () {
+    for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+      SendMessageLengthTable[To]+=GetSendMessageLength(To);
+
+      //end the part of the sender
+      if (SendMessageLengthTable[To]!=0) {
+        SendMessageLengthTable[To]+=sizeof(int);
+      }
+
+      //the total length of the message to be send
+      MPI_Isend(SendMessageLengthTable+To,1,MPI_INT,To,10,MPI_GLOBAL_COMMUNICATOR,SendMessageSizeRequestTable+SendMessageSizeRequestTableLength);
+      SendMessageLengthProcessTable[SendMessageSizeRequestTableLength]=To;
+      SendMessageSizeRequestTableLength++;
+    }
+  };
+
+  auto ScheduleRecvMessageSizeTable = [&] () {
+    for (From=0;From<PIC::Mesh::mesh.nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][From]==true)) {
+      MPI_Irecv(RecvMessageLengthTable+From,1,MPI_INT,From,10,MPI_GLOBAL_COMMUNICATOR,RecvMessageSizeRequestTable+RecvMessageSizeRequestTableLength);
+      RecvMessageLengthProcessTable[RecvMessageSizeRequestTableLength]=From;
+      RecvMessageSizeRequestTableLength++;
+    }
+  };
+
+  auto DeleteTemporatuBufers = [&] () {
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+      if (RecvParticleDataBuffer[thread]!=NULL) delete [] RecvParticleDataBuffer[thread];
+      if (SendParticleDataBuffer[thread]!=NULL) delete [] SendParticleDataBuffer[thread];
+    }
+  };
+
+  auto CompleteSendOperations =[&] () {
+    if (SendParticleDataRequestTableLength!=0) {
+      MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
+      SendParticleDataRequestTableLength=0;
+    }
+
+    if (SendMessageSizeRequestTableLength!=0){
+      MPI_Waitall(SendMessageSizeRequestTableLength,SendMessageSizeRequestTable,MPI_STATUSES_IGNORE);
+      SendMessageSizeRequestTableLength=0;
+    }
+  };
+
+  auto SendParticleData =[&] () {
+    for (To=0;To<PIC::nTotalThreads;To++) if ((To!=PIC::ThisThread)&&(SendMessageLengthTable[To]!=0)) {
+      //there is something to send => pack the data and send it
+      bool CommunicationInitialed_BLOCK_;
+      int iCell,jCell,kCell;
+
+      SendParticleDataBuffer[To]=new char [SendMessageLengthTable[To]];
+
+      int offset=0;
+      char *buffer=SendParticleDataBuffer[To];
+
+      offset+=PackThreadParticleData(To,buffer);
+
+      if (offset!=SendMessageLengthTable[To]) exit(__LINE__,__FILE__,"Error: the data anount to be send is not consistent");
+
+      //end the part of the sender - initiate non-blocks send
+      MPI_Isend(buffer,offset,MPI_CHAR,To,11,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequestTable+SendParticleDataRequestTableLength);
+      SendParticleDataRequestTableLength++;
+    }
+  };
+
   //=====================================================================================================================
 
   //calculate the number of bytes that will be send
-  long int *FirstCellParticleTable;
-  int thread;
 
-  for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
-    SendMessageLengthTable[To]+=GetSendMessageLength(To);
 
-    //end the part of the sender
-    if (SendMessageLengthTable[To]!=0) {
-      SendMessageLengthTable[To]+=sizeof(int);
-    }
 
-    //the total length of the message to be send
-    MPI_Isend(SendMessageLengthTable+To,1,MPI_INT,To,10,MPI_GLOBAL_COMMUNICATOR,SendMessageSizeRequestTable+SendMessageSizeRequestTableLength);
-    SendMessageLengthProcessTable[SendMessageSizeRequestTableLength]=To;
-    SendMessageSizeRequestTableLength++;
-  }
-
-  //recieve the length of the message to be recieved
-  for (From=0;From<PIC::Mesh::mesh.nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][From]==true)) {
-    MPI_Irecv(RecvMessageLengthTable+From,1,MPI_INT,From,10,MPI_GLOBAL_COMMUNICATOR,RecvMessageSizeRequestTable+RecvMessageSizeRequestTableLength);
-    RecvMessageLengthProcessTable[RecvMessageSizeRequestTableLength]=From;
-    RecvMessageSizeRequestTableLength++;
-  }
-
+  SetMessageSizeTable();
+  ScheduleRecvMessageSizeTable();
 
   //initiate partice data send
-  for (To=0;To<PIC::nTotalThreads;To++) if ((To!=PIC::ThisThread)&&(SendMessageLengthTable[To]!=0)) {
-    //there is something to send => pack the data and send it
-    bool CommunicationInitialed_BLOCK_;
-    int iCell,jCell,kCell;
-
-    SendParticleDataBuffer[To]=new char [SendMessageLengthTable[To]];
-
-    int offset=0;
-    char *buffer=SendParticleDataBuffer[To];
-
-    offset+=PackThreadParticleData(To,buffer);
-
-    if (offset!=SendMessageLengthTable[To]) exit(__LINE__,__FILE__,"Error: the data anount to be send is not consistent");
-
-    //end the part of the sender - initiate non-blocks send
-    MPI_Isend(buffer,offset,MPI_CHAR,To,11,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequestTable+SendParticleDataRequestTableLength);
-    SendParticleDataRequestTableLength++;
-  }
+  SendParticleData();
 
 
   while ((RecvMessageSizeRequestTableLength>0)||(RecvPaticleDataRequestTableLength>0)) {
@@ -418,23 +449,9 @@ void PIC::Parallel::ExchangeParticleData() {
   }
 
 
-  //finish previous send operations in case nor finished yet
-  if (SendParticleDataRequestTableLength!=0) {
-    MPI_Waitall(SendParticleDataRequestTableLength,SendParticleDataRequestTable,MPI_STATUSES_IGNORE);
-    SendParticleDataRequestTableLength=0;
-  }
-
-  if (SendMessageSizeRequestTableLength!=0){
-    MPI_Waitall(SendMessageSizeRequestTableLength,SendMessageSizeRequestTable,MPI_STATUSES_IGNORE);
-    SendMessageSizeRequestTableLength=0;
-  }
-
-  //delete temporary buffers
-  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-    if (RecvParticleDataBuffer[thread]!=NULL) delete [] RecvParticleDataBuffer[thread];
-    if (SendParticleDataBuffer[thread]!=NULL) delete [] SendParticleDataBuffer[thread];
-  }
-
+  //compelte send operations and delete temporary buffers
+  CompleteSendOperations();
+  DeleteTemporatuBufers();
 }
 
 
