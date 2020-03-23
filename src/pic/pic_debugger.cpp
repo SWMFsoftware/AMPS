@@ -1180,13 +1180,19 @@ void PIC::Debugger::MemoryLeakCatch::Trap(int nline,const char* fname) {
    printf(msg); //here the memory leack can be intersepted in a debugger
 }  
 
-void PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {
+bool PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {
+  bool res=false;
+
   if (Active==true) {
     if (PIC::Debugger::read_mem_usage()>Baseline) {
       Trap(nline,fname);
       SetBaseline();
+     
+      res=true; 
     }
   }
+
+  return res;
 }
 
 

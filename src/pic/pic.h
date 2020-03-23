@@ -4415,7 +4415,7 @@ namespace PIC {
       void SetBaseline();
       void SetActive(bool);
       void Trap(int,const char*);
-      void Test(int,const char*);
+      bool Test(int,const char*);
     }
   }
 
