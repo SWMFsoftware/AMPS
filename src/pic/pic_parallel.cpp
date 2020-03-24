@@ -145,7 +145,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
         if  (Particle!=-1) {
           if (CommunicationInitialed_BLOCK_==false) {
-            SendMessageLengthTable[To]+=sizeof(nodeid)+sizeof(int);
+            size+=sizeof(nodeid)+sizeof(int);
 
             CommunicationInitialed_BLOCK_=true;
           }
@@ -159,6 +159,11 @@ void PIC::Parallel::ExchangeParticleData() {
           }
         }
       }
+    }
+
+    //end the part of the sender
+    if (size!=0) {
+      size+=sizeof(int);
     }
 
     return size;
@@ -325,11 +330,6 @@ void PIC::Parallel::ExchangeParticleData() {
   //Send message size table
   for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
     SendMessageLengthTable[To]+=GetSendMessageLength(To);
-
-    //end the part of the sender
-    if (SendMessageLengthTable[To]!=0) {
-      SendMessageLengthTable[To]+=sizeof(int);
-    }
 
     //the total length of the message to be send
     MPI_Isend(SendMessageLengthTable+To,1,MPI_INT,To,10,MPI_GLOBAL_COMMUNICATOR,SendMessageSizeRequestTable+SendMessageSizeRequestTableLength);
