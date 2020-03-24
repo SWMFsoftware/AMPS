@@ -1163,10 +1163,11 @@ double PIC::Debugger::read_mem_usage() {
   return rssMB;
 }
 
-double PIC::Debugger::MemoryLeakCatch::Baseline=0.0;
+
+struct mallinfo PIC::Debugger::MemoryLeakCatch::Baseline;
 bool PIC::Debugger::MemoryLeakCatch::Active=false;
 
-void PIC::Debugger::MemoryLeakCatch::SetBaseline() {Baseline=PIC::Debugger::read_mem_usage();} 
+void PIC::Debugger::MemoryLeakCatch::SetBaseline() {Baseline=mallinfo();} 
 
 void PIC::Debugger::MemoryLeakCatch::SetActive(bool flag) {
   Active=flag;
@@ -1175,8 +1176,9 @@ void PIC::Debugger::MemoryLeakCatch::SetActive(bool flag) {
 
 void PIC::Debugger::MemoryLeakCatch::Trap(int nline,const char* fname) {
    char msg[500];
+   struct mallinfo t=mallinfo();
 
-   sprintf(msg,"The size of the allocated  heap have increased by %e MB (thread=%i,line=%i,file=%s)\n",PIC::Debugger::read_mem_usage()-Baseline,PIC::ThisThread,nline,fname);
+   sprintf(msg,"The amount of memory allocated with malloc have increased by %e MB (thread=%i,line=%i,file=%s)\n",(t.uordblks-Baseline.uordblks)/1048576.0,PIC::ThisThread,nline,fname);
    printf(msg); //here the memory leack can be intersepted in a debugger
 }  
 
@@ -1184,7 +1186,9 @@ bool PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {
   bool res=false;
 
   if (Active==true) {
-    if (PIC::Debugger::read_mem_usage()>Baseline) {
+    struct mallinfo t=mallinfo();
+
+    if (t.uordblks>Baseline.uordblks) {
       Trap(nline,fname);
       SetBaseline();
      
