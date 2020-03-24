@@ -23,6 +23,8 @@
 #include <fstream>
 #include <signal.h>
 
+#include <malloc.h>
+
 #include <iostream>
 #include <ctime>
 #include <ratio>
@@ -4410,7 +4412,7 @@ namespace PIC {
 
     namespace MemoryLeakCatch {
       extern bool Active;
-      extern double Baseline;
+      extern struct mallinfo Baseline;
 
       void SetBaseline();
       void SetActive(bool);
