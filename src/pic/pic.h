@@ -23,7 +23,9 @@
 #include <fstream>
 #include <signal.h>
 
+#if defined(__linux__)
 #include <malloc.h>
+#endif
 
 #include <iostream>
 #include <ctime>
@@ -4412,7 +4414,13 @@ namespace PIC {
 
     namespace MemoryLeakCatch {
       extern bool Active;
+
+#if defined(__linux__)
       extern struct mallinfo Baseline;
+#else
+      extern double Baseline;
+#endif
+
 
       void SetBaseline();
       void SetActive(bool);
