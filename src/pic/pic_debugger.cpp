@@ -622,10 +622,12 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
 
 //=====================================================================================
 //get signature describe the particle population
-unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,const char* fname) {
+unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,const char* fname,FILE *fout) {
   CRC32 Checksum;
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
+
+  static int CallCounter=0;
 
   //init the particle buffer
   for (i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleBuffer[i]=0;
@@ -678,24 +680,30 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
 
 
   //output the checksum
-  if (PIC::ThisThread==0) {
+  if (fout==NULL) { 
+    if (PIC::ThisThread==0) {
+      char msg[500];
+
+      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+      Checksum.PrintChecksumSingleThread(msg);
+    }
+  }
+  else {
     char msg[500];
 
-    sprintf(msg," line=%ld, file=%s",nline,fname);
-    Checksum.PrintChecksumSingleThread(msg);
+    sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+    Checksum.PrintChecksumSingleThread(fout,msg);
   }
 
+  CallCounter++;
   return Checksum.checksum();
 }
 
 
-unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname) {
+unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname,FILE* fout) {
   CRC32 Checksum;
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
-
-  CMPI_channel pipe;
-  pipe.init(1000000);
 
   //init the particle buffer
   for (i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleBuffer[i]=0;
@@ -704,15 +712,11 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
   const int ParticleDataSend_SIGNAL=1;
   const int BockDataStarted_SIGNAL=2;
 
-  if (PIC::ThisThread==0) pipe.openRecvAll();
-  else pipe.openSend(0);
+  auto AddPartcle2Checksum = [&] (CRC32 *Checksum,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+    int i,j,k;
+    long int ptr;
 
-  //loop through all blocks
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    if ((node->Thread==0)&&(PIC::ThisThread==0)) {
-      //the block belongs to the root
-
-      if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+    if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
         ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
         //collect signature
@@ -722,15 +726,57 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
           PIC::ParticleBuffer::CloneParticle(ParticleBuffer,ParticleDataPtr);
 
           //add signature of the particle
-          Checksum.add(ParticleBuffer+offset,length);
+          Checksum->add(ParticleBuffer+offset,length);
           ptr=PIC::ParticleBuffer::GetNext(ptr);
         }
       }
-    }
-    else if (PIC::ThisThread==0) {
-      //this is the root BUT the block belongs to another MPI process
-      int Signal;
+  };  
 
+  //loop through all blocks
+
+  cAMRnodeID nodeid;
+
+  if (fout==NULL) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+
+    if (PIC::ThisThread==0) {
+	 node->AMRnodeID.Checksum(&Checksum);
+    }
+
+    if ((node->Thread==0)&&(PIC::ThisThread==0)) {
+      //the block belongs to the root
+
+       AddPartcle2Checksum(&Checksum,node);
+    }
+    else {
+      if (PIC::ThisThread==0) {
+        MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+
+        MPI_Status status;
+        MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      }
+      else if (PIC::ThisThread==node->Thread) {
+        MPI_Status status;
+        MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+
+        AddPartcle2Checksum(&Checksum,node);
+        MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+      }
+    }
+
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  }
+  }
+  else {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+
+         node->AMRnodeID.Checksum(&Checksum);
+       AddPartcle2Checksum(&Checksum,node);
+    }
+  }
+
+
+/*
       pipe.recv(Signal,node->Thread);
 
       switch (Signal) {
@@ -788,25 +834,35 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
     }
   }
 
+*/
   //output the checksum
-  if (PIC::ThisThread==0) {
+  static int CallCounter=0;
+
+
+  if (fout==NULL) {
+    if (PIC::ThisThread==0) {
+      char msg[500];
+
+      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+      Checksum.PrintChecksumSingleThread(msg);
+    }
+  }
+  else {
     char msg[500];
 
-    pipe.closeRecvAll();
-
-    sprintf(msg," line=%ld, file=%s",nline,fname);
-    Checksum.PrintChecksumSingleThread(msg);
+    sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+    Checksum.PrintChecksumSingleThread(fout,msg);
   }
-  else pipe.closeSend();
 
+  CallCounter++;
   return Checksum.checksum();
 }
 
-unsigned long int PIC::Debugger::GetParticlePopulationLocationSignature(long int nline,const char* fname) {
-  return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double),nline,fname);
+unsigned long int PIC::Debugger::GetParticlePopulationLocationSignature(long int nline,const char* fname,FILE* fout) {
+  return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double),nline,fname,fout);
 }
-unsigned long int PIC::Debugger::GetParticlePopulationVelocitySignature(long int nline,const char* fname) {
-  return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double),nline,fname);
+unsigned long int PIC::Debugger::GetParticlePopulationVelocitySignature(long int nline,const char* fname,FILE* fout) {
+  return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double),nline,fname,fout);
 }
 
 //=========================================================================================================
