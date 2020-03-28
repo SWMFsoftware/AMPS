@@ -195,10 +195,16 @@ public:
     return crc_accum;
   }
 
-  void PrintChecksum(long int nline,const char* fname) {
+  void PrintChecksum(long int nline,const char* fname,const char* msg=NULL) {
     char message[1000];
     
-    sprintf(message," line=%ld, file=%s",nline,fname);
+    if (msg==NULL) {
+      sprintf(message," line=%ld, file=%s",nline,fname);
+    }
+    else {
+      sprintf(message," %s (line=%ld, file=%s)",msg,nline,fname);
+    }
+
     PrintChecksum(message);
   }
 
@@ -246,6 +252,17 @@ public:
 
     if (message!=NULL) printf("$PREFIX:CRC32 checksum=0x%lx, message=%s (thread=%i):\n",checksum(),message,ThisThread);
     else printf("$PREFIX:CRC32 checksum=0x%lx  (thread=%i):\n",checksum(),ThisThread);
+  }
+
+  void PrintChecksumSingleThread(FILE *fout,const char* message=NULL) {
+    int ThisThread=0;
+
+    #ifdef MPI_ON
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&ThisThread);
+    #endif
+
+    if (message!=NULL) fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx, message=%s (thread=%i):\n",checksum(),message,ThisThread);
+    else fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx  (thread=%i):\n",checksum(),ThisThread);
   }
 
   bool Compare() {
