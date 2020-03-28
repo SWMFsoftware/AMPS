@@ -399,17 +399,19 @@ void PIC::ParticleBuffer::LoadImageFile(int fd) {
 //==========================================================
 //pack the particle data
 
-void PIC::ParticleBuffer::PackParticleData(char* buffer,long int ptr) {
+void PIC::ParticleBuffer::PackParticleData(char* buffer,long int ptr,CRC32* checksum) {
   byte *SourceData=GetParticleDataPointer(ptr);
 //  long int i;
 
 //  for (int i=0;i<ParticleDataLength;i++) buffer[i]=SourceData[i];
 
-  memcpy(buffer,SourceData,ParticleDataLength*sizeof(byte));
+  memcpy(buffer,SourceData,ParticleDataLength);
+
+  if (checksum!=NULL) checksum->add(buffer,ParticleDataLength);
 }
 
 
-void PIC::ParticleBuffer::UnPackParticleData(char* buffer,long int ptr) {
+void PIC::ParticleBuffer::UnPackParticleData(char* buffer,long int ptr,CRC32* checksum) {
   byte *pdata;
   long int next,prev;
 
@@ -419,7 +421,8 @@ void PIC::ParticleBuffer::UnPackParticleData(char* buffer,long int ptr) {
 
 //  for (int i=0;i<ParticleDataLength;i++) pdata[i]=buffer[i];
 
-  memcpy(pdata,buffer,ParticleDataLength*sizeof(byte));
+  memcpy(pdata,buffer,ParticleDataLength);
+  if (checksum!=NULL) checksum->add(buffer,ParticleDataLength);
 
   SetPrev(prev,pdata);
   SetNext(next,pdata);
