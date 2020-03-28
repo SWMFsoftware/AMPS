@@ -149,6 +149,7 @@ public:
 
 private:
   unsigned long crc_table[256];
+  int CallCounter;
 
   //generate the table of CRC remainders for all possible bytes 
   void generare_crc_table() { 
@@ -165,6 +166,7 @@ private:
 public: 
 
   CRC32 () {
+    CallCounter=0;
     crc_accum=0;
     generare_crc_table();
   };
@@ -261,8 +263,10 @@ public:
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&ThisThread);
     #endif
 
-    if (message!=NULL) fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx, message=%s (thread=%i):\n",checksum(),message,ThisThread);
-    else fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx  (thread=%i):\n",checksum(),ThisThread);
+    if (message!=NULL) fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx, message=%s (thread=%i,ncall=%i):\n",checksum(),message,ThisThread,CallCounter);
+    else fprintf(fout,"$PREFIX:CRC32 checksum=0x%lx  (thread=%i, ncall=%i):\n",checksum(),ThisThread,CallCounter);
+
+    CallCounter++;
   }
 
   bool Compare() {
