@@ -712,129 +712,69 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
   const int ParticleDataSend_SIGNAL=1;
   const int BockDataStarted_SIGNAL=2;
 
-  auto AddPartcle2Checksum = [&] (CRC32 *Checksum,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  auto AddPartcle2Checksum = [&] (CRC32 *Checksum,PIC::ParticleBuffer::byte *ParticleBuffer,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
     int i,j,k;
     long int ptr;
+    PIC::ParticleBuffer::byte *ParticleDataPtr;
 
     if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+      ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-        //collect signature
-        while (ptr!=-1) {
-          //copy the state vector of the particle without 'next' and 'prev'
-          ParticleDataPtr=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-          PIC::ParticleBuffer::CloneParticle(ParticleBuffer,ParticleDataPtr);
+      //collect signature
+      while (ptr!=-1) {
+        //copy the state vector of the particle without 'next' and 'prev'
+        ParticleDataPtr=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        PIC::ParticleBuffer::CloneParticle(ParticleBuffer,ParticleDataPtr);
 
-          //add signature of the particle
-          Checksum->add(ParticleBuffer+offset,length);
-          ptr=PIC::ParticleBuffer::GetNext(ptr);
-        }
+        //add signature of the particle
+        Checksum->add(ParticleBuffer+offset,length);
+        ptr=PIC::ParticleBuffer::GetNext(ptr);
       }
+    }
   };  
 
   //loop through all blocks
-
   cAMRnodeID nodeid;
 
   if (fout==NULL) {
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 
-    if (PIC::ThisThread==0) {
-	 node->AMRnodeID.Checksum(&Checksum);
-    }
-
-    if ((node->Thread==0)&&(PIC::ThisThread==0)) {
-      //the block belongs to the root
-
-       AddPartcle2Checksum(&Checksum,node);
-    }
-    else {
       if (PIC::ThisThread==0) {
-        MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
-
-        MPI_Status status;
-        MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        node->AMRnodeID.Checksum(&Checksum);
       }
-      else if (PIC::ThisThread==node->Thread) {
-        MPI_Status status;
-        MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-        AddPartcle2Checksum(&Checksum,node);
-        MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+      if ((node->Thread==0)&&(PIC::ThisThread==0)) {
+        //the block belongs to the root
+
+        AddPartcle2Checksum(&Checksum,ParticleBuffer,node);
       }
+      else {
+        if (PIC::ThisThread==0) {
+          MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+
+          MPI_Status status;
+          MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        }
+        else if (PIC::ThisThread==node->Thread) {
+          MPI_Status status;
+          MPI_Recv(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+
+          AddPartcle2Checksum(&Checksum,ParticleBuffer,node);
+          MPI_Send(&Checksum,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+        }
+      }
+
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
-
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  }
   }
   else {
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 
-         node->AMRnodeID.Checksum(&Checksum);
-       AddPartcle2Checksum(&Checksum,node);
+      node->AMRnodeID.Checksum(&Checksum);
+      AddPartcle2Checksum(&Checksum,ParticleBuffer,node);
     }
   }
 
-
-/*
-      pipe.recv(Signal,node->Thread);
-
-      switch (Signal) {
-      case BockDataStarted_SIGNAL:
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-          pipe.recv(Signal,node->Thread);
-
-          //collect signatures
-          while (Signal!=CommunicationCompleted_SIGNAL) {
-            pipe.recv(ParticleBuffer,PIC::ParticleBuffer::ParticleDataLength,node->Thread);
-            Checksum.add(ParticleBuffer+offset,length);
-
-            pipe.recv(Signal,node->Thread);
-          }
-        }
-
-        break;
-      case CommunicationCompleted_SIGNAL:
-        break;
-      default:
-        exit(__LINE__,__FILE__,"Error: the sigmal is not recognized");
-      }
-
-
-    }
-    else if (node->Thread==PIC::ThisThread) {
-      //this is NOT the root BUT the block belongs to the current MPI process
-      //loop through all cells and particles
-
-      if (node->block!=NULL) {
-        pipe.send(BockDataStarted_SIGNAL);
-
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-          ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-          while (ptr!=-1) {
-            pipe.send(ParticleDataSend_SIGNAL);
-
-            //copy the state vector of the particle without 'next' and 'prev'
-            ParticleDataPtr=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-            PIC::ParticleBuffer::CloneParticle(ParticleBuffer,ParticleDataPtr);
-            pipe.send(ParticleBuffer,PIC::ParticleBuffer::ParticleDataLength);
-
-            ptr=PIC::ParticleBuffer::GetNext(ptr);
-          }
-
-          pipe.send(CommunicationCompleted_SIGNAL);
-        }
-
-      }
-      else {
-        pipe.send(CommunicationCompleted_SIGNAL);
-      }
-
-    }
-  }
-
-*/
   //output the checksum
   static int CallCounter=0;
 
