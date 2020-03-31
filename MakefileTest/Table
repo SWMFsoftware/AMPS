@@ -1053,6 +1053,44 @@ Check=
 
 <#
 
+#>
+Name=test/magnetic-reconnection_avx256
+Time=10
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+Ref=8{pgcc}@@(0+valeriy)
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_magnetic-reconnection_avx256_compile..." > test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnection_avx256KEYS}
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>@echo "test_magnetic-reconnection_avx256_compile... done" >> test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
+
+Check=
+>>>@echo "test_magnetic-reconnection_avx256_check..." >> test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
+>>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection_avx256DIR}/PIC_reconnect_out=200.dat 10
+>>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
+
+<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
+>>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff;)
+
+>>>@ls -l test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
+>>>@echo Test test_magnetic-reconnection_avx256 has finished: `date`
+
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=test/fast-wave
