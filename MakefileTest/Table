@@ -1070,8 +1070,10 @@ Compile=
 >>>cd ./share/; mkdir -p lib
 >>>cd ./share/Library/src; make LIB
 >>>./Config.pl -application=test/magnetic-reconnection -amps-test=on ${TESTmagnetic-reconnection_avx256KEYS}
+>>>./Config.pl -avx=256
 >>>@rm -rf srcTemp
 >>>-@($(MAKE) -j8  amps)
+>>>./Config.pl -avx=off
 >>>@echo "test_magnetic-reconnection_avx256_compile... done" >> test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
 
 Check=
