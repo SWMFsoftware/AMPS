@@ -987,6 +987,8 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
+Ref=5{gcc}@@(0+amps-gpu)
+
 Outs=
 
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
