@@ -873,10 +873,11 @@ Compile=
 Check=
 >>>@echo "test_lightwave-current-on_check..." >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
-<<<ifeq ($(wildcard output/test_lightwave-current-on/*.tmp),)
+>>>mkdir output/test_lightwave-current-on/temp_files
+>>>cp output/test_lightwave-current-on/*.ref_np* output/test_lightwave-current-on/temp_files
+
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '` 
-<<<endif
 
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat \ 
@@ -901,6 +902,9 @@ Check=
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff;)
 
 >>>@cat test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
+
+>>>cp output/test_lightwave-current-on/temp_files/* output/test_lightwave-current-on/
+>>>rm -rf output/test_lightwave-current-on/temp_files
 
 >>>@ls -l test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff
 >>>@ls -l test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff
