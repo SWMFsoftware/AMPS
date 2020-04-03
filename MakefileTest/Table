@@ -1061,8 +1061,8 @@ Check=
 Name=test/magnetic-reconnection_avx256
 Time=10
 
-Ref=2{icc}@@(0+valeriy)
-Ref=1{gcc}@@(0+valeriy)
+Ref=21{icc}@@(0+valeriy)
+Ref=11{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Outs=
@@ -1085,12 +1085,16 @@ Check=
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection_avx256DIR}/PIC_reconnect_out=200.dat 10
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
 
-<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>mkdir output/test_magnetic-reconnection/temp_files
+>>>cp output/test_magnetic-reconnection/*ref_np* output/test_magnetic-reconnection/temp_files
+
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff;)
+
+>>>mv output/test_magnetic-reconnection/temp_files/* output/test_magnetic-reconnection/
+>>>rm -rf output/test_magnetic-reconnection/temp_files
 
 >>>@ls -l test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
 >>>@echo Test test_magnetic-reconnection_avx256 has finished: `date`
