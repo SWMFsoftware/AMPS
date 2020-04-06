@@ -2142,7 +2142,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2179,7 +2179,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede+amps-gpu)
@@ -2215,7 +2215,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2250,7 +2250,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2284,7 +2284,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
