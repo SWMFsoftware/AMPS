@@ -857,6 +857,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 Ref=5{gcc}@@(0+amps-gpu)
+Ref=9{icc}@@(0+amps-gpu)
 
 Outs=
 
@@ -989,6 +990,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+amps-gpu)
+Ref=9{icc}@@(0+amps-gpu)
 
 Outs=
 
@@ -1068,6 +1070,7 @@ Ref=21{icc}@@(0+valeriy)
 Ref=11{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 Ref=51{gcc}@@(0+amps-gpu)
+Ref=91{icc}@@(0+amps-gpu)
 
 Outs=
 
