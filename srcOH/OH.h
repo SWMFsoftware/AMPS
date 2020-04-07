@@ -157,7 +157,7 @@ namespace OH {
 	    Buffer[i1][i2] += Weight;
 	}
 	//--------------
-	void Print(int DataOutputFileNumber, char* printCharIN);
+	void Print(int DataOutputFileNumber, const char* printCharIN);
 	//--------------
 	cSampled2DFunction(){
 	  N1=0;N2=0; VMin1=0.0; VMin2 = 0.0; dV1 = 1.0; dV2 = 1.0;

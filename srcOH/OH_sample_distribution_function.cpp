@@ -389,7 +389,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
 
 //====================================================
 // the print function for the calss used to sample 2D distribution functions
-void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int DataOutputFileNumber, char* printCharIN){
+void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int DataOutputFileNumber, const char* printCharIN){
   long int idim,thread;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);

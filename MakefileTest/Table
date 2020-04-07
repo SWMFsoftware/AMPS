@@ -856,6 +856,9 @@ Time=3
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
+Ref=5{gcc}@@(0+amps-gpu)
+Ref=9{icc}@@(0+amps-gpu)
+Ref=3{gcc}@@(0+stampede)
 
 Outs=
 
@@ -873,10 +876,11 @@ Compile=
 Check=
 >>>@echo "test_lightwave-current-on_check..." >> test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
-<<<ifeq ($(wildcard output/test_lightwave-current-on/*.tmp),)
+>>>mkdir output/test_lightwave-current-on/temp_files
+>>>cp output/test_lightwave-current-on/*.ref_np* output/test_lightwave-current-on/temp_files
+
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case0.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '` 
-<<<endif
 
 >>>-@${TESTlightwave-current-onDIR}/../utility/RemoveColumn.pl -c=5 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/PIC_particle_case0.out=6.dat \ 
@@ -901,6 +905,9 @@ Check=
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff;)
 
 >>>@cat test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
+
+>>>cp output/test_lightwave-current-on/temp_files/* output/test_lightwave-current-on/
+>>>rm -rf output/test_lightwave-current-on/temp_files
 
 >>>@ls -l test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff
 >>>@ls -l test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff
@@ -983,6 +990,9 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
+Ref=5{gcc}@@(0+amps-gpu)
+Ref=9{icc}@@(0+amps-gpu)
+
 Outs=
 
 Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
@@ -1057,9 +1067,11 @@ Check=
 Name=test/magnetic-reconnection_avx256
 Time=10
 
-Ref=2{icc}@@(0+valeriy)
-Ref=1{gcc}@@(0+valeriy)
+Ref=21{icc}@@(0+valeriy)
+Ref=11{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
+Ref=51{gcc}@@(0+amps-gpu)
+Ref=91{icc}@@(0+amps-gpu)
 
 Outs=
 
@@ -1081,12 +1093,16 @@ Check=
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnection_avx256DIR}/PIC_reconnect_out=200.dat 10
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
 
-<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>mkdir output/test_magnetic-reconnection/temp_files
+>>>cp output/test_magnetic-reconnection/*ref_np* output/test_magnetic-reconnection/temp_files
+
 >>>-@${TESTmagnetic-reconnection_avx256DIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection_avx256-REF).ref_np`ls $(TESTmagnetic-reconnection_avx256DIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff;)
+
+>>>mv output/test_magnetic-reconnection/temp_files/* output/test_magnetic-reconnection/
+>>>rm -rf output/test_magnetic-reconnection/temp_files
 
 >>>@ls -l test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
 >>>@echo Test test_magnetic-reconnection_avx256 has finished: `date`
@@ -2127,7 +2143,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2164,7 +2180,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede+amps-gpu)
@@ -2200,7 +2216,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2235,7 +2251,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2269,7 +2285,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades+amps-gpu)
 Ref=7{pgcc}@@(0+pleiades)
 
 Ref=5{gcc}@@(0+stampede)
@@ -2880,7 +2896,7 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
-Name=test/Mars-Hot-Carbon 
+Name=test/Mars-Hot-Carbon@@(0+) 
 Time=1
 
 Compile=
