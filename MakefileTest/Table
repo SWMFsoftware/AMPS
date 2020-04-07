@@ -858,6 +858,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
+Ref=3{gcc}@@(0+stampede)
 
 Outs=
 
