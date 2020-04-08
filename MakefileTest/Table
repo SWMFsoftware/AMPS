@@ -641,6 +641,8 @@ Check=
 Name=Earth-cutoff-rigidity 
 Time=15 
 
+Ref=2{icc}@@(0+valeriy)
+
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
@@ -684,14 +686,14 @@ Check=
 >>>@echo "test_Earth-cutoff-rigidity_check..." >> test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/CutoffRigidityMap\[R=6.871000e+06\].dat \ 
->>>output/test_Earth-cutoff-rigidity/CutoffRigidityMap\[R=6.871000e+06\].ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
->>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>output/test_Earth-cutoff-rigidity/CutoffRigidityMap\[R=6.871000e+06\]$(TESTEarth-cutoff-rigidity-REF).ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/EnergySpectrumMap\[R=6.871000e+06\].s=0.dat \        
->>>output/test_Earth-cutoff-rigidity/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
->>>@ls -l test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d.dat \
+>>>output/test_Earth-cutoff-rigidity/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d$(TESTEarth-cutoff-rigidity-REF).ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff  > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity has finished: `date`
 <#
