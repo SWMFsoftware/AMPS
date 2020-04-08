@@ -85,6 +85,8 @@ contains
        call CON_stop(NameSub//': PT_ERROR: empty version cannot be used!')
     end select
 
+    
+
   end subroutine PT_set_param
 
   !============================================================================
@@ -217,6 +219,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_put_from_gm'
     !--------------------------------------------------------------------------
+   
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
@@ -241,7 +244,7 @@ contains
   subroutine PT_put_from_oh( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
-    use CON_coupler, ONLY: i_proc, PT_, n_proc
+    use CON_coupler, ONLY: i_proc, PT_, n_proc, OH_, Grid_C
 
     implicit none
 
@@ -257,6 +260,8 @@ contains
 
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
+    call amps_get_fluid_number(Grid_C(OH_)%nVar)
+
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)

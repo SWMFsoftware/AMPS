@@ -32,7 +32,7 @@ int PIC::CPLR::SWMF::TotalDataLength=0;
 double PIC::CPLR::SWMF::MeanPlasmaAtomicMass=1.0*_AMU_;
 bool PIC::CPLR::SWMF::FirstCouplingOccured=false;
 list<PIC::CPLR::SWMF::fSendCenterPointData> PIC::CPLR::SWMF::SendCenterPointData;
-
+int PIC::CPLR::SWMF::nFluid =-1;
 //set the interpolation stencil that is used for interpolation in the coupler
 void PIC::CPLR::InitInterpolationStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   switch( _PIC_COUPLER__INTERPOLATION_MODE_) {
