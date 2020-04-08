@@ -1011,12 +1011,16 @@ Check=
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnectionDIR}/PIC_reconnect_out=200.dat 10
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
 
-<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>mkdir output/test_magnetic-reconnection/temp_files
+>>>cp output/test_magnetic-reconnection/*ref_np* output/test_magnetic-reconnection/temp_files
+
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '` 
-<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \ 
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff;)
+
+>>>mv output/test_magnetic-reconnection/temp_files/* output/test_magnetic-reconnection/
+>>>rm -rf output/test_magnetic-reconnection/temp_files
 
 >>>@ls -l test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 >>>@echo Test test_magnetic-reconnection has finished: `date`
