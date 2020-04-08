@@ -642,6 +642,7 @@ Name=Earth-cutoff-rigidity
 Time=15 
 
 Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
