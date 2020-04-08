@@ -3224,15 +3224,30 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx 
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx 
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
 <<<endif
 <<<endif
 
@@ -3306,15 +3321,30 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2 
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
 <<<endif
 <<<endif
 
@@ -3360,15 +3390,30 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2 
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>sleep 2
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
+>>>-cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>sleep 2
 <<<endif
 <<<endif
 
