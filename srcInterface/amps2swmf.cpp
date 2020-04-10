@@ -50,6 +50,9 @@ extern "C" {
   void amps_save_restart_();
   void amps_finalize_();
   
+  //get fluid number from other SWMF component
+  void amps_get_fluid_number_(int * nVarIn);
+
   //import magnetic field from GM onto the 'center' nodes
   void amps_get_center_point_number(int*);
   void amps_get_center_point_coordinates(double*);
@@ -60,6 +63,13 @@ extern "C" {
     PIC::Mesh::mesh.SyncMeshID();
     *id=PIC::Mesh::mesh.GetMeshID();
     //*id=aa;
+  }
+
+  void amps_get_fluid_number_(int * fluidNumberIn){
+    
+    PIC::CPLR::SWMF::nFluid = (*fluidNumberIn-3)/5;
+    //for test
+    //printf("coupler fluid number is %d\n", PIC::CPLR::SWMF::nFluid );
   }
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread) {

@@ -641,6 +641,9 @@ Check=
 Name=Earth-cutoff-rigidity 
 Time=15 
 
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
 Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
 Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
@@ -684,14 +687,14 @@ Check=
 >>>@echo "test_Earth-cutoff-rigidity_check..." >> test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/CutoffRigidityMap\[R=6.871000e+06\].dat \ 
->>>output/test_Earth-cutoff-rigidity/CutoffRigidityMap\[R=6.871000e+06\].ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
->>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>output/test_Earth-cutoff-rigidity/CutoffRigidityMap\[R=6.871000e+06\]$(TESTEarth-cutoff-rigidity-REF).ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/EnergySpectrumMap\[R=6.871000e+06\].s=0.dat \        
->>>output/test_Earth-cutoff-rigidity/EnergySpectrumMap\[R=6.871000e+06\].s=0.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
->>>@ls -l test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d.dat \
+>>>output/test_Earth-cutoff-rigidity/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d$(TESTEarth-cutoff-rigidity-REF).ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--EnergySpectrumMap$(TESTEarth-cutoff-rigidity-REF).diff > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
+>>>@cat test_Earth-cutoff-rigidity--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity-REF).diff test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff  > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity has finished: `date`
 <#
@@ -858,6 +861,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
+Ref=10{pgcc}@@(0+amps-gpu)
 Ref=3{gcc}@@(0+stampede)
 
 Outs=
@@ -992,6 +996,7 @@ Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
+Ref=10{pgcc}@@(0+amps-gpu)
 
 Outs=
 
@@ -1011,12 +1016,16 @@ Check=
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/ReduceFile.pl ${TESTmagnetic-reconnectionDIR}/PIC_reconnect_out=200.dat 10
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
 
-<<<ifeq ($(wildcard output/test_magnetic-reconnection/*.tmp),)
+>>>mkdir output/test_magnetic-reconnection/temp_files
+>>>cp output/test_magnetic-reconnection/*ref_np* output/test_magnetic-reconnection/temp_files
+
 >>>-@${TESTmagnetic-reconnectionDIR}/../utility/RemoveColumn.pl -c=5 output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '` 
-<<<endif
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTmagnetic-reconnectionDIR)/PIC_reconnect_out=200.dat.Reduced.Step=10 \ 
 >>>output/test_magnetic-reconnection/PIC_reconnect_out=200.dat.Reduced.Step=10$(TESTmagnetic-reconnection-REF).ref_np`ls $(TESTmagnetic-reconnectionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff;)
+
+>>>mv output/test_magnetic-reconnection/temp_files/* output/test_magnetic-reconnection/
+>>>rm -rf output/test_magnetic-reconnection/temp_files
 
 >>>@ls -l test_magnetic-reconnection$(TESTmagnetic-reconnection-REF).diff
 >>>@echo Test test_magnetic-reconnection has finished: `date`
@@ -1072,6 +1081,7 @@ Ref=11{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 Ref=51{gcc}@@(0+amps-gpu)
 Ref=91{icc}@@(0+amps-gpu)
+Ref=11{pgcc}@@(0+amps-gpu)
 
 Outs=
 
@@ -3217,15 +3227,15 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx 
+>>>cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx 
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
 <<<endif
 <<<endif
 
@@ -3299,15 +3309,15 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
 <<<endif
 <<<endif
 
@@ -3353,15 +3363,15 @@ Compile=
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
->>>cd SWMF;./Config.pl -install -compiler=ifort,iccmpicxx
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
 <<<endif
 
 <<<ifeq ($(COMPILE.c),gcc)
->>>cd SWMF;./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
 <<<endif
 
 <<<ifeq ($(COMPILE.c),pgcc)
->>>cd SWMF;./Config.pl -install -compiler=pgf90,pgccmpicxx
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
 <<<endif
 <<<endif
 
