@@ -863,6 +863,7 @@ Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
 Ref=3{gcc}@@(0+stampede)
+Ref=6{icc}@@(0+pleiades)
 
 Outs=
 
@@ -896,34 +897,34 @@ Check=
 >>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff;) 
 >>>mv $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat.tmp $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ex.dat output/test_lightwave-current-on/GradDivE_0_Ex.ref  > test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff;) 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ey.dat output/test_lightwave-current-on/GradDivE_0_Ey.ref  > test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ez.dat output/test_lightwave-current-on/GradDivE_0_Ez.ref  > test_lightwave-current-on--GradDivE_0_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ex.dat output/test_lightwave-current-on/GradDivE_0_Ex.ref  > test_lightwave-current-on--GradDivE_0_Ex.diff;) 
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ey.dat output/test_lightwave-current-on/GradDivE_0_Ey.ref  > test_lightwave-current-on--GradDivE_0_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ez.dat output/test_lightwave-current-on/GradDivE_0_Ez.ref  > test_lightwave-current-on--GradDivE_0_Ez.diff;)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ex.dat output/test_lightwave-current-on/GradDivE_1_Ex.ref  > test_lightwave-current-on--GradDivE_1_Ex$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ey.dat output/test_lightwave-current-on/GradDivE_1_Ey.ref  > test_lightwave-current-on--GradDivE_1_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ez.dat output/test_lightwave-current-on/GradDivE_1_Ez.ref  > test_lightwave-current-on--GradDivE_1_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ex.dat output/test_lightwave-current-on/GradDivE_1_Ex.ref  > test_lightwave-current-on--GradDivE_1_Ex.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ey.dat output/test_lightwave-current-on/GradDivE_1_Ey.ref  > test_lightwave-current-on--GradDivE_1_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ez.dat output/test_lightwave-current-on/GradDivE_1_Ez.ref  > test_lightwave-current-on--GradDivE_1_Ez.diff;)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ex.dat output/test_lightwave-current-on/GradDivE_2_Ex.ref  > test_lightwave-current-on--GradDivE_2_Ex$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ey.dat output/test_lightwave-current-on/GradDivE_2_Ey.ref  > test_lightwave-current-on--GradDivE_2_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ex.dat output/test_lightwave-current-on/GradDivE_2_Ex.ref  > test_lightwave-current-on--GradDivE_2_Ex.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ey.dat output/test_lightwave-current-on/GradDivE_2_Ey.ref  > test_lightwave-current-on--GradDivE_2_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez.diff;)
 
 >>>@cat test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 >>>cp output/test_lightwave-current-on/temp_files/* output/test_lightwave-current-on/
 >>>rm -rf output/test_lightwave-current-on/temp_files
 
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ez.diff
 
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ez.diff
 
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ez.diff
 
 >>>@ls -l test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff
 >>>@ls -l test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff
@@ -997,6 +998,8 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
+
+Ref=6{icc}@@(0+pleiades)
 
 Outs=
 
@@ -1082,6 +1085,7 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=51{gcc}@@(0+amps-gpu)
 Ref=91{icc}@@(0+amps-gpu)
 Ref=11{pgcc}@@(0+amps-gpu)
+Ref=61{icc}@@(0+pleiades)
 
 Outs=
 
