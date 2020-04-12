@@ -444,7 +444,7 @@ Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid
 
 #>
 Time=1
-Name=test/binary-reader@@(0+valeriy+stampede+pleiades)
+Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu)
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
@@ -507,7 +507,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+stampede)
@@ -2161,7 +2161,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2179,7 +2179,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Lapenta2017CUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Lapenta2017-REF).ref_np`ls ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Lapenta2017$(TESTIndividual_Trajectories--Lapenta2017-REF).diff
 >>>@ls -l test_Individual_Trajectories--Lapenta2017$(TESTIndividual_Trajectories--Lapenta2017-REF).diff
 >>>@echo Test test_Individual_Trajectories--Lapenta2017 has finished: `date`
@@ -2198,7 +2198,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede+amps-gpu)
 Ref=4{icc}@@(0+stampede)
@@ -2215,7 +2215,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-2 ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Markidis2010CUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Markidis2010-REF).ref_np`ls ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Markidis2010$(TESTIndividual_Trajectories--Markidis2010-REF).diff
 >>>@ls -l test_Individual_Trajectories--Markidis2010$(TESTIndividual_Trajectories--Markidis2010-REF).diff
 >>>@echo Test test_Individual_Trajectories--Markidis2010 has finished: `date`
@@ -2234,7 +2234,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2252,7 +2252,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--BorisCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Boris-REF).ref_np`ls ${TESTIndividual_Trajectories--BorisDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Boris$(TESTIndividual_Trajectories--Boris-REF).diff
 >>>@ls -l test_Individual_Trajectories--Boris$(TESTIndividual_Trajectories--Boris-REF).diff
 >>>@echo Test test_Individual_Trajectories--Boris has finished: `date`
@@ -2269,7 +2269,7 @@ Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2287,7 +2287,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Boris-relativisticCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Boris-relativistic-REF).ref_np`ls ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Boris-relativistic$(TESTIndividual_Trajectories--Boris-relativistic-REF).diff
 >>>@ls -l test_Individual_Trajectories--Boris-relativistic$(TESTIndividual_Trajectories--Boris-relativistic-REF).diff
 >>>@echo Test test_Individual_Trajectories--Boris-relativistic has finished: `date`
@@ -2303,7 +2303,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2322,7 +2322,7 @@ CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECT
 
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-2 ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--guiding-centerCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--guiding-center-REF).ref_np`ls ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--guiding-center$(TESTIndividual_Trajectories--guiding-center-REF).diff
 >>>@ls -l test_Individual_Trajectories--guiding-center$(TESTIndividual_Trajectories--guiding-center-REF).diff
 >>>@echo Test test_Individual_Trajectories--guiding-center has finished: `date`
@@ -2848,7 +2848,7 @@ Time=50
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=3{gcc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 Ref=3{gcc}@@(0+stampede+amps-gpu)
 Ref=2{pgcc}@@(0+valeriy)
 
