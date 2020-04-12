@@ -864,6 +864,7 @@ Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
 Ref=3{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+pleiades)
+Ref=1{gcc}@@(0+pleiades)
 
 Outs=
 
@@ -1000,6 +1001,7 @@ Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
 
 Ref=6{icc}@@(0+pleiades)
+Ref=4{gcc}@@(0+pleiades)
 
 Outs=
 
@@ -1086,6 +1088,7 @@ Ref=51{gcc}@@(0+amps-gpu)
 Ref=91{icc}@@(0+amps-gpu)
 Ref=11{pgcc}@@(0+amps-gpu)
 Ref=61{icc}@@(0+pleiades)
+Ref=41{gcc}@@(0+pleiades)
 
 Outs=
 
