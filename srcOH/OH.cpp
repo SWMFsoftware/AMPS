@@ -41,6 +41,7 @@ void OH::Output::PrintVariableList(FILE* fout,int DataSetNumber) {
       fprintf(fout,", \"ENA Vz (Source Region ID=%i)\"",i);
       fprintf(fout,", \"ENA Temperature (Source Region ID=%i)\"",i);
     }
+
     fprintf(fout,", \"ENA Density (Total Solution)\"");
     fprintf(fout,", \"ENA Vx (Total Solution)\"");
     fprintf(fout,", \"ENA Vy (Total Solution)\"");
@@ -56,22 +57,16 @@ void OH::Output::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,doub
   char *offset;
 
   for (i=0;i<nInterpolationCoeficients;i++) {
-    
-    offset = 
-      InterpolationList[i]->GetAssociatedDataBufferPointer() + 
-      PIC::Mesh::completedCellSampleDataPointerOffset;
+    offset = InterpolationList[i]->GetAssociatedDataBufferPointer() + PIC::Mesh::completedCellSampleDataPointerOffset;
 
     S1+=(*((double*)(offset+OH::Output::ohSourceDensityOffset)))*InterpolationCoeficients[i];
-    
-    for(idim=0 ; idim<3; idim++)
-      S2[idim]+=(*(idim+(double*)(offset+OH::Output::ohSourceMomentumOffset)))*InterpolationCoeficients[i];
+
+    for(idim=0 ; idim<3; idim++) S2[idim]+=(*(idim+(double*)(offset+OH::Output::ohSourceMomentumOffset)))*InterpolationCoeficients[i];
 
     S3+=(*((double*)(offset+OH::Output::ohSourceEnergyOffset)))*InterpolationCoeficients[i];
   }
-  
-  offset = 
-    CenterNode->GetAssociatedDataBufferPointer() + 
-    PIC::Mesh::completedCellSampleDataPointerOffset;
+
+  offset = CenterNode->GetAssociatedDataBufferPointer() + PIC::Mesh::completedCellSampleDataPointerOffset;
 
   memcpy(offset+OH::Output::ohSourceDensityOffset, &S1,  sizeof(double));
   memcpy(offset+OH::Output::ohSourceMomentumOffset,&S2,3*sizeof(double));
@@ -83,30 +78,30 @@ void OH::Output::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,doub
       double t=0.0,  Sv[3]={0.0,0.0,0.0}, Sv2[3]={0.0,0.0,0.0};
 
       for (i=0;i<nInterpolationCoeficients;i++) {
-	offset=InterpolationList[i]->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset;
-	
-	t+=(*(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetDensitySample)))*InterpolationCoeficients[i]/InterpolationList[i]->Measure;
-	
-	// grab particle weith from offset+ofsettfor particle weight
-	TotalParticleWeight=(*(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetDensitySample)));
-	
-	// have to divide by particle weight to interpolate velocity, if no particles in cell it will be zero
-	if (TotalParticleWeight > 0.0){
-	  for (j=0; j<3; j++){
-	    Sv[j]+=(*(j+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetVelocitySample)))*InterpolationCoeficients[i]/TotalParticleWeight;
-	  }
-	}
-	
-	// treating V2 the same as the velocity components
-	if (TotalParticleWeight > 0.0){
-	  for (int h=0; h<3; h++){
-	    Sv2[h]+=(*(h+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetV2Sample)))*InterpolationCoeficients[i]/TotalParticleWeight;
-	  }
-	}
+        offset=InterpolationList[i]->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset;
+
+        t+=(*(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetDensitySample)))*InterpolationCoeficients[i]/InterpolationList[i]->Measure;
+
+        // grab particle weith from offset+ofsettfor particle weight
+        TotalParticleWeight=(*(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetDensitySample)));
+
+        // have to divide by particle weight to interpolate velocity, if no particles in cell it will be zero
+        if (TotalParticleWeight > 0.0) {
+          for (j=0; j<3; j++){
+            Sv[j]+=(*(j+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetVelocitySample)))*InterpolationCoeficients[i]/TotalParticleWeight;
+          }
+        }
+
+        // treating V2 the same as the velocity components
+        if (TotalParticleWeight > 0.0) {
+          for (int h=0; h<3; h++){
+            Sv2[h]+=(*(h+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetV2Sample)))*InterpolationCoeficients[i]/TotalParticleWeight;
+          }
+        }
       }
-      
+
       offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset;
-      
+
       *(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetDensitySample))=t;
       for (k=0; k<3; k++) *(k+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetVelocitySample))=Sv[k];
       for (int l=0; l<3; l++) *(l+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[physpec]+(double*)(offset+OH::Sampling::OriginLocation::OffsetV2Sample))=Sv2[l];
@@ -135,10 +130,10 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
     if (pipe->ThisThread==CenterNodeThread) {
       t= *(idim+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset));
     }
-    
+
     if (pipe->ThisThread==0) {
       if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
-      
+
       fprintf(fout,"%e ",t);
     }
     else pipe->send(t);
@@ -158,52 +153,52 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 
   // ENA origin sampling output
   if (DoPrintSpec[DataSetNumber]) for (int iSource=0;iSource<OH::Sampling::OriginLocation::nSampledOriginLocations+1;iSource++) {
-      //density of the ENAs produced in specific origin regions
+    //density of the ENAs produced in specific origin regions
+    if (pipe->ThisThread==CenterNodeThread) {
+      t= *(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetDensitySample));
+    }
+
+    if (pipe->ThisThread==0) {
+      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+
+      fprintf(fout,"%e ",t/PIC::LastSampleLength);
+    }
+    else pipe->send(t);
+
+    // velocity of the ENAs produced in specific origin regions
+    for (int idim=0; idim<3; idim++){
       if (pipe->ThisThread==CenterNodeThread) {
-	t= *(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetDensitySample));
+        t= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
       }
 
       if (pipe->ThisThread==0) {
-	if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
-	
-	fprintf(fout,"%e ",t/PIC::LastSampleLength);
-      }
-      else pipe->send(t);
-      
-      // velocity of the ENAs produced in specific origin regions
-      for (int idim=0; idim<3; idim++){
-	if (pipe->ThisThread==CenterNodeThread) {
-	  t= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
-	}
-	
-	if (pipe->ThisThread==0) {
-	  if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
-	  
-	  fprintf(fout,"%e ",t);
-	}
-	else pipe->send(t);
-      }
+        if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
 
-      // Temp of the ENAs produced in specific origin regions calculated using the average sqruared velocity and the square of the average velocity components
-      if (pipe->ThisThread==CenterNodeThread) {
-	for (int idim=0; idim<3; idim++){
-	  v[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
-	  v2[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetV2Sample));
-
-	  t+=v2[idim]-v[idim]*v[idim];
-	  
-	  // cant have negative temperature which can happen if only 1 particle is in a cell
-	  if(t < 0.0) t=1.0E-15;
-	}
-      }
-	
-      if (pipe->ThisThread==0) {
-	if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
-	  
-	fprintf(fout,"%e ",PIC::MolecularData::GetMass(DataSetNumber)*t/(3.0*Kbol));
+        fprintf(fout,"%e ",t);
       }
       else pipe->send(t);
     }
+
+    // Temp of the ENAs produced in specific origin regions calculated using the average sqruared velocity and the square of the average velocity components
+    if (pipe->ThisThread==CenterNodeThread) {
+      for (int idim=0; idim<3; idim++){
+        v[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
+        v2[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetV2Sample));
+
+        t+=v2[idim]-v[idim]*v[idim];
+
+        // cant have negative temperature which can happen if only 1 particle is in a cell
+        if (t < 0.0) t=1.0E-15;
+      }
+    }
+
+    if (pipe->ThisThread==0) {
+      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+
+      fprintf(fout,"%e ",PIC::MolecularData::GetMass(DataSetNumber)*t/(3.0*Kbol));
+    }
+    else pipe->send(t);
+  }
 
 }
 
@@ -237,29 +232,20 @@ void OH::Output::Init() {
 
 // Loss -----------------------------------------------------------------------
 
-double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
 
   double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
   double PlasmaBulkVelocity[3];
 
-  double lifetime=0.0;
+  double lifetime,TotalFrequency=0.0;
 
   //in case of running in a stand-along mode
-  #ifdef _OH_STAND_ALONG_MODE_
-  #if _OH_STAND_ALONG_MODE_ == _PIC_MODE_ON_
+#ifdef _OH_STAND_ALONG_MODE_
+#if _OH_STAND_ALONG_MODE_ == _PIC_MODE_ON_
   PhotolyticReactionAllowedFlag=false;
   return lifetime;
-  #endif
-  #endif
-
-
-
-  PIC::CPLR::InitInterpolationStencil(x,node);
-
-  PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity();
-  PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure();
-  PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
-  PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
+#endif
+#endif
 
   // change this to false to turn off charge-exchange
   PhotolyticReactionAllowedFlag=true;
@@ -273,27 +259,52 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
   // velocity of a particle
   double v[3];
   PIC::ParticleBuffer::GetV(v,ptr);  
-  //-------------------
-  switch (spec) {
-  case _H_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V1_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V2_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V3_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: unknown species");
+
+  //loop through all background ion specices
+  PIC::CPLR::InitInterpolationStencil(x,node);
+
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) {
+    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(iFluid);
+    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
+    PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
+    PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
+
+    switch (spec) {
+    case _H_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V1_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V2_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V3_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown species");
+    }
+
+    FrequencyTable[iFluid]=1.0/lifetime;
   }
 
-  return lifetime;
-
+  return TotalFrequency;
 }
+
+
+double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids];
+  double lifetime=0.0;
+
+  GetFrequencyTable(FrequencyTable,x,spec,ptr,PhotolyticReactionAllowedFlag,node);
+
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) lifetime+=1.0/FrequencyTable[iFluid];
+
+  return lifetime;
+}
+
+
 
 void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //as a result of the reaction only velocity of a particle is changed
@@ -333,19 +344,42 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     //inject the products of the reaction
     double ParentTimeStep,ParentParticleWeight;
 
-  #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+
+    //determine with shich ions fluid that partice will interact with
+    int ifluid=0;
+
+    if (PIC::CPLR::SWMF::nCommunicatedIonFluids>1) {
+      double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids],TotalFrequency,cnt=0.0,cnt_max;
+      bool PhotolyticReactionAllowedFlag;
+
+      TotalFrequency=GetFrequencyTable(FrequencyTable,xParent,spec,ptr,PhotolyticReactionAllowedFlag,node);
+
+      cnt_max=rnd()*TotalFrequency;
+
+      for (ifluid=0;ifluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid++) {
+        cnt+=FrequencyTable[ifluid];
+        if (cnt>=cnt_max) break;
+      }
+
+      if (ifluid==PIC::CPLR::SWMF::nCommunicatedIonFluids) ifluid=PIC::CPLR::SWMF::nCommunicatedIonFluids-1;
+    }
+
+
+
+
+#if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
     ParentParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-  #else
+#else
     ParentParticleWeight=0.0;
     exit(__LINE__,__FILE__,"Error: the weight mode is node defined");
-  #endif
+#endif
 
-  #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
     ParentTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-  #else
+#else
     ParentTimeStep=0.0;
     exit(__LINE__,__FILE__,"Error: the time step node is not defined");
-  #endif
+#endif
 
     //account for the parent particle correction factor
     ParentParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
@@ -354,13 +388,14 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double PlasmaBulkVelocity[3];
     double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
     double vp[3];
-    
+
     PIC::CPLR::InitInterpolationStencil(xParent,node);
-    PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
-    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity();
-    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure();
+
+    PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid,PlasmaBulkVelocity);
+    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(ifluid);
+    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid);
     PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
-    
+
     // calculating the random velocity of the proton from the maxwellian velocity of the local plasma
     PIC::Distribution::MaxwellianVelocityDistribution(vp,PlasmaBulkVelocity,PlasmaTemperature,spec);
 
@@ -370,23 +405,24 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 
     CenterNode=PIC::Mesh::Search::FindCell(xParent); ///node->block->GetCenterNode(nd);
     offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
-    double vh2 = 0.0, vp2 = 0.0;
-    double c = ParentParticleWeight
-      / PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]
-      / CenterNode->Measure;
-    *((double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
 
-    for(int idim=0; idim<3; idim++){
-      *(idim + (double*)(offset+OH::Output::ohSourceMomentumOffset)) +=
-	c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
-      vh2      +=vParent[idim]*vParent[idim];
+    double vh2 = 0.0, vp2 = 0.0;
+    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
+
+    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
+
+    for (int idim=0; idim<3; idim++) {
+      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
+
+      vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
-    *((double*)(offset+OH::Output::ohSourceEnergyOffset)) +=
-      c*0.5*_MASS_(_H_)*(vh2-vp2);
-   
+
+    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*(vh2-vp2);
+
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
+
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {
       PIC::ParticleBuffer::SetI(_H_ENA_V3_SPEC_,ParticleData);
@@ -400,6 +436,7 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     else {
       PIC::ParticleBuffer::SetI(_H_SPEC_,ParticleData);
     }
+
     // tagging the particle to the right population that it was created
     OH::SetOriginTag(OH::GetEnaOrigin(PlasmaNumberDensity,PlasmaPressure,PlasmaBulkVelocity), ParticleData);
   }
@@ -430,7 +467,7 @@ void OH::Init_BeforeParser(){
 int OH::user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   //setting User defined function to process particles leaving domain at certain faces
   //useful for 1D runs if just want flows in one direction
-  
+
   // removing particles if hit faces perpandiulat to x axis
   if (nIntersectionFace == 0 || nIntersectionFace == 1) return _PARTICLE_DELETED_ON_THE_FACE_; 
 
@@ -522,7 +559,7 @@ void OH::InitializeParticleWithEnaOriginTag(long int ptr, cTreeNodeAMR<PIC::Mesh
   PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
   PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity();
   PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure();
-  
+
   // assign the origin tag to the particle
   OH::SetOriginTag(OH::GetEnaOrigin(PlasmaNumberDensity,PlasmaPressure,PlasmaBulkVelocity), ParticleData);
 
@@ -628,7 +665,7 @@ void OH::InitPhysicalSpecies(){
 
   // holds the number of the index of each additional unique physical species
   OH::nPhysSpec=0;
-  
+
   // resetting/initializing the array holding the physical species index 
   for (int spec=0; spec<PIC::nTotalSpecies; spec++){
     OH::PhysSpec[spec]=-1;
@@ -647,18 +684,18 @@ void OH::InitPhysicalSpecies(){
       q1=PIC::MolecularData::GetElectricCharge(s1);
 
       if (m0 == m1 && q0 == q1){
-	OH::PhysSpec[s0]=OH::PhysSpec[s1];
-	break;
+        OH::PhysSpec[s0]=OH::PhysSpec[s1];
+        break;
       }
     }
     // if there was no match to previous species then it is a new species
     if (OH::PhysSpec[s0]<0) {
       //setting index of new physical species to hold value of nPhysSpec
       OH::PhysSpec[s0]=OH::nPhysSpec;
-   
+
       //setting the value of the array to print region sampling data of that physical species in this species data file
       OH::DoPrintSpec[s0]=true;
-  
+
       // updating counter of number of species
       OH::nPhysSpec++;
     }
