@@ -344,29 +344,6 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     //inject the products of the reaction
     double ParentTimeStep,ParentParticleWeight;
 
-
-    //determine with shich ions fluid that partice will interact with
-    int ifluid=0;
-
-    if (PIC::CPLR::SWMF::nCommunicatedIonFluids>1) {
-      double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids],TotalFrequency,cnt=0.0,cnt_max;
-      bool PhotolyticReactionAllowedFlag;
-
-      TotalFrequency=GetFrequencyTable(FrequencyTable,xParent,spec,ptr,PhotolyticReactionAllowedFlag,node);
-
-      cnt_max=rnd()*TotalFrequency;
-
-      for (ifluid=0;ifluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid++) {
-        cnt+=FrequencyTable[ifluid];
-        if (cnt>=cnt_max) break;
-      }
-
-      if (ifluid==PIC::CPLR::SWMF::nCommunicatedIonFluids) ifluid=PIC::CPLR::SWMF::nCommunicatedIonFluids-1;
-    }
-
-
-
-
 #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
     ParentParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
 #else
@@ -390,10 +367,9 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double vp[3];
 
     PIC::CPLR::InitInterpolationStencil(xParent,node);
-
-    PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid,PlasmaBulkVelocity);
-    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(ifluid);
-    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid);
+    PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
+    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity();
+    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure();
     PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
 
     // calculating the random velocity of the proton from the maxwellian velocity of the local plasma
@@ -405,24 +381,22 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 
     CenterNode=PIC::Mesh::Search::FindCell(xParent); ///node->block->GetCenterNode(nd);
     offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
-
     double vh2 = 0.0, vp2 = 0.0;
     double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
+    *((double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
 
-    for (int idim=0; idim<3; idim++) {
-      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
+    for(int idim=0; idim<3; idim++){
+      *(idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
 
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*(vh2-vp2);
+    *((double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*(vh2-vp2);
 
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
-
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {
       PIC::ParticleBuffer::SetI(_H_ENA_V3_SPEC_,ParticleData);
@@ -436,7 +410,6 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     else {
       PIC::ParticleBuffer::SetI(_H_SPEC_,ParticleData);
     }
-
     // tagging the particle to the right population that it was created
     OH::SetOriginTag(OH::GetEnaOrigin(PlasmaNumberDensity,PlasmaPressure,PlasmaBulkVelocity), ParticleData);
   }
