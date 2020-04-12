@@ -67,7 +67,7 @@ extern "C" {
 
   void amps_get_fluid_number_(int * fluidNumberIn){
     
-    PIC::CPLR::SWMF::nFluid = (*fluidNumberIn-3)/5;
+    PIC::CPLR::SWMF::nCommunicatedIonFluids= (*fluidNumberIn-3)/5;
     //for test
     //printf("coupler fluid number is %d\n", PIC::CPLR::SWMF::nFluid );
   }
