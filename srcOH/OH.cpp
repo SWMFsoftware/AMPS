@@ -232,12 +232,12 @@ void OH::Output::Init() {
 
 // Loss -----------------------------------------------------------------------
 
-double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
 
   double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
   double PlasmaBulkVelocity[3];
 
-  double lifetime=0.0;
+  double lifetime,TotalFrequency=0.0;
 
   //in case of running in a stand-along mode
 #ifdef _OH_STAND_ALONG_MODE_
@@ -246,15 +246,6 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
   return lifetime;
 #endif
 #endif
-
-
-
-  PIC::CPLR::InitInterpolationStencil(x,node);
-
-  PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity();
-  PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure();
-  PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
-  PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
 
   // change this to false to turn off charge-exchange
   PhotolyticReactionAllowedFlag=true;
@@ -268,27 +259,52 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
   // velocity of a particle
   double v[3];
   PIC::ParticleBuffer::GetV(v,ptr);  
-  //-------------------
-  switch (spec) {
-  case _H_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V1_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V2_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  case _H_ENA_V3_SPEC_:
-    lifetime= ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: unknown species");
+
+  //loop through all background ion specices
+  PIC::CPLR::InitInterpolationStencil(x,node);
+
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) {
+    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(iFluid);
+    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
+    PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
+    PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
+
+    switch (spec) {
+    case _H_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V1_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V2_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    case _H_ENA_V3_SPEC_:
+      lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown species");
+    }
+
+    FrequencyTable[iFluid]=1.0/lifetime;
   }
 
-  return lifetime;
-
+  return TotalFrequency;
 }
+
+
+double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids];
+  double lifetime=0.0;
+
+  GetFrequencyTable(FrequencyTable,x,spec,ptr,PhotolyticReactionAllowedFlag,node);
+
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) lifetime+=1.0/FrequencyTable[iFluid];
+
+  return lifetime;
+}
+
+
 
 void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //as a result of the reaction only velocity of a particle is changed
