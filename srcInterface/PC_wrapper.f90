@@ -25,6 +25,7 @@ module PC_wrapper
   public:: PC_put_from_gm  
   public:: PC_get_for_gm
   public:: PC_put_from_gm_dt
+  public:: PC_put_from_gm_grid_info
   public:: PC_put_from_gm_init
 
 
@@ -245,10 +246,16 @@ contains
     end if
 
   end subroutine PC_put_from_gm
-
   !============================================================================
 
-  !==============================================================================
+  subroutine PC_put_from_gm_grid_info(nInt, Int_I)
+    integer, intent(in)         :: nInt 
+    integer, intent(in)         :: Int_I(nInt)
+    !-------------------------------------------------------------------------
+    ! Empty function
+  end subroutine PC_put_from_gm_grid_info
+  !============================================================================
+
   subroutine PC_get_for_gm(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &
        Data_VI)
 
