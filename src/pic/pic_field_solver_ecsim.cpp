@@ -1692,7 +1692,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
     
     double CellVolume=1;
     double dx[3];
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;    
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];    
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
     
     for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -1730,7 +1730,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
                 
           double * CenterOffset = (double *)(block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
                 
-          CenterOffset[divEIndex] = divE * CellVolume*0.25;
+          CenterOffset[divEIndex] = divE * 0.25;
 
         }
       }
@@ -3409,10 +3409,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
     //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
-    double dx[3],dx_no[3];
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
-    for (int iDim=0; iDim<3;iDim++) dx_no[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
-
+    double dx[3];
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];  
+   
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
     
     
@@ -3446,11 +3445,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
             double xCell[3];
             int index[3]={i,j,k};
             for (int iDim=0;iDim<3;iDim++){ 
-              xNode[iDim] = node->xmin[iDim]*length_conv+dx[iDim]*index[iDim];
-              xCell[iDim] =  node->xmin[iDim]+dx_no[iDim]*(index[iDim]+0.5);
+              xNode[iDim] =  node->xmin[iDim]+dx[iDim]*index[iDim];
+              xCell[iDim] =  node->xmin[iDim]+dx[iDim]*(index[iDim]+0.5);
             }
             
-            bool atBoundary = isBoundaryCell(xCell,dx_no,node);
+            bool atBoundary = isBoundaryCell(xCell,dx,node);
             
             
             //if (isBoundaryCell(xCell,dx_no,node)) continue;
@@ -3482,7 +3481,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                 
               }else{
                 double xRel[3];
-                for (int iDim=0;iDim<3;iDim++) xRel[iDim] = (xInit[iDim]*length_conv-xNode[iDim])/dx[iDim];
+                for (int iDim=0;iDim<3;iDim++) xRel[iDim] = (xInit[iDim]-xNode[iDim])/dx[iDim];
               
                 int iClosestNode[3];
                 for (int iDim=0;iDim<3;iDim++) iClosestNode[iDim] = int(index[iDim]+round(xRel[iDim]));
@@ -3519,7 +3518,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                 eChargeDens = 
                   ((double *) (block->GetCornerNode(localCornerId)->
                                GetAssociatedDataBufferPointer()+
-                               PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))[SpeciesDataIndex[0]]*(-25);
+                               PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset))[SpeciesDataIndex[0]]*qom[0];
                 
                 
                 double displacement[3],temp;
@@ -3532,13 +3531,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                                 
                 double epsLimit=0.1;
                 
-                if (fabs( displacement[0] / dx_no[0]) > epsLimit ||
-                    fabs( displacement[1] / dx_no[1]) > epsLimit ||
-                    fabs( displacement[2] / dx_no[2]) > epsLimit) {
+                if (fabs( displacement[0] / dx[0]) > epsLimit ||
+                    fabs( displacement[1] / dx[1]) > epsLimit ||
+                    fabs( displacement[2] / dx[2]) > epsLimit) {
                   double dl =
                     sqrt(pow(displacement[0], 2) + pow(displacement[1], 2) + pow(displacement[2], 2));
                   for (int iDim = 0; iDim < 3; iDim++)
-                    displacement[iDim] *= epsLimit * dx_no[0] / dl;
+                    displacement[iDim] *= epsLimit * dx[0] / dl;
                 }
                 
                 for (int iDim=0; iDim<3; iDim++) xFinal[iDim]=xInit[iDim]+displacement[iDim];  
@@ -3650,7 +3649,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];  
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
     
     
@@ -3724,7 +3723,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
         for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
           int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
           if (!node->block->GetCenterNode(LocalCenterId)) continue;
-          ((double *) (node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[netChargeNewIndex] += q_Center[LocalCenterId];
+          ((double *) (node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset))[netChargeNewIndex] += q_Center[LocalCenterId]/CellVolume;
         
         }
       }
