@@ -438,7 +438,7 @@ Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
 -------------------------------------------------------------------------------
 #>
 Time=1
-Name=test/tecplot-reader@@(0+valeriy+srbwks73465-01+pleiades)  
+Name=test/tecplot-reader@@(0+valeriy+pleiades)  
 Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid 
 <#
 
@@ -448,6 +448,7 @@ Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu)
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+amps-gpu)
 
 Run=
 >>>@echo "test_binary_reader_run..." >> test_binary-reader.diff
