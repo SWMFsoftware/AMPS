@@ -2892,7 +2892,7 @@ Time=50
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
-Ref=8{pgcc}@@(0+valeriy)
+Ref=7{pgcc}@@(0+amps-gpu+pleiades)
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
 Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/VENUS@@(0+amps-gpu)
