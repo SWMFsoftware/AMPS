@@ -231,7 +231,7 @@ void  dynamicAllocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
   std::vector<int> allocatedBlockIndexArr; 
-  //printf("dynamic allocate blocks called\n");
+  printf("dynamic allocate blocks called\n");
   deallocateBlocks();
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
@@ -287,10 +287,13 @@ void  dynamicAllocateBlocks(){
  
 
   //printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  int nGlobalAllocatedBlocks;
+  MPI_Allreduce(&nAllocatedBlocks,&nGlobalAllocatedBlocks,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-  
+
   printf("thread id:%d, before createnewlist called\n", PIC::ThisThread);
-  //PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  if (nGlobalAllocatedBlocks!=0)
+  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
 
   /*
@@ -308,10 +311,10 @@ void initNewBlocks() {
   printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
-    /*
+    
     printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
            PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
-    */
+    
     int iBlock=-1;
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       if (!node->block || node->Thread!=PIC::ThisThread) continue;
