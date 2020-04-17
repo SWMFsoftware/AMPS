@@ -81,6 +81,21 @@ void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
 }
 
 
+double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  double res=0.0;
+  if (node->block) {
+    res=1.0;
+  }else{
+    res=0.1;
+  }
+  // for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);                             \
+                                                                                                             
+
+  return res;
+}
+
+
+
 bool IsOutside(double * x){
 
   double xx=x[0];  
@@ -113,7 +128,12 @@ bool IsOutside(double * x){
 void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   
   long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
-  if (FirstCellParticleTable==NULL) return;
+
+  if (FirstCellParticleTable==NULL) {
+    if (node->block) PIC::Mesh::mesh.DeallocateBlock(node);
+    return;
+  }
+
   for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
     for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
       for (int i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -124,7 +144,7 @@ void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }
   }
   
-
+  PIC::Mesh::mesh.DeallocateBlock(node);
 
 }
 
@@ -269,7 +289,10 @@ void  dynamicAllocateBlocks(){
   //printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
 
   
-  
+  printf("thread id:%d, before createnewlist called\n", PIC::ThisThread);
+  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
+
   /*
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=newNodeList.begin(); it!=newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
@@ -1977,6 +2000,8 @@ void amps_init_mesh() {
 
   }
   //coupling send info from amps to fluid
+  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
 

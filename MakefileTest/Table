@@ -438,16 +438,17 @@ Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
 -------------------------------------------------------------------------------
 #>
 Time=1
-Name=test/tecplot-reader@@(0+valeriy+srbwks73465-01+pleiades)  
+Name=test/tecplot-reader@@(0+valeriy+pleiades)  
 Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid 
 <#
 
 #>
 Time=1
-Name=test/binary-reader@@(0+valeriy+stampede+pleiades)
+Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu)
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+amps-gpu)
 
 Run=
 >>>@echo "test_binary_reader_run..." >> test_binary-reader.diff
@@ -507,7 +508,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+stampede)
@@ -863,6 +864,8 @@ Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
 Ref=3{gcc}@@(0+stampede)
+Ref=6{icc}@@(0+pleiades)
+Ref=1{gcc}@@(0+pleiades)
 
 Outs=
 
@@ -896,34 +899,34 @@ Check=
 >>>output/test_lightwave-current-on/PIC_particle_case1.out=6$(TESTlightwave-current-on-REF).ref_np`ls $(TESTlightwave-current-onDIR)/PT/thread* |wc -l |tr -d ' '`  > test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff;) 
 >>>mv $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat.tmp $(TESTlightwave-current-onDIR)/PIC_particle_case1.out=6.dat
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ex.dat output/test_lightwave-current-on/GradDivE_0_Ex.ref  > test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff;) 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ey.dat output/test_lightwave-current-on/GradDivE_0_Ey.ref  > test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ez.dat output/test_lightwave-current-on/GradDivE_0_Ez.ref  > test_lightwave-current-on--GradDivE_0_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ex.dat output/test_lightwave-current-on/GradDivE_0_Ex.ref  > test_lightwave-current-on--GradDivE_0_Ex.diff;) 
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ey.dat output/test_lightwave-current-on/GradDivE_0_Ey.ref  > test_lightwave-current-on--GradDivE_0_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_0_Ez.dat output/test_lightwave-current-on/GradDivE_0_Ez.ref  > test_lightwave-current-on--GradDivE_0_Ez.diff;)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ex.dat output/test_lightwave-current-on/GradDivE_1_Ex.ref  > test_lightwave-current-on--GradDivE_1_Ex$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ey.dat output/test_lightwave-current-on/GradDivE_1_Ey.ref  > test_lightwave-current-on--GradDivE_1_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ez.dat output/test_lightwave-current-on/GradDivE_1_Ez.ref  > test_lightwave-current-on--GradDivE_1_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ex.dat output/test_lightwave-current-on/GradDivE_1_Ex.ref  > test_lightwave-current-on--GradDivE_1_Ex.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ey.dat output/test_lightwave-current-on/GradDivE_1_Ey.ref  > test_lightwave-current-on--GradDivE_1_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_1_Ez.dat output/test_lightwave-current-on/GradDivE_1_Ez.ref  > test_lightwave-current-on--GradDivE_1_Ez.diff;)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ex.dat output/test_lightwave-current-on/GradDivE_2_Ex.ref  > test_lightwave-current-on--GradDivE_2_Ex$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ey.dat output/test_lightwave-current-on/GradDivE_2_Ey.ref  > test_lightwave-current-on--GradDivE_2_Ey$(TESTlightwave-current-on-REF).diff;)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ex.dat output/test_lightwave-current-on/GradDivE_2_Ex.ref  > test_lightwave-current-on--GradDivE_2_Ex.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ey.dat output/test_lightwave-current-on/GradDivE_2_Ey.ref  > test_lightwave-current-on--GradDivE_2_Ey.diff;)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTlightwave-current-onDIR)/GradDivE_2_Ez.dat output/test_lightwave-current-on/GradDivE_2_Ez.ref  > test_lightwave-current-on--GradDivE_2_Ez.diff;)
 
 >>>@cat test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff > test_lightwave-current-on$(TESTlightwave-current-on-REF).diff
 
 >>>cp output/test_lightwave-current-on/temp_files/* output/test_lightwave-current-on/
 >>>rm -rf output/test_lightwave-current-on/temp_files
 
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_0_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_0_Ez.diff
 
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_1_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_1_Ez.diff
 
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ex$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ey$(TESTlightwave-current-on-REF).diff
->>>@ls -l test_lightwave-current-on--GradDivE_2_Ez$(TESTlightwave-current-on-REF).diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ex.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ey.diff
+>>>@ls -l test_lightwave-current-on--GradDivE_2_Ez.diff
 
 >>>@ls -l test_lightwave-current-on--particle_energy$(TESTlightwave-current-on-REF).diff
 >>>@ls -l test_lightwave-current-on--langmuir_wave$(TESTlightwave-current-on-REF).diff
@@ -997,6 +1000,9 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=5{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
 Ref=10{pgcc}@@(0+amps-gpu)
+
+Ref=6{icc}@@(0+pleiades)
+Ref=4{gcc}@@(0+pleiades)
 
 Outs=
 
@@ -1082,6 +1088,8 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=51{gcc}@@(0+amps-gpu)
 Ref=91{icc}@@(0+amps-gpu)
 Ref=11{pgcc}@@(0+amps-gpu)
+Ref=61{icc}@@(0+pleiades)
+Ref=41{gcc}@@(0+pleiades)
 
 Outs=
 
@@ -2154,7 +2162,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2172,7 +2180,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Lapenta2017CUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Lapenta2017-REF).ref_np`ls ${TESTIndividual_Trajectories--Lapenta2017DIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Lapenta2017$(TESTIndividual_Trajectories--Lapenta2017-REF).diff
 >>>@ls -l test_Individual_Trajectories--Lapenta2017$(TESTIndividual_Trajectories--Lapenta2017-REF).diff
 >>>@echo Test test_Individual_Trajectories--Lapenta2017 has finished: `date`
@@ -2191,7 +2199,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede+amps-gpu)
 Ref=4{icc}@@(0+stampede)
@@ -2208,7 +2216,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-2 ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Markidis2010CUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Markidis2010-REF).ref_np`ls ${TESTIndividual_Trajectories--Markidis2010DIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Markidis2010$(TESTIndividual_Trajectories--Markidis2010-REF).diff
 >>>@ls -l test_Individual_Trajectories--Markidis2010$(TESTIndividual_Trajectories--Markidis2010-REF).diff
 >>>@echo Test test_Individual_Trajectories--Markidis2010 has finished: `date`
@@ -2227,7 +2235,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2245,7 +2253,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--BorisCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Boris-REF).ref_np`ls ${TESTIndividual_Trajectories--BorisDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Boris$(TESTIndividual_Trajectories--Boris-REF).diff
 >>>@ls -l test_Individual_Trajectories--Boris$(TESTIndividual_Trajectories--Boris-REF).diff
 >>>@echo Test test_Individual_Trajectories--Boris has finished: `date`
@@ -2262,7 +2270,7 @@ Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2280,7 +2288,7 @@ CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/O
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+stampede)
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-3 ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--Boris-relativisticCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--Boris-relativistic-REF).ref_np`ls ${TESTIndividual_Trajectories--Boris-relativisticDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--Boris-relativistic$(TESTIndividual_Trajectories--Boris-relativistic-REF).diff
 >>>@ls -l test_Individual_Trajectories--Boris-relativistic$(TESTIndividual_Trajectories--Boris-relativistic-REF).diff
 >>>@echo Test test_Individual_Trajectories--Boris-relativistic has finished: `date`
@@ -2296,7 +2304,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades+amps-gpu)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
@@ -2315,7 +2323,7 @@ CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECT
 
 
 Check=
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
+>>>-@${SCRIPTDIR}/DiffNum.pl -r=2.0e-2 ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat         \
 >>>${TESTIndividual_Trajectories--guiding-centerCUSTOMREFSOLUTIONPATHS}/test_CCMC-Individual_Trajectories$(TESTIndividual_Trajectories--guiding-center-REF).ref_np`ls ${TESTIndividual_Trajectories--guiding-centerDIR}/PT/thread* |wc -l |tr -d ' '` > test_Individual_Trajectories--guiding-center$(TESTIndividual_Trajectories--guiding-center-REF).diff
 >>>@ls -l test_Individual_Trajectories--guiding-center$(TESTIndividual_Trajectories--guiding-center-REF).diff
 >>>@echo Test test_Individual_Trajectories--guiding-center has finished: `date`
@@ -2841,7 +2849,7 @@ Time=50
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=3{gcc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 Ref=3{gcc}@@(0+stampede+amps-gpu)
 Ref=2{pgcc}@@(0+valeriy)
 
@@ -2884,7 +2892,7 @@ Time=50
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
-Ref=8{pgcc}@@(0+valeriy)
+Ref=7{pgcc}@@(0+amps-gpu+pleiades)
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
 Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/VENUS@@(0+amps-gpu)
