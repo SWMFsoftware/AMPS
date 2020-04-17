@@ -290,7 +290,7 @@ void  dynamicAllocateBlocks(){
 
   
   printf("thread id:%d, before createnewlist called\n", PIC::ThisThread);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  //PIC::Mesh::mesh.CreateNewParallelDistributionLists();
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
 
   /*
