@@ -204,15 +204,15 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 
 int OH::Output::RequestDataBuffer(int offset){
   OH::Output::ohSourceDensityOffset=offset;
-  OH::Output::TotalDataLength = 1;
+  OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
   offset+=sizeof(double);
 
   OH::Output::ohSourceMomentumOffset=offset;
-  OH::Output::TotalDataLength+=3;
+  OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
   offset+=3*sizeof(double);
 
   OH::Output::ohSourceEnergyOffset=offset;
-  OH::Output::TotalDataLength++;
+  OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
   offset+=sizeof(double);
 
   return OH::Output::TotalDataLength*sizeof(double);
