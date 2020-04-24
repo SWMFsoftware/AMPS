@@ -56,16 +56,16 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
   TotalDataLength=3;
 
   BulkVelocityOffset=offset+TotalDataLength*sizeof(double);
-  TotalDataLength+=3;
+  TotalDataLength+=3*nCommunicatedIonFluids;
 
   PlasmaPressureOffset=offset+TotalDataLength*sizeof(double);
-  TotalDataLength++;
+  TotalDataLength+=nCommunicatedIonFluids;
 
   PlasmaNumberDensityOffset=offset+TotalDataLength*sizeof(double);
-  TotalDataLength++;
+  TotalDataLength+=nCommunicatedIonFluids;
 
   PlasmaTemperatureOffset=offset+TotalDataLength*sizeof(double);
-  TotalDataLength++;
+  TotalDataLength+=nCommunicatedIonFluids;
 
   return TotalDataLength*sizeof(double);
 
@@ -379,6 +379,17 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
               *((double*)(cell->GetAssociatedDataBufferPointer()+MagneticFieldOffset+idim*sizeof(double)))=((offset>=0)&&(Bx_SWMF2AMPS>=0)) ? data[offset+Bx_SWMF2AMPS+idim] : 0.0;
             }
 
+          
+            //in case there are mode then just one fluid -> process other fluids
+            for (int ifluid=1;ifluid<nCommunicatedIonFluids;ifluid++) {
+              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset))=data[offset+8+5*ifluid]/MeanPlasmaAtomicMass;
+
+              for (idim=0;idim<3;idim++) {
+                *(idim+3*ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+BulkVelocityOffset))=data[offset+9+idim+5*ifluid]/data[offset+8+5*ifluid]; 
+              }
+
+              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=data[offset+12+5*ifluid];
+            }
           }
         }
     }
