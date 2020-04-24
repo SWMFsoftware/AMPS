@@ -17,6 +17,9 @@ module PT_wrapper
   public:: PT_save_restart
   public:: PT_finalize
 
+  ! Init AMPS 
+  public:: PT_init_component
+
   ! Point coupling
   public:: PT_get_grid_info 
   public:: PT_find_points
@@ -92,6 +95,7 @@ contains
   !============================================================================
 
   subroutine PT_init_session(iSession, TimeSimulation)
+     use CON_coupler, ONLY: OH_, Grid_C
 
     !INPUT PARAMETERS:
     integer,  intent(in) :: iSession         ! session number (starting from 1)
@@ -145,6 +149,14 @@ contains
     call AMPS_TimeStep(TimeSimulation, TimeSimulationLimit) 
 
   end subroutine PT_run
+
+  !============================================================================
+
+  subroutine PT_init_component(nIonFluids) 
+    integer,intent(in)::nIonFluids !the number of the ion fluids that will be communicated to AMPS 
+
+    call amps_from_oh_init(nIonFluids)
+  end subroutine PT_init_component
 
   !============================================================================
 
