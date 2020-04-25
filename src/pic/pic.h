@@ -4640,21 +4640,31 @@ namespace PIC {
         for (idim=0;idim<3;idim++) B[idim]=offset[idim];
       }
 
-      inline void GetBackgroundPlasmaVelocity(double *v,PIC::Mesh::cDataCenterNode *cell) {
+      inline void GetBackgroundPlasmaVelocity(int iBackgroundPlasmaSpec,double *v,PIC::Mesh::cDataCenterNode *cell) {
         int idim;
-        double *offset=(double*)(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
+        double *offset=3*iBackgroundPlasmaSpec+(double*)(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
 
         for (idim=0;idim<3;idim++) v[idim]=offset[idim];
       }
 
+      inline void GetBackgroundPlasmaVelocity(double *v,PIC::Mesh::cDataCenterNode *cell) {
+        GetBackgroundPlasmaVelocity(0,v,cell);
+      }
 
+      inline double GetBackgroundPlasmaPressure(int iBackgroundPlasmaSpec,PIC::Mesh::cDataCenterNode *cell) {
+        return *(iBackgroundPlasmaSpec+(double*)(PlasmaPressureOffset+cell->GetAssociatedDataBufferPointer()));
+      }
 
       inline double GetBackgroundPlasmaPressure(PIC::Mesh::cDataCenterNode *cell) {
-        return *((double*)(PlasmaPressureOffset+cell->GetAssociatedDataBufferPointer()));
+        return GetBackgroundPlasmaPressure(0,cell);
+      }
+
+      inline double GetBackgroundPlasmaNumberDensity(int iBackgroundPlasmaSpec,PIC::Mesh::cDataCenterNode *cell) {
+        return *(iBackgroundPlasmaSpec+(double*)(PlasmaNumberDensityOffset+cell->GetAssociatedDataBufferPointer()));
       }
 
       inline double GetBackgroundPlasmaNumberDensity(PIC::Mesh::cDataCenterNode *cell) {
-        return *((double*)(PlasmaNumberDensityOffset+cell->GetAssociatedDataBufferPointer()));
+        return GetBackgroundPlasmaNumberDensity(0,cell);
       }
 
       inline double GetBackgroundPlasmaTemperature(PIC::Mesh::cDataCenterNode *cell) {
@@ -5475,7 +5485,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         SWMF::GetBackgroundPlasmaVelocity(t,Stencil->cell[iStencil]);
+         SWMF::GetBackgroundPlasmaVelocity(iBackgroundPlasmaSpec,t,Stencil->cell[iStencil]);
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          DATAFILE::GetBackgroundPlasmaVelocity(t,Stencil->cell[iStencil], Time);
          #else
@@ -5525,7 +5535,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         res+=SWMF::GetBackgroundPlasmaPressure(Stencil->cell[iStencil])*Stencil->Weight[iStencil];
+         res+=SWMF::GetBackgroundPlasmaPressure(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          res+=DATAFILE::GetBackgroundPlasmaPressure(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
@@ -5577,7 +5587,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         res+=SWMF::GetBackgroundPlasmaNumberDensity(Stencil->cell[iStencil])*Stencil->Weight[iStencil];
+         res+=SWMF::GetBackgroundPlasmaNumberDensity(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          res+=DATAFILE::GetBackgroundPlasmaNumberDensity(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else

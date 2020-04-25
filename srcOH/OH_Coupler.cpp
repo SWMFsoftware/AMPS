@@ -14,34 +14,10 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
   int i0=0,i1=0;
   char vname[200];
 
-  //get the offsets
-  int Density_AMPS2OH  =-1;
-  int MomentumX_AMPS2OH=-1;
-  int MomentumY_AMPS2OH=-1;
-  int MomentumZ_AMPS2OH=-1;
-  int Energy_AMPS2OH   =-1;
-
-  while ((NameVar[i0]!=0)&&(NameVar[i0]==' ')) i0++;
-
-  for (int n=0;n<(*nVarIn);n++) {
-    i1=i0;
-    while (NameVar[i1]!=' ') {
-      vname[i1-i0]=tolower(NameVar[i1]);
-      i1++;
-    }
-
-    vname[i1-i0]=0;
-
-    if (strcmp(vname,"srho")==0) Density_AMPS2OH  =n;
-    if (strcmp(vname,"smx" )==0) MomentumX_AMPS2OH=n;
-    if (strcmp(vname,"smy" )==0) MomentumY_AMPS2OH=n;
-    if (strcmp(vname,"smz" )==0) MomentumZ_AMPS2OH=n;
-    if (strcmp(vname,"se" ) ==0) Energy_AMPS2OH   =n;
-    
-    i0=i1;
-
-    while ((NameVar[i0]!=0)&&(NameVar[i0]==' ')) i0++;
-  }
+  int density_offset=0;
+  int momentum_offset=1;
+  int energy_offset=4;
+  int package_length=5;
 
   //save the data
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
@@ -68,32 +44,32 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
     for (ifluid=0;ifluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid++) {
       if (PIC::LastSampleLength!=0) {
         // copy density source
-        Data_VI[fluid_data_offset+Density_AMPS2OH+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+density_offset+pt*(*nVarIn)]=
           (*(ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceDensityOffset)))/PIC::LastSampleLength;
 
         // copy momentum source
-        Data_VI[fluid_data_offset+MomentumX_AMPS2OH+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+0+momentum_offset+pt*(*nVarIn)]=
           (*(0+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
-        Data_VI[fluid_data_offset+MomentumY_AMPS2OH+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+1+momentum_offset+pt*(*nVarIn)]=
           (*(1+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
-        Data_VI[fluid_data_offset+MomentumZ_AMPS2OH+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)]=
           (*(2+3*ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset)))/PIC::LastSampleLength;
 
         // copy energy source
-        Data_VI[fluid_data_offset+Energy_AMPS2OH+pt*(*nVarIn)]=
+        Data_VI[fluid_data_offset+energy_offset+pt*(*nVarIn)]=
           (*(ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceEnergyOffset)))/PIC::LastSampleLength;
       }
       else {
-        Data_VI[fluid_data_offset+Density_AMPS2OH  +pt*(*nVarIn)]=0.0;
-        Data_VI[fluid_data_offset+MomentumX_AMPS2OH+pt*(*nVarIn)]=0.0;
-        Data_VI[fluid_data_offset+MomentumY_AMPS2OH+pt*(*nVarIn)]=0.0;
-        Data_VI[fluid_data_offset+MomentumZ_AMPS2OH+pt*(*nVarIn)]=0.0;
-        Data_VI[fluid_data_offset+Energy_AMPS2OH   +pt*(*nVarIn)]=0.0;
+        Data_VI[fluid_data_offset+density_offset  +pt*(*nVarIn)]=0.0;
+        Data_VI[fluid_data_offset+0+momentum_offset+pt*(*nVarIn)]=0.0;
+        Data_VI[fluid_data_offset+1+momentum_offset+pt*(*nVarIn)]=0.0;
+        Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)]=0.0;
+        Data_VI[fluid_data_offset+energy_offset   +pt*(*nVarIn)]=0.0;
       }
 
-      fluid_data_offset+=5;
+      fluid_data_offset+=package_length;
     }
   }
 

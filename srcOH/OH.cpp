@@ -265,28 +265,34 @@ double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, l
 
   for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) {
     PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(iFluid);
-    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
-    PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
-    PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
 
-    switch (spec) {
-    case _H_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V1_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V2_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V3_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: unknown species");
+    if (PlasmaNumberDensity>0.0) {
+      PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
+      PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
+      PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
+
+
+      switch (spec) {
+      case _H_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V1_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V2_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V3_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: unknown species");
+      }
+
+      FrequencyTable[iFluid]=1.0/lifetime;
+      TotalFrequency+=FrequencyTable[iFluid];
     }
-
-    FrequencyTable[iFluid]=1.0/lifetime;
+    else FrequencyTable[iFluid]=0.0;
   }
 
   return TotalFrequency;
@@ -299,7 +305,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
 
   GetFrequencyTable(FrequencyTable,x,spec,ptr,PhotolyticReactionAllowedFlag,node);
 
-  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) lifetime+=1.0/FrequencyTable[iFluid];
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) if (FrequencyTable[iFluid]>0.0) lifetime+=1.0/FrequencyTable[iFluid];
 
   return lifetime;
 }
@@ -422,6 +428,8 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
+
+    if ((isfinite(vp[0])==false)||(isfinite(vp[1])==false)||(isfinite(vp[2])==false)) exit(__LINE__,__FILE__,"Error: out of range");  
 
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {
