@@ -327,16 +327,18 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
 
     vname[i1-i0]=0;
 
-    if (strcmp(vname,"rho")==0) Rho_SWMF2AMPS=n;
-    if (strcmp(vname,"mx")==0)  Vx_SWMF2AMPS=n;
-    if (strcmp(vname,"bx")==0)  Bx_SWMF2AMPS=n;
-    if (strcmp(vname,"p")==0)   P_SWMF2AMPS=n;
+    if ((strcmp(vname,"rho")==0)||(strcmp(vname,"swhrho")==0)) Rho_SWMF2AMPS=n;
+    if ((strcmp(vname,"mx")==0)||(strcmp(vname,"swhmx")==0))  Vx_SWMF2AMPS=n;
+    if ((strcmp(vname,"bx")==0)||(strcmp(vname,"swhbx")==0))  Bx_SWMF2AMPS=n;
+    if ((strcmp(vname,"p")==0)||(strcmp(vname,"swhp")==0))   P_SWMF2AMPS=n;
 
     n++;
     i0=i1;
 
     while ((ValiableList[i0]!=0)&&(ValiableList[i0]==' ')) i0++;
   }
+
+  if ((Rho_SWMF2AMPS==-1)||(Vx_SWMF2AMPS==-1)||(Bx_SWMF2AMPS==-1)||(P_SWMF2AMPS==-1)) exit(__LINE__,__FILE__,"Error: background plasma macroscopic parameter is not found"); 
 
   //get coordinated of the center points
   for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
@@ -382,13 +384,13 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
           
             //in case there are mode then just one fluid -> process other fluids
             for (int ifluid=1;ifluid<nCommunicatedIonFluids;ifluid++) {
-              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset))=data[offset+8+5*ifluid]/MeanPlasmaAtomicMass;
+              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset))=data[offset+8+5*(ifluid-1)]/MeanPlasmaAtomicMass;
 
               for (idim=0;idim<3;idim++) {
-                *(idim+3*ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+BulkVelocityOffset))=data[offset+9+idim+5*ifluid]/data[offset+8+5*ifluid]; 
+                *(idim+3*ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+BulkVelocityOffset))=data[offset+9+idim+5*(ifluid-1)]/data[offset+8+5*(ifluid-1)]; 
               }
 
-              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=data[offset+12+5*ifluid];
+              *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=data[offset+12+5*(ifluid-1)];
             }
           }
         }
