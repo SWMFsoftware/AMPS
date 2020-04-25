@@ -17,9 +17,6 @@ module PT_wrapper
   public:: PT_save_restart
   public:: PT_finalize
 
-  ! Init AMPS 
-  public:: PT_init_component
-
   ! Point coupling
   public:: PT_get_grid_info 
   public:: PT_find_points
@@ -103,7 +100,9 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
 
-    ! call AMPS_init(iSession, TimeSimulation)
+    ! write(*,*)'!!! Grid_C(OH_)%nVar=', Grid_C(OH_)%nVar
+
+    call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
 
   end subroutine PT_init_session
 
@@ -149,14 +148,6 @@ contains
     call AMPS_TimeStep(TimeSimulation, TimeSimulationLimit) 
 
   end subroutine PT_run
-
-  !============================================================================
-
-  subroutine PT_init_component(nIonFluids) 
-    integer,intent(in)::nIonFluids !the number of the ion fluids that will be communicated to AMPS 
-
-    call amps_from_oh_init(nIonFluids)
-  end subroutine PT_init_component
 
   !============================================================================
 
@@ -256,7 +247,7 @@ contains
   subroutine PT_put_from_oh( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
-    use CON_coupler, ONLY: i_proc, PT_, n_proc, OH_, Grid_C
+    use CON_coupler, ONLY: i_proc, PT_, n_proc
 
     implicit none
 
@@ -272,8 +263,6 @@ contains
 
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
-    call amps_get_fluid_number(Grid_C(OH_)%nVar)
-
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
