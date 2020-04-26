@@ -47,7 +47,21 @@ long int nint(double);
 void PrintErrorLog(const char*);
 void PrintErrorLog(long int,const char*,const char*);
 
-extern int ExitErrorCode;
+//===================================================
+//operation with the ExitErrorCode
+extern unsigned int ExitErrorCode;
+const int ExitErrorCodeSeparator=10000;
+
+void inline SetExitErrorCode(int Line,int FunctionCode) {
+  ExitErrorCode=FunctionCode+ExitErrorCodeSeparator*Line;
+}
+
+void inline UnpackExitErrorCode(int& Line,int& FunctionCode) {
+  Line=ExitErrorCode/ExitErrorCodeSeparator;
+  FunctionCode=ExitErrorCode%ExitErrorCodeSeparator;
+}
+
+
 void exit(long int,const char*,const char* =NULL);
 void PrintLineMark(long int,char*,char* =NULL);
 

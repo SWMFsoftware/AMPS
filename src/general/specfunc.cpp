@@ -28,7 +28,7 @@
 
 int ThisThread;
 int TotalThreadsNumber;
-int ExitErrorCode=0;
+unsigned int ExitErrorCode=0;
 
 long int nint(double a)
 {
@@ -113,14 +113,16 @@ void PrintErrorLog(long int nline, const char* fname, const char* message) {
   fclose(errorlog);
 }
 
-
 //===================================================
 //use: exit(__LINE__,__FILE__, "mesage")
 void exit(long int nline, const char* fname, const char* msg) {
   char str[1000];
+  int t1,t2;
 
-  if (msg==NULL) sprintf(str," exit: line=%ld, file=%s (error code=%i)\n",nline,fname,ExitErrorCode);
-  else sprintf(str," exit: line=%ld, file=%s, message=%s (error code=%i)\n",nline,fname,msg,ExitErrorCode);
+  UnpackExitErrorCode(t1,t2); 
+
+  if (msg==NULL) sprintf(str," exit: line=%ld, file=%s (error code=%i.%i)\n",nline,fname,t1,t2);
+  else sprintf(str," exit: line=%ld, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
 
   printf("$PREFIX:%s",str);
 
