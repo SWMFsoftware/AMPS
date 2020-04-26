@@ -1604,9 +1604,15 @@ void PIC::Sampling::Sampling() {
 void PIC::SignalHandler(int sig) {
   cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh.ThisThread << endl;
 
-  switch(sig) {
+  switch (sig) {
   case SIGFPE :
-    cout << "$PREFIX:Signal=SIGFPE" << endl;
+    cout << "$PREFIX: Signal=SIGFPE" << endl;
+    break;
+  case SIGSEGV :
+    cout << "$PREFIX: Signal=SIGSEGV" << endl;
+    break;
+  case SIGBUS :
+    cout << "$PREFIX: Signal=SIGBUS" << endl;
     break;
   default:
     exit(__LINE__,__FILE__,"Error: unknown signal");
@@ -1894,6 +1900,8 @@ void PIC::Init_BeforeParser() {
 
   //set up the signal handler
   signal(SIGFPE,SignalHandler);
+  signal(SIGSEGV,SignalHandler);
+  signal(SIGBUS,SignalHandler);
 
 
   //init coupler 
