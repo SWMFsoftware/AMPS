@@ -6,6 +6,8 @@
 !==========================================================================
 module PT_wrapper
 
+  use CON_coupler, ONLY: i_proc, PT_, n_proc, OH_, Grid_C
+
   implicit none
 
   private ! except
@@ -36,7 +38,6 @@ contains
     use CON_comp_info
     use ModReadParam
 
-    character (len=*), parameter :: NameSub='PT_set_param'
     integer :: iComm,iProc,nProc, nThread
 
     ! Arguments
@@ -44,12 +45,10 @@ contains
     character (len=*), intent(in)     :: TypeAction ! What to do
 
     ! Contains the PARAM.in segment
-    character(len=lStringLine), allocatable :: StringLineF_I(:) 
+    character(len=lStringLine), allocatable :: StringLineF_I(:)
+
+    character (len=*), parameter :: NameSub='PT_set_param'
     !-------------------------------------------------------------------------
-
-    !call AMPS_TimeStep()
-
-
     select case(TypeAction)
     case('VERSION')
        call put(CompInfo,&
@@ -58,7 +57,8 @@ contains
             Version    =1.0)
 
     case('MPI')
-       call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc, nThread=nThread)
+       call get(CompInfo, iComm=iComm, iProc=iProc, nProc=nProc, &
+            nThread=nThread)
        call AMPS_SetMpiCommunicator(iComm, iProc, nProc, nThread)
 
     case('CHECK')
@@ -80,29 +80,24 @@ contains
 
     case('GRID')
        ! Grid info depends on BATSRUS
+       !write(*,*)'!!!',NameSub,i_proc(),' Grid_C(OH_)%nVar=',Grid_C(OH_)%nVar
+       !call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
 
     case default
        call CON_stop(NameSub//': PT_ERROR: empty version cannot be used!')
     end select
-
-    
 
   end subroutine PT_set_param
 
   !============================================================================
 
   subroutine PT_init_session(iSession, TimeSimulation)
-     use CON_coupler, ONLY: OH_, Grid_C
 
     !INPUT PARAMETERS:
     integer,  intent(in) :: iSession         ! session number (starting from 1)
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PT_init_session'
-
-    ! write(*,*)'!!! Grid_C(OH_)%nVar=', Grid_C(OH_)%nVar
-
-    call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
 
   end subroutine PT_init_session
 
@@ -163,6 +158,9 @@ contains
 
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
     !--------------------------------------------------------------------------
+    !write(*,*)'!!!', NameSub, i_proc(), ' Grid_C(OH_)%nVar=', Grid_C(OH_)%nVar
+    call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
+    
     nDimOut    = 3
     iGridOut   = 1
     iDecompOut = 1
@@ -171,10 +169,10 @@ contains
 
   end subroutine PT_get_grid_info
 
-  !==============================================================================
+  !============================================================================
   subroutine PT_find_points(nDimIn, nPoint, Xyz_DI, iProc_I)
 
-    integer, intent(in) :: nDimIn                ! dimension of position vectors
+    integer, intent(in) :: nDimIn                ! dimension of position vector
     integer, intent(in) :: nPoint                ! number of positions
     real,    intent(in) :: Xyz_DI(nDimIn,nPoint) ! positions
     integer, intent(out):: iProc_I(nPoint)       ! processor owning position
@@ -206,8 +204,6 @@ contains
   subroutine PT_put_from_gm( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
-    use CON_coupler, ONLY: i_proc, PT_, n_proc
-
     implicit none
 
     character(len=*), intent(inout):: NameVar ! List of variables
@@ -222,7 +218,6 @@ contains
 
     character(len=*), parameter :: NameSub='PT_put_from_gm'
     !--------------------------------------------------------------------------
-   
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
