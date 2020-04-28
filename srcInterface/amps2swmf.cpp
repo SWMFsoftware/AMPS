@@ -248,8 +248,10 @@ extern "C" {
 
     init_flag=true;
 
-    //set the total number of the ion sluids
+    //set the total number of the ion fluids
     PIC::CPLR::SWMF::nCommunicatedIonFluids=*nIonFluids; 
+
+    if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
 
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
