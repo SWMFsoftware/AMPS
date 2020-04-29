@@ -150,6 +150,8 @@ contains
 
     ! Provide information about AMPS grid
 
+    use CON_coupler, ONLY:PT_,OH_,GM_,Grid_C,Couple_CC 
+
     implicit none
 
     integer, intent(out):: nDimOut    ! grid dimensionality
@@ -157,9 +159,22 @@ contains
     integer, intent(out):: iDecompOut ! decomposition index
 
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
+
+    integer :: nIonFluids  
+
     !--------------------------------------------------------------------------
     !write(*,*)'!!!', NameSub, i_proc(), ' Grid_C(OH_)%nVar=', Grid_C(OH_)%nVar
-    call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
+
+
+    if(Couple_CC(GM_,PT_)%DoThis) then
+      nIonFluids=Grid_C(GM_)%nVar/5
+    else if(Couple_CC(OH_,PT_)%DoThis)then
+      nIonFluids=Grid_C(OH_)%nVar/5
+    else 
+      call CON_stop("What AMPS is coupled to???")
+    endif 
+
+    call amps_from_oh_init(nIonFluids)
     
     nDimOut    = 3
     iGridOut   = 1
