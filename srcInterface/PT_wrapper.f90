@@ -1,12 +1,10 @@
 !  Copyright (C) 2002 Regents of the University of Michigan, 
 !  portions used with permission 
 !  For more information, see http://csem.engin.umich.edu/tools/swmf
-
-!  $Id$
 !==========================================================================
 module PT_wrapper
 
-  use CON_coupler, ONLY: i_proc, PT_, n_proc, OH_, Grid_C
+  use CON_coupler, ONLY: PT_, Grid_C, iCompSourceCouple
 
   implicit none
 
@@ -80,8 +78,6 @@ contains
 
     case('GRID')
        ! Grid info depends on BATSRUS
-       !write(*,*)'!!!',NameSub,i_proc(),' Grid_C(OH_)%nVar=',Grid_C(OH_)%nVar
-       !call amps_from_oh_init(Grid_C(OH_)%nVar / 5)
 
     case default
        call CON_stop(NameSub//': PT_ERROR: empty version cannot be used!')
@@ -109,7 +105,7 @@ contains
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PT_finalize'
-
+    !-------------------------------------------------------------------------
     call AMPS_finalize
 
   end subroutine PT_finalize
@@ -122,14 +118,14 @@ contains
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PT_save_restart'
-
+    !-------------------------------------------------------------------------
+    !!! PT should save restart files !!!
+    
   end subroutine PT_save_restart
 
   !============================================================================
 
-  subroutine PT_run(TimeSimulation,TimeSimulationLimit)
-
-    implicit none
+  subroutine PT_run(TimeSimulation, TimeSimulationLimit)
 
     !INPUT/OUTPUT ARGUMENTS:
     real, intent(inout):: TimeSimulation   ! current time of component
@@ -138,9 +134,8 @@ contains
     real, intent(in):: TimeSimulationLimit ! simulation time not to be exceeded
 
     character(len=*), parameter :: NameSub='PT_run'
-
-    ! call AMPS_run(TimeSimulation, TimeSimulationLimit)
-    call AMPS_TimeStep(TimeSimulation, TimeSimulationLimit) 
+    !-------------------------------------------------------------------------
+    call AMPS_timestep(TimeSimulation, TimeSimulationLimit) 
 
   end subroutine PT_run
 
@@ -148,33 +143,22 @@ contains
 
   subroutine PT_get_grid_info(nDimOut, iGridOut, iDecompOut)
 
-    ! Provide information about AMPS grid
-
-    use CON_coupler, ONLY:PT_,OH_,GM_,Grid_C,Couple_CC 
-
-    implicit none
+    ! Provide information about AMPS grid. Set number of ion fluids.
 
     integer, intent(out):: nDimOut    ! grid dimensionality
     integer, intent(out):: iGridOut   ! grid index (increases with AMR)
     integer, intent(out):: iDecompOut ! decomposition index
 
+    integer:: nVarCouple
+    
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
-
-    integer :: nIonFluids  
-
     !--------------------------------------------------------------------------
-    !write(*,*)'!!!', NameSub, i_proc(), ' Grid_C(OH_)%nVar=', Grid_C(OH_)%nVar
-
-
-    if(Couple_CC(GM_,PT_)%DoThis) then
-      nIonFluids=Grid_C(GM_)%nVar/5
-    else if(Couple_CC(OH_,PT_)%DoThis)then
-      nIonFluids=Grid_C(OH_)%nVar/5
-    else 
-      call CON_stop("What AMPS is coupled to???")
-    endif 
-
-    call amps_from_oh_init(nIonFluids)
+    if(iCompSourceCouple /= PT_)then
+       nVarCouple = Grid_C(iCompSourceCouple)%nVar
+       !write(*,*)'!!!', NameSub, i_proc(), ' nVarCouple=', nVarCouple
+       ! Pass number of fluids to this incorrectly named subroutine
+       call amps_from_oh_init(nVarCouple / 5)
+    end if
     
     nDimOut    = 3
     iGridOut   = 1
@@ -195,21 +179,18 @@ contains
     ! Find array of points and return processor indexes owning them
     ! Could be generalized to return multiple processors...
 
-    real::x(3) = 0.0
-    integer:: iPoint, thread
+    real:: Xyz_D(3) = 0.0
+    integer:: iPoint, iProcFound
 
     character(len=*), parameter:: NameSub = 'PT_find_points'
     !--------------------------------------------------------------------------
     do iPoint = 1, nPoint
-      x(:)=0.0
-      x(1:nDimIn)=Xyz_DI(:,iPoint)
+      Xyz_D(:)=0.0
+      Xyz_D(1:nDimIn) = Xyz_DI(:,iPoint)
       
-      call amps_get_point_thread_number(thread,x)
-      iProc_I(iPoint)=thread
+      call amps_get_point_thread_number(iProcFound, Xyz_D)
+      iProc_I(iPoint) = iProcFound
       
-    
- !      Xyz_D(1:nDimIn) = Xyz_DI(:,iPoint)*Si2No_V(UnitX_)
- !      call find_grid_block(Xyz_D, iProc_I(iPoint), iBlock)
     end do
 
   end subroutine PT_find_points
@@ -219,8 +200,6 @@ contains
   subroutine PT_put_from_gm( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
-    implicit none
-
     character(len=*), intent(inout):: NameVar ! List of variables
     integer,          intent(inout):: nVar    ! Number of variables in Data_VI
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
@@ -228,8 +207,6 @@ contains
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
-
-    integer:: iPoint, i
 
     character(len=*), parameter :: NameSub='PT_put_from_gm'
     !--------------------------------------------------------------------------
@@ -257,10 +234,6 @@ contains
   subroutine PT_put_from_oh( &
        NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
 
-    use CON_coupler, ONLY: i_proc, PT_, n_proc
-
-    implicit none
-
     character(len=*), intent(inout):: NameVar ! List of variables
     integer,          intent(inout):: nVar    ! Number of variables in Data_VI
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
@@ -268,8 +241,6 @@ contains
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
-
-    integer:: iPoint, i
 
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
@@ -289,24 +260,23 @@ contains
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
-    
+
   end subroutine PT_put_from_oh
-  !==============================================================================
+  !============================================================================
   subroutine PT_put_from_oh_dt(Dt)
-    implicit none
+
     real,    intent(in):: Dt
     character(len=*), parameter :: NameSub='PT_put_from_oh_dt'
     !--------------------------------------------------------------------------
     call amps_impose_global_time_step(Dt)
+
   end subroutine PT_put_from_oh_dt
 
-  !==============================================================================
+  !============================================================================
   subroutine PT_get_for_oh(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &
        Data_VI)
 
     ! Get data from PT to OH
-
-    implicit none
 
     logical,          intent(in):: IsNew   ! true for new point array
     character(len=*), intent(in):: NameVar ! List of variables
@@ -317,60 +287,11 @@ contains
     real, intent(in) :: Xyz_DI(nDimIn,nPoint)  ! Position vectors
     real, intent(out):: Data_VI(nVarIn,nPoint) ! Data array
 
-    !real:: Xyz_D(MaxDim), B0_D(MaxDim)
-    !real:: Dist_D(MaxDim), State_V(nVar)
-    !integer:: iCell_D(MaxDim)
-
-    integer:: iPoint, iBlock, iProcFound
-    
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
-
-
-    !conver the coordinates to SI
-    !do iPoint = 1, nPoint
-    !  Xyz_D(:,iPoint) = Xyz_DI(:,iPoint)*Si2No_V(UnitX_)
-    !end do
-
-    call amps_send_batsrus2amps_center_point_data(NameVar,nVarIn,nDimIn,nPoint,Xyz_DI,Data_VI)
-
-
-    !Dist_D = -1.0
-    !Xyz_D  =  0.0
-    
-    
-
-    !do iPoint = 1, nPoint
-
-    !   Xyz_D(1:nDim) = Xyz_DI(:,iPoint)*Si2No_V(UnitX_)
-    !   call find_grid_block(Xyz_D, iProcFound, iBlock, iCell_D, Dist_D, &
-    !        UseGhostCell = .true.)
-
-    !   if(iProcFound /= iProc)then
-    !      write(*,*)NameSub,' ERROR: Xyz_D, iProcFound=', Xyz_D, iProcFound
-    !      call stop_mpi(NameSub//' could not find position on this proc')
-    !   end if
-
-    !   select case(nDim)
-    !   case (1)
-    !      State_V = linear(State_VGB(:,:,MinJ,MinK,iBlock), &
-    !           nVar, MinI, MaxI, Xyz_D(1), iCell = iCell_D(1), Dist = Dist_D(1))
-    !   case (2)
-    !      State_V = bilinear(State_VGB(:,:,:,MinK,iBlock), &
-    !           nVar, MinI, MaxI, MinJ, MaxJ, Xyz_D(1:2), iCell_D = iCell_D(1:2), Dist_D = Dist_D(1:2))
-    !   case (3)
-    !      State_V = trilinear(State_VGB(:,:,:,:,iBlock), &
-    !           nVar, MinI, MaxI, MinJ, MaxJ, MinK, MaxK, Xyz_D, iCell_D = iCell_D, Dist_D = Dist_D)
-    !   end select
-
-    !   if(UseB0)then
-    !      call get_b0(Xyz_D, B0_D)
-    !      State_V(Bx_:Bz_) = State_V(Bx_:Bz_) + B0_D
-    !   end if
-
-    !   Data_VI(1:nVar,iPoint) = State_V*No2Si_V(iUnitCons_V)
-
-    !end do
+    ! Overly long ame that violates Fortran 90 rules !!!
+    call amps_send_batsrus2amps_center_point_data( &
+         NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, Data_VI)
 
   end subroutine PT_get_for_oh
 
