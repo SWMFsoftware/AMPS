@@ -9860,7 +9860,7 @@ nMPIops++;
     }
     else {
       #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      res=(startNode->IsUsedInCalculationFlag==true) ? startNode->ParallelLoadMeasure : 0.0;
+      res=((startNode->Thread==ThisThread)&&(startNode->IsUsedInCalculationFlag==true)) ? startNode->ParallelLoadMeasure : 0.0;
 
       //check whether the node load measure is normalized
       if (isfinite(res)==false) {
@@ -9900,8 +9900,16 @@ nMPIops++;
     }
 
     if (startNode==rootTree) {
-      if (ThisThread==0) pipe.closeRecvAll();
+      if (ThisThread==0) {
+        pipe.closeRecvAll();
+
+        res=0.0;
+
+        for (int thread=0;thread<nTotalThreads;thread++) res+=ThreadLoad[thread];
+      }
       else pipe.closeSend();
+
+      MPI_Bcast(&res,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
     }
 
     return res;
@@ -10753,7 +10761,7 @@ if (TmpAllocationCounter==2437) {
              if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
            }
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
+           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
 
            if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
            if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
@@ -12649,7 +12657,7 @@ if (TmpAllocationCounter==2437) {
   void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> * NewlyAllocatedNodeList) {
     cTreeNodeAMR<cBlockAMR> *node;
     cAMRnodeID *NodeIdTableGlobal=NULL;
-    int iNode,NodeTableLengthGlobal;
+    int thread,iNode,NodeTableLengthGlobal;
     int nOperations=0;
     //increment the mesh modification counter
     //nMeshModificationCounter++,meshModifiedFlag=true; 
@@ -12659,6 +12667,18 @@ if (TmpAllocationCounter==2437) {
 
     int *NodeTableLengthTable=new int [nTotalThreads];
     MPI_Gather(&NodeTableLength,1,MPI_INT,NodeTableLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      for (thread=0,NodeTableLengthGlobal=0;thread<nTotalThreads;thread++) NodeTableLengthGlobal+=NodeTableLengthTable[thread];
+    }
+
+    MPI_Bcast(&NodeTableLengthGlobal,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (NodeTableLengthGlobal==0) {
+      delete [] NodeTableLengthTable;
+      return;
+    }
+
 
     if (ThisThread==0) {
       //determine the total length of the table
@@ -12701,7 +12721,7 @@ if (TmpAllocationCounter==2437) {
       }
 
       //waite while att recieving is completed
-      MPI_Waitall(RequestTableLength,RequestTable,MPI_STATUSES_IGNORE);
+      if (RequestTableLength!=0) MPI_Waitall(RequestTableLength,RequestTable,MPI_STATUSES_IGNORE);
 
       //remove temporary buffers
       delete [] RequestTable;
@@ -12735,10 +12755,11 @@ if (TmpAllocationCounter==2437) {
         node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
         node->IsUsedInCalculationFlag=true;
         nOperations++;          
+
+        if (NewlyAllocatedNodeList!=NULL) NewlyAllocatedNodeList->push_back(node);
                 
         if (node->Thread==ThisThread) {
           AllocateBlock(node);
-          NewlyAllocatedNodeList->push_back(node);
 
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
         }
