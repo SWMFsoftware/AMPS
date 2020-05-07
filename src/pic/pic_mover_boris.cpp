@@ -1054,7 +1054,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 #endif //_TARGET_ == _TARGET_NONE_
 
 
-  if (newNode==NULL || !newNode->block ) {
+  if (newNode==NULL) {
     //the particle left the computational domain
     int code=_PARTICLE_DELETED_ON_THE_FACE_;
 
