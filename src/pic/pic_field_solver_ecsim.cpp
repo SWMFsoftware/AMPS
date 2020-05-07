@@ -3555,9 +3555,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
               */
 
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * newNode=PIC::Mesh::mesh.findTreeNode(xFinal,node);
-              if (newNode==NULL || newNode->block==NULL){
+
+              if (newNode==NULL) {
                 PIC::ParticleBuffer::DeleteParticle(ptr);
-              }else{
+              }
+              else if (newNode->block==NULL) {
+                PIC::ParticleBuffer::DeleteParticle(ptr);
+              }
+              else{
                   if (PIC::Mesh::mesh.fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
                   
                   PIC::Mesh::cDataBlockAMR * block=newNode->block;
