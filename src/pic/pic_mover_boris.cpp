@@ -1013,11 +1013,6 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
 
-  if (newNode->IsUsedInCalculationFlag==false) { 
-    PIC::ParticleBuffer::DeleteParticle(ptr);
-    return _PARTICLE_IN_NOT_IN_USE_NODE_;
-  }
-
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
 #if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
@@ -1154,6 +1149,13 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
       exit(__LINE__,__FILE__,"Error: not implemented");
     }
   }
+  else {
+    //at this point newNode!=NULL
+    if (newNode->IsUsedInCalculationFlag==false) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_IN_NOT_IN_USE_NODE_;
+    }
+  }
 
   //save the trajectory point
  #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
@@ -1170,8 +1172,8 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
-  //if ((block=newNode->block)==NULL && newNode->Thread!=-1) {
-  if ((block=newNode->block)==NULL && newNode->IsUsedInCalculationFlag!=false) {
+
+  if ((block=newNode->block)==NULL) { // case newNode->IsUsedInCalculationFlag==false is already considered above
     if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
       double Rate;
 
