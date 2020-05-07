@@ -83,13 +83,9 @@ void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=0.0;
-  if (node->block) {
-    res=1.0;
-  }else{
-    res=0.1;
-  }
-  // for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);                             \
-                                                                                                             
+
+  //only nodes that are used that are used in the calcualtion will be equally distributed across the MPI process pool
+  if (node->IsUsedInCalculationFlag==true) res=1.0;
 
   return res;
 }
@@ -1913,12 +1909,11 @@ void amps_init_mesh() {
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   PIC::Mesh::initCellSamplingDataBuffer();
-
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  //PIC::Mesh::mesh.AllowBlockAllocation=true;
+  //PIC::Mesh::mesh.AllocateTreeBlocks();
+  //PIC::Mesh::mesh.InitCellMeasure();
 
   //experiment of staircase blocks
   /*
@@ -2005,6 +2000,14 @@ void amps_init_mesh() {
   //coupling send info from amps to fluid
   PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+
+  //blocks need to be allocated after the final domain decomposition map is created
+  PIC::Mesh::mesh.AllowBlockAllocation=true;
+  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh.InitCellMeasure();
+
+
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
 
