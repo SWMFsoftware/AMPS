@@ -10469,17 +10469,24 @@ if (TmpAllocationCounter==2437) {
       //calcualte the number of blocks per thread
       cTreeNodeAMR<cBlockAMR> *ptr;
       long int GlobalTotalBlockNumberTable[nTotalThreads];
+      int nTotalUsedInSimulationNodes=0,GlobalTotalTotalUsedInSimulationNodeTable[nTotalThreads];
 
-      for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) nTotalBlocks++;
+      for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+        nTotalBlocks++;
+        if (ptr->IsUsedInCalculationFlag==true) nTotalUsedInSimulationNodes++;
+      }
 
       MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Gather(&nTotalUsedInSimulationNodes,1,MPI_INT,GlobalTotalTotalUsedInSimulationNodeTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (ThisThread==0) {
         fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
         for (int t=0;t<nTotalThreads;t++) {
-          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalBlockNumberTable[t]);
+          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
         }
+
+        fflush(DiagnospticMessageStream);
       }
 
 
@@ -10752,16 +10759,17 @@ if (TmpAllocationCounter==2437) {
          cTreeNodeAMR<cBlockAMR> *maxLoadBlock=NULL;
 
          for (t=0;t<nTotalThreads;t++) {
-           long int nblocks;
+           long int nblocks=0,used_nblocks=0;
 
-           for (nblocks=0,ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+           for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
              nblocks++;
+             if (ptr->IsUsedInCalculationFlag==true) used_nblocks++;
 
              if ((minBlockLoad<0.0)||(minBlockLoad>ptr->ParallelLoadMeasure)) minBlockLoad=ptr->ParallelLoadMeasure;
              if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
            }
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
+           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,used_nblocks,nblocks);
 
            if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
            if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
@@ -10805,6 +10813,7 @@ if (TmpAllocationCounter==2437) {
          fprintf(DiagnospticMessageStream,"$PREFIX:Middle block's coordinates=");
          for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",middleX[idim]/(1<<_MESH_DIMENSION_));
          fprintf(DiagnospticMessageStream,"\n\n");
+         fflush(DiagnospticMessageStream);  
       }
     };
 
