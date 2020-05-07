@@ -3702,6 +3702,7 @@ namespace PIC {
     #define _PARTICLE_CROSS_THE_FACE_        1
     #define _PARTICLE_LEFT_THE_DOMAIN_       2
     #define _PARTICLE_MOTION_FINISHED_       3
+    #define _PARTICLE_IN_NOT_IN_USE_NODE_    4
 
     namespace Sampling {
       namespace Errors {

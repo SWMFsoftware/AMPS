@@ -1013,6 +1013,11 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
 
+  if (newNode->IsUsedInCalculationFlag==false) { 
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_IN_NOT_IN_USE_NODE_;
+  }
+
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
 #if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
