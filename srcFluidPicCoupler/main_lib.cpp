@@ -288,8 +288,15 @@ void  dynamicAllocateBlocks(){
 
 
   printf("thread id:%d, before createnewlist called\n", PIC::ThisThread);
-  if (nGlobalAllocatedBlocks!=0)
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+  if (nGlobalAllocatedBlocks!=0) { 
+    //reset the parallel load measure such that the used-in-simulation nodes are uniformly distributed between all MPI processes
+    PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
+
+    //create the new domain decomposition
+    PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  }
+
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
 
   /*
@@ -1995,8 +2002,8 @@ void amps_init_mesh() {
     }
   
     delete [] nodeTable;
-
   }
+
   //coupling send info from amps to fluid
   PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
