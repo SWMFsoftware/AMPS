@@ -9,6 +9,16 @@
  *      Author: vtenishe
  */
 
+
+/*
+The algorithm of calculating GradDivStencil375 as in Chen-2019-JCP.
+Previously, that was used implemented with a lookup table 'graddiv'. 
+The last version of the implementation that was using lookup tables to store the discretization coefficient is 95cf4741af7259dfb93ea73d6e864353f87226a5
+
+The Maple script used for calculating the lookup tables for the previous implementation is in AMPS/other.
+*/
+
+
 #include "pic.h"
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
@@ -503,285 +513,6 @@ void computeMassMatrixOffsetTable(){
   initMassMatrixOffsetTable=true;
 }
 
-/*
-static const double LaplacianCoeff[3][27]={{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
-			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
-			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
-			      {-0.5,-0.25,-0.25,0.25,0.125,0.125,0.25,0.125,0.125,
-			       -0.25,-0.125,-0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,
-			       -0.25,-0.125,-0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625},
-			      {-0.5,-0.25,-0.25,-0.25,-0.125,-0.125,-0.25,-0.125,-0.125,
-			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,
-			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625}};
-*/
-
-/*
-static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
-				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
-				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
-			       {0,0,0,0,0.125,-0.125,0,-0.125,0.125,0,0,0,0,0.0625,-0.0625,0,
-				-0.0625,0.0625,0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0.125,-0.125,0,0.0625,-0.0625,
-				0,0.0625,-0.0625,0,-0.125,0.125,0,-0.0625,0.0625,0,-0.0625,0.0625}},
-			      {{0,0,0,0,0.125,-0.125,0,-0.125,0.125,0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625,
-				0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625},
-			       {-0.5,-0.25,-0.25,0.25,0.125,0.125,0.25,0.125,0.125,-0.25,-0.125,-0.125,
-				0.125,0.0625,0.0625,0.125,0.0625,0.0625,-0.25,-0.125,-0.125,0.125,0.0625,
-				0.0625,0.125,0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0,0,0.125,0.0625,0.0625,-0.125,-0.0625,-0.0625,0,0,0,
-				-0.125,-0.0625,-0.0625,0.125,0.0625,0.0625}},
-			      {{0,0,0,0,0,0,0,0,0,0,0.125,-0.125,0,0.0625,-0.0625,0,0.0625,-0.0625,0,
-				-0.125,0.125,0,-0.0625,0.0625,0,-0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0,0,0.125,0.0625,0.0625,-0.125,-0.0625,-0.0625,
-				0,0,0,-0.125,-0.0625,-0.0625,0.125,0.0625,0.0625},
-			       {-0.5,-0.25,-0.25,-0.25,-0.125,-0.125,-0.25,-0.125,-0.125,0.25,0.125,
-				0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,0.25,0.125,0.125,0.125,
-				0.0625,0.0625,0.125,0.0625,0.0625}}};
-
-*/
-/*
-static const double graddivNew[3][3][125] = {
-
-{{-1/18.0,0.0,0.0,-1/24.0,0.0,
-0.0,-1/24.0,0.0,0.0,-1/24.0,
-0.0,0.0,-1/32.0,0.0,0.0,
--1/32.0,0.0,0.0,-1/24.0,0.0,
-0.0,-1/32.0,0.0,0.0,-1/32.0,
-0.0,0.0,1/36.0,1/36.0,1/48.0,
-1/48.0,1/48.0,1/48.0,-1/72.0,0.0,
-0.0,1/144.0,1/144.0,-1/72.0,0.0,
-0.0,1/144.0,1/144.0,1/48.0,1/48.0,
-1/64.0,1/64.0,1/64.0,1/64.0,-1/96.0,
-0.0,0.0,1/192.0,1/192.0,-1/96.0,
-0.0,0.0,1/192.0,1/192.0,1/48.0,
-1/48.0,1/64.0,1/64.0,1/64.0,1/64.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/72.0,0.0,0.0,1/144.0,1/144.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/72.0,0.0,0.0,1/144.0,1/144.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0
-  },
-{0.0,0.0,0.0,0.0,1/72.0,
--1/72.0,0.0,-1/72.0,1/72.0,0.0,
-0.0,0.0,0.0,1/96.0,-1/96.0,
-0.0,-1/96.0,1/96.0,0.0,0.0,
-0.0,0.0,1/96.0,-1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,1/72.0,
--1/72.0,-1/72.0,1/72.0,0.0,1/144.0,
--1/144.0,1/144.0,-1/144.0,0.0,-1/144.0,
-1/144.0,-1/144.0,1/144.0,0.0,0.0,
-1/96.0,-1/96.0,-1/96.0,1/96.0,0.0,
-1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
--1/192.0,1/192.0,-1/192.0,1/192.0,0.0,
-0.0,1/96.0,-1/96.0,-1/96.0,1/96.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
-},
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
-0.0,1/96.0,-1/96.0,0.0,-1/72.0,
-1/72.0,0.0,-1/96.0,1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,1/72.0,-1/72.0,
-1/96.0,-1/96.0,1/96.0,-1/96.0,0.0,
-1/288.0,-1/288.0,1/288.0,-1/288.0,0.0,
-1/288.0,-1/288.0,1/288.0,-1/288.0,-1/72.0,
-1/72.0,-1/96.0,1/96.0,-1/96.0,1/96.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/144.0,-1/144.0,1/144.0,-1/144.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/144.0,1/144.0,-1/144.0,1/144.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
-}
-},
-{{0.0,0.0,0.0,0.0,1/72.0,
--1/72.0,0.0,-1/72.0,1/72.0,0.0,
-0.0,0.0,0.0,1/96.0,-1/96.0,
-0.0,-1/96.0,1/96.0,0.0,0.0,
-0.0,0.0,1/96.0,-1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,1/144.0,
--1/144.0,-1/144.0,1/144.0,0.0,1/72.0,
--1/72.0,1/144.0,-1/144.0,0.0,-1/72.0,
-1/72.0,-1/144.0,1/144.0,0.0,0.0,
-1/192.0,-1/192.0,-1/192.0,1/192.0,0.0,
-1/96.0,-1/96.0,1/192.0,-1/192.0,0.0,
--1/96.0,1/96.0,-1/192.0,1/192.0,0.0,
-0.0,1/192.0,-1/192.0,-1/192.0,1/192.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
-  },
-{-1/18.0,-1/24.0,-1/24.0,0.0,0.0,
-0.0,0.0,0.0,0.0,-1/24.0,
--1/32.0,-1/32.0,0.0,0.0,0.0,
-0.0,0.0,0.0,-1/24.0,-1/32.0,
--1/32.0,0.0,0.0,0.0,0.0,
-0.0,0.0,-1/72.0,-1/72.0,0.0,
-0.0,0.0,0.0,1/36.0,1/48.0,
-1/48.0,1/144.0,1/144.0,1/36.0,1/48.0,
-1/48.0,1/144.0,1/144.0,-1/96.0,-1/96.0,
-0.0,0.0,0.0,0.0,1/48.0,
-1/64.0,1/64.0,1/192.0,1/192.0,1/48.0,
-1/64.0,1/64.0,1/192.0,1/192.0,-1/96.0,
--1/96.0,0.0,0.0,0.0,0.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-},
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,1/72.0,1/96.0,1/96.0,
--1/72.0,-1/96.0,-1/96.0,0.0,0.0,
-0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
-1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/288.0,1/288.0,-1/288.0,-1/288.0,1/72.0,
-1/96.0,1/96.0,1/288.0,1/288.0,-1/72.0,
--1/96.0,-1/96.0,-1/288.0,-1/288.0,0.0,
-0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-0.0,0.0,0.0,0.0,0.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-}
-},
-{{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
-0.0,1/96.0,-1/96.0,0.0,-1/72.0,
-1/72.0,0.0,-1/96.0,1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,1/144.0,-1/144.0,
-1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
-1/288.0,-1/288.0,1/576.0,-1/576.0,0.0,
-1/288.0,-1/288.0,1/576.0,-1/576.0,-1/144.0,
-1/144.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/72.0,-1/72.0,1/144.0,-1/144.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/72.0,1/72.0,-1/144.0,1/144.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
-  },
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,1/72.0,1/96.0,1/96.0,
--1/72.0,-1/96.0,-1/96.0,0.0,0.0,
-0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
-1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/288.0,1/288.0,-1/288.0,-1/288.0,1/144.0,
-1/192.0,1/192.0,1/576.0,1/576.0,-1/144.0,
--1/192.0,-1/192.0,-1/576.0,-1/576.0,0.0,
-0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-0.0,0.0,0.0,0.0,0.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-},
-{-1/18.0,-1/24.0,-1/24.0,-1/24.0,-1/32.0,
--1/32.0,-1/24.0,-1/32.0,-1/32.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,-1/72.0,-1/72.0,-1/96.0,
--1/96.0,-1/96.0,-1/96.0,-1/72.0,-1/96.0,
--1/96.0,-1/288.0,-1/288.0,-1/72.0,-1/96.0,
--1/96.0,-1/288.0,-1/288.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-}
-}
-};
-
-*/
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
@@ -1028,35 +759,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
   
-/*
-  for (int ii=0;ii<3;ii++){
-    for (int jj=0;jj<3;jj++){
-      for (int kk=0;kk<3;kk++){
-        int index=ii+jj*3+kk*9;
-        int iElement = index + iVar*27;
-        //minus laplacian
-        MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]-=
-          LaplacianCoeff[0][index]*coeffSqr[0]+LaplacianCoeff[1][index]*coeffSqr[1]+
-          LaplacianCoeff[2][index]*coeffSqr[2];
-      }
-    }
-  }
-*/
-  
 
   //plus self
   MatrixRowNonZeroElementTable[27*iVar].MatrixElementParameterTable[0]+=1;
 
 
   //plus graddiv E
- 
-    for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
-      cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++) {
+    cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-
-
-      for (int it=0;it<st->Length;it++) {
+    for (int it=0;it<st->Length;it++) {
       int ii=reversed_indexAddition[st->Data[it].i+1];
       int jj=reversed_indexAddition[st->Data[it].j+1];
       int kk=reversed_indexAddition[st->Data[it].k+1];
@@ -1064,25 +777,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
-/*
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-*/
-
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];//+
-         //   0.0*corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+    }
 
 
-
-      }
-
-
-      for (int it=0;it<st375->Length;it++) {
-
+    //add contribution from a larger stencil (divE correction)
+    for (int it=0;it<st375->Length;it++) {
       if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
-  
 
       int ii=reversed_indexAddition[st375->Data[it].i+1];
       int jj=reversed_indexAddition[st375->Data[it].j+1];
@@ -1091,122 +792,48 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
-/*
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-*/
-
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-         //   0.0*(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
-            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-
-
-//if (fabs(st375->Data[it].a-graddivNew[iVar][iVarIndex][nodeIndex])>1.0E-4) {
-//exit(__LINE__,__FILE__);
-//}
-
-
-      }
-
-
-
-
-
-
-    }
-
-/*
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex]+
-	    corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
-      }
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
- 
-*/
 
 #if _PIC_STENCIL_NUMBER_==375   
+  int cntTemp = 0;
+  int OrderingOffsetTable[5][5][5];
 
-int cntTemp = 0;
-int OrderingOffsetTable[5][5][5];
+  for (int kk=0;kk<5;kk++){
+    for (int jj=0;jj<5;jj++){
+      for (int ii=0;ii<5;ii++){
+        if (ii<3 && jj<3 && kk<3) continue;
 
-    for (int kk=0;kk<5;kk++){
-      for (int jj=0;jj<5;jj++){
-        for (int ii=0;ii<5;ii++){
-if (ii<3 && jj<3 && kk<3) continue;
-
-OrderingOffsetTable[ii][jj][kk]=cntTemp;
-cntTemp++;
-
-
-        }
+        OrderingOffsetTable[ii][jj][kk]=cntTemp;
+        cntTemp++;
       }
     }
-
-
-
-
-
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-
-     cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
-
-
-     for (int it=0;it<st375->Length;it++) { 
-
-          int ii=reversed_indexOffset[st375->Data[it].i+2];
-          int jj=reversed_indexOffset[st375->Data[it].j+2];
-          int kk=reversed_indexOffset[st375->Data[it].k+2];
-
-          if (ii<3 && jj<3 && kk<3) continue;
-          int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
-          int nodeIndex= 27+OrderingOffsetTable[ii][jj][kk];
-
-
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-     }
-
   }
 
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
+    for (int it=0;it<st375->Length;it++) {
 
+      int ii=reversed_indexOffset[st375->Data[it].i+2];
+      int jj=reversed_indexOffset[st375->Data[it].j+2];
+      int kk=reversed_indexOffset[st375->Data[it].k+2];
+
+      if (ii<3 && jj<3 && kk<3) continue;
+      int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
+      int nodeIndex= 27+OrderingOffsetTable[ii][jj][kk];
+
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+    }
+  }
 #endif
 
 
-/*
-#if _PIC_STENCIL_NUMBER_==375   
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    int cntTemp = 0;
-    for (int kk=0;kk<5;kk++){
-      for (int jj=0;jj<5;jj++){
-        for (int ii=0;ii<5;ii++){
-          if (ii<3 && jj<3 && kk<3) continue;
-          int iElement = 81+iVarIndex*98+cntTemp;
-          int nodeIndex= 27+cntTemp;
-          cntTemp++;
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
-      }
-    }
-  }
-
-#endif
-*/
-
-    
   //find corners outside the boundary
   vector<int> pointLeft;
   int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
+
   for (int ii=0;ii<_PIC_STENCIL_NUMBER_;ii++) {
     MatrixRowNonZeroElementTable[ii].Node=node;
 
@@ -1247,15 +874,18 @@ cntTemp++;
     int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
     int indexG_local[3];
     bool isFixed=false;
+
     for (int idim=0; idim<3; idim++) {
       xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
     }
      
     pointLeft.push_back(ii);
+
     if (MatrixRowNonZeroElementTable[ii].Node==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false){
+    }
+    else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false) {
       pointLeft.pop_back();
       continue;
     }
@@ -1263,7 +893,8 @@ cntTemp++;
     if (nodeTemp==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (nodeTemp->IsUsedInCalculationFlag==false){
+    }
+    else if (nodeTemp->IsUsedInCalculationFlag==false){
       pointLeft.pop_back();
       continue;
     }
@@ -1272,29 +903,21 @@ cntTemp++;
   }
 
   for (int ii=0; ii<pointLeft.size();ii++){
-
     int copyFrom = pointLeft[ii];
 
     if (ii!=copyFrom){
-      MatrixRowNonZeroElementTable[ii].i=
-        MatrixRowNonZeroElementTable[copyFrom].i;
-      MatrixRowNonZeroElementTable[ii].j=
-        MatrixRowNonZeroElementTable[copyFrom].j;
-      MatrixRowNonZeroElementTable[ii].k=
-        MatrixRowNonZeroElementTable[copyFrom].k;
-      MatrixRowNonZeroElementTable[ii].MatrixElementValue=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
-      MatrixRowNonZeroElementTable[ii].iVar=
-        MatrixRowNonZeroElementTable[copyFrom].iVar;
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = 
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
+      MatrixRowNonZeroElementTable[ii].i=MatrixRowNonZeroElementTable[copyFrom].i;
+      MatrixRowNonZeroElementTable[ii].j=MatrixRowNonZeroElementTable[copyFrom].j;
+      MatrixRowNonZeroElementTable[ii].k=MatrixRowNonZeroElementTable[copyFrom].k;
+
+      MatrixRowNonZeroElementTable[ii].MatrixElementValue= MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
+      MatrixRowNonZeroElementTable[ii].iVar=MatrixRowNonZeroElementTable[copyFrom].iVar;
+
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
          
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
     }
 
   }
@@ -1310,10 +933,10 @@ cntTemp++;
     for (int jj=0;jj<3;jj++){
       for (int kk=0;kk<3;kk++){
         int iElement = ii+jj*3+kk*9;
-	int iNode = i+indexAddition[ii];
-	int jNode = j+indexAddition[jj];
-	int kNode = k+indexAddition[kk];
-        
+        int iNode = i+indexAddition[ii];
+        int jNode = j+indexAddition[jj];
+        int kNode = k+indexAddition[kk];
+
         RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
         RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
       }
@@ -1342,55 +965,57 @@ cntTemp++;
   //if (fabs(x[0]-1.0)<0.1 && fabs(x[1]-1.0)<0.1 && fabs(x[2]-1.0)<0.1)
   //  isTest = true;
 #if _PIC_STENCIL_NUMBER_==375  
-    for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
-      int cntTemp = 0;
-      for (int kk=0; kk<5; kk++){
-	for (int jj=0; jj<5; jj++){
-	  for (int ii=0; ii<5; ii++){
-	    
-	    if (ii<3 && jj<3 && kk<3) continue;
-	    
-	    int iNode = i+indexOffset[ii];
-	    int jNode = j+indexOffset[jj];
-	    int kNode = k+indexOffset[kk];
+  for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
+    int cntTemp = 0;
 
-	    int iElement = 81+iVarIndex*98+cntTemp;
-	    cntTemp++;
-	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-	    char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
-	    if (pntTemp) {
-	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-	    }else{
-	      RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
-	    }
-	    //if (isTest){
-	      // printf("test 1,1,1:%d, %d, %d, pntTemp:%p\n", iNode,jNode,kNode, pntTemp);
-	    //}
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+        for (int ii=0; ii<5; ii++){
 
-	  }
-	}
+          if (ii<3 && jj<3 && kk<3) continue;
+
+          int iNode = i+indexOffset[ii];
+          int jNode = j+indexOffset[jj];
+          int kNode = k+indexOffset[kk];
+
+          int iElement = 81+iVarIndex*98+cntTemp;
+          cntTemp++;
+
+          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+
+          char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
+
+          if (pntTemp) {
+            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          }
+          else{
+            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
+          }
+        }
       }
     }
-    
-       
-    for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
-      int cntTemp = 0;
-      for (int kk=0; kk<5; kk++){
-	for (int jj=0; jj<5; jj++){
-	  for (int ii=0; ii<5; ii++){
-	    
-	    if (ii<3 && jj<3 && kk<3) continue;
-	    int iElement = 81+iVarIndex*98+cntTemp;	  
-	    int iElementOld = 81+cntTemp;
-	    cntTemp++;
-	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=
-			   RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
-	    
-	  }
-	}
+  }
+
+
+  for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
+    int cntTemp = 0;
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+        for (int ii=0; ii<5; ii++){
+          if (ii<3 && jj<3 && kk<3) continue;
+
+          int iElement = 81+iVarIndex*98+cntTemp;
+          int iElementOld = 81+cntTemp;
+
+          cntTemp++;
+
+          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+          RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
+
+        }
       }
     }
+  }
 #endif
     
 
@@ -1412,32 +1037,12 @@ cntTemp++;
   }
 
 
-/* 
-  for (int ii=0;ii<3;ii++){
-    for (int jj=0;jj<3;jj++){
-      for (int kk=0;kk<3;kk++){
-        int index=ii+jj*3+kk*9;
-        int iElement = index + iVar*27;
-        //plus laplacian
-	
-        RhsSupportTable_CornerNodes[iElement].Coefficient +=
-          LaplacianCoeff[0][index]*coeffSqr[0]+LaplacianCoeff[1][index]*coeffSqr[1]+
-          LaplacianCoeff[2][index]*coeffSqr[2];
-	
-      }
-    }
-  }
-*/
-
-  
   //minus graddiv E
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
 
 
-      for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
-
-
-      for (int it=0;it<st->Length;it++) {
+    for (int it=0;it<st->Length;it++) {
       int ii=reversed_indexAddition[st->Data[it].i+1];
       int jj=reversed_indexAddition[st->Data[it].j+1];
       int kk=reversed_indexAddition[st->Data[it].k+1];
@@ -1445,126 +1050,47 @@ cntTemp++;
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-
-      }
-    }
-/*
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
-      }
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
-  */
 
 #if _PIC_STENCIL_NUMBER_==375
-  
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
-
-for (int it=0;it<st375->Length;it++) {
+    for (int it=0;it<st375->Length;it++) {
 
       if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
-
 
       int ii=reversed_indexAddition[st375->Data[it].i+1];
       int jj=reversed_indexAddition[st375->Data[it].j+1];
       int kk=reversed_indexAddition[st375->Data[it].k+1];
 
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
 
-
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
-
-/*
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-          //  printf("test1 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
-
-        }
-      }
-    }
-  }
-
-*/
 
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
-     cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
+    for (int it=0;it<st375->Length;it++) {
+      int ii=reversed_indexOffset[st375->Data[it].i+2];
+      int jj=reversed_indexOffset[st375->Data[it].j+2];
+      int kk=reversed_indexOffset[st375->Data[it].k+2];
 
-     for (int it=0;it<st375->Length;it++) {
+      if (ii<3 && jj<3 && kk<3) continue;
 
-          int ii=reversed_indexOffset[st375->Data[it].i+2];
-          int jj=reversed_indexOffset[st375->Data[it].j+2];
-          int kk=reversed_indexOffset[st375->Data[it].k+2];
+      int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
+      int nodeIndex = 27+OrderingOffsetTable[ii][jj][kk];
 
-
-	  if (ii<3 && jj<3 && kk<3) continue;
-	  int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];	  
-	  int nodeIndex = 27+OrderingOffsetTable[ii][jj][kk];
-	  
-	  //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
-	  RhsSupportTable_CornerNodes[iElement].Coefficient -=
-			 corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-	  //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
-	  // if (iElement==336) {
-
-	  //printf("test3, corrCoeff:%e, graddivNew:%e, coeff:%e,%e\n", corrCoeff,
-	  //graddivNew[iVar][iVarIndex][nodeIndex], coeff[iVar], coeff[iVarIndex]);
-	    //}
-  
-	}
-      }
-  
-
-/*
-  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
-    int cntTemp = 0;
-
-    for (int kk=0; kk<5; kk++){
-      for (int jj=0; jj<5; jj++){
-        for (int ii=0; ii<5; ii++){
-
-          if (ii<3 && jj<3 && kk<3) continue;
-          int iElement = 81+iVarIndex*98+cntTemp;
-          int nodeIndex = 27+cntTemp;
-
-          cntTemp++;
-          //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-                         corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-          //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
-          // if (iElement==336) {
-
-          //printf("test3, corrCoeff:%e, graddivNew:%e, coeff:%e,%e\n", corrCoeff,
-          //graddivNew[iVar][iVarIndex][nodeIndex], coeff[iVar], coeff[iVarIndex]);
-            //}
-
-        }
-      }
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
-*/
+
 #endif
 
 
@@ -1575,10 +1101,8 @@ for (int it=0;it<st375->Length;it++) {
 
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
-  
-  
+
   int indexAdditionB[2] = {-1,0};
-  
   int iElement = 0;
   
   double curlB = 0.0;
@@ -1626,8 +1150,6 @@ for (int it=0;it<st375->Length;it++) {
 
      //Ey  rhs+= d Bx/dz - d Bz/dx
     if (iVar==1){
-     
-      
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[2]; //c(dt)/dz
@@ -1668,16 +1190,10 @@ for (int it=0;it<st375->Length;it++) {
           iElement++;
         }
       }
-      
-      // double analytic = -1000*3.14159265/2*cos((x[0]+1)*3.14159265/2)*0.2;
-      //printf("Ey,curlB:%f,analytic:%f\n", curlB, analytic);
-      //rhs+=curlB;
     }
     
     //Ez  rhs+= d By/dx - d Bx/dy
-    if (iVar==2){
-     
-     
+    if (iVar==2) {
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[0]; //c(dt)/dx
