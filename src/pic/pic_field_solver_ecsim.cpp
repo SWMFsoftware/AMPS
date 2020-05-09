@@ -74,6 +74,7 @@ int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
 cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[3][3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[3][3];
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -538,7 +539,7 @@ static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,
 				0.0625,0.0625,0.125,0.0625,0.0625}}};
 
 */
-
+/*
 static const double graddivNew[3][3][125] = {
 
 {{-1/18.0,0.0,0.0,-1/24.0,0.0,
@@ -780,7 +781,7 @@ static const double graddivNew[3][3][125] = {
 }
 };
 
-
+*/
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
@@ -976,6 +977,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
 #if _PIC_STENCIL_NUMBER_==375  
   int indexOffset[5] = {0,-1,1,-2,2};
+
+  int reversed_indexOffset[5]={3,1,0,2,4}; //table to convert i,j,k ->ii,jj,kk
+
+
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
     int cntTemp =0;
     
@@ -1047,6 +1052,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
  
     for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
       cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+      cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+
 
 
       for (int it=0;it<st->Length;it++) {
@@ -1057,10 +1064,56 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
+/*
           MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
             (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
             corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+*/
+
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];//+
+         //   0.0*corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+
+
+
       }
+
+
+      for (int it=0;it<st375->Length;it++) {
+
+      if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
+  
+
+      int ii=reversed_indexAddition[st375->Data[it].i+1];
+      int jj=reversed_indexAddition[st375->Data[it].j+1];
+      int kk=reversed_indexAddition[st375->Data[it].k+1];
+
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
+
+/*
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
+            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+*/
+
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+         //   0.0*(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
+            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+
+
+//if (fabs(st375->Data[it].a-graddivNew[iVar][iVarIndex][nodeIndex])>1.0E-4) {
+//exit(__LINE__,__FILE__);
+//}
+
+
+      }
+
+
+
+
+
+
     }
 
 /*
@@ -1081,15 +1134,65 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 */
 
 #if _PIC_STENCIL_NUMBER_==375   
+
+int cntTemp = 0;
+int OrderingOffsetTable[5][5][5];
+
+    for (int kk=0;kk<5;kk++){
+      for (int jj=0;jj<5;jj++){
+        for (int ii=0;ii<5;ii++){
+if (ii<3 && jj<3 && kk<3) continue;
+
+OrderingOffsetTable[ii][jj][kk]=cntTemp;
+cntTemp++;
+
+
+        }
+      }
+    }
+
+
+
+
+
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+
+     cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+
+
+     for (int it=0;it<st375->Length;it++) { 
+
+          int ii=reversed_indexOffset[st375->Data[it].i+2];
+          int jj=reversed_indexOffset[st375->Data[it].j+2];
+          int kk=reversed_indexOffset[st375->Data[it].k+2];
+
+          if (ii<3 && jj<3 && kk<3) continue;
+          int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
+          int nodeIndex= 27+OrderingOffsetTable[ii][jj][kk];
+
+
+          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
+            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+     }
+
+  }
+
+
+
+#endif
+
+
+/*
+#if _PIC_STENCIL_NUMBER_==375   
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
     int cntTemp = 0;
     for (int kk=0;kk<5;kk++){
-      for (int jj=0;jj<5;jj++){	
-	for (int ii=0;ii<5;ii++){       
-	  if (ii<3 && jj<3 && kk<3) continue;
-	  int iElement = 81+iVarIndex*98+cntTemp;	  
-	  int nodeIndex= 27+cntTemp;
-	  cntTemp++;
+      for (int jj=0;jj<5;jj++){
+        for (int ii=0;ii<5;ii++){
+          if (ii<3 && jj<3 && kk<3) continue;
+          int iElement = 81+iVarIndex*98+cntTemp;
+          int nodeIndex= 27+cntTemp;
+          cntTemp++;
           MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
             corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
         }
@@ -1098,7 +1201,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
 
 #endif
-
+*/
 
     
   //find corners outside the boundary
@@ -1365,6 +1468,30 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 #if _PIC_STENCIL_NUMBER_==375
   
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+
+cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+
+for (int it=0;it<st375->Length;it++) {
+
+      if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
+
+
+      int ii=reversed_indexAddition[st375->Data[it].i+1];
+      int jj=reversed_indexAddition[st375->Data[it].j+1];
+      int kk=reversed_indexAddition[st375->Data[it].k+1];
+
+          int nodeIndex=ii+jj*3+kk*9;
+          int iElement = nodeIndex + iVarIndex*27;
+          RhsSupportTable_CornerNodes[iElement].Coefficient -=
+            corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+
+
+    }
+  }
+
+
+/*
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
     for (int ii=0;ii<3;ii++){
       for (int jj=0;jj<3;jj++){
         for (int kk=0;kk<3;kk++){
@@ -1372,29 +1499,33 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
           int iElement = nodeIndex + iVarIndex*27;
           RhsSupportTable_CornerNodes[iElement].Coefficient -=
             corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-	  //  printf("test1 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
+          //  printf("test1 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
 
         }
       }
     }
   }
 
+*/
 
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
-    int cntTemp = 0;
+     cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-    for (int kk=0; kk<5; kk++){
-      for (int jj=0; jj<5; jj++){
-	for (int ii=0; ii<5; ii++){
+
+     for (int it=0;it<st375->Length;it++) {
+
+          int ii=reversed_indexOffset[st375->Data[it].i+2];
+          int jj=reversed_indexOffset[st375->Data[it].j+2];
+          int kk=reversed_indexOffset[st375->Data[it].k+2];
+
 
 	  if (ii<3 && jj<3 && kk<3) continue;
-	  int iElement = 81+iVarIndex*98+cntTemp;	  
-	  int nodeIndex = 27+cntTemp;
+	  int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];	  
+	  int nodeIndex = 27+OrderingOffsetTable[ii][jj][kk];
 	  
-	  cntTemp++;	  
 	  //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
 	  RhsSupportTable_CornerNodes[iElement].Coefficient -=
-			 corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+			 corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
 	  //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
 	  // if (iElement==336) {
 
@@ -1404,9 +1535,36 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   
 	}
       }
+  
+
+/*
+  for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
+    int cntTemp = 0;
+
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+        for (int ii=0; ii<5; ii++){
+
+          if (ii<3 && jj<3 && kk<3) continue;
+          int iElement = 81+iVarIndex*98+cntTemp;
+          int nodeIndex = 27+cntTemp;
+
+          cntTemp++;
+          //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
+          RhsSupportTable_CornerNodes[iElement].Coefficient -=
+                         corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
+          //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
+          // if (iElement==336) {
+
+          //printf("test3, corrCoeff:%e, graddivNew:%e, coeff:%e,%e\n", corrCoeff,
+          //graddivNew[iVar][iVarIndex][nodeIndex], coeff[iVar], coeff[iVarIndex]);
+            //}
+
+        }
+      }
     }
   }
-  
+*/
 #endif
 
 
@@ -5690,6 +5848,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
     GradDivE[2].Ey.Print("GradDivE_2_Ey.dat");
     GradDivE[2].Ez.Print("GradDivE_2_Ez.dat");
   }
+
+  GradDivE[0].Ex.ExportStencil(&GradDivStencil375[0][0]);
+  GradDivE[0].Ey.ExportStencil(&GradDivStencil375[0][1]);  
+  GradDivE[0].Ez.ExportStencil(&GradDivStencil375[0][2]); 
+
+  GradDivE[1].Ex.ExportStencil(&GradDivStencil375[1][0]); 
+  GradDivE[1].Ey.ExportStencil(&GradDivStencil375[1][1]); 
+  GradDivE[1].Ez.ExportStencil(&GradDivStencil375[1][2]); 
+
+  GradDivE[2].Ex.ExportStencil(&GradDivStencil375[2][0]); 
+  GradDivE[2].Ey.ExportStencil(&GradDivStencil375[2][1]); 
+  GradDivE[2].Ez.ExportStencil(&GradDivStencil375[2][2]); 
 }
 
 

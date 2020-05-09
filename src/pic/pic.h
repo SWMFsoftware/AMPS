@@ -6373,6 +6373,7 @@ namespace FieldSolver {
             //stencils used for building the matrix
             extern cStencil::cStencilData LaplacianStencil[3];
             extern cStencil::cStencilData GradDivStencil[3][3];
+            extern cStencil::cStencilData GradDivStencil375[3][3];
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
