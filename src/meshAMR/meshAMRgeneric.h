@@ -12781,6 +12781,8 @@ if (TmpAllocationCounter==2437) {
             if (NeibNode==node) {
               //the newly activated node is in the boundary layer -> allocate it
               AllocateBlock(node);
+              InitCellMeasureBlock(node);
+
               nOperations++;
               //NewlyAllocatedNodeList.push_back(node);
 
