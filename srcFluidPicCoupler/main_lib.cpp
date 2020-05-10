@@ -295,6 +295,7 @@ void  dynamicAllocateBlocks(){
 
     //create the new domain decomposition
     PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+    PIC::DomainBlockDecomposition::UpdateBlockTable();
   }
 
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
@@ -331,19 +332,22 @@ void initNewBlocks() {
       for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
       //printf("dx:%e,%e,%e\n",dx[0],dx[1],dx[2]);
       
-      for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+      for (int k=0;k<_BLOCK_CELLS_Z_+1;k++) for (int j=0;j<_BLOCK_CELLS_Y_+1;j++) for (int i=0;i<_BLOCK_CELLS_X_+1;i++) {
             
             int ind[3]={i,j,k};
             double x[3];
 
 	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
 	    if (CornerNode!=NULL){
-              
+
+	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
+
+	      if ((k==_BLOCK_CELLS_Z_ || j==_BLOCK_CELLS_Y_ || i==_BLOCK_CELLS_X_) &&
+		  !PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;//do not init fields for non-boundary corners
 	      char * offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
               
               
-	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
-	  
+	    	  
               double Ex,Ey,Ez,Bx,By,Bz;
               
               Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
