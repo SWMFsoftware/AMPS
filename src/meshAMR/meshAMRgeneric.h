@@ -12769,6 +12769,7 @@ if (TmpAllocationCounter==2437) {
                 
         if (node->Thread==ThisThread) {
           AllocateBlock(node);
+          InitCellMeasureBlock(node);
 
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
         }
