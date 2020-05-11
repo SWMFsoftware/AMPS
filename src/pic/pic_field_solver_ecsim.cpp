@@ -4811,8 +4811,12 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
     if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
   }
 
-  if (node==NULL || node->IsUsedInCalculationFlag==false) return 8;
-
+  if (node==NULL){
+    return 8;
+  } else if (node->IsUsedInCalculationFlag==false){
+    return 8;
+  }
+  
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
@@ -4833,8 +4837,20 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
 }
 
 
-bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
-  
+int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  // 0:    not boundary corner
+  // 1:001 x-direction face  
+  // 2:010 y-direction face
+  // 4:100 z-direction face
+  // 6:110 x-direction edge
+  // 5:101 y-direction edge
+  // 3:011 z-direction edge
+  // 7:111 corner
+  // 8: outside block and outside domain
+  /*
+  bool isTest=false;
+  if (fabs(x[0]-16.5)<0.1 && fabs(x[1]-8.5)<0.1 && fabs(x[2]-4.5)<0.1) isTest=true;
+  */
   for (int idim=0; idim<3 && node; idim++){
     if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
   }
@@ -4843,22 +4859,11 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
     if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
   }
 
-  
-  if (node==NULL || node->IsUsedInCalculationFlag==false) return true;
-
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->IsUsedInCalculationFlag==false) {
-
-    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
-      return true;
-    }
+  if (node==NULL){
+    return 8;
+  } else if (node->IsUsedInCalculationFlag==false){
+    return 8;
   }
-  
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) {
-      return true;
-    }
-  }
-
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
@@ -4871,149 +4876,24 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
     addition *=10;
   }
 
-  if (sum==0) return false;
-  
-  switch (sum) {
-  case 111:
-    if (!node->GetNeibCorner(0)) {
-      return true;
-    }else if (node->GetNeibCorner(0)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-    
-  case 1110:
-    if (!node->GetNeibCorner(1)) {
-      return true;
-    }else if (node->GetNeibCorner(1)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-    
-  case 10101:
-    if (!node->GetNeibCorner(2)) {
-      return true;
-    }else if (node->GetNeibCorner(2)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-   
-  case 11100:
-    if (!node->GetNeibCorner(3)) {
-      return true;
-    }else if (node->GetNeibCorner(3)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
+  if (sum==0) return 0;
 
-  case 100011:
-    if (!node->GetNeibCorner(4)) {
-      return true;
-    }else if (node->GetNeibCorner(4)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
+  int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
 
-  case 101010:
-    if (!node->GetNeibCorner(5)) {
-      return true;
-    }else if (node->GetNeibCorner(5)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-
-
-  case 110001:
-    if (!node->GetNeibCorner(6)) {
-      return true;
-    }else if (node->GetNeibCorner(6)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-
-
-  case 111000:
-    if (!node->GetNeibCorner(7)) {
-      return true;
-    }else if (node->GetNeibCorner(7)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-   
-  case 110:
-    if (!node->GetNeibEdge(0,0)) return true;
-    else if (node->GetNeibEdge(0,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 10100:
-    if (!node->GetNeibEdge(1,0)) return true;
-    else if (node->GetNeibEdge(1,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 110000:
-    if (!node->GetNeibEdge(2,0)) return true;
-    else if (node->GetNeibEdge(2,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 100010:
-    if (!node->GetNeibEdge(3,0)) return true;
-    else if (node->GetNeibEdge(3,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 101:
-    if (!node->GetNeibEdge(4,0)) return true;
-    else if (node->GetNeibEdge(4,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 1100:
-    if (!node->GetNeibEdge(5,0)) return true;
-    else if (node->GetNeibEdge(5,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 101000:
-    if (!node->GetNeibEdge(6,0)) return true;
-    else if (node->GetNeibEdge(6,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 100001:
-    if (!node->GetNeibEdge(7,0)) return true;
-    else if (node->GetNeibEdge(7,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 11:
-    if (!node->GetNeibEdge(8,0)) return true;
-    else if (node->GetNeibEdge(8,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 1010:
-    if (!node->GetNeibEdge(9,0)) return true;
-    else if (node->GetNeibEdge(9,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 11000:
-    if (!node->GetNeibEdge(10,0)) return true;
-    else if (node->GetNeibEdge(10,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 10001:
-    if (!node->GetNeibEdge(11,0)) return true;
-    else if (node->GetNeibEdge(11,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-    
-  default:
-    return false;
-  }
-  
-
+  return val;
 }
 
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
-      return true;
-  }
+  for (int idim=0;idim<3;idim++)  if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS){
+
+      if (node->GetNeibFace(idim*2+1,0,0)==NULL){
+        return true;
+      }else if (node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false){
+	return true;
+      }
+    }
 
   return false;  
 }
