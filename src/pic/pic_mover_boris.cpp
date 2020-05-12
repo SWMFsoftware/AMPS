@@ -107,8 +107,27 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
 int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
-  double vInit[3],xInit[3]={0.0,0.0,0.0},vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
   int idim,i,j,k,spec;
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+  double vInit[3],xInit[3]={0.0,0.0,0.0},vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
+  double u[3]={0.0,0.0,0.0}, U[3]={0.0,0.0,0.0};
+  double acclInit[3],rotInit[3];
+#else
+  double xminBlock[3],xmaxBlock[3];
+
+  union {__m256d vInit_v; double vInit[4];};
+  union {__m256d vFinal_v; double vFinal[4];};
+
+  union {__m256d xInit_v; double xInit[4];};
+  union {__m256d xFinal_v; double xFinal[4];};
+
+  union {__m256d u_v; double u[4];};
+  union {__m256d U_v; double U[4];};
+
+  union {__m256d acclInit_v; double acclInit[4];};
+  union {__m256d rotInit_v; double rotInit[4];};
+#endif
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   PIC::ParticleBuffer::GetV(vInit,ParticleData);
@@ -155,7 +174,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   memcpy(xminBlock,startNode->xmin,DIM*sizeof(double));
   memcpy(xmaxBlock,startNode->xmax,DIM*sizeof(double));
   
-  double acclInit[3],rotInit[3];
+
   
 #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
   _PIC_PARTICLE_MOVER__BORIS_SPLIT_ACCELERATION_(acclInit,rotInit,spec,ptr,xInit,vInit,startNode);
@@ -172,7 +191,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
    * h        =-0.5*dt*\Omega                                     *
    * s        = 2*h/(1+|h|^2)                                     *
    ****************************************************************/
-  double u[3]={0.0,0.0,0.0}, U[3]={0.0,0.0,0.0},dtTempOverTwo,dtTemp;
+  double dtTempOverTwo,dtTemp;
 
   #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
   switch (BackwardTimeIntegrationMode) {
@@ -186,14 +205,39 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   dtTemp=dtTotal,dtTempOverTwo=dtTotal/2.0;
   #endif
 
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
+  __m256d h_v,h2_v,uh_v,omega_v;
+
+  u_v=_mm256_fmadd_pd(_mm256_set1_pd(dtTempOverTwo),acclInit_v,vInit_v);
+  h_v=_mm256_mul_pd(_mm256_set1_pd(-dtTempOverTwo),rotInit_v);
+
+  h2_v=_mm256_mul_pd(h_v,h_v);
+  uh_v=_mm256_mul_pd(u_v,h_v);
+
+  double h2 = h2_v[0]+h2_v[1]+h2_v[2];
+  double uh = uh_v[0]+uh_v[1]+uh_v[2];
+
+
+  Vector3D::CrossProduct(omega_v,u_v,h_v);
+
+  U_v=_mm256_add_pd(
+        _mm256_mul_pd(_mm256_set1_pd((1.0-h2)/(1.0+h2)),u_v),
+        _mm256_mul_pd(_mm256_set1_pd(2.0/(1.0+h2)),_mm256_fmadd_pd(_mm256_set1_pd(uh),h_v,omega_v))); 
+            
+  vFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dtTempOverTwo),acclInit_v,U_v);
+  xFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dtTemp),vFinal_v,xInit_v);
+#else
+
   u[0]=vInit[0]+dtTempOverTwo*acclInit[0];
   u[1]=vInit[1]+dtTempOverTwo*acclInit[1];
   u[2]=vInit[2]+dtTempOverTwo*acclInit[2];
 
   double h[3];
+
   h[0]=-dtTempOverTwo*rotInit[0];
   h[1]=-dtTempOverTwo*rotInit[1];
   h[2]=-dtTempOverTwo*rotInit[2];
+
   double h2 = h[0]*h[0]+h[1]*h[1]+h[2]*h[2];
   double uh = u[0]*h[0]+u[1]*h[1]+u[2]*h[2];
 
@@ -209,7 +253,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   xFinal[0]=xInit[0]+dtTemp*vFinal[0];
   xFinal[1]=xInit[1]+dtTemp*vFinal[1];
   xFinal[2]=xInit[2]+dtTemp*vFinal[2];
-  
+#endif
   
 
   //rotate the final position
