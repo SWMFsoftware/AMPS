@@ -25,6 +25,9 @@ int OH::Output::TotalDataLength = 0;
 int OH::Output::ohSourceDensityOffset =-1; 
 int OH::Output::ohSourceMomentumOffset=-1;
 int OH::Output::ohSourceEnergyOffset  =-1;
+int OH::Output::ohSinkDensityOffset =-1;
+int OH::Output::ohSinkMomentumOffset=-1;
+int OH::Output::ohSinkEnergyOffset  =-1;
 
 
 
@@ -205,15 +208,29 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 int OH::Output::RequestDataBuffer(int offset){
   OH::Output::ohSourceDensityOffset=offset;
   OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=sizeof(double);
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
 
   OH::Output::ohSourceMomentumOffset=offset;
   OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=3*sizeof(double);
+  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
 
   OH::Output::ohSourceEnergyOffset=offset;
   OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=sizeof(double);
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+
+  OH::Output::ohSinkDensityOffset=offset;
+  OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+  OH::Output::ohSinkMomentumOffset=offset;
+  OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+  OH::Output::ohSinkEnergyOffset=offset;
+  OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
 
   return OH::Output::TotalDataLength*sizeof(double);
 }
@@ -415,16 +432,20 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double vh2 = 0.0, vp2 = 0.0;
     double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
+    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c;
+    *(ifluid+(double*)(offset+OH::Output::ohSinkDensityOffset))-=c;
 
     for (int idim=0; idim<3; idim++) {
-      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
+      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*vParent[idim];
+      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSinkMomentumOffset))-=c*_MASS_(_H_)*vp[idim];
 
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*(vh2-vp2);
+    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
+    *(ifluid+(double*)(offset+OH::Output::ohSinkEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
+
 
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
