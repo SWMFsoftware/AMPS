@@ -10471,15 +10471,48 @@ if (TmpAllocationCounter==2437) {
       long int GlobalTotalBlockNumberTable[nTotalThreads];
       int nTotalUsedInSimulationNodes=0,GlobalTotalTotalUsedInSimulationNodeTable[nTotalThreads];
 
-      for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
-        nTotalBlocks++;
-        if (ptr->IsUsedInCalculationFlag==true) nTotalUsedInSimulationNodes++;
-      }
+      std::function<void(cTreeNodeAMR<cBlockAMR>*)> CountThreadNumber;
+
+      CountThreadNumber = [&] (cTreeNodeAMR<cBlockAMR>* startNode) -> void {
+        if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+          if (startNode->Thread==ThisThread) {
+            nTotalBlocks++;
+            if (startNode->IsUsedInCalculationFlag==true) nTotalUsedInSimulationNodes++;
+          }
+        }
+        else {
+          int iDownNode;
+          cTreeNodeAMR<cBlockAMR> *downNode;
+
+          for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+            CountThreadNumber(downNode);
+          }
+        }
+      };
+
+
+      nTotalBlocks=0,nTotalUsedInSimulationNodes=0;
+      CountThreadNumber(rootTree);
 
       MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
       MPI_Gather(&nTotalUsedInSimulationNodes,1,MPI_INT,GlobalTotalTotalUsedInSimulationNodeTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (ThisThread==0) {
+        //count the total number of blocks, and the number of blocks-used-in-calcualtions
+        int nGlobalBlockNumber=0,nGlobalUsedInCalculationBlocks=0;         
+
+        for (int thread=0;thread<nTotalThreads;thread++) nGlobalBlockNumber+=GlobalTotalBlockNumberTable[thread],nGlobalUsedInCalculationBlocks+=GlobalTotalTotalUsedInSimulationNodeTable[thread];
+
+        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%ld, Total Number of blocks: %ld\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
+
+        if (nGlobalUsedInCalculationBlocks==0) {
+          //there are not blocks used in the calcualtion -> terminate the execution
+
+          fflush(DiagnospticMessageStream);
+          exit(__LINE__,__FILE__,"Error: the number of the blocks-used-in-calcualtions is zero");
+        }
+
+        //output the domain decomposition statistics
         fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
         for (int t=0;t<nTotalThreads;t++) {
