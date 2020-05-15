@@ -1462,6 +1462,22 @@ sub ReadGeneralBlock {
       ampsConfigLib::RedefineMacro("_GHOST_CELLS_Z_",$s2,"meshAMR/meshAMRdef.h");
     }
 
+    ### Mesh type ###
+    elsif ($InputLine eq "MESHTYPE") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "UNIFORM") {
+        ampsConfigLib::RedefineMacro("_AMR_MESH_TYPE_","_AMR_MESH_TYPE__UNIFORM_","meshAMR/meshAMRdef.h");
+      }
+      elsif ($InputLine eq "NON_UNIFORM") {
+        ampsConfigLib::RedefineMacro("_AMR_MESH_TYPE_","_AMR_MESH_TYPE__NON_UNIFORM_","meshAMR/meshAMRdef.h");
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "The option is unknown ($line)\n";
+      }
+    }
+
     ####Set the communication depth 
     elsif ($InputLine eq "COMMUNICATIONDEPTH") {
       ($InputLine,$InputComment)=split('!',$line,2);
