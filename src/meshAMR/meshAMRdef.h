@@ -227,6 +227,13 @@ public:
 };
 
 //the stack class to store the data structure of the mesh
+class cStackElementBase {
+public: 
+  int stack_element_id; 
+};
+
+
+
 template<class T>
 class cAMRstack : public cAMRexit {
 public: 
@@ -334,6 +341,9 @@ public:
  
   //get the entry pointer and counting number
   long int GetEntryCountingNumber(T* ptr) {
+    return (ptr!=NULL) ? ptr->stack_element_id : -1;
+
+/*
     long int nMemoryBank,res=-1;
 
     if (ptr!=NULL) {
@@ -345,6 +355,7 @@ public:
     }
  
     return -1;
+*/
   }
 
   T* GetEntryPointer(long int countingNumber) {
@@ -477,6 +488,8 @@ public:
 
     res=elementStackList[elementStackBank][offset];
     elementStackPointer++;
+
+    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_; 
 
     if ((ForceElementNumberLimit==true)&&(usedElements()>_MAX_MESH_ELEMENT_NUMBER_)) exit(__LINE__,__FILE__,"The number of the requster mesh elements exeeds the limit -> increase _MESH_ELEMENTS_NUMBERING_BITS_ ");
 
@@ -632,6 +645,8 @@ public:
     offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     res=BaseElementStack.elementStackList[elementStackBank][offset];
+    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+
     if (associatedDataStackList!=NULL) res->SetAssociatedDataBufferPointer(associatedDataStackList[elementStackBank][offset]);
     BaseElementStack.elementStackPointer++;
 
