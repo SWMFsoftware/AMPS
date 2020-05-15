@@ -724,7 +724,7 @@ unsigned long int GetTriangulationSignature();
   void SmoothMeshResolution(double MaxNeibSizeRatio);
 
 
-  class cTriangleFaceDescriptor {
+  class cTriangleFaceDescriptor : public cStackElementBase {
   public:
     cTriangleFace *TriangleFace;
     cTriangleFaceDescriptor *next,*prev;
