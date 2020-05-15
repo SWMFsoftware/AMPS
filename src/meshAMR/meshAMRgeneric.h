@@ -6427,6 +6427,33 @@ if (CallsCounter==83) {
     //build the list connecting nodes locaed at the bottom of the graph's branches
     CreateBottomBranchNodeList(rootTree);
 
+    //in the case when _AMR_MESH_TYPE_ is set _AMR_MESH_TYPE__UNIFORM_, verify that the generated mesh is actually uniform
+    if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_) {
+      int RefinmentLevel=-1;
+      std::function<void(cTreeNodeAMR<cBlockAMR>*)> CheckBlockRefinmentLevel;
+
+      CheckBlockRefinmentLevel= [&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+        if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) { 
+          if (RefinmentLevel==-1) {
+            RefinmentLevel=node->RefinmentLevel; 
+          }
+          else {
+            if (RefinmentLevel!=node->RefinmentLevel) exit(__LINE__,__FILE__,"Error: the mesh is not uniform while _AMR_MESH_TYPE_ is set being _AMR_MESH_TYPE__UNIFORM_"); 
+          }
+        }
+        else {
+          int iDownNode;
+          cTreeNodeAMR<cBlockAMR> *downNode;
+
+          for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+            CheckBlockRefinmentLevel(downNode);
+          }
+        }
+      };
+ 
+      CheckBlockRefinmentLevel(rootTree); 
+    } 
+
     //end function message
     if (rank==0) {
       printf("$PREFIX: Building mesh.....   done\n");
