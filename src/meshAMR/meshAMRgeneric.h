@@ -69,7 +69,7 @@
 extern double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
 
-class cBasicNode : public cAMRexit {
+class cBasicNode : public cStackElementBase, public cAMRexit {
 public:
   //the place holder for the structure that contained the associated data
   inline int AssociatedDataLength() {return 0;}
@@ -338,7 +338,7 @@ public:
 };
 
 template <class cBlockAMR>
-class cTreeNodeAMR : public cAMRexit {
+class cTreeNodeAMR : public cStackElementBase, public cAMRexit {
 public:
   cTreeNodeAMR *upNode,*downNode[1<<_MESH_DIMENSION_];
   cBlockAMR *block;
@@ -933,7 +933,7 @@ public:
 
 //=======================================================================
 template <class cCornerNode,class cCenterNode> 
-class cBasicBlockAMR : public cAMRexit {
+class cBasicBlockAMR : public cStackElementBase,public cAMRexit {
 public:
   //the place holder for the structure that contained the associated data
   int AssociatedDataLength() {return 0;}
@@ -1829,18 +1829,18 @@ public:
     if ((_MESH_DIMENSION_<1)||(_MESH_DIMENSION_>3)) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
 
     xGlobalMin[0]=xMin[0],xGlobalMax[0]=xMax[0],dxRootBlock[0]=(xMax[0]-xMin[0]);
-    if (2*_GHOST_CELLS_X_>_BLOCK_CELLS_X_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+    if (2*_GHOST_CELLS_X_>=_BLOCK_CELLS_X_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
     EPS=0.0001*dxRootBlock[0]/double(_BLOCK_CELLS_X_)/(1<<_MAX_REFINMENT_LEVEL_); 
 
     if (_MESH_DIMENSION_>1) {
       xGlobalMin[1]=xMin[1],xGlobalMax[1]=xMax[1],dxRootBlock[1]=(xMax[1]-xMin[1]); 
-      if (2*_GHOST_CELLS_Y_>_BLOCK_CELLS_Y_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+      if (2*_GHOST_CELLS_Y_>=_BLOCK_CELLS_Y_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
       if (EPS>0.0001*dxRootBlock[1]/double(_BLOCK_CELLS_Y_)/(1<<_MAX_REFINMENT_LEVEL_)) EPS=0.0001*dxRootBlock[1]/double(_BLOCK_CELLS_Y_)/(1<<_MAX_REFINMENT_LEVEL_); 
     }
 
     if (_MESH_DIMENSION_>2) {
       xGlobalMin[2]=xMin[2],xGlobalMax[2]=xMax[2],dxRootBlock[2]=(xMax[2]-xMin[2]);
-      if (2*_GHOST_CELLS_Z_>_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
+      if (2*_GHOST_CELLS_Z_>=_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"The mesh dimension is wrong");
       if (EPS>0.0001*dxRootBlock[2]/double(_BLOCK_CELLS_Z_)/(1<<_MAX_REFINMENT_LEVEL_)) EPS=0.0001*dxRootBlock[2]/double(_BLOCK_CELLS_Z_)/(1<<_MAX_REFINMENT_LEVEL_);
     }
 
@@ -4067,6 +4067,7 @@ if (startNode->Temp_ID==77) {
 
       ptrCornerNode=CornerNodes.newElement();
       ptrCornerNode->SetX(x);
+      ptrCornerNode->nodeDescriptor.nNodeConnections=0;
     }
 
     startNode->block->SetCornerNode(ptrCornerNode,nd);
@@ -4142,6 +4143,7 @@ if (startNode->Temp_ID==77) {
       ptrCenterNode=CenterNodes.newElement();
       ptrCenterNode->SetX(x);
       ptrCenterNode->Measure=-1.0;
+      ptrCenterNode->nodeDescriptor.nNodeConnections=0;
     }
 
     startNode->block->SetCenterNode(ptrCenterNode,nd);
@@ -6424,6 +6426,33 @@ if (CallsCounter==83) {
 
     //build the list connecting nodes locaed at the bottom of the graph's branches
     CreateBottomBranchNodeList(rootTree);
+
+    //in the case when _AMR_MESH_TYPE_ is set _AMR_MESH_TYPE__UNIFORM_, verify that the generated mesh is actually uniform
+    if (_AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_) {
+      int RefinmentLevel=-1;
+      std::function<void(cTreeNodeAMR<cBlockAMR>*)> CheckBlockRefinmentLevel;
+
+      CheckBlockRefinmentLevel= [&] (cTreeNodeAMR<cBlockAMR>* node) -> void {
+        if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) { 
+          if (RefinmentLevel==-1) {
+            RefinmentLevel=node->RefinmentLevel; 
+          }
+          else {
+            if (RefinmentLevel!=node->RefinmentLevel) exit(__LINE__,__FILE__,"Error: the mesh is not uniform while _AMR_MESH_TYPE_ is set being _AMR_MESH_TYPE__UNIFORM_"); 
+          }
+        }
+        else {
+          int iDownNode;
+          cTreeNodeAMR<cBlockAMR> *downNode;
+
+          for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+            CheckBlockRefinmentLevel(downNode);
+          }
+        }
+      };
+ 
+      CheckBlockRefinmentLevel(rootTree); 
+    } 
 
     //end function message
     if (rank==0) {
@@ -9860,7 +9889,7 @@ nMPIops++;
     }
     else {
       #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      res=(startNode->IsUsedInCalculationFlag==true) ? startNode->ParallelLoadMeasure : 0.0;
+      res=((startNode->Thread==ThisThread)&&(startNode->IsUsedInCalculationFlag==true)) ? startNode->ParallelLoadMeasure : 0.0;
 
       //check whether the node load measure is normalized
       if (isfinite(res)==false) {
@@ -9900,8 +9929,16 @@ nMPIops++;
     }
 
     if (startNode==rootTree) {
-      if (ThisThread==0) pipe.closeRecvAll();
+      if (ThisThread==0) {
+        pipe.closeRecvAll();
+
+        res=0.0;
+
+        for (int thread=0;thread<nTotalThreads;thread++) res+=ThreadLoad[thread];
+      }
       else pipe.closeSend();
+
+      MPI_Bcast(&res,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
     }
 
     return res;
@@ -10461,17 +10498,57 @@ if (TmpAllocationCounter==2437) {
       //calcualte the number of blocks per thread
       cTreeNodeAMR<cBlockAMR> *ptr;
       long int GlobalTotalBlockNumberTable[nTotalThreads];
+      int nTotalUsedInSimulationNodes=0,GlobalTotalTotalUsedInSimulationNodeTable[nTotalThreads];
 
-      for (nTotalBlocks=0,ptr=ParallelNodesDistributionList[ThisThread];ptr!=NULL;ptr=ptr->nextNodeThisThread) nTotalBlocks++;
+      std::function<void(cTreeNodeAMR<cBlockAMR>*)> CountThreadNumber;
+
+      CountThreadNumber = [&] (cTreeNodeAMR<cBlockAMR>* startNode) -> void {
+        if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+          if (startNode->Thread==ThisThread) {
+            nTotalBlocks++;
+            if (startNode->IsUsedInCalculationFlag==true) nTotalUsedInSimulationNodes++;
+          }
+        }
+        else {
+          int iDownNode;
+          cTreeNodeAMR<cBlockAMR> *downNode;
+
+          for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+            CountThreadNumber(downNode);
+          }
+        }
+      };
+
+
+      nTotalBlocks=0,nTotalUsedInSimulationNodes=0;
+      CountThreadNumber(rootTree);
 
       MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Gather(&nTotalUsedInSimulationNodes,1,MPI_INT,GlobalTotalTotalUsedInSimulationNodeTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (ThisThread==0) {
+        //count the total number of blocks, and the number of blocks-used-in-calcualtions
+        int nGlobalBlockNumber=0,nGlobalUsedInCalculationBlocks=0;         
+
+        for (int thread=0;thread<nTotalThreads;thread++) nGlobalBlockNumber+=GlobalTotalBlockNumberTable[thread],nGlobalUsedInCalculationBlocks+=GlobalTotalTotalUsedInSimulationNodeTable[thread];
+
+        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%ld, Total Number of blocks: %ld\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
+
+        if (nGlobalUsedInCalculationBlocks==0) {
+          //there are not blocks used in the calcualtion -> terminate the execution
+
+          fflush(DiagnospticMessageStream);
+          exit(__LINE__,__FILE__,"Error: the number of the blocks-used-in-calcualtions is zero");
+        }
+
+        //output the domain decomposition statistics
         fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
         for (int t=0;t<nTotalThreads;t++) {
-          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalBlockNumberTable[t]);
+          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
         }
+
+        fflush(DiagnospticMessageStream);
       }
 
 
@@ -10744,16 +10821,17 @@ if (TmpAllocationCounter==2437) {
          cTreeNodeAMR<cBlockAMR> *maxLoadBlock=NULL;
 
          for (t=0;t<nTotalThreads;t++) {
-           long int nblocks;
+           long int nblocks=0,used_nblocks=0;
 
-           for (nblocks=0,ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
+           for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
              nblocks++;
+             if (ptr->IsUsedInCalculationFlag==true) used_nblocks++;
 
              if ((minBlockLoad<0.0)||(minBlockLoad>ptr->ParallelLoadMeasure)) minBlockLoad=ptr->ParallelLoadMeasure;
              if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
            }
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld\n",t,newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,nblocks);
+           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,used_nblocks,nblocks);
 
            if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
            if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
@@ -10797,6 +10875,7 @@ if (TmpAllocationCounter==2437) {
          fprintf(DiagnospticMessageStream,"$PREFIX:Middle block's coordinates=");
          for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",middleX[idim]/(1<<_MESH_DIMENSION_));
          fprintf(DiagnospticMessageStream,"\n\n");
+         fflush(DiagnospticMessageStream);  
       }
     };
 
@@ -12649,7 +12728,7 @@ if (TmpAllocationCounter==2437) {
   void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> * NewlyAllocatedNodeList) {
     cTreeNodeAMR<cBlockAMR> *node;
     cAMRnodeID *NodeIdTableGlobal=NULL;
-    int iNode,NodeTableLengthGlobal;
+    int thread,iNode,NodeTableLengthGlobal;
     int nOperations=0;
     //increment the mesh modification counter
     //nMeshModificationCounter++,meshModifiedFlag=true; 
@@ -12659,6 +12738,18 @@ if (TmpAllocationCounter==2437) {
 
     int *NodeTableLengthTable=new int [nTotalThreads];
     MPI_Gather(&NodeTableLength,1,MPI_INT,NodeTableLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (ThisThread==0) {
+      for (thread=0,NodeTableLengthGlobal=0;thread<nTotalThreads;thread++) NodeTableLengthGlobal+=NodeTableLengthTable[thread];
+    }
+
+    MPI_Bcast(&NodeTableLengthGlobal,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+    if (NodeTableLengthGlobal==0) {
+      delete [] NodeTableLengthTable;
+      return;
+    }
+
 
     if (ThisThread==0) {
       //determine the total length of the table
@@ -12701,7 +12792,7 @@ if (TmpAllocationCounter==2437) {
       }
 
       //waite while att recieving is completed
-      MPI_Waitall(RequestTableLength,RequestTable,MPI_STATUSES_IGNORE);
+      if (RequestTableLength!=0) MPI_Waitall(RequestTableLength,RequestTable,MPI_STATUSES_IGNORE);
 
       //remove temporary buffers
       delete [] RequestTable;
@@ -12735,10 +12826,12 @@ if (TmpAllocationCounter==2437) {
         node=findAMRnodeWithID(NodeIdTableGlobal[iNode]);
         node->IsUsedInCalculationFlag=true;
         nOperations++;          
+
+        if (NewlyAllocatedNodeList!=NULL) NewlyAllocatedNodeList->push_back(node);
                 
         if (node->Thread==ThisThread) {
           AllocateBlock(node);
-          NewlyAllocatedNodeList->push_back(node);
+          InitCellMeasureBlock(node);
 
           if (fProcessTreeNodeData!=NULL) fProcessTreeNodeData(node);
         }
@@ -12750,6 +12843,8 @@ if (TmpAllocationCounter==2437) {
             if (NeibNode==node) {
               //the newly activated node is in the boundary layer -> allocate it
               AllocateBlock(node);
+              InitCellMeasureBlock(node);
+
               nOperations++;
               //NewlyAllocatedNodeList.push_back(node);
 

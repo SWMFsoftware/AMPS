@@ -52,13 +52,13 @@ int PIC::TimeStep() {
    }
 
    //Set the exit error code
-   ExitErrorCode=_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    
    //init the random number generator is needed
    if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh.rootTree);
 
    //update the local block list
-   ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UpdateBlockTable_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    DomainBlockDecomposition::UpdateBlockTable();
    
    //init required sample length if the sample output mode is by time interval 
@@ -194,7 +194,7 @@ int PIC::TimeStep() {
    }
 
   //sampling of the particle data
-   ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__Sampling_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    SamplingTime=MPI_Wtime();
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -218,7 +218,7 @@ int PIC::TimeStep() {
   InjectionBoundaryTime=MPI_Wtime();
 
   //inject particle through the domain's boundaries
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__InjectionBoundaryConditions_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::BC::InjectionBoundaryConditions();
 
   //inject particles into the volume of the domain
@@ -228,13 +228,13 @@ int PIC::TimeStep() {
 
   //call a user-defined injection function
   if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
-    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UserDefinedParticleInjectionFunction_;
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
     PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
   }
 
   //the extra injection process by the exosphere model (src/models/exosphere)
   if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
-    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExosphereModelExtraInjectionFunction_;
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
     PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
   }
 
@@ -244,7 +244,7 @@ int PIC::TimeStep() {
 
   //simulate particle collisions
 #if _PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ParticleCollisionModel_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleCollisionTime=MPI_Wtime();
 
   #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
@@ -263,7 +263,7 @@ int PIC::TimeStep() {
 
   //simulate collisions with the background atmosphere
 #if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__BackgroundAtmosphere_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   BackgroundAtmosphereCollisionTime=MPI_Wtime();
 
   #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
@@ -282,7 +282,7 @@ int PIC::TimeStep() {
 
   //particle photochemistry model
   #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__PhotolyticReactions_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PhotoChemistryTime=MPI_Wtime();
   ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
   PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
@@ -291,7 +291,7 @@ int PIC::TimeStep() {
 
   //perform user-define processing of the model particles
 #if _PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UserParticleProcessing_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   UserDefinedParticleProcessingTime=MPI_Wtime();
   PIC::UserParticleProcessing::Processing();
   UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
@@ -299,7 +299,7 @@ int PIC::TimeStep() {
 #endif
 
   //move existing particles
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__MoveParticles_;
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   
 #if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
     ParticleMovingTime=MPI_Wtime();
@@ -309,12 +309,12 @@ int PIC::TimeStep() {
 
     //check the consistence of the particles lists
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CheckParticleList_;
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
     PIC::ParticleBuffer::CheckParticleList();
 #endif
     
     //syncronize processors and exchange particle data
-    ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeParticleData_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
@@ -329,7 +329,7 @@ int PIC::TimeStep() {
   #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__OFF_
   //do nothing
   #else
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__FieldSolver_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   FieldSolverTime=MPI_Wtime();
 
   switch (_PIC_FIELD_SOLVER_MODE_) {
@@ -348,12 +348,12 @@ int PIC::TimeStep() {
 
   //check the consistence of the particles lists
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CheckParticleList_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::ParticleBuffer::CheckParticleList();
   #endif
 
   //syncronize processors and exchange particle data
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeParticleData_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
@@ -401,20 +401,20 @@ int PIC::TimeStep() {
 
   //incase OpenMP is used: rebalance the list of the available particles between OpenMP threads
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__RebalanceParticleList_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::ParticleBuffer::Thread::RebalanceParticleList();
   #endif
 
 
   //update the total number of the sampled trajecotries
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UpdateTrajectoryCounter_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::ParticleTracker::UpdateTrajectoryCounter();
 #endif
 
   //call user defined MPI procedure
 #if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__UserDefinedMPI_RoutineExecutionTime_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime();
   _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_();
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime()-UserDefinedMPI_RoutineExecutionTime;
@@ -423,7 +423,7 @@ int PIC::TimeStep() {
 
   //update the glabal time counter if needed
 #if _PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__CPLR_DATAFILE_MULTIFILE_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::SimulationTime::Update();
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
   //update data
@@ -441,7 +441,7 @@ int PIC::TimeStep() {
 #endif//_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
 #endif//_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
 
-  ExitErrorCode=_PIC__EXIT_CODE__LAST_BLOCK__ExchangeStatisticData_;
+   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
   struct cExchangeStatisticData {
     double TotalInterationRunTime;
@@ -1604,9 +1604,15 @@ void PIC::Sampling::Sampling() {
 void PIC::SignalHandler(int sig) {
   cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh.ThisThread << endl;
 
-  switch(sig) {
+  switch (sig) {
   case SIGFPE :
-    cout << "$PREFIX:Signal=SIGFPE" << endl;
+    cout << "$PREFIX: Signal=SIGFPE" << endl;
+    break;
+  case SIGSEGV :
+    cout << "$PREFIX: Signal=SIGSEGV" << endl;
+    break;
+  case SIGBUS :
+    cout << "$PREFIX: Signal=SIGBUS" << endl;
     break;
   default:
     exit(__LINE__,__FILE__,"Error: unknown signal");
@@ -1894,6 +1900,8 @@ void PIC::Init_BeforeParser() {
 
   //set up the signal handler
   signal(SIGFPE,SignalHandler);
+  signal(SIGSEGV,SignalHandler);
+  signal(SIGBUS,SignalHandler);
 
 
   //init coupler 

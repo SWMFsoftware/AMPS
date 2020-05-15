@@ -36,7 +36,7 @@
 
 //=======================================================================
 //the descriptor of the internal boundary conditions
-class cInternalBoundaryConditionsDescriptor {
+class cInternalBoundaryConditionsDescriptor : public cStackElementBase {
 public:
   unsigned char BondaryType;
   void *BoundaryElement;

@@ -248,9 +248,9 @@ contains
   end subroutine PC_put_from_gm
   !============================================================================
 
-  subroutine PC_put_from_gm_grid_info(nInt, Int_I)
-    integer, intent(in)         :: nInt 
-    integer, intent(in)         :: Int_I(nInt)
+  subroutine PC_put_from_gm_grid_info(nInt, nPicGrid, AccumulatedSize_I, Int_I)
+    integer, intent(in)         :: nInt, nPicGrid
+    integer, intent(in)         :: Int_I(nInt), AccumulatedSize_I(nPicGrid)
     !-------------------------------------------------------------------------
     ! Empty function
   end subroutine PC_put_from_gm_grid_info

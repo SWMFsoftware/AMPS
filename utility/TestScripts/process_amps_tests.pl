@@ -95,7 +95,9 @@ foreach $day (@days){
        my $newtest = $1;
        
        #remove the reference solution index if such exists
-       $newtest=~s/\[(.?)\]//g;
+       $newtest=~s/\[(.)\]//g;
+       $newtest=~s/\[(..)\]//g;
+       $newtest=~s/\[(...)\]//g;
              
        # specify failure for previous test
        $result{$day}{$test}{$machine} =~ s/failed/$stage/ if $stage;
@@ -112,7 +114,9 @@ foreach $day (@days){
      my $line;
      
      $line=$_;
-     $line=~s/\[(.?)\]//g;
+     $line=~s/\[(.)\]//g;
+     $line=~s/\[(..)\]//g;
+     $line=~s/\[(...)\]//g;
 
      print HTML $line;
    }

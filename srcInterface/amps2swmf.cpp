@@ -49,6 +49,9 @@ extern "C" {
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
   void amps_save_restart_();
   void amps_finalize_();
+
+  //init coupling with SW?F/OH
+  void amps_from_oh_init_(int *nIonFluids); 
   
   //get fluid number from other SWMF component
   void amps_get_fluid_number_(int * nVarIn);
@@ -73,23 +76,11 @@ extern "C" {
   }
 
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread) {
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     omp_set_num_threads(*nThread);
     #endif
+
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
-    //initialize the coupler and AMPS
-    PIC::CPLR::SWMF::init();
-    amps_init_mesh();
-#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
-    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_       
-    omp_set_num_threads(*nThread);
-    #endif
-    PIC::CPLR::FLUID::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
-    //initialize the coupler and AMPS
-    //PIC::CPLR::FLUID::init();
-#endif
-    // amps_init_mesh();
   }
   
   void amps_save_restart_(){
@@ -248,6 +239,23 @@ extern "C" {
     }
 */
 
+  }
+
+  void  amps_from_oh_init_(int *nIonFluids) {
+    static bool init_flag=false;
+
+    if (init_flag==true) return;
+
+    init_flag=true;
+
+    //set the total number of the ion fluids
+    PIC::CPLR::SWMF::nCommunicatedIonFluids=*nIonFluids; 
+
+    if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
+
+    //initialize the coupler and AMPS
+    PIC::CPLR::SWMF::init();
+    amps_init_mesh();
   }
 
   void amps_finalize_() {

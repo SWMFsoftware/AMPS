@@ -25,6 +25,9 @@ int OH::Output::TotalDataLength = 0;
 int OH::Output::ohSourceDensityOffset =-1; 
 int OH::Output::ohSourceMomentumOffset=-1;
 int OH::Output::ohSourceEnergyOffset  =-1;
+int OH::Output::ohSinkDensityOffset =-1;
+int OH::Output::ohSinkMomentumOffset=-1;
+int OH::Output::ohSinkEnergyOffset  =-1;
 
 
 
@@ -204,16 +207,30 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 
 int OH::Output::RequestDataBuffer(int offset){
   OH::Output::ohSourceDensityOffset=offset;
-  OH::Output::TotalDataLength = 1;
-  offset+=sizeof(double);
+  OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
 
   OH::Output::ohSourceMomentumOffset=offset;
-  OH::Output::TotalDataLength+=3;
-  offset+=3*sizeof(double);
+  OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
 
   OH::Output::ohSourceEnergyOffset=offset;
-  OH::Output::TotalDataLength++;
-  offset+=sizeof(double);
+  OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+
+  OH::Output::ohSinkDensityOffset=offset;
+  OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+  OH::Output::ohSinkMomentumOffset=offset;
+  OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
+  OH::Output::ohSinkEnergyOffset=offset;
+  OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
+  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+
 
   return OH::Output::TotalDataLength*sizeof(double);
 }
@@ -265,28 +282,34 @@ double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, l
 
   for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) {
     PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(iFluid);
-    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
-    PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
-    PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
 
-    switch (spec) {
-    case _H_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V1_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V2_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    case _H_ENA_V3_SPEC_:
-      lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: unknown species");
+    if (PlasmaNumberDensity>0.0) {
+      PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(iFluid);
+      PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
+      PIC::CPLR::GetBackgroundPlasmaVelocity(iFluid,PlasmaBulkVelocity);
+
+
+      switch (spec) {
+      case _H_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V1_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V1_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V2_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V2_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      case _H_ENA_V3_SPEC_:
+        lifetime=ChargeExchange::LifeTime(_H_ENA_V3_SPEC_, v, PlasmaBulkVelocity, PlasmaTemperature, PlasmaNumberDensity);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: unknown species");
+      }
+
+      FrequencyTable[iFluid]=1.0/lifetime;
+      TotalFrequency+=FrequencyTable[iFluid];
     }
-
-    FrequencyTable[iFluid]=1.0/lifetime;
+    else FrequencyTable[iFluid]=0.0;
   }
 
   return TotalFrequency;
@@ -299,7 +322,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
 
   GetFrequencyTable(FrequencyTable,x,spec,ptr,PhotolyticReactionAllowedFlag,node);
 
-  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) lifetime+=1.0/FrequencyTable[iFluid];
+  for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) if (FrequencyTable[iFluid]>0.0) lifetime+=1.0/FrequencyTable[iFluid];
 
   return lifetime;
 }
@@ -409,19 +432,25 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double vh2 = 0.0, vp2 = 0.0;
     double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset)) += 0.0;
+    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c;
+    *(ifluid+(double*)(offset+OH::Output::ohSinkDensityOffset))-=c;
 
     for (int idim=0; idim<3; idim++) {
-      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*(vParent[idim]-vp[idim]);
+      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*vParent[idim];
+      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSinkMomentumOffset))-=c*_MASS_(_H_)*vp[idim];
 
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*(vh2-vp2);
+    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
+    *(ifluid+(double*)(offset+OH::Output::ohSinkEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
+
 
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
+
+    if ((isfinite(vp[0])==false)||(isfinite(vp[1])==false)||(isfinite(vp[2])==false)) exit(__LINE__,__FILE__,"Error: out of range");  
 
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {

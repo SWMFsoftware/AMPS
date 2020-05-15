@@ -9,6 +9,16 @@
  *      Author: vtenishe
  */
 
+
+/*
+The algorithm of calculating GradDivStencil375 as in Chen-2019-JCP.
+Previously, that was used implemented with a lookup table 'graddiv'. 
+The last version of the implementation that was using lookup tables to store the discretization coefficient is 95cf4741af7259dfb93ea73d6e864353f87226a5
+
+The Maple script used for calculating the lookup tables for the previous implementation is in AMPS/other.
+*/
+
+
 #include "pic.h"
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
@@ -74,6 +84,7 @@ int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
 cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[3][3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[3][3];
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -502,285 +513,6 @@ void computeMassMatrixOffsetTable(){
   initMassMatrixOffsetTable=true;
 }
 
-/*
-static const double LaplacianCoeff[3][27]={{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
-			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
-			       -0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
-			      {-0.5,-0.25,-0.25,0.25,0.125,0.125,0.25,0.125,0.125,
-			       -0.25,-0.125,-0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,
-			       -0.25,-0.125,-0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625},
-			      {-0.5,-0.25,-0.25,-0.25,-0.125,-0.125,-0.25,-0.125,-0.125,
-			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,
-			       0.25,0.125,0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625}};
-*/
-
-/*
-static const double graddiv[3][3][27]={{{-0.5,0.25,0.25,-0.25,0.125,0.125,-0.25,0.125,0.125,
-				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625,
-				-0.25,0.125,0.125,-0.125,0.0625,0.0625,-0.125,0.0625,0.0625},
-			       {0,0,0,0,0.125,-0.125,0,-0.125,0.125,0,0,0,0,0.0625,-0.0625,0,
-				-0.0625,0.0625,0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0.125,-0.125,0,0.0625,-0.0625,
-				0,0.0625,-0.0625,0,-0.125,0.125,0,-0.0625,0.0625,0,-0.0625,0.0625}},
-			      {{0,0,0,0,0.125,-0.125,0,-0.125,0.125,0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625,
-				0,0,0,0,0.0625,-0.0625,0,-0.0625,0.0625},
-			       {-0.5,-0.25,-0.25,0.25,0.125,0.125,0.25,0.125,0.125,-0.25,-0.125,-0.125,
-				0.125,0.0625,0.0625,0.125,0.0625,0.0625,-0.25,-0.125,-0.125,0.125,0.0625,
-				0.0625,0.125,0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0,0,0.125,0.0625,0.0625,-0.125,-0.0625,-0.0625,0,0,0,
-				-0.125,-0.0625,-0.0625,0.125,0.0625,0.0625}},
-			      {{0,0,0,0,0,0,0,0,0,0,0.125,-0.125,0,0.0625,-0.0625,0,0.0625,-0.0625,0,
-				-0.125,0.125,0,-0.0625,0.0625,0,-0.0625,0.0625},
-			       {0,0,0,0,0,0,0,0,0,0,0,0,0.125,0.0625,0.0625,-0.125,-0.0625,-0.0625,
-				0,0,0,-0.125,-0.0625,-0.0625,0.125,0.0625,0.0625},
-			       {-0.5,-0.25,-0.25,-0.25,-0.125,-0.125,-0.25,-0.125,-0.125,0.25,0.125,
-				0.125,0.125,0.0625,0.0625,0.125,0.0625,0.0625,0.25,0.125,0.125,0.125,
-				0.0625,0.0625,0.125,0.0625,0.0625}}};
-
-*/
-
-static const double graddivNew[3][3][125] = {
-
-{{-1/18.0,0.0,0.0,-1/24.0,0.0,
-0.0,-1/24.0,0.0,0.0,-1/24.0,
-0.0,0.0,-1/32.0,0.0,0.0,
--1/32.0,0.0,0.0,-1/24.0,0.0,
-0.0,-1/32.0,0.0,0.0,-1/32.0,
-0.0,0.0,1/36.0,1/36.0,1/48.0,
-1/48.0,1/48.0,1/48.0,-1/72.0,0.0,
-0.0,1/144.0,1/144.0,-1/72.0,0.0,
-0.0,1/144.0,1/144.0,1/48.0,1/48.0,
-1/64.0,1/64.0,1/64.0,1/64.0,-1/96.0,
-0.0,0.0,1/192.0,1/192.0,-1/96.0,
-0.0,0.0,1/192.0,1/192.0,1/48.0,
-1/48.0,1/64.0,1/64.0,1/64.0,1/64.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/72.0,0.0,0.0,1/144.0,1/144.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/72.0,0.0,0.0,1/144.0,1/144.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/96.0,0.0,0.0,1/192.0,1/192.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0,
--1/288.0,0.0,0.0,1/576.0,1/576.0
-  },
-{0.0,0.0,0.0,0.0,1/72.0,
--1/72.0,0.0,-1/72.0,1/72.0,0.0,
-0.0,0.0,0.0,1/96.0,-1/96.0,
-0.0,-1/96.0,1/96.0,0.0,0.0,
-0.0,0.0,1/96.0,-1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,1/72.0,
--1/72.0,-1/72.0,1/72.0,0.0,1/144.0,
--1/144.0,1/144.0,-1/144.0,0.0,-1/144.0,
-1/144.0,-1/144.0,1/144.0,0.0,0.0,
-1/96.0,-1/96.0,-1/96.0,1/96.0,0.0,
-1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
--1/192.0,1/192.0,-1/192.0,1/192.0,0.0,
-0.0,1/96.0,-1/96.0,-1/96.0,1/96.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/288.0,-1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
-},
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
-0.0,1/96.0,-1/96.0,0.0,-1/72.0,
-1/72.0,0.0,-1/96.0,1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,1/72.0,-1/72.0,
-1/96.0,-1/96.0,1/96.0,-1/96.0,0.0,
-1/288.0,-1/288.0,1/288.0,-1/288.0,0.0,
-1/288.0,-1/288.0,1/288.0,-1/288.0,-1/72.0,
-1/72.0,-1/96.0,1/96.0,-1/96.0,1/96.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,-1/288.0,1/288.0,-1/288.0,1/288.0,
-0.0,1/144.0,-1/144.0,1/144.0,-1/144.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,1/192.0,-1/192.0,1/192.0,-1/192.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,1/576.0,-1/576.0,1/576.0,-1/576.0,
-0.0,-1/144.0,1/144.0,-1/144.0,1/144.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0,
-0.0,-1/576.0,1/576.0,-1/576.0,1/576.0
-}
-},
-{{0.0,0.0,0.0,0.0,1/72.0,
--1/72.0,0.0,-1/72.0,1/72.0,0.0,
-0.0,0.0,0.0,1/96.0,-1/96.0,
-0.0,-1/96.0,1/96.0,0.0,0.0,
-0.0,0.0,1/96.0,-1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,1/144.0,
--1/144.0,-1/144.0,1/144.0,0.0,1/72.0,
--1/72.0,1/144.0,-1/144.0,0.0,-1/72.0,
-1/72.0,-1/144.0,1/144.0,0.0,0.0,
-1/192.0,-1/192.0,-1/192.0,1/192.0,0.0,
-1/96.0,-1/96.0,1/192.0,-1/192.0,0.0,
--1/96.0,1/96.0,-1/192.0,1/192.0,0.0,
-0.0,1/192.0,-1/192.0,-1/192.0,1/192.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
-  },
-{-1/18.0,-1/24.0,-1/24.0,0.0,0.0,
-0.0,0.0,0.0,0.0,-1/24.0,
--1/32.0,-1/32.0,0.0,0.0,0.0,
-0.0,0.0,0.0,-1/24.0,-1/32.0,
--1/32.0,0.0,0.0,0.0,0.0,
-0.0,0.0,-1/72.0,-1/72.0,0.0,
-0.0,0.0,0.0,1/36.0,1/48.0,
-1/48.0,1/144.0,1/144.0,1/36.0,1/48.0,
-1/48.0,1/144.0,1/144.0,-1/96.0,-1/96.0,
-0.0,0.0,0.0,0.0,1/48.0,
-1/64.0,1/64.0,1/192.0,1/192.0,1/48.0,
-1/64.0,1/64.0,1/192.0,1/192.0,-1/96.0,
--1/96.0,0.0,0.0,0.0,0.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-},
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,1/72.0,1/96.0,1/96.0,
--1/72.0,-1/96.0,-1/96.0,0.0,0.0,
-0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
-1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/288.0,1/288.0,-1/288.0,-1/288.0,1/72.0,
-1/96.0,1/96.0,1/288.0,1/288.0,-1/72.0,
--1/96.0,-1/96.0,-1/288.0,-1/288.0,0.0,
-0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
-0.0,0.0,0.0,0.0,0.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-0.0,0.0,0.0,0.0,0.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-}
-},
-{{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,-1/72.0,0.0,1/96.0,-1/96.0,
-0.0,1/96.0,-1/96.0,0.0,-1/72.0,
-1/72.0,0.0,-1/96.0,1/96.0,0.0,
--1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,1/144.0,-1/144.0,
-1/192.0,-1/192.0,1/192.0,-1/192.0,0.0,
-1/288.0,-1/288.0,1/576.0,-1/576.0,0.0,
-1/288.0,-1/288.0,1/576.0,-1/576.0,-1/144.0,
-1/144.0,-1/192.0,1/192.0,-1/192.0,1/192.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,1/72.0,-1/72.0,1/144.0,-1/144.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,1/96.0,-1/96.0,1/192.0,-1/192.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,1/288.0,-1/288.0,1/576.0,-1/576.0,
-0.0,-1/72.0,1/72.0,-1/144.0,1/144.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,-1/96.0,1/96.0,-1/192.0,1/192.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0,
-0.0,-1/288.0,1/288.0,-1/576.0,1/576.0
-  },
-{0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,1/72.0,1/96.0,1/96.0,
--1/72.0,-1/96.0,-1/96.0,0.0,0.0,
-0.0,-1/72.0,-1/96.0,-1/96.0,1/72.0,
-1/96.0,1/96.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/288.0,1/288.0,-1/288.0,-1/288.0,1/144.0,
-1/192.0,1/192.0,1/576.0,1/576.0,-1/144.0,
--1/192.0,-1/192.0,-1/576.0,-1/576.0,0.0,
-0.0,-1/288.0,-1/288.0,1/288.0,1/288.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-0.0,0.0,0.0,0.0,0.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-0.0,0.0,0.0,0.0,0.0,
--1/72.0,-1/96.0,-1/96.0,-1/288.0,-1/288.0,
-1/72.0,1/96.0,1/96.0,1/288.0,1/288.0,
--1/144.0,-1/192.0,-1/192.0,-1/576.0,-1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-},
-{-1/18.0,-1/24.0,-1/24.0,-1/24.0,-1/32.0,
--1/32.0,-1/24.0,-1/32.0,-1/32.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,-1/72.0,-1/72.0,-1/96.0,
--1/96.0,-1/96.0,-1/96.0,-1/72.0,-1/96.0,
--1/96.0,-1/288.0,-1/288.0,-1/72.0,-1/96.0,
--1/96.0,-1/288.0,-1/288.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-0.0,0.0,0.0,0.0,0.0,
-1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/36.0,1/48.0,1/48.0,1/144.0,1/144.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/48.0,1/64.0,1/64.0,1/192.0,1/192.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0,
-1/144.0,1/192.0,1/192.0,1/576.0,1/576.0
-}
-}
-};
-
-
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, int k, int iVar,
                        cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
@@ -976,6 +708,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
 #if _PIC_STENCIL_NUMBER_==375  
   int indexOffset[5] = {0,-1,1,-2,2};
+
+  int reversed_indexOffset[5]={3,1,0,2,4}; //table to convert i,j,k ->ii,jj,kk
+
+
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
     int cntTemp =0;
     
@@ -1023,33 +759,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
   
-/*
-  for (int ii=0;ii<3;ii++){
-    for (int jj=0;jj<3;jj++){
-      for (int kk=0;kk<3;kk++){
-        int index=ii+jj*3+kk*9;
-        int iElement = index + iVar*27;
-        //minus laplacian
-        MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]-=
-          LaplacianCoeff[0][index]*coeffSqr[0]+LaplacianCoeff[1][index]*coeffSqr[1]+
-          LaplacianCoeff[2][index]*coeffSqr[2];
-      }
-    }
-  }
-*/
-  
 
   //plus self
   MatrixRowNonZeroElementTable[27*iVar].MatrixElementParameterTable[0]+=1;
 
 
   //plus graddiv E
- 
-    for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++) {
+    cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-
-      for (int it=0;it<st->Length;it++) {
+    for (int it=0;it<st->Length;it++) {
       int ii=reversed_indexAddition[st->Data[it].i+1];
       int jj=reversed_indexAddition[st->Data[it].j+1];
       int kk=reversed_indexAddition[st->Data[it].k+1];
@@ -1057,53 +777,63 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex]+
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-      }
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
 
-/*
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex]+
-	    corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
-      }
+
+    //add contribution from a larger stencil (divE correction)
+    for (int it=0;it<st375->Length;it++) {
+      if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
+
+      int ii=reversed_indexAddition[st375->Data[it].i+1];
+      int jj=reversed_indexAddition[st375->Data[it].j+1];
+      int kk=reversed_indexAddition[st375->Data[it].k+1];
+
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
+
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
- 
-*/
 
 #if _PIC_STENCIL_NUMBER_==375   
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    int cntTemp = 0;
-    for (int kk=0;kk<5;kk++){
-      for (int jj=0;jj<5;jj++){	
-	for (int ii=0;ii<5;ii++){       
-	  if (ii<3 && jj<3 && kk<3) continue;
-	  int iElement = 81+iVarIndex*98+cntTemp;	  
-	  int nodeIndex= 27+cntTemp;
-	  cntTemp++;
-          MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
+  int cntTemp = 0;
+  int OrderingOffsetTable[5][5][5];
+
+  for (int kk=0;kk<5;kk++){
+    for (int jj=0;jj<5;jj++){
+      for (int ii=0;ii<5;ii++){
+        if (ii<3 && jj<3 && kk<3) continue;
+
+        OrderingOffsetTable[ii][jj][kk]=cntTemp;
+        cntTemp++;
       }
     }
   }
 
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
+
+    for (int it=0;it<st375->Length;it++) {
+
+      int ii=reversed_indexOffset[st375->Data[it].i+2];
+      int jj=reversed_indexOffset[st375->Data[it].j+2];
+      int kk=reversed_indexOffset[st375->Data[it].k+2];
+
+      if (ii<3 && jj<3 && kk<3) continue;
+      int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
+      int nodeIndex= 27+OrderingOffsetTable[ii][jj][kk];
+
+      MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
+    }
+  }
 #endif
 
 
-    
   //find corners outside the boundary
   vector<int> pointLeft;
   int kMax=_BLOCK_CELLS_Z_,jMax=_BLOCK_CELLS_Y_,iMax=_BLOCK_CELLS_X_;
+
   for (int ii=0;ii<_PIC_STENCIL_NUMBER_;ii++) {
     MatrixRowNonZeroElementTable[ii].Node=node;
 
@@ -1144,15 +874,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     int indlocal[3]={MatrixRowNonZeroElementTable[ii].i,MatrixRowNonZeroElementTable[ii].j,MatrixRowNonZeroElementTable[ii].k};
     int indexG_local[3];
     bool isFixed=false;
+
     for (int idim=0; idim<3; idim++) {
       xlocal[idim]=MatrixRowNonZeroElementTable[ii].Node->xmin[idim]+indlocal[idim]*dx[idim];
     }
      
     pointLeft.push_back(ii);
+
     if (MatrixRowNonZeroElementTable[ii].Node==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false){
+    }
+    else if (MatrixRowNonZeroElementTable[ii].Node->IsUsedInCalculationFlag==false) {
       pointLeft.pop_back();
       continue;
     }
@@ -1160,7 +893,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     if (nodeTemp==NULL){
       pointLeft.pop_back();
       continue;
-    }else if (nodeTemp->IsUsedInCalculationFlag==false){
+    }
+    else if (nodeTemp->IsUsedInCalculationFlag==false){
       pointLeft.pop_back();
       continue;
     }
@@ -1169,29 +903,21 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
 
   for (int ii=0; ii<pointLeft.size();ii++){
-
     int copyFrom = pointLeft[ii];
 
     if (ii!=copyFrom){
-      MatrixRowNonZeroElementTable[ii].i=
-        MatrixRowNonZeroElementTable[copyFrom].i;
-      MatrixRowNonZeroElementTable[ii].j=
-        MatrixRowNonZeroElementTable[copyFrom].j;
-      MatrixRowNonZeroElementTable[ii].k=
-        MatrixRowNonZeroElementTable[copyFrom].k;
-      MatrixRowNonZeroElementTable[ii].MatrixElementValue=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
-      MatrixRowNonZeroElementTable[ii].iVar=
-        MatrixRowNonZeroElementTable[copyFrom].iVar;
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
-      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = 
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
+      MatrixRowNonZeroElementTable[ii].i=MatrixRowNonZeroElementTable[copyFrom].i;
+      MatrixRowNonZeroElementTable[ii].j=MatrixRowNonZeroElementTable[copyFrom].j;
+      MatrixRowNonZeroElementTable[ii].k=MatrixRowNonZeroElementTable[copyFrom].k;
+
+      MatrixRowNonZeroElementTable[ii].MatrixElementValue= MatrixRowNonZeroElementTable[copyFrom].MatrixElementValue;
+      MatrixRowNonZeroElementTable[ii].iVar=MatrixRowNonZeroElementTable[copyFrom].iVar;
+
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTable[0];
+      MatrixRowNonZeroElementTable[ii].MatrixElementParameterTableLength=MatrixRowNonZeroElementTable[copyFrom].MatrixElementParameterTableLength;
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTableLength = MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTableLength;
          
-      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=
-        MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
+      MatrixRowNonZeroElementTable[ii].MatrixElementSupportTable[0]=MatrixRowNonZeroElementTable[copyFrom].MatrixElementSupportTable[0];
     }
 
   }
@@ -1207,10 +933,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     for (int jj=0;jj<3;jj++){
       for (int kk=0;kk<3;kk++){
         int iElement = ii+jj*3+kk*9;
-	int iNode = i+indexAddition[ii];
-	int jNode = j+indexAddition[jj];
-	int kNode = k+indexAddition[kk];
-        
+        int iNode = i+indexAddition[ii];
+        int jNode = j+indexAddition[jj];
+        int kNode = k+indexAddition[kk];
+
         RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
         RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
       }
@@ -1239,55 +965,57 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   //if (fabs(x[0]-1.0)<0.1 && fabs(x[1]-1.0)<0.1 && fabs(x[2]-1.0)<0.1)
   //  isTest = true;
 #if _PIC_STENCIL_NUMBER_==375  
-    for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
-      int cntTemp = 0;
-      for (int kk=0; kk<5; kk++){
-	for (int jj=0; jj<5; jj++){
-	  for (int ii=0; ii<5; ii++){
-	    
-	    if (ii<3 && jj<3 && kk<3) continue;
-	    
-	    int iNode = i+indexOffset[ii];
-	    int jNode = j+indexOffset[jj];
-	    int kNode = k+indexOffset[kk];
+  for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
+    int cntTemp = 0;
 
-	    int iElement = 81+iVarIndex*98+cntTemp;
-	    cntTemp++;
-	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-	    char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
-	    if (pntTemp) {
-	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-	    }else{
-	      RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
-	    }
-	    //if (isTest){
-	      // printf("test 1,1,1:%d, %d, %d, pntTemp:%p\n", iNode,jNode,kNode, pntTemp);
-	    //}
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+        for (int ii=0; ii<5; ii++){
 
-	  }
-	}
+          if (ii<3 && jj<3 && kk<3) continue;
+
+          int iNode = i+indexOffset[ii];
+          int jNode = j+indexOffset[jj];
+          int kNode = k+indexOffset[kk];
+
+          int iElement = 81+iVarIndex*98+cntTemp;
+          cntTemp++;
+
+          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+
+          char * pntTemp = node->block->GetCornerNode(_getCornerNodeLocalNumber(iNode,jNode,kNode))->GetAssociatedDataBufferPointer();
+
+          if (pntTemp) {
+            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=pntTemp+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+          }
+          else{
+            RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer = NULL;
+          }
+        }
       }
     }
-    
-       
-    for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
-      int cntTemp = 0;
-      for (int kk=0; kk<5; kk++){
-	for (int jj=0; jj<5; jj++){
-	  for (int ii=0; ii<5; ii++){
-	    
-	    if (ii<3 && jj<3 && kk<3) continue;
-	    int iElement = 81+iVarIndex*98+cntTemp;	  
-	    int iElementOld = 81+cntTemp;
-	    cntTemp++;
-	    RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
-	    RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=
-			   RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
-	    
-	  }
-	}
+  }
+
+
+  for (int iVarIndex=1; iVarIndex<3; iVarIndex++){
+    int cntTemp = 0;
+    for (int kk=0; kk<5; kk++){
+      for (int jj=0; jj<5; jj++){
+        for (int ii=0; ii<5; ii++){
+          if (ii<3 && jj<3 && kk<3) continue;
+
+          int iElement = 81+iVarIndex*98+cntTemp;
+          int iElementOld = 81+cntTemp;
+
+          cntTemp++;
+
+          RhsSupportTable_CornerNodes[iElement].Coefficient= 0.0;
+          RhsSupportTable_CornerNodes[iElement].AssociatedDataPointer=RhsSupportTable_CornerNodes[iElementOld].AssociatedDataPointer;
+
+        }
       }
     }
+  }
 #endif
     
 
@@ -1309,32 +1037,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
 
 
-/* 
-  for (int ii=0;ii<3;ii++){
-    for (int jj=0;jj<3;jj++){
-      for (int kk=0;kk<3;kk++){
-        int index=ii+jj*3+kk*9;
-        int iElement = index + iVar*27;
-        //plus laplacian
-	
-        RhsSupportTable_CornerNodes[iElement].Coefficient +=
-          LaplacianCoeff[0][index]*coeffSqr[0]+LaplacianCoeff[1][index]*coeffSqr[1]+
-          LaplacianCoeff[2][index]*coeffSqr[2];
-	
-      }
-    }
-  }
-*/
-
-  
   //minus graddiv E
+  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
+    cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
 
 
-      for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-      cStencil::cStencilData *st=&GradDivStencil[iVar][iVarIndex];
-
-
-      for (int it=0;it<st->Length;it++) {
+    for (int it=0;it<st->Length;it++) {
       int ii=reversed_indexAddition[st->Data[it].i+1];
       int jj=reversed_indexAddition[st->Data[it].j+1];
       int kk=reversed_indexAddition[st->Data[it].k+1];
@@ -1342,71 +1050,47 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       int nodeIndex=ii+jj*3+kk*9;
       int iElement = nodeIndex + iVarIndex*27;
 
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            (1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
-
-      }
-    }
-/*
-  for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            (1-corrCoeff)*graddiv[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-        }
-      }
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=(1-corrCoeff)*st->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
-  */
 
 #if _PIC_STENCIL_NUMBER_==375
-  
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
-    for (int ii=0;ii<3;ii++){
-      for (int jj=0;jj<3;jj++){
-        for (int kk=0;kk<3;kk++){
-          int nodeIndex=ii+jj*3+kk*9;
-          int iElement = nodeIndex + iVarIndex*27;
-          RhsSupportTable_CornerNodes[iElement].Coefficient -=
-            corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-	  //  printf("test1 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-        }
-      }
+    for (int it=0;it<st375->Length;it++) {
+
+      if ((st375->Data[it].i<-1)||(st375->Data[it].i>1) || (st375->Data[it].j<-1)||(st375->Data[it].j>1) ||(st375->Data[it].k<-1)||(st375->Data[it].k>1) ) continue;
+
+      int ii=reversed_indexAddition[st375->Data[it].i+1];
+      int jj=reversed_indexAddition[st375->Data[it].j+1];
+      int kk=reversed_indexAddition[st375->Data[it].k+1];
+
+      int nodeIndex=ii+jj*3+kk*9;
+      int iElement = nodeIndex + iVarIndex*27;
+
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
 
 
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
-    int cntTemp = 0;
+    cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
-    for (int kk=0; kk<5; kk++){
-      for (int jj=0; jj<5; jj++){
-	for (int ii=0; ii<5; ii++){
+    for (int it=0;it<st375->Length;it++) {
+      int ii=reversed_indexOffset[st375->Data[it].i+2];
+      int jj=reversed_indexOffset[st375->Data[it].j+2];
+      int kk=reversed_indexOffset[st375->Data[it].k+2];
 
-	  if (ii<3 && jj<3 && kk<3) continue;
-	  int iElement = 81+iVarIndex*98+cntTemp;	  
-	  int nodeIndex = 27+cntTemp;
-	  
-	  cntTemp++;	  
-	  //printf("test4 iElement:%d, coeff:%e, nodeIndex:%d\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient,nodeIndex);
-	  RhsSupportTable_CornerNodes[iElement].Coefficient -=
-			 corrCoeff*graddivNew[iVar][iVarIndex][nodeIndex]*coeff[iVar]*coeff[iVarIndex];
-	  //printf("test2 iElement:%d, coeff:%e\n", iElement, RhsSupportTable_CornerNodes[iElement].Coefficient);
-	  // if (iElement==336) {
+      if (ii<3 && jj<3 && kk<3) continue;
 
-	  //printf("test3, corrCoeff:%e, graddivNew:%e, coeff:%e,%e\n", corrCoeff,
-	  //graddivNew[iVar][iVarIndex][nodeIndex], coeff[iVar], coeff[iVarIndex]);
-	    //}
-  
-	}
-      }
+      int iElement = 81+iVarIndex*98+OrderingOffsetTable[ii][jj][kk];
+      int nodeIndex = 27+OrderingOffsetTable[ii][jj][kk];
+
+      RhsSupportTable_CornerNodes[iElement].Coefficient -=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
-  
+
 #endif
 
 
@@ -1417,10 +1101,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
   //Ex^n,Ey^n,Ez^n
   rhs=0.0;
-  
-  
+
   int indexAdditionB[2] = {-1,0};
-  
   int iElement = 0;
   
   double curlB = 0.0;
@@ -1468,8 +1150,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
      //Ey  rhs+= d Bx/dz - d Bz/dx
     if (iVar==1){
-     
-      
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[2]; //c(dt)/dz
@@ -1510,16 +1190,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
           iElement++;
         }
       }
-      
-      // double analytic = -1000*3.14159265/2*cos((x[0]+1)*3.14159265/2)*0.2;
-      //printf("Ey,curlB:%f,analytic:%f\n", curlB, analytic);
-      //rhs+=curlB;
     }
     
     //Ez  rhs+= d By/dx - d Bx/dy
-    if (iVar==2){
-     
-     
+    if (iVar==2) {
       for (int ii=0;ii<2;ii++){
         for (int jj=0;jj<2;jj++){
           RhsSupportTable_CenterNodes[iElement].Coefficient=coeff4[0]; //c(dt)/dx
@@ -3555,9 +3229,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
               */
 
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * newNode=PIC::Mesh::mesh.findTreeNode(xFinal,node);
-              if (newNode==NULL || newNode->block==NULL){
+
+              if (newNode==NULL) {
                 PIC::ParticleBuffer::DeleteParticle(ptr);
-              }else{
+              }
+              else if (newNode->block==NULL) {
+                PIC::ParticleBuffer::DeleteParticle(ptr);
+              }
+              else{
                   if (PIC::Mesh::mesh.fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
                   
                   PIC::Mesh::cDataBlockAMR * block=newNode->block;
@@ -5132,8 +4811,12 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
     if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
   }
 
-  if (node==NULL || node->IsUsedInCalculationFlag==false) return 8;
-
+  if (node==NULL){
+    return 8;
+  } else if (node->IsUsedInCalculationFlag==false){
+    return 8;
+  }
+  
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
@@ -5154,8 +4837,20 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
 }
 
 
-bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
-  
+int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  // 0:    not boundary corner
+  // 1:001 x-direction face  
+  // 2:010 y-direction face
+  // 4:100 z-direction face
+  // 6:110 x-direction edge
+  // 5:101 y-direction edge
+  // 3:011 z-direction edge
+  // 7:111 corner
+  // 8: outside block and outside domain
+  /*
+  bool isTest=false;
+  if (fabs(x[0]-16.5)<0.1 && fabs(x[1]-8.5)<0.1 && fabs(x[2]-4.5)<0.1) isTest=true;
+  */
   for (int idim=0; idim<3 && node; idim++){
     if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0);
   }
@@ -5164,22 +4859,11 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
     if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0);
   }
 
-  
-  if (node==NULL || node->IsUsedInCalculationFlag==false) return true;
-
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2,0,0)==NULL || node->GetNeibFace(idim*2,0,0)->IsUsedInCalculationFlag==false) {
-
-    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS){
-      return true;
-    }
+  if (node==NULL){
+    return 8;
+  } else if (node->IsUsedInCalculationFlag==false){
+    return 8;
   }
-  
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) {
-      return true;
-    }
-  }
-
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
@@ -5192,149 +4876,24 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
     addition *=10;
   }
 
-  if (sum==0) return false;
-  
-  switch (sum) {
-  case 111:
-    if (!node->GetNeibCorner(0)) {
-      return true;
-    }else if (node->GetNeibCorner(0)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-    
-  case 1110:
-    if (!node->GetNeibCorner(1)) {
-      return true;
-    }else if (node->GetNeibCorner(1)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-    
-  case 10101:
-    if (!node->GetNeibCorner(2)) {
-      return true;
-    }else if (node->GetNeibCorner(2)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-   
-  case 11100:
-    if (!node->GetNeibCorner(3)) {
-      return true;
-    }else if (node->GetNeibCorner(3)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
+  if (sum==0) return 0;
 
-  case 100011:
-    if (!node->GetNeibCorner(4)) {
-      return true;
-    }else if (node->GetNeibCorner(4)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
+  int val =  isCornerBoundary(sum,node)+isEdgeBoundary(sum,node)+isFaceBoundary(sum,node);
 
-  case 101010:
-    if (!node->GetNeibCorner(5)) {
-      return true;
-    }else if (node->GetNeibCorner(5)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-
-
-  case 110001:
-    if (!node->GetNeibCorner(6)) {
-      return true;
-    }else if (node->GetNeibCorner(6)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-
-
-  case 111000:
-    if (!node->GetNeibCorner(7)) {
-      return true;
-    }else if (node->GetNeibCorner(7)->IsUsedInCalculationFlag==false){
-      return true;
-    }
-    else return false;
-   
-  case 110:
-    if (!node->GetNeibEdge(0,0)) return true;
-    else if (node->GetNeibEdge(0,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 10100:
-    if (!node->GetNeibEdge(1,0)) return true;
-    else if (node->GetNeibEdge(1,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 110000:
-    if (!node->GetNeibEdge(2,0)) return true;
-    else if (node->GetNeibEdge(2,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 100010:
-    if (!node->GetNeibEdge(3,0)) return true;
-    else if (node->GetNeibEdge(3,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 101:
-    if (!node->GetNeibEdge(4,0)) return true;
-    else if (node->GetNeibEdge(4,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 1100:
-    if (!node->GetNeibEdge(5,0)) return true;
-    else if (node->GetNeibEdge(5,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 101000:
-    if (!node->GetNeibEdge(6,0)) return true;
-    else if (node->GetNeibEdge(6,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 100001:
-    if (!node->GetNeibEdge(7,0)) return true;
-    else if (node->GetNeibEdge(7,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 11:
-    if (!node->GetNeibEdge(8,0)) return true;
-    else if (node->GetNeibEdge(8,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 1010:
-    if (!node->GetNeibEdge(9,0)) return true;
-    else if (node->GetNeibEdge(9,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 11000:
-    if (!node->GetNeibEdge(10,0)) return true;
-    else if (node->GetNeibEdge(10,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-
-  case 10001:
-    if (!node->GetNeibEdge(11,0)) return true;
-    else if (node->GetNeibEdge(11,0)->IsUsedInCalculationFlag==false) return true;
-    else return false;
-    
-  default:
-    return false;
-  }
-  
-
+  return val;
 }
 
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
-  for (int idim=0;idim<3;idim++) if (node->GetNeibFace(idim*2+1,0,0)==NULL || node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false) {
-    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS)
-      return true;
-  }
+  for (int idim=0;idim<3;idim++)  if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS){
+
+      if (node->GetNeibFace(idim*2+1,0,0)==NULL){
+        return true;
+      }else if (node->GetNeibFace(idim*2+1,0,0)->IsUsedInCalculationFlag==false){
+	return true;
+      }
+    }
 
   return false;  
 }
@@ -5685,6 +5244,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
     GradDivE[2].Ey.Print("GradDivE_2_Ey.dat");
     GradDivE[2].Ez.Print("GradDivE_2_Ez.dat");
   }
+
+  GradDivE[0].Ex.ExportStencil(&GradDivStencil375[0][0]);
+  GradDivE[0].Ey.ExportStencil(&GradDivStencil375[0][1]);  
+  GradDivE[0].Ez.ExportStencil(&GradDivStencil375[0][2]); 
+
+  GradDivE[1].Ex.ExportStencil(&GradDivStencil375[1][0]); 
+  GradDivE[1].Ey.ExportStencil(&GradDivStencil375[1][1]); 
+  GradDivE[1].Ez.ExportStencil(&GradDivStencil375[1][2]); 
+
+  GradDivE[2].Ex.ExportStencil(&GradDivStencil375[2][0]); 
+  GradDivE[2].Ey.ExportStencil(&GradDivStencil375[2][1]); 
+  GradDivE[2].Ez.ExportStencil(&GradDivStencil375[2][2]); 
 }
 
 

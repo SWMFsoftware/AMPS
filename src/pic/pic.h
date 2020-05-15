@@ -364,7 +364,7 @@ namespace PIC {
     extern cAssociatedDataAMRstack<cFieldLineSegment> SegmentsAll;
     
 
-  class cFieldLineVertex{
+  class cFieldLineVertex : public cStackElementBase {
     private:
       //flag whether coords of vertex have been set
       char IsSet;
@@ -615,7 +615,7 @@ namespace PIC {
     };
 
     //class cFieldLineVertex --------------------------------------------------
-    class cFieldLineSegment {
+    class cFieldLineSegment : public cStackElementBase {
     private:
       //flag segment has been set (i.e. both vertices are set)
       char IsSet;
@@ -3702,6 +3702,7 @@ namespace PIC {
     #define _PARTICLE_CROSS_THE_FACE_        1
     #define _PARTICLE_LEFT_THE_DOMAIN_       2
     #define _PARTICLE_MOTION_FINISHED_       3
+    #define _PARTICLE_IN_NOT_IN_USE_NODE_    4
 
     namespace Sampling {
       namespace Errors {
@@ -4640,21 +4641,31 @@ namespace PIC {
         for (idim=0;idim<3;idim++) B[idim]=offset[idim];
       }
 
-      inline void GetBackgroundPlasmaVelocity(double *v,PIC::Mesh::cDataCenterNode *cell) {
+      inline void GetBackgroundPlasmaVelocity(int iBackgroundPlasmaSpec,double *v,PIC::Mesh::cDataCenterNode *cell) {
         int idim;
-        double *offset=(double*)(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
+        double *offset=3*iBackgroundPlasmaSpec+(double*)(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
 
         for (idim=0;idim<3;idim++) v[idim]=offset[idim];
       }
 
+      inline void GetBackgroundPlasmaVelocity(double *v,PIC::Mesh::cDataCenterNode *cell) {
+        GetBackgroundPlasmaVelocity(0,v,cell);
+      }
 
+      inline double GetBackgroundPlasmaPressure(int iBackgroundPlasmaSpec,PIC::Mesh::cDataCenterNode *cell) {
+        return *(iBackgroundPlasmaSpec+(double*)(PlasmaPressureOffset+cell->GetAssociatedDataBufferPointer()));
+      }
 
       inline double GetBackgroundPlasmaPressure(PIC::Mesh::cDataCenterNode *cell) {
-        return *((double*)(PlasmaPressureOffset+cell->GetAssociatedDataBufferPointer()));
+        return GetBackgroundPlasmaPressure(0,cell);
+      }
+
+      inline double GetBackgroundPlasmaNumberDensity(int iBackgroundPlasmaSpec,PIC::Mesh::cDataCenterNode *cell) {
+        return *(iBackgroundPlasmaSpec+(double*)(PlasmaNumberDensityOffset+cell->GetAssociatedDataBufferPointer()));
       }
 
       inline double GetBackgroundPlasmaNumberDensity(PIC::Mesh::cDataCenterNode *cell) {
-        return *((double*)(PlasmaNumberDensityOffset+cell->GetAssociatedDataBufferPointer()));
+        return GetBackgroundPlasmaNumberDensity(0,cell);
       }
 
       inline double GetBackgroundPlasmaTemperature(PIC::Mesh::cDataCenterNode *cell) {
@@ -5475,7 +5486,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         SWMF::GetBackgroundPlasmaVelocity(t,Stencil->cell[iStencil]);
+         SWMF::GetBackgroundPlasmaVelocity(iBackgroundPlasmaSpec,t,Stencil->cell[iStencil]);
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          DATAFILE::GetBackgroundPlasmaVelocity(t,Stencil->cell[iStencil], Time);
          #else
@@ -5525,7 +5536,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         res+=SWMF::GetBackgroundPlasmaPressure(Stencil->cell[iStencil])*Stencil->Weight[iStencil];
+         res+=SWMF::GetBackgroundPlasmaPressure(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          res+=DATAFILE::GetBackgroundPlasmaPressure(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
@@ -5577,7 +5588,7 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil->Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         res+=SWMF::GetBackgroundPlasmaNumberDensity(Stencil->cell[iStencil])*Stencil->Weight[iStencil];
+         res+=SWMF::GetBackgroundPlasmaNumberDensity(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          res+=DATAFILE::GetBackgroundPlasmaNumberDensity(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
@@ -6362,6 +6373,7 @@ namespace FieldSolver {
             //stencils used for building the matrix
             extern cStencil::cStencilData LaplacianStencil[3];
             extern cStencil::cStencilData GradDivStencil[3][3];
+            extern cStencil::cStencilData GradDivStencil375[3][3];
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
@@ -6399,7 +6411,7 @@ namespace FieldSolver {
             void InterpolateB_N2C();
              
             int  isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-            bool isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+            int isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
             bool isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
           
             void ComputeNetCharge(bool doUpdateOld);

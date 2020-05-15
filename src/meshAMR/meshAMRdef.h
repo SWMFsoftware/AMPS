@@ -151,6 +151,10 @@
 
 #define _AMR_PARALLEL_MODE_ _AMR_PARALLEL_MODE_ON_
 
+//define the type of the generated mesh: uniform or non-uniform; That is important for determening how many ghost cells are needed to have linear interpolation
+#define _AMR_MESH_TYPE__UNIFORM_     0
+#define _AMR_MESH_TYPE__NON_UNIFORM_ 1
+#define _AMR_MESH_TYPE_ _AMR_MESH_TYPE__NON_UNIFORM_
 
 //the type of the data exchange in the mesh's parallel mode : GhostCells -> only that data, which is stored in ghost cells is transfered; BlockBoundaryLayer -> a layer of blocks is created on the domain's boundary, and the whole blocks is transfered
 #define _AMR_PARALLEL_DATA_EXCHANGE_MODE__GHOST_CELLS_           0
@@ -227,6 +231,13 @@ public:
 };
 
 //the stack class to store the data structure of the mesh
+class cStackElementBase {
+public: 
+  int stack_element_id; 
+};
+
+
+
 template<class T>
 class cAMRstack : public cAMRexit {
 public: 
@@ -334,6 +345,9 @@ public:
  
   //get the entry pointer and counting number
   long int GetEntryCountingNumber(T* ptr) {
+    return (ptr!=NULL) ? ptr->stack_element_id : -1;
+
+/*
     long int nMemoryBank,res=-1;
 
     if (ptr!=NULL) {
@@ -345,6 +359,7 @@ public:
     }
  
     return -1;
+*/
   }
 
   T* GetEntryPointer(long int countingNumber) {
@@ -477,6 +492,8 @@ public:
 
     res=elementStackList[elementStackBank][offset];
     elementStackPointer++;
+
+    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_; 
 
     if ((ForceElementNumberLimit==true)&&(usedElements()>_MAX_MESH_ELEMENT_NUMBER_)) exit(__LINE__,__FILE__,"The number of the requster mesh elements exeeds the limit -> increase _MESH_ELEMENTS_NUMBERING_BITS_ ");
 
@@ -632,6 +649,8 @@ public:
     offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     res=BaseElementStack.elementStackList[elementStackBank][offset];
+    res->stack_element_id=offset+elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
+
     if (associatedDataStackList!=NULL) res->SetAssociatedDataBufferPointer(associatedDataStackList[elementStackBank][offset]);
     BaseElementStack.elementStackPointer++;
 

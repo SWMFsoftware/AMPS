@@ -83,13 +83,9 @@ void GetGlobalCornerIndex(int * index ,double * x, double * dx, double * xmin){
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=0.0;
-  if (node->block) {
-    res=1.0;
-  }else{
-    res=0.1;
-  }
-  // for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);                             \
-                                                                                                             
+
+  //only nodes that are used that are used in the calcualtion will be equally distributed across the MPI process pool
+  if (node->IsUsedInCalculationFlag==true) res=1.0;
 
   return res;
 }
@@ -231,7 +227,7 @@ void  dynamicAllocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
   std::vector<int> allocatedBlockIndexArr; 
-  //printf("dynamic allocate blocks called\n");
+  printf("dynamic allocate blocks called\n");
   deallocateBlocks();
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
@@ -287,10 +283,21 @@ void  dynamicAllocateBlocks(){
  
 
   //printf("test2 thread id:%d,nAllocatedBlocks:%d, list size:%d\n", PIC::ThisThread, nAllocatedBlocks, PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  int nGlobalAllocatedBlocks;
+  MPI_Allreduce(&nAllocatedBlocks,&nGlobalAllocatedBlocks,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-  
+
   printf("thread id:%d, before createnewlist called\n", PIC::ThisThread);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+  if (nGlobalAllocatedBlocks!=0) { 
+    //reset the parallel load measure such that the used-in-simulation nodes are uniformly distributed between all MPI processes
+    PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
+
+    //create the new domain decomposition
+    PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+    PIC::DomainBlockDecomposition::UpdateBlockTable();
+  }
+
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
 
   /*
@@ -308,10 +315,10 @@ void initNewBlocks() {
   printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
-    /*
+    
     printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
            PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
-    */
+    
     int iBlock=-1;
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       if (!node->block || node->Thread!=PIC::ThisThread) continue;
@@ -325,19 +332,22 @@ void initNewBlocks() {
       for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
       //printf("dx:%e,%e,%e\n",dx[0],dx[1],dx[2]);
       
-      for (int k=-1;k<_BLOCK_CELLS_Z_+1;k++) for (int j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (int i=-1;i<_BLOCK_CELLS_X_+1;i++) {
+      for (int k=0;k<_BLOCK_CELLS_Z_+1;k++) for (int j=0;j<_BLOCK_CELLS_Y_+1;j++) for (int i=0;i<_BLOCK_CELLS_X_+1;i++) {
             
             int ind[3]={i,j,k};
             double x[3];
 
 	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
 	    if (CornerNode!=NULL){
-              
+
+	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
+
+	      if ((k==_BLOCK_CELLS_Z_ || j==_BLOCK_CELLS_Y_ || i==_BLOCK_CELLS_X_) &&
+		  !PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;//do not init fields for non-boundary corners
 	      char * offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
               
               
-	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
-	  
+	    	  
               double Ex,Ey,Ez,Bx,By,Bz;
               
               Ex = PIC::CPLR::FLUID::FluidInterface.getEx(iBlock,x[0],x[1],x[2]);
@@ -1910,12 +1920,11 @@ void amps_init_mesh() {
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   PIC::Mesh::initCellSamplingDataBuffer();
-
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  //PIC::Mesh::mesh.AllowBlockAllocation=true;
+  //PIC::Mesh::mesh.AllocateTreeBlocks();
+  //PIC::Mesh::mesh.InitCellMeasure();
 
   //experiment of staircase blocks
   /*
@@ -1997,11 +2006,19 @@ void amps_init_mesh() {
     }
   
     delete [] nodeTable;
-
   }
+
   //coupling send info from amps to fluid
   PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+
+  //blocks need to be allocated after the final domain decomposition map is created
+  PIC::Mesh::mesh.AllowBlockAllocation=true;
+  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh.InitCellMeasure();
+
+
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
 }
 

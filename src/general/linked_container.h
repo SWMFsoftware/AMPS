@@ -12,14 +12,14 @@ public:
   class cNode {
   public:
     T data;
-    cNode* next;
+    cNode *next,*prev;
   };
   
   cStack<cNode> NodeStack;
-  cNode *front_node;
+  cNode *front_node,*back_node;
   
   cLinkedContainer() {
-    front_node=NULL;
+    front_node=NULL,back_node=NULL;
     NodeStack.explicitConstructor();
   }
   
@@ -84,8 +84,39 @@ public:
 
     t->data=new_element; 
     
-    t->next=front_node;
-    front_node=t;
+    if (front_node==NULL) {
+      //front_node and back_node are not initialized yet
+      t->next=NULL,t->prev=NULL;
+      front_node=t;
+      back_node=t;
+    }
+    else {
+      t->next=front_node;
+      t->prev=NULL;
+      
+      front_node->prev=t;
+      front_node=t;
+    }
+  }
+  
+  void push_back(T& new_element) {
+    cNode *t=NodeStack.newElement();
+    
+    t->data=new_element;
+    
+    if (front_node==NULL) {
+      //front_node and back_node are not initialized yet
+      t->next=NULL,t->prev=NULL;
+      front_node=t;
+      back_node=t;
+    }
+    else {
+      t->next=NULL;
+      t->prev=back_node;
+      
+      back_node->next=t;
+      back_node=t;
+    }
   }
 };
 

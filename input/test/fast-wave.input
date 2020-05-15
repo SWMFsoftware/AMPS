@@ -59,8 +59,9 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
   NastranSurfaceUserData=on
   
+  MeshType=uniform !uniform,non-uniform
   BlockCells=16,8,4
-  GhostCells=2,2,1
+  GhostCells=1,1,1
 
   NastranSurfaceUserData=on !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
