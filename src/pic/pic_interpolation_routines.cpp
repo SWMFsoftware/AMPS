@@ -134,6 +134,11 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
     kLoc=(XyzIn_D[2]-xmin[2])/(xmax[2]-xmin[2])*_BLOCK_CELLS_Z_;
 
     #if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
+    //in case the mesh is uniform (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) -> use simple trilinear interpolation
+    if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {
+      return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+    } 
+
     //if the point of interest is deep inside the block or all neighbors of the block has the same resolution level -> use simple trilinear interpolation
     if ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) {
       //all blocks around has the same level of the resolution
