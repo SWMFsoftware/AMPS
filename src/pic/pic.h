@@ -364,7 +364,7 @@ namespace PIC {
     extern cAssociatedDataAMRstack<cFieldLineSegment> SegmentsAll;
     
 
-  class cFieldLineVertex{
+  class cFieldLineVertex : public cStackElementBase {
     private:
       //flag whether coords of vertex have been set
       char IsSet;
@@ -615,7 +615,7 @@ namespace PIC {
     };
 
     //class cFieldLineVertex --------------------------------------------------
-    class cFieldLineSegment {
+    class cFieldLineSegment : public cStackElementBase {
     private:
       //flag segment has been set (i.e. both vertices are set)
       char IsSet;
