@@ -25,9 +25,6 @@ int OH::Output::TotalDataLength = 0;
 int OH::Output::ohSourceDensityOffset =-1; 
 int OH::Output::ohSourceMomentumOffset=-1;
 int OH::Output::ohSourceEnergyOffset  =-1;
-int OH::Output::ohSinkDensityOffset =-1;
-int OH::Output::ohSinkMomentumOffset=-1;
-int OH::Output::ohSinkEnergyOffset  =-1;
 
 
 
@@ -208,29 +205,15 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 int OH::Output::RequestDataBuffer(int offset){
   OH::Output::ohSourceDensityOffset=offset;
   OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+  offset+=sizeof(double)*PIC::CPLR::SWMF::nCommunicatedIonFluids;
 
   OH::Output::ohSourceMomentumOffset=offset;
   OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
+  offset+=3*sizeof(double)*PIC::CPLR::SWMF::nCommunicatedIonFluids;
 
   OH::Output::ohSourceEnergyOffset=offset;
   OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
-
-
-  OH::Output::ohSinkDensityOffset=offset;
-  OH::Output::TotalDataLength=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
-
-  OH::Output::ohSinkMomentumOffset=offset;
-  OH::Output::TotalDataLength+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=3*PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
-
-  OH::Output::ohSinkEnergyOffset=offset;
-  OH::Output::TotalDataLength+=PIC::CPLR::SWMF::nCommunicatedIonFluids;
-  offset+=PIC::CPLR::SWMF::nCommunicatedIonFluids*sizeof(double);
-
+  offset+=sizeof(double)*PIC::CPLR::SWMF::nCommunicatedIonFluids;
 
   return OH::Output::TotalDataLength*sizeof(double);
 }
@@ -367,10 +350,18 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     //inject the products of the reaction
     double ParentTimeStep,ParentParticleWeight;
 
+    // new particle comes from solar wind and has random velocity from proton Maxwellian distribution
+    double PlasmaBulkVelocity[3];
+    double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
+    double vp[3];
+
+    PIC::CPLR::InitInterpolationStencil(xParent,node);
 
     //determine with shich ions fluid that partice will interact with
-    int ifluid=0;
+    int ifluid_interact=0;
+    int ifluid_contribute=0;
 
+    //determine the ion fluid for charge exchange
     if (PIC::CPLR::SWMF::nCommunicatedIonFluids>1) {
       double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids],TotalFrequency,cnt=0.0,cnt_max;
       bool PhotolyticReactionAllowedFlag;
@@ -379,14 +370,34 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 
       cnt_max=rnd()*TotalFrequency;
 
-      for (ifluid=0;ifluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid++) {
-        cnt+=FrequencyTable[ifluid];
+      for (ifluid_interact=0;ifluid_interact<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid_interact++) {
+        cnt+=FrequencyTable[ifluid_interact];
         if (cnt>=cnt_max) break;
       }
 
-      if (ifluid==PIC::CPLR::SWMF::nCommunicatedIonFluids) ifluid=PIC::CPLR::SWMF::nCommunicatedIonFluids-1;
+      if (ifluid_interact==PIC::CPLR::SWMF::nCommunicatedIonFluids) ifluid_interact=PIC::CPLR::SWMF::nCommunicatedIonFluids-1;
     }
 
+    //determine the ion fluid where the new ion would contributed 
+    //the ion fluid is determined such that abs(v-u_f)/vth_f is minimized
+    if (PIC::CPLR::SWMF::nCommunicatedIonFluids>1) { 
+      double tt,t,tmin=-1.0;
+        
+      for (int ifluid=0;ifluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;ifluid++) {
+        PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid,PlasmaBulkVelocity);
+        PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(ifluid);
+        PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid);
+        PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
+
+        for (int idim=0;idim<3;idim++) {
+          tt=PlasmaBulkVelocity[idim]-vParent[idim];
+          t+=tt*tt;
+        }
+
+        t/=PlasmaTemperature;
+        if ((tmin<0.0)||(tmin>t)) tmin=t,ifluid_contribute=ifluid; 
+      }  
+    }
 
 
 
@@ -407,19 +418,12 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     //account for the parent particle correction factor
     ParentParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
-    // new particle comes from solar wind and has random velocity from proton Maxwellian distribution
-    double PlasmaBulkVelocity[3];
-    double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
-    double vp[3];
-
-    PIC::CPLR::InitInterpolationStencil(xParent,node);
-
-    PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid,PlasmaBulkVelocity);
-    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(ifluid);
-    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid);
+    // calculating the random velocity of the proton from the maxwellian velocity of the local plasma
+    PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid_interact,PlasmaBulkVelocity);
+    PlasmaNumberDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(ifluid_interact);
+    PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid_interact);
     PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
 
-    // calculating the random velocity of the proton from the maxwellian velocity of the local plasma
     PIC::Distribution::MaxwellianVelocityDistribution(vp,PlasmaBulkVelocity,PlasmaTemperature,spec);
 
     // charge exchange process transfers momentum and energy to plasma
@@ -432,20 +436,19 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double vh2 = 0.0, vp2 = 0.0;
     double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c;
-    *(ifluid+(double*)(offset+OH::Output::ohSinkDensityOffset))-=c;
+    *(ifluid_interact+(double*)(offset+OH::Output::ohSourceDensityOffset))-=c*_MASS_(_H_);
+    *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c*_MASS_(_H_);
 
     for (int idim=0; idim<3; idim++) {
-      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*vParent[idim];
-      *(3*ifluid+idim + (double*)(offset+OH::Output::ohSinkMomentumOffset))-=c*_MASS_(_H_)*vp[idim];
+      *(3*ifluid_interact+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))-=c*_MASS_(_H_)*vp[idim];
+      *(3*ifluid_contribute+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*vParent[idim];
 
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
 
-    *(ifluid+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
-    *(ifluid+(double*)(offset+OH::Output::ohSinkEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
-
+    *(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
+    *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
 
     // creating new neutral particle with the velocity of the selected proton
     PIC::ParticleBuffer::SetV(vp,ParticleData);
