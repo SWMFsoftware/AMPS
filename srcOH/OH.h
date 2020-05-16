@@ -193,9 +193,9 @@ namespace OH {
   //---------------------------------------------------------------------------
   namespace Output{
     extern int TotalDataLength;
-    extern int ohSourceDensityOffset,ohSinkDensityOffset;
-    extern int ohSourceMomentumOffset,ohSinkMomentumOffset;
-    extern int ohSourceEnergyOffset,ohSinkEnergyOffset; 
+    extern int ohSourceDensityOffset;
+    extern int ohSourceMomentumOffset;
+    extern int ohSourceEnergyOffset;
 
     void Init();
 
