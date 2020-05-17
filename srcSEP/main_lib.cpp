@@ -74,6 +74,13 @@ void amps_init() {
   MPI_Barrier(MPI_COMM_WORLD);
 
 
+  //reserve data for magnetic filed
+  PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
+  //PIC::CPLR::DATAFILE::Offset::MagneticField.active=true;
+  //PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+  //PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
+
+
   //init the Mercury model
  ////::Init_BeforeParser();
   PIC::Init_BeforeParser();
@@ -218,6 +225,45 @@ void amps_init() {
   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_SPEC_);
 
 
+  //init magnetic filed
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> InitMagneticField; 
+
+  InitMagneticField =[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void {
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      PIC::Mesh::cDataBlockAMR *block;
+
+      if ((block=startNode->block)!=NULL) {
+        double B[3],x[3];
+        int idim,i,j,k,LocalCellNumber;
+        PIC::Mesh::cDataCenterNode *cell;
+        double *data;
+
+        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+
+          if ((cell=block->GetCenterNode(LocalCellNumber))!=NULL) {
+            cell->GetX(x);
+            SEP::ParkerSpiral::GetB(B,x);
+
+            data=(double*)(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset); 
+
+            for (idim=0;idim<3;idim++) data[idim]=B[idim]; 
+          } 
+        }
+      }
+    }
+    else {
+      int iDownNode;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+      for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+        InitMagneticField(downNode);
+      }
+    }
+  };
+
+  InitMagneticField(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh.outputMeshDataTECPLOT("magnetic-field.dat",0);
 
 
   MPI_Barrier(MPI_COMM_WORLD);
