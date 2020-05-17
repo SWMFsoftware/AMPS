@@ -1228,6 +1228,10 @@ public:
   typedef int (*cGetCenterNodesInterpolationCoefficients)(double *x,double *CoefficientsList,cCenterNode **InterpolationStencil,cTreeNodeAMR<cBlockAMR>* startNode,int nMaxCoefficients);
   cGetCenterNodesInterpolationCoefficients GetCenterNodesInterpolationCoefficients;
 
+  //user-defined criterion for node splitting
+  typedef bool (*fUserNodeSplitCriterion)(cTreeNodeAMR<cBlockAMR>*); 
+  fUserNodeSplitCriterion UserNodeSplitCriterion;
+
   //accept tree node function
   typedef bool (*cAcceptBlockFunc)(double*,double*);
   cAcceptBlockFunc accepltTreeNodeFunction;
@@ -2018,6 +2022,9 @@ public:
      GetCenterNodesInterpolationCoefficients=NULL;
      GetCornerNodesInterpolationCoefficients=NULL;
      localResolution=NULL;
+
+     //user-defined criterion for node splitting
+     UserNodeSplitCriterion=NULL;
 
      //set the defaul value of the diagnostic stream
      DiagnospticMessageStream=stdout;
@@ -6349,10 +6356,15 @@ if (CallsCounter==83) {
         }
       }  
 
+      //apply user-criterion for splitting the current node
+      bool node_split_flag=false;
 
+      if (UserNodeSplitCriterion!=NULL) {
+        node_split_flag=UserNodeSplitCriterion(startNode);
+      }
 
       //the block is split if 1. the cell size exceeds the required one and 2. the root block has to be split (startNode->upNode==NULL)
-      if ((requredResolution<characteristicBlockSize)||(startNode->upNode==NULL)) {
+      if ((requredResolution<characteristicBlockSize)||(startNode->upNode==NULL)||(node_split_flag==true)) {
         res=splitTreeNode(startNode);
 
       } 
