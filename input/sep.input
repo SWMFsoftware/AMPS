@@ -1,7 +1,7 @@
 
 #main  
 
-SpeciesList=O, H
+SpeciesList=H_plus 
 
 
 !settings of the directories
@@ -63,6 +63,9 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) SEP::ParticleMover(ptr,LocalTimeStep,node)
+   
 
 #endGeneral
 
