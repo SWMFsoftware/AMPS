@@ -30,6 +30,8 @@
 namespace SEP {
   using namespace Exosphere;
 
+  int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
   namespace Sampling {
     using namespace Exosphere::Sampling;
   }
