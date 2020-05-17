@@ -43,16 +43,18 @@ void SEP::Mesh::LoadFieldLine(list<SEP::cFieldLine> *field_line) {
 
   for (int i=0;i<FieldLineTableLength;i++) FieldLineTable[i]=FieldLineTable[0]+3*i;
 
-  fLine=fopen("magnetic-line.dat","w");
-  fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"MAgnetic Field Line\", I=%i\n",FieldLineTableLength);
+  if (PIC::ThisThread==0) {
+    fLine=fopen("magnetic-line.dat","w");
+    fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"MAgnetic Field Line\", I=%i\n",FieldLineTableLength);
+  }
 
   for (i=0,it=field_line->begin();it!=field_line->end();it++,i++) {
     for (int idim=0;idim<3;idim++) FieldLineTable[i][idim]=it->x[idim];
 
-    fprintf(fLine,"%e %e %e\n",FieldLineTable[i][0],FieldLineTable[i][1],FieldLineTable[i][2]);
+    if (PIC::ThisThread==0) fprintf(fLine,"%e %e %e\n",FieldLineTable[i][0],FieldLineTable[i][1],FieldLineTable[i][2]);
   }
 
-  fclose(fLine);
+  if (PIC::ThisThread==0) fclose(fLine);
 }
 
 bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
