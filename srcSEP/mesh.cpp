@@ -25,7 +25,10 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
 }
 
 double SEP::Mesh::localResolution(double *x) {
-  return 10.0*_RADIUS_(_SUN_);
+
+  if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
+
+  return 20.0*_RADIUS_(_SUN_);
 }
 
 
@@ -114,7 +117,7 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
 
 
 double SEP::Mesh::localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  double CellSize,CharacteristicSpeed=400E3;
+  double CellSize,CharacteristicSpeed=40000E3;
 
   CellSize=startNode->GetCharacteristicCellSize();
   return 0.3*CellSize/CharacteristicSpeed;
