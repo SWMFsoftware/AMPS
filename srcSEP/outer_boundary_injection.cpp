@@ -16,6 +16,9 @@ bool SEP::ParticleSource::OuterBoundary::BoundingBoxParticleInjectionIndicator(c
 
   static double vNA[3]={0.0,0.0,0.0},nNA=5.0E6,tempNA=1.0E5;
 
+  return false;
+
+
   if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
@@ -104,6 +107,12 @@ double SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate(int spec,cTr
   bool ExternalFaces[6];
   double ExternalNormal[3],BlockSurfaceArea;
   int nface;
+
+ 
+
+  return 0.0;
+
+
 
   if (spec!=_O_SPEC_ && spec!=_H_SPEC_) return 0; //inject only spec=0
 
