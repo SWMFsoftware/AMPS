@@ -121,10 +121,10 @@ void amps_init() {
 
 
     Sphere->localResolution=SEP::Mesh::localSphericalSurfaceResolution;
-    Sphere->InjectionRate=SEP::SourceProcesses::totalProductionRate;
+    Sphere->InjectionRate=SEP::ParticleSource::InnerBoundary::sphereInjectionRate;
     Sphere->faceat=0;
-    Sphere->ParticleSphereInteraction=SEP::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation;
-    Sphere->InjectionBoundaryCondition=SEP::SourceProcesses::InjectionBoundaryModel;
+    Sphere->ParticleSphereInteraction=ParticleSphereInteraction;
+    Sphere->InjectionBoundaryCondition=SEP::ParticleSource::InnerBoundary::sphereParticleInjection;
 
     Sphere->PrintTitle=SEP::Sampling::OutputSurfaceDataFile::PrintTitle;
     Sphere->PrintVariableList=SEP::Sampling::OutputSurfaceDataFile::PrintVariableList;
@@ -221,8 +221,7 @@ void amps_init() {
 
   //set up the particle weight
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate;
-  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_O_SPEC_);
-  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_SPEC_);
+  PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_PLUS_SPEC_);
 
 
   //init magnetic filed
