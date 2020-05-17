@@ -57,7 +57,7 @@ namespace SEP {
     };
 
     namespace ParkerSpiral {
-      void GetB(double *B,double *x,double u_sw);
+      void GetB(double *B,double *x,double u_sw=400.0E3);
       void CreateFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun);
     }
 
