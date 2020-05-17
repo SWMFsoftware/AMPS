@@ -97,8 +97,8 @@
 
 
 //the maximum number and othe length of the variable that containes the number of a mesh node's connection (the number of how many blocks containes the corner node)
-#define _MAX_CORNER_NODE_CONNECTION_      220 
-#define _MAX_CORNER_NODE_CONNECTION_BITS_   8 
+#define _MAX_CORNER_NODE_CONNECTION_      27 
+#define _MAX_CORNER_NODE_CONNECTION_BITS_  6 
 
 //the maximum value of the size of the variable that contains the block's refinment level
 #define _MAX_REFINMENT_LEVEL_BITS_ 5
