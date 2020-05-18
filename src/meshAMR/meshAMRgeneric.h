@@ -6516,6 +6516,7 @@ if (CallsCounter==83) {
     	    xProbe[2]=x[2]+k*dz;
 
     	    if ((cellNode=findTreeNode(xProbe,startNode))==NULL) continue;
+            if (cellNode->block==NULL) continue;
 
     	    //determine the indexes of the center node that corresponds to the point 'xProbe'
     	    cellNode->ConvertGlobal2LocalCoordinates(xLocal,xProbe);
