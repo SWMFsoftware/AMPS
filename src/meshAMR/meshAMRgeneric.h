@@ -5928,6 +5928,8 @@ if (CallsCounter==83) {
         }
       }
 
+      //skip bloks that are not used in the claculation
+      if (startNode->IsUsedInCalculationFlag==false) return;
 
       meshBlocksNumber++;
       SendRequest=false;
@@ -6819,6 +6821,9 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
           if (NeibTable[i]==NULL) return;
         }
       }
+
+      //skip bloks that are not used in the claculation
+      if (startNode->IsUsedInCalculationFlag==false) return;
 
       flag=false;
       if (ThisThread==0) flag=true;
