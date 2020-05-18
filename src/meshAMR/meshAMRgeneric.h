@@ -12762,6 +12762,8 @@ if (TmpAllocationCounter==2437) {
       return;
     }
 
+    //set the mesh modification flag  
+    nMeshModificationCounter++,meshModifiedFlag=true,meshModifiedFlag_CountMeshElements=true;
 
     if (ThisThread==0) {
       //determine the total length of the table
