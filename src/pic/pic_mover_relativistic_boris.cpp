@@ -452,7 +452,13 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
         exit(__LINE__,__FILE__,"Error: not implemented");
       }
     }
-
+    else {
+      //at this point newNode!=NULL
+      if (newNode->IsUsedInCalculationFlag==false) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_IN_NOT_IN_USE_NODE_;
+      }
+    }
 
 
     startNode=newNode;
