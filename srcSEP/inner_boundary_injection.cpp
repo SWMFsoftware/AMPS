@@ -54,14 +54,44 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   exit(__LINE__,__FILE__,"Error: the time step node is not defined");
 #endif
 
-  /*
+  
   double TimeCounter=0.0;
-  double ModelParticlesInjectionRate=sphereInjectionRate(NA,SphereDataPointer)/ParticleWeight;
+  double ModelParticlesInjectionRate=sphereInjectionRate(spec,BoundaryElementType,SphereDataPointer)/ParticleWeight;
+  int idim;
+
+  double vbulk[3]={0.0,0.0,0.0};
+  double Temp=10.0E6; 
+  double ExternalNormal[3];
 
   while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
+    Vector3D::Distribution::Uniform(x,sphereRadius);   
+    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
 
-*/
+    if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) continue; 
+    if (startNode->block->GetLocalTimeStep(spec)/LocalTimeStep<rnd()) continue;
 
+    //generate the particle velocity
+    for (idim=0;idim<3;idim++) ExternalNormal[idim]=-x[idim]/sphereRadius; 
+    PIC::Distribution::InjectMaxwellianDistribution(v,vbulk,Temp,ExternalNormal,spec);
+
+    //generate a particle
+    newParticle=PIC::ParticleBuffer::GetNewParticle();
+    newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
+    nInjectedParticles++;
+
+    PIC::ParticleBuffer::SetX(x,newParticleData);
+    PIC::ParticleBuffer::SetV(v,newParticleData);
+    PIC::ParticleBuffer::SetI(spec,newParticleData);
+
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleWeightCorrection,newParticleData);
+
+    //inject the particle into the system
+    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode);
+  }
+
+  return nInjectedParticles;
+
+/*
   static double InjectParticles=0.0;
 
   bool flag;
@@ -142,11 +172,12 @@ InjectionTangentionalSpeed+=sqrt(v1);
 
 
     //inject the particle into the system
-    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd() /*LocalTimeStep-TimeCounter*/,startNode,true);
-//    PIC::Mover::MoveParticleBoundaryInjection[NA](newParticle,startNode->block->GetLocalTimeStep(NA)*rnd() /*LocalTimeStep-TimeCounter*/,startNode,true);
+    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd() / *LocalTimeStep-TimeCounter* /,startNode,true);
+//    PIC::Mover::MoveParticleBoundaryInjection[NA](newParticle,startNode->block->GetLocalTimeStep(NA)*rnd() / *LocalTimeStep-TimeCounter* /,startNode,true);
   }
 
   return nInjectedParticles;
+*/
 }
 
 long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int BoundaryElementType,void *BoundaryElement) {
