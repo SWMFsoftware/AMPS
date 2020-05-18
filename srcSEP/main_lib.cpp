@@ -49,6 +49,8 @@ const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRun
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=1.0;
 
+  if (node->IsUsedInCalculationFlag==false) return 0.0;
+
  // for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);
 
   return res;
@@ -186,6 +188,61 @@ void amps_init() {
 
   PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+
+
+  //mark no-used black that are far from the magnetic filed line 
+  list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> not_used_list; 
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>*)> MarkNotUsed; 
+  int cnt=0;
+  
+  MarkNotUsed=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> *not_used_list) -> void {
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      //if (startNode->xmin[0]<0.0) not_used_list->push_back(startNode);
+
+      if (cnt%PIC::nTotalThreads!=PIC::ThisThread) return;
+
+      double r,x[3],d2min=-1.0,dmax;
+      int idim;
+
+      for (idim=0;idim<3;idim++) x[idim]=0.5*(startNode->xmin[idim]+startNode->xmax[idim]);
+
+      r=Vector3D::Length(x);
+
+      if (r>5.0*_RADIUS_(_SUN_)) {
+        list<SEP::cFieldLine>::iterator it;
+        double d2,t;
+        
+        for (it=field_line.begin();it!=field_line.end();it++) {
+          for (idim=0,d2=0.0;idim<3;idim++) {
+            t=x[idim]-it->x[idim];
+            d2+=t*t;
+          }
+
+          if ((d2min<0.0)||(d2min>d2)) d2min=d2;
+        }
+
+        dmax=5.0*_RADIUS_(_SUN_)+15.0/200.0*(r-5.0*_RADIUS_(_SUN_));
+        if (d2min>dmax*dmax) not_used_list->push_back(startNode); 
+      }
+    }
+    else {
+      int iDownNode;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+      for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+        MarkNotUsed(downNode,not_used_list);
+      }
+    }
+  }; 
+
+  MarkNotUsed(PIC::Mesh::mesh.rootTree,&not_used_list);
+
+  PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
+  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+
+  PIC::Mesh::mesh.outputMeshTECPLOT("mesh-reduced.dat");
 
   //initialize the blocks
   PIC::Mesh::mesh.AllowBlockAllocation=true;
