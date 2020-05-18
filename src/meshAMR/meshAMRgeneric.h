@@ -12897,6 +12897,23 @@ if (TmpAllocationCounter==2437) {
   }
 
 
+  void SetTreeNodeActiveUseFlag(list<cTreeNodeAMR<cBlockAMR>*> *NodeList,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> * NewlyAllocatedNodeList) {
+    cTreeNodeAMR<cBlockAMR>** NodeTable;
+    int NodeTableLength,i;
+    typename list<cTreeNodeAMR<cBlockAMR>*>::iterator it;
+
+    NodeTableLength=NodeList->size();
+    NodeTable=new cTreeNodeAMR<cBlockAMR>*[NodeTableLength];
+
+    for (i=0,it=NodeList->begin();it!=NodeList->end();i++,it++) NodeTable[i]=*it;
+    
+    SetTreeNodeActiveUseFlag(NodeTable,NodeTableLength,fProcessTreeNodeData,IsUsedInCalculationFlag,NewlyAllocatedNodeList);
+
+    delete [] NodeTable;
+  }
+
+
+
   //Count the number of blocks, center and corner nodes and compare those with the sizes of the corresponding stackes
   void GetMeshElementInfo() {
     int nCenterNodes=0,nCornerNodes=0,nAllocatedBlocks=0,nAllocatedLayerBlocks=0,nTotalTreeNodes=0;
