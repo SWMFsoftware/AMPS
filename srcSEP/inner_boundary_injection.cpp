@@ -63,6 +63,25 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double Temp=10.0E6; 
   double ExternalNormal[3];
 
+
+  double emin=0.1*MeV2J;
+  double emax=10.0*MeV2J;
+
+  double s=4.0;
+  double q=3.0*s/(3-1.0);
+
+  double p,pmin,pmax,speed; 
+
+  speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));  
+  pmin=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec)); 
+
+  speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
+  pmax=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+
+  double A0=pow(pmin,-q+1.0);
+  double A=pow(pmax,-q+1.0)-A0; 
+
+
   while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
     Vector3D::Distribution::Uniform(x,sphereRadius);   
     startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
@@ -73,6 +92,12 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     //generate the particle velocity
     for (idim=0;idim<3;idim++) ExternalNormal[idim]=-x[idim]/sphereRadius; 
     PIC::Distribution::InjectMaxwellianDistribution(v,vbulk,Temp,ExternalNormal,spec);
+
+    p=pow(A0+rnd()*A,1.0/(-q+1.0));
+    speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+
+    Vector3D::Distribution::Uniform(v,speed);
+    if (Vector3D::DotProduct(x,v)<0.0) for (int i=0;i<3;i++) v[i]=-v[i];
 
     //generate a particle
     newParticle=PIC::ParticleBuffer::GetNewParticle();
