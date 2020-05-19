@@ -11059,7 +11059,7 @@ if (TmpAllocationCounter==2437) {
       for (thread=0;thread<nTotalThreads;thread++) {
         cTreeNodeAMR<cBlockAMR> *ptr;
 
-        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) {
+        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->IsUsedInCalculationFlag==true)&&(ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) {
           if (ptr->Thread!=ThisThread) {
             //the block will be moved In
             MoveInNodeTableSize[ptr->Thread]++;
@@ -11092,7 +11092,7 @@ if (TmpAllocationCounter==2437) {
       for (thread=0;thread<nTotalThreads;thread++) {
         cTreeNodeAMR<cBlockAMR> *ptr;
 
-        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) if (ptr->IsUsedInCalculationFlag==true) {
+        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->IsUsedInCalculationFlag==true)&&(ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) if (ptr->IsUsedInCalculationFlag==true) {
           if (ptr->Thread!=ThisThread) {
             //blocks will be moved In
             MoveInNodeTable[ptr->Thread][MoveInNodeTableSize[ptr->Thread]]=ptr;
@@ -11708,7 +11708,7 @@ if (TmpAllocationCounter==2437) {
 
           #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
+          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
             sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
             GetAMRnodeID(nodeid,sendNode);
 
@@ -11731,7 +11731,7 @@ if (TmpAllocationCounter==2437) {
           }
           #endif //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
+         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
 
@@ -11754,7 +11754,7 @@ if (TmpAllocationCounter==2437) {
          }
 
          #if _MESH_DIMENSION_ == 3
-         for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)) {
+         for (i=0;i<12*2;i++) if ((sendNode=recvNode->neibNodeEdge[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
       
