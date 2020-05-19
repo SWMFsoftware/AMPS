@@ -11092,7 +11092,7 @@ if (TmpAllocationCounter==2437) {
       for (thread=0;thread<nTotalThreads;thread++) {
         cTreeNodeAMR<cBlockAMR> *ptr;
 
-        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->IsUsedInCalculationFlag==true)&&(ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) if (ptr->IsUsedInCalculationFlag==true) {
+        for (ptr=ParallelNodesDistributionList[thread];ptr!=NULL;ptr=ptr->nextNodeThisThread) if ((ptr->IsUsedInCalculationFlag==true)&&(ptr->Thread!=thread)&&((ptr->Thread==ThisThread)||(thread==ThisThread))) {
           if (ptr->Thread!=ThisThread) {
             //blocks will be moved In
             MoveInNodeTable[ptr->Thread][MoveInNodeTableSize[ptr->Thread]]=ptr;
