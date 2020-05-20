@@ -65,12 +65,14 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 
 
   double emin=0.1*MeV2J;
-  double emax=10.0*MeV2J;
+  double emax=100.0*MeV2J;
 
   double s=4.0;
   double q=3.0*s/(3-1.0);
 
   double p,pmin,pmax,speed; 
+
+  double cMin=pow(pmin,-q);
 
   speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));  
   pmin=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec)); 
@@ -81,6 +83,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double A0=pow(pmin,-q+1.0);
   double A=pow(pmax,-q+1.0)-A0; 
 
+  double WeightNorm=pow(pmin,-q);
 
   while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
     Vector3D::Distribution::Uniform(x,sphereRadius);   
@@ -93,7 +96,11 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     for (idim=0;idim<3;idim++) ExternalNormal[idim]=-x[idim]/sphereRadius; 
     PIC::Distribution::InjectMaxwellianDistribution(v,vbulk,Temp,ExternalNormal,spec);
 
-    p=pow(A0+rnd()*A,1.0/(-q+1.0));
+//    p=pow(A0+rnd()*A,1.0/(-q+1.0));
+//    speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+
+    p=pmin+rnd()*(pmax-pmin);
+    ParticleWeightCorrection=pow(p,-q)/WeightNorm;
     speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
 
     Vector3D::Distribution::Uniform(v,speed);
