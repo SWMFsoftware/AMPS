@@ -165,6 +165,7 @@ void amps_init() {
   PIC::Mesh::mesh.memoryAllocationReport();
 
 
+/*
   if (PIC::Mesh::mesh.ThisThread==0) {
     PIC::Mesh::mesh.buildMesh();
     PIC::Mesh::mesh.saveMeshFile("mesh.msh");
@@ -174,6 +175,10 @@ void amps_init() {
     MPI_Barrier(MPI_COMM_WORLD);
     PIC::Mesh::mesh.readMeshFile("mesh.msh");
   }
+*/
+
+  PIC::Mesh::mesh.buildMesh();
+  MPI_Barrier(MPI_COMM_WORLD);
 
   cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
 
@@ -194,7 +199,31 @@ void amps_init() {
   //mark no-used black that are far from the magnetic filed line 
   list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> not_used_list; 
   std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>*)> MarkNotUsed; 
-  int cnt=0;
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> GetMaxBlockRefinmentLevel;
+
+  int cnt=0,MaxRefinmentLevel=-1;
+
+
+  GetMaxBlockRefinmentLevel=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) -> void {
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      double x[3];
+
+      for (int idim=0;idim<3;idim++) x[idim]=0.5*(startNode->xmin[idim]+startNode->xmax[idim]);
+
+       if (Vector3D::Length(x)>10.0*_RADIUS_(_SUN_)) {
+         if (MaxRefinmentLevel<startNode->RefinmentLevel) MaxRefinmentLevel=startNode->RefinmentLevel;
+       }
+    }
+    else {
+      int iDownNode;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+      for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+        GetMaxBlockRefinmentLevel(downNode);
+      }
+    }
+  };  
+
   
   MarkNotUsed=[&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,list <cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> *not_used_list) -> void {
     if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
@@ -209,21 +238,27 @@ void amps_init() {
 
       r=Vector3D::Length(x);
 
-      if (r>5.0*_RADIUS_(_SUN_)) {
+      if (r>10.0*_RADIUS_(_SUN_)) {
         list<SEP::cFieldLine>::iterator it;
         double d2,t;
         
         for (it=field_line.begin();it!=field_line.end();it++) {
           for (idim=0,d2=0.0;idim<3;idim++) {
-            t=x[idim]-it->x[idim];
+            t=min(fabs(startNode->xmin[idim]-it->x[idim]),fabs(startNode->xmax[idim]-it->x[idim])); 
             d2+=t*t;
           }
 
           if ((d2min<0.0)||(d2min>d2)) d2min=d2;
         }
 
-        dmax=5.0*_RADIUS_(_SUN_)+15.0/200.0*(r-5.0*_RADIUS_(_SUN_));
-        if (d2min>dmax*dmax) not_used_list->push_back(startNode); 
+        dmax=10.0*_RADIUS_(_SUN_)+15.0/200.0*(r-10.0*_RADIUS_(_SUN_));
+
+        if (d2min>dmax*dmax) {
+          not_used_list->push_back(startNode); 
+        }
+        else {
+          if (startNode->RefinmentLevel<MaxRefinmentLevel-2) not_used_list->push_back(startNode);
+        }
       }
     }
     else {
@@ -236,6 +271,7 @@ void amps_init() {
     }
   }; 
 
+  GetMaxBlockRefinmentLevel(PIC::Mesh::mesh.rootTree);
   MarkNotUsed(PIC::Mesh::mesh.rootTree,&not_used_list);
 
   PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
@@ -572,7 +608,7 @@ t=1.0;
 
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-       PIC::RequiredSampleLength*=2;
+//       PIC::RequiredSampleLength*=2;
        if (PIC::RequiredSampleLength>20000) PIC::RequiredSampleLength=20000;
        
        
