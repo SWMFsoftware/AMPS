@@ -66,20 +66,26 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
   int i;
   double d2;
 
+
+  if (startNode->RefinmentLevel>=7) return false;
+
+
+  
+
   bool field_line_intersect_node=false;
 
-  double d2min=pow(2.0*_RADIUS_(_SUN_),2);
+  double d2min=pow(4.0*_RADIUS_(_SUN_),2);
   double cell_res2,cell_res; ////=0.1+(0.5-0.1)/(200-1.2)*(sqrt(pow(0.5*(xmin[0]+xmax[0]),2)+pow(0.5*(xmin[1]+xmax[1]),2)+pow(0.5*(xmin[2]+xmax[2]),2))/_RADIUS_(_SUN_)-1.2);
 
   double r=sqrt(pow(0.5*(xmin[0]+xmax[0]),2)+pow(0.5*(xmin[1]+xmax[1]),2)+pow(0.5*(xmin[2]+xmax[2]),2))/_RADIUS_(_SUN_);
 
   if (r<1.1) return false;
 
-  cell_res=(r>0.0) ? 0.1*exp(log(0.5/0.1)/log(200.0/1.2)*log(r/1.2)) : 0.1;
+  cell_res=(r>1.1) ? 0.15*exp(log(0.5/0.1)/log(200.0/1.2)*log(r/1.2)) : 0.1;
 
 
   if (cell_res<0.1) cell_res=0.1;
-  if (cell_res>0.5) cell_res=0.5;
+  if (cell_res>0.8) cell_res=0.8;
 
   cell_res2=pow(cell_res*_RADIUS_(_SUN_),2);
 
@@ -90,7 +96,9 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
     for (int idim=0;idim<3;idim++) {
       if ((FieldLineTable[i][idim]<xmin[idim]) || (FieldLineTable[i][idim]>xmax[idim])) field_line_intersect_node=false;
 
-      double t=0.5*(xmin[idim]+xmax[idim])-FieldLineTable[i][idim];
+      double t; /////....=0.5*(xmin[idim]+xmax[idim])-FieldLineTable[i][idim];
+
+      t=min(fabs(xmin[idim]-FieldLineTable[i][idim]),fabs(xmax[idim]-FieldLineTable[i][idim]));
 
       d2+=t*t;
     }
