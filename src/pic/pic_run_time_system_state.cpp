@@ -267,9 +267,8 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
     }
 
     fprintf(fout,"\n");
+    fflush(fout);
   }
-
-  fflush(fout);
 }
 
 void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,long int nline,const char *fname) {
