@@ -6191,7 +6191,7 @@ if (CallsCounter==83) {
 
       SendRequestVector=NULL,BlockNodeGlabalNumber=NULL;
 
-      CompareGlobalNodeNumbering(rootTree);
+      //CompareGlobalNodeNumbering(rootTree);
 
       meshModifiedFlag_CountMeshElements=false;
 
@@ -6255,6 +6255,7 @@ if (CallsCounter==83) {
       static const int jMin=-_GHOST_CELLS_Y_,jMax=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;
       static const int kMin=-_GHOST_CELLS_Z_,kMax=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;
       #endif
+
 
 
       for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++)  {
@@ -7403,7 +7404,7 @@ nMPIops++;
     //Count the number of the elements of the mesh
     if (meshModifiedFlag_CountMeshElements==true) {
       countMeshElements(rootTree,0);
-      CompareGlobalNodeNumbering(rootTree);
+      //CompareGlobalNodeNumbering(rootTree);
     }
 
     if ((ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_GLOBAL_NODE_NUMBER_)&&(meshNodesNumber==0)) {
