@@ -10108,10 +10108,10 @@ nMPIops++;
 
   void AllocateTreeBlocks(cTreeNodeAMR<cBlockAMR>* startNode,int DomainIntersectionFlag) {
     static bool ThisThreadBlockFound;
-    static long int nAllocatedBlocks;
+    static long int nAllocatedBlocks,nAllBlocks;
 
     if (startNode==rootTree) {
-      ThisThreadBlockFound=false,nAllocatedBlocks=0;
+      ThisThreadBlockFound=false,nAllocatedBlocks=0,nAllBlocks=0;
 
       //init the ray tracing module if needed
       CutCell::InitRayTracingModule();
@@ -10184,7 +10184,7 @@ nMPIops++;
     }
     else {
       if (startNode->Thread==ThisThread) {
-        ThisThreadBlockFound=true,nAllocatedBlocks++;
+        ThisThreadBlockFound=true,nAllBlocks++;
 
 
 //====================== DEBUG =======================
@@ -10205,6 +10205,7 @@ if (TmpAllocationCounter==2437) {
 
 
         if (startNode->block==NULL) AllocateBlock(startNode);
+        if (startNode->block!=NULL) nAllocatedBlocks++;
 
 
 //====================== DEBUG =======================
@@ -10229,21 +10230,19 @@ if (TmpAllocationCounter==2437) {
 
       if (mpiInitFlag==true) {
         long int thread=0,*buffer=NULL;
+        long int AllBlockCounterTable[nTotalThreads];
+        long int AllocatedBlockCounterTable[nTotalThreads];
+
+        MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,AllocatedBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllBlocks,1,MPI_LONG,AllBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
         if (ThisThread==0) {
-          buffer=new long int [nTotalThreads];
-          buffer[0]=nAllocatedBlocks;
-
-          long int bufferRecv[nTotalThreads];
-          MPI_Gather(buffer,1,MPI_LONG,bufferRecv,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-          memcpy(buffer,bufferRecv,nTotalThreads*sizeof(long int));
-
           fprintf(DiagnospticMessageStream,"$PREFIX:Blocks Allocation Report:\n$PREFIX: Thread\tAllocatedBlocks\n");
-          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld\n",thread,buffer[thread]);
 
-          delete [] buffer;
+          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld(%ld)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
+
+          fflush(DiagnospticMessageStream);
         }
-        else MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
@@ -10251,33 +10250,30 @@ if (TmpAllocationCounter==2437) {
 #if _AMR_PARALLEL_DATA_EXCHANGE_MODE_ == _AMR_PARALLEL_DATA_EXCHANGE_MODE__DOMAIN_BOUNDARY_LAYER_
         cTreeNodeAMR<cBlockAMR> *node;
 
-        nAllocatedBlocks=0;
+        nAllocatedBlocks=0,nAllBlocks=0;
 
         for (thread=0;thread<nTotalThreads;thread++) {
           node=DomainBoundaryLayerNodesList[thread];
 
           while (node!=NULL) {
-            nAllocatedBlocks++;
+            nAllBlocks++;
             if (node->block==NULL) AllocateBlock(node);
 
+            if (node->block!=NULL) nAllocatedBlocks++; 
             node=node->nextNodeThisThread;
           }
         }
 
+        MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,AllocatedBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllBlocks,1,MPI_LONG,AllBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
         if (ThisThread==0) {
-          buffer=new long int [nTotalThreads];
-          buffer[0]=nAllocatedBlocks;
-
-          long int bufferRecv[nTotalThreads];
-          MPI_Gather(buffer,1,MPI_LONG,bufferRecv,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-          memcpy(buffer,bufferRecv,nTotalThreads*sizeof(long int));
-
           fprintf(DiagnospticMessageStream,"$PREFIX:Blocks Allocation Report:\n$PREFIX: Thread\tAllocated Domain's Boundary Blocks\n");
-          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld\n",thread,buffer[thread]);
 
-          delete [] buffer;
+          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld(%ld)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
+
+          fflush(DiagnospticMessageStream);
         }
-        else MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 #endif
