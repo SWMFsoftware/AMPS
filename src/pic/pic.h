@@ -343,11 +343,28 @@ namespace PIC {
     extern cDatumStored   DatumAtVertexPlasmaTemperature;
     extern cDatumStored   DatumAtVertexPlasmaPressure;
     extern cDatumStored   DatumAtVertexMagneticFluxFunction;
+    extern cDatumStored   DatumAtVertexPlasmaWaves;
     extern cDatumTimed    DatumAtVertexParticleWeight;
     extern cDatumTimed    DatumAtVertexParticleNumber;
     extern cDatumTimed    DatumAtVertexNumberDensity;
     extern cDatumWeighted DatumAtVertexParticleEnergy;
     extern cDatumWeighted DatumAtGridParticleEnergy;
+
+
+    class cVertexAllocationManager {
+    public:
+      bool ElectricField,MagneticField,PlasmaVelocity,PlasmaDensity;
+      bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
+      bool PlasmaWaves;
+
+      cVertexAllocationManager() {
+        ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
+        PlasmaTemperature=false,PlasmaPressure=false,MagneticFluxFunction=false;
+        PlasmaWaves=false;
+      }
+    };
+
+    extern cVertexAllocationManager VertexAllocationManager;
 
 
 

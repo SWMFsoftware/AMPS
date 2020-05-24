@@ -20,6 +20,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", false);
     cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", false);
     cDatumStored DatumAtVertexMagneticFluxFunction(1,"\"MagneticFluxFunction [nT*m]\"", true);
+    cDatumStored DatumAtVertexPlasmaWaves(1,"\"Plasma waves\"",false);
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
@@ -28,6 +29,8 @@ namespace PIC {
 
 
     cDatumWeighted DatumAtGridParticleEnergy(1,"\"Kinetic energy [J]\"",true);
+
+    cVertexAllocationManager VertexAllocationManager;
 
     vector<cDatumStored*> DataStoredAtVertex;
     vector<cDatumSampled*> DataSampledAtVertex;
@@ -365,7 +368,7 @@ namespace PIC {
     //=========================================================================
     void Init() {
       
-      if(PIC::nTotalThreads > 1) exit(__LINE__, __FILE__,"Not implemented for multiple processors");
+    //  if(PIC::nTotalThreads > 1) exit(__LINE__, __FILE__,"Not implemented for multiple processors");
       
       // allocate container for field lines
       FieldLinesAll = new cFieldLine [nFieldLineMax];
@@ -374,13 +377,15 @@ namespace PIC {
       long int Offset = 0;
 
       // activate data that are stored but NOT sampled
-      DatumAtVertexMagneticField.       activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexElectricField.       activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexPlasmaVelocity.      activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexPlasmaDensity.       activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexPlasmaTemperature.   activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexPlasmaPressure.      activate(Offset, &DataStoredAtVertex);
-      DatumAtVertexMagneticFluxFunction.activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.MagneticField==true)        DatumAtVertexMagneticField.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.ElectricField==true)        DatumAtVertexElectricField.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PlasmaVelocity==true)       DatumAtVertexPlasmaVelocity.      activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PlasmaDensity==true)        DatumAtVertexPlasmaDensity.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PlasmaTemperature==true)    DatumAtVertexPlasmaTemperature.   activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PlasmaPressure==true)       DatumAtVertexPlasmaPressure.      activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.MagneticFluxFunction==true) DatumAtVertexMagneticFluxFunction.activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PlasmaWaves==true)          DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
+
 
       // activate data that is sampled
       long int SamplingOffset = Offset;
