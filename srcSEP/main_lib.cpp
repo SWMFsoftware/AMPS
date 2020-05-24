@@ -152,13 +152,45 @@ void amps_init() {
   }
 
   //generate the magneric field line
-  list<SEP::cFieldLine> field_line;
+  list<SEP::cFieldLine> field_line,field_line_old,field_line_new;
   double xStart[3]={1.1,0.0,0.0};
 
-  SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
-  SEP::Mesh::ImportFieldLine(&field_line);
-  PIC::Mesh::mesh.UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
 
+  switch (SEP::DomainType) {
+  case SEP::DomainType_ParkerSpiral:
+    SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
+    SEP::Mesh::ImportFieldLine(&field_line);
+
+    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) {
+      PIC::FieldLine::Init();
+      SEP::Mesh::InitFieldLineAMPS(&field_line);
+    }
+
+    break;
+  case SEP::DomainType_FLAMPA_FieldLines:
+    SEP::Mesh::LoadFieldLine_flampa(&field_line_old,"FieldLineOld.in");
+    SEP::Mesh::ImportFieldLine(&field_line_old);
+    SEP::Mesh::PrintFieldLine(&field_line_old,"FieldLineOld.dat");
+
+    SEP::Mesh::LoadFieldLine_flampa(&field_line_new,"FieldLineNew.in");
+    SEP::Mesh::ImportFieldLine(&field_line_new);
+    SEP::Mesh::PrintFieldLine(&field_line_new,"FieldLineNew.dat");
+
+
+    //init the field line library in AMPS
+    PIC::FieldLine::VertexAllocationManager.PlasmaWaves=true;
+    PIC::FieldLine::VertexAllocationManager.MagneticField=true;
+    PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
+
+    PIC::FieldLine::DatumAtVertexPlasmaWaves.length=2;
+
+    PIC::FieldLine::Init();
+
+    SEP::Mesh::InitFieldLineAMPS(&field_line_old);
+    SEP::Mesh::InitFieldLineAMPS(&field_line_new);
+  }
+
+  PIC::Mesh::mesh.UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
   //generate only the tree
   PIC::Mesh::mesh.AllowBlockAllocation=false;
   PIC::Mesh::mesh.init(xmin,xmax,SEP::Mesh::localResolution);

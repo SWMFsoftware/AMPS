@@ -38,6 +38,7 @@ namespace SEP {
   const int ParticleTrajectoryCalculation_GuidingCenter=0;
   const int ParticleTrajectoryCalculation_RelativisticBoris=1;
   const int ParticleTrajectoryCalculation_IgorFieldLine=2;
+  const int ParticleTrajectoryCalculation_FieldLine=3;
 
   extern int ParticleTrajectoryCalculation;
 

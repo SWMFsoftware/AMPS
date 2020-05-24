@@ -15,6 +15,9 @@
 double** SEP::Mesh::FieldLineTable=NULL;
 int SEP::Mesh::FieldLineTableLength=0;
 
+int SEP::ParticleTrajectoryCalculation=SEP::ParticleTrajectoryCalculation_RelativisticBoris;
+int SEP::DomainType=SEP::DomainType_ParkerSpiral;
+
 
 double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
   double res,r,l[3];
@@ -209,7 +212,7 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
     Vertex->SetMagneticField(it->B);
     Vertex->SetPlasmaVelocity(it->U);
 
-    if (FL::DatumAtVertexPlasmaWaves.length>0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
+    if (FL::DatumAtVertexPlasmaWaves.offset>=0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
   }
 
 }
