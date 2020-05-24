@@ -3411,3 +3411,56 @@ Check=
 
 
 
+
+
+#>
+Name=test/AMPS-BATSRUS_dynamic_fluxrope  
+Time=15 
+
+ExeptionCode=SKIP{pgcc}
+
+Compile=
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_compile..." > test_AMPS-BATSRUS_dynamic_fluxrope.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_compile... done" >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+
+
+Rundir=
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_rundir..." >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_rundir... done" >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+
+Run=
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_run..." >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+>>>@echo Test test_AMPS-BATSRUS_dynamic_fluxrope has started: `date`
+
+>>>cd SWMF;$(MAKE) MPIRUN="${MPIRUN} -np 8" test12_aniso_AMPS_dynamic_fluxrope
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_run... done" >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+
+Check=
+>>>@echo "test_AMPS-BATSRUS_dynamic_fluxrope_check..." >> test_AMPS-BATSRUS_dynamic_fluxrope.diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/RESULTS/fluxrope/PT/amps.dat output/test_aniso_AMPS_dynamic_fluxrope/amps.ref  > test_AMPS-BATSRUS_dynamic_fluxrope.diff)
+
+>>>-@ls -l test_AMPS-BATSRUS_dynamic_fluxrope.diff
+>>>@echo Test test_AMPS-BATSRUS_dynamic_fluxrope has finished: `date`
+
+<#
+
