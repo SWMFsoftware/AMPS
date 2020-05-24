@@ -30,6 +30,19 @@
 namespace SEP {
   using namespace Exosphere;
 
+  //parameters controlling the model execution
+  const int DomainType_ParkerSpiral=0;
+  const int DomainType_FLAMPA_FieldLines=1;
+  extern int DomainType;
+
+  const int ParticleTrajectoryCalculation_GuidingCenter=0;
+  const int ParticleTrajectoryCalculation_RelativisticBoris=1;
+  const int ParticleTrajectoryCalculation_IgorFieldLine=2;
+
+  extern int ParticleTrajectoryCalculation;
+
+
+
   int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
   namespace Sampling {
@@ -54,9 +67,15 @@ namespace SEP {
   }
 
 
-  struct cFieldLine {
-      double x[3];
-    };
+  class cFieldLine {
+  public:
+    double x[3],U[3],B[3],Wave[2];
+
+    cFieldLine() {
+      for (int idim=0;idim<3;idim++) x[idim]=0.0,U[idim]=0.0,B[idim]=0.0;
+      for (int i=0;i<2;i++) Wave[i]=0.0;
+    }
+  };
 
     namespace ParkerSpiral {
       void GetB(double *B,double *x,double u_sw=400.0E3);
@@ -68,12 +87,18 @@ namespace SEP {
       double localResolution(double *x);
       bool NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
-      void LoadFieldLine(list<SEP::cFieldLine> *field_line);
+      void ImportFieldLine(list<SEP::cFieldLine> *field_line);
+      void PrintFieldLine(list<SEP::cFieldLine> *field_line,const char *fname);
+      void LoadFieldLine_flampa(list<SEP::cFieldLine> *field_line,const char *fname);
+      
       double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
       //magnetic field line data
       extern double **FieldLineTable;
       extern int FieldLineTableLength;
+
+    //init field line in AMPS
+    void InitFieldLineAMPS(list<SEP::cFieldLine> *field_line);
     }
 
 

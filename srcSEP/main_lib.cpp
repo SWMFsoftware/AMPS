@@ -156,7 +156,7 @@ void amps_init() {
   double xStart[3]={1.1,0.0,0.0};
 
   SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
-  SEP::Mesh::LoadFieldLine(&field_line);
+  SEP::Mesh::ImportFieldLine(&field_line);
   PIC::Mesh::mesh.UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
 
   //generate only the tree
