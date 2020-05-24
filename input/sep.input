@@ -55,7 +55,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   ReferenceInjectionParticleNumber=200
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
-  InitialSampleLength=100
+  InitialSampleLength=400
 
 
   BlockCells=5,5,5
@@ -106,12 +106,15 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
 
 
-#block ../sep.input.pl !process settings of the moon module
+#block ../input/sep.input.pl !process settings of the moon module
 
   SphereInsideDomain=on ! place star inside the computational domain
 
  !forces that determine particle's trajectories
  Forces=off, gravity, FrameRotation !off, gravity, Lorentz, FrameRotation
+
+  DomainType=ParkerSpiral !ParkerSpiral,FLAMPA
+  ParticleTrajectory=FieldLine !RelativisticBoris !RelativisticBoris,GuidingCenter,IgorFieldLine
 
 #endblock
 
@@ -153,4 +156,4 @@ CouplerMode=T96 !ices !!off, ices, swmf
 #endblock
 
 
-#end
+!!!#end

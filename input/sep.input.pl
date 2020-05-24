@@ -82,52 +82,6 @@ while ($line=<InputFile>) {
       die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
     }
   }
-  
-#  elsif ($InputLine eq "EPD_FLUX") {  #the injection flux of the high energy ions
-#    ($InputLine,$InputComment)=split('!',$line,2);
-#    chomp($InputLine);
-#    $InputLine=~s/[=();]/ /g;
-    
-#    ($s0,$s1,$s2)=split(' ',$InputLine,3);
-#    ampsConfigLib::ChangeValueOfVariable("const static double EPD_Flux",$s1,"main/Europa.h");   
-#  }
-
-#  elsif ($InputLine eq "UNIMOLECULARREACTION") { 
-#    ($InputLine,$InputComment)=split(' ',$InputComment,2);
-#    $InputLine=~s/ //g;
-#     
-#    if ($InputLine eq "PHOTOIONIZATION") {
-#      ampsConfigLib::AddLine2File("#undef _PIC_PHOTOLYTIC_REACTIONS_MODE_\n#define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_\n\n","main/UserDefinition.PIC.h");   
-#      ampsConfigLib::AddLine2File("#undef _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_\n#define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2,t3,t4) Europa::ExospherePhotoionizationReactionProcessor(t0,t1,t2,t3,t4);\n","main/UserDefinition.PIC.h");
-#      ampsConfigLib::AddLine2File("#undef _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_\n#define _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(t0,t1,t2,t3) Europa::ExospherePhotoionizationLifeTime(t0,t1,t2,t3);\n","main/UserDefinition.PIC.h");
-#    }    
-#    elsif ($InputLine eq "GENERICTRANSFORMATION") {
-#      my $ReactionProcessor;
-#      
-#      ($InputLine,$InputComment)=split(' ',$InputComment,2);
-#      if ($InputLine eq "FUNC") {    
-#        $line=~s/[=()]/ /g;
-#        ($ReactionProcessor,$line)=split(' ',$line,2);
-#        ($ReactionProcessor,$line)=split(' ',$line,2);
-#        ($ReactionProcessor,$line)=split(' ',$line,2);
-#        ($ReactionProcessor,$line)=split(' ',$line,2);
-#      }
-#      else {
-#        die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
-#      }
-      
-#      ampsConfigLib::AddLine2File("#undef _PIC_PHOTOLYTIC_REACTIONS_MODE_\n#define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_\n\n","main/UserDefinition.PIC.h");
-#      ampsConfigLib::AddLine2File("#undef _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_\n#define _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_\n\n","main/UserDefinition.PIC.h");
-#      ampsConfigLib::AddLine2File("#undef _PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_\n#define _PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(t0,t1,t2,t3,t4,t5,t6,t7) $ReactionProcessor(t0,t1,t2,t3,t4,t5,t6,t7);\n","main/UserDefinition.PIC.h"); 
-#    }
-#    elsif ($InputLine eq "OFF") {
-#      ampsConfigLib::AddLine2File("#undef _PIC_PHOTOLYTIC_REACTIONS_MODE_\n#define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_OFF_\n\n","main/UserDefinition.PIC.h");
-#    }
-#    else {
-#      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
-#    }
-#  }  
-  
   elsif ($InputLine eq "FORCES") {    
     $InputComment=~s/[,]/ /g;
     
@@ -162,6 +116,45 @@ while ($line=<InputFile>) {
     ($s0,$s1,$s2)=split(' ',$InputLine,3);
     ampsConfigLib::ChangeValueOfVariable("static const double Omega",$s1,"main/sep.h");        
  }
+
+ ##the type of the computational domain 
+ elsif ($InputLine eq "DOMAINTYPE") {
+   ($InputLine,$InputComment)=split(' ',$InputComment,2);
+   $InputLine=~s/ //g;
+
+
+   if ($InputLine eq "PARKERSPIRAL") {
+     ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_ParkerSpiral","main/mesh.cpp");
+   }
+   elsif ($InputLine eq "FLAMPA") {
+     ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_FLAMPA_FieldLines","main/mesh.cpp");
+   }
+   else {
+     die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+   }
+ }
+
+  ##the model for integrating particle trajectories 
+  elsif ($InputLine eq "PARTICLETRAJECTORY") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+
+    if ($InputLine eq "RELATIVISTICBORIS") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_RelativisticBoris","main/mesh.cpp");
+    }
+    elsif ($InputLine eq "GUIDINGCENTER") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_GuidingCenter","main/mesh.cpp");
+    }
+    elsif ($InputLine eq "IGORFIELDLINE") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_IgorFieldLine","main/mesh.cpp");
+    }
+    elsif ($InputLine eq "FIELDLINE") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_FieldLine","main/mesh.cpp");
+    }    else {
+      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+ }
+
   
  
  
