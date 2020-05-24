@@ -153,10 +153,27 @@ void amps_init() {
 
   //generate the magneric field line
   list<SEP::cFieldLine> field_line;
+
+  //load FLAMPA field lines  
+  char fname[200];
+  list<SEP::cFieldLine> field_line_new,field_line_old;
+
+
+  
+  SEP::Mesh::LoadFieldLine_flampa(&field_line_old,"FieldLineOld.in");
+  SEP::Mesh::ImportFieldLine(&field_line_old);
+  SEP::Mesh::PrintFieldLine(&field_line_old,"FieldLineOld.dat");
+
+  SEP::Mesh::LoadFieldLine_flampa(&field_line_new,"FieldLineNew.in");
+  SEP::Mesh::ImportFieldLine(&field_line_new);
+  SEP::Mesh::PrintFieldLine(&field_line_new,"FieldLineNew.dat");
+
+
+  //Create a Parker piral filed line
   double xStart[3]={1.1,0.0,0.0};
 
   SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
-  SEP::Mesh::LoadFieldLine(&field_line);
+  SEP::Mesh::ImportFieldLine(&field_line);
   PIC::Mesh::mesh.UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
 
   //generate only the tree

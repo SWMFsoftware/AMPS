@@ -68,7 +68,10 @@ namespace SEP {
       double localResolution(double *x);
       bool NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
-      void LoadFieldLine(list<SEP::cFieldLine> *field_line);
+      void ImportFieldLine(list<SEP::cFieldLine> *field_line);
+      void PrintFieldLine(list<SEP::cFieldLine> *field_line,const char *fname);
+      void LoadFieldLine_flampa(list<SEP::cFieldLine> *field_line,const char *fname);
+
       double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
       //magnetic field line data
