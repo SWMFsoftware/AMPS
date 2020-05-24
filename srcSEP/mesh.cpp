@@ -32,73 +32,33 @@ double SEP::Mesh::localResolution(double *x) {
 }
 
 
-void SEP::Mesh::ImportFieldLine(list<SEP::cFieldLine> *field_line) {
-  int ip,idim;
+void SEP::Mesh::LoadFieldLine(list<SEP::cFieldLine> *field_line) {
+  int i;
   list<SEP::cFieldLine>::iterator it;
   FILE *fLine;
 
-  double **TempFieldLineTable=NULL; 
-  int NewFieldLineTableLength=field_line->size();
+  if (FieldLineTableLength!=0) exit(__LINE__,__FILE__,"Error: the filed line is alreadu deined");
 
-  TempFieldLineTable=new double *[NewFieldLineTableLength+FieldLineTableLength];
-  TempFieldLineTable[0]=new double [3*(NewFieldLineTableLength+FieldLineTableLength)];
+  FieldLineTableLength=field_line->size();
 
-  for (int i=0;i<NewFieldLineTableLength+FieldLineTableLength;i++) TempFieldLineTable[i]=TempFieldLineTable[0]+3*i;
+  FieldLineTable=new double *[FieldLineTableLength];
+  FieldLineTable[0]=new double [3*FieldLineTableLength];
 
-  for (ip=0;ip<FieldLineTableLength;ip++) for (idim=0;idim<3;idim++) TempFieldLineTable[ip][idim]=FieldLineTable[ip][idim]; 
+  for (int i=0;i<FieldLineTableLength;i++) FieldLineTable[i]=FieldLineTable[0]+3*i;
 
-  for (it=field_line->begin();it!=field_line->end();it++,ip++) for (int idim=0;idim<3;idim++) TempFieldLineTable[ip][idim]=it->x[idim]; 
-
-  if (FieldLineTable!=NULL) {
-    delete [] FieldLineTable[0];
-    delete [] FieldLineTable;
-
-    FieldLineTable=TempFieldLineTable;
-  } 
-}
-
-void SEP::Mesh::PrintFieldLine(list<SEP::cFieldLine> *field_line,const char *fname) {
-  list<SEP::cFieldLine>::iterator it;
-  FILE *fLine;
-  
   if (PIC::ThisThread==0) {
-    fLine=fopen(fname,"w");
-    fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"Magnetic Field Line\", I=%i\n",field_line->size());
-
-    for (it=field_line->begin();it!=field_line->end();it++) {
-      fprintf(fLine,"%e %e %e\n",it->x[0],it->x[1],it->x[2]);
-    }
-
-    fclose(fLine);
+    fLine=fopen("magnetic-line.dat","w");
+    fprintf(fLine,"VARIABLES=\"x\",\"y\",\"z\"\nZONE T=\"MAgnetic Field Line\", I=%i\n",FieldLineTableLength);
   }
-} 
 
-void SEP::Mesh::LoadFieldLine_flampa(list<SEP::cFieldLine> *field_line,const char *fname) {
-   SEP::cFieldLine p;
-   CiFileOperations ifile;
-   char str[10000],dat[10000],*endptr;
+  for (i=0,it=field_line->begin();it!=field_line->end();it++,i++) {
+    for (int idim=0;idim<3;idim++) FieldLineTable[i][idim]=it->x[idim];
 
-   ifile.openfile(fname);
+    if (PIC::ThisThread==0) fprintf(fLine,"%e %e %e\n",FieldLineTable[i][0],FieldLineTable[i][1],FieldLineTable[i][2]);
+  }
 
-   while (ifile.eof()==false) {
-     if (ifile.GetInputStr(str,sizeof(str))==true) {
-       ifile.CutInputStr(dat,str);
-
-       for (int idim=0;idim<3;idim++) {
-         ifile.CutInputStr(dat,str);
-         p.x[idim]=strtod(dat,&endptr);
-       }
-
-       field_line->push_back(p);
-     }
-   }
-
-   ifile.closefile();
-} 
-
-
-
-
+  if (PIC::ThisThread==0) fclose(fLine);
+}
 
 bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   double *xmin=startNode->xmin;
