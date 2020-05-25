@@ -32,8 +32,10 @@ namespace SEP {
 
   //parameters controlling the model execution
   const int DomainType_ParkerSpiral=0;
-  const int DomainType_FLAMPA_FieldLines=1;
+  const int DomainType_MultipleParkerSpirals=1; 
+  const int DomainType_FLAMPA_FieldLines=2;
   extern int DomainType;
+  extern int Domain_nTotalParkerSpirals;
 
   const int ParticleTrajectoryCalculation_GuidingCenter=0;
   const int ParticleTrajectoryCalculation_RelativisticBoris=1;

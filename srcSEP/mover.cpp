@@ -13,7 +13,14 @@ int SEP::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
 
   PIC::ParticleBuffer::GetX(xInit,ptr);
 
-  res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+  switch (SEP::ParticleTrajectoryCalculation) {
+  case SEP::ParticleTrajectoryCalculation_RelativisticBoris:
+    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+    break;
+  case ParticleTrajectoryCalculation_FieldLine:
+    res=PIC::Mover::FieldLine::Mover_SecondOrder(ptr,dtTotal,startNode);
+    break;
+  }
 
   if (res==_PARTICLE_MOTION_FINISHED_) {
     //appply particle scatering model if needed 

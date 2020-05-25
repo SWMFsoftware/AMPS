@@ -158,6 +158,8 @@ void amps_init() {
 
   switch (SEP::DomainType) {
   case SEP::DomainType_ParkerSpiral:
+    PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+
     SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
     SEP::Mesh::ImportFieldLine(&field_line);
 
@@ -168,6 +170,8 @@ void amps_init() {
 
     break;
   case SEP::DomainType_FLAMPA_FieldLines:
+    PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true; 
+
     SEP::Mesh::LoadFieldLine_flampa(&field_line_old,"FieldLineOld.in");
     SEP::Mesh::ImportFieldLine(&field_line_old);
     SEP::Mesh::PrintFieldLine(&field_line_old,"FieldLineOld.dat");

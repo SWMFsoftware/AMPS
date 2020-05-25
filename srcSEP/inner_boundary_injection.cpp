@@ -70,7 +70,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double s=4.0;
   double q=3.0*s/(3-1.0);
 
-  double p,pmin,pmax,speed; 
+  double p,pmin,pmax,speed,pvect[3]; 
 
   double cMin=pow(pmin,-q);
 
@@ -85,8 +85,22 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 
   double WeightNorm=pow(pmin,-q);
 
+  int iFieldLine;
+  
   while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
-    Vector3D::Distribution::Uniform(x,sphereRadius);   
+
+    switch (SEP::ParticleTrajectoryCalculation) {
+    case SEP::ParticleTrajectoryCalculation_RelativisticBoris:
+      Vector3D::Distribution::Uniform(x,sphereRadius);   
+      break;
+    case ParticleTrajectoryCalculation_FieldLine: case  ParticleTrajectoryCalculation_IgorFieldLine:
+      iFieldLine=(int)(PIC::FieldLine::nFieldLine*rnd());
+      PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstVertex()->GetX(x);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
+    
     startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
 
     if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) continue; 
@@ -102,20 +116,34 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     p=pmin+rnd()*(pmax-pmin);
     ParticleWeightCorrection=pow(p,-q)/WeightNorm;
     speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
-
-    Vector3D::Distribution::Uniform(v,speed);
-    if (Vector3D::DotProduct(x,v)<0.0) for (int i=0;i<3;i++) v[i]=-v[i];
-
-    //generate a particle
-    newParticle=PIC::ParticleBuffer::GetNewParticle();
-    newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
     nInjectedParticles++;
 
-    PIC::ParticleBuffer::SetX(x,newParticleData);
-    PIC::ParticleBuffer::SetV(v,newParticleData);
-    PIC::ParticleBuffer::SetI(spec,newParticleData);
+    switch (SEP::ParticleTrajectoryCalculation) {
+    case SEP::ParticleTrajectoryCalculation_RelativisticBoris:
+      Vector3D::Distribution::Uniform(v,speed);
+      if (Vector3D::DotProduct(x,v)<0.0) for (int i=0;i<3;i++) v[i]=-v[i];
 
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleWeightCorrection,newParticleData);
+      //generate a particle
+      newParticle=PIC::ParticleBuffer::GetNewParticle();
+      newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
+
+      PIC::ParticleBuffer::SetX(x,newParticleData);
+      PIC::ParticleBuffer::SetV(v,newParticleData);
+      PIC::ParticleBuffer::SetI(spec,newParticleData);
+
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleWeightCorrection,newParticleData);
+      break;
+    case ParticleTrajectoryCalculation_FieldLine: case  ParticleTrajectoryCalculation_IgorFieldLine:
+      Vector3D::Distribution::Uniform(pvect,p);
+      if (Vector3D::DotProduct(x,pvect)<0.0) for (int i=0;i<3;i++) pvect[i]=-pvect[i];
+
+      //add a new aprticle inthe system
+      PIC::FieldLine::InjectParticle_default(spec,pvect,ParticleWeightCorrection,iFieldLine,0);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    } 
+
 
     //inject the particle into the system
     _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode);

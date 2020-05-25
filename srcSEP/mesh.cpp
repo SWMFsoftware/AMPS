@@ -17,6 +17,7 @@ int SEP::Mesh::FieldLineTableLength=0;
 
 int SEP::ParticleTrajectoryCalculation=SEP::ParticleTrajectoryCalculation_RelativisticBoris;
 int SEP::DomainType=SEP::DomainType_ParkerSpiral;
+int SEP::Domain_nTotalParkerSpirals=1;
 
 
 double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
