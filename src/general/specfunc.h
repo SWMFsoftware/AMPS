@@ -452,9 +452,9 @@ namespace Vector3D {
   }
 
   inline void Normalize(double *x,double NewLength=1.0) {
-    double l=Length(x)/NewLength;
+    double l=NewLength/Length(x);
 
-    for (int idim=0;idim<3;idim++) x[idim]/=l;
+    for (int idim=0;idim<3;idim++) x[idim]*=l;
   }
 
   //distribute the vector direction
@@ -555,12 +555,26 @@ namespace Relativistic {
     return mass*Speed/sqrt(1.0-(Speed*Speed)/(SpeedOfLight*SpeedOfLight));
   }
 
+  inline void Vel2Momentum(double *p,double *v,double mass) {
+    double m_gamma=mass*GetGamma(v);
+
+    for (int idim=0;idim<3;idim++) p[idim]=m_gamma*v[idim];
+  } 
+
   inline double Momentum2Speed(double Momentum,double mass) {
     return Momentum*SpeedOfLight/sqrt(Momentum*Momentum+pow(mass*SpeedOfLight,2));
   }
 
   inline double Momentum2Speed(double* MomentumVector,double mass) {
     return Momentum2Speed(Vector3D::Length(MomentumVector),mass);
+  }
+
+  inline void Momentum2Vel(double *v,double *p,double mass) {
+    double pAbs=Vector3D::Length(p);
+    double speed=Momentum2Speed(pAbs, mass); 
+    double c=speed/pAbs;
+
+    for (int idim=0;idim<3;idim++) v[idim]=c*p[idim]; 
   }
 
   inline double Momentum2Energy(double Momentum,double mass) {
