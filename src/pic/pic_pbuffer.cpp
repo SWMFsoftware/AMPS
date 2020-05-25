@@ -17,6 +17,8 @@ long int PIC::ParticleBuffer::FirstPBufferParticle=-1;
 int PIC::ParticleBuffer::Thread::NTotalThreads=0;
 long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::ParticleBuffer::Thread::FirstPBufferParticle=NULL;
 
+PIC::ParticleBuffer::cOptionalParticleFieldAllocationManager PIC::ParticleBuffer::OptionalParticleFieldAllocationManager;
+int PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=-1,PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=-1;
 
 //==========================================================
 //init the buffer
@@ -25,6 +27,15 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   if ((ParticleDataBuffer!=NULL)||(MaxNPart!=0)) exit(__LINE__,__FILE__,"Reallocation of the particle data buffer");
   if (sizeof(byte)!=1) exit(__LINE__,__FILE__,"The size of 'byte' is diferent from 1");
   if (BufrerLength<=0) exit(__LINE__,__FILE__,"BufrerLength is less that zero");
+
+  //reserve space for optional parameters
+  if (OptionalParticleFieldAllocationManager.MomentumParallelNormal==true) {
+    _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=ParticleDataLength;
+    ParticleDataLength+=sizeof(double);
+
+    _PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=ParticleDataLength;
+    ParticleDataLength+=sizeof(double);
+  } 
 
   //reserve the space for additional 'particle's variables'
 

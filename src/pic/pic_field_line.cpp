@@ -83,6 +83,11 @@ namespace PIC {
     
     //=========================================================================
     cFieldLineVertex* cFieldLine::Add(double *xIn) {
+
+      if (PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal==false) {
+        exit(__LINE__,__FILE__,"Error: when field line module is used, PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal has to be set to TRUE");
+      }
+
       // check if field lineis unset
       if (IsSet == 0) {
         if (FirstVertex==NULL) {

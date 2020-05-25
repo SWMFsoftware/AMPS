@@ -1610,6 +1610,19 @@ namespace PIC {
     unsigned long int GetParticleSignature(long int ptr,CRC32* sig,bool IncludeListInfo=false);
     unsigned long int GetParticleSignature(long int ptr,bool IncludeListInfo=false);
 
+    //table controlling memory allocation for optional parameters 
+    class cOptionalParticleFieldAllocationManager {
+    public:
+      bool MomentumParallelNormal;
+
+      cOptionalParticleFieldAllocationManager() {
+        MomentumParallelNormal=false;
+      }
+    }; 
+
+    extern cOptionalParticleFieldAllocationManager OptionalParticleFieldAllocationManager;
+    extern int _PIC_PARTICLE_DATA__MOMENTUM_NORMAL_,_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_; 
+
     //the namespace contains data used in case when OpenMP is used
     namespace Thread {
       extern int NTotalThreads;
@@ -1822,6 +1835,43 @@ namespace PIC {
 
       memcpy(ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_,x,DIM*sizeof(double));
     }
+    //-------------------------------------------------------------------------
+
+    // Operations related to the particles' parallel and normal momentum
+    inline double GetMomentumParallel(long int ptr) {
+      return *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_)); 
+    }
+
+    inline double GetMomentumParallel(byte *ParticleDataStart) {
+      return *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_));
+    } 
+
+    inline void SetMomentumParallel(double p,long int ptr) {
+      *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_))=p;
+    }
+
+    inline void SetMomentumParallel(double p,byte *ParticleDataStart) {
+      *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_))=p;
+    }
+
+
+
+    inline double GetMomentumNormal(long int ptr) {
+      return *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_));
+    }
+
+    inline double GetMomentumNormal(byte *ParticleDataStart) {
+      return *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_));
+    }
+
+    inline void SetMomentumNormal(double p,long int ptr) {
+      *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_))=p;
+    }
+
+    inline void SetMomentumNormal(double p,byte *ParticleDataStart) {
+      *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_))=p;
+    }
+
     //-------------------------------------------------------------------------
 
     // Operations related to the individual particle weight correction    
