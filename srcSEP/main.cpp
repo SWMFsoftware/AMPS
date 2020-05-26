@@ -39,17 +39,12 @@ int main(int argc,char **argv) {
 
   amps_init();
 
-
+  int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
 
 
   //time step
-  for (long int niter=0;niter<100000001;niter++) {
-
+  for (long int niter=0;niter<TotalIterations;niter++) {
     amps_time_step();
-
-
-
-
   }
 
 
