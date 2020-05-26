@@ -198,32 +198,57 @@ namespace PIC {
     }
     
     //=========================================================================
-    long int InjectParticle_default(int spec) {
+ long int InjectParticle_default(int spec) {
+   double WeightCorrection,p[3],v[3];
+   int iFieldLine,iSegment;
+
+   iFieldLine = (int)(nFieldLine * rnd());
+   FieldLinesAll[iFieldLine].GetSegmentRandom(iSegment,WeightCorrection, spec);
+
+   int q=3;
+   double vmin=1e6, vmax=1e6;
+   double pvmin = pow(vmin, 1-q), pvmax = pow(vmax, 1-q);
+   double r= rnd();
+   double absv = pow( (1-r)*pvmin + r*pvmax, 1.0/(1-q));
+
+   double m0=PIC::MolecularData::GetMass(spec);
+
+   switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+   case _PIC_MODE_OFF_:
+     Vector3D::Distribution::Uniform(p,absv*m0);
+     break;
+
+   case _PIC_MODE_ON_:
+     Vector3D::Distribution::Uniform(v,absv);
+     Relativistic::Vel2Momentum(p,v,PIC::MolecularData::GetMass(spec));
+     break;
+   }
+
+   return InjectParticle_default(spec,p,1.0,iFieldLine,iSegment);
+}
+
+
+
+    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment) {
       //namespace alias
       namespace PB = PIC::ParticleBuffer;
 
       // pointer particle to the particle to be injected
-      PB::byte* ptrData;
-      ptrData = new PB::byte[PB::GetParticleDataLength()];
+      PB::byte ptrData[PB::ParticleDataLength];
       
       //default settings
-      PB::SetIndividualStatWeightCorrection(1.0,ptrData);
+      PB::SetIndividualStatWeightCorrection(ParticleWeightCorrectionFactor,ptrData);
       PB::SetI(spec, ptrData);
       
       // pick a random field line
-      int iFieldLine = (int)(nFieldLine * rnd());
       PB::SetFieldLineId(iFieldLine, ptrData);
 
       // inject particle onto this field line
-      int iSegment;
       double WeightCorrection;
       //    FieldLinesAll[iFieldLine].GetSegmentRandom(iSegment,
       //					       WeightCorrection, spec);
       
       //Inject at the beginning of the field line FOR PARKER SPIRAL
-      iSegment = 0;
-      FieldLinesAll[iFieldLine].GetSegmentRandom(iSegment,WeightCorrection, spec);
-
       cFieldLineSegment* Segment=FieldLinesAll[iFieldLine].GetSegment(iSegment);
       double S = iSegment + rnd();
       PB::SetFieldLineCoord(S, ptrData);
@@ -242,38 +267,90 @@ namespace PIC {
       // inject power law, 
       // see Numerical Studies of the Solar Energetic Particle 
       // Transport and Acceleration, Tenishev et al.
-      int q=3;
-      double vmin=1e6, vmax=1e6;
-      double pvmin = pow(vmin, 1-q), pvmax = pow(vmax, 1-q);
-      double r= rnd();
-      double absv = pow( (1-r)*pvmin + r*pvmax, 1.0/(1-q));
+      //int q=3;
+      //double vmin=1e6, vmax=1e6;
+      //double pvmin = pow(vmin, 1-q), pvmax = pow(vmax, 1-q);
+      //double r= rnd();
+      //double absv = pow( (1-r)*pvmin + r*pvmax, 1.0/(1-q));
 
       //direction of velocity: INJECT ALONG HE FIELD LINE FOR PARKER SPIRAL
-      double cosPhi =  1 - 2*rnd();
+      //double cosPhi =  1 - 2*rnd();
 
-      double vpar = absv*cosPhi;
-      double KinEnergyPerp = 9.1E-31 * 0.5 * (absv*absv - vpar*vpar);
+      //double vpar = absv*cosPhi;
+      //double KinEnergyPerp = 9.1E-31 * 0.5 * (absv*absv - vpar*vpar);
 
 
       //velocity is paral to the field line
-      Segment->GetDir(v);
-      for (int i=0; i<3; i++) v[i]*=vpar;
-      PB::SetV(v, ptrData);
-      
+      //Segment->GetDir(v);
+      //for (int i=0; i<3; i++) v[i]*=vpar;
+      //PB::SetV(v, ptrData);
+     
+
+      int idim;
+      double vpar[3],vperp[3],l[3],c0=0.0,m0=PIC::MolecularData::GetMass(spec);
+      double pPerpAbs,pParAbs,pPerpAbs2=0.0,pParAbs2=0.0;
+
+      Segment->GetDir(l);
+
+      switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+      case _PIC_MODE_OFF_:
+        for (c0=0.0,idim=0;idim<3;idim++) {
+          v[idim]=p[idim]/m0;
+          c0+=p[idim]*l[idim];
+        }
+
+        for (pPerpAbs2=0.0,pParAbs2=0.0,idim=0;idim<3;idim++) {
+          double t;
+
+          t=p[idim]-c0*l[idim];
+          pPerpAbs2+=t*t;
+
+          t=c0*l[idim];
+          pParAbs2+=t*t; 
+        }
+
+        pPerpAbs=sqrt(pPerpAbs2);
+        pParAbs=sqrt(pParAbs2);
+        break;
+
+      case _PIC_MODE_ON_:
+        ::Relativistic::Momentum2Vel(v,p,m0);
+        c0=Vector3D::DotProduct(p,l);
+
+        for (pPerpAbs2=0.0,pParAbs2=0.0,idim=0;idim<3;idim++) {
+          double t;
+
+          t=p[idim]-c0*l[idim];
+          pPerpAbs2+=t*t;
+
+          t=c0*l[idim];
+          pParAbs2+=t*t;
+        } 
+        
+        pPerpAbs=sqrt(pPerpAbs2);
+        pParAbs=sqrt(pParAbs2);
+        break;
+      }
+
+
+      PB::SetV(v,ptrData);
+      PB::SetMomentumParallel(pParAbs,ptrData);
+      PB::SetMomentumNormal(pPerpAbs,ptrData);
+ 
       //magnetic field
       double B[3], AbsB;
       Segment->GetMagneticField(S-(int)S, B);
       AbsB = pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2], 0.5)+1E-15;
       
       //magnetic moment
-      PB::SetMagneticMoment(KinEnergyPerp/AbsB, ptrData);
+      double mu=pPerpAbs2/(2.0*m0*AbsB);
+      PB::SetMagneticMoment(mu, ptrData);
 
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
       node=PIC::Mesh::mesh.findTreeNode(x);
       
       long int res=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
 
-      delete [] ptrData;
       double misc = PB::GetFieldLineCoord(res);
 
       return res;
@@ -324,7 +401,7 @@ namespace PIC {
       cFieldLineVertex *Vertex=FirstVertex;
       int nVertex = (is_loop()) ? nSegment : nSegment+1;
 
-      for (int iVertex=0; iVertex<=nVertex; iVertex++) {
+      for (int iVertex=0; iVertex<nVertex; iVertex++) {
         //print coordinates
         double x[DIM];
         double Value[3];
@@ -998,9 +1075,10 @@ namespace FieldLine{
     double dtTemp;
     PIC::ParticleBuffer::byte *ParticleData;
     double AbsBInit=0.0;
-    double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
+//    double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
     double AbsBMiddle=0.0;
     double vFinal[3]={0.0,0.0,0.0},xFinal[3]={0.0,0.0,0.0};
+
     int   iFieldLine = -1;
     double FieldLineCoordInit   = -1.0;
     double FieldLineCoordMiddle = -1.0;
@@ -1008,16 +1086,21 @@ namespace FieldLine{
     
     double ForceParalInit=0.0, ForceParalMiddle=0.0;
     double dirInit[3]={0.0,0.0,0.0};
-    double vparInit=0.0, vparMiddle=0.0, vparFinal=0.0;
+    double vParInit=0.0, vParMiddle=0.0, vParFinal=0.0;
+    double pParInit,pPerpInit,pParMiddle,pParFinal;
     int i,j,k,spec;
 	
     ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-    PIC::ParticleBuffer::GetV(vInit,ParticleData);
-    PIC::ParticleBuffer::GetX(xInit,ParticleData);
+    pPerpInit=PIC::ParticleBuffer::GetMomentumNormal(ParticleData);
+    pParInit=PIC::ParticleBuffer::GetMomentumParallel(ParticleData);
+
+
     spec=PIC::ParticleBuffer::GetI(ParticleData);
 
     double m0 = PIC::MolecularData::GetMass(spec);
     double mu = PIC::ParticleBuffer::GetMagneticMoment(ptr);
+    double v[3];
+    double p[3];
 
     iFieldLine = PIC::ParticleBuffer::GetFieldLineId(ptr);
     FieldLineCoordInit = PIC::ParticleBuffer::GetFieldLineCoord(ptr);
@@ -1025,25 +1108,31 @@ namespace FieldLine{
     static long int nCall=0;
     nCall++;
     
-    //  memcpy(xminBlock,startNode->xmin,DIM*sizeof(double));
-    //  memcpy(xmaxBlock,startNode->xmax,DIM*sizeof(double));
-
     // predictor step
     #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
     GuidingCenterMotion(ForceParalInit,AbsBInit,spec,ptr,iFieldLine,FieldLineCoordInit);
     #endif
     
     FL::FieldLinesAll[iFieldLine].GetSegmentDirection(dirInit, FieldLineCoordInit);
-    vparInit = vInit[0]*dirInit[0]+vInit[1]*dirInit[1]+vInit[2]*dirInit[2];
-    
+
+    switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+    case _PIC_MODE_OFF_:
+      vParInit=pParInit/m0;
+      break;
+    case _PIC_MODE_ON_:
+      p[0]=pParInit,p[1]=pPerpInit,p[2]=0.0; 
+
+      ::Relativistic::Momentum2Vel(v,p,m0);
+      vParInit=v[0];
+    }
     
     dtTemp=dtTotal/2.0;
 
     // advance coordinates half-step
-    FieldLineCoordMiddle = FL::FieldLinesAll[iFieldLine].move(FieldLineCoordInit, dtTemp * vparInit);
+    FieldLineCoordMiddle = FL::FieldLinesAll[iFieldLine].move(FieldLineCoordInit, dtTemp*vParInit);
 
     // advance momentum half-step
-    vparMiddle = vparInit + dtTemp * ForceParalInit/m0;
+    pParMiddle=pParInit+dtTemp*ForceParalInit;
     
     if (FL::FieldLinesAll[iFieldLine].is_loop()) FL::FieldLinesAll[iFieldLine].fix_coord(FieldLineCoordMiddle);
     
@@ -1071,10 +1160,21 @@ namespace FieldLine{
     
 
     // advance coordinates full-step
-    FieldLineCoordFinal = FL::FieldLinesAll[iFieldLine].move(FieldLineCoordInit, dtTotal * vparMiddle);
+
+    switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+    case _PIC_MODE_OFF_:
+      vParMiddle=pParMiddle/m0;
+      break;
+    case _PIC_MODE_ON_:
+      p[0]=pParMiddle,p[1]=pPerpInit,p[2]=0.0;
+      ::Relativistic::Momentum2Vel(v,p,m0);
+      vParMiddle=v[0];
+    }
+
+    FieldLineCoordFinal = FL::FieldLinesAll[iFieldLine].move(FieldLineCoordInit, dtTotal*vParMiddle);
 
     // advance momentum full-step
-    vparFinal =vparInit + dtTotal * ForceParalMiddle/m0; 
+    pParFinal=pParInit+dtTotal*ForceParalMiddle;
 
     if (FL::FieldLinesAll[iFieldLine].is_loop()) FL::FieldLinesAll[iFieldLine].fix_coord(FieldLineCoordFinal);
 
@@ -1096,12 +1196,23 @@ namespace FieldLine{
       }
     }
 
-    FL::FieldLinesAll[iFieldLine].GetSegmentDirection(vFinal, FieldLineCoordFinal);
-    vFinal[0]*=vparFinal;vFinal[1]*=vparFinal;vFinal[2]*=vparFinal;
     FL::FieldLinesAll[iFieldLine].GetCartesian(xFinal, FieldLineCoordFinal);
-    
     newNode=PIC::Mesh::Search::FindBlock(xFinal);
-    
+
+
+    ////PIC::ParticleBuffer::GetMomentumNormal(pPerpFinal,ParticleData) --> pPerpFinal was not updated 
+    PIC::ParticleBuffer::SetMomentumParallel(pParFinal,ParticleData);
+
+
+    switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+    case _PIC_MODE_OFF_:
+      v[0]=pParFinal/m0,v[1]=pPerpInit/m0,v[2]=0.0;
+      break;
+    case _PIC_MODE_ON_:
+      p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
+      ::Relativistic::Momentum2Vel(v,p,m0);
+    }
+
     PIC::ParticleBuffer::SetV(vFinal,ParticleData);
     PIC::ParticleBuffer::SetX(xFinal,ParticleData);
     PB::SetFieldLineCoord(FieldLineCoordFinal, ParticleData);
