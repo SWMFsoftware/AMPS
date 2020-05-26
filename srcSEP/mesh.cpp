@@ -50,7 +50,7 @@ void SEP::Mesh::ImportFieldLine(list<SEP::cFieldLine> *field_line) {
 
   for (i=0;i<NewFieldLineTableLength;i++) NewFieldLineTable[i]=NewFieldLineTable[0]+3*i;
 
-  for (ip=0;ip<FieldLineTableLength;ip++) for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=FieldLineTable[i][idim]; 
+  for (ip=0;ip<FieldLineTableLength;ip++) for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=FieldLineTable[ip][idim]; 
 
   for (it=field_line->begin();it!=field_line->end();it++,ip++) {
     for (idim=0;idim<3;idim++) NewFieldLineTable[ip][idim]=it->x[idim];
@@ -215,5 +215,6 @@ void SEP::Mesh::InitFieldLineAMPS(list<SEP::cFieldLine> *field_line) {
 
     if (FL::DatumAtVertexPlasmaWaves.offset>=0) Vertex->SetDatum(FL::DatumAtVertexPlasmaWaves,it->Wave);
   }
-
+  
+  FL::nFieldLine++;
 }
