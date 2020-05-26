@@ -159,13 +159,43 @@ void amps_init() {
   switch (SEP::DomainType) {
   case SEP::DomainType_ParkerSpiral:
     PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+  
+    if (SEP::Domain_nTotalParkerSpirals==1) { 
+      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
+      SEP::Mesh::ImportFieldLine(&field_line);
 
-    SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
-    SEP::Mesh::ImportFieldLine(&field_line);
+      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) {
+        PIC::FieldLine::Init();
+        SEP::Mesh::InitFieldLineAMPS(&field_line);
+      }
+    }
+    else {
+      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) PIC::FieldLine::Init();
 
-    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) {
-      PIC::FieldLine::Init();
-      SEP::Mesh::InitFieldLineAMPS(&field_line);
+      rnd_seed(10);
+
+      for (int iline=0;iline<SEP::Domain_nTotalParkerSpirals;iline++) {
+        double x0[3],r,phi;  
+        double phi_max=15.0*Pi/180.0;
+
+        r=Vector3D::Length(xStart);
+
+        phi=phi_max*rnd();
+        if (rnd()<0.5) phi=-phi;
+
+        x0[0]=r*sin(phi);
+        x0[1]=r*cos(phi);
+        x0[2]=0.0; 
+
+        field_line.clear();
+
+        SEP::ParkerSpiral::CreateFileLine(&field_line,x0,250.0);
+        SEP::Mesh::ImportFieldLine(&field_line);
+
+        if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) SEP::Mesh::InitFieldLineAMPS(&field_line);
+      } 
+
+      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) PIC::FieldLine::Output("all-field-lines.dat",false);
     }
 
     break;
