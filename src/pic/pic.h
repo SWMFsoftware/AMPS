@@ -1072,6 +1072,7 @@ namespace PIC {
     // there is a user-defined procedure
     long int InjectParticle(int spec);
     long int InjectParticle_default(int spec);
+    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment);
   }
 
   //the first part of the namespace Debugger difinition
