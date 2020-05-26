@@ -126,6 +126,9 @@ while ($line=<InputFile>) {
    if ($InputLine eq "PARKERSPIRAL") {
      ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_ParkerSpiral","main/mesh.cpp");
    }
+   elsif ($InputLine eq "MULTIPLEPARKERSPIRALS") {
+     ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_MultipleParkerSpirals","main/mesh.cpp");
+   }
    elsif ($InputLine eq "FLAMPA") {
      ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_FLAMPA_FieldLines","main/mesh.cpp");
    }
@@ -133,6 +136,13 @@ while ($line=<InputFile>) {
      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
    }
  }
+
+  ##set the total number of Parker spirals that defines the domain
+  elsif ($InputLine eq "NTOTALPARKERSPIRALS") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+    ampsConfigLib::ChangeValueOfVariable("int SEP::Domain_nTotalParkerSpirals",$InputLine,"main/mesh.cpp");
+  }
 
   ##the model for integrating particle trajectories 
   elsif ($InputLine eq "PARTICLETRAJECTORY") {
