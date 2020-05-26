@@ -405,6 +405,48 @@ Compile=
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_CCMC_compile... done" >> test_CCMC.diff
 <#
+
+
+-------------------------------------------------------------------------------
+#>
+Name=SEP--Multiple_Parker_spiral--boris_relativistic 
+Time=4
+
+Compile=
+>>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile..." > test_SEP--Multiple_Parker_spiral--boris_relativistic.diff
+>>>./Config.pl -application=test/sep_multiple_parker_spiral__boris_relativistic -spice-path=nospice   -amps-test=on 
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Multiple_Parker_spiral--boris_relativistic.diff
+<#
+
+
+#>
+Name=SEP--Parker_spiral--boris_relativistic      
+Time=4
+
+Compile=
+>>>@echo "test_SEP--Parker_spiral--boris_relativistic_compile..." > test_SEP--Parker_spiral--boris_relativistic.diff
+>>>./Config.pl -application=test/sep_parker_spiral__boris_relativistic -spice-path=nospice   -amps-test=on                  
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP--Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Parker_spiral--boris_relativistic.diff
+<#
+
+
+#>
+Name=SEP--Parker_spiral--field_line         
+Time=4
+
+Compile=
+>>>@echo "test_SEP--Parker_spiral--field_line_compile..." > test_SEP--Parker_spiral--field_line.diff
+>>>./Config.pl -application=test/sep_parker_spiral__field_line -spice-path=nospice   -amps-test=on         
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP--Parker_spiral--field_line_compile... done" >> test_SEP--Parker_spiral--field_line.diff
+<#
+
+
 -------------------------------------------------------------------------------
 #>
 Name=Moon
