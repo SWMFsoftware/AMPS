@@ -491,11 +491,11 @@ namespace PIC {
 
       //.......................................................................
       //set individual stored variables
-      inline void SetDatum(cDatumStored Datum, double* In) {
+      inline void SetDatum(cDatumStored& Datum, double* In) {
         if (Datum.offset>=0) memcpy(AssociatedDataPointer+Datum.offset, In, Datum.length * sizeof(double));
       }
 
-      inline void SetDatum(cDatumStored Datum, double In) {
+      inline void SetDatum(cDatumStored& Datum, double In) {
         if (Datum.offset>=0) memcpy(AssociatedDataPointer+Datum.offset, &In, sizeof(double));
       }
 
@@ -525,44 +525,61 @@ namespace PIC {
 
       //.......................................................................
       //set individual sampled variables
-      inline void SetDatum(cDatumSampled Datum, double* In, int spec) {
+      inline void SetDatum(cDatumSampled& Datum, double* In, int spec) {
         if (Datum.offset>=0) memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),In, Datum.length * sizeof(double));
       }
 
-      inline void SetDatum(cDatumSampled Datum, double In, int spec) {
+      inline void SetDatum(cDatumSampled& Datum, double In, int spec) {
         if (Datum.offset>=0) memcpy(AssociatedDataPointer + CompletedSamplingOffset + Datum.offset + Datum.length * spec * sizeof(double),&In, sizeof(double));
       }
 
       //.......................................................................
       // sample data
-      inline void SampleDatum(PIC::Datum::cDatumSampled Datum,double* In, int spec, double weight=1.0) {
+      inline void SampleDatum(PIC::Datum::cDatumSampled& Datum,double* In, int spec, double weight=1.0) {
         if (Datum.offset>=0) for (int i=0; i<Datum.length; i++)  *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In[i] * weight;
       }
 
-      inline void SampleDatum(Datum::cDatumSampled Datum, double In, int spec,double weight=1.0) {
+      inline void SampleDatum(Datum::cDatumSampled& Datum, double In, int spec,double weight=1.0) {
         if (Datum.offset>=0) *(spec + (double*)(AssociatedDataPointer + CollectingSamplingOffset+Datum.offset))+= In * weight;
       }
 
       //.......................................................................
       //get individual stored variables
-      inline void GetDatum(cDatumStored Datum, double* Out) {
+      inline void GetDatum(cDatumStored& Datum, double* Out) {
         if (Datum.offset>=0) memcpy(Out, AssociatedDataPointer+Datum.offset, Datum.length * sizeof(double));
       }
 
-      inline void GetDatum(cDatumStored Datum, double& Out) {
+      inline void GetDatum(cDatumStored& Datum, double& Out) {
         if (Datum.offset>=0) Out = *(double*)(AssociatedDataPointer+Datum.offset);
       }
 
+      inline double* GetDatum_ptr(cDatumStored& Datum) {
+        return (Datum.offset>=0) ? (double*)(AssociatedDataPointer+Datum.offset) : NULL;
+      } 
+
+
       inline void GetElectricField(double* ElectricFieldOut) {
         GetDatum(DatumAtVertexElectricField, ElectricFieldOut);
+      }
+
+      inline double* GetElectricField() {
+        return GetDatum_ptr(DatumAtVertexElectricField);
       }
 
       inline void GetMagneticField(double* MagneticFieldOut) {
         GetDatum(DatumAtVertexMagneticField, MagneticFieldOut);
       }
 
+      inline double* GetMagneticField() {
+        GetDatum_ptr(DatumAtVertexMagneticField);
+      }
+
       inline void GetPlasmaVelocity(double* PlasmaVelocityOut) {
         GetDatum(DatumAtVertexPlasmaVelocity, PlasmaVelocityOut);
+      }
+
+      inline double* GetPlasmaVelocity() {
+        GetDatum_ptr(DatumAtVertexPlasmaVelocity);
       }
 
       inline void GetPlasmaDensity(double& PlasmaDensityOut) {
@@ -579,17 +596,17 @@ namespace PIC {
 
       //get accumulated data
       //.......................................................................
-      inline void GetDatumCumulative(Datum::cDatumSampled Datum, double* Out, int spec) {
+      inline void GetDatumCumulative(Datum::cDatumSampled& Datum, double* Out, int spec) {
         if (Datum.offset>=0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
       }
 
-      inline double GetDatumCumulative(Datum::cDatumSampled Datum, int spec) {
+      inline double GetDatumCumulative(Datum::cDatumSampled& Datum, int spec) {
         return (Datum.offset>=0) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) : 0.0;
       }
 
       //get data averaged over time
       //.......................................................................
-      inline void GetDatumAverage(cDatumTimed Datum, double* Out, int spec) {
+      inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec) {
         if (Datum.offset>=0) {
           if (PIC::LastSampleLength>0) {
             for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength;
@@ -598,13 +615,13 @@ namespace PIC {
         }
       }
 
-      inline double GetDatumAverage(cDatumTimed Datum, int spec) {
+      inline double GetDatumAverage(cDatumTimed& Datum, int spec) {
         return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
       }
 
       //get data averaged over sampled weight
       //.......................................................................
-      inline void GetDatumAverage(cDatumWeighted Datum, double* Out, int spec) {
+      inline void GetDatumAverage(cDatumWeighted& Datum, double* Out, int spec) {
         double TotalWeight=0.0;
 
         GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
@@ -615,7 +632,7 @@ namespace PIC {
         }
       }
 
-      inline double GetDatumAverage(cDatumWeighted Datum, int spec) {
+      inline double GetDatumAverage(cDatumWeighted& Datum, int spec) {
         double TotalWeight=0.0;
 
         GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
@@ -761,9 +778,9 @@ namespace PIC {
       //interpolate individual variables from vertices to point on the segment
       //position 0<=s<=1 on the segment
       inline void GetElectricField(double  S, double* ElectricFieldOut) {
-        double tBegin[DIM], tEnd[DIM];
+        double *tBegin, *tEnd;
 
-        begin->GetElectricField( tBegin), end->GetElectricField(tEnd);
+        tBegin=begin->GetElectricField(),tEnd=end->GetElectricField();
 
         for (int idim=0; idim<DIM; idim++) {
           ElectricFieldOut[idim]  = tBegin[idim] * (1 - S) + tEnd[idim] * S;
@@ -772,9 +789,9 @@ namespace PIC {
 
       //position 0<=s<=1 on the segment
       inline void GetMagneticField(double  S, double* MagneticFieldOut) {
-        double tBegin[DIM], tEnd[DIM];
+        double *tBegin,*tEnd;
 
-        begin->GetMagneticField( tBegin), end->GetMagneticField(tEnd);
+        tBegin=begin->GetMagneticField(),tEnd=end->GetMagneticField();
 
         for (int idim=0; idim<DIM; idim++) {
           MagneticFieldOut[idim]  = tBegin[idim] * (1 - S) + tEnd[idim] * S;
@@ -783,9 +800,9 @@ namespace PIC {
 
       //position 0<=s<=1 on segment
       inline void GetPlasmaVelocity(double  S, double* PlasmaVelocityOut) {
-        double tBegin[DIM], tEnd[DIM];
+        double *tBegin,*tEnd;
 
-        begin->GetPlasmaVelocity(tBegin), end->GetPlasmaVelocity(tEnd);
+        tBegin=begin->GetPlasmaVelocity(),tEnd=end->GetPlasmaVelocity();
 
         for (int idim=0; idim<DIM; idim++) {
           PlasmaVelocityOut[idim] = tBegin[idim] * (1 - S) + tEnd[idim] * S;
