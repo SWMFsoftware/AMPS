@@ -1032,12 +1032,9 @@ namespace FieldLine{
     // namespace alias
     namespace FL = PIC::FieldLine;
 
-    double ForceParal_LOC = 0.0;
-    double AbsB_LOC       = 0.0;
-    
-    //#if _FORCE_LORENTZ_MODE_ == _PIC_MODE_ON_
-    
+    #if _PIC__IDEAL_MHD_MODE_ == _PIC_MODE_OFF_
     exit(__LINE__,__FILE__,"Error: calculation of the electric field component of the Lorentz force is not implemented");
+    #endif
 
     double B[3],B0[3],B1[3], AbsBDeriv;
     double mu     = PIC::ParticleBuffer::GetMagneticMoment(ptr);
@@ -1046,7 +1043,7 @@ namespace FieldLine{
     FL::FieldLinesAll[iFieldLine].GetMagneticField(B0, (int)FieldLineCoord);
     FL::FieldLinesAll[iFieldLine].GetMagneticField(B,       FieldLineCoord);
     FL::FieldLinesAll[iFieldLine].GetMagneticField(B1, (int)FieldLineCoord+1-1E-7);
-    AbsB_LOC   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
+    AbsB   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
     
     AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
         pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
@@ -1054,15 +1051,10 @@ namespace FieldLine{
     //parallel force
     #if _PIC__IDEAL_MHD_MODE_ == _PIC_MODE_ON_
     // in this case E = - V \cross B => E_{\paral} = E*b = 0
-    ForceParal_LOC = - mu * AbsBDeriv;
+    ForceParal = - mu * AbsBDeriv;
     #else
     exit(__LINE__, __FILE__, "not implemented");
     #endif//_PIC__IDEAL_MHD_MODE_ == _PIC_MODE_ON_
-    
-    
-    //#endif//_FORCE_LORENTZ_MODE_
-    ForceParal = ForceParal_LOC;
-    AbsB       = AbsB_LOC;
   }
   
   // mover itself
