@@ -138,7 +138,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
       if (Vector3D::DotProduct(x,pvect)<0.0) for (int i=0;i<3;i++) pvect[i]=-pvect[i];
 
       //add a new aprticle inthe system
-      PIC::FieldLine::InjectParticle_default(spec,pvect,ParticleWeightCorrection,iFieldLine,0);
+      newParticle=PIC::FieldLine::InjectParticle_default(spec,pvect,ParticleWeightCorrection,iFieldLine,0);
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is unknown");
