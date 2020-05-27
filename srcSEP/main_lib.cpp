@@ -159,6 +159,10 @@ void amps_init() {
   switch (SEP::DomainType) {
   case SEP::DomainType_ParkerSpiral:
     PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+
+    PIC::FieldLine::VertexAllocationManager.PlasmaWaves=true;
+    PIC::FieldLine::VertexAllocationManager.MagneticField=true;
+    PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
   
     if (SEP::Domain_nTotalParkerSpirals==1) { 
       SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
