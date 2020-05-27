@@ -47,8 +47,11 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
 
   dl=length_rsun*_RADIUS_(_SUN_)/npoints;
 
-  for (idim=0;idim<3;idim++) p.x[idim]=xstart[idim]*_RADIUS_(_SUN_);
+  for (idim=0;idim<3;idim++) {
+    p.x[idim]=xstart[idim]*_RADIUS_(_SUN_);
+  }
 
+  GetB(p.B,p.x,u_sw);
   field_line->push_back(p);
 
 
@@ -58,6 +61,7 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
 
     for (idim=0;idim<3;idim++) p.x[idim]+=l[idim];
 
+    GetB(p.B,p.x,u_sw);
     field_line->push_back(p);
   }
 }
