@@ -387,7 +387,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
               *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset))=data[offset+8+5*(ifluid-1)]/MeanPlasmaAtomicMass;
 
               for (idim=0;idim<3;idim++) {
-                *(idim+3*ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+BulkVelocityOffset))=data[offset+9+idim+5*(ifluid-1)]/data[offset+8+5*(ifluid-1)]; 
+                *(idim+3*ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+BulkVelocityOffset))=(data[offset+8+5*(ifluid-1)]>0.0) ? data[offset+9+idim+5*(ifluid-1)]/data[offset+8+5*(ifluid-1)] : 0.0; 
               }
 
               *(ifluid+(double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=data[offset+12+5*(ifluid-1)];
