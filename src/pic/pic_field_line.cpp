@@ -1198,11 +1198,11 @@ namespace FieldLine{
 
     switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
     case _PIC_MODE_OFF_:
-      v[0]=pParFinal/m0,v[1]=pPerpInit/m0,v[2]=0.0;
+      vFinal[0]=pParFinal/m0,vFinal[1]=pPerpInit/m0,vFinal[2]=0.0;
       break;
     case _PIC_MODE_ON_:
       p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
-      ::Relativistic::Momentum2Vel(v,p,m0);
+      ::Relativistic::Momentum2Vel(vFinal,p,m0);
     }
 
     PIC::ParticleBuffer::SetV(vFinal,ParticleData);
@@ -1214,7 +1214,7 @@ namespace FieldLine{
 
   //save the trajectory point
 #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-  PIC::ParticleTracker::RecordTrajectoryPoint(xInit,vInit,spec,ParticleData,(void*)startNode);
+  PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)startNode);
 #endif
 
 
