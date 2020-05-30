@@ -227,7 +227,6 @@ public:
 
           ifile.CutInputStr(str1,str);
           DataBuffer[iAlt][iLat][iLon]=strtod(str1,&endptr);
-          if (!isfinite(DataBuffer[iAlt][iLat][iLon])) printf("infinity:%e\n",DataBuffer[iAlt][iLat][iLon]);
         }
 
         ++iAlt;
@@ -386,9 +385,16 @@ cAlt=0.0,cLon=0.0,cLat=0.0;
             c1=DataBuffer[iAlt][iLat+j][iLon+i]*exp(-h*(r-PlanetRadius-minAltitude-iAlt*dAltitude));
           }else{
             
-            double temp = DataBuffer[iAlt][iLat+j][iLon+i];
-            if (temp>_TGCM_VALID_VALUE_LIMIT_) c1=0.0;
-
+	    double temp = DataBuffer[iAlt][iLat+j][iLon+i];
+            if (temp>_TGCM_VALID_VALUE_LIMIT_) {
+              c1=0.0;
+            }else{
+              double htemp = 5e5;
+              c1=pow(10,DataBuffer[iAlt][iLat+j][iLon+i])*exp(-1./htemp*(r-PlanetRadius-minAltitude-iAlt*dAltitude));
+              //printf("extrapolate c1:%e,h:%e,1/h:%e,temp:%e,10temp:%e,r:%e,PlanetRadius:%e,minAltitude:%e,iAlt:%d,dAltitude:%e\n",               
+              //       c1,h,1/(h+1e-30),temp,pow(10,temp),r,PlanetRadius,minAltitude,iAlt,dAltitude);                                              
+            }
+	    
           }
            
           break;

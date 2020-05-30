@@ -28,7 +28,7 @@
 #include "ifileopr.h"
 #include "MTGCM.h"
 #include "m-gitm.h"
-#include "Venus.dfn"
+#include "Mars.dfn"
 
 #include "quadrature.h"
 #include "SphericalVolumeMesh.h"
@@ -37,7 +37,9 @@
 #include "MarsBackgroundAtmosphereFox.h"
 
 //the forward scattering cross section
-#include "Kharchenko-2000-fig-3.h"
+//#include "Kharchenko-2000-fig-3.h"
+
+#include "NewOCO2-2.5eV-v03-Total.h"
 
 //List of types of O2+ DR coefficients
 #define Hodges 0
@@ -172,76 +174,58 @@ inline void ReadMTGCM() {
 		Te.PlanetRadius=_RADIUS_(_TARGET_);
 		Te.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
                 //sprintf(fname,"/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Te_venus.h");
-                sprintf(fname,"%s/Te_venus.h",PIC::UserModelInputDataPath);
-		//Te.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Te_venus.h");
-                Te.ReadDataFile(fname);
-                //printf("venus Te read\n");
+		Te.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Te_venus.h");
+                printf("venus Te read\n");
 
 		Tn.PlanetRadius=_RADIUS_(_TARGET_);
 		Tn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		//sprintf(fname,"/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Tn_venus.h");
-                sprintf(fname,"%s/Tn_venus.h",PIC::UserModelInputDataPath);
-		//Tn.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Tn_venus.h");
-		Tn.ReadDataFile(fname);
-		
-             		
+		//sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
+		Tn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
+				
 		Ti.PlanetRadius=_RADIUS_(_TARGET_);
 		Ti.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/Tn_venus.h",PIC::UserModelInputDataPath);
-		//Ti.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Tn_venus.h");
-                Ti.ReadDataFile(fname);	
-	
-                
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
+		Ti.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
+		
 		O2p.PlanetRadius=_RADIUS_(_TARGET_);
 		O2p.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		//sprintf(fname,"/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/O2p_venus.h");
-                sprintf(fname,"%s/O2p_venus.h",PIC::UserModelInputDataPath);	
-		//O2p.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/O2p_venus.h");
-		O2p.ReadDataFile(fname);
-		
-                
-		
+		//sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/O2p_venus.h");
+		O2p.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/O2p_venus.h");
+				
 		E.PlanetRadius=_RADIUS_(_TARGET_);
 		E.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-                sprintf(fname,"%s/Ne_venus.h",PIC::UserModelInputDataPath);	
-		//E.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Ne_venus.h");
-		E.ReadDataFile(fname);
-		               
-
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Ne_venus.h");
+		E.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Ne_venus.h");
+		
 		O.PlanetRadius=_RADIUS_(_TARGET_);
 		O.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-                sprintf(fname,"%s/O_venus.h",PIC::UserModelInputDataPath);	
-                //sprintf(fname,"/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/O_venus.h");
-		//O.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/O_venus.h");
-                O.ReadDataFile(fname);
-	
-
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/O_venus.h");
+		O.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/O_venus.h");
+		
 		CO.PlanetRadius=_RADIUS_(_TARGET_);
 		CO.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/CO_venus.h",PIC::UserModelInputDataPath);
-		//CO.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/CO_venus.h");
-                CO.ReadDataFile(fname);
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/CO_venus.h");
+		CO.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/CO_venus.h");
 		
 		CO2.PlanetRadius=_RADIUS_(_TARGET_);
 		CO2.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"%s/CO2_venus.h",PIC::UserModelInputDataPath);
-		//CO2.ReadDataFile("/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/CO2_venus.h");
-                CO2.ReadDataFile(fname);
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/CO2_venus.h");
+		CO2.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/CO2_venus.h");
 	
 		Un.PlanetRadius=_RADIUS_(_TARGET_);
 		Un.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/Un_venus.h",PIC::UserModelInputDataPath);
-		Un.ReadDataFile(fname);
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Un_venus.h");
+		Un.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Un_venus.h");
 		
 		Vn.PlanetRadius=_RADIUS_(_TARGET_);
 		Vn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/Vn_venus.h",PIC::UserModelInputDataPath);
-		Vn.ReadDataFile(fname);
+		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");
+		Vn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");
 		
 		Wn.PlanetRadius=_RADIUS_(_TARGET_);
 		Wn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/Vn_venus.h",PIC::UserModelInputDataPath);
-		Wn.ReadDataFile(fname);  
+		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
+		Wn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");  
                 //will be set to 0 for Venus
 		
 
@@ -281,7 +265,9 @@ inline void ReadMTGCM() {
 //    ForwardCollisionCrossSection.AddProfile(3*eV2J,_KHANCHERKO_2000__3EV_DATA_LENGTH_,_KHANCHERKO_2000__3EV_DATA_);
 
 
-    ForwardCollisionCrossSection.AddProfile(3*eV2J,_FOX_LENGTH_,_FOX_DATA_);
+    //ForwardCollisionCrossSection.AddProfile(3*eV2J,_FOX_LENGTH_,_FOX_DATA_);
+    ForwardCollisionCrossSection.AddProfile(2.5*eV2J,_NEWOCO2_2_5EV_LENGTH_,_NEWOCO2_2_5EV_DATA_);
+    
 
 //    ForwardCollisionCrossSection.AddProfile(3.1*eV2J,_KHANCHERKO_LENGTH_,_KHANCHERKO_DATA_);
 
@@ -423,7 +409,7 @@ inline double ProductionRateCaluclation_HotO(double *x) {
                    localHO2p, localHE, Eslope, Oslope
                    );
             */
-            bool isnan(localHE);
+            //bool isnan(localHE);
             
             if (/*localHE<=0.0 &&*/ localHO2p>0.0) {
                 tE=E.Interpolate(x)*exp(-(Altitude-cutoffAlt)/localHO2p);
@@ -445,8 +431,12 @@ inline double ProductionRateCaluclation_HotO(double *x) {
             production_rate=1.6E-7*pow(300/Te.Interpolate(x),0.55)*O2p.Interpolate(x)*tE;
 #endif
 #if DRO2p == Mehr //Mehr and Biondi [1969]
-            if (Te.Interpolate(x)<=1200.0) {production_rate=1.95E-7*pow(300/(Te.Interpolate(x)+1e-5),0.7)*(O2p.Interpolate(x)/1.0e6)*(tE/1.0e6);}
-            else if (Te.Interpolate(x)>1200.0) {production_rate=7.39E-8*pow(1200/(Te.Interpolate(x)+1e-5),0.56)*(O2p.Interpolate(x)/1.0e6)*(tE/1.0e6);}
+            if (Te.Interpolate(x)<=1200.0) {production_rate=1.95E-7*pow(300/(Te.Interpolate(x)+1e-5),0.7)*(O2p.Interpolate(x))*(tE);} //changed for MTGCM
+            else if (Te.Interpolate(x)>1200.0) {production_rate=7.39E-8*pow(1200/(Te.Interpolate(x)+1e-5),0.56)*(O2p.Interpolate(x))*(tE);} //changed for MTGCM
+
+
+
+
             /*
             if (fabs(Altitude-4.268962e+07)<2e3){
               printf("Te.Interpolate(x):%e\n",Te.Interpolate(x));
@@ -501,8 +491,8 @@ inline double ProductionRateCaluclation_HotO(double *x) {
 #endif
         
     }
-
-    if ((!isfinite(production_rate)) || (!isfinite(production_rate))){
+    /*
+    if (isnan(production_rate) || isinf(production_rate)){
       
       printf("Altitude:%e, production rate:%e\n",Altitude,production_rate);
       double temp1= Te.Interpolate(x);
@@ -517,6 +507,8 @@ inline double ProductionRateCaluclation_HotO(double *x) {
 
 
     }
+    */
+    
     return production_rate*1.0e6;
 
 }
@@ -601,7 +593,7 @@ inline double ProductionRateCaluclation_HotC(double *x) {
         }
         
         double localH=10E3/(log(COp.Interpolate(vectop)/COp.Interpolate(vectop2)));
-        bool isnan(localH);
+      
         if (localH<COpScaleHeight/3) {
             localH=COpScaleHeight/2;
         }
@@ -618,11 +610,11 @@ inline double ProductionRateCaluclation_HotC(double *x) {
         else if (Altitude>=Altitude2){t=(COp.Interpolate(vectop)*exp((Altitude2-z0)/localH))*exp(-(Altitude-Altitude2)/COpScaleHeight);}
         
         //	if (nz>100E3){exit(__LINE__,__FILE__,"Error");}
-      //  bool isnan(t);
-       // bool isinf(t);
+       
+       
         
         double nz=1E3,tt=0.0;
-        while (isfinite(t)!=true) {
+        while (isnan(t)==true) {
             if (nz>=Altitude) {t=1.0;}
             for (idim=0;idim<DIM;idim++) {vectop2[idim]= (3388.25E3+(Altitude-nz))*(x[idim]/r);}
             t=COp.Interpolate(vectop2);
