@@ -571,7 +571,7 @@ namespace PIC {
       }
 
       inline double* GetMagneticField() {
-        GetDatum_ptr(DatumAtVertexMagneticField);
+        return GetDatum_ptr(DatumAtVertexMagneticField);
       }
 
       inline void GetPlasmaVelocity(double* PlasmaVelocityOut) {
@@ -579,7 +579,7 @@ namespace PIC {
       }
 
       inline double* GetPlasmaVelocity() {
-        GetDatum_ptr(DatumAtVertexPlasmaVelocity);
+        return GetDatum_ptr(DatumAtVertexPlasmaVelocity);
       }
 
       inline void GetPlasmaDensity(double& PlasmaDensityOut) {
