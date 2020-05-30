@@ -28,7 +28,7 @@
 #include "ifileopr.h"
 #include "MTGCM.h"
 #include "m-gitm.h"
-#include "Mars.dfn"
+#include "Venus.dfn"
 
 #include "quadrature.h"
 #include "SphericalVolumeMesh.h"
@@ -173,59 +173,59 @@ inline void ReadMTGCM() {
     
 		Te.PlanetRadius=_RADIUS_(_TARGET_);
 		Te.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-                //sprintf(fname,"/Volumes/scratch/Yinsi/AMPS_venus/VENUS_test/Te_venus.h");
-		Te.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Te_venus.h");
+                sprintf(fname,"%s/Te_venus.h",PIC::UserModelInputDataPath);
+		Te.ReadDataFile(fname);
                 printf("venus Te read\n");
 
 		Tn.PlanetRadius=_RADIUS_(_TARGET_);
 		Tn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		//sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
-		Tn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
+		sprintf(fname,"%s/Tn_venus.h",PIC::UserModelInputDataPath);
+		Tn.ReadDataFile(fname);
 				
 		Ti.PlanetRadius=_RADIUS_(_TARGET_);
 		Ti.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-		Ti.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Tn_venus.h");
+		sprintf(fname,"%s/Tn_venus.h",PIC::UserModelInputDataPath);
+		Ti.ReadDataFile(fname);
 		
 		O2p.PlanetRadius=_RADIUS_(_TARGET_);
 		O2p.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		//sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/O2p_venus.h");
-		O2p.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/O2p_venus.h");
+		sprintf(fname,"%s/O2p_venus.h",PIC::UserModelInputDataPath);
+		O2p.ReadDataFile(fname);
 				
 		E.PlanetRadius=_RADIUS_(_TARGET_);
 		E.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Ne_venus.h");
-		E.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Ne_venus.h");
+		sprintf(fname,"%s/Ne_venus.h",PIC::UserModelInputDataPath);
+		E.ReadDataFile(fname);
 		
 		O.PlanetRadius=_RADIUS_(_TARGET_);
 		O.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/O_venus.h");
-		O.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/O_venus.h");
+		sprintf(fname,"%s/O_venus.h",PIC::UserModelInputDataPath);
+		O.ReadDataFile(fname);
 		
 		CO.PlanetRadius=_RADIUS_(_TARGET_);
 		CO.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/CO_venus.h");
-		CO.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/CO_venus.h");
+		sprintf(fname,"%s/CO_venus.h",PIC::UserModelInputDataPath);
+		CO.ReadDataFile(fname);
 		
 		CO2.PlanetRadius=_RADIUS_(_TARGET_);
 		CO2.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_SCALE_HIGHT__FORCE_POSITIVE_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/CO2_venus.h");
-		CO2.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/CO2_venus.h");
+		sprintf(fname,"%s/CO2_venus.h",PIC::UserModelInputDataPath);
+		CO2.ReadDataFile(fname);
 	
 		Un.PlanetRadius=_RADIUS_(_TARGET_);
 		Un.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Un_venus.h");
-		Un.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Un_venus.h");
+		sprintf(fname,"%s/Un_venus.h",PIC::UserModelInputDataPath);
+		Un.ReadDataFile(fname);
 		
 		Vn.PlanetRadius=_RADIUS_(_TARGET_);
 		Vn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");
-		Vn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");
+		sprintf(fname,"%s/Vn_venus.h",PIC::UserModelInputDataPath);
+		Vn.ReadDataFile(fname);
 		
 		Wn.PlanetRadius=_RADIUS_(_TARGET_);
 		Wn.OutsideDomainInterpolationMode=_MTGCM_INTERPOLATION_MODE_VERTICAL_CONSTANT_;
-		sprintf(fname,"%s/MTGCM_equinox_SL/MGITM_PERMAX-SDC.dat",PIC::UserModelInputDataPath);
-		Wn.ReadDataFile("/nobackup/yshou/AMPS_venus/VENUS_test/Vn_venus.h");  
+		sprintf(fname,"%s/Vn_venus.h",PIC::UserModelInputDataPath);
+		Wn.ReadDataFile(fname);  
                 //will be set to 0 for Venus
 		
 

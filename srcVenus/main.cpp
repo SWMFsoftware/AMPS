@@ -563,7 +563,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   for (long int niter=0;niter<nTotalIterations;niter++) {
      PIC::TimeStep();
 
-     PIC::Debugger::check_max_mem_usage("test1 ");
+//     PIC::Debugger::check_max_mem_usage("test1 ");
 //     PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
 
 //  PIC::ChemicalReactions::PhotolyticReactions::Init();
