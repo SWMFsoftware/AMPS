@@ -480,7 +480,7 @@ Keys=-ices-path=/Users/vtenishe/ices/ICES/Models@@(0+valeriy)
 -------------------------------------------------------------------------------
 #>
 Time=1
-Name=test/tecplot-reader@@(0+valeriy+pleiades)  
+Name=test/tecplot-reader@@(0+valeriy+pleiades+amps-gpu)  
 Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid 
 <#
 
