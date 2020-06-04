@@ -1076,7 +1076,7 @@ namespace PIC {
     
 
     // output data
-    void Output(char* fname, bool GeometryOnly);
+    void Output(const char* fname, bool GeometryOnly);
 
     //functions for computing field-line segment weight
     void FieldLineWeight_Uniform(double* Weight, cFieldLineSegment* Segment);

@@ -485,7 +485,7 @@ namespace PIC {
     }
     
     //=========================================================================
-    void Output(char* fname, bool GeometryOnly) {
+    void Output(const char* fname, bool GeometryOnly) {
 
       //swap sampling offsets
       cFieldLineVertex::swapSamplingBuffers();
