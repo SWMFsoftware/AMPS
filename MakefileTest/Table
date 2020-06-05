@@ -420,13 +420,13 @@ Compile=
 >>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Multiple_Parker_spiral--boris_relativistic.diff
 
 Check=
->>>@echo "SEP--Multiple_Parker_spiral--boris_relativistic_check..." >> SEP--Multiple_Parker_spiral--boris_relativistic.diff
+>>>@echo "SEP--Multiple_Parker_spiral--boris_relativistic_check..." >> test_SEP--Multiple_Parker_spiral--boris_relativistic.diff
 >>>@${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/../utility/ReduceFile.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > SEP--Multiple_Parker_spiral--boris_relativistic.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Multiple_Parker_spiral--boris_relativistic.diff 
 
 
->>>@ls -l SEP--Multiple_Parker_spiral--boris_relativistic.diff 
+>>>@ls -l test_SEP--Multiple_Parker_spiral--boris_relativistic.diff 
 >>>@echo Test SEP--Multiple_Parker_spiral--boris_relativistic has finished: `date`
 <#
 
@@ -443,13 +443,13 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--boris_relativistic_compile... done" >> test_SEP--Parker_spiral--boris_relativistic.diff
 
 Check=
->>>@echo "SEP--Parker_spiral--boris_relativistic_check..." >> SEP--Parker_spiral--boris_relativistic.diff
+>>>@echo "SEP--Parker_spiral--boris_relativistic_check..." >> test_SEP--Parker_spiral--boris_relativistic.diff
 >>>@${TESTSEP--Parker_spiral--boris_relativisticDIR}/../utility/ReduceFile.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > SEP--Parker_spiral--boris_relativistic.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--boris_relativistic.diff 
 
 
->>>@ls -l SEP--Parker_spiral--boris_relativistic.diff 
+>>>@ls -l test_SEP--Parker_spiral--boris_relativistic.diff 
 >>>@echo Test SEP--Parker_spiral--boris_relativistic has finished: `date`
 <#
 
@@ -466,13 +466,13 @@ Compile=
 >>>@echo "test_SEP--Parker_spiral--field_line_compile... done" >> test_SEP--Parker_spiral--field_line.diff
 
 Check=
->>>@echo "SEP--Parker_spiral--field_line_check..." >> SEP--Parker_spiral--field_line.diff
+>>>@echo "SEP--Parker_spiral--field_line_check..." >> test_SEP--Parker_spiral--field_line.diff
 >>>@${TESTSEP--Parker_spiral--field_lineDIR}/../utility/ReduceFile.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Parker_spiral--field_lineDIR)/PT/thread* |wc -l |tr -d ' '` > SEP--Parker_spiral--field_line.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500.ref_np`ls $(TESTSEP--Parker_spiral--field_lineDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--field_line.diff 
 
 
->>>@ls -l SEP--Parker_spiral--field_line.diff 
+>>>@ls -l test_SEP--Parker_spiral--field_line.diff 
 >>>@echo Test SEP--Parker_spiral--field_line has finished: `date`
 <#
 
