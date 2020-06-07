@@ -307,7 +307,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
 
   for (int iFluid=0;iFluid<PIC::CPLR::SWMF::nCommunicatedIonFluids;iFluid++) if (FrequencyTable[iFluid]>0.0) lifetime+=1.0/FrequencyTable[iFluid];
 
-  return lifetime;
+  return (lifetime>0.0) ? lifetime : std::numeric_limits<double>::infinity();
 }
 
 
