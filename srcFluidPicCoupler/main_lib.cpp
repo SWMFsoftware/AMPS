@@ -312,7 +312,7 @@ void initNewBlocks() {
 
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-  static int nMeshCounter=-1;
+  //static int nMeshCounter=-1;
   //printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
@@ -391,7 +391,8 @@ void initNewBlocks() {
   
   //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
-  if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+  //if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+  if(PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size()!=0){
     //printf("main_lib test1\n");
 
     PIC::BC::ExternalBoundary::UpdateData();
@@ -401,7 +402,7 @@ void initNewBlocks() {
     }
 
     PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
-    nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+    //nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
   }
 
   PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
