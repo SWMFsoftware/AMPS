@@ -37,7 +37,7 @@
 #include "MarsBackgroundAtmosphereFox.h"
 
 //the forward scattering cross section
-//#include "Kharchenko-2000-fig-3.h"
+#include "Kharchenko-2000-fig-3.h"
 
 #include "NewOCO2-2.5eV-v03-Total.h"
 
@@ -262,11 +262,11 @@ inline void ReadMTGCM() {
 //    ForwardCollisionCrossSection.AddProfile(0.03*eV2J,_KHANCHERKO_2000__0_03EV_DATA_LENGTH_,_KHANCHERKO_2000__0_03EV_DATA_);
 //    ForwardCollisionCrossSection.AddProfile(0.3*eV2J,_KHANCHERKO_2000__0_3EV_DATA_LENGTH_,_KHANCHERKO_2000__0_3EV_DATA_);
 
-//    ForwardCollisionCrossSection.AddProfile(3*eV2J,_KHANCHERKO_2000__3EV_DATA_LENGTH_,_KHANCHERKO_2000__3EV_DATA_);
+    ForwardCollisionCrossSection.AddProfile(3*eV2J,_KHANCHERKO_2000__3EV_DATA_LENGTH_,_KHANCHERKO_2000__3EV_DATA_);
 
 
     //ForwardCollisionCrossSection.AddProfile(3*eV2J,_FOX_LENGTH_,_FOX_DATA_);
-    ForwardCollisionCrossSection.AddProfile(2.5*eV2J,_NEWOCO2_2_5EV_LENGTH_,_NEWOCO2_2_5EV_DATA_);
+//    ForwardCollisionCrossSection.AddProfile(2.5*eV2J,_NEWOCO2_2_5EV_LENGTH_,_NEWOCO2_2_5EV_DATA_);
     
 
 //    ForwardCollisionCrossSection.AddProfile(3.1*eV2J,_KHANCHERKO_LENGTH_,_KHANCHERKO_DATA_);

@@ -21,11 +21,11 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetCollisionCrossSectionB
   return 3.0E-19;
 #elif _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION_ == _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION__FORWARD_SCATTERING_
 
-  //return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);
+  return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);
     
-    if (BackgroundSpecieNumber==0) {return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);}
-	else if (BackgroundSpecieNumber==1) {return 2.0E-18;}
-    else {return 1.8E-18;}
+//    if (BackgroundSpecieNumber==0) {return ForwardCollisionCrossSection.GetTotalCrossSection(TranslationalEnergy);}
+//	else if (BackgroundSpecieNumber==1) {return 2.0E-18;}
+//    else {return 1.8E-18;}
     
 #endif
 }
@@ -36,11 +36,11 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetSigmaCrMax(int spec,in
   return 10000.0*3.0E-19;
 
 #elif _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION_ == _BACKGROUND_ATMOSPHERE_COLLISION_CROSS_SECTION__FORWARD_SCATTERING_
-    //return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();
+   return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();
     
-    if (BackgroundSpecieNumber==0) {return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();}
-	else if (BackgroundSpecieNumber==1) {return 10000.0*2.0E-18;}
-    else {return 10000.0*1.8E-18;}
+//    if (BackgroundSpecieNumber==0) {return 10000.0*ForwardCollisionCrossSection.GetMaxTotalCrossSection();}
+//	else if (BackgroundSpecieNumber==1) {return 10000.0*2.0E-18;}
+//    else {return 10000.0*1.8E-18;}
 
 #else
   exit(__LINE__,__FILE__,"Error: option is not found");
@@ -63,7 +63,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   int idim;
   double *xmin,*xmax,*xMiddle,x[3],v[3],beta;
 
-  static const double GlobalNeutalTemeprature=179.0;
+  double GlobalNeutalTemeprature=179.0;
 
   //generate positions of the background particle in the cell
   xmin=node->xmin;
@@ -75,6 +75,8 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   x[2]=xMiddle[2]+(xmax[2]-xmin[2])/_BLOCK_CELLS_Z_*(rnd()-0.5);
 
   PIC::ParticleBuffer::SetX(x,BackgroundAtmosphereParticleData);
+
+  GlobalNeutalTemeprature=newMars::Tn.Interpolate(x);
 
   //generate velocity vector for a particle representing the bacground atmosphere
   beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemeprature);
@@ -131,7 +133,7 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberD
 	
     }
     
-#if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
+//#if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
     switch (BackgroundSpecieNumber) {
         case _O_BACKGROUND_SPEC_ :
             res=(O.DataValueDefined(x)==true) ? O.Interpolate(x) : 0.0;
@@ -153,8 +155,9 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberD
             exit(__LINE__,__FILE__,"Error: the optino is not found");
     }
     
-    // res*=1E6;
+     res*=1E6;
     
+/*
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
     switch (BackgroundSpecieNumber) {
         case _O_BACKGROUND_SPEC_ :
@@ -175,6 +178,7 @@ double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberD
 #else
     exit(__LINE__,__FILE__,"Error: the option is not defined");
 #endif
+*/
     
     return res;
 }
@@ -296,9 +300,13 @@ bool  PIC::MolecularCollisions::BackgroundAtmosphere::KeepConditionModelParticle
 
 
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
-  const static double GlobalNeutalTemeprature=179.0;
+  double GlobalNeutalTemeprature=179.0;
 
-  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemeprature;
+//  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemeprature;
+
+  temp=Tn.Interpolate(x);
+
+
   //if (Tn.DataValueDefined(x)) printf("background:Tn.Interpolate(x):%e\n", Tn.Interpolate(x));
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
   temp=MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x);

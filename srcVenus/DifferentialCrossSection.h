@@ -134,6 +134,8 @@ public:
     if ((minScatteringAngle<0.0)||(minScatteringAngle<t.data[0].ScatteringAngle)) minScatteringAngle=t.data[0].ScatteringAngle;
     if ((maxScatteringAngle<0.0)||(maxScatteringAngle>t.data[t.nPoints-1].ScatteringAngle)) maxScatteringAngle=t.data[t.nPoints-1].ScatteringAngle;
 
+//minScatteringAngle=0.0;
+
     if (ThisThread==0) std::cout << "Diff. Cross Section: Collision Energy=" << t.Energy << "[J] (" << t.Energy/eV2J << "[eV]), Total Collision Cross Section=" << t.TotalIntegralCrossSection <<
         ", Applied range of scattering angles=" << t.data[0].ScatteringAngle/Pi*180.0 << " to " << t.data[t.nPoints-1].ScatteringAngle/Pi*180.0 << " [degrees]" << std::endl;
   }

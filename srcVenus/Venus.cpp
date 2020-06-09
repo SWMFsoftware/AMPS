@@ -250,7 +250,7 @@ void newMars::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Cent
     if (Te.DataValueDefined(x)==true) fprintf(fout,"%e  %e  %e  %e  %e  %e  %e  ",buffer.maxTheoreticalLocalInjectionRate,buffer.minTheoreticalLocalInjectionRate,buffer.TheoreticalLocalInjectionRate,buffer.NumericalLocalInjectionRate,Te.Interpolate(x),1.0E6*E.Interpolate(x),1.0E6*O2p.Interpolate(x));
     else  fprintf(fout,"0.0  0.0  0.0  0.0  0.0  0.0  0.0 ");
 
-    for (int bspec=0;bspec<nBackgroundSpecies;bspec++) fprintf(fout,"%e  %e  ",BackgroundDensityBuffer[bspec].minValue,BackgroundDensityBuffer[bspec].maxValue);
+    for (int bspec=0;bspec<nBackgroundSpecies;bspec++) fprintf(fout,"%e  %e  ",PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberDensity(bspec,x),BackgroundDensityBuffer[bspec].maxValue);
   }
   else {
     pipe->send((char*)&buffer,sizeof(cDataExchengeBuffer));
@@ -494,7 +494,7 @@ long int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kC
 
 
        //two O particles will be produce ar the same time
-       ModelParticleInjectionRate=0.5*PIC::VolumeParticleInjection::GetCellInjectionRate(_O_SPEC_,cell)/LocalParticleWeight;
+       ModelParticleInjectionRate=/*0.5*5.0 * */ 0.5*PIC::VolumeParticleInjection::GetCellInjectionRate(_O_SPEC_,cell)/LocalParticleWeight;
        LocalTimeStep=node->block->GetLocalTimeStep(_O_SPEC_);
 
 
@@ -558,7 +558,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
 #endif
 
     }
-    while (p<rnd());
+    while (false); // (p<rnd());
 #endif
 
 

@@ -303,8 +303,7 @@ public:
     if (iLon>=nLongitudePoints-1) iLon=nLongitudePoints-2,cLon=1.0;
 
     if (iAlt<0) {
-      if (ExeptionHandlerMode==_MTGCM_INTERPOLATION_EXEPTION_HANDLING_MODE__RETURN_ZERO_) return 0.0;
-      exit(__LINE__,__FILE__,"Error: the point is below the lower boundary");
+      iAlt=0;
     }
 
     if (iAlt>=nAltitudePoints-1) AboveDomainLimit=true,iAlt=nAltitudePoints-1;
