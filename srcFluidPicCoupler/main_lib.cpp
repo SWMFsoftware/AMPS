@@ -92,7 +92,7 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 
 
-bool IsOutside(double * x){
+bool IsOutside_init(double * x){
 
   double xx=x[0];  
   //double yy=x[1];
@@ -119,6 +119,19 @@ bool IsOutside(double * x){
 
 }
 
+
+bool IsOutside(double * x){
+
+
+  double xx=x[0];
+
+  if (xx<2*PIC::CPLR::FLUID::iCycle) return true;
+  if (xx>2*PIC::CPLR::FLUID::iCycle+0.5 && xx<=16+2*PIC::CPLR::FLUID::iCycle) return false;
+
+  return true;
+
+
+}
 
 
 void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
@@ -185,7 +198,7 @@ void deallocateBlocks(){
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
     }
     
-    if (xmiddle[0]<=PIC::CPLR::FLUID::iCycle*2 && node->block!=NULL && node->Thread==PIC::ThisThread)  {
+    if (IsOutside(xmiddle) && node->block!=NULL && node->Thread==PIC::ThisThread)  {
       deallocatedBlockIndexArr.push_back(iBlock);
     }
     iBlock++;
@@ -238,7 +251,7 @@ void  dynamicAllocateBlocks(){
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
     }
 
-    if (xmiddle[0]<=16+PIC::CPLR::FLUID::iCycle*2 && xmiddle[0]>PIC::CPLR::FLUID::iCycle*2+0.5  && node->block==NULL && node->Thread==PIC::ThisThread)  {
+    if (!IsOutside(xmiddle)  && node->block==NULL && node->Thread==PIC::ThisThread)  {
       allocatedBlockIndexArr.push_back(iBlock);
       /*
       printf("allocateBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p,iBlock:%d\n",
@@ -1992,7 +2005,7 @@ void amps_init_mesh() {
         xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
       }
     
-      if (IsOutside(xmiddle))  {
+      if (IsOutside_init(xmiddle))  {
         deallocatedBlockIndexArr.push_back(iBlock);
       }
       iBlock++;
