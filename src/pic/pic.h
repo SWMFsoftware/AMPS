@@ -6494,7 +6494,8 @@ namespace FieldSolver {
             void UpdateJMassMatrix();
             void InterpolateB_C2N();
             void InterpolateB_N2C();
-             
+	    void InterpolateB_N2C_Block(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+	    
             int  isBoundaryCell(double * x, double *dx, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
             int isBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
             bool isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);

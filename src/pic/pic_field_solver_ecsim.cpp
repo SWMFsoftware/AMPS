@@ -3844,6 +3844,70 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
   }
 }
 
+void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C_Block(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) return;
+
+  int CellCounter,CellCounterMax=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+  shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset) \
+  shared(OffsetB_corner,PrevBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField)
+#endif
+  for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
+    int nLocalNode,i,j,k,ii,jj,kk;
+
+    ii=CellCounter;
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+
+    i=ii;
+
+
+    //if ((node->block==NULL)||(node->Thread!=PIC::ThisThread)) return;
+
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+        BoundaryBlock=true;
+        break;
+      }
+
+      if (BoundaryBlock==true) continue;
+    }
+
+    char *offset=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    double tempB_curr[3]={0,0,0}, tempB_prev[3]={0,0,0};
+
+    for (int kk=0;kk<=1; kk++) for (int jj=0; jj<=1; jj++) for (int ii=0; ii<=1; ii++){
+      char *offsetTmp=node->block->GetCornerNode(_getCornerNodeLocalNumber(i+ii,j+jj,k+kk))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+
+      double *CurrentPtr = (double*)(offsetTmp+CurrentBOffset);
+      double *PrevPtr = (double*)(offsetTmp+PrevBOffset);
+
+      for (int idim=0;idim<3;idim++) {
+        tempB_curr[idim] += CurrentPtr[idim];
+        tempB_prev[idim] += PrevPtr[idim];
+      }
+    }
+
+    double *nodeCurrPtr = (double*)(offset+CurrentBOffset);
+    double *nodePrevPtr = (double*)(offset+PrevBOffset);
+
+    for (int idim=0;idim<3;idim++) {
+      nodeCurrPtr[idim] = tempB_curr[idim]/8.0;
+      nodePrevPtr[idim] = tempB_prev[idim]/8.0;
+    }
+  }
+}
 
 
 //compute E^(n+1)  from E^(n+theta) and E^n

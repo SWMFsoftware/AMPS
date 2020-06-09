@@ -312,12 +312,13 @@ void initNewBlocks() {
 
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-  printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
+  static int nMeshCounter=-1;
+  //printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
     
-    printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
-           PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
+    //printf("initNewBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p\n",
+    //       PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
     
     int iBlock=-1;
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
@@ -383,15 +384,28 @@ void initNewBlocks() {
             else{
               printf("corner node is null!\n");
             }
-	  }//for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) 
+	  }//for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++)
+      //InterpolateB_N2C_Block(node);
     }
   }
   
+  //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
+
+  if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+    //printf("main_lib test1\n");
+
+    PIC::BC::ExternalBoundary::UpdateData();
+
+    for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.begin(); it!=PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.end();it++){
+      InterpolateB_N2C_Block(*it);
+    }
+
+    PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+    nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+  }
+
   PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
-  PIC::BC::ExternalBoundary::UpdateData();
-  InterpolateB_N2C(); 
-  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   
 }
 
