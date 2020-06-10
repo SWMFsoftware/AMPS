@@ -1,5 +1,7 @@
 #!/bin/csh
 
+source /etc/csh/login.d/env.csh
+
 set WorkDir = $HOME
 source $WorkDir/module/gnu 
 
