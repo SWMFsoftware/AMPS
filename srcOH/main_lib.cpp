@@ -50,7 +50,14 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 
   switch (spec) {
   case _H_SPEC_: 
-    if (PIC::nTotalSpecies == 1) CharacteristicSpeed=50.0E3;
+    if (PIC::nTotalSpecies == 1) {
+
+      #ifdef _OH_TEST_SHOCKTUBE_
+      CharacteristicSpeed=100.0E3;
+      #else 
+      CharacteristicSpeed=50.0E3;
+      #endif
+    }
     else CharacteristicSpeed=25.0E3;
     break;
   case _H_ENA_V1_SPEC_:
