@@ -183,42 +183,56 @@ extern "C" {
     static double swmfTimeSimulation=-1.0;
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
+    
+    auto coupler_swmf = [&] () {
+      //call AMPS only after the first coupling has occured
+      if (PIC::CPLR::SWMF::FirstCouplingOccured==false) {
+        *TimeSimulation=*TimeSimulationLimit;
+        return;
+      }
+      
+      //init AMPS
+      if (InitFlag==false) {
+        amps_init();
+        InitFlag=true;
+      }
+      
+      //determine whether to proceed with the current iteraction
+      if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
+        *TimeSimulation=*TimeSimulationLimit;
+        return;
+      }
+      else {
+        swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+        *TimeSimulation=swmfTimeSimulation;
+      }
+    };
+    
+    auto coupler_fluid = [&] () {
+      //call AMPS only after the first coupling has occured
+      if (PIC::CPLR::FLUID::FirstCouplingOccured==false) {
+        *TimeSimulation=*TimeSimulationLimit;
+        return;
+      }
+      
+      //determine whether to proceed with the current iteraction
+      if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT()>*TimeSimulationLimit) {
+        *TimeSimulation=*TimeSimulationLimit;
+        return;
+      }
+      else {
+        swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT();
+        *TimeSimulation=swmfTimeSimulation;
+      }
+    };
 
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_    
-    //call AMPS only after the first coupling has occured
-    if (PIC::CPLR::SWMF::FirstCouplingOccured==false) {
-      *TimeSimulation=*TimeSimulationLimit;
-      return;
-    }
-#elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_    
-    //call AMPS only after the first coupling has occured
-    if (PIC::CPLR::FLUID::FirstCouplingOccured==false) {
-      *TimeSimulation=*TimeSimulationLimit;
-      return;
-    }
-#endif
-
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-    //init AMPS
-    if (InitFlag==false) {
-      //initamps_();
-
-      amps_init();
-      InitFlag=true;
-
-      //print the output file on each iteration
-      //PIC::RequiredSampleLength=1;
-    }
-#endif
-
-    //determine whether to proceed with the current iteraction
-    if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT()>*TimeSimulationLimit) {
-      *TimeSimulation=*TimeSimulationLimit;
-      return;
-    }
-    else {
-      swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT();
-      *TimeSimulation=swmfTimeSimulation;
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      coupler_swmf();
+      break;
+    case _PIC_COUPLER_MODE__FLUID_:
+      coupler_fluid();
+      break;
     }
 
     //call AMPS
@@ -226,19 +240,6 @@ extern "C" {
     counter++;
 
     amps_time_step();
-
-/*
-   //GetMeanParticleMicroscopicParameters() is called ub amps_finalize_()
-    if (PIC::ModelTestRun::mode==true) if (counter==PIC::ModelTestRun::nTotalIteraction) {
-      char fname[400];
-
-      sprintf(fname,"%s/amps.dat",PIC::OutputDataFileDirectory);
-      PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
-
-      exit(0);
-    }
-*/
-
   }
 
   void  amps_from_oh_init_(int *nIonFluids) {
