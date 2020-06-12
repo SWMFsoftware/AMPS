@@ -52,11 +52,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   case _H_SPEC_: 
     if (PIC::nTotalSpecies == 1) {
 
-      #ifdef _OH_TEST_SHOCKTUBE_
-      CharacteristicSpeed=100.0E3;
-      #else 
-      CharacteristicSpeed=50.0E3;
-      #endif
+      CharacteristicSpeed=sqrt(pow(OH::InjectionVelocity[0],2)+pow(OH::InjectionVelocity[1],2)+pow(OH::InjectionVelocity[2],2));
     }
     else CharacteristicSpeed=25.0E3;
     break;
