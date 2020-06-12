@@ -25,7 +25,7 @@
 class CiFileOperations {
 public:
   FILE* fd;
-  char fname[100],init_str[init_str_maxlength]; 
+  char fname[1000],init_str[init_str_maxlength]; 
   long int line;
 
   CiFileOperations() {
