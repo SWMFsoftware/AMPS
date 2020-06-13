@@ -413,7 +413,7 @@ Name=SEP--Multiple_Parker_spiral--boris_relativistic
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
-Ref=1{pgcc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
 
 Compile=
 >>>@echo "test_SEP--Multiple_Parker_spiral--boris_relativistic_compile..." > test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff
