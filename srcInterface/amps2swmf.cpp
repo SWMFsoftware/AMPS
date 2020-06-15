@@ -185,53 +185,67 @@ extern "C" {
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
     
     auto coupler_swmf = [&] () {
+      bool res=true;
+
       //call AMPS only after the first coupling has occured
       if (PIC::CPLR::SWMF::FirstCouplingOccured==false) {
         *TimeSimulation=*TimeSimulationLimit;
-        return;
+        res=false;
       }
+      else { 
+        //init AMPS
+        if (InitFlag==false) {
+          amps_init();
+          InitFlag=true;
+        }
       
-      //init AMPS
-      if (InitFlag==false) {
-        amps_init();
-        InitFlag=true;
+        //determine whether to proceed with the current iteraction
+        if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
+          *TimeSimulation=*TimeSimulationLimit;
+          res=false;
+        }
+        else {
+          swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+          *TimeSimulation=swmfTimeSimulation;
+          res=true;
+        }
       }
-      
-      //determine whether to proceed with the current iteraction
-      if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
-        *TimeSimulation=*TimeSimulationLimit;
-        return;
-      }
-      else {
-        swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-        *TimeSimulation=swmfTimeSimulation;
-      }
+
+      return res;
     };
     
     auto coupler_fluid = [&] () {
+      bool res=true;
+
       //call AMPS only after the first coupling has occured
       if (PIC::CPLR::FLUID::FirstCouplingOccured==false) {
         *TimeSimulation=*TimeSimulationLimit;
-        return;
+        res=false;
       }
-      
-      //determine whether to proceed with the current iteraction
-      if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT()>*TimeSimulationLimit) {
-        *TimeSimulation=*TimeSimulationLimit;
-        return;
+      else { 
+        //determine whether to proceed with the current iteraction
+        if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT()>*TimeSimulationLimit) {
+          *TimeSimulation=*TimeSimulationLimit;
+          res=false;
+        }
+        else {
+          swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT();
+          *TimeSimulation=swmfTimeSimulation;
+          res=true;
+        }
       }
-      else {
-        swmfTimeSimulation+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::FluidInterface.getNo2SiT();
-        *TimeSimulation=swmfTimeSimulation;
-      }
+
+      return res;
     };
+
+    bool call_amps_flag=true;
 
     switch (_PIC_COUPLER_MODE_) {
     case _PIC_COUPLER_MODE__SWMF_:
-      coupler_swmf();
+      call_amps_flag=coupler_swmf();
       break;
     case _PIC_COUPLER_MODE__FLUID_:
-      coupler_fluid();
+      call_amps_flag=coupler_fluid();
       break;
     }
 
@@ -239,7 +253,7 @@ extern "C" {
     static long int counter=0;
     counter++;
 
-    amps_time_step();
+    if (call_amps_flag==true) amps_time_step();
   }
 
   void  amps_from_oh_init_(int *nIonFluids) {
