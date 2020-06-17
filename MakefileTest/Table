@@ -3477,8 +3477,8 @@ Run=
 Check=
 >>>@echo "test_AMPS-BATSRUS-OH_check..." >> test_AMPS-BATSRUS-OH.diff
 
-<<<ifneq ($(wildcard SWMF/test14_ohpt.diff),)
->>>-@cp SWMF/test14_ohpt.diff test_AMPS-BATSRUS-OH.diff
+<<<ifneq ($(wildcard SWMF/test14_*.diff),)
+>>>-@cat SWMF/test14_oh.diff  SWMF/test14_pt.diff > test_AMPS-BATSRUS-OH.diff
 <<<endif
 
 >>>-@ls -l test_AMPS-BATSRUS-OH.diff
