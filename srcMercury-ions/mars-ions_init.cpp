@@ -42,7 +42,13 @@ double localResolution(double *x) {
    res = .75*rm;
    // printf("r<1, r=%e\n",r);
  } else if (r>=1*rm and r<2*rm){
-   res = 80e3;
+   switch (_PIC_NIGHTLY_TEST_MODE_) {
+   case _PIC_MODE_ON_:
+     res=800.0e3;
+     break;
+   default:
+     res = 80e3;
+   }
   } else{
    res = 7*rm; //just use a random large number, for example 800km.
   }

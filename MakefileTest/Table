@@ -82,6 +82,37 @@ Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSL
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+pleiades)
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+stampede)
 <#
+
+
+-------------------------------------------------------------------------------
+
+#>
+Name=test/Mercury-ions 
+Time=2
+
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+valeriy)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+amps-gpu)
+Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+pleiades)
+Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+stampede)
+
+Check=
+>>>@echo "test_Mercury-ions_check..." >> test_Mercury-ions$(TESTMercury-ions-REF).diff
+
+>>>-@${TESTMercury-ionsDIR}/../utility/ReduceFile.pl ${TESTMercury-ionsDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat 10
+>>>-@${TESTMercury-ionsDIR}/../utility/ReduceFile.pl ${TESTMercury-ionsDIR}/PT/plots/pic.NA_PLUS.s=0.out=0.dat 10
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMercury-ionsDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10   output/test_Mercury-ions/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMercury-ionsDIR}/PT/plots/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10   output/test_Mercury-ions/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--voluem$(TESTMercury-ions-REF).diff
+
+>>>@cat test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff test_Mercury-ions--volume$(TESTMercury-ions-REF).diff > test_Mercury-ions$(TESTMercury-ions-REF).diff
+
+>>>@ls -l test_Mercury-ions--volume$(TESTMercury-ions-REF).diff
+>>>@ls -l test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff
+>>>@ls -l test_Mercury-ions$(TESTMercury-ions-REF).diff 
+>>>@echo Test test_Mercury-ion has finished: `date`
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=Titan

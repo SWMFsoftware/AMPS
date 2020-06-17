@@ -317,7 +317,7 @@ void amps_init_mesh() {
   //PIC::BC::BlockInjectionBCindicatior=BoundingBoxParticleInjectionIndicator;
   //PIC::BC::InitBoundingBoxInjectionBlockList();
 
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+  //PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
   if (PIC::ThisThread==0) cout << "AMPS' Initialization is complete" << endl;
 
 }
@@ -409,8 +409,15 @@ void amps_init() {
           PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
           PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=14;
           // NOTE_ANG: YOU MUST remove the *.mcr and *.CenterNodeBackgroundData.bin files in the data source folder upon changing the input file!
-          PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__MHD_7_t00000200_n0300072.plt"); //1st - Simple Fields
-          // PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__MHD_7_t00000130_n0272263.plt"); //2nd - M2 Fields
+
+          switch (_PIC_NIGHTLY_TEST_MODE_) {
+          case _PIC_MODE_ON_: 
+            PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__MHD_7_t00000130_n0272263.plt"); //2nd - M2 Fields
+            break;
+          default: 
+            //PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__MHD_7_t00000200_n0300072.plt"); //1st - Simple Fields
+            PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__MHD_7_t00000130_n0272263.plt"); //2nd - M2 Fields
+	  } 
 	  //        }
 
         break;

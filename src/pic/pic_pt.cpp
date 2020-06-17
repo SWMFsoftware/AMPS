@@ -191,6 +191,7 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
 
   //save physical data
   memcpy(TrajectoryRecord->data.x,x,3*sizeof(double));
+  memcpy(TrajectoryRecord->data.v,v,3*sizeof(double));
   TrajectoryRecord->data.Speed=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
   TrajectoryRecord->data.spec=spec;
 
@@ -523,7 +524,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     sprintf(str,"%s.s=%i.%s.dat",fname,spec,ChemSymbol);
 
     fout[spec]=fopen(str,"w");
-    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\"");
+    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\"");
 
     #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
     fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
@@ -711,7 +712,8 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
         exit(__LINE__,__FILE__,"Error: unknown option");
         #endif
 
-        fprintf(trOut,"%e  %e  %e  %i  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],TrajectoryData->spec,TrajectoryData->Speed);
+        fprintf(trOut,"%e  %e  %e  %i  %e   %e  %e  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],
+          TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
 
         #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
         fprintf(trOut," %e  %e ",TrajectoryData->ElectricCharge,TrajectoryData->ParticleSize);

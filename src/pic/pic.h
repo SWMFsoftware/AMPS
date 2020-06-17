@@ -1126,7 +1126,7 @@ namespace PIC {
     };
 
     struct cTrajectoryPhysicalData {
-      double x[3],Speed;
+      double x[3],v[3],Speed;
       int spec;
 
       #if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_
