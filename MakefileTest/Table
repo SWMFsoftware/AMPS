@@ -1230,6 +1230,8 @@ Check=
 >>>mv output/test_magnetic-reconnection/temp_files/* output/test_magnetic-reconnection/
 >>>rm -rf output/test_magnetic-reconnection/temp_files
 
+>>>mv $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10.tmp $(TESTmagnetic-reconnection_avx256DIR)/PIC_reconnect_out=200.dat.Reduced.Step=10
+
 >>>@ls -l test_magnetic-reconnection_avx256$(TESTmagnetic-reconnection_avx256-REF).diff
 >>>@echo Test test_magnetic-reconnection_avx256 has finished: `date`
 
