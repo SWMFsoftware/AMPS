@@ -90,7 +90,7 @@ while (nPart-->0){
   // GenerateUniformDistrOnSphere(Pi/2,-Pi/2,135*Pi/180,40*Pi/180,x,1.01*BATL::rSphere,1.6*BATL::rSphere); //"Full Between"
   GenerateUniformDistrOnSphere(Pi/2,-Pi/2,Pi,40*Pi/180,x,1.01*BATL::rSphere,1.6*BATL::rSphere); //"Full Below NCusp"
   // GenerateUniformDistrOnSphere(Pi/2,-Pi/2,180*Pi/180,0*Pi/180,x,1.6*BATL::rSphere,4*BATL::rSphere); //"Far"
-  printf("xInit:%e,%e,%e\n", x[0],x[1],x[2]);
+  if (_PIC_NIGHTLY_TEST_MODE_ != _PIC_MODE_ON_) printf("xInit:%e,%e,%e\n", x[0],x[1],x[2]);
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::Mesh::mesh.findTreeNode(x,NULL);
 
   if (node!=NULL) {
@@ -110,7 +110,7 @@ while (nPart-->0){
       //v[1]=0;
       //v[2]=0;
 
-      printf("Init v:%e,%e,%e;vth:%e\n",v[0],v[1],v[2],vth);
+      if (_PIC_NIGHTLY_TEST_MODE_ != _PIC_MODE_ON_) printf("Init v:%e,%e,%e;vth:%e\n",v[0],v[1],v[2],vth);
       PIC::ParticleBuffer::InitiateParticle(x, v,NULL,&Spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
 
 
