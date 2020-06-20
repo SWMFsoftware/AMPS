@@ -8493,8 +8493,6 @@ nMPIops++;
     long int Counter[1+_MAX_REFINMENT_LEVEL_];
     int level,thread;
 
-    CMPI_channel pipe(100000);
-
     for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) Counter[level]=0;
 
     //count the number of tree nodes for each refinment level 
@@ -8612,10 +8610,7 @@ nMPIops++;
 
       fprintf(DiagnospticMessageStream,"$PREFIX:Memory usage:\n");
       fprintf(DiagnospticMessageStream,"$PREFIX:Thread \t Tree \t Blocks \t Nodes\n");
-
-      pipe.openRecvAll();
     }
-    else pipe.openSend(0);
 
 
     long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;
@@ -8626,23 +8621,30 @@ nMPIops++;
     CenterNodesAllocation=CenterNodes.getAllocatedMemory();
 
     for (thread=0;thread<nTotalThreads;thread++) {
-      if (thread!=0) {
-        if (ThisThread==0) {
-          pipe.recv(TreeNodesAllocation,thread);
-          pipe.recv(BlocksAllocation,thread);
-          pipe.recv(CornerNodesAllocation,thread);
-          pipe.recv(CenterNodesAllocation,thread);
-        }
-        else if (ThisThread==thread) {
-          pipe.send(TreeNodesAllocation);
-          pipe.send(BlocksAllocation);
-          pipe.send(CornerNodesAllocation);
-          pipe.send(CenterNodesAllocation);
-        }
+    	
+      struct cAllocationData {
+    	 long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;	  
+      } data;
+    	
+      if (thread==ThisThread) {
+    	  data.TreeNodesAllocation=TreeNodesAllocation;
+    	  data.BlocksAllocation=BlocksAllocation;
+    	  data.CornerNodesAllocation=CornerNodesAllocation;
+    	  data.CenterNodesAllocation=CenterNodesAllocation;
       }
-
-//      if (ThisThread==0) *DiagnospticMessageStream << "$PREFIX:" << thread << "\t" << TreeNodesAllocation/1.0E6 << "MB\t" << BlocksAllocation/1.0E6 << "MB\t" << CornerNodesAllocation/1.0E6 << "MB" << std::endl;
-      if (ThisThread==0) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%eMB\t%eMB\t%eMB\n",thread,TreeNodesAllocation/1.0E6,BlocksAllocation/1.0E6,CornerNodesAllocation/1.0E6);
+    	
+      if (thread!=0) {
+    	  if (ThisThread==thread) {
+    		MPI_Send(&data,sizeof(cAllocationData),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+    	  }
+    	  else if (ThisThread==0) {
+    		MPI_Status status;
+    		
+    		MPI_Recv(&data,sizeof(cAllocationData),MPI_BYTE,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+    	  }
+      }
+       
+      if (ThisThread==0) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%eMB\t%eMB\t%eMB\n",thread,data.TreeNodesAllocation/1.0E6,data.BlocksAllocation/1.0E6,data.CornerNodesAllocation/1.0E6);
     }
 
 
@@ -8655,30 +8657,34 @@ nMPIops++;
       ru_ixrss=ResourceUsage.ru_ixrss;
       ru_idrss=ResourceUsage.ru_idrss;
 
-//      if (ThisThread==0) *DiagnospticMessageStream << "$PREFIX:Thread \t \"maximum resident set size\"\t \"integral shared memory size\"\t  \"integral unshared data size\"" <<std::endl;
       if (ThisThread==0) fprintf(DiagnospticMessageStream,"$PREFIX:Thread \t \"maximum resident set size\"\t \"integral shared memory size\"\t  \"integral unshared data size\"\n");
 
       for (thread=0;thread<nTotalThreads;thread++) {
-        if (thread!=0) {
-          if (ThisThread==0) {
-            pipe.recv(ru_maxrss,thread);
-            pipe.recv(ru_ixrss,thread);
-            pipe.recv(ru_idrss,thread);
-          }
-          else if (ThisThread==thread) {
-            pipe.send(ru_maxrss);
-            pipe.send(ru_ixrss);
-            pipe.send(ru_idrss);
-          }
-        }
-
-//        if (ThisThread==0) *DiagnospticMessageStream << "$PREFIX:" << thread << "\t" << ru_maxrss/1.0E6 << "MB\t" << ru_ixrss/1.0E6 << "MB\t" << ru_idrss/1.0E6 << "MB" << std::endl;
-        if (ThisThread==0) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%eMB\t%eMB\t%eMB\n",thread,ru_maxrss/1.0E6,ru_ixrss/1.0E6,ru_idrss/1.0E6);
+    	  
+    	struct cAllocationData {
+    	  long int ru_maxrss,ru_ixrss,ru_idrss;
+    	} data;
+    	  
+    	if (ThisThread==thread) {
+    		data.ru_maxrss=ru_maxrss;
+    		data.ru_ixrss=ru_ixrss;
+    		data.ru_idrss=ru_idrss;
+    	}
+    	
+    	if (thread!=0) {    		
+      	  if (ThisThread==thread) {
+      		MPI_Send(&data,sizeof(cAllocationData),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+      	  }
+      	  else if (ThisThread==0) {
+      		MPI_Status status;
+      		
+      		MPI_Recv(&data,sizeof(cAllocationData),MPI_BYTE,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+      	  }       
+    	}
+    	  
+        if (ThisThread==0) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%eMB\t%eMB\t%eMB\n",thread,data.ru_maxrss/1.0E6,data.ru_ixrss/1.0E6,data.ru_idrss/1.0E6);
       }
     } 
-
-    if (ThisThread==0) pipe.closeRecvAll();
-    else pipe.closeSend();
   }
     
   //determine weather 'startNode' is attached to the boundary of the bounding box (external boundary)
