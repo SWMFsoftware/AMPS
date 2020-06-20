@@ -1474,165 +1474,159 @@ public:
   }
 
   //generate the mesh signeture: the signature contained the time of the mesh creeation, the user name and the computer name where the lesh is created
-  void generateMeshSignature(cTreeNodeAMR<cBlockAMR> *node=NULL) {
-    static CRC32 Signature;
-    static CMPI_channel pipe;
+  void generateMeshSignature() {
+    CRC32 Signature;
 
-    if (node==NULL) {
-      node=rootTree;
-      Signature.clear();
-      pipe.init(1000000);
+    Signature.clear();
 
-      //add the size of the domain to the signature
-      Signature.add(rootTree->xmax,3);
-      Signature.add(rootTree->xmin,3);
+    //add the size of the domain to the signature
+    Signature.add(rootTree->xmax,3);
+    Signature.add(rootTree->xmin,3);
 
-      //add to the signature the number of the cells and ghost cells
-      int t[2];
+    //add to the signature the number of the cells and ghost cells
+    int t[2];
 
-      t[0]=_GHOST_CELLS_X_,t[1]=_BLOCK_CELLS_X_;
+    t[0]=_GHOST_CELLS_X_,t[1]=_BLOCK_CELLS_X_;
+    Signature.add(t,2);
+
+    if (_MESH_DIMENSION_>=2) {
+      t[0]=_GHOST_CELLS_Y_,t[1]=_BLOCK_CELLS_Y_;
       Signature.add(t,2);
-
-      if (_MESH_DIMENSION_>=2) {
-        t[0]=_GHOST_CELLS_Y_,t[1]=_BLOCK_CELLS_Y_;
-        Signature.add(t,2);
-      }
-
-      if (_MESH_DIMENSION_==3) {
-        t[0]=_GHOST_CELLS_Z_,t[1]=_BLOCK_CELLS_Z_;
-        Signature.add(t,2);
-      }
-
-      //open mpi channel
-      if (ThisThread==0) pipe.openRecvAll();
-      else pipe.openSend(0);
     }
 
-    //scan through the tree and calculate the signature component the is due to the distribution of the cells
-    //determine whether the node is at the bottom of the tree
-    int i,j,k,nd;
+    if (_MESH_DIMENSION_==3) {
+      t[0]=_GHOST_CELLS_Z_,t[1]=_BLOCK_CELLS_Z_;
+      Signature.add(t,2);
+    }
 
-    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-      //add the local number of the allocated center nodes
+    std::function<void(cTreeNodeAMR<cBlockAMR>*,CRC32*)> SignatureDownTree;
+    
+    SignatureDownTree = [&] (cTreeNodeAMR<cBlockAMR> *node,CRC32* Signature) -> void {
+      //scan through the tree and calculate the signature component the is due to the distribution of the cells
+      //determine whether the node is at the bottom of the tree
+      int i,j,k,nd;
 
-      #if _MESH_DIMENSION_ == 3
-      const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-      const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-      const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
-      #else
-      exit(__LINE__,__FILE__,"Error: not implemented");
-      #endif
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        //add the local number of the allocated center nodes
 
+        #if _MESH_DIMENSION_ == 3
+        const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+        const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+        const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+        #else
+        exit(__LINE__,__FILE__,"Error: not implemented");
+        #endif
 
-      if ((ThisThread==node->Thread)||(ThisThread==0)) {
-        int BlockAllocatedFlag;
-
-        if (ThisThread==node->Thread) {
-          BlockAllocatedFlag=(node->block==NULL) ? false : true;
-          if (ThisThread!=0) pipe.send(BlockAllocatedFlag);
-        }
-        else pipe.recv(BlockAllocatedFlag,node->Thread);
-
-        if (BlockAllocatedFlag==true) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-          //locate the cell
-          if (ThisThread==node->Thread) {
-            nd=getCenterNodeLocalNumber(i,j,k);
-            if (node->block->GetCenterNode(nd)==NULL) nd=-1;
-
-            if (ThisThread!=0) pipe.send(nd);
+        if ((ThisThread==node->Thread)&&(ThisThread==0)) {
+          if (node->block!=NULL) {
+            for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
+              //locate the cell
+              nd=getCenterNodeLocalNumber(i,j,k);
+              if (node->block->GetCenterNode(nd)==NULL) nd=-1;
+                
+              Signature->add(nd);
+            }
           }
-          else pipe.recv(nd,node->Thread);
-
-          if (ThisThread==0) Signature.add(nd);
         }
-      }
-    }
-    else {
-      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-        cTreeNodeAMR<cBlockAMR> *downNode=node->downNode[nDownNode];
-
-        if (downNode!=NULL) {
+        else if ((ThisThread==node->Thread)||(ThisThread==0)) {
           if (ThisThread==0) {
-            Signature.add(downNode->Temp_ID);
-            Signature.add(downNode->xmax,3);
-            Signature.add(downNode->xmin,3);
+            MPI_Status status;
+            
+            MPI_Send(Signature,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+            MPI_Recv(Signature,sizeof(CRC32),MPI_BYTE,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
           }
-
-          generateMeshSignature(downNode);
+          else {
+            MPI_Status status;
+            
+            MPI_Recv(Signature,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+            
+            for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
+              //locate the cell
+              nd=getCenterNodeLocalNumber(i,j,k);
+              if (node->block->GetCenterNode(nd)==NULL) nd=-1;
+              
+              Signature->add(nd);
+            }
+            
+            MPI_Send(Signature,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR);
+          }
         }
       }
-    }
+      else {
+        for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
+          cTreeNodeAMR<cBlockAMR> *downNode=node->downNode[nDownNode];
+
+          if (downNode!=NULL) {
+            if (ThisThread==0) {
+              Signature->add(downNode->xmax,3);
+              Signature->add(downNode->xmin,3);
+            }
+
+            SignatureDownTree(downNode,Signature);
+          }
+        }
+      }
+    };
 
 
     //finish calculation of the mesh signature and send it to all processors
-    if (node==rootTree) {
-      //add the information of the internal bodies into the signature
-      #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-      if (ThisThread==0) {
-        list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryDescriptor;
+    SignatureDownTree(rootTree,&Signature);
+    
+    
+    //add the information of the internal bodies into the signature
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+    if (ThisThread==0) {
+      list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryDescriptor;
 
-        cInternalSphericalData* Sphere;
-        cInternalCircleData* Circle;
-        cInternalSphere1DData* Sphere1D;
-        cInternalRotationBodyData* RotationBody;
+      cInternalSphericalData* Sphere;
+      cInternalCircleData* Circle;
+      cInternalSphere1DData* Sphere1D;
+      cInternalRotationBodyData* RotationBody;
 
-        for (InternalBoundaryDescriptor=InternalBoundaryList.begin();InternalBoundaryDescriptor!=InternalBoundaryList.end();InternalBoundaryDescriptor++) {
-          switch(InternalBoundaryDescriptor->BondaryType) {
-          case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
-            Sphere=(cInternalSphericalData*)(InternalBoundaryDescriptor->BoundaryElement);
+      for (InternalBoundaryDescriptor=InternalBoundaryList.begin();InternalBoundaryDescriptor!=InternalBoundaryList.end();InternalBoundaryDescriptor++) {
+        switch(InternalBoundaryDescriptor->BondaryType) {
+        case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+          Sphere=(cInternalSphericalData*)(InternalBoundaryDescriptor->BoundaryElement);
 
-            Signature.add(Sphere->Radius);
-            Signature.add(Sphere->OriginPosition,3);
-            break;
-          case _INTERNAL_BOUNDARY_TYPE_CIRCLE_:
-            Circle=(cInternalCircleData*)(InternalBoundaryDescriptor->BoundaryElement);
+          Signature.add(Sphere->Radius);
+          Signature.add(Sphere->OriginPosition,3);
+          break;
+        case _INTERNAL_BOUNDARY_TYPE_CIRCLE_:
+          Circle=(cInternalCircleData*)(InternalBoundaryDescriptor->BoundaryElement);
 
-            Signature.add(Circle->Radius);
-            Signature.add(Circle->OriginPosition,3);
-            break;
-          case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
-            Sphere1D=(cInternalSphere1DData*)(InternalBoundaryDescriptor->BoundaryElement);
+          Signature.add(Circle->Radius);
+          Signature.add(Circle->OriginPosition,3);
+          break;
+        case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
+          Sphere1D=(cInternalSphere1DData*)(InternalBoundaryDescriptor->BoundaryElement);
 
-            Signature.add(Sphere1D->Radius);
-            Signature.add(Sphere1D->OriginPosition,3);
-            break;
-          case _INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_:
-            RotationBody=(cInternalRotationBodyData*)(InternalBoundaryDescriptor->BoundaryElement);
+          Signature.add(Sphere1D->Radius);
+          Signature.add(Sphere1D->OriginPosition,3);
+          break;
+        case _INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_:
+          RotationBody=(cInternalRotationBodyData*)(InternalBoundaryDescriptor->BoundaryElement);
 
-            Signature.add(RotationBody->OriginPosition,3);
-            Signature.add(RotationBody->AxisOfSymmetry,3);
-            Signature.add(RotationBody->xAxisMin);
-            Signature.add(RotationBody->xAxisMax);
-            Signature.add(RotationBody->rSurfaceMax);
+          Signature.add(RotationBody->OriginPosition,3);
+          Signature.add(RotationBody->AxisOfSymmetry,3);
+          Signature.add(RotationBody->xAxisMin);
+          Signature.add(RotationBody->xAxisMax);
+          Signature.add(RotationBody->rSurfaceMax);
 
-            break;
-          case _INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_:
-            for (int nt=0;nt<CutCell::nBoundaryTriangleFaces;nt++) for (int np=0;np<3;np++) Signature.add(CutCell::BoundaryTriangleFaces[nt].node[np]->x,3);
+          break;
+        case _INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_:
+          for (int nt=0;nt<CutCell::nBoundaryTriangleFaces;nt++) for (int np=0;np<3;np++) Signature.add(CutCell::BoundaryTriangleFaces[nt].node[np]->x,3);
 
-            break;
-          default:
-            exit(__LINE__,__FILE__,"Error: The internal boundary type is not recognized");
-          }
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: The internal boundary type is not recognized");
         }
       }
-      #endif
-
-
-      //close the pipe and set the signature
-      if (ThisThread==0) {
-        pipe.closeRecvAll();
-        MeshSignature=Signature.checksum();
-      }
-      else pipe.closeSend();
-
-      //de-allocate all buffers associated with the pipe
-      pipe.remove();
-
-      //distribute the signature between all processors
-      MPI_Bcast(&MeshSignature,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-
     }
+    #endif
+
+    //distribute the signature between all processors
+    MPI_Bcast(&MeshSignature,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
 
   unsigned long getMeshSignature() {
