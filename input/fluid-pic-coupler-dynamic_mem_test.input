@@ -13,7 +13,7 @@ makefile  MPIRUN=mpirun -np 4
 makefile LINK_SWMF_SHARED_LIB=on
 
 !makefile ExternalModules=models/exosphere
-ProjectSourceDirectory=srcFluidPicCoupler 
+ProjectSourceDirectory=srcFluxRope 
 WorkingSourceDirectory=srcTemp   !. !srcTemp !the location of the code that will be compiled (current directory == ".")
 SourceDirectory=src
 
