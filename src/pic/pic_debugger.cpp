@@ -1232,7 +1232,11 @@ bool PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {
 
 void PIC::Debugger::check_max_mem_usage(string tag) {
   double memLocal = read_mem_usage();
-    
+  double memMax;
+  
+  MPI_Reduce(&memLocal, &memMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_GLOBAL_COMMUNICATOR);
+  
+  if (PIC::ThisThread==0)
   cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
 }
 
