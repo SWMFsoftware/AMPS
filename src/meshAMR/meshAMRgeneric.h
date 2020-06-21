@@ -9041,27 +9041,22 @@ nMPIops++;
 
 
   //save/load the binary file containing the center node measures
-  void SaveCenterNodeMeasure(cTreeNodeAMR<cBlockAMR> *node=NULL) {
-    static CMPI_channel pipe;
-    static FILE *fout=NULL;
+  void SaveCenterNodeMeasure() {
+    CMPI_channel pipe(10000);
+    FILE* fout=NULL;
 
-    if (node==NULL) {
-      unsigned long Signature=getMeshSignature();
+    unsigned long Signature=getMeshSignature();
 
-      node=rootTree;
-      pipe.init(1000000);
+    if (ThisThread==0) {
+      pipe.openRecvAll();
 
-      if (ThisThread==0) {
-        pipe.openRecvAll();
+      //open the file
+      char fname[500];
+      sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.bin",Signature);
 
-        //open the file
-        char fname[400];
-        sprintf(fname,"amr.sig=0x%lx.CenterNodeMeasure.bin",Signature);
-
-        fout=fopen(fname,"w");
-      }
-      else pipe.openSend(0);
+      fout=fopen(fname,"w");
     }
+    else pipe.openSend(0);
 
     //loop through all points
     //create the list of the points
@@ -9079,45 +9074,50 @@ nMPIops++;
     exit(__LINE__,__FILE__,"Error: not implemented");
     #endif
 
+	std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*,FILE*)> SaveDownTree;
+    
+    SaveDownTree = [&] (cTreeNodeAMR<cBlockAMR>* node,CMPI_channel* pipe,FILE* fout) -> void {
+      if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+        if ((ThisThread==0)||(node->Thread==ThisThread)) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
+          //get cell's measure
+          if (node->Thread==ThisThread) {
+            Measure=-1.0;
 
+            //locate the cell
+            if (node->block!=NULL) {
+              nd=getCenterNodeLocalNumber(i,j,k);
+              if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) Measure=CenterNode->Measure;
+            }
 
-    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-      if ((ThisThread==0)||(node->Thread==ThisThread)) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-        //get cell's measure
-        if (node->Thread==ThisThread) {
-          Measure=-1.0;
-
-          //locate the cell
-          if (node->block!=NULL) {
-            nd=getCenterNodeLocalNumber(i,j,k);
-            if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) Measure=CenterNode->Measure;
+            if (node->Thread!=0) pipe->send(Measure);
+          }
+          else {
+            pipe->recv(Measure,node->Thread);
           }
 
-          if (node->Thread!=0) pipe.send(Measure);
+          //save cells' measure
+          if (ThisThread==0) fwrite(&Measure,sizeof(double),1,fout);
         }
-        else {
-          pipe.recv(Measure,node->Thread);
+      }
+      else {
+        for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) {
+        	SaveDownTree(node->downNode[nDownNode],pipe,fout);
         }
-
-        //save cells' measure
-        if (ThisThread==0) fwrite(&Measure,sizeof(double),1,fout);
-
       }
-    }
-    else {
-      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) SaveCenterNodeMeasure(node->downNode[nDownNode]);
-    }
+    };
 
-    if (node==rootTree) {
-      if (ThisThread==0) {
-        pipe.closeRecvAll();
-        fclose(fout);
-      }
-      else pipe.closeSend();
-
-      pipe.remove();
-      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    
+    SaveDownTree(rootTree,&pipe,fout);
+    
+    
+    if (ThisThread==0) {
+      pipe.closeRecvAll();
+      fclose(fout);
     }
+    else pipe.closeSend();
+
+    pipe.remove();
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
 
   bool LoadCenterNodeMeasure(const char *CellMeasureFilePath, cTreeNodeAMR<cBlockAMR> *node=NULL) {
@@ -9736,7 +9736,7 @@ nMPIops++;
       //try to save the file with the cell measures
       if (_AMR_READ_SAVE_CENTER_NODE_MEASURE__MODE_==_ON_AMR_MESH_) {
         if (ThisThread==0) printf("$PREFIX: saving the calculated volume data file.... ");
-        SaveCenterNodeMeasure(NULL);
+        SaveCenterNodeMeasure();
         if (ThisThread==0) printf("   done\n");
       }
     }
