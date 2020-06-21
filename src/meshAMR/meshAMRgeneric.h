@@ -9196,30 +9196,29 @@ nMPIops++;
 
   //save/load the center node associated data. nSaveVariables==-1 -> save the whole associated data vector
   void SaveCenterNodeAssociatedData(const char *fNameBase, int *SaveVariableOffset, int nSaveVariables,cTreeNodeAMR<cBlockAMR>  *node=NULL) {
-    static CMPI_channel pipe;
-    static FILE *fout=NULL;
+    CMPI_channel pipe;
+    FILE *fout=NULL;
 
-    if (node==NULL) {
-      unsigned long Signature;
+    unsigned long Signature;
 
-      Signature=getMeshSignature();
-      node=rootTree;
-      pipe.init(1000000);
+    Signature=getMeshSignature();
+    node=rootTree;
+    pipe.init(100000);
 
-      if (ThisThread==0) {
-        pipe.openRecvAll();
+    if (ThisThread==0) {
+      pipe.openRecvAll();
 
-        //open the file
-        char fname[400];
-        sprintf(fname,"amr.sig=0x%lx.f=%s.CenterNodeAssociatedData.bin",Signature,fNameBase);
+      //open the file
+      char fname[400];
+      sprintf(fname,"amr.sig=0x%lx.f=%s.CenterNodeAssociatedData.bin",Signature,fNameBase);
 
-        fout=fopen(fname,"w");
+      fout=fopen(fname,"w");
 
-        //save the number of the variables
-        fwrite(&nSaveVariables,sizeof(int),1,fout);
-      }
-      else pipe.openSend(0);
+      //save the number of the variables
+      fwrite(&nSaveVariables,sizeof(int),1,fout);
     }
+    else pipe.openSend(0);
+
 
     //loop through all points
     //create the list of the points
@@ -9237,64 +9236,70 @@ nMPIops++;
     #endif
 
     char SendCellFlag;
+    
+    std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*,FILE*)> SaveDownTree;
 
-    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-      if ((ThisThread==0)||(node->Thread==ThisThread)) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-        SendCellFlag=true;
+    SaveDownTree = [&] (cTreeNodeAMR<cBlockAMR>* node,CMPI_channel* pipe) -> void {
+    	if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    		if ((ThisThread==0)||(node->Thread==ThisThread)) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
+    			SendCellFlag=true;
 
-        //determine whether the cell data neede to be saved
-        if (node->Thread==ThisThread) {
-          //locate the cell
-          if (node->block==NULL) SendCellFlag=false,offset=NULL;
+    			//determine whether the cell data neede to be saved
+    			if (node->Thread==ThisThread) {
+    				//locate the cell
+    				if (node->block==NULL) SendCellFlag=false,offset=NULL;
 
-          nd=getCenterNodeLocalNumber(i,j,k);
+    				nd=getCenterNodeLocalNumber(i,j,k);
 
-          if (SendCellFlag==true) {
-            if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) offset=CenterNode->GetAssociatedDataBufferPointer();
-            else SendCellFlag=false,offset=NULL;
-          }
+    				if (SendCellFlag==true) {
+    					if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) offset=CenterNode->GetAssociatedDataBufferPointer();
+    					else SendCellFlag=false,offset=NULL;
+    				}
 
-          if (node->Thread!=0) pipe.send(SendCellFlag);
-        }
-        else {
-          pipe.recv(SendCellFlag,node->Thread);
-        }
+    				if (node->Thread!=0) pipe->send(SendCellFlag);
+    			}
+    			else {
+    				pipe->recv(SendCellFlag,node->Thread);
+    			}
 
-        //save the cell data saving flag
-        if (ThisThread==0) fwrite(&SendCellFlag,sizeof(char),1,fout);
+    			//save the cell data saving flag
+    			if (ThisThread==0) fwrite(&SendCellFlag,sizeof(char),1,fout);
 
-        //save the cell data
-        if (SendCellFlag==true) {
-          if (node->Thread==ThisThread) {
-            if (node->Thread==0) {
-              if (nSaveVariables==-1) fwrite(offset,sizeof(char),CenterNode->AssociatedDataLength(),fout);
-              else for (int nvar=0;nvar<nSaveVariables;nvar++) {
-                fwrite(offset+SaveVariableOffset[nvar],sizeof(double),1,fout);
-              }
-            }
-            else {
-              pipe.send(offset,CenterNode->AssociatedDataLength());
-            }
-          }
-          else {
-            char data[CenterNode->AssociatedDataLength()];
+    			//save the cell data
+    			if (SendCellFlag==true) {
+    				if (node->Thread==ThisThread) {
+    					if (node->Thread==0) {
+    						if (nSaveVariables==-1) fwrite(offset,sizeof(char),CenterNode->AssociatedDataLength(),fout);
+    						else for (int nvar=0;nvar<nSaveVariables;nvar++) {
+    							fwrite(offset+SaveVariableOffset[nvar],sizeof(double),1,fout);
+    						}
+    					}
+    					else {
+    						pipe->send(offset,CenterNode->AssociatedDataLength());
+    					}
+    				}
+    				else {
+    					char data[CenterNode->AssociatedDataLength()];
 
-            //recieve the data
-            pipe.recv(data,CenterNode->AssociatedDataLength(),node->Thread);
+    					//recieve the data
+						pipe->recv(data,CenterNode->AssociatedDataLength(),node->Thread);
 
-            //save the data
-            if (nSaveVariables==-1) fwrite(data,sizeof(char),CenterNode->AssociatedDataLength(),fout);
-            else for (int nvar=0;nvar<nSaveVariables;nvar++) {
-              fwrite(data+SaveVariableOffset[nvar],sizeof(double),1,fout);
-            }
+						//save the data
+						if (nSaveVariables==-1) fwrite(data,sizeof(char),CenterNode->AssociatedDataLength(),fout);
+						else for (int nvar=0;nvar<nSaveVariables;nvar++) {
+							fwrite(data+SaveVariableOffset[nvar],sizeof(double),1,fout);
+						}
 
-          }
-        }
-      }
-    }
-    else {
-      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) SaveCenterNodeAssociatedData(fNameBase,SaveVariableOffset,nSaveVariables,node->downNode[nDownNode]);
-    }
+    				}
+    			}
+    		}
+    	}
+    	else {
+    		for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) {
+    			SaveDownTree(node->downNode[nDownNode],pipe);
+    		}
+    	}
+    };
 
     if (node==rootTree) {
       if (ThisThread==0) {
