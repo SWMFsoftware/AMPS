@@ -1540,7 +1540,7 @@ public:
             
             MPI_Recv(Signature,sizeof(CRC32),MPI_BYTE,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
             
-            for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
+            if (node->block!=NULL) for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
               //locate the cell
               nd=getCenterNodeLocalNumber(i,j,k);
               if (node->block->GetCenterNode(nd)==NULL) nd=-1;
