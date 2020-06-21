@@ -5731,33 +5731,38 @@ if (startNode->Temp_ID==15) {
 
   } 
 
-  void CompareTreeStructure(cTreeNodeAMR<cBlockAMR> *startNode) {
-    static cAMRnodeID id,idtemp;
-    static CMPI_channel pipe(1000000);
-
-    if (startNode==rootTree) {
-      if (ThisThread==0)  pipe.openRecvAll();
-      else pipe.openSend(0);
-    }
-
-    GetAMRnodeID(id,startNode);
-
-    if (ThisThread==0) {
-      for (int thread=1;thread<nTotalThreads;thread++) {
-        pipe.recv(idtemp,thread);
-        if (id!=idtemp) exit(__LINE__,__FILE__,"Error: the tree is not consistent");
-      }
-    }
-    else pipe.send(id);
-
-    for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) CompareTreeStructure(startNode->downNode[nDownNode]);
-
-    if (startNode==rootTree) {
-      if (ThisThread==0)  pipe.closeRecvAll();
-      else pipe.closeSend();
-
-      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    }
+  void CompareTreeStructure() {
+	CRC32 cs;
+	
+	std::function<void(cTreeNodeAMR<cBlockAMR>*,CRC32*)> CompereDownTree;
+	  
+	CompereDownTree = [&] (cTreeNodeAMR<cBlockAMR>* node,CRC32* cs) -> void {
+		cAMRnodeID id;
+		
+		 GetAMRnodeID(id,node);
+		 id.Checksum(cs);
+		 
+		 for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (node->downNode[nDownNode]!=NULL) {
+			 CompereDownTree(node->downNode[nDownNode],cs);
+		 }
+	};
+	  
+	CompereDownTree(rootTree,&cs);
+	
+	unsigned long checksum;
+	unsigned long *CheckSumTable=new unsigned long [nTotalThreads];
+	
+	checksum=cs.checksum();
+	
+	MPI_Gather(&checksum,1,MPI_UNSIGNED_LONG,CheckSumTable,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+	
+	if (ThisThread==0) {
+		for (int thread=1;thread<nTotalThreads;thread++) if (CheckSumTable[thread]!=CheckSumTable[0]) {
+			exit(__LINE__,__FILE__,"Error: the tree is not consistent");
+		}
+	}
+	
+	delete [] CheckSumTable;
   }
 
   void CompareGlobalNodeNumbering(cTreeNodeAMR<cBlockAMR> *startNode) {
@@ -5891,7 +5896,7 @@ if (CallsCounter==83) {
       resetNodeProcessedFlag();
 
       //compare the tree
-      CompareTreeStructure(rootTree);
+      CompareTreeStructure();
 
       SendRequestVector=new int [nTotalThreads];
       BlockNodeGlabalNumber=new long int [nBlockCornerNodes];
@@ -10805,6 +10810,7 @@ if (TmpAllocationCounter==2437) {
       }
 
       pipe.closeBcast();
+      pipe.remove();
     };
 
     auto VerifyDomainDecomposistionConsistency = [&] () {
