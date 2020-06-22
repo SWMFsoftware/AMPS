@@ -1426,9 +1426,10 @@ public:
 
   void check_max_mem_usage(string tag) {
     double memLocal = read_mem_usage();
-    double memMax = memLocal;
-
-    cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << ThisThread << endl;
+    double memMax;
+    MPI_Reduce(&memLocal, &memMax, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_GLOBAL_COMMUNICATOR);
+    
+    if (ThisThread==0)  cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << ThisThread << endl;
   }
 
   void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag,int Thread=-1) {
@@ -9895,84 +9896,129 @@ nMPIops++;
 
 
   //The MPI routines used in the mesh
-  double CalculateTotalParallelLoadMeasure(cTreeNodeAMR<cBlockAMR>* startNode,double *ThreadLoad) {
+  double CalculateTotalParallelLoadMeasure(double *ThreadLoad=NULL) {
     double res=0.0;
-    static CMPI_channel *pipe;
     
-    if (startNode==rootTree) {
-      pipe=new CMPI_channel;
-      pipe->init(100000);
-      
-      if (ThisThread==0) {
-        pipe->openRecvAll();
-        for (int thread=0;thread<nTotalThreads;thread++) ThreadLoad[thread]=0.0;
-      }
-      else pipe->openSend(0);
-    }
     
-    startNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+	auto PopulateThreadLoad = [&] (double *ThreadLoad) {
+	      for (cTreeNodeAMR<cBlockAMR>* node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+	    	  if (node->IsUsedInCalculationFlag==true) ThreadLoad[node->Thread]+=node->ParallelLoadMeasure;
+	      }
+	};
     
-    if (startNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
-#if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      startNode->ParallelLoadMeasure=0.0;
-#endif
+    auto GetBlockNumber = [&] (int thread) {
+      int res=0;
+      cTreeNodeAMR<cBlockAMR>* node;
       
-      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) res+=CalculateTotalParallelLoadMeasure(startNode->downNode[nDownNode],ThreadLoad);
-    }
-    else {
-#if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      res=((startNode->Thread==ThisThread)&&(startNode->IsUsedInCalculationFlag==true)) ? startNode->ParallelLoadMeasure : 0.0;
       
-      //check whether the node load measure is normalized
-      if (isfinite(res)==false) {
-        char msg[200];
-        
-        sprintf(msg,"Error: the parallel load measure is not normalized (res=%e)",res);
-        exit(__LINE__,__FILE__,msg);
+      for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    	  if ((node->Thread==thread)&&(node->IsUsedInCalculationFlag==true)) res++; 
       }
       
-      
-      if (ThisThread==0) {
-        double t;
-        
-        if (startNode->IsUsedInCalculationFlag==true) {
-          if (ThreadLoad!=NULL) ThreadLoad[0]+=res;
-          
-          for (int thread=1;thread<nTotalThreads;thread++) {
-            pipe->recv(t,thread);
-            res+=t;
-            if (ThreadLoad!=NULL) ThreadLoad[thread]+=t;
-          }
-          
-          startNode->ParallelLoadMeasure=res;
+      return res;
+    };
+    
+    auto PopulateBlockWeightTable = [&] (double *WeightTable) {
+    	int cnt=0;
+    	cTreeNodeAMR<cBlockAMR>* node;
+    	
+        for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+      	  if ((node->Thread==ThisThread)&&(node->IsUsedInCalculationFlag==true)) { 
+      		WeightTable[cnt++]=node->ParallelLoadMeasure;
+      	  }
         }
-        else {
-          startNode->ParallelLoadMeasure=0.0;
-        }
+    };
+
+    auto UnPackBlockWeightTable = [&] (double *WeightTable, int thread) {
+    	int cnt=0;
+    	cTreeNodeAMR<cBlockAMR>* node;
+
+    	for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    		if ((node->Thread==thread)&&(node->IsUsedInCalculationFlag==true)) { 
+    			node->ParallelLoadMeasure=WeightTable[cnt++];
+    		}
+    	}
+    };
+    
+    auto GetTotalLoad = [&] () {
+    	double res=0.0;
+    	
+    	for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    		if (node->IsUsedInCalculationFlag==true) { 
+    			res+=node->ParallelLoadMeasure;
+    		}
+    	}
+    	
+    	return res;
+    };
+    
+    int nBlocksThread=0;
+    int * nBlocksThreadTable=NULL;
+    if (ThisThread!=0) {
+      nBlocksThread=GetBlockNumber(ThisThread);
+    }else{
+      nBlocksThreadTable=new int [nTotalThreads];
+    }
+
+    MPI_Gather(&nBlocksThread,1,MPI_INT,nBlocksThreadTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    
+    double **  WeightTableProcess=NULL; 
+    double * WeightTable=NULL;
+    MPI_Request * reqList =NULL;
+    MPI_Request reqSend;
+    if (ThisThread==0){
+      WeightTableProcess=  new double * [nTotalThreads-1];
+      reqList = new MPI_Request [nTotalThreads-1];
+      for (int thread=1;thread<nTotalThreads;thread++) {
+	int threadBlockNum = nBlocksThreadTable[thread];
+	WeightTableProcess[thread-1]=NULL;
+	//if threadBlockNum=0, WeightTableProcess[thread-1]=NULL;
+	WeightTableProcess[thread-1]= new double [threadBlockNum];
+	MPI_Irecv(WeightTableProcess[thread-1],threadBlockNum,MPI_DOUBLE,thread,thread,MPI_GLOBAL_COMMUNICATOR,reqList+thread-1);
+      }      
+    }
+
+    if (ThisThread!=0){
+      WeightTable=new double [nBlocksThread];
+      PopulateBlockWeightTable(WeightTable);
+      MPI_Isend(WeightTable,nBlocksThread,MPI_DOUBLE,0,ThisThread,MPI_GLOBAL_COMMUNICATOR, &reqSend);
+      MPI_Status status;
+      MPI_Wait(&reqSend, &status);
+      delete [] WeightTable;
+    }
+
+    
+    if (ThisThread==0){
+      int nComplete=0;
+      while (nComplete<nTotalThreads-1){
+	int flag, index;
+	MPI_Status status;
+	MPI_Testany(nTotalThreads-1,reqList,&index,&flag,&status);
+
+	if ((flag==true)&&(index!=MPI_UNDEFINED)) {
+	  if (WeightTableProcess[index]!=NULL)
+	    UnPackBlockWeightTable(WeightTableProcess[index],index+1); 
+	  nComplete++;
+	}
       }
-      else {
-        if (startNode->IsUsedInCalculationFlag==true) pipe->send(res);
-      }
-#elif _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_OFF_
-      res=0.0;
-#else
-      exit(__LINE__,__FILE__,"Error: unknown option");
-#endif
+      
+      MPI_Waitall(nTotalThreads-1,reqList,MPI_STATUSES_IGNORE);//release memory here
+      
+      delete [] nBlocksThreadTable;
+      for (int ii=0; ii<nTotalThreads-1;ii++) delete [] WeightTableProcess[ii];
+      delete [] WeightTableProcess;
+      delete [] reqList;
+    }
+
+    
+    if (ThreadLoad!=NULL) {
+    	for (int thread=0;thread<nTotalThreads;thread++) ThreadLoad[thread]=0.0;    	
+    	PopulateThreadLoad(ThreadLoad);
     }
     
-    if (startNode==rootTree) {
-      if (ThisThread==0) {
-        pipe->closeRecvAll();
-        
-        res=0.0;
-        
-        for (int thread=0;thread<nTotalThreads;thread++) res+=ThreadLoad[thread];
-      }
-      else pipe->closeSend();
-      
-      MPI_Bcast(&res,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-      delete pipe;
-    }
+    if (ThisThread==0)
+      res=GetTotalLoad();
+    MPI_Bcast(&res,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
     
     return res;
   }
@@ -10515,13 +10561,13 @@ if (TmpAllocationCounter==2437) {
       for (nLevel=0;nLevel<=_MAX_REFINMENT_LEVEL_;nLevel++) nResolutionLevelBlocks[nLevel]=0;
 
       double InitialProcessorLoad[nTotalThreads];
-      LoadMeasureNormal=CalculateTotalParallelLoadMeasure(rootTree,InitialProcessorLoad)/nTotalThreads;
+      LoadMeasureNormal=CalculateTotalParallelLoadMeasure(InitialProcessorLoad)/nTotalThreads;
 
       MPI_Bcast(&LoadMeasureNormal,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (LoadMeasureNormal<=0.0) {
         SetConstantParallelLoadMeasure(1.0,rootTree);
-        LoadMeasureNormal=CalculateTotalParallelLoadMeasure(rootTree,InitialProcessorLoad)/nTotalThreads;
+        LoadMeasureNormal=CalculateTotalParallelLoadMeasure(InitialProcessorLoad)/nTotalThreads;
       }
 
       //calcualte the number of blocks per thread
