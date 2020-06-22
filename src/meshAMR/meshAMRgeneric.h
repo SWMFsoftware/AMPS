@@ -9901,7 +9901,7 @@ nMPIops++;
     
     if (startNode==rootTree) {
       pipe=new CMPI_channel;
-      pipe->init(10000);
+      pipe->init(100000);
       
       if (ThisThread==0) {
         pipe->openRecvAll();
