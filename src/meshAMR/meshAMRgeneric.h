@@ -10005,7 +10005,7 @@ nMPIops++;
       
       //check if block numbers are consistent
       
-      for (int ii=1;ii<nTotalThreads-1;ii++){
+      for (int ii=1;ii<nTotalThreads;ii++){
         if (nBlocksThreadTable[ii]!=cntThreads[ii-1])
           exit(__LINE__,__FILE__);
       }
