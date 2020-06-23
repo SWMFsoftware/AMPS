@@ -9989,25 +9989,33 @@ nMPIops++;
 
     
     if (ThisThread==0){
-      int nComplete=0;
-      while (nComplete<nTotalThreads-1){
-	int flag, index;
-	MPI_Status status;
-	MPI_Testany(nTotalThreads-1,reqList,&index,&flag,&status);
+ 
+      MPI_Waitall(nTotalThreads-1,reqList,MPI_STATUSES_IGNORE);
+      
+      int * cntThreads=new int [nTotalThreads-1];
+      for (int ii=0;ii<nTotalThreads-1;ii++) cntThreads[ii]=0;
+      cTreeNodeAMR<cBlockAMR>* node;
 
-	if ((flag==true)&&(index!=MPI_UNDEFINED)) {
-	  if (WeightTableProcess[index]!=NULL)
-	    UnPackBlockWeightTable(WeightTableProcess[index],index+1); 
-	  nComplete++;
-	}
+      for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+        if ((node->Thread!=0)&&(node->IsUsedInCalculationFlag==true)) {
+          int thread = node->Thread;
+          node->ParallelLoadMeasure=WeightTableProcess[thread-1][cntThreads[thread-1]++];
+        }
       }
       
-      MPI_Waitall(nTotalThreads-1,reqList,MPI_STATUSES_IGNORE);//release memory here
+      //check if block numbers are consistent
       
+      for (int ii=1;ii<nTotalThreads-1;ii++){
+        if (nBlocksThreadTable[ii]!=cntThreads[ii-1])
+          exit(__LINE__,__FILE__);
+      }
+
       delete [] nBlocksThreadTable;
+      delete [] cntThreads;
       for (int ii=0; ii<nTotalThreads-1;ii++) delete [] WeightTableProcess[ii];
       delete [] WeightTableProcess;
       delete [] reqList;
+      
     }
 
     
@@ -10018,6 +10026,7 @@ nMPIops++;
     
     if (ThisThread==0)
       res=GetTotalLoad();
+    
     MPI_Bcast(&res,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
     
     return res;
