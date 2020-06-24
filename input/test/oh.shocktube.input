@@ -74,7 +74,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   RecoverParticleData=off  \\ !on, off
     file=AMPS.restart
 
-  !DomainBoundaryParticleIntersection=user-defined \\ !!delete, SpecularReflection, PeriodicCondition, user-defined \\
+  !DomainBoundaryParticleIntersection=SpecularReflection \\ !!delete, SpecularReflection, PeriodicCondition, user-defined \\ default is user-defined \\
   !  function = OH::user_set_face_boundary
 
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
@@ -97,10 +97,10 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   InjectionTemperature=1000;		!default=6519
   
   !domain settings
-  DomainXMin=(-1.5E12,-7.5E11,-7.5E11); !(-2E13,-8E11,-8E11);!default=(-8E13,-2E13,-2E13)
-  DomainXMax=(1.5E12,7.5E11,7.5E11); !( 2E13, 8E11, 8E11);!default=( 8E13, 2E13, 2E13)
-  DomainDXmin = 1.5E11;			  !default=5E12
-  DomainDXMax = 1.5E11;			  !default=5E12
+  DomainXMin=(-3E13,-3E13,-3E13); !(-2E13,-8E11,-8E11);!default=(-8E13,-2E13,-2E13)
+  DomainXMax=(3E13,3E13,3E13); !( 2E13, 8E11, 8E11);!default=( 8E13, 2E13, 2E13)
+  DomainDXmin = 1.5E13;			  !default=5E12
+  DomainDXMax = 1.5E13;			  !default=5E12
 
   VelocityDistributionSampling=off \\ !on, off
     x=(4.0E+13,0.0,-2.0E+13), (0.0,2.0E+6,0.0), (-2.0E+6,0.0,0.0) \\ 
