@@ -8603,7 +8603,7 @@ nMPIops++;
       printf("_GHOST_CELLS_X_=%i\n_GHOST_CELLS_Y_=%i\n_GHOST_CELLS_Z_=%i\n",_GHOST_CELLS_X_,_GHOST_CELLS_Y_,_GHOST_CELLS_Z_);
 
 
-      printf("|1 thread\t|2 nLeafThisThreadBlocks\t|3 nAllocatedThisThreadCenterNodes\t|4 nAllocatedThisThreadCornerNodes\t|5 nLeafAllBlocks\t|6 nAllocatedAllCenterNodes\t|7 nAllocatedAllCornerNodes\t|8 GhostLayerBlocks\n");
+      printf("|1 thread\n|2 nLeafThisThreadBlocks\n|3 nAllocatedThisThreadCenterNodes\n|4 nAllocatedThisThreadCornerNodes\n|5 nLeafAllBlocks\n|6 nAllocatedAllCenterNodes\n|7 nAllocatedAllCornerNodes\n|8 GhostLayerBlocks\n");
 
       for (int thread=0;thread<nTotalThreads;thread++) {
         printf("%i\t%i\t\t%i\t\t%i\t\t%i\t\t%i\t\t%i\t\t%i\n",thread,nLeafThisThreadBlocksTable[thread],nAllocatedThisThreadCenterNodesTable[thread],nAllocatedThisThreadCornerNodesTable[thread],nLeafAllBlocksTable[thread],
