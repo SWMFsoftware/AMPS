@@ -147,7 +147,7 @@ public:
    }
 
    void func_exit() {
-     data_ptr->FunctionDataTableIndex--;
+     data_ptr->FunctionCallTableIndex--;
    }
 
    void InitLogger() {
@@ -275,6 +275,8 @@ int size=sizeof(cLoggerData);
          if (data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution==true) {
            if (clock()/CLOCKS_PER_SEC-data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time>data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit) {
              PrintLog();
+
+             exit(0);
            }
          }
        }           
