@@ -112,9 +112,41 @@ void test1 () {
 }
 
 
+void single_process_test () {
+  class cLogData {
+  public:
+    double t;
+
+    void PrintLog(int PintIndex) {
+      printf("t=%e\n",t);
+    }
+  };
+
+
+  cLogger<cLogData>  logger;
+  logger.InitLogger();
+
+  cLogData d;
+
+  d.t=34;
+
+  logger.func_enter(__LINE__,__FILE__,&d,0,5);
+
+
+  d.t=234;
+
+  logger.add_data_point(__LINE__,&d);
+
+  while (true);
+}
+
 
 
 int main(int argc,char **argv) {
+
+
+  single_process_test();
+
   PIC::InitMPI();
 
   logger.InitLogger();
