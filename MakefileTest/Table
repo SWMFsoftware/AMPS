@@ -101,9 +101,9 @@ Check=
 >>>-@${TESTMercury-ionsDIR}/../utility/ReduceFile.pl ${TESTMercury-ionsDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat 10
 >>>-@${TESTMercury-ionsDIR}/../utility/ReduceFile.pl ${TESTMercury-ionsDIR}/PT/plots/pic.NA_PLUS.s=0.out=0.dat 10
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMercury-ionsDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10   output/test_Mercury-ions/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=1.0E-6 -r=1E-6 ${TESTMercury-ionsDIR}/PT/plots/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10   output/test_Mercury-ions/amps.TrajectoryTracking.out=0.s=0.NA_PLUS.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMercury-ionsDIR}/PT/plots/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10   output/test_Mercury-ions/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--volume$(TESTMercury-ions-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=1.0E-6 -r=1E-3 ${TESTMercury-ionsDIR}/PT/plots/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10   output/test_Mercury-ions/pic.NA_PLUS.s=0.out=0.dat.Reduced.Step=10$(TESTMercury-ions-REF).ref_np`ls $(TESTMercury-ionsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Mercury-ions--volume$(TESTMercury-ions-REF).diff
 
 >>>@cat test_Mercury-ions--trajectory$(TESTMercury-ions-REF).diff test_Mercury-ions--volume$(TESTMercury-ions-REF).diff > test_Mercury-ions$(TESTMercury-ions-REF).diff
 
