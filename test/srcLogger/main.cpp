@@ -137,7 +137,7 @@ void single_process_test () {
 
   logger.add_data_point(__LINE__,&d);
 
-  while (true);
+  sleep(20);
 }
 
 
