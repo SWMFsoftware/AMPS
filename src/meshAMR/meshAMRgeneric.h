@@ -9249,7 +9249,7 @@ nMPIops++;
 
     char SendCellFlag;
     
-    std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*,FILE*)> SaveDownTree;
+    std::function<void(cTreeNodeAMR<cBlockAMR>*,CMPI_channel*)> SaveDownTree;
 
     SaveDownTree = [&] (cTreeNodeAMR<cBlockAMR>* node,CMPI_channel* pipe) -> void {
     	if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
