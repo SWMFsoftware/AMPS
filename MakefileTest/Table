@@ -2680,7 +2680,7 @@ Compile=
 
 Check=
 >>>@echo "test_Mover-Boris_check..." >> test_Mover-Boris${TESTMover-Boris-REF}.diff
->>>-${SCRIPTDIR}/DiffNum.pl ${TESTMover-BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat          \
+>>>-${SCRIPTDIR}/DiffNum.pl -r=1e-5 ${TESTMover-BorisDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat          \
 >>>${TESTMover-BorisKEYS}/output/test_CCMC-Individual_Trajectories${TESTMover-Boris-REF}.ref_np`ls ${TESTMover-BorisDIR}/PT/thread* |wc -l |tr -d ' '` > test_Mover-Boris${TESTMover-Boris-REF}.diff
 >>>@ls -l test_Mover-Boris${TESTMover-Boris-REF}.diff
 >>>@echo Test test_Mover-Boris has finished: `date`
@@ -2730,7 +2730,7 @@ Compile=
 
 Check=
 >>>@echo "test_Mover-Boris-relativistic_check..." >> test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
->>>-${SCRIPTDIR}/DiffNum.pl ${TESTMover-Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat          \
+>>>-${SCRIPTDIR}/DiffNum.pl -r=1e-6 ${TESTMover-Boris-relativisticDIR}/PT/plots/test_CCMC-Individual_Trajectories.dat          \
 >>>${TESTMover-Boris-relativisticKEYS}/output-relativistic/test_CCMC-Individual_Trajectories${TESTMover-Boris-relativistic-REF}.ref_np`ls ${TESTMover-Boris-relativisticDIR}/PT/thread* |wc -l |tr -d ' '` > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 >>>@ls -l test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 >>>@echo Test test_Mover-Boris-relativistic has finished: `date`
