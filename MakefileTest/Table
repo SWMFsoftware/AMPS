@@ -2700,7 +2700,7 @@ Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Mover-Boris_compile..." > test_Mover-Boris${TESTMover-Boris-REF}.diff
->>>./Config.pl -application=test/Mover-Boris -cplr-data-path=${TESTMover-BorisKEYS} -model-data-path=${TESTMover-BorisKEYS}  -amps-test=on
+>>>./Config.pl -application=test/Mover-Boris -cplr-data-path=${TESTMover-BorisKEYS} -model-data-path=${TESTMover-BorisKEYS} -spice-path=nospice  -amps-test=on
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_Mover-Boris_compile... done" >> test_Mover-Boris${TESTMover-Boris-REF}.diff
