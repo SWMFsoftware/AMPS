@@ -2212,7 +2212,7 @@ Start:
 
 
 
-  inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
+  inline cTreeNodeAMR<cBlockAMR>* findTreeNode(int *ix,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
     int iState=0,jState=0,kState=0,i,j,k;
    // double xmin[3],xmax[3];
@@ -2221,11 +2221,7 @@ Start:
     if (startNode==NULL) startNode=rootTree;
 
     //get the global index of the searched point
-    int idim,ix[3];
-
-    for (idim=0;idim<_MESH_DIMENSION_;idim++) ix[idim]=(x[idim]-xGlobalMin[idim])/dx_max_refinment[idim];
-
-
+    int idim;
     bool inblock,found=false;
 
     while (found==false) {
@@ -2276,6 +2272,16 @@ Start:
   }
 
 
+  inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
+    if (startNode==NULL) startNode=rootTree;
+
+    //get the global index of the searched point
+    int idim,ix[3];
+
+    for (idim=0;idim<_MESH_DIMENSION_;idim++) ix[idim]=(x[idim]-xGlobalMin[idim])/dx_max_refinment[idim];
+
+    return findTreeNode(ix,startNode);
+  }
 
 
 /*  inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
