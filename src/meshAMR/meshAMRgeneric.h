@@ -464,6 +464,8 @@ public:
   double (*CutCellSurfaceLocalResolution)(CutCell::cTriangleFaceDescriptor*);
 #endif
 
+  int xMinGlobalIndex[_MESH_DIMENSION_],NodeGeometricSizeIndex;
+
   double xmin[_MESH_DIMENSION_],xmax[_MESH_DIMENSION_];
   int RefinmentLevel,minNeibRefinmentLevel,maxNeibRefinmentLevel; //min/max values are used for calculation of the interpolation stencils
 
@@ -1863,6 +1865,11 @@ public:
     exit(__LINE__,__FILE__,"Error: the option is not found");
 #endif
 
+    //set the minimum value of dx
+    for (int idim=0;idim<3;idim++) {
+      dx_max_refinment[idim]=(xGlobalMax[idim]-xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
+    }
+
 
     //set the default value for the 'interpolation functions'
     GetCenterNodesInterpolationCoefficients=NULL;
@@ -1886,6 +1893,9 @@ public:
 
     rootTree->RefinmentLevel=0;
     for (i=0;i<_MESH_DIMENSION_;i++) rootTree->xmin[i]=xMin[i],rootTree->xmax[i]=xMax[i];
+
+    rootTree->NodeGeometricSizeIndex=1<<_MAX_REFINMENT_LEVEL_;
+    for (i=0;i<_MESH_DIMENSION_;i++) rootTree->xMinGlobalIndex[i]=0;
 
 
     //add the boundary faces to the root node
@@ -2200,7 +2210,75 @@ Start:
   }
   */
 
+
+
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
+    cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
+    int iState=0,jState=0,kState=0,i,j,k;
+   // double xmin[3],xmax[3];
+
+
+    if (startNode==NULL) startNode=rootTree;
+
+    //get the global index of the searched point
+    int idim,ix[3];
+
+    for (idim=0;idim<_MESH_DIMENSION_;idim++) ix[idim]=(x[idim]-xGlobalMin[idim])/dx_max_refinment[idim];
+
+
+    bool inblock,found=false;
+
+    while (found==false) {
+      inblock=true;
+
+      for (idim=0;idim<_MESH_DIMENSION_;idim++) {
+        if ((ix[idim]<startNode->xMinGlobalIndex[idim])||(ix[idim]>=startNode->xMinGlobalIndex[idim]+startNode->NodeGeometricSizeIndex)) {
+          inblock=false;
+          break;
+        }
+      }
+
+      if (inblock==true) {
+        i=(ix[0]-startNode->xMinGlobalIndex[0]<startNode->NodeGeometricSizeIndex/2) ? 0 : 1;
+
+        if (_MESH_DIMENSION_>1) {
+          j=(ix[1]-startNode->xMinGlobalIndex[1]<startNode->NodeGeometricSizeIndex/2) ? 0 : 1;
+        }
+        else j=0;
+
+        if (_MESH_DIMENSION_>2) {
+          k=(ix[2]-startNode->xMinGlobalIndex[2]<startNode->NodeGeometricSizeIndex/2) ? 0 : 1;
+        }
+        else k=0;
+
+        cTreeNodeAMR<cBlockAMR> *t=startNode->downNode[i+2*(j+2*k)];
+
+        if (t!=NULL) {
+          startNode=t;
+          continue;
+        }
+        else return startNode;
+      }
+      else {
+        //move up if the up-block is avaiable
+        if (startNode->upNode!=0) {
+          startNode=startNode->upNode;
+          continue;
+        }
+        else {
+          return NULL;
+        }
+      }
+
+    }
+
+    return res;
+  }
+
+
+
+
+/*  inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
     int iState=0,jState=0,kState=0,i,j,k;
     double xmin[3],xmax[3];
@@ -2239,7 +2317,7 @@ Start:
       k=((x[2]-xmin[2])/dxRootBlock[2]*(1<<startNode->RefinmentLevel)<0.5) ? 0 : 1;
 #endif
 
-      t=startNode->downNode[i+2*(j+2*k)]; 
+      t=startNode->downNode[i+2*(j+2*k)];
 
       if (t!=NULL) {
         startNode=t;
@@ -2268,7 +2346,7 @@ Start:
     if (res!=NULL) for (int idim=0;idim<_MESH_DIMENSION_;idim++) if ((x[idim]<res->xmin[idim])||(res->xmax[idim]<x[idim])) exit(__LINE__,__FILE__,"Error: did'nt find the tree node");
 #endif
     return res;
-  }
+  }*/
 
   //find the node of the tree where the point 'x' is located BUT the nodes' resolution should be less of equal to UpperResolutionLevel (the found free could be not the last in the tree (can be located somewhere in the middle of the tree)
   cTreeNodeAMR<cBlockAMR>*  findTreeNodeLimitedResolutionLevel(double *x,int UpperResolutionLevel,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
@@ -4935,6 +5013,23 @@ if (startNode->Temp_ID==15) {
        //init the node ID
        GetAMRnodeID(newTreeNode->AMRnodeID,newTreeNode);
 
+
+       int NodeGeometricSizeIndex=startNode->NodeGeometricSizeIndex/2;
+       int *xMinGlobalIndex=newTreeNode->xMinGlobalIndex;
+
+       newTreeNode->NodeGeometricSizeIndex=NodeGeometricSizeIndex;
+
+       xMinGlobalIndex[0]=startNode->xMinGlobalIndex[0]+((iDownNode==0) ? 0 : NodeGeometricSizeIndex);
+
+       if (_MESH_DIMENSION_>1) {
+         xMinGlobalIndex[1]=startNode->xMinGlobalIndex[1]+((jDownNode==0) ? 0 : NodeGeometricSizeIndex);
+       }
+
+       if (_MESH_DIMENSION_>2) {
+         xMinGlobalIndex[2]=startNode->xMinGlobalIndex[2]+((kDownNode==0) ? 0 : NodeGeometricSizeIndex);
+       }
+
+
        //init newTreeNode->xmin,xmax 
        xmin=newTreeNode->xmin;
        xmax=newTreeNode->xmax;
@@ -6412,6 +6507,7 @@ if (CallsCounter==83) {
     }
   }
 
+  double dx_max_refinment[3];
 
   void buildMesh() {
     int level;
@@ -6426,7 +6522,15 @@ if (CallsCounter==83) {
     }
      
     double dx[3];
-    for (int idim=0;idim<3;idim++) dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
+    for (int idim=0;idim<3;idim++) {
+      dx[idim]=xGlobalMax[idim]-xGlobalMin[idim];
+    }
+
+    if (1<<sizeof(int)<=_MAX_REFINMENT_LEVEL_) {
+      exit(__LINE__,__FILE__,"Size of int is not sufficient to feep the AMR tree with the number of refingments as in _MAX_REFINMENT_LEVEL_ -> _MAX_REFINMENT_LEVEL_ should be reduced");
+    }
+
+
 
     for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) {
       flag=buildMesh_OneLevelRefinment(rootTree,0,level);
@@ -7746,6 +7850,8 @@ nMPIops++;
     //save the node ID
     fwrite(&startNode->AMRnodeID,sizeof(cAMRnodeID),1,fout);
 
+    //save 
+
 
     //save the node neighbors
 #if _MESH_DIMENSION_ == 1
@@ -7800,6 +7906,9 @@ nMPIops++;
     fwrite(startNode->xmax,_MESH_DIMENSION_*sizeof(double),1,fout);
     fwrite(&startNode->RefinmentLevel,sizeof(int),1,fout);
     fwrite(&startNode->nodeDescriptor,sizeof(startNode->nodeDescriptor),1,fout);
+
+    fwrite(startNode->xMinGlobalIndex,_MESH_DIMENSION_*sizeof(int),1,fout);
+    fwrite(&startNode->NodeGeometricSizeIndex,sizeof(int),1,fout);
 
 #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
     fwrite(&startNode->Thread,sizeof(int),1,fout);
@@ -7963,6 +8072,10 @@ nMPIops++;
     fread(startNode->xmax,_MESH_DIMENSION_*sizeof(double),1,fout);
     fread(&startNode->RefinmentLevel,sizeof(int),1,fout);
     fread(&startNode->nodeDescriptor,sizeof(startNode->nodeDescriptor),1,fout);
+
+    fread(startNode->xMinGlobalIndex,_MESH_DIMENSION_*sizeof(int),1,fout);
+    fread(&startNode->NodeGeometricSizeIndex,sizeof(int),1,fout);
+
 
 #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
     fread(&startNode->Thread,sizeof(int),1,fout);
