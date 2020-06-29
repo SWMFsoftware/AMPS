@@ -248,7 +248,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         static const int FaceNodeMap[6][4]={ {0,2,4,6}, {1,3,5,7}, {0,1,4,5}, {2,3,6,7}, {0,1,2,3}, {4,5,6,7}};
 
         if (CoarserBlock==NULL) for (int iCorner=0;iCorner<4;iCorner++) {
-          NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner]);
+          NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner],&PIC::Mesh::mesh);
 
           if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
             //found a coarser block

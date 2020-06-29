@@ -113,7 +113,7 @@
 
 
 //check the consistancy of the mesh on each level of refinments during creation of the mesh
-#define _CHECK_MESH_CONSISTANCY_ _ON_AMR_MESH_
+#define _CHECK_MESH_CONSISTANCY_ _OFF_AMR_MESH_ //_ON_AMR_MESH_
 
 
 //the number of bits reserved to store the counting number of the mesh elements

@@ -1187,7 +1187,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
       if (k==-1) k=0;
       idx = i+2*(j+2*k);
       
-      nodeNeib = node->GetNeibCorner(idx);      
+      nodeNeib = node->GetNeibCorner(idx,&PIC::Mesh::mesh);      
     }else if(nZeros == 1){
       // Edges
       int idx = -1; 
@@ -2537,22 +2537,33 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
               int iNeib;
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neib;
-              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **NeibTable;
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[6*4];
               int NeibTableLength;
               bool found=false;
+
+              
 
               for (int iTest=0;(iTest<3)&&(found==false);iTest++) {
                 switch(iTest) {
                 case 0:
-                  NeibTable=startNode->neibNodeFace;
+                 // NeibTable=startNode->neibNodeFace;
+                  
+                  for (int i=0;i<6*4;i++) NeibTable[i]=startNode->neibNodeFace[i];
+ 
                   NeibTableLength=6*4;
                   break;
                 case 1:
-                  NeibTable=startNode->neibNodeCorner;
+                //  NeibTable=startNode->neibNodeCorner;
+
+                  startNode->GetNeibTable(NeibTable,&PIC::Mesh::mesh);
+
                   NeibTableLength=8;
                   break;
                 case 2:
-                  NeibTable=startNode->neibNodeEdge;
+                 // NeibTable=startNode->neibNodeEdge;
+
+                  for (int i=0;i<12*2;i++) NeibTable[i]=startNode->neibNodeEdge[i];
+
                   NeibTableLength=12*2;
                   break;
                 }
@@ -2600,22 +2611,34 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                   //verify that the corner node is connected to a block that belongs to the current MPI process
                   int iNeib;
                   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neib;
-                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **NeibTable;
+                  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[12*2];
                   int NeibTableLength;
                   bool found=false;
 
                   for (int iTest=0;(iTest<3)&&(found==false);iTest++) {
                     switch(iTest) {
                     case 0:
-                      NeibTable=GhostBlock->neibNodeFace;
+                     // NeibTable=GhostBlock->neibNodeFace;
+
+                      for (int i=0;i<6*4;i++) NeibTable[i]=GhostBlock->neibNodeFace[i];
+
                       NeibTableLength=6*4;
                       break;
                     case 1:
-                      NeibTable=GhostBlock->neibNodeCorner;
+                      //NeibTable=GhostBlock->neibNodeCorner;
+
+                      GhostBlock->GetNeibTable(NeibTable,&PIC::Mesh::mesh); 
+
+
                       NeibTableLength=8;
                       break;
                     case 2:
-                      NeibTable=GhostBlock->neibNodeEdge;
+//                      NeibTable=GhostBlock->neibNodeEdge;
+
+
+                      for (int i=0;i<12*2;i++) NeibTable[i]=GhostBlock->neibNodeEdge[i];
+
+
                       NeibTableLength=12*2;
                       break;
                     }

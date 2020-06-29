@@ -205,6 +205,8 @@ public:
 
 template <class cBlockAMR> class cTreeNodeAMR;
 template <class cCornerNode,class cCenterNode> class cBasicBlockAMR; 
+//template <class cCornerNode,class cCenterNode,class cBlockAMR> class cMeshAMRgeneric; 
+
 
 //===================================================================
 
@@ -337,12 +339,20 @@ public:
   }
 };
 
-template <class cBlockAMR>
+template <typename cBlockAMR>
 class cTreeNodeAMR : public cStackElementBase, public cAMRexit {
 public:
   cTreeNodeAMR *upNode,*downNode[1<<_MESH_DIMENSION_];
   cBlockAMR *block;
   cAMRnodeID AMRnodeID;
+
+  //typedef cTreeNodeAMR<cBlockAMR>* (* fneibNodeCorner)(int ,cTreeNodeAMR<cBlockAMR>*);
+  //static fneibNodeCorner neibNodeCorner;
+
+  template <typename T>
+  void GetNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+    for (int i=0;i<(1<<_MESH_DIMENSION_);i++) NeibTable[i]=neibNodeCorner(i,mesh_ptr);
+  } 
 
   static unsigned char FlagTableStatusVector;
   unsigned char FlagTable;
@@ -395,6 +405,62 @@ public:
 
 
   //Neighbors of the nodes
+
+
+   template <typename T>
+   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,const T& mesh_ptr) {
+     int ix[3];
+
+     switch(i) {
+     case 0:
+       ix[0]=xMinGlobalIndex[0]-1;
+       ix[1]=xMinGlobalIndex[1]-1;
+       ix[2]=xMinGlobalIndex[2]-1;
+       break;
+     case 1:
+       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+       ix[1]=xMinGlobalIndex[1]-1;
+       ix[2]=xMinGlobalIndex[2]-1;
+       break;
+     case 2:
+       ix[0]=xMinGlobalIndex[0]-1;
+       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+       ix[2]=xMinGlobalIndex[2]-1;
+       break;
+     case 3:
+       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+       ix[2]=xMinGlobalIndex[2]-1;
+       break;
+
+     case 4:
+       ix[0]=xMinGlobalIndex[0]-1;
+       ix[1]=xMinGlobalIndex[1]-1;
+       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+       break;
+     case 5:
+       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+       ix[1]=xMinGlobalIndex[1]-1;
+       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+       break;
+     case 6:
+       ix[0]=xMinGlobalIndex[0]-1;
+       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+       break;
+     case 7:
+       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+       break;
+     }
+
+     return mesh_ptr->findTreeNode(ix,this);
+   }
+
+  #define _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ _OFF_AMR_MESH__ 
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_ 
   #if _MESH_DIMENSION_ == 1
   cTreeNodeAMR *neibNodeFace[2];
   #elif _MESH_DIMENSION_ == 2
@@ -402,6 +468,11 @@ public:
   #elif _MESH_DIMENSION_ == 3
   cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
   #endif
+#else
+
+  cTreeNodeAMR *neibNodeFace[6*4],*neibNodeEdge[12*2];
+
+#endif
 
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
@@ -441,7 +512,13 @@ public:
 
     #elif _MESH_DIMENSION_ == 3
     for (int i=0;i<6*4;i++) neibNodeFace[i]=NULL;
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (int i=0;i<8;i++) neibNodeCorner[i]=NULL;
+#endif
+
+
+
     for (int i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
     #endif //_MESH_DIMENSION_
   }
@@ -618,7 +695,13 @@ public:
     for (i=0;i<4;i++) neibNodeCorner[i]=NULL;
     #elif _MESH_DIMENSION_ == 3
     for (i=0;i<6*4;i++) neibNodeFace[i]=NULL;
+
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
+#endif 
+
+
     for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
     #endif
 
@@ -642,7 +725,8 @@ public:
   }
 
   //determine the minimum and maximum resolution levels of the neighbor blocks
-  void SetNeibRefinmentLevelLimits() {
+  template <typename T>
+  void SetNeibRefinmentLevelLimits(const T mesh_ptr) {
     cTreeNodeAMR* node;
     int i;
 
@@ -660,7 +744,7 @@ public:
     }
 
     //connection through corners
-    for (i=0;i<8;i++) if ((node=neibNodeCorner[i])!=NULL) {
+    for (i=0;i<8;i++) if ((node=neibNodeCorner(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -696,7 +780,8 @@ public:
   */
 
 
-  cTreeNodeAMR *GetNeibCorner(int nCornerNode) {
+  template<typename T>
+  cTreeNodeAMR *GetNeibCorner(int nCornerNode,const T mesh_ptr) {
     cTreeNodeAMR *res;
 
 #if _MESH_DIMENSION_ == 1
@@ -704,7 +789,7 @@ public:
     res=NULL;
 #else
     if ((nCornerNode<0)||(nCornerNode>=1<<_MESH_DIMENSION_)) exit(__LINE__,__FILE__,"Error: out of range");
-    res=neibNodeCorner[nCornerNode];
+    res=neibNodeCorner(nCornerNode,mesh_ptr);
 #endif
 
     return res;
@@ -736,7 +821,9 @@ public:
 // do nothing
 #else
     if ((nCornerNode<0)||(nCornerNode>=1<<_MESH_DIMENSION_)) exit(__LINE__,__FILE__,"Error: out of range");
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     neibNodeCorner[nCornerNode]=neibNode;
+#endif
 #endif
   }
 
@@ -800,7 +887,9 @@ public:
 #endif
   }
 
-  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k) {
+
+  template <typename T>
+  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,const T mesh_ptr) {
     cTreeNodeAMR *res=NULL;
 
 #if _MESH_DIMENSION_ == 1
@@ -836,7 +925,7 @@ public:
        if (j==-1) j=0;
        if (k==-1) k=0;
 
-       res=GetNeibCorner(i+2*(j+2*k));
+       res=GetNeibCorner(i+2*(j+2*k),mesh_ptr);
      } else if (code==2) { //edge node
        int nedge=-1;
 
@@ -893,9 +982,10 @@ public:
   }
 
   //check if a node is a neighbor of the 'this node'
-  bool CheckNeibNode(cTreeNodeAMR* neibNode) {
+  template <typename T>
+  bool CheckNeibNode(cTreeNodeAMR* neibNode,const T mesh_ptr) {
     //check the connections through the corner nodes
-    for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (GetNeibCorner(nd)==neibNode) {
+    for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (GetNeibCorner(nd,mesh_ptr)==neibNode) {
       return true;
     }
 
@@ -2057,6 +2147,9 @@ public:
      //default value of the parallel mesh generation flag
      ParallelMeshGenerationFlag=false;
 
+     //set the function for determening neib corner nodes
+     //cTreeNodeAMR<cBlockAMR>::neibNodeCorner=neibNodeCorner;
+
      //set up the tree and the root block
      rootBlock=NULL;
      rootTree=NULL;
@@ -2211,7 +2304,59 @@ Start:
   */
 
 
+/*
+   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,cTreeNodeAMR<cBlockAMR>* startNode) {
+     int ix[3];
+  
+     switch(i) {
+     case 0:
+       ix[0]=startNode->xMinGlobalIndex[0]-1;
+       ix[1]=startNode->xMinGlobalIndex[1]-1;
+       ix[2]=startNode->xMinGlobalIndex[2]-1;
+       break;  
+     case 1:
+       ix[0]=startNode->xMinGlobalIndex[0]+startNode->NodeGeometricSizeIndex;
+       ix[1]=startNode->xMinGlobalIndex[1]-1;
+       ix[2]=startNode->xMinGlobalIndex[2]-1;
+       break;
+     case 2:
+       ix[0]=startNode->xMinGlobalIndex[0]-1;
+       ix[1]=startNode->xMinGlobalIndex[1]+startNode->NodeGeometricSizeIndex;
+       ix[2]=startNode->xMinGlobalIndex[2]-1;
+       break;
+     case 3:
+       ix[0]=startNode->xMinGlobalIndex[0]+startNode->NodeGeometricSizeIndex;
+       ix[1]=startNode->xMinGlobalIndex[1]+startNode->NodeGeometricSizeIndex;
+       ix[2]=startNode->xMinGlobalIndex[2]-1;
+       break;
 
+     case 4:
+       ix[0]=startNode->xMinGlobalIndex[0]-1;
+       ix[1]=startNode->xMinGlobalIndex[1]-1;
+       ix[2]=startNode->xMinGlobalIndex[2]+startNode->NodeGeometricSizeIndex;
+       break;
+     case 5:
+       ix[0]=startNode->xMinGlobalIndex[0]+startNode->NodeGeometricSizeIndex;
+       ix[1]=startNode->xMinGlobalIndex[1]-1;
+       ix[2]=startNode->xMinGlobalIndex[2]+startNode->NodeGeometricSizeIndex;
+       break;
+     case 6:
+       ix[0]=startNode->xMinGlobalIndex[0]-1;
+       ix[1]=startNode->xMinGlobalIndex[1]+startNode->NodeGeometricSizeIndex;
+       ix[2]=startNode->xMinGlobalIndex[2]+startNode->NodeGeometricSizeIndex;
+       break;
+     case 7:
+       ix[0]=startNode->xMinGlobalIndex[0]+startNode->NodeGeometricSizeIndex;
+       ix[1]=startNode->xMinGlobalIndex[1]+startNode->NodeGeometricSizeIndex;
+       ix[2]=startNode->xMinGlobalIndex[2]+startNode->NodeGeometricSizeIndex;
+       break;
+     }
+    
+     return findTreeNode(ix,startNode);
+   }
+
+
+*/
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(int *ix,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
     int iState=0,jState=0,kState=0,i,j,k;
@@ -2453,7 +2598,7 @@ Start:
   */
 
   cTreeNodeAMR<cBlockAMR> *getNeibNode(int i,int j,int k,cTreeNodeAMR<cBlockAMR>* startNode) {
-    return startNode->GetNeibNode(i,j,k);
+    return startNode->GetNeibNode(i,j,k,this);
   }
 
   cTreeNodeAMR<cBlockAMR> *getNeibNode_DirectTreeSearch(int i,int j,int k,cTreeNodeAMR<cBlockAMR>* startNode) {
@@ -2845,12 +2990,12 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
     for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) {
       int ndNeib;
 
-      neibNode=startNode->GetNeibCorner(nd);
+      neibNode=startNode->GetNeibCorner(nd,this);
 
       if (neibNode!=NULL) {
         if ((neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_)||(abs(startNode->RefinmentLevel-neibNode->RefinmentLevel)>1)) exit(__LINE__,__FILE__,"Error: node's connection is not consistent");
 
-        for (ndNeib=0;ndNeib<(1<<_MESH_DIMENSION_);ndNeib++) if (neibNode->GetNeibCorner(ndNeib)==startNode) {
+        for (ndNeib=0;ndNeib<(1<<_MESH_DIMENSION_);ndNeib++) if (neibNode->GetNeibCorner(ndNeib,this)==startNode) {
           break;
         }
 
@@ -5205,7 +5350,7 @@ if (startNode->Temp_ID==15) {
 
      for (int nface=0;nface<2*_MESH_DIMENSION_;nface++) {
        neibNode=startNode->GetNeibFace(nface,0,0);
-       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
+       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode,this)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
 
 #endif
@@ -5288,7 +5433,7 @@ if (startNode->Temp_ID==15) {
 
        //make connection through the corner nodes of startNode
        for (nd=0;nd<4;nd++) if ((nUpCornerNode=ExternalNodesCornerNodeConnectionMap_upNode[nDownNode][nd].nUpCornerNode)!=-1) {
-         neibNode=startNode->GetNeibCorner(nUpCornerNode);
+         neibNode=startNode->GetNeibCorner(nUpCornerNode,this);
 
          startNode->downNode[nDownNode]->SetNeibCorner(neibNode,nUpCornerNode);
          if (neibNode!=NULL) neibNode->SetNeibCorner(startNode->downNode[nDownNode],ExternalNodesCornerNodeConnectionMap_upNode[nDownNode][nd].nNeibCornerNode);
@@ -5499,7 +5644,7 @@ if (startNode->Temp_ID==15) {
 
      for (nDownNode=0,nd=0;nDownNode<8;nDownNode++,nd++) {
        downNode=startNode->downNode[nDownNode];
-       t=startNode->GetNeibCorner(nd);
+       t=startNode->GetNeibCorner(nd,this);
 
        downNode->SetNeibCorner(t,nd);
        if (t!=NULL) t->SetNeibCorner(downNode,ExternalNodesCornerNodeConnectionMap_upNode[nDownNode][nd].nNeibCornerNode);
@@ -5743,18 +5888,21 @@ if (startNode->Temp_ID==15) {
      //check consistency of the node's reconnection
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
 #if _CHECK_MESH_CONSISTANCY_ == _ON_AMR_MESH_
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
      for (nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if ((neibNode=startNode->neibNodeCorner[nd])!=NULL) {
        if (neibNode->CheckNeibNode(startNode)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
+#endif
 
      for (int nface=0;nface<2*_MESH_DIMENSION_;nface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
        neibNode=startNode->GetNeibFace(nface,i,j);
-       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
+       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode,this)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
 
      for (int nedge=0;nedge<12;nedge++) for (int iEdge=0;iEdge<2;iEdge++) {
        neibNode=startNode->GetNeibEdge(nedge,iEdge);
-       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
+       if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode,this)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
 #endif
 #endif
@@ -6170,7 +6318,7 @@ if (CallsCounter==83) {
         if (startNode->block!=NULL) SendRequest=true;
 
         if (SendRequest==false) {
-          for (nd=0;nd<4;nd++) if ((neibNode=startNode->GetNeibCorner(nd))!=NULL) if (neibNode->block!=NULL) {
+          for (nd=0;nd<4;nd++) if ((neibNode=startNode->GetNeibCorner(nd,this))!=NULL) if (neibNode->block!=NULL) {
             SendRequest=true;
             break;
           }
@@ -6189,7 +6337,7 @@ if (CallsCounter==83) {
         if (startNode->block!=NULL) SendRequest=true;
 
         if (SendRequest==false) {
-          for (nd=0;nd<8;nd++) if ((neibNode=startNode->GetNeibCorner(nd))!=NULL) if (neibNode->block!=NULL) {
+          for (nd=0;nd<8;nd++) if ((neibNode=startNode->GetNeibCorner(nd,this))!=NULL) if (neibNode->block!=NULL) {
             SendRequest=true;
             break;
           }
@@ -7872,10 +8020,12 @@ nMPIops++;
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<4;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeCorner[i]);
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
+#endif
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
     for (i=0;i<6*4;i++) {
@@ -7883,10 +8033,12 @@ nMPIops++;
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeCorner[i]);
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
+#endif
 
     for (i=0;i<12*2;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeEdge[i]);
@@ -8038,10 +8190,12 @@ nMPIops++;
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<4;i++) {
       fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
+#endif
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
     for (i=0;i<6*4;i++) {
@@ -8049,10 +8203,12 @@ nMPIops++;
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) {
       fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
+#endif
 
     for (i=0;i<12*2;i++) {
       fread(&countingNumber,sizeof(long int),1,fout);
@@ -8405,7 +8561,7 @@ nMPIops++;
 
     if (startNode==NULL) startNode=rootTree;
 
-    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) startNode->SetNeibRefinmentLevelLimits();
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) startNode->SetNeibRefinmentLevelLimits(this);
     else for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) SetNodeNeibResolutionLevelLimit(startNode->downNode[nDownNode]);
   }
 
@@ -8936,7 +9092,7 @@ nMPIops++;
 #endif
 
 #ifdef _AMR_InitDomainBoundaryLayer_ADD_CORNER_NODES_
-      for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeCorner[i])!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
+      for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeCorner(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
         //check if the node is not in the list already
         found=false,tNode=DomainBoundaryLayerNodesList[neibThread];
 
@@ -11762,9 +11918,11 @@ if (TmpAllocationCounter==2437) {
            ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
          }
 
-         for (i=0;i<4;i++) if (node->neibNodeCorner[i]!=NULL) if (node->neibNodeCorner[i]->Thread!=node->Thread) {
-           ParallelSendRecvMap[node->neibNodeCorner[i]->Thread][node->Thread]=true;
-           ParallelSendRecvMap[node->Thread][node->neibNodeCorner[i]->Thread]=true;
+         cTreeNodeAMR<cBlockAMR> *NeibCorner; 
+
+         for (i=0;i<4;i++) if ((NeibCorner=node->neibNodeCorner(i,this))!=NULL) if (NeibCorner->Thread!=node->Thread) {
+           ParallelSendRecvMap[NeibCorner->Thread][node->Thread]=true;
+           ParallelSendRecvMap[node->Thread][NeibCorner->Thread]=true;
          }
   #elif _MESH_DIMENSION_ == 3
 
@@ -11781,9 +11939,12 @@ if (TmpAllocationCounter==2437) {
              }
            }
 
-         for (i=0;i<8;i++) if (node->neibNodeCorner[i]!=NULL) if (node->neibNodeCorner[i]->Thread!=node->Thread) {
-           ParallelSendRecvMap[node->neibNodeCorner[i]->Thread][node->Thread]=true;
-           ParallelSendRecvMap[node->Thread][node->neibNodeCorner[i]->Thread]=true;
+
+         cTreeNodeAMR<cBlockAMR> *NeibCorner;
+
+         for (i=0;i<8;i++) if ((NeibCorner=node->neibNodeCorner(i,this))!=NULL) if (NeibCorner->Thread!=node->Thread) {
+           ParallelSendRecvMap[NeibCorner->Thread][node->Thread]=true;
+           ParallelSendRecvMap[node->Thread][NeibCorner->Thread]=true;
          }
 
          for (i=0;i<12*2;i++) if (node->neibNodeEdge[i]!=NULL) if (node->neibNodeEdge[i]->Thread!=node->Thread) {
@@ -11883,7 +12044,7 @@ if (TmpAllocationCounter==2437) {
           #endif
 
           #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
           #endif  //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
            //add face-neighbors into the send list
@@ -11905,7 +12066,7 @@ if (TmpAllocationCounter==2437) {
 
           #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
+          for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeCorner(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
             sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
             GetAMRnodeID(nodeid,sendNode);
 
@@ -12003,7 +12164,10 @@ if (TmpAllocationCounter==2437) {
             fprintf(DiagnospticMessageStream,"$PREFIX:Error: the node is not allocated:\n");
 
             #ifdef _AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
-            for (i=0;i<(1<<_MESH_DIMENSION_);i++) if (recvNode->neibNodeCorner[i]!=NULL) if (recvNode->neibNodeCorner[i]->Thread==ThisThread) {
+
+            cTreeNodeAMR<cBlockAMR>* NeibCorner; 
+
+            for (i=0;i<(1<<_MESH_DIMENSION_);i++) if ((NeibCorner=recvNode->neibNodeCorner(i,this))!=NULL) if (NeibCorner->Thread==ThisThread) {
               found=true;
               fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
             }
@@ -12862,32 +13026,32 @@ if (TmpAllocationCounter==2437) {
     }
 
     //connection through corners
-    for (icorner=0;icorner<8;icorner++) if ((neibNode=node->GetNeibCorner(icorner))!=NULL) {
+    for (icorner=0;icorner<8;icorner++) if ((neibNode=node->GetNeibCorner(icorner,this))!=NULL) {
       switch (icorner) {
       case 0:
-        if (neibNode->GetNeibCorner(6)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(6,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 1:
-        if (neibNode->GetNeibCorner(7)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(7,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 2:
-        if (neibNode->GetNeibCorner(4)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(4,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 3:
-        if (neibNode->GetNeibCorner(5)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(5,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 4:
-        if (neibNode->GetNeibCorner(2)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(2,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 5:
-        if (neibNode->GetNeibCorner(3)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(3,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 6:
-        if (neibNode->GetNeibCorner(0)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(0,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 7:
-        if (neibNode->GetNeibCorner(1)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibCorner(1,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       }
     }
@@ -13400,6 +13564,12 @@ if (TmpAllocationCounter==2437) {
 template <typename T>
 unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0;
 
+
+//template <typename T>
+//typename cTreeNodeAMR<T>::fneibNodeCorner cTreeNodeAMR<T>::neibNodeCorner=NULL;
+
+//template <class cCornerNode,class cCenterNode,class cBlockAMR>
+//class cMeshAMRgeneric
 
 
 

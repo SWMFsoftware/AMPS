@@ -336,7 +336,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
 
   //1.3 Loop though corners
   //the following is the pattern of node numbering: GetNeibCorner(i+2*(j+2*k))
-  for (icorner=0;icorner<8;icorner++) if ((neibNode=Node->GetNeibCorner(icorner))!=NULL) if (neibNode->Thread==To) {
+  for (icorner=0;icorner<8;icorner++) if ((neibNode=Node->GetNeibCorner(icorner,&PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
     if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutionNeibCorner[icorner]=true;
     neib_found=true;
 

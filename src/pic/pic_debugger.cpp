@@ -839,7 +839,7 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
     //corner
     for (icorner=0;icorner<8;icorner++) {
-      if ((neibNode=node->GetNeibCorner(icorner))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibCorner(icorner,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"icorner=%i,neib=%i\n",icorner,id);

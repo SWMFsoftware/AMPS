@@ -4720,9 +4720,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(0)) {
+      if (!node->GetNeibCorner(0,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(0)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4737,9 +4737,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(1)) {
+      if (!node->GetNeibCorner(1,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(1)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(1,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4754,9 +4754,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(2)) {
+      if (!node->GetNeibCorner(2,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(2)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(2,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4771,9 +4771,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(3)) {
+      if (!node->GetNeibCorner(3,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(3)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(3,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4788,9 +4788,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(4)) {
+      if (!node->GetNeibCorner(4,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(4)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(4,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4805,9 +4805,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(5)) {
+      if (!node->GetNeibCorner(5,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(5)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(5,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4822,9 +4822,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(6)) {
+      if (!node->GetNeibCorner(6,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(6)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(6,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -4839,9 +4839,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(7)) {
+      if (!node->GetNeibCorner(7,&PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(7)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(7,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
