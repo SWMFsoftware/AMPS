@@ -57,13 +57,12 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   InitialSampleLength=20
   TestRunTotalIteration=50
 
-  NastranSurfaceUserData=on
-  
   MeshType=uniform !uniform,non-uniform
   BlockCells=16,8,4
   GhostCells=1,1,1
 
-  NastranSurfaceUserData=on !on !!!on, off
+  !InternalBoundary=off
+  NastranSurfaceUserData=off !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
   TrajectoryTracing=off !on
