@@ -915,7 +915,7 @@ sub ReadMainBlock {
   
   #set the conditions for a repeables execution path of the code
   if ($ForceRepatableExecutionPath == 1) {
-    ampsConfigLib::RedefineMacro("_PIC_DEBUGGER_MODE_","_PIC_DEBUGGER_MODE_ON_","pic/picGlobal.dfn");
+#   ampsConfigLib::RedefineMacro("_PIC_DEBUGGER_MODE_","_PIC_DEBUGGER_MODE_ON_","pic/picGlobal.dfn");
     ampsConfigLib::RedefineMacro("_PIC_DYNAMIC_LOAD_BALANCING_MODE_","_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_","pic/picGlobal.dfn");
     ampsConfigLib::RedefineMacro("_PIC_PARTICLE_EXCHANGE_ENFORCE_RECIEVING_ORDER_MODE_","_PIC_MODE_ON_","pic/picGlobal.dfn"); 
   }
