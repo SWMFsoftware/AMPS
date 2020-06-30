@@ -13812,6 +13812,9 @@ CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::FirstTriangleCutFace=NULL;
 
 template <typename T>
 CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace_temp=NULL;
+
+template <typename T>
+CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace=NULL;
 #endif
 
 
