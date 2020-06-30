@@ -2781,7 +2781,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   // Loop through all blocks. 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
     PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable,cflTable) firstprivate (ProcessCell)
 #endif
   for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
@@ -3618,7 +3618,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv) \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,nCell,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,B_conv) \
   shared(PrevBOffset,CurrentBOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread,length_conv,cDt) \
   shared(PIC::CPLR::DATAFILE::Offset::ElectricField,OffsetE_HalfTimeStep,PIC::CPLR::DATAFILE::Offset::MagneticField) \
   shared(ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,E_conv) firstprivate(node_last) private (dx,coeff,coeff4,x)
@@ -3721,7 +3721,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*(_BLOCK_CELLS_Z_+1)*(_BLOCK_CELLS_Y_+1)*(_BLOCK_CELLS_X_+1);
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
   shared(OffsetB_corner,length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField)
 #endif
   for (CellCounter=0;CellCounter<CellCounterMax;CellCounter++) {
@@ -3784,7 +3784,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
   shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset) \
   shared(OffsetB_corner,PrevBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField)
 #endif
@@ -3850,7 +3850,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C_Block(cTreeNodeA
   int CellCounter,CellCounterMax=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
   shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset) \
   shared(OffsetB_corner,PrevBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField,node)
 #endif
@@ -3919,7 +3919,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_last=NULL;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
+#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellCounterMax,BxOffsetIndex,ByOffsetIndex,BzOffsetIndex,PIC::DomainBlockDecomposition::BlockTable,PIC::ThisThread) \
   shared(length_conv,ExOffsetIndex,EyOffsetIndex,EzOffsetIndex,B_conv,E_conv,theta,CurrentEOffset,OffsetE_HalfTimeStep,CurrentBOffset,PIC::CPLR::DATAFILE::Offset::MagneticField,PIC::CPLR::DATAFILE::Offset::ElectricField) \
   firstprivate(node_last) private (CellVolume) reduction(+:WaveEnergySum)
 #endif
