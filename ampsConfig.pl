@@ -1551,12 +1551,30 @@ sub ReadGeneralBlock {
       }
       elsif ($InputLine eq "OFF") {
         ampsConfigLib::RedefineMacro("_PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_","_PIC_MODE_OFF_","pic/picGlobal.dfn");
+        ampsConfigLib::RedefineMacro("_AMR__CUT_CELL__MODE_","_OFF_AMR_MESH_","meshAMR/meshAMRdef.h"); 
       }
       else {
         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
         die "The option is unknown ($line)\n";
       }
     }  
+
+    ##InternalBoundary
+
+    elsif ($InputLine eq "INTERNALBOUNDARY") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "ON") {
+        ampsConfigLib::RedefineMacro("_INTERNAL_BOUNDARY_MODE_","_INTERNAL_BOUNDARY_MODE_ON_","meshAMR/meshAMRdef.h");
+      }
+      elsif ($InputLine eq "OFF") {
+        ampsConfigLib::RedefineMacro("_INTERNAL_BOUNDARY_MODE_","_INTERNAL_BOUNDARY_MODE_OFF_","meshAMR/meshAMRdef.h");
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "The option is unknown ($line)\n";
+      }
+    }
 
     ### TRAJECTORYTRACING ###
     elsif ($InputLine eq "TRAJECTORYTRACING") {
