@@ -831,7 +831,7 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
     //edge neib
     for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) {
-      if ((neibNode=node->GetNeibEdge(iedge,i))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibEdge(iedge,i,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"iedge=%i,i=%i,neib=%i\n",iface,i,id);

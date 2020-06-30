@@ -228,7 +228,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         static const int faceEdges[6][4]={{4,11,7,8},{5,10,6,9},{0,9,3,8},{1,10,2,11},{0,5,1,4},{3,6,2,7}};
 
         if (CoarserBlock==NULL) for (int iEdge=0;iEdge<4;iEdge++) {
-          NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0);
+          NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0,&PIC::Mesh::mesh);
 
           if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
             //found a coarser block

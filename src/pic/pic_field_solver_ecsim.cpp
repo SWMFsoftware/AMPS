@@ -4453,8 +4453,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else {
-      if (!node->GetNeibEdge(0,0)) return 6;
-      else if (node->GetNeibEdge(0,0)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(0,0,&PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -4471,8 +4471,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else {
-      if (!node->GetNeibEdge(1,0)) return 6;
-      else if (node->GetNeibEdge(1,0)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(1,0,&PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(1,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -4490,8 +4490,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     } else {
-      if (!node->GetNeibEdge(2,0)) return 6;
-      else if (node->GetNeibEdge(2,0)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(2,0,&PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(2,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -4508,8 +4508,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else{
-      if (!node->GetNeibEdge(3,0)) return 6;
-      else if (node->GetNeibEdge(3,0)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(3,0,&PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(3,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -4526,8 +4526,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
       
     if (a+b) { return a+b;
     }else{
-      if (!node->GetNeibEdge(4,0)) return 5;
-      else if (node->GetNeibEdge(4,0)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(4,0,&PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(4,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -4545,8 +4545,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
    
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(5,0)) return 5;
-      else if (node->GetNeibEdge(5,0)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(5,0,&PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(5,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
   
@@ -4564,8 +4564,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(6,0)) return 5;
-      else if (node->GetNeibEdge(6,0)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(6,0,&PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(6,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -4583,8 +4583,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(7,0)) return 5;
-      else if (node->GetNeibEdge(7,0)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(7,0,&PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(7,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -4602,8 +4602,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(8,0)) return 3;
-      else if (node->GetNeibEdge(8,0)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(8,0,&PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(8,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
    
@@ -4621,8 +4621,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(9,0)) return 3;
-      else if (node->GetNeibEdge(9,0)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(9,0,&PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(9,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     
@@ -4640,8 +4640,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(10,0)) return 3;
-      else if (node->GetNeibEdge(10,0)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(10,0,&PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(10,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
         
@@ -4659,8 +4659,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{    
-      if (!node->GetNeibEdge(11,0)) return 3;
-      else if (node->GetNeibEdge(11,0)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(11,0,&PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(11,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     

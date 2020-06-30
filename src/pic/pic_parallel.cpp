@@ -1208,7 +1208,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	if(i == -1 && j ==  1) idx = 11; 
       }
 
-      nodeNeib = node->GetNeibEdge(idx,0); 
+      nodeNeib = node->GetNeibEdge(idx,0,&PIC::Mesh::mesh); 
       
     }else if(nZeros == 2){
       // Faces
@@ -2562,7 +2562,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                 case 2:
                  // NeibTable=startNode->neibNodeEdge;
 
-                  for (int i=0;i<12*2;i++) NeibTable[i]=startNode->neibNodeEdge[i];
+                  startNode->GetEdgeNeibTable(NeibTable,&PIC::Mesh::mesh); 
 
                   NeibTableLength=12*2;
                   break;
@@ -2636,7 +2636,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 //                      NeibTable=GhostBlock->neibNodeEdge;
 
 
-                      for (int i=0;i<12*2;i++) NeibTable[i]=GhostBlock->neibNodeEdge[i];
+                      GhostBlock->GetEdgeNeibTable(NeibTable,&PIC::Mesh::mesh);
 
 
                       NeibTableLength=12*2;

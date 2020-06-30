@@ -183,7 +183,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
 
   //1.2 Loop through edges
   for (iedge=0;iedge<12;iedge++) {
-    for (i=0,flag=false;(i<2)&&(flag==false);i++) if ((neibNode=Node->GetNeibEdge(iedge,i))!=NULL) if (neibNode->Thread==To) {
+    for (i=0,flag=false;(i<2)&&(flag==false);i++) if ((neibNode=Node->GetNeibEdge(iedge,i,&PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
       flag=true;
       if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutinoNeibEdge[iedge]=true;
       neib_found=true;
