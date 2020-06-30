@@ -660,7 +660,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
         bool flag=false;
 
-        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
         if (flag==true) {
           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -893,7 +893,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
        if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
          iface=iFaceTable[i];
 
-         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
            //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
            switch (iface) {
@@ -1060,7 +1060,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     bool flag=false; 
 
     if ((pipe==NULL)&&(SendDataBuffer==NULL)) flag=true;
-    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
     if (flag==true) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -1283,7 +1283,7 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   for (int i=0;i<3;i++) {
     iface=iFaceTable[i];
 
-    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {

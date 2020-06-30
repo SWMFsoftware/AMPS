@@ -206,7 +206,7 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
 		  jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-		  node=node->GetNeibFace(nExitFace,iFace,jFace);
+		  node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
 		}
 		else {
 		  PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,l,xNodeExit,xFaceExitLocal,nExitFace);
@@ -272,7 +272,7 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
       jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-      node=node->GetNeibFace(nExitFace,iFace,jFace);
+      node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
     }
     else {
       PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,l,xNodeExit,xFaceExitLocal,nExitFace);
@@ -352,7 +352,7 @@ int PIC::RayTracing::FindFistIntersectedFace(double *x0Ray,double *lRay,double *
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
       jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-      node=node->GetNeibFace(nExitFace,iFace,jFace);
+      node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
     }
     else {
       PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,lRay,xNodeExit,xFaceExitLocal,nExitFace);

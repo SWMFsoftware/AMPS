@@ -58,7 +58,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBloc
    for (int ipass=0;ipass<3;ipass++) {
     iface=iFaceTable[ipass];
 
-    if ((neibNode=Node->GetNeibFace(iface,0,0))!=NULL) if (neibNode->RefinmentLevel<Node->RefinmentLevel) {
+    if ((neibNode=Node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (neibNode->RefinmentLevel<Node->RefinmentLevel) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {
@@ -107,7 +107,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
   //1. Set the CenterNode send mask
   //1.1 Loop through faces
   for (iface=0;iface<6;iface++) {
-    for (i=0,flag=false;(i<2)&&(flag==false);i++) for (j=0;(j<2)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j))!=NULL) if (neibNode->Thread==To) {
+    for (i=0,flag=false;(i<2)&&(flag==false);i++) for (j=0;(j<2)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j,&PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
       flag=true;
       if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutionNeibFace[iface]=true;
       neib_found=true;

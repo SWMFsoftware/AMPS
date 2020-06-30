@@ -350,9 +350,29 @@ public:
   //static fneibNodeCorner neibNodeCorner;
 
   template <typename T>
-  void GetNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  void GetCornerNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
     for (int i=0;i<(1<<_MESH_DIMENSION_);i++) NeibTable[i]=neibNodeCorner(i,mesh_ptr);
   } 
+
+  template <typename T>
+  void GetFaceNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+    int nTotalFaces;
+
+    switch (_MESH_DIMENSION_) {
+    case 1:
+      nTotalFaces=2;
+      break;
+    case 2:
+      nTotalFaces=2*4;
+      break;
+    case 3:
+      nTotalFaces=4*6;
+      break;
+    }
+
+    for (int i=0;i<nTotalFaces;i++) NeibTable[i]=neibNodeFace(i,mesh_ptr);
+  }
+
 
   static unsigned char FlagTableStatusVector;
   unsigned char FlagTable;
@@ -458,6 +478,97 @@ public:
      return mesh_ptr->findTreeNode(ix,this);
    }
 
+
+   template <typename T>
+   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,const T& mesh_ptr) {
+     int ix[3];
+
+     //numberic patter:
+     //GetNeibFace(int nface,int iFace,int jFace) {
+     //neibNodeFace[iFace+2*(jFace+2*nface)];
+
+     for (int i=0;i<_MESH_DIMENSION_;i++) ix[i]=xMinGlobalIndex[i]; 
+
+     auto process_face0 = [&] (int iFace,int jFace) {
+       ix[0]-=1;
+
+       if ((iFace==1)&&(NodeGeometricSizeIndex>1)) ix[1]+=NodeGeometricSizeIndex/2;
+       if ((jFace==1)&&(NodeGeometricSizeIndex>1)) ix[2]+=NodeGeometricSizeIndex/2; 
+     };
+
+     auto process_face1 = [&] (int iFace,int jFace) {
+       process_face0(iFace,jFace);
+
+       ix[0]+=1+NodeGeometricSizeIndex; //1 is from process_face0 where 1 is substracted  
+     }; 
+
+
+     auto process_face2 = [&] (int iFace,int jFace) {
+       ix[1]-=1;
+
+       if ((iFace==1)&&(NodeGeometricSizeIndex>1)) ix[0]+=NodeGeometricSizeIndex/2;
+       if ((jFace==1)&&(NodeGeometricSizeIndex>1)) ix[2]+=NodeGeometricSizeIndex/2;
+     };
+
+ 
+     auto process_face3 = [&] (int iFace,int jFace) {
+       process_face2(iFace,jFace);
+
+       ix[1]+=1+NodeGeometricSizeIndex;
+     }; 
+
+
+     auto process_face4 = [&] (int iFace,int jFace) {
+       ix[2]-=1;
+      
+       if ((iFace==1)&&(NodeGeometricSizeIndex>1)) ix[0]+=NodeGeometricSizeIndex/2;
+       if ((jFace==1)&&(NodeGeometricSizeIndex>1)) ix[1]+=NodeGeometricSizeIndex/2;
+     };
+
+
+     auto process_face5 = [&] (int iFace,int jFace) {
+       process_face4(iFace,jFace);
+
+       ix[2]+=1+NodeGeometricSizeIndex;
+     }; 
+
+     int nface=i/4;    
+     int iFace,jFace;
+
+     i-=4*nface;
+     jFace=i/2;
+     iFace=i%2;
+          
+     switch (nface) {
+     case 0:
+       process_face0(iFace,jFace);
+       break;
+
+     case 1:
+       process_face1(iFace,jFace);
+       break;
+
+     case 2:
+       process_face2(iFace,jFace);
+       break;
+
+     case 3:
+       process_face3(iFace,jFace);
+       break;
+
+     case 4:
+       process_face4(iFace,jFace);
+       break;
+
+     case 5:
+       process_face5(iFace,jFace);
+       break;
+    }
+
+     return mesh_ptr->findTreeNode(ix,this);
+   }
+
+
   #define _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ _OFF_AMR_MESH__ 
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_ 
@@ -470,7 +581,7 @@ public:
   #endif
 #else
 
-  cTreeNodeAMR *neibNodeFace[6*4],*neibNodeEdge[12*2];
+  cTreeNodeAMR *neibNodeEdge[12*2];
 
 #endif
 
@@ -511,10 +622,10 @@ public:
     for (int i=0;i<4;i++) neibNodeCorner[i]=NULL;
 
     #elif _MESH_DIMENSION_ == 3
-    for (int i=0;i<6*4;i++) neibNodeFace[i]=NULL;
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (int i=0;i<8;i++) neibNodeCorner[i]=NULL;
+    for (int i=0;i<6*4;i++) neibNodeFace[i]=NULL; 
 #endif
 
 
@@ -694,11 +805,11 @@ public:
     for (i=0;i<4*2;i++) neibNodeFace[i]=NULL;
     for (i=0;i<4;i++) neibNodeCorner[i]=NULL;
     #elif _MESH_DIMENSION_ == 3
-    for (i=0;i<6*4;i++) neibNodeFace[i]=NULL;
 
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
+    for (i=0;i<6*4;i++) neibNodeFace[i]=NULL;
 #endif 
 
 
@@ -738,7 +849,7 @@ public:
     exit(__LINE__,__FILE__,"not implemented");
     #elif _MESH_DIMENSION_ == 3
     //connections through faces
-    for (i=0;i<6*4;i++) if ((node=neibNodeFace[i])!=NULL) {
+    for (i=0;i<6*4;i++) if ((node=neibNodeFace(i,mesh_ptr))!=NULL) {
       if ((minNeibRefinmentLevel==-1)||(minNeibRefinmentLevel>node->RefinmentLevel)) minNeibRefinmentLevel=node->RefinmentLevel;
       if (maxNeibRefinmentLevel<node->RefinmentLevel) maxNeibRefinmentLevel=node->RefinmentLevel;
     }
@@ -827,7 +938,8 @@ public:
 #endif
   }
 
-  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace) {
+  template <typename T>
+  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,const T mesh_ptr) {
     cTreeNodeAMR* res;
 
 #if _MESH_DIMENSION_ == 1
@@ -835,7 +947,7 @@ public:
 #elif _MESH_DIMENSION_ == 2
     res=neibNodeFace[iFace+2*nface];
 #else
-    res=neibNodeFace[iFace+2*(jFace+2*nface)];
+    res=neibNodeFace(iFace+2*(jFace+2*nface),mesh_ptr);
 #endif
 
     return res;
@@ -853,7 +965,9 @@ public:
 #elif _MESH_DIMENSION_ == 2
     neibNodeFace[iFace+2*nface]=neibNode;
 #else
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     neibNodeFace[iFace+2*(jFace+2*nface)]=neibNode;
+#endif
 #endif
   }
 
@@ -953,7 +1067,7 @@ public:
        else if (k==1) nface=5;
        else exit(__LINE__,__FILE__,"Error: out of range");
 
-       res=GetNeibFace(nface,0,0);
+       res=GetNeibFace(nface,0,0,mesh_ptr);
 
      } else if (code==0) res=this;
      else exit(__LINE__,__FILE__,"Error: parameters are out or range");
@@ -993,13 +1107,13 @@ public:
 #if _MESH_DIMENSION_ == 2
     int nface,i;
 
-    for (nface=0;nface<4;nface++) for (i=0;i<2;i++) if (GetNeibFace(nface,i,0)==neibNode) {
+    for (nface=0;nface<4;nface++) for (i=0;i<2;i++) if (GetNeibFace(nface,i,0,this)==neibNode) {
       return true;
     }
 #elif _MESH_DIMENSION_ == 3
     int nface,i,j;
 
-    for (nface=0;nface<6;nface++) for (i=0;i<2;i++) for (j=0;j<2;j++) if (GetNeibFace(nface,i,j)==neibNode) {
+    for (nface=0;nface<6;nface++) for (i=0;i<2;i++) for (j=0;j<2;j++) if (GetNeibFace(nface,i,j,this)==neibNode) {
       return true;
     }
 #endif
@@ -3009,13 +3123,13 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
       int nfaceNeib;
       bool found;
 
-      neibNode=startNode->GetNeibFace(nface,0,0);
+      neibNode=startNode->GetNeibFace(nface,0,0,this);
 
       if (neibNode!=NULL) {
         found=false;
         if ((neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_)||(abs(startNode->RefinmentLevel-neibNode->RefinmentLevel)>1)) exit(__LINE__,__FILE__,"Error: node's connection is not consistent");
 
-        for (nfaceNeib=0;nfaceNeib<2;nfaceNeib++) if (found==false) if (neibNode->GetNeibFace(nfaceNeib,0,0)==startNode) {
+        for (nfaceNeib=0;nfaceNeib<2;nfaceNeib++) if (found==false) if (neibNode->GetNeibFace(nfaceNeib,0,0,this)==startNode) {
           found=true;
           break;
         }
@@ -3028,13 +3142,13 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
       int nfaceNeib,iFaceNeib;
       bool found;
 
-      neibNode=startNode->GetNeibFace(nface,iFace,0);
+      neibNode=startNode->GetNeibFace(nface,iFace,0,this);
 
       if (neibNode!=NULL) {
         found=false;
         if ((neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_)||(abs(startNode->RefinmentLevel-neibNode->RefinmentLevel)>1)) exit(__LINE__,__FILE__,"Error: node's connection is not consistent");
 
-        for (nfaceNeib=0;nfaceNeib<4;nfaceNeib++) if (found==false) for (iFaceNeib=0;iFaceNeib<2;iFaceNeib++) if (neibNode->GetNeibFace(nfaceNeib,iFaceNeib,0)==startNode) {
+        for (nfaceNeib=0;nfaceNeib<4;nfaceNeib++) if (found==false) for (iFaceNeib=0;iFaceNeib<2;iFaceNeib++) if (neibNode->GetNeibFace(nfaceNeib,iFaceNeib,0,this)==startNode) {
           found=true;
           break;
         }
@@ -3048,14 +3162,14 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
       int nfaceNeib,iFaceNeib,jFaceNeib;
       bool found;
 
-      neibNode=startNode->GetNeibFace(nface,iFace,jFace);
+      neibNode=startNode->GetNeibFace(nface,iFace,jFace,this);
 
       if (neibNode!=NULL) {
         found=false;
         if ((neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_)||(abs(startNode->RefinmentLevel-neibNode->RefinmentLevel)>1)) exit(__LINE__,__FILE__,"Error: node's connection is not consistent");
 
         for (nfaceNeib=0;nfaceNeib<6;nfaceNeib++) if (found==false) for (iFaceNeib=0;iFaceNeib<2;iFaceNeib++) for (jFaceNeib=0;jFaceNeib<2;jFaceNeib++) {
-          if (neibNode->GetNeibFace(nfaceNeib,iFaceNeib,jFaceNeib)==startNode) {
+          if (neibNode->GetNeibFace(nfaceNeib,iFaceNeib,jFaceNeib,this)==startNode) {
             found=true;
             break;
           }
@@ -5334,7 +5448,7 @@ if (startNode->Temp_ID==15) {
      for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
        //make connection through the faces
        for (nface=0;nface<2*_MESH_DIMENSION_;nface++) if ((nUpFace=ExternalNodesFaceConnectionMap_upNode[nDownNode][nface].nUpFace)!=-1) {
-         neibNode=startNode->GetNeibFace(nUpFace,0,0);
+         neibNode=startNode->GetNeibFace(nUpFace,0,0,this);
 
          startNode->downNode[nDownNode]->SetNeibFace(neibNode,nface,0,0);
 
@@ -5349,7 +5463,7 @@ if (startNode->Temp_ID==15) {
 #if _CHECK_MESH_CONSISTANCY_ == _ON_AMR_MESH_
 
      for (int nface=0;nface<2*_MESH_DIMENSION_;nface++) {
-       neibNode=startNode->GetNeibFace(nface,0,0);
+       neibNode=startNode->GetNeibFace(nface,0,0,this);
        if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode,this)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
 
@@ -5415,7 +5529,7 @@ if (startNode->Temp_ID==15) {
        //make connection through the faces
        for (nface=0;nface<2*_MESH_DIMENSION_;nface++) if ((nUpFace=ExternalNodesFaceConnectionMap_upNode[nDownNode][nface].nUpFace)!=-1) {
          iFace=ExternalNodesFaceConnectionMap_upNode[nDownNode][nface].iFace;
-         neibNode=startNode->GetNeibFace(nUpFace,iFace,0);
+         neibNode=startNode->GetNeibFace(nUpFace,iFace,0,this);
 
          for (i=0;i<2;i++) startNode->downNode[nDownNode]->SetNeibFace(neibNode,nface,i,0);
 
@@ -5441,8 +5555,8 @@ if (startNode->Temp_ID==15) {
 
        //make connection through the corner nodes of startNode->downNode[:]
        for (nd=0;nd<4;nd++) if ((nUpFace=ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].nUpFace)!=-1) {
-         if (startNode->GetNeibFace(nUpFace,0,0)!=startNode->GetNeibFace(nUpFace,1,0)) {
-           neibNode=startNode->GetNeibFace(nUpFace,ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].iFace,0);
+         if (startNode->GetNeibFace(nUpFace,0,0)!=startNode->GetNeibFace(nUpFace,1,0,this)) {
+           neibNode=startNode->GetNeibFace(nUpFace,ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].iFace,0,this);
 
            startNode->downNode[nDownNode]->SetNeibCorner(neibNode,nd);
            if (neibNode!=NULL) neibNode->SetNeibCorner(startNode->downNode[nDownNode],ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].nNeibCornerNode);
@@ -5600,7 +5714,7 @@ if (startNode->Temp_ID==15) {
          jFace=ExternalNodesFaceConnectionMap_upNode[nDownNode][nface].jFace;
          nNeibFace=ExternalNodesFaceConnectionMap_upNode[nDownNode][nface].nNeibFace;
 
-         t=startNode->GetNeibFace(nUpFace,iFace,jFace);
+         t=startNode->GetNeibFace(nUpFace,iFace,jFace,this);
 
          //connect node 't' to the 'downNode'
          if (t!=NULL) {
@@ -5698,7 +5812,7 @@ if (startNode->Temp_ID==15) {
          iFace=ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].iFace;
          jFace=ExternalNodesCornerNodeConnectionMap_downNode[nDownNode][nd].jFace;
 
-         t=startNode->GetNeibFace(nUpFace,iFace,jFace);
+         t=startNode->GetNeibFace(nUpFace,iFace,jFace,this);
 
          if (t!=NULL) if (t->RefinmentLevel==downNode->RefinmentLevel) {
            downNode->SetNeibCorner(t,nd);
@@ -5873,7 +5987,7 @@ if (startNode->Temp_ID==15) {
          jFace=ExternalNodesEdgeCornerConnectionMap_downNode[nDownNode][nedge].jFace;
          nNeibEdge=ExternalNodesEdgeCornerConnectionMap_downNode[nDownNode][nedge].nNeibEdge;
 
-         t=startNode->GetNeibFace(nUpFace,iFace,jFace);
+         t=startNode->GetNeibFace(nUpFace,iFace,jFace,this);
 
          //connect 'downNode' to 't' together
          if (t!=NULL) if (t->RefinmentLevel==downNode->RefinmentLevel)  for (iEdge=0;iEdge<2;iEdge++) {
@@ -5896,7 +6010,7 @@ if (startNode->Temp_ID==15) {
 #endif
 
      for (int nface=0;nface<2*_MESH_DIMENSION_;nface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
-       neibNode=startNode->GetNeibFace(nface,i,j);
+       neibNode=startNode->GetNeibFace(nface,i,j,this);
        if (neibNode!=NULL) if (neibNode->CheckNeibNode(startNode,this)==true) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
      }
 
@@ -6181,7 +6295,9 @@ if (CallsCounter==83) {
       //in case when the periodic boundary conditions are applied
       //nodes adjustent to the boundary of the domain is not considered
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        cTreeNodeAMR<cBlockAMR>** NeibTable=startNode->neibNodeFace;
+        cTreeNodeAMR<cBlockAMR>* NeibTable[4*6];
+
+        startNode->GetFaceNeibTable(NeibTable,this);
 
         for (int i=0;i<4*6;i++) {
           if (NeibTable[i]==NULL) return;
@@ -6308,7 +6424,7 @@ if (CallsCounter==83) {
 
         if (SendRequest==false) {
           for (int nface=0;nface<2;nface++) if (SendRequest==false) {
-            if ((neibNode=startNode->GetNeibFace(nface,0,0))!=NULL) if (neibNode->block!=NULL) {
+            if ((neibNode=startNode->GetNeibFace(nface,0,0,this))!=NULL) if (neibNode->block!=NULL) {
               SendRequest=true;
               break;
             }
@@ -6326,7 +6442,7 @@ if (CallsCounter==83) {
 
         if (SendRequest==false) {
           for (int nface=0;nface<4;nface++) if (SendRequest==false) {
-            for (int iFace=0;iFace<2;iFace++) if ((neibNode=startNode->GetNeibFace(nface,iFace,0))!=NULL) if (neibNode->block!=NULL) {
+            for (int iFace=0;iFace<2;iFace++) if ((neibNode=startNode->GetNeibFace(nface,iFace,0,this))!=NULL) if (neibNode->block!=NULL) {
               SendRequest=true;
               break;
             }
@@ -6352,7 +6468,7 @@ if (CallsCounter==83) {
 
         if (SendRequest==false) {
           for (int nface=0;nface<6;nface++) if (SendRequest==false) {
-            for (int iFace=0;iFace<2;iFace++) for (int jFace=0;jFace<2;jFace++) if ((neibNode=startNode->GetNeibFace(nface,iFace,jFace))!=NULL) if (neibNode->block!=NULL) {
+            for (int iFace=0;iFace<2;iFace++) for (int jFace=0;jFace<2;jFace++) if ((neibNode=startNode->GetNeibFace(nface,iFace,jFace,this))!=NULL) if (neibNode->block!=NULL) {
               SendRequest=true;
               break;
             }
@@ -7086,7 +7202,10 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
       //in case when the periodic boundary conditions are applied
       //nodes adjustent to the boundary of the domain is not considered
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        cTreeNodeAMR<cBlockAMR>** NeibTable=startNode->neibNodeFace;
+        cTreeNodeAMR<cBlockAMR>* NeibTable[4*6];
+
+
+        startNode->GetFaceNeibTable(NeibTable,this);
 
         for (int i=0;i<4*6;i++) {
           if (NeibTable[i]==NULL) return;
@@ -8028,12 +8147,14 @@ nMPIops++;
 #endif
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
+
     for (i=0;i<6*4;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeFace[i]);
       fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeCorner[i]);
       fwrite(&countingNumber,sizeof(long int),1,fout);
@@ -8198,12 +8319,13 @@ nMPIops++;
 #endif
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
+
+#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<6*4;i++) {
       fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
-#if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<8;i++) {
       fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
@@ -9131,7 +9253,7 @@ nMPIops++;
 //#endif
 
 //#ifdef _AMR_InitDomainBoundaryLayer_ADD_FACES_
-      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeFace[i])!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
+      for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((neibNode=node->neibNodeFace(i,this))!=NULL) if ((neibThread=neibNode->Thread)!=ThisThread) {
         //check if the node is not in the list already
         found=false,tNode=DomainBoundaryLayerNodesList[neibThread];
 
@@ -11907,6 +12029,11 @@ if (TmpAllocationCounter==2437) {
           //search through the neighbors of the blocks
   #if _MESH_DIMENSION_ == 1
   //for (i=0;i<2;i++) neibNodeFace[i]=NULL;
+
+
+
+   
+
           for (i=0;i<2;i++) if (node->neibNodeFace[i]!=NULL) if (node->neibNodeFace[i]->Thread!=node->Thread) {
             ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
             ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
@@ -11930,12 +12057,16 @@ if (TmpAllocationCounter==2437) {
   //for (i=0;i<8;i++) neibNodeCorner[i]=NULL;
   //for (i=0;i<12*2;i++) neibNodeEdge[i]=NULL;
 
-         for (i=0;i<6*4;i++) if (node->neibNodeFace[i]!=NULL) {
+
+cTreeNodeAMR<cBlockAMR> *NeibFace; 
 
 
-             if (node->neibNodeFace[i]->Thread!=node->Thread) {
-               ParallelSendRecvMap[node->neibNodeFace[i]->Thread][node->Thread]=true;
-               ParallelSendRecvMap[node->Thread][node->neibNodeFace[i]->Thread]=true;
+         for (i=0;i<6*4;i++) if ((NeibFace=node->neibNodeFace(i,this))!=NULL) {
+
+
+             if (NeibFace->Thread!=node->Thread) {
+               ParallelSendRecvMap[NeibFace->Thread][node->Thread]=true;
+               ParallelSendRecvMap[node->Thread][NeibFace->Thread]=true;
              }
            }
 
@@ -12048,7 +12179,7 @@ if (TmpAllocationCounter==2437) {
           #endif  //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
            //add face-neighbors into the send list
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if (sendNode->Thread==From) sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_FALSE_;
 
            //add the edge-neighbors to the send list
            if (_MESH_DIMENSION_==3) {
@@ -12089,7 +12220,7 @@ if (TmpAllocationCounter==2437) {
           }
           #endif //_AMR_ParallelBlockDataExchange_SEND_CORNER_NODES_
 
-         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace[i])!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
+         for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((sendNode=recvNode->neibNodeFace(i,this))!=NULL) if ((sendNode->Thread==From)&&(sendNode->nodeDescriptor.NodeProcessingFlag==_AMR_FALSE_)&&(sendNode->IsUsedInCalculationFlag==true)) {
            sendNode->nodeDescriptor.NodeProcessingFlag=_AMR_TRUE_;
            GetAMRnodeID(nodeid,sendNode);
 
@@ -12173,7 +12304,10 @@ if (TmpAllocationCounter==2437) {
             }
             #endif
 
-           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if (recvNode->neibNodeFace[i]!=NULL) if (recvNode->neibNodeFace[i]->Thread==ThisThread) {
+
+           cTreeNodeAMR<cBlockAMR>* NeibFace;
+
+           for (i=0;i<_MESH_DIMENSION_*(1<<_MESH_DIMENSION_);i++) if ((NeibFace=recvNode->neibNodeFace(i,this))!=NULL) if (NeibFace->Thread==ThisThread) {
              found=true;
              fprintf(DiagnospticMessageStream,"$PREFIX:'recvNode' has neibours on 'ThisThread': (file=%s, line=%i)\n",__FILE__,__LINE__);
            }
@@ -12956,27 +13090,27 @@ if (TmpAllocationCounter==2437) {
     int iface,iedge,icorner,i,j;
 
     //check connection through faces
-    for (iface=0;iface<6;iface++) for (int i=0;i<2;i++) for (j=0;j<2;j++) if ((neibNode=node->GetNeibFace(iface,i,j))!=NULL) {
+    for (iface=0;iface<6;iface++) for (int i=0;i<2;i++) for (j=0;j<2;j++) if ((neibNode=node->GetNeibFace(iface,i,j,this))!=NULL) {
       switch (iface) {
       case 0:
-        if (neibNode->GetNeibFace(1,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(1,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 1:
-        if (neibNode->GetNeibFace(0,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(0,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 2:
-        if (neibNode->GetNeibFace(3,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(3,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 3:
-        if (neibNode->GetNeibFace(2,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(2,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 4:
-        if (neibNode->GetNeibFace(5,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(5,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 5:
-        if (neibNode->GetNeibFace(4,i,j)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibFace(4,i,j,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       }
     }

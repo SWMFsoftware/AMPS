@@ -210,7 +210,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         }
 
         //check blocks connected through the face
-        NeibNode=node->GetNeibFace(iFace,0,0);
+        NeibNode=node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh);
 
         if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
           //found a coarser block

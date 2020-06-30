@@ -823,7 +823,7 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
     //face neib
     for (iface=0;iface<6;iface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
-      if ((neibNode=node->GetNeibFace(iface,i,j))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibFace(iface,i,j,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"iface=%i,i=%i,j=%i,neib=%i\n",iface,i,j,id);

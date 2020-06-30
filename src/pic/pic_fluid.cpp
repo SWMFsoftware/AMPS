@@ -207,7 +207,7 @@ bool PIC::CPLR::FLUID::isTrueBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
     bool BoundaryBlock=false;
     
-    for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+    for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;

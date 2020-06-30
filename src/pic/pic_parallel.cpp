@@ -1212,14 +1212,14 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
       
     }else if(nZeros == 2){
       // Faces
-      if(i == -1) nodeNeib = node->GetNeibFace(0,0,0);
-      if(i ==  1) nodeNeib = node->GetNeibFace(1,0,0);
+      if(i == -1) nodeNeib = node->GetNeibFace(0,0,0,&PIC::Mesh::mesh);
+      if(i ==  1) nodeNeib = node->GetNeibFace(1,0,0,&PIC::Mesh::mesh);
 
-      if(j == -1) nodeNeib = node->GetNeibFace(2,0,0);
-      if(j ==  1) nodeNeib = node->GetNeibFace(3,0,0);
+      if(j == -1) nodeNeib = node->GetNeibFace(2,0,0,&PIC::Mesh::mesh);
+      if(j ==  1) nodeNeib = node->GetNeibFace(3,0,0,&PIC::Mesh::mesh);
 
-      if(k == -1) nodeNeib = node->GetNeibFace(4,0,0);
-      if(k ==  1) nodeNeib = node->GetNeibFace(5,0,0);
+      if(k == -1) nodeNeib = node->GetNeibFace(4,0,0,&PIC::Mesh::mesh);
+      if(k ==  1) nodeNeib = node->GetNeibFace(5,0,0,&PIC::Mesh::mesh);
     }else{
       nodeNeib = NULL; 
     }
@@ -2548,14 +2548,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                 case 0:
                  // NeibTable=startNode->neibNodeFace;
                   
-                  for (int i=0;i<6*4;i++) NeibTable[i]=startNode->neibNodeFace[i];
+                  startNode->GetFaceNeibTable(NeibTable,&PIC::Mesh::mesh);
  
                   NeibTableLength=6*4;
                   break;
                 case 1:
                 //  NeibTable=startNode->neibNodeCorner;
 
-                  startNode->GetNeibTable(NeibTable,&PIC::Mesh::mesh);
+                  startNode->GetCornerNeibTable(NeibTable,&PIC::Mesh::mesh);
 
                   NeibTableLength=8;
                   break;
@@ -2620,14 +2620,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                     case 0:
                      // NeibTable=GhostBlock->neibNodeFace;
 
-                      for (int i=0;i<6*4;i++) NeibTable[i]=GhostBlock->neibNodeFace[i];
+                      GhostBlock->GetFaceNeibTable(NeibTable,&PIC::Mesh::mesh);
 
                       NeibTableLength=6*4;
                       break;
                     case 1:
                       //NeibTable=GhostBlock->neibNodeCorner;
 
-                      GhostBlock->GetNeibTable(NeibTable,&PIC::Mesh::mesh); 
+                      GhostBlock->GetCornerNeibTable(NeibTable,&PIC::Mesh::mesh); 
 
 
                       NeibTableLength=8;
