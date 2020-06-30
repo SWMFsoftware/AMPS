@@ -669,7 +669,7 @@ public:
   //the data uswed for the parallel implementation of the mesh; next node in the space filling curve
   #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
   int Thread;
-  double ParallelLoadMeasure;
+  float ParallelLoadMeasure;
   cTreeNodeAMR *FillingCurveNextNode,*FillingCurvePrevNode;
   #endif
 
