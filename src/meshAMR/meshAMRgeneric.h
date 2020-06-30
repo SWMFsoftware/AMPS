@@ -2629,7 +2629,7 @@ Start:
     //get the global index of the searched point
     int idim,ix[3];
 
-    for (idim=0;idim<_MESH_DIMENSION_;idim++) ix[idim]=(x[idim]-xGlobalMin[idim])/dx_max_refinment[idim];
+    for (idim=0;idim<_MESH_DIMENSION_;idim++) ix[idim]=floor((x[idim]-xGlobalMin[idim])/dx_max_refinment[idim]);
 
     return findTreeNode(ix,startNode);
   }
