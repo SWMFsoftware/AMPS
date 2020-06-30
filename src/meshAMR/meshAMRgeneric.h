@@ -376,7 +376,13 @@ public:
   template <typename T>
   void GetEdgeNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
 
-    for (int i=0;i<2*12;i++) NeibTable[i]=neibNodeEdge(i,mesh_ptr);
+    switch (_MESH_DIMENSION_) {
+    case 3:
+      for (int i=0;i<2*12;i++) NeibTable[i]=neibNodeEdge(i,mesh_ptr);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the function should not be cassed for cases other that _MESH_DIMENSION_==3");
+    } 
   }
 
 
@@ -437,48 +443,55 @@ public:
    cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,const T& mesh_ptr) {
      int ix[3];
 
-     switch(i) {
-     case 0:
-       ix[0]=xMinGlobalIndex[0]-1;
-       ix[1]=xMinGlobalIndex[1]-1;
-       ix[2]=xMinGlobalIndex[2]-1;
-       break;
-     case 1:
-       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
-       ix[1]=xMinGlobalIndex[1]-1;
-       ix[2]=xMinGlobalIndex[2]-1;
-       break;
-     case 2:
-       ix[0]=xMinGlobalIndex[0]-1;
-       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
-       ix[2]=xMinGlobalIndex[2]-1;
-       break;
+     switch (_MESH_DIMENSION_) {
      case 3:
-       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
-       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
-       ix[2]=xMinGlobalIndex[2]-1;
-       break;
+       switch(i) {
+       case 0:
+         ix[0]=xMinGlobalIndex[0]-1;
+         ix[1]=xMinGlobalIndex[1]-1;
+         ix[2]=xMinGlobalIndex[2]-1;
+         break;
+       case 1:
+         ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+         ix[1]=xMinGlobalIndex[1]-1;
+         ix[2]=xMinGlobalIndex[2]-1;
+         break;
+       case 2:
+         ix[0]=xMinGlobalIndex[0]-1;
+         ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+         ix[2]=xMinGlobalIndex[2]-1;
+         break;
+       case 3:
+         ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+         ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+         ix[2]=xMinGlobalIndex[2]-1;
+         break;
 
-     case 4:
-       ix[0]=xMinGlobalIndex[0]-1;
-       ix[1]=xMinGlobalIndex[1]-1;
-       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+       case 4:
+         ix[0]=xMinGlobalIndex[0]-1;
+         ix[1]=xMinGlobalIndex[1]-1;
+         ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+         break;
+       case 5:
+         ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+         ix[1]=xMinGlobalIndex[1]-1;
+         ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+         break;
+       case 6:
+         ix[0]=xMinGlobalIndex[0]-1;
+         ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+         ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+         break;
+       case 7:
+         ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
+         ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
+         ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
+         break;
+       }
+
        break;
-     case 5:
-       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
-       ix[1]=xMinGlobalIndex[1]-1;
-       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
-       break;
-     case 6:
-       ix[0]=xMinGlobalIndex[0]-1;
-       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
-       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
-       break;
-     case 7:
-       ix[0]=xMinGlobalIndex[0]+NodeGeometricSizeIndex;
-       ix[1]=xMinGlobalIndex[1]+NodeGeometricSizeIndex;
-       ix[2]=xMinGlobalIndex[2]+NodeGeometricSizeIndex;
-       break;
+     default:
+       exit(__LINE__,__FILE__,"Error: not implemented");
      }
 
      return mesh_ptr->findTreeNode(ix,this);
@@ -541,35 +554,42 @@ public:
      int nface=i/4;    
      int iFace,jFace;
 
-     i-=4*nface;
-     jFace=i/2;
-     iFace=i%2;
-          
-     switch (nface) {
-     case 0:
-       process_face0(iFace,jFace);
-       break;
-
-     case 1:
-       process_face1(iFace,jFace);
-       break;
-
-     case 2:
-       process_face2(iFace,jFace);
-       break;
-
+     switch (_MESH_DIMENSION_) {
      case 3:
-       process_face3(iFace,jFace);
-       break;
+       i-=4*nface;
+       jFace=i/2;
+       iFace=i%2;
 
-     case 4:
-       process_face4(iFace,jFace);
-       break;
+       switch (nface) {
+       case 0:
+         process_face0(iFace,jFace);
+         break;
 
-     case 5:
-       process_face5(iFace,jFace);
+       case 1:
+         process_face1(iFace,jFace);
+         break;
+
+       case 2:
+         process_face2(iFace,jFace);
+         break;
+
+       case 3:
+         process_face3(iFace,jFace);
+         break;
+
+       case 4:
+         process_face4(iFace,jFace);
+         break;
+
+       case 5:
+         process_face5(iFace,jFace);
+         break;
+       }
+
        break;
-    }
+     default:
+       exit(__LINE__,__FILE__,"Error: not implemented");
+     }
 
      return mesh_ptr->findTreeNode(ix,this);
    }
@@ -581,8 +601,7 @@ public:
 
      int isegment,iedge;
 
-     iedge=i/2;
-     isegment=i%2;
+
 
      static const int Increment[12][3]= {
        {0,-1,-1}, //edge  0
@@ -603,24 +622,32 @@ public:
 
      static const int Direction[12]={0,0,0,0,  1,1,1,1, 2,2,2,2};  
 
-     for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
-       ix[idim]=xMinGlobalIndex[idim]; 
+     switch (_MESH_DIMENSION_) {
+     case 3:
+       iedge=i/2;
+       isegment=i%2;
 
-       if (Increment[iedge][idim]==-1) ix[idim]-=1;
-       else if (Increment[iedge][idim]==1) ix[idim]+=NodeGeometricSizeIndex;  
-     }
-       
-     if (isegment==1) {
-       if (NodeGeometricSizeIndex>1) {
-         ix[Direction[iedge]]+=NodeGeometricSizeIndex/2;
+       for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
+         ix[idim]=xMinGlobalIndex[idim];
+
+         if (Increment[iedge][idim]==-1) ix[idim]-=1;
+         else if (Increment[iedge][idim]==1) ix[idim]+=NodeGeometricSizeIndex;
        }
+
+       if (isegment==1) {
+         if (NodeGeometricSizeIndex>1) {
+           ix[Direction[iedge]]+=NodeGeometricSizeIndex/2;
+         }
+       }
+       
+       break;
+     default:
+       exit(__LINE__,__FILE__,"Error: not implemented");
      }
 
      return mesh_ptr->findTreeNode(ix,this);
    }
 
-
-  #define _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ _OFF_AMR_MESH__ 
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_ 
   #if _MESH_DIMENSION_ == 1

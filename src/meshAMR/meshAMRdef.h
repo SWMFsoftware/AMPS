@@ -45,6 +45,9 @@
 #define _AMR__CUT_CELL__MODE_  _AMR__CUT_CELL__MODE__ON_
 
 
+//keep/do not keep pointed to the neib tree not (that can be used acceleration of the search procedure)
+#define _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ _OFF_AMR_MESH_
+
 //the existance of the internal boundaries (bodies inside the compurational domain)
 #define _INTERNAL_BOUNDARY_MODE_ON_  0
 #define _INTERNAL_BOUNDARY_MODE_OFF_ 1
