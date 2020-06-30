@@ -744,7 +744,7 @@ public:
   int xMinGlobalIndex[_MESH_DIMENSION_],NodeGeometricSizeIndex;
 
   double xmin[_MESH_DIMENSION_],xmax[_MESH_DIMENSION_];
-  int RefinmentLevel,minNeibRefinmentLevel,maxNeibRefinmentLevel; //min/max values are used for calculation of the interpolation stencils
+  char RefinmentLevel,minNeibRefinmentLevel,maxNeibRefinmentLevel; //min/max values are used for calculation of the interpolation stencils
 
   struct cNodeDescriptor {
     unsigned NodeProcessingFlag : 1;
