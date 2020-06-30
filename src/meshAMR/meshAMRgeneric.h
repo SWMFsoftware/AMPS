@@ -652,8 +652,13 @@ public:
     CutCell::cTriangleFaceDescriptor* FirstTriangleCutFace;
   };
 
+#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_ 
   cCutFaceListDescriptor* neibCutFaceListDescriptorList;
   cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
+#else //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
+  static cCutFaceListDescriptor* neibCutFaceListDescriptorList;
+  static cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
+#endif 
 
   cTreeNodeAMR() {
 //    ActiveFlag=false;
@@ -699,9 +704,15 @@ public:
 
   //the list of the cut-face descriptors
 #if _AMR__CUT_CELL__MODE_ ==  _AMR__CUT_CELL__MODE__ON_
-  CutCell::cTriangleFaceDescriptor *FirstTriangleCutFace,*neibFirstTriangleCutFace,*neibFirstTriangleCutFace_temp;
-  double (*CutCellSurfaceLocalResolution)(CutCell::cTriangleFaceDescriptor*);
+  double (*CutCellSurfaceLocalResolution)(CutCell::cTriangleFaceDescriptor*); 
 #endif
+
+#if _AMR__CUT_CELL__MODE_ ==  _AMR__CUT_CELL__MODE__ON_
+  CutCell::cTriangleFaceDescriptor *FirstTriangleCutFace,*neibFirstTriangleCutFace,*neibFirstTriangleCutFace_temp;
+#else 
+  static CutCell::cTriangleFaceDescriptor *FirstTriangleCutFace,*neibFirstTriangleCutFace,*neibFirstTriangleCutFace_temp;
+#endif
+
 
   int xMinGlobalIndex[_MESH_DIMENSION_],NodeGeometricSizeIndex;
 
@@ -13755,6 +13766,26 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
 template <typename T>
 unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0;
+
+
+#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_ 
+//in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
+
+template <typename T>
+typename cTreeNodeAMR<T>::cCutFaceListDescriptor* cTreeNodeAMR<T>::neibCutFaceListDescriptorList=NULL;
+
+template <typename T>
+typename cTreeNodeAMR<T>::cCutFaceListDescriptor*  cTreeNodeAMR<T>::neibCutFaceListDescriptorList_temp=NULL;
+#endif
+
+
+#if _AMR__CUT_CELL__MODE_ ==  _AMR__CUT_CELL__MODE__OFF_
+template <typename T>
+CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::FirstTriangleCutFace=NULL;
+
+template <typename T>
+CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace_temp=NULL;
+#endif
 
 
 //template <typename T>
