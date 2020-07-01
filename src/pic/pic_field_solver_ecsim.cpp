@@ -92,6 +92,11 @@ PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalRunTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalMatvecTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DynamicAllocationTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionParticleTime(_PIC_TIMER_MODE_HRES_);
+
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
   SolveTime.PrintMeanMPI("Electromagnetic::ECSIM timing - SolveTime"); 
@@ -99,7 +104,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
   UpdateETime .PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateETime=");
   UpdateJMassMatrixTime.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateJMassMatrixTime");
   TotalMatvecTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalMatvecTime");
-  TotalRunTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalRunTime"); 
+  TotalRunTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalRunTime");
+  ParticleMoverTime.PrintMeanMPI("Electromagnetic::ECSIM timing - ParticleMoverTime");
+  DynamicAllocationTime.PrintMeanMPI("Electromagnetic::ECSIM timing - DynamicAllocationTime");
+  DivECorrectionFieldTime.PrintMeanMPI("Electromagnetic::ECSIM timing - DivECorrectionFieldTime");
+  DivECorrectionParticleTime.PrintMeanMPI("Electromagnetic::ECSIM timing -DivECorrectionParticleTime");
 }
 
 
@@ -2956,6 +2965,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.Start();
   ComputeNetCharge(true);
   ComputeDivE();
   SetBoundaryChargeDivE();
@@ -2964,9 +2974,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
   PoissonSolver.Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
                       PIC::CPLR::FLUID::EFieldIter,PackBlockData_phi,UnpackBlockData_phi);
   SetBoundaryPHI();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionParticleTime.Start();
   CorrectParticleLocation();
   PIC::Parallel::ExchangeParticleData();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionParticleTime.UpdateTimer();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.Start();
   ComputeNetCharge(false);
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
 }
 
 void exchangeParticleLocal(){

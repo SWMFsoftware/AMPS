@@ -238,6 +238,7 @@ void deallocateBlocks(){
 
 void  dynamicAllocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  CumulativeTiming::DynamicAllocationTime.Start();
   int iBlock=0;
   std::vector<int> allocatedBlockIndexArr; 
   printf("dynamic allocate blocks called\n");
@@ -312,7 +313,7 @@ void  dynamicAllocateBlocks(){
   }
 
   printf("thread id:%d, createnewlist called\n", PIC::ThisThread);
-
+  CumulativeTiming::DynamicAllocationTime.UpdateTimer();
   /*
   for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>::iterator it=newNodeList.begin(); it!=newNodeList.end();it++){
     PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle(*it);
@@ -324,6 +325,7 @@ void  dynamicAllocateBlocks(){
 void initNewBlocks() {
 
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  CumulativeTiming::DynamicAllocationTime.Start();
   int nCells[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
   //static int nMeshCounter=-1;
   //printf("init new block is called list size:%d\n",PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size());
@@ -420,7 +422,7 @@ void initNewBlocks() {
 
   PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
-  
+  CumulativeTiming::DynamicAllocationTime.UpdateTimer();
 }
 
 
@@ -1089,7 +1091,10 @@ long int setFixedParticle_BC(){
       iBlk++;
       //if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
       //if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
-      if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->IsUsedInCalculationFlag!=false) continue;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   nodeTemp = node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh);
+      if (nodeTemp!=NULL){
+	if (nodeTemp->IsUsedInCalculationFlag!=false) continue;
+      }
       //printf("iFace:%d, iBlk:%d, node:%p,nodeXmin:%e,%e,%e\n",iFace,iBlk,node,
       //       node->xmin[0],node->xmin[1],node->xmin[2]);
       
@@ -1471,7 +1476,7 @@ long int PrepopulateDomain() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -1653,7 +1658,7 @@ void SetIC() {
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
 	bool BoundaryBlock=false;
 	
-	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	    //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	    BoundaryBlock=true;
 	    break;
@@ -1783,7 +1788,7 @@ long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;

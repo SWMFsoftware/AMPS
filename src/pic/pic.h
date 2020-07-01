@@ -4343,7 +4343,6 @@ namespace PIC {
     void PrintMeanMPI(const char *msg=NULL) {
       double *dtTable=new double [PIC::nTotalThreads];
 
-      UpdateTimer();
       MPI_Gather(&dT,1,MPI_DOUBLE,dtTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (PIC::ThisThread==0) {
@@ -6448,7 +6447,11 @@ namespace FieldSolver {
               extern Debugger::cTimer UpdateETime; 
               extern Debugger::cTimer TotalRunTime; 
 	      extern Debugger::cTimer TotalMatvecTime;
-
+	      extern Debugger::cTimer ParticleMoverTime;
+	      extern Debugger::cTimer DynamicAllocationTime;
+	      extern Debugger::cTimer DivECorrectionFieldTime;
+	      extern Debugger::cTimer DivECorrectionParticleTime;
+	      
               void Print();
             }
 

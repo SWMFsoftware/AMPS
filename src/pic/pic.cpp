@@ -342,7 +342,9 @@ int PIC::TimeStep() {
 
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   ParticleMovingTime=MPI_Wtime();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.Start();
   PIC::Mover::MoveParticles();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
@@ -376,6 +378,8 @@ int PIC::TimeStep() {
     if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
     PIC::CPLR::FLUID::write_output(timeNow);
     PIC::CPLR::FLUID::check_max_mem_usage();
+    PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print();
+
   }
   
   #endif
