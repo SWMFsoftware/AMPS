@@ -344,7 +344,6 @@ int PIC::TimeStep() {
   ParticleMovingTime=MPI_Wtime();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.Start();
   PIC::Mover::MoveParticles();
-  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
@@ -358,6 +357,7 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
+  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 
