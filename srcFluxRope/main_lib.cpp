@@ -1145,9 +1145,9 @@ long int setFixedParticle_BC(){
        
       if (!node->block) continue;
       iBlk++;
-      //if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
-      //if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
-      if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->IsUsedInCalculationFlag!=false) continue;
+      //if (node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh)!=NULL) continue;
+      //if (node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
+      if (node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh)!=NULL && node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag!=false) continue;
       //printf("iFace:%d, iBlk:%d, node:%p,nodeXmin:%e,%e,%e\n",iFace,iBlk,node,
       //       node->xmin[0],node->xmin[1],node->xmin[2]);
       
@@ -1529,7 +1529,7 @@ long int PrepopulateDomain() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -1711,7 +1711,7 @@ void SetIC() {
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
 	bool BoundaryBlock=false;
 	
-	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	    //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	    BoundaryBlock=true;
 	    break;
@@ -1841,7 +1841,7 @@ long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;

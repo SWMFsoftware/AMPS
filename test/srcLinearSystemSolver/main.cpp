@@ -524,7 +524,7 @@ return;
 
   // set  bc for the lower boundary
   /*
-  for (int iDim=0;iDim<3;iDim++) if ((node->GetNeibFace(iDim*2,0,0)==NULL) && index[iDim]==0 ) {
+  for (int iDim=0;iDim<3;iDim++) if ((node->GetNeibFace(iDim*2,0,0,&PIC::Mesh::mesh)==NULL) && index[iDim]==0 ) {
     //the point is located at the boundary of the domain
     MatrixRowNonZeroElementTable[0].i=i,MatrixRowNonZeroElementTable[0].j=j,MatrixRowNonZeroElementTable[0].k=k,MatrixRowNonZeroElementTable[0].MatrixElementValue=1.0;
     MatrixRowNonZeroElementTable[0].iVar=0;
@@ -544,14 +544,14 @@ return;
     int jMax =2;
     int sign=1;
     // set bc for the neihbor cell of higher boundary
-    if (index[ii]== nCell[ii]-1 && node->GetNeibFace(2*ii+1,0,0)==NULL) {
+    if (index[ii]== nCell[ii]-1 && node->GetNeibFace(2*ii+1,0,0,&PIC::Mesh::mesh)==NULL) {
       jMax = 1;
       sign = 1; 
       nDirBoundary++;
       rhs -= 100; //boundary condition
     }
 
-    if (index[ii]== 0 && node->GetNeibFace(2*ii,0,0)==NULL) {
+    if (index[ii]== 0 && node->GetNeibFace(2*ii,0,0,&PIC::Mesh::mesh)==NULL) {
       jMax = 1;
       sign = -1; 
       nDirBoundary++;
@@ -606,7 +606,7 @@ return;
   }
 
   //populate the spencil
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the left boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -618,7 +618,7 @@ return;
     NonZeroElementsFound=1;
     RhsSupportLength=0;
   }
-  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0)==NULL)) ) {
+  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the right boundary
     //x-direction
 
@@ -866,12 +866,12 @@ return;
 
 
   //boundary
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0)==NULL)) ||
-      ((j==0)&&(node->GetNeibFace(2,0,0)==NULL)) ||
-      ((k==0)&&(node->GetNeibFace(4,0,0)==NULL)) ||
-      ((i==_BLOCK_CELLS_X_)&&(node->GetNeibFace(1,0,0)==NULL)) ||
-      ((j==_BLOCK_CELLS_Y_)&&(node->GetNeibFace(3,0,0)==NULL)) ||
-      ((k==_BLOCK_CELLS_Z_)&&(node->GetNeibFace(5,0,0)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) ||
+      ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) ||
+      ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ||
+      ((i==_BLOCK_CELLS_X_)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) ||
+      ((j==_BLOCK_CELLS_Y_)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) ||
+      ((k==_BLOCK_CELLS_Z_)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -979,7 +979,7 @@ return;
 
   /*
   //populate the spencil
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the left boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -991,7 +991,7 @@ return;
     NonZeroElementsFound=1;
     RhsSupportLength=0;
   }
-  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0)==NULL)) ) {
+  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the right boundary
     //x-direction
 

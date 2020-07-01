@@ -149,7 +149,7 @@ long int PrepopulateDomain(int spec,double NumberDensity,double Temperature) {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh,&PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -261,7 +261,7 @@ void SetIC() {
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
 	bool BoundaryBlock=false;
 	
-	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0)==NULL) {
+	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh,&PIC::Mesh::mesh)==NULL) {
 	    //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	    BoundaryBlock=true;
 	    break;
