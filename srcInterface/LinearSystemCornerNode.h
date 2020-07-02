@@ -1057,7 +1057,10 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
   RecvExchangeBufferTable[PIC::ThisThread]=x;
 
-
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel default(none) shared (RecvExchangeBufferTable,PIC::ThisThread,PIC::nTotalThreads,p) firstprivate(length)
+#endif
+{
   double **LocalRecvExchangeBufferTable;
  
   LocalRecvExchangeBufferTable=new double*[PIC::nTotalThreads];
@@ -1065,7 +1068,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for schedule(dynamic,1) default(none) firstprivate(length) shared(LocalRecvExchangeBufferTable,p)
+#pragma omp for schedule(dynamic,4) 
 #endif
   for (int irow=0;irow<MatrixRowTableLength;irow++) {
 
@@ -1183,7 +1186,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   delete [] LocalRecvExchangeBufferTable;
 
-
+}
 
   RecvExchangeBufferTable[PIC::ThisThread]=NULL;
 
@@ -1192,6 +1195,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   delete [] RecvExchangeBufferTable;
+
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
