@@ -2843,6 +2843,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::atomic<bool> quit_flag;
     std::atomic<cCellData*> *CellDataTable;
     std::atomic<bool> *AvailableCellDataTable;
+    std::atomic_flag *cell_table_lock;
+    std::atomic_flag copy_lock; 
 
     void Copy(cCellData *CellData,int thread) {
       double  *target,*source;
@@ -2880,6 +2882,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       }
 
       AvailableCellDataTable[thread]=true;
+      cell_table_lock[thread].clear(std::memory_order_release);
     }
 
     void Manager() {
@@ -2891,13 +2894,16 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
           if (AvailableCellDataTable[thread]==false) {
             found=true;
+
+            while (copy_lock.test_and_set(std::memory_order_acquire)==false);
+
             Copy(CellDataTable[thread],thread);
           }
         }
 
         if (found==false) {
-          if (sem_wait(manager_sem)<0) {
-            exit(__LINE__,__FILE__"[sem_wait] fail");
+          if (sem_trywait(manager_sem)<0) {
+        //    exit(__LINE__,__FILE__"[sem_wait] fail");
           }
         }
       }
@@ -2912,6 +2918,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     cCopyManager(int thread) : quit_flag(false)  {
       CellDataTable=new std::atomic<cCellData*> [PIC::nTotalThreadsOpenMP];
       AvailableCellDataTable=new std::atomic<bool> [PIC::nTotalThreadsOpenMP];
+      cell_table_lock=new std::atomic_flag [PIC::nTotalThreadsOpenMP];
+
+
+      copy_lock.clear(std::memory_order_release);
+      copy_lock.test_and_set(std::memory_order_acquire); 
+
 
       sprintf(manager_sem_name,"amps_field_solver_sem_thread%i",thread);
 
@@ -2931,6 +2943,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
         AvailableCellDataTable[i]=true;
         CellDataTable[i]=NULL;
+        cell_table_lock[i].clear(std::memory_order_release);
       }
 
       m_thread=std::thread(&cCopyManager::Manager,this);
@@ -2964,6 +2977,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       delete [] CellDataTable;
       delete [] AvailableCellDataTable;
+      delete [] cell_table_lock;
 
       //release the semaphore
       if (sem_post(manager_sem)<0) {
@@ -3004,8 +3018,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       if (t==NULL) exit(__LINE__,__FILE__);
 
+
+while (cell_table_lock[thread].test_and_set(std::memory_order_acquire)==false);
+
+
       CellDataTable[thread]=t;
       AvailableCellDataTable[thread]=false;
+
+copy_lock.clear(std::memory_order_release);
 
       //release the semaphore
       if (sem_post(manager_sem)<0) {
