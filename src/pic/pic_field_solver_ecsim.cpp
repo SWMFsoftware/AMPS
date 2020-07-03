@@ -33,6 +33,22 @@ The Maple script used for calculating the lookup tables for the previous impleme
 #include <immintrin.h>
 #endif
 
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <semaphore.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
+
+
+
 double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
 list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
@@ -1664,6 +1680,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
 
+    auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
       for (int k=kCellIn-1;k<=kCellIn+1;k++) {
@@ -1673,7 +1690,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
-            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
             double * ptr =  (double*)(offset+CurrentBOffset);
             B_Center[LocalCenterId]=ptr;
           }
@@ -1681,6 +1698,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       }
     }
 
+
+    auto ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
       for (int k=kCellIn-1;k<=kCellIn+1;k++) {
@@ -1690,7 +1709,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
-            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
             double * ptr =  (double*)(offset+CurrentBOffset);
             B_corner[LocalCornerId]=ptr;
           }
@@ -1705,6 +1724,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     long int *FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
+
+    auto InterpolationCoefficientTable_LocalNodeOrder=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+    auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
     #pragma ivdep
     for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
@@ -1761,14 +1783,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       char *offset[8];
 
-      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
 
       #pragma ivdep
       for (int ii=0; ii<8; ii++) {
@@ -1898,7 +1920,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
 
-          WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+          WeightPG=InterpolationCoefficientTable_LocalNodeOrder;
    
           #ifndef __PGI
           _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
@@ -1906,7 +1928,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 	  
           double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
-          vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+          vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
           ParticleEnergyCell += 0.5*mass*vsqr_par;
 
           //compute alpha*vInit
@@ -2080,6 +2102,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
 
+    auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    auto ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
     if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
       for (int k=kCellIn-1;k<=kCellIn+1;k++) {
@@ -2089,7 +2113,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
             if (!node->block->GetCenterNode(LocalCenterId)) continue;
-            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
             double * ptr =  (double*)(offset+CurrentBOffset);
             B_Center[LocalCenterId]=ptr;
           }
@@ -2106,7 +2130,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           for (int i=iCellIn-1;i<=iCellIn+1;i++) {
             int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
             if (!node->block->GetCornerNode(LocalCornerId)) continue;
-            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
             double * ptr =  (double*)(offset+CurrentBOffset);
             B_corner[LocalCornerId]=ptr;
           }
@@ -2129,6 +2153,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
     double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
+
+    auto InterpolationCoefficientTable_LocalNodeOrder=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+    auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
 
     for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
@@ -2178,14 +2205,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       char *offset[8];
 
-      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
 
       #pragma ivdep
       for (int ii=0; ii<8; ii++) {
@@ -2340,7 +2367,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
 
-          WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+          WeightPG=InterpolationCoefficientTable_LocalNodeOrder;
 
           #ifndef __PGI
           _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
@@ -2353,7 +2380,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
           double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
 
-          vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+          vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
           ParticleEnergyCell += 0.5*mass*vsqr_par;
 
           //compute alpha*vInit
@@ -2777,7 +2804,232 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  cCellData CellDataTable[PIC::nTotalThreadsOpenMP];
+
+  //copy manager 
+
+
+  /*
+  Class 'cCopyManager' can be used for updating the cell's data. Before, each process/thread updated its data.
+  In the case of threads, that might result in a race condition that was eliminated by protecting the cell's associated data with a lock.
+  To eliminate frequent checking the lock, cCopyManager can be used instead.
+
+  The class intends to provide a mechanism to update the data while continuing calculations. So, cCopyManager starts a new thread that makes the updates.
+  Calculating process/thread call CopyManager::set_work() passing the pointed to the data that need to be updated.
+  After the call of CopyManager::set_work(), while the data are still processing, process/thread switch the buffer used for calculations and process the next cell.
+
+  One thread is produced by a process regardless of the number of OpenMP processes used in the calculations.
+
+  Methods:
+  Copy() -> update the cell's data.
+  Manager() -> look for data that needs to be updated and call the method Copy().
+  cCopyManager(): starts the new thread
+  set_quit() -> finalize data updating; waits untill all data process and join the thred; deallocates all buffers
+  wait() -> wait
+  set_work() -> computing process/thread call set_work() when new data needs to be copied to the cells' state vectors
+
+  The thread synchronization is done with a semaphore.
+
+  When all data is processed, the copying thread (Manager()) stopped execution with sem_wait().
+  So, computing processes/threads wake up the copying thread with sem_post().
+
+  The class is fully functioning, but in terms of performance, it is still an experimental code.
+  The method of updating cells' data is determined with macro _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_.
+  */
+
+
+  class cCopyManager {
+  private:
+    std::thread m_thread;
+    std::atomic<bool> quit_flag;
+    std::atomic<cCellData*> *CellDataTable;
+    std::atomic<bool> *AvailableCellDataTable;
+
+    void Copy(cCellData *CellData,int thread) {
+      double  *target,*source;
+      int idim,ii;
+
+      int CornerUpdateTable[8]={0,1,2,3,4,5,6,7};
+      int CornerUpdateTableLength=8;
+
+      while (CornerUpdateTableLength>0) {
+        //loop through all non-updated corners to find that one which is not locked
+        for (int it=0;it<CornerUpdateTableLength;it++) {
+          int icor=CornerUpdateTable[it];
+
+          target=CellData->CornerData[icor].CornerJ_ptr;
+          source=CellData->CornerData[icor].CornerJ;
+
+          for (idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+          target=CellData->CornerData[icor].CornerMassMatrix_ptr;
+          source=CellData->CornerData[icor].CornerMassMatrix;
+
+          for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+          if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+            target=CellData->CornerData[icor].SpecData_ptr;
+            source=CellData->CornerData[icor].SpecData;
+
+            for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+          }
+
+          //decrease the length of the table
+          CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
+          CornerUpdateTableLength--;
+        }
+      }
+
+      AvailableCellDataTable[thread]=true;
+    }
+
+    void Manager() {
+      bool found=true;
+
+      do {
+        found=false;
+
+        for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
+          if (AvailableCellDataTable[thread]==false) {
+            found=true;
+            Copy(CellDataTable[thread],thread);
+          }
+        }
+
+        if (found==false) {
+          if (sem_wait(manager_sem)<0) {
+            exit(__LINE__,__FILE__"[sem_wait] fail");
+          }
+        }
+      }
+      while ((quit_flag==false)||(found==true));
+    }
+
+    char manager_sem_name[100];
+    sem_t *manager_sem;
+
+  public:
+
+    cCopyManager(int thread) : quit_flag(false)  {
+      CellDataTable=new std::atomic<cCellData*> [PIC::nTotalThreadsOpenMP];
+      AvailableCellDataTable=new std::atomic<bool> [PIC::nTotalThreadsOpenMP];
+
+      sprintf(manager_sem_name,"amps_field_solver_sem_thread%i",thread);
+
+      manager_sem=sem_open(manager_sem_name,O_CREAT,0600,0);
+
+      if (manager_sem==SEM_FAILED) {
+        perror("[sem_open] failed\n");
+        exit(__LINE__,__FILE__);
+      }
+
+      //release the semaphore
+      if (sem_post(manager_sem)<0) {
+        perror("Parent: [semp_post] failed\n");
+        return;
+      }
+
+      for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+        AvailableCellDataTable[i]=true;
+        CellDataTable[i]=NULL;
+      }
+
+      m_thread=std::thread(&cCopyManager::Manager,this);
+    }
+
+    void set_quit() {
+      quit_flag=true;
+
+      //release the semaphore
+      if (sem_post(manager_sem)<0) {
+        perror("Parent: [semp_post] failed\n");
+        return;
+      }
+
+      bool found=false;
+
+      do {
+        found=false;
+
+        for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
+          if (AvailableCellDataTable[thread]==false) {
+            found=true;
+            break;
+          }
+        }
+      }
+      while (found==true);
+
+
+      m_thread.join();
+
+      delete [] CellDataTable;
+      delete [] AvailableCellDataTable;
+
+      //release the semaphore
+      if (sem_post(manager_sem)<0) {
+        perror("Parent: [semp_post] failed\n");
+        return;
+      }
+
+      //remove the semaphore
+      if (sem_close(manager_sem)!=0) {
+        exit(__LINE__,__FILE__,"[sem_close] failed");
+      }
+
+      if (sem_unlink(manager_sem_name)<0) {
+        exit(__LINE__,__FILE__,"[sem_unlink] failed\n");
+        return;
+      }
+
+    }
+
+    ~cCopyManager() {
+      quit_flag=true;
+    }
+
+    bool test(int thread) const {return AvailableCellDataTable[thread];}
+
+    void wait(int thread) {
+      //release the semaphore
+      if (sem_post(manager_sem)<0) {
+        perror("Parent: [semp_post] failed\n");
+        return;
+      }
+
+      while (AvailableCellDataTable[thread]==false);
+    }
+
+    void set_work(cCellData* t,int thread) {
+      wait(thread);
+
+      if (t==NULL) exit(__LINE__,__FILE__);
+
+      CellDataTable[thread]=t;
+      AvailableCellDataTable[thread]=false;
+
+      //release the semaphore
+      if (sem_post(manager_sem)<0) {
+        perror("Parent: [semp_post] failed\n");
+        return;
+      }
+    }
+  };
+
+#if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
+  cCopyManager copy_manager(PIC::ThisThread);
+  cCopyManager *copy_manager_ptr=&copy_manager;
+#else
+  cCopyManager *copy_manager_ptr=NULL;
+#endif
+
+  //////////////////////////////////////
+
+
+  cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
+  cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
+
+
+
   bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
   double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
   double cflTable[PIC::nTotalSpecies][PIC::nTotalThreadsOpenMP];
@@ -2785,134 +3037,183 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
     ParticleEnergyTable[i]=0.0;
     for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-    cflTable[iSp][i]=0.0;
+      cflTable[iSp][i]=0.0;
   }		 		 
+
+  auto mesh_ptr=&PIC::Mesh::mesh;
+  auto ThisThread=PIC::ThisThread;
+  auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+
 
   // Loop through all blocks. 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for default(none) shared (PIC::Mesh::mesh,CellDataTable,PIC::ThisThread,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-    PIC::DomainBlockDecomposition::BlockTable,ParticleEnergyTable,cflTable) firstprivate (ProcessCell)
+
+#pragma omp parallel default(none) shared (copy_manager_ptr,CellDataTable_Bank0,CellDataTable_Bank1,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
+		ParticleEnergyTable,cflTable) firstprivate (ProcessCell,mesh_ptr,ThisThread,BlockTable)
+  {
+
+    int this_thread_id=omp_get_thread_num();
+    auto CellData_TH=CellDataTable_Bank0+this_thread_id;
+
+#pragma omp for schedule(guided,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_)
+
+#else 
+    int this_thread_id=0;
+    auto CellData_TH=CellDataTable_Bank0+this_thread_id;
+
 #endif
-  for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
-    int nLocalNode,ii=CellCounter;
-    int i,j,k;
+    for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
+      int nLocalNode,ii=CellCounter;
+      int i,j,k;
 
-    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
-    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
 
-    j=ii/_BLOCK_CELLS_X_;
-    ii-=j*_BLOCK_CELLS_X_;
+      j=ii/_BLOCK_CELLS_X_;
+      ii-=j*_BLOCK_CELLS_X_;
 
-    i=ii;
+      i=ii;
 
 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
 
-    if (node->block==NULL) continue;
-    double StartTime=MPI_Wtime();
+      if (node->block==NULL) continue;
+      double StartTime=MPI_Wtime();
 
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      bool BoundaryBlock=false;
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
-        //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
-        BoundaryBlock=true;
-        break;
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,mesh_ptr)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+
+        if (BoundaryBlock==true) continue;
       }
 
-      if (BoundaryBlock==true) continue;
+      if (node->Thread!=ThisThread) continue;
+
+
+      CellData_TH->clean();
+      CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellData_TH,0,1);
+
+      if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
+        double *target,*source;
+        int idim,ii;
+
+        int CornerUpdateTable[8]={0,1,2,3,4,5,6,7};
+        int CornerUpdateTableLength=8;
+
+        switch (_PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_) {
+        case _PIC_MODE_ON_:
+
+          copy_manager_ptr->set_work(CellData_TH,this_thread_id);
+
+
+          while (CornerUpdateTableLength>0) {
+            //loop through all non-updated corners to find that one which is not locked
+            for (int it=0;it<CornerUpdateTableLength;it++) {
+              int icor=CornerUpdateTable[it];
+
+              ParticleEnergyTable[this_thread_id]+=CellData_TH->ParticleEnergy;
+
+              for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+                if (CellData_TH->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData_TH->cflCell[iSp];
+              }
+
+              //decrease the length of the table
+              CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
+              CornerUpdateTableLength--;
+            }
+          }
+
+
+          //switch the pointer to the data buffers
+          CellData_TH=(CellData_TH==CellDataTable_Bank0+this_thread_id) ? CellDataTable_Bank1+this_thread_id : CellDataTable_Bank0+this_thread_id;
+          break;
+        case _PIC_MODE_OFF_:
+          while (CornerUpdateTableLength>0) {
+            //loop through all non-updated corners to find that one which is not locked
+            for (int it=0;it<CornerUpdateTableLength;it++) {
+              int icor=CornerUpdateTable[it];
+
+              #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+              if (CellData_TH->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false)
+              #endif
+              {
+                //the corner can be processes. access to the corner's data is locked for other threads
+
+                ParticleEnergyTable[this_thread_id]+=CellData_TH->ParticleEnergy;
+
+                for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+                  if (CellData_TH->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData_TH->cflCell[iSp];
+                }
+
+                target=CellData_TH->CornerData[icor].CornerJ_ptr;
+                source=CellData_TH->CornerData[icor].CornerJ;
+
+                for (idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+                target=CellData_TH->CornerData[icor].CornerMassMatrix_ptr;
+                source=CellData_TH->CornerData[icor].CornerMassMatrix;
+
+                for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+                if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+                  target=CellData_TH->CornerData[icor].SpecData_ptr;
+                  source=CellData_TH->CornerData[icor].SpecData;
+
+                  for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+                }
+
+
+                //decrease the length of the table
+                CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
+                CornerUpdateTableLength--;
+
+                //reset the flag
+                if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
+                  CellData_TH->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
+                }
+              }
+            }
+          }
+
+          break;
+
+        default:
+          exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
+        }
+      }
+
+      //increment the time counter
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+        node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+      }
     }
 
-    if (node->Thread!=PIC::ThisThread) continue;
-
-
-   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   int this_thread_id=omp_get_thread_num();
-   #else
-   int this_thread_id=0;
-   #endif
-
-
-   CellDataTable[this_thread_id].clean();
-   //CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,this_thread_id,PIC::nTotalThreadsOpenMP);
-
-   CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellDataTable+this_thread_id,0,1);
-
-
-   cCellData *CellData=NULL;
-
-   if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
-     double *target,*source;
-     int idim,ii;
-
-     int CornerUpdateTable[8]={0,1,2,3,4,5,6,7};
-     int CornerUpdateTableLength=8;
-
-     CellData=CellDataTable+this_thread_id;
-
-     while (CornerUpdateTableLength>0) {
-       //loop through all non-updated corners to find that one which is not locked
-       for (int it=0;it<CornerUpdateTableLength;it++) {
-         int icor=CornerUpdateTable[it];
-
-         #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-         if (CellData->CornerData[icor].CornerNode->lock_associated_data.test_and_set(std::memory_order_acquire)==false) 
-         #endif
-         {
-           //the corner can be processes. access to the corner's data is locked for other threads
-
-           ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
-
-           for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
-             if (CellData->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData->cflCell[iSp];
-           }
-
-           target=CellData->CornerData[icor].CornerJ_ptr;
-           source=CellData->CornerData[icor].CornerJ;
-
-           for (idim=0;idim<3;idim++) target[idim]+=source[idim];
-
-           target=CellData->CornerData[icor].CornerMassMatrix_ptr;
-           source=CellData->CornerData[icor].CornerMassMatrix;
-
-           for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
-
-           if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-             target=CellData->CornerData[icor].SpecData_ptr;
-             source=CellData->CornerData[icor].SpecData;
-
-             for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
-           }
-
-
-           //decrease the length of the table
-           CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
-           CornerUpdateTableLength--;
-
-           //reset the flag
-           if (_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_) {
-             CellData->CornerData[icor].CornerNode->lock_associated_data.clear(std::memory_order_release);
-           }
-         }
-       }
-     }
-   }
-
-    //increment the time counter
-    if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
-      node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-    }
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   }
+#endif
+
+
+#if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
+  copy_manager.set_quit();
+#endif
+
+
+
 
   //reduce the particle energy table
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) ParticleEnergy+=ParticleEnergyTable[i];
 
   //find the max cfl among all threads
   for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++)
-  cfl_process[iSp] = *max_element(cflTable[iSp], cflTable[iSp]+PIC::nTotalThreadsOpenMP);
+    cfl_process[iSp] = *max_element(cflTable[iSp], cflTable[iSp]+PIC::nTotalThreadsOpenMP);
 
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:

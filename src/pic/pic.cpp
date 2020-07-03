@@ -1634,17 +1634,9 @@ void PIC::InitMPI() {
   MPI_Initialized(&initialized);
 
   if (!initialized) {
-    #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-    MPI_Init(NULL, NULL);
-
-    #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     int provided;
+
     MPI_Init_thread(NULL,NULL,MPI_THREAD_FUNNELED,&provided);
-
-    #else
-    #error Unknown option
-    #endif //_COMPILATION_MODE_
-
     MPI_GLOBAL_COMMUNICATOR=MPI_COMM_WORLD;
   }
 

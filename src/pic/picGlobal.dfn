@@ -383,5 +383,9 @@ at the end of each time step
 #define _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__Yuxi_    1
 #define _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE_   _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__DEFAULT_ 
 
+//In PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix():   
+//Ther are two options for updating cell data: 1) each process/thread updates its data, and 2) a process/thread uses copy manager (class cCopyManager) to update the data.  
+//At this stage, cCopyManager is functional but still experimental
+#define  _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ _PIC_MODE_OFF_ 
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
