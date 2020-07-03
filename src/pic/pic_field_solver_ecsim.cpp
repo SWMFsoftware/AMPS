@@ -2846,7 +2846,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::atomic_flag *cell_table_lock;
     std::atomic_flag copy_lock; 
 
-    void Copy(cCellData *CellData,int thread) {
+    void Copy(cCellData *CellData,int this_thread_id) {
       double  *target,*source;
       int idim,ii;
 
@@ -2875,14 +2875,20 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
             for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
           }
 
+          ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
+
+          for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+            if (CellData->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData->cflCell[iSp];
+          }
+
           //decrease the length of the table
           CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
           CornerUpdateTableLength--;
         }
       }
 
-      AvailableCellDataTable[thread]=true;
-      cell_table_lock[thread].clear(std::memory_order_release);
+      AvailableCellDataTable[this_thread_id]=true;
+      cell_table_lock[this_thread_id].clear(std::memory_order_release);
     }
 
     void Manager() {
@@ -2913,9 +2919,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     char manager_sem_name[100];
     sem_t *manager_sem;
 
+    double *ParticleEnergyTable;
+    double **cflTable;
+
   public:
 
-    cCopyManager(int thread) : quit_flag(false)  {
+    cCopyManager(int thread,double* ParticleEnergyTable_in,double** cflTable_in) : quit_flag(false)  {
       CellDataTable=new std::atomic<cCellData*> [PIC::nTotalThreadsOpenMP];
       AvailableCellDataTable=new std::atomic<bool> [PIC::nTotalThreadsOpenMP];
       cell_table_lock=new std::atomic_flag [PIC::nTotalThreadsOpenMP];
@@ -2924,6 +2933,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
       copy_lock.clear(std::memory_order_release);
       copy_lock.test_and_set(std::memory_order_acquire); 
 
+      ParticleEnergyTable=ParticleEnergyTable_in;
+      cflTable=cflTable_in;
 
       sprintf(manager_sem_name,"amps_field_solver_sem_thread%i",thread);
 
@@ -3035,30 +3046,32 @@ copy_lock.clear(std::memory_order_release);
     }
   };
 
+  //////////////////////////////////////
+
+  cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
+  cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
+
+  bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
+  double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
+  double **cflTable=new double* [PIC::nTotalSpecies];
+
+  for (int s=0;s<PIC::nTotalSpecies;s++) cflTable[s]=new double [PIC::nTotalThreadsOpenMP];
+  
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+      cflTable[iSp][i]=0.0;
+  }		 		 
+
+
 #if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
-  cCopyManager copy_manager(PIC::ThisThread);
+  cCopyManager copy_manager(PIC::ThisThread,ParticleEnergyTable,cflTable);
   cCopyManager *copy_manager_ptr=&copy_manager;
 #else
   cCopyManager *copy_manager_ptr=NULL;
 #endif
 
-  //////////////////////////////////////
-
-
-  cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
-  cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
-
-
-
-  bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
-  double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
-  double cflTable[PIC::nTotalSpecies][PIC::nTotalThreadsOpenMP];
-
-  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
-    ParticleEnergyTable[i]=0.0;
-    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-      cflTable[iSp][i]=0.0;
-  }		 		 
 
   auto mesh_ptr=&PIC::Mesh::mesh;
   auto ThisThread=PIC::ThisThread;
@@ -3132,25 +3145,6 @@ copy_lock.clear(std::memory_order_release);
         case _PIC_MODE_ON_:
 
           copy_manager_ptr->set_work(CellData_TH,this_thread_id);
-
-
-          while (CornerUpdateTableLength>0) {
-            //loop through all non-updated corners to find that one which is not locked
-            for (int it=0;it<CornerUpdateTableLength;it++) {
-              int icor=CornerUpdateTable[it];
-
-              ParticleEnergyTable[this_thread_id]+=CellData_TH->ParticleEnergy;
-
-              for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
-                if (CellData_TH->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData_TH->cflCell[iSp];
-              }
-
-              //decrease the length of the table
-              CornerUpdateTable[it]=CornerUpdateTable[CornerUpdateTableLength-1];
-              CornerUpdateTableLength--;
-            }
-          }
-
 
           //switch the pointer to the data buffers
           CellData_TH=(CellData_TH==CellDataTable_Bank0+this_thread_id) ? CellDataTable_Bank1+this_thread_id : CellDataTable_Bank0+this_thread_id;
@@ -3281,6 +3275,13 @@ copy_lock.clear(std::memory_order_release);
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ ) {
     PIC::CPLR::FLUID::fix_plasma_node_boundary();
   }
+
+
+  //delete temp buffers 
+  for (int s=0;s<PIC::nTotalSpecies;s++) delete [] cflTable[s];
+
+  delete [] cflTable;
+
 }
 
 
