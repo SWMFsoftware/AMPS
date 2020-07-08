@@ -885,17 +885,11 @@ int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x,double** &LocalRecvExchangeBufferTable) {
   int To,From;
 
-  double **LocalSendBuffer=new double *[PIC::nTotalThreads];
   LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads];
   
+  MPI_Datatype *unknown_vector_type_table=new MPI_Datatype[PIC::nTotalThreads];
+  
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-    if (NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]>0) {
-       LocalSendBuffer[thread]=new double [NodeUnknownVariableVectorLength*SendExchangeBufferLength[thread]];
-    }
-    else {
-      LocalSendBuffer[thread]=NULL;
-    }
-
     if (NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]>0) {
       LocalRecvExchangeBufferTable[thread]=new double [NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]];
     }
@@ -921,15 +915,25 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     int Length=SendExchangeBufferLength[To];
     int *IndexTable=SendExchangeBufferElementIndex[To];
 
+    int length_table[Length];
+    int offset_table[Length];
 
     for (i=0;i<Length;i++) {
-      memcpy(LocalSendBuffer[To]+offset,x+NodeUnknownVariableVectorLength*IndexTable[i],NodeUnknownVariableVectorLength*sizeof(double));
+      length_table[i]=NodeUnknownVariableVectorLength;
+      offset_table[i]=NodeUnknownVariableVectorLength*IndexTable[i]; 
+    }
+
+    MPI_Type_indexed(Length, length_table, offset_table, MPI_DOUBLE, unknown_vector_type_table+To);
+    MPI_Type_commit(unknown_vector_type_table+To);
+
+    for (i=0;i<Length;i++) {
       offset+=NodeUnknownVariableVectorLength;
     }
 
     if (offset!=NodeUnknownVariableVectorLength*SendExchangeBufferLength[To]) exit(__LINE__,__FILE__,"Error: out of limit");
 
-    MPI_Isend(LocalSendBuffer[To],NodeUnknownVariableVectorLength*SendExchangeBufferLength[To],MPI_DOUBLE,To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+    MPI_Isend(x,1,unknown_vector_type_table[To],To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+
     SendRequestTableLength++;
   }
 
@@ -937,11 +941,8 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   MPI_Waitall(RecvRequestTableLength,RecvRequestTable,MPI_STATUSES_IGNORE);
   MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
 
-
-   //delete temporary buffers
-   for (int thread=0;thread<PIC::nTotalThreads;thread++) if (LocalSendBuffer[thread]!=NULL) delete [] LocalSendBuffer[thread];
-
-   delete [] LocalSendBuffer;
+  //delete temporary buffers
+  delete [] unknown_vector_type_table;
 }
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
