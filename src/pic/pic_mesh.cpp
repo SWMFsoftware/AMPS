@@ -1427,7 +1427,7 @@ void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   if (LastMeshModificationID==PIC::Mesh::mesh.nMeshModificationCounter) return; //no modification of the mesh is made
 
   //calculate the new number of the blocks
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     nLocalBlocks++;
   }
 
@@ -1436,7 +1436,7 @@ void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
 
   //populate the block pointer buffer
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     BlockTable[nLocalBlocks++]=node;
   }
 
