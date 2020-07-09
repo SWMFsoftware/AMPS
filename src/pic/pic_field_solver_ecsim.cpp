@@ -120,6 +120,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
   UpdateBTime.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateBTime");
   UpdateETime .PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateETime=");
   UpdateJMassMatrixTime.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateJMassMatrixTime");
+  UpdateJMassMatrixTime_MPI.PrintMeanMPI("Electromagnetic::ECSIM timing - UpdateJMassMatrixTime_MPI");
   TotalMatvecTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalMatvecTime");
   TotalRunTime.PrintMeanMPI("Electromagnetic::ECSIM timing - TotalRunTime");
   ParticleMoverTime.PrintMeanMPI("Electromagnetic::ECSIM timing - ParticleMoverTime");
