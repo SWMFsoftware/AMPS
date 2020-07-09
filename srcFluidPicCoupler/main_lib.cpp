@@ -186,10 +186,13 @@ void readRestartData(FILE* fname){
 
 void deallocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  int iBlock=0;
+  int iBlock;
   std::vector<int> deallocatedBlockIndexArr; 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+ 
     double xmiddle[3];
     //   bool isOutside=false;
     //init flag
@@ -198,31 +201,20 @@ void deallocateBlocks(){
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
     }
     
-    if (IsOutside(xmiddle) && node->block!=NULL && node->Thread==PIC::ThisThread)  {
-      deallocatedBlockIndexArr.push_back(iBlock);
+    if (IsOutside(xmiddle) && node->block!=NULL)  {
+      deallocatedBlockIndexArr.push_back(iLocalNode);
     }
-    iBlock++;
+    //iBlock++;
   }
 
   int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
-  
-  //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
+    //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
-  iBlock=0;
-  int iDeallocatedBlock=0;
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    if (iDeallocatedBlock==nDeallocatedBlocks) break;
-    if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
-      nodeTable[iDeallocatedBlock] = node;
-      /*
-      printf("deallocating node->Thread:%d, node->min:%e,%e,%e, node->block:%p,isUsed:%s\n",
-             node->Thread,
-             node->xmin[0],node->xmin[1],node->xmin[2],node->block,
-             node->IsUsedInCalculationFlag?"T":"F");
-      */
-      iDeallocatedBlock++;
-    }
-    iBlock++;
+
+  
+  for (int iDeallocatedBlock=0;iDeallocatedBlock<nDeallocatedBlocks; iDeallocatedBlock++ ){
+    int indBlock = deallocatedBlockIndexArr[iDeallocatedBlock];
+    nodeTable[iDeallocatedBlock] = PIC::DomainBlockDecomposition::BlockTable[indBlock];
   }
   
   
@@ -240,47 +232,36 @@ void  dynamicAllocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   CumulativeTiming::DynamicAllocationTime.Start();
   int iBlock=0;
-  std::vector<int> allocatedBlockIndexArr; 
+  std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* > allocatedBlockArr; 
   printf("dynamic allocate blocks called\n");
   deallocateBlocks();
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    
+    if (node->IsUsedInCalculationFlag==true) continue;
     double xmiddle[3];
     //   bool isOutside=false;
     for (int idim=0;idim<3;idim++){
       xmiddle[idim]=(node->xmin[idim]+node->xmax[idim])/2;
     }
 
-    if (!IsOutside(xmiddle)  && node->block==NULL && node->Thread==PIC::ThisThread)  {
-      allocatedBlockIndexArr.push_back(iBlock);
+    if (!IsOutside(xmiddle)  && node->block==NULL )  {
+      allocatedBlockArr.push_back(node);
       /*
       printf("allocateBlock: thread id:%d, node->thread:%d, nodemin:%e,%e,%e\n,node->block:%p,iBlock:%d\n",
              PIC::ThisThread, node->Thread, node->xmin[0],node->xmin[1],node->xmin[2],node->block,iBlock);
       */
     }
-    iBlock++;
   }
 
-  int nAllocatedBlocks = allocatedBlockIndexArr.size();
+  int nAllocatedBlocks = allocatedBlockArr.size();
   
   //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = NULL;
   
   if (nAllocatedBlocks!=0) nodeTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nAllocatedBlocks];
 
+  for (int iBlock=0;iBlock<nAllocatedBlocks; iBlock++) nodeTable[iBlock] = allocatedBlockArr[iBlock];
 
-
-  iBlock=0;
-  int iAllocatedBlock=0;
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    if (iAllocatedBlock==nAllocatedBlocks) break;
-    if (iBlock==allocatedBlockIndexArr[iAllocatedBlock]) {
-      nodeTable[iAllocatedBlock] = node;
-      iAllocatedBlock++;
-    }
-    iBlock++;
-  }
 
   //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
@@ -1909,6 +1890,7 @@ void amps_init_mesh() {
   }
   PIC::Mesh::mesh.memoryAllocationReport();
 
+  /*
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
 
@@ -1949,7 +1931,8 @@ void amps_init_mesh() {
       system(command);
     }
   }
-
+  */
+  PIC::Mesh::mesh.buildMesh();
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   PIC::Mesh::initCellSamplingDataBuffer();
@@ -1998,8 +1981,8 @@ void amps_init_mesh() {
   */
 
   if (_PIC_DYNAMIC_ALLOCATING_BLOCKS_== _PIC_MODE_ON_){
-    int iBlock=0;
-    std::vector<int> deallocatedBlockIndexArr; 
+   
+    std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> deallocatedBlockArr; 
     for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       
       double xmiddle[3];
@@ -2011,25 +1994,19 @@ void amps_init_mesh() {
       }
     
       if (IsOutside_init(xmiddle))  {
-        deallocatedBlockIndexArr.push_back(iBlock);
+        deallocatedBlockArr.push_back(node);
       }
-      iBlock++;
     }
 
-    int nDeallocatedBlocks = deallocatedBlockIndexArr.size();
+    int nDeallocatedBlocks = deallocatedBlockArr.size();
   
     //printf("thread id:%d, num of deallocated blks:%d\n",PIC::ThisThread, nDeallocatedBlocks);
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** nodeTable = new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nDeallocatedBlocks];
-    iBlock=0;
+  
     int iDeallocatedBlock=0;
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-      if (iDeallocatedBlock==nDeallocatedBlocks) break;
-      if (iBlock==deallocatedBlockIndexArr[iDeallocatedBlock]) {
-        nodeTable[iDeallocatedBlock] = node;
-        iDeallocatedBlock++;
-      }
-      iBlock++;
-    }
+    for (int iDeallocatedBlock=0;iDeallocatedBlock<nDeallocatedBlocks; iDeallocatedBlock++)
+      nodeTable[iDeallocatedBlock]=  deallocatedBlockArr[iDeallocatedBlock];
+    
   
   
     if (nDeallocatedBlocks!=0) {
