@@ -106,6 +106,7 @@ PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateETime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime(_PIC_TIMER_MODE_HRES_);
+PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateJMassMatrixTime_MPI(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalRunTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::TotalMatvecTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime(_PIC_TIMER_MODE_HRES_);
@@ -1577,7 +1578,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   long int LocalCellNumber;    
 
   CumulativeTiming::UpdateJMassMatrixTime.Start();
-
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
+  
   double ParticleEnergy=0.0;
   double cfl_process[PIC::nTotalSpecies];
   for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) cfl_process[iSp]=0.0;
@@ -3281,6 +3283,8 @@ copy_lock.clear(std::memory_order_release);
   for (int s=0;s<PIC::nTotalSpecies;s++) delete [] cflTable[s];
 
   delete [] cflTable;
+
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.UpdateTimer();
 
 }
 
