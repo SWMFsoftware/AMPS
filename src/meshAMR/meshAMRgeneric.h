@@ -11206,7 +11206,7 @@ if (TmpAllocationCounter==2437) {
         }  
 
         //increment the processor number if needed
-        if ((CumulativeProcessorLoad>1.1+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
+        if ((CumulativeProcessorLoad>1.0+1e-9+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
           nCurrentProcessorBalancing++;
           ThreadStartNode[nCurrentProcessorBalancing]=CurveNode;
         }
