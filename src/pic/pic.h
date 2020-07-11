@@ -6442,6 +6442,7 @@ namespace FieldSolver {
             //timing of the solver execution
             namespace CumulativeTiming {
               extern Debugger::cTimer UpdateJMassMatrixTime;
+	      extern Debugger::cTimer UpdateJMassMatrixTime_MPI; 
               extern Debugger::cTimer SolveTime; 
               extern Debugger::cTimer UpdateBTime; 
               extern Debugger::cTimer UpdateETime; 

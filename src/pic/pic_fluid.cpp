@@ -93,7 +93,7 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
 
 void PIC::CPLR::FLUID::GetCornerPointNumber(int *nCornerPoints) {
   int thread,i,j,k;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCornerNode *corner;
 
@@ -101,7 +101,10 @@ void PIC::CPLR::FLUID::GetCornerPointNumber(int *nCornerPoints) {
 
   nBlockProc = 0; 
   //count the number of the corner points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+
     if(!isTrueBlock(node) || !node->block) continue;
     block=node->block;
     nBlockProc++; 
@@ -120,14 +123,17 @@ void PIC::CPLR::FLUID::GetCornerPointNumber(int *nCornerPoints) {
 
 void PIC::CPLR::FLUID::GetCornerPointCoordinates(double *x) {
   int thread,i,j,k,cnt=0;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCornerNode *corner;
   
   int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
   //get coordinated of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+
     if(!isTrueBlock(node) || !node->block) continue;
     block=node->block;
         
@@ -170,10 +176,13 @@ void PIC::CPLR::FLUID::ReceiveCornerPointData(char* ValiableList, int nVarialbes
   int BlockSize_D[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};  
 
   int iBlock = 0; 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;   
+  //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;   
   double * xMin, *xMax; 
   
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+    
     if(!isTrueBlock(node) || !node->block) continue;
     xMin = node->xmin; // The ghost cells are excluded.
     xMax = node->xmax; 
@@ -559,18 +568,23 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCornerNode *corner;
-  int iBlock=0;
+  int iBlock=0, iLocalNode=-1;
 
   double xMinL_I[3] = {PIC::Mesh::mesh.xGlobalMax[0],PIC::Mesh::mesh.xGlobalMax[1],PIC::Mesh::mesh.xGlobalMax[2]};
   double xMaxL_I[3] = {PIC::Mesh::mesh.xGlobalMin[0],PIC::Mesh::mesh.xGlobalMin[1],PIC::Mesh::mesh.xGlobalMin[2]};
-
-  //  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {                                        
+  
+  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];      
+    //for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {                                        
+    bool isAllocated=false;
+    if (node->IsUsedInCalculationFlag==true) {
+      iLocalNode++;
+      isAllocated=true;
+    }
+    //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];      
     //if(!isTrueBlock(node) || !node->block) continue;
     if(!isTrueBlock(node)) continue;
-    block=node->block;
+   
     double dx[3];
     for (int idim=0;idim<3;idim++)
       dx[idim]= (node->xmax[idim]-node->xmin[idim])/nCells[idim];
@@ -595,8 +609,10 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
           xp = xTemp[0], yp = xTemp[1],zp = xTemp[2];
           
           if (writerIn.is_inside_plot_region(index_G[0], index_G[1], index_G[2], xp, yp, zp)) {
+	    int iBlockIn=-2;
+	    if (isAllocated) iBlockIn = iLocalNode;
             pointList_II.push_back({{(double)i, (double)j, (double)k,    xp,
-                    yp,         zp,         (double)iLocalNode} });          
+                    yp,         zp,         (double)iBlockIn} });          
           
             if (xp < xMinL_I[0])
               xMinL_I[0] = xp;
@@ -617,7 +633,7 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
 	  // Look for IPIC3D2/src/main/iPic3Dlib.cpp:line1784 for reference.
 
         }
-    }
+    }    
   }
 
   long nPointLocal = pointList_II.size();
@@ -645,7 +661,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
   //std::cout<<nameSub<<" is called"<<std::endl;
 
   bool isCoord = false;
-  int ix_=0, iy_=1, iz_=2, iBlk_=6;
+  int ix_=0, iy_=1, iz_=2,ixx_=3,iyy_=4,izz_=5, iBlk_=6;
   int ix, iy, iz, iBlock; 
 
   long nPoint = pointList_II.size();
@@ -658,18 +674,24 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
     iz = pointList_II[iPoint][iz_];
     iBlock = pointList_II[iPoint][iBlk_];
    
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::DomainBlockDecomposition::BlockTable[iBlock];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
+    if (iBlock>=0) node=PIC::DomainBlockDecomposition::BlockTable[iBlock];
 
 
     double xPoint[3];
-    xPoint[0] =node->xmin[0]+(node->xmax[0]-node->xmin[0])/nCells[0]*ix;
-    xPoint[1] =node->xmin[1]+(node->xmax[1]-node->xmin[1])/nCells[1]*iy;
-    xPoint[2] =node->xmin[2]+(node->xmax[2]-node->xmin[2])/nCells[2]*iz;
-    
+    if (iBlock>=0){
+      xPoint[0] =node->xmin[0]+(node->xmax[0]-node->xmin[0])/nCells[0]*ix;
+      xPoint[1] =node->xmin[1]+(node->xmax[1]-node->xmin[1])/nCells[1]*iy;
+      xPoint[2] =node->xmin[2]+(node->xmax[2]-node->xmin[2])/nCells[2]*iz;
+    }else{
+      xPoint[0]=pointList_II[iPoint][ixx_];
+      xPoint[1]=pointList_II[iPoint][iyy_];
+      xPoint[2]=pointList_II[iPoint][izz_];
+    }
 
     PIC::InterpolationRoutines::CellCentered::cStencil CenterStencil(false);
 
-    if (node->block){
+    if (node){
       //interpolate the magnetic field from center nodes to particle location                       
        
       
@@ -713,10 +735,12 @@ void PIC::CPLR::FLUID::fix_plasma_node_boundary(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
 
-    if (!node->block) continue;
-        
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+      
+    if (!node->block) continue;        
     double dx[3];
     double *xminBlock= node->xmin, *xmaxBlock= node->xmax;
        

@@ -1682,7 +1682,10 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
 void PIC::Mesh::SetCornerNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
@@ -1709,7 +1712,10 @@ void PIC::Mesh::SetCornerNodeAssociatedDataValue(double NewValue,int ResetElemen
 void PIC::Mesh::SetCenterNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=-1;i<_BLOCK_CELLS_X_+1;i++) for (j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
