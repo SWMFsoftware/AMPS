@@ -934,6 +934,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
     MPI_Isend(x,1,unknown_vector_type_table[To],To,0,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
 
+    MPI_Type_free(unknown_vector_type_table+To); 
     SendRequestTableLength++;
   }
 

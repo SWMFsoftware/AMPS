@@ -197,6 +197,8 @@ void PIC::Parallel::ExchangeParticleData() {
 
     MPI_Isend(PIC::ParticleBuffer::ParticleDataBuffer,1,particle_send_type,To,12,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequest);
 
+    MPI_Type_free(&particle_send_type);
+
     delete [] length_table;
     delete [] offset_table;
   };
