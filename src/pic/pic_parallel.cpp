@@ -126,12 +126,13 @@ void PIC::Parallel::ExchangeParticleData() {
 
   
 
-  auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<int> *SendParticleList,int& nTotalSendParticles,int To) {
+  auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<MPI_Aint> *SendParticleList,int& nTotalSendParticles,int To) {
     int npart,SendSellNumber=0;
     long int *FirstCellParticleTable;
     bool block_header_saved,cell_header_saved; 
 
     cMessageDescriptorList p;
+    MPI_Aint particle_data;
 
     nTotalSendParticles=0;
 
@@ -150,7 +151,8 @@ void PIC::Parallel::ExchangeParticleData() {
             SendSellNumber++;
 
             while (Particle!=-1) {
-              SendParticleList->push_back(Particle);
+              MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer+PIC::ParticleBuffer::GetParticleDataOffset(Particle),&particle_data); 
+              SendParticleList->push_back(particle_data);
 
               p.nTotalParticles++;
               nTotalSendParticles++;
@@ -179,27 +181,23 @@ void PIC::Parallel::ExchangeParticleData() {
   };
 
 
-  auto InitSendParticleData = [&] (int To,int nTotalSendParticles,list<int> *SendParticleList,MPI_Request *SendParticleDataRequest) { 
-    int *length_table=new int [nTotalSendParticles];
-    int *offset_table=new int [nTotalSendParticles];
+  auto InitSendParticleData = [&] (int To,int nTotalSendParticles,list<MPI_Aint> *SendParticleList,MPI_Request *SendParticleDataRequest) { 
+    MPI_Aint *offset_table=new MPI_Aint [nTotalSendParticles];
     int iptr;
-    list<int>::iterator it;
+    list<MPI_Aint>::iterator it;
 
     for (iptr=0,it=SendParticleList->begin();it!=SendParticleList->end();it++,iptr++) {
-      length_table[iptr]=PIC::ParticleBuffer::ParticleDataLength;
-      offset_table[iptr]=*it*PIC::ParticleBuffer::ParticleDataLength; 
+      offset_table[iptr]=*it; 
     }
        
     MPI_Datatype particle_send_type;
 
-    MPI_Type_indexed(nTotalSendParticles,length_table,offset_table,MPI_BYTE,&particle_send_type);
+    MPI_Type_create_hindexed_block(nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(long int),offset_table,MPI_BYTE,&particle_send_type);
     MPI_Type_commit(&particle_send_type);
 
-    MPI_Isend(PIC::ParticleBuffer::ParticleDataBuffer,1,particle_send_type,To,12,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequest);
+    MPI_Isend(MPI_BOTTOM,1,particle_send_type,To,12,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequest);
 
     MPI_Type_free(&particle_send_type);
-
-    delete [] length_table;
     delete [] offset_table;
   };
 
@@ -230,7 +228,7 @@ void PIC::Parallel::ExchangeParticleData() {
     }
   };
 
-  auto UnpackRecvParticleBuffer = [&] (int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable,PIC::ParticleBuffer::byte *ParticleDataBuffer) {
+  auto InitNewParticles = [&] (int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable,list<MPI_Aint> *RecvParticleList) {
     int icell,i,j,k;
     int ptr_cnt,new_particle;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
@@ -238,6 +236,7 @@ void PIC::Parallel::ExchangeParticleData() {
     cMessageDescriptorList *p;
     int particle_data_buffer_offset=0;
 
+    MPI_Aint particle_data;
 
     for (icell=0;icell<nTotalSendCells;icell++) {
       if ((node==NULL)||(node_id!=MessageDescriptorTable[icell].node_id)) { 
@@ -249,8 +248,9 @@ void PIC::Parallel::ExchangeParticleData() {
 
       for (ptr_cnt=0;ptr_cnt<p->nTotalParticles;ptr_cnt++) {  
         new_particle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[p->iCell+_BLOCK_CELLS_X_*(p->jCell+_BLOCK_CELLS_Y_*p->kCell)],true);  
-        PIC::ParticleBuffer::CloneParticle(PIC::ParticleBuffer::GetParticleDataPointer(new_particle),ParticleDataBuffer+particle_data_buffer_offset);   
-        particle_data_buffer_offset+=PIC::ParticleBuffer::ParticleDataLength;
+
+        MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer+PIC::ParticleBuffer::GetParticleDataOffset(new_particle),&particle_data);
+        RecvParticleList->push_back(particle_data);
       }
    }
  }; 
@@ -267,7 +267,7 @@ void PIC::Parallel::ExchangeParticleData() {
   //send send_descriptor and particle data
   for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
     int i,n_sent_cells,nTotalSendParticles;
-    list<int> SendParticleList;
+    list<MPI_Aint> SendParticleList;
     list<cMessageDescriptorList> MessageDescriptorList;
 
     n_sent_cells=PrepareMessageDescriptorTable(&MessageDescriptorList,&SendParticleList,nTotalSendParticles,To); 
@@ -317,7 +317,12 @@ void PIC::Parallel::ExchangeParticleData() {
 
   //recive the particle data
   MPI_Request RecvRequestMessageDescriptorTable[PIC::nTotalThreads];
+  int RecvRequestMessageDescriptorTableLength=0;
+
   MPI_Request RecvRequestParticleDataTable[PIC::nTotalThreads];
+  int RecvRequestParticleDataTableLength=0;
+
+
   int RecvRequestTableLength=0;
   int nRecvPackages=0;
 
@@ -335,11 +340,13 @@ void PIC::Parallel::ExchangeParticleData() {
     RecvMessageDescriptorFlagTable[thread]=false,RecvParticleDataFlagTable[thread]=false;
   }
 
-  while ((RecvRequestDataInfoTableLength!=0)||(nRecvPackages!=0)) {
+  int MessageDescriptorWaiting=0;
+
+  while ((RecvRequestDataInfoTableLength!=0)||(MessageDescriptorWaiting!=0)) {
     if (RecvRequestDataInfoTableLength!=0) {
       MPI_Testany(RecvRequestDataInfoTableLength,RecvRequestDataInfoTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
-      if (flag==true) {
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
         int From=RecvDataInfoMap[iFrom];
 
         MPI_Wait(RecvRequestDataInfoTable+iFrom,MPI_STATUS_IGNORE); 
@@ -353,38 +360,53 @@ void PIC::Parallel::ExchangeParticleData() {
           RecvMessageDescriptorTable[From]=new cMessageDescriptorList[RecvDataInfo[From].nTotalSendCells];
           RecvParticleDataBuffer[From]=new PIC::ParticleBuffer::byte[PIC::ParticleBuffer::ParticleDataLength*RecvDataInfo[From].nTotalSendParticles];
 
-          RecvParticleDataMap[RecvRequestTableLength]=From;
+          RecvParticleDataMap[RecvRequestMessageDescriptorTableLength]=From;
 
-          MPI_Irecv(RecvMessageDescriptorTable[From],RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList),MPI_BYTE,From,10,MPI_GLOBAL_COMMUNICATOR,RecvRequestMessageDescriptorTable+RecvRequestTableLength);
-          MPI_Irecv(RecvParticleDataBuffer[From],PIC::ParticleBuffer::ParticleDataLength*RecvDataInfo[From].nTotalSendParticles,MPI_BYTE,From,12,MPI_GLOBAL_COMMUNICATOR,RecvRequestParticleDataTable+RecvRequestTableLength);
-
-          RecvRequestTableLength++;
-          nRecvPackages++;
+          MPI_Irecv(RecvMessageDescriptorTable[From],RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList),MPI_BYTE,From,10,MPI_GLOBAL_COMMUNICATOR,RecvRequestMessageDescriptorTable+RecvRequestMessageDescriptorTableLength);
+          RecvRequestMessageDescriptorTableLength++;
+          MessageDescriptorWaiting++;
         } 
       }
     }
 
-    MPI_Testany(RecvRequestTableLength,RecvRequestParticleDataTable,&iFrom,&flag,MPI_STATUS_IGNORE);
-    if (flag==true) RecvParticleDataFlagTable[iFrom]=true;
 
-    MPI_Testany(RecvRequestTableLength,RecvRequestMessageDescriptorTable,&iFrom,&flag,MPI_STATUS_IGNORE);
-    if (flag==true) RecvMessageDescriptorFlagTable[iFrom]=true;
-       
-    //check if anything can be unpacked 
-    for (int iFrom=0;iFrom<PIC::Mesh::mesh.nTotalThreads;iFrom++) if ((RecvParticleDataFlagTable[iFrom]==true)&&(RecvMessageDescriptorFlagTable[iFrom]==true)) {
-      //unpack particle data 
-      UnpackRecvParticleBuffer(RecvDataInfo[RecvParticleDataMap[iFrom]].nTotalSendCells,RecvMessageDescriptorTable[RecvParticleDataMap[iFrom]],RecvParticleDataBuffer[RecvParticleDataMap[iFrom]]); 
+    if (RecvRequestMessageDescriptorTableLength!=0) {
+      MPI_Testany(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
-      RecvParticleDataFlagTable[iFrom]=false;
-      RecvMessageDescriptorFlagTable[iFrom]=false;
-      nRecvPackages--;
-    } 
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
+        int From=RecvParticleDataMap[iFrom];
+        list<MPI_Aint> RecvParticleList;
+
+        MessageDescriptorWaiting--;
+
+        InitNewParticles(RecvDataInfo[From].nTotalSendCells,RecvMessageDescriptorTable[From],&RecvParticleList);  
+
+        MPI_Aint *offset_table=new MPI_Aint [RecvDataInfo[From].nTotalSendParticles];
+        int iptr;
+        list<MPI_Aint>::iterator it;
+
+        for (iptr=0,it=RecvParticleList.begin();it!=RecvParticleList.end();it++,iptr++) {
+          offset_table[iptr]=*it;
+        }
+
+        MPI_Datatype particle_send_type;
+
+        MPI_Type_create_hindexed_block(RecvDataInfo[From].nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(long int),offset_table,MPI_BYTE,&particle_send_type);
+        MPI_Type_commit(&particle_send_type);
+
+        MPI_Irecv(MPI_BOTTOM,1,particle_send_type,From,12,MPI_GLOBAL_COMMUNICATOR,RecvRequestParticleDataTable+RecvRequestParticleDataTableLength);
+        RecvRequestParticleDataTableLength++;  
+
+        MPI_Type_free(&particle_send_type);
+        delete [] offset_table;
+      } 
+    }
   }
   
 
   //wait for completing recv operation (clean memory used by MPI) 
-  MPI_Waitall(RecvRequestTableLength,RecvRequestParticleDataTable,MPI_STATUSES_IGNORE);
-  MPI_Waitall(RecvRequestTableLength,RecvRequestMessageDescriptorTable,MPI_STATUSES_IGNORE); 
+  MPI_Waitall(RecvRequestParticleDataTableLength,RecvRequestParticleDataTable,MPI_STATUSES_IGNORE);
+  MPI_Waitall(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,MPI_STATUSES_IGNORE); 
 
   //wait for completing send operations 
   MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
