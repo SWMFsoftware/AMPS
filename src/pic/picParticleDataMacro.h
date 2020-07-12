@@ -16,17 +16,21 @@
 
 // SET OF MANDATORY PARAMETERS CARRIED BY A PARTICLE
 //-----------------------------------------------------------------------------
-// Mandatory parameter: species ID
-#define _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_ 0
 // Mandatory parameter: next particle in the stack
-#define _PIC_PARTICLE_DATA__NEXT_OFFSET_ \
-    (_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_ + sizeof(unsigned char))
+#define _PIC_PARTICLE_DATA__NEXT_OFFSET_ 0 
 // Mandatory parameter: prev particle in the stack
 #define _PIC_PARTICLE_DATA__PREV_OFFSET_ \
     (_PIC_PARTICLE_DATA__NEXT_OFFSET_ + sizeof(long int))
+
+// Mandatory parameter: species ID
+#define _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_ \
+  (_PIC_PARTICLE_DATA__PREV_OFFSET_ + sizeof(long int)) 
+
+
 // Mandatory parameter: velocity of a particle
 #define _PIC_PARTICLE_DATA__VELOCITY_OFFSET_ \
-    (_PIC_PARTICLE_DATA__PREV_OFFSET_ + sizeof(long int))
+    (_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_ + sizeof(unsigned char))
+
 // Mandatory parameter: position of a particle
 #define _PIC_PARTICLE_DATA__POSITION_OFFSET_ \
     (_PIC_PARTICLE_DATA__VELOCITY_OFFSET_+ 3*sizeof(double))
