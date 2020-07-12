@@ -1518,6 +1518,9 @@ public:
   //parallel mesh generation flag;
   bool ParallelMeshGenerationFlag;
 
+  //extra parallel load "window" allowed when rebalancing the parallel load 
+  double ParallelLoadEPS;
+
   //the function that calculates the interpolation coefficients to get an interpolated value for the block's nodes
   //return the number of the interpolation coefficients that was used in the stencil. if the return value <=0 -> the operation is not succesful
   typedef int (*cGetCornerNodesInterpolationCoefficients)(double *x,double *CoefficientsList,cCornerNode **InterpolationStencil,cTreeNodeAMR<cBlockAMR>* startNode,int nMaxCoefficients);
@@ -2334,6 +2337,10 @@ public:
      GetCenterNodesInterpolationCoefficients=NULL;
      GetCornerNodesInterpolationCoefficients=NULL;
      localResolution=NULL;
+
+     //extra parallel load "window" allowed when rebalancing the parallel load 
+     ParallelLoadEPS=0.1;
+
 
      //user-defined criterion for node splitting
      UserNodeSplitCriterion=NULL;
@@ -11206,7 +11213,7 @@ if (TmpAllocationCounter==2437) {
         }  
 
         //increment the processor number if needed
-        if ((CumulativeProcessorLoad>1.0+1e-9+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
+        if ((CumulativeProcessorLoad>1.0+ParallelLoadEPS+nCurrentProcessorBalancing)&&(nCurrentProcessorBalancing!=nTotalThreads-1)&&(CumulativeThreadLoad[nCurrentProcessorBalancing]>0.0)) {
           nCurrentProcessorBalancing++;
           ThreadStartNode[nCurrentProcessorBalancing]=CurveNode;
         }
