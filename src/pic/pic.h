@@ -1618,6 +1618,11 @@ namespace PIC {
     //the basic data access functions for a particle
     byte *GetParticleDataPointer(long int);
 
+    //get particle data offset (pass next ans prev)
+    inline int GetParticleDataOffset(long int ptr) {
+      return _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_+ptr*ParticleDataLength; 
+    }
+
     //check the total particles number
     void CheckParticleList();
 
