@@ -2985,203 +2985,320 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData==NULL) exit(__LINE__,__FILE__,"Error: the pointer is not allocated");
   
   
-
-
   //determine whether the mesh/domain decomposition have been changed
   static int nMeshModificationCounter=-1;
   int localMeshChangeFlag,globalMeshChangeFlag;
-  
+
   localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
   MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
 
 
+  static MPI_Datatype *send_to_process=NULL,*recv_to_process=NULL;
+  static MPI_Datatype *send_processed=NULL,*recv_processed=NULL;
+
+  static bool *send_to_process_flag=NULL,*recv_to_process_flag=NULL;
+  static bool *send_processed_flag=NULL,*recv_processed_flag=NULL;
+
+
+  if (send_to_process==NULL) {
+    globalMeshChangeFlag=1;
+
+    send_to_process=new MPI_Datatype [PIC::nTotalThreads];
+    recv_to_process=new MPI_Datatype [PIC::nTotalThreads];
+    send_processed=new MPI_Datatype [PIC::nTotalThreads];
+    recv_processed=new MPI_Datatype [PIC::nTotalThreads];
+
+
+    send_to_process_flag=new bool  [PIC::nTotalThreads];
+    recv_to_process_flag=new bool [PIC::nTotalThreads];
+    send_processed_flag=new bool [PIC::nTotalThreads];
+    recv_processed_flag=new bool [PIC::nTotalThreads];
+
+    for (int t=0;t<PIC::nTotalThreads;t++) {
+      send_to_process_flag[t]=false,recv_to_process_flag[t]=false,send_processed_flag[t]=false,recv_processed_flag[t]=false;
+    }
+  }
+
+  bool InitMPItype=false;
+
+
   if (globalMeshChangeFlag!=0) {
+
+    InitMPItype=true;
+
+    for (int t=0;t<PIC::nTotalThreads;t++) {
+      if (send_to_process_flag[t]==true) {
+        MPI_Type_free(send_to_process+t);
+        send_to_process_flag[t]=false;
+      }
+
+      if (recv_to_process_flag[t]==true) {
+        MPI_Type_free(recv_to_process+t); 
+        recv_to_process_flag[t]=false;
+      }
+
+
+      if (send_processed_flag[t]==true) {
+        MPI_Type_free(send_processed+t); 
+        send_processed_flag[t]=false;
+      }
+
+
+      if (recv_processed_flag[t]==true) {
+        MPI_Type_free(recv_processed+t); 
+        recv_processed_flag[t]=false;
+      }
+    }
+
+
+    cStencilData *ptrStencil=StencilList;
+
+    while (ptrStencil!=NULL) {
+      DeallocateStencilDataBuffers(ptrStencil);
+
+      ptrStencil=ptrStencil->next;
+    }
+
+
     //if the mesh has changed -> build the table
     ResetCornerNodeProcessedFlag();
-  
+
     ReservePeriodicBCFlags();
     ResetPeriodicBCFlags(PIC::Mesh::mesh.rootTree);
-    
+
     //evalaute the size of the global data buffers
     GlobalContributingThreadTableLength=0;
     GlobalCornerNodeAssociatedDataPointerTableLength=0;
-    
+
     if (GlobalCornerNodeAssociatedDataPointerTable!=NULL) {
       delete [] GlobalCornerNodeAssociatedDataPointerTable;
       delete [] GlobalContributingThreadTable;
       delete [] GlobalMPI_StatusTable;
       delete [] GlobalMPI_RequestTable;
-      
+
       GlobalCornerNodeAssociatedDataPointerTable=NULL,GlobalContributingThreadTable=NULL,GlobalMPI_StatusTable=NULL,GlobalMPI_RequestTable=NULL;
     }
 
     BuildStencilTable(PIC::Mesh::mesh.rootTree,false);
-    
+
     //allocate the global data buffers
     GlobalCornerNodeAssociatedDataPointerTable=new char* [GlobalCornerNodeAssociatedDataPointerTableLength];
     GlobalContributingThreadTable=new int [GlobalContributingThreadTableLength];
     GlobalMPI_StatusTable=new MPI_Status [GlobalContributingThreadTableLength];
     GlobalMPI_RequestTable=new MPI_Request [GlobalContributingThreadTableLength];
-    
+
     //generate the stencil table
     GlobalContributingThreadTableLength=0;
     GlobalCornerNodeAssociatedDataPointerTableLength=0;
-    
+
     ResetCornerNodeProcessedFlag();
     BuildStencilTable(PIC::Mesh::mesh.rootTree,true);
     ReleasePeriodicBCFlags();
   }
-  
+
   //perform communication
   cStencilData *ptrStencil=StencilList,*p;
   int i,iStencilOffset,iS,iStencilStart,iStencilEnd,iStencil,iStencilBlock,iStencilBlockMax;
-  
+
   const int StencilBlockSize=100;
   cStencilData *StencilBlock[StencilBlockSize];
-  
-  
-  for (iStencilBlock=0;iStencilBlock*StencilBlockSize<nTotalStencils;iStencilBlock++) {
-    for (iS=0;iS<StencilBlockSize;iS++) StencilBlock[iS]=NULL;
-    
-    iStencilOffset=iStencilBlock*StencilBlockSize;
-    iStencilBlockMax=iStencilOffset+StencilBlockSize;
-    
-    
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    
-    if (iStencilBlockMax>=nTotalStencils) iStencilBlockMax=nTotalStencils;
-    
-    if (ptrStencil!=NULL) {
-      do {
-        if (ptrStencil->iStencil<iStencilBlockMax) {
-          StencilBlock[ptrStencil->iStencil-iStencilOffset]=ptrStencil;
-        }
-        else break;
-        
-        ptrStencil=ptrStencil->next;
-      }
-      while (ptrStencil!=NULL);
-    }
-    
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    
-    //begin processing stencils
-    for (iS=0;iS<StencilBlockSize;iS++) if ((p=StencilBlock[iS])!=NULL) {
+
+
+  //begin processing stencils
+  list<MPI_Aint> RecvToProcess[PIC::nTotalThreads],SendToProcess[PIC::nTotalThreads];
+  list<MPI_Aint> RecvProcessed[PIC::nTotalThreads],SendProcessed[PIC::nTotalThreads];
+  MPI_Aint data_ptr;
+
+  ptrStencil=StencilList;
+
+  if (InitMPItype==true) {
+    while (ptrStencil!=NULL) {
+
+      p=ptrStencil;
+      ptrStencil=ptrStencil->next;
+
       AllocateStencilDataBuffers(p);
       ProcessLocalStencilData(p);
 
-
       if (p->ProcessingThread==PIC::ThisThread) {
         for (int i=0;i<p->ContributingThreadTableLength;i++) {
-          MPI_Recv(p->RecvDataBuffer[i],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_CHAR,p->ContributingThreadTable[i],0,MPI_GLOBAL_COMMUNICATOR,p->Status);
-        }
 
-        ProcessMpiStencilData(p);
+          MPI_Get_address(p->RecvDataBuffer[i],&data_ptr);
+          RecvToProcess[p->ContributingThreadTable[i]].push_back(data_ptr);
+        }
 
         for (int i=0;i<p->ContributingThreadTableLength;i++) {
-          MPI_Send(p->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_CHAR,p->ContributingThreadTable[i],0,MPI_GLOBAL_COMMUNICATOR);
-        }
-
-        for (int i=1;i<p->CornerNodeAssociatedDataPointerTableLength;i++) {
-          PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(p->CornerNodeAssociatedDataPointerTable[i],p->CornerNodeAssociatedDataPointerTable[0]);
+          MPI_Get_address(p->CornerNodeAssociatedDataPointerTable[0],&data_ptr);
+          SendProcessed[p->ContributingThreadTable[i]].push_back(data_ptr);
         }
       }
       else {
-        MPI_Send(p->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_CHAR,p->ProcessingThread,0,MPI_GLOBAL_COMMUNICATOR);
-        MPI_Recv(p->Accumulator,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_CHAR,p->ProcessingThread,0,MPI_GLOBAL_COMMUNICATOR,p->Status);
+        MPI_Get_address(p->CornerNodeAssociatedDataPointerTable[0],&data_ptr);
+        SendToProcess[p->ProcessingThread].push_back(data_ptr);
 
-        for (int i=0;i<p->CornerNodeAssociatedDataPointerTableLength;i++) {
-          PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(p->CornerNodeAssociatedDataPointerTable[i],p->Accumulator);
-        }
-      }
-
-
-      DeallocateStencilDataBuffers(p);
-    }
-
-
-
-/*    for (iS=0;iS<StencilBlockSize;iS++) if ((p=StencilBlock[iS])!=NULL) {
-      AllocateStencilDataBuffers(p);
-      p->SendCompleted=false;
-      p->RecvCompleted=false;
-
-      //process the local data
-      ProcessLocalStencilData(p);
-
-      if (p->ProcessingThread==PIC::ThisThread) {
-        //initiate recieving data from other MPI processes
-        InitRecvProcessedLocalStencilData(p,iS);
-      }
-      else {
-        //initiate send of the processed local data to the processing thread
-        InitSendProcessedLocalStencilData(p,iS);
-        
-        //initiate revieving of the processed data
-        InitRecvProcessedStencilData(p,iS);
+        MPI_Get_address(p->Accumulator,&data_ptr);
+        RecvProcessed[p->ProcessingThread].push_back(data_ptr);
       }
     }
-    
-    //collect all MPI data by the processing thread
-    bool CommunicationComplete;
-    
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    
-    do {
-      CommunicationComplete=true;
-      
-      for (iS=0;iS<StencilBlockSize;iS++) if ((p=StencilBlock[iS])!=NULL) {
-        if (p->ProcessingThread==PIC::ThisThread) {
-          //test whether all data was recieved
-          if (p->RecvCompleted==false) {
-            if (TestRecvProcessedLocalStencilData(p)==true) {
-              //the data was recieved: process it and init send back
-              ProcessMpiStencilData(p);
-              
-              //Scatter the data
-              ScatterProcessedStencilData(p,iS);
-            }
-            else CommunicationComplete=false;
-          }
-        }
-        else {
-          //test whether the processed data is recieved
-          if (p->RecvCompleted==false) {
-            if (TestRecvProcessedStencilData(p)==true) {
-              //the processed data was recieved and distributed: deallocate the buffers
-              DeallocateStencilDataBuffers(p);
-              StencilBlock[iS]=NULL;
-            }
-            else CommunicationComplete=false;
-          }
-        }
-      }
-      
-      //verify that all scattering operations are completed
-      for (iS=0;iS<StencilBlockSize;iS++) if ((p=StencilBlock[iS])!=NULL) {
-        if (p->ProcessingThread==PIC::ThisThread) {
-          if ((p->SendCompleted==false)&&(p->RecvCompleted==true)) {
-            if (TestScatterProcessedStencilData(p)==true) {
-              //communication is completed: deallocate the buffer
-              DeallocateStencilDataBuffers(p);
-              StencilBlock[iS]=NULL;
-            }
-            else CommunicationComplete=false;
-          }
-          
-        }
-      }
+  } else {
+    while (ptrStencil!=NULL) {
+      ProcessLocalStencilData(ptrStencil);
+      ptrStencil=ptrStencil->next;
     }
-    while (CommunicationComplete==false);
-    
-    
-    for (iS=0;iS<StencilBlockSize;iS++) if (StencilBlock[iS]!=NULL) exit(__LINE__,__FILE__,"Error: something is not deallocated");*/
-
-    
-    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
-  
-  
-  
+
+  //create the data type
+  MPI_Aint *offset_table;
+  int cnt;
+  list<MPI_Aint>::iterator it;
+
+
+  if (InitMPItype==true) {
+    for (int To=0;To<PIC::nTotalThreads;To++) if (PIC::ThisThread!=To) {
+      int size=SendToProcess[To].size();
+
+      if (size>0) {
+        send_to_process_flag[To]=true;
+
+        offset_table=new MPI_Aint [size];
+
+        for (cnt=0,it=SendToProcess[To].begin();it!=SendToProcess[To].end();it++,cnt++) offset_table[cnt]=*it;
+
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,send_to_process+To);
+
+        MPI_Type_commit(send_to_process+To);
+        delete [] offset_table;
+      }
+    }
+
+    for (int To=0;To<PIC::nTotalThreads;To++) if (PIC::ThisThread!=To) {
+      int size=SendProcessed[To].size();
+
+      if (size>0) {
+        send_processed_flag[To]=true;
+
+        offset_table=new MPI_Aint [size];
+
+        for (cnt=0,it=SendProcessed[To].begin();it!=SendProcessed[To].end();it++,cnt++) offset_table[cnt]=*it;
+
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,send_processed+To);
+
+        MPI_Type_commit(send_processed+To);
+        delete [] offset_table;
+      }
+    }
+
+    for (int From=0;From<PIC::nTotalThreads;From++) if (PIC::ThisThread!=From) {
+      int size=RecvToProcess[From].size();
+
+      if (size>0) {
+        recv_to_process_flag[From]=true;
+
+        offset_table=new MPI_Aint [size];
+
+        for (cnt=0,it=RecvToProcess[From].begin();it!=RecvToProcess[From].end();it++,cnt++) offset_table[cnt]=*it;
+
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_to_process+From);
+
+        MPI_Type_commit(recv_to_process+From);
+        delete [] offset_table;
+      }
+    }
+
+    for (int From=0;From<PIC::nTotalThreads;From++) if (PIC::ThisThread!=From) {
+      int size=RecvProcessed[From].size();
+
+      if (size>0) {
+        recv_processed_flag[From]=true;
+
+        offset_table=new MPI_Aint [size];
+
+        for (cnt=0,it=RecvProcessed[From].begin();it!=RecvProcessed[From].end();it++,cnt++) offset_table[cnt]=*it;
+
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_processed+From);
+
+        MPI_Type_commit(recv_processed+From);
+        delete [] offset_table;
+      }
+    }
+  }
+
+  MPI_Request SendRequestTable[2*PIC::nTotalThreads];
+  int SendRequestTableLength=0;
+
+  MPI_Request RecvRequestTable[2*PIC::nTotalThreads];
+  int RecvRequestTableLength=0;
+
+
+  //send data to process
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    if (send_to_process_flag[thread]==true) {
+      MPI_Isend(MPI_BOTTOM,1,send_to_process[thread],thread,10,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+      SendRequestTableLength++;
+
+      //MPI_Type_free(send_to_process+thread);
+    }
+
+    if (recv_to_process_flag[thread]==true) {
+      MPI_Irecv(MPI_BOTTOM,1,recv_to_process[thread],thread,10,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvRequestTableLength);
+      RecvRequestTableLength++;
+
+      //MPI_Type_free(recv_to_process+thread);
+    }
+  }
+
+  MPI_Waitall(RecvRequestTableLength,RecvRequestTable,MPI_STATUSES_IGNORE);
+  RecvRequestTableLength=0;
+
+  //process data
+  ptrStencil=StencilList;
+
+
+  while (ptrStencil!=NULL) {
+    p=ptrStencil;
+    ptrStencil=ptrStencil->next;
+
+    if (p->ProcessingThread==PIC::ThisThread) {
+      ProcessMpiStencilData(p);
+    }
+  }
+
+  //send the results
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    if (send_processed_flag[thread]==true) {
+      MPI_Isend(MPI_BOTTOM,1,send_processed[thread],thread,11,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+      SendRequestTableLength++;
+
+      // MPI_Type_free(send_processed+thread);
+    }
+
+    if (recv_processed_flag[thread]==true) {
+      MPI_Irecv(MPI_BOTTOM,1,recv_processed[thread],thread,11,MPI_GLOBAL_COMMUNICATOR,RecvRequestTable+RecvRequestTableLength);
+      RecvRequestTableLength++;
+
+      //MPI_Type_free(recv_processed+thread);
+    }
+  }
+
+  MPI_Waitall(RecvRequestTableLength,RecvRequestTable,MPI_STATUSES_IGNORE);
+  MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
+
+  ptrStencil=StencilList;
+
+  while (ptrStencil!=NULL) {
+    p=ptrStencil;
+    ptrStencil=ptrStencil->next;
+
+    if (p->ProcessingThread==PIC::ThisThread) {
+      for (int i=1;i<p->CornerNodeAssociatedDataPointerTableLength;i++) {
+        PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(p->CornerNodeAssociatedDataPointerTable[i],p->CornerNodeAssociatedDataPointerTable[0]);
+      }
+    }
+    else {
+      for (int i=0;i<p->CornerNodeAssociatedDataPointerTableLength;i++) {
+        PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData(p->CornerNodeAssociatedDataPointerTable[i],p->Accumulator);
+      }
+    }
+  }
 }
