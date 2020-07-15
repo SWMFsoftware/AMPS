@@ -2355,7 +2355,7 @@ public:
      nParallelListRedistributions=0;
 
      //the counter of any mesh modifications or rebalancing 
-     nMeshModificationCounter=0;
+     nMeshModificationCounter=1;
 
      //default value of the parallel mesh generation flag
      ParallelMeshGenerationFlag=false;
@@ -8121,7 +8121,7 @@ nMPIops++;
 
 
   void outputMeshTECPLOT(const char *fname) {
-    int nMeshModificationCounterLocal;
+    unsigned long int nMeshModificationCounterLocal;
     bool meshModifiedFlagLocal,meshModifiedFlag_CountMeshElementsLocal;
 
     //set the state of the variables before starting of the output procedure
@@ -8138,7 +8138,7 @@ nMPIops++;
   }
 
   void outputMeshDataTECPLOT(const char *fname,int DataSetnumber=-1) {
-    int nMeshModificationCounterLocal;
+    unsigned long int nMeshModificationCounterLocal;
     bool meshModifiedFlagLocal,meshModifiedFlag_CountMeshElementsLocal;
 
     //set the state of the variables before starting of the output procedure
@@ -12538,7 +12538,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     char **SendDataExchangeBuffer;
     char **RecvDataExchangeBuffer;
 
-    int LastMeshModificationIndexValue;
+    unsigned long int LastMeshModificationIndexValue;
     int nDataExchangeRounds;
     int NodeDataLength,NodeSendPerRound;
 
@@ -12555,7 +12555,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       SendNodeIDTable=NULL,RecvNodeIDTable=NULL;
       GlobalSendTable=NULL;
       SendDataExchangeBuffer=NULL,RecvDataExchangeBuffer=NULL;
-      LastMeshModificationIndexValue=-1;
+      LastMeshModificationIndexValue=0;
       NodeDataLength=-1;
       NodeSendPerRound=-1;
 
@@ -13322,21 +13322,25 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
   
     
   long int SyncMeshID() {
-    long int buffer[nTotalThreads];
+    unsigned long int buffer[nTotalThreads];
 
-    MPI_Gather(&nMeshModificationCounter,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nMeshModificationCounter,1,MPI_UNSIGNED_LONG,buffer,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
     
     if (ThisThread==0) {
       //check whether all elements in the buffer are already syncronized
       
       for (int thread=1;thread<nTotalThreads;thread++) if (buffer[thread]!=buffer[0]) {
           //mesh ID need to be syncronized
-          for (int i=1;i<nTotalThreads;i++) nMeshModificationCounter+=buffer[i];
+          unsigned long t=buffer[0]; 
+
+          for (int i=1;i<nTotalThreads;i++) if (t<buffer[i]) t=buffer[i];
+
+          nMeshModificationCounter=t+1;
           break;
         }
     }
     
-    MPI_Bcast(&nMeshModificationCounter,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Bcast(&nMeshModificationCounter,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     return nMeshModificationCounter;
   }
