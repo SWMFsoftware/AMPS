@@ -8121,7 +8121,7 @@ nMPIops++;
 
 
   void outputMeshTECPLOT(const char *fname) {
-    int nMeshModificationCounterLocal;
+    unsigned long int nMeshModificationCounterLocal;
     bool meshModifiedFlagLocal,meshModifiedFlag_CountMeshElementsLocal;
 
     //set the state of the variables before starting of the output procedure
@@ -8138,7 +8138,7 @@ nMPIops++;
   }
 
   void outputMeshDataTECPLOT(const char *fname,int DataSetnumber=-1) {
-    int nMeshModificationCounterLocal;
+    unsigned long int nMeshModificationCounterLocal;
     bool meshModifiedFlagLocal,meshModifiedFlag_CountMeshElementsLocal;
 
     //set the state of the variables before starting of the output procedure
@@ -13321,6 +13321,34 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
   }
   
     
+  long int SyncMeshID() {
+    unsigned long int buffer[nTotalThreads];
+
+    MPI_Gather(&nMeshModificationCounter,1,MPI_UNSIGNED_LONG,buffer,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    
+    if (ThisThread==0) {
+      //check whether all elements in the buffer are already syncronized
+      
+      for (int thread=1;thread<nTotalThreads;thread++) if (buffer[thread]!=buffer[0]) {
+          //mesh ID need to be syncronized
+          unsigned long t=buffer[0]; 
+
+          for (int i=1;i<nTotalThreads;i++) if (t<buffer[i]) t=buffer[i];
+
+          nMeshModificationCounter=t+1;
+          break;
+        }
+    }
+    
+    MPI_Bcast(&nMeshModificationCounter,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+
+    return nMeshModificationCounter;
+  }
+  
+  long int GetMeshID() {
+    return nMeshModificationCounter;
+  }
+  
   //Set/Remove TreeNodeActiveUseFlag
   void SetTreeNodeActiveUseFlag(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,void(*fProcessTreeNodeData)(cTreeNodeAMR<cBlockAMR>*),bool IsUsedInCalculationFlag,list<cTreeNodeAMR<cBlockAMR>*> * NewlyAllocatedNodeList) {
     cTreeNodeAMR<cBlockAMR> *node;
