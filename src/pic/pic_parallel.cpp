@@ -220,7 +220,7 @@ void PIC::Parallel::ExchangeParticleData() {
       while (ptr!=-1) {
         next=PIC::ParticleBuffer::GetNext(ptr);
 
-        PIC::ParticleBuffer::DeleteParticle(ptr);
+        PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr,true);
         ptr=next;
       }
 
