@@ -97,6 +97,9 @@ void PIC::CPLR::FLUID::GetCornerPointNumber(int *nCornerPoints) {
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCornerNode *corner;
 
+  //in case the BlockTable is not initialized yet -> init BlockTable
+  if (PIC::DomainBlockDecomposition::BlockTable==NULL) PIC::DomainBlockDecomposition::UpdateBlockTable();
+
   *nCornerPoints=0;
 
   nBlockProc = 0; 
