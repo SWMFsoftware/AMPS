@@ -4634,7 +4634,18 @@ namespace PIC {
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
 
       //interpolation functions
-      cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
+      void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil);
+
+      inline cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
+        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+        int ThreadOpenMP=omp_get_thread_num();
+        #else
+        int ThreadOpenMP=0;
+        #endif 
+
+        InitStencil(x,node,PIC::InterpolationRoutines::CornerBased::StencilTable[ThreadOpenMP]);
+        return PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
+      }
     }
 
     //cell center interpolation routines
@@ -4644,7 +4655,18 @@ namespace PIC {
 
       //types of the cell ceneterd interpolating rourines implemented in AMPS
       namespace Constant {
-        PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
+        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+
+        inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          int ThreadOpenMP=omp_get_thread_num();
+          #else
+          int ThreadOpenMP=0;
+          #endif
+
+          InitStencil(x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]); 
+          return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
+        }
       }
 
       namespace Linear {
@@ -4665,9 +4687,44 @@ namespace PIC {
         const double PrecisionCellCenter = 1.0e-3;
 
         //interpolation functions
-        PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
-        PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-        PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+        void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+
+        inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          int ThreadOpenMP=omp_get_thread_num();
+          #else
+          int ThreadOpenMP=0;
+          #endif
+
+          InitStencil(x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
+        } 
+
+        void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+
+        inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          int ThreadOpenMP=omp_get_thread_num();
+          #else
+          int ThreadOpenMP=0;
+          #endif
+ 
+          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,x,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP; 
+        }
+
+        void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+
+        inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+          int ThreadOpenMP=omp_get_thread_num();
+          #else
+          int ThreadOpenMP=0;
+          #endif
+
+          GetTriliniarInterpolationMutiBlockStencil(x,xStencilMin,xStencilMax,node,PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP]);
+          return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
+        }           
       }
 
     }

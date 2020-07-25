@@ -39,7 +39,7 @@ void PIC::InterpolationRoutines::Init() {
 }
 
 //determine stencil for the cell centered piecewise constant interpolation
-PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
   int i,j,k;
   long int nd;
   PIC::Mesh::cDataCenterNode *cell;
@@ -51,7 +51,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
   #endif
 
   //flush the stencil
-  PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].flush();
+  Stencil.flush();
 
   //find the block
   if (node==NULL) {
@@ -78,15 +78,13 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
 
   //add the cell to the stencil
   if (cell!=NULL) {
-    PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].AddCell(1.0,cell,nd);
+    Stencil.AddCell(1.0,cell,nd);
   }
   else exit(__LINE__,__FILE__,"Error: cell is not initialized");
-
-  return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
 }
 
 //determine the stencil for the cell centered linear interpolation using interpolation library from ../share/Library/src/
-PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int ThreadOpenMP=omp_get_thread_num();
@@ -136,24 +134,28 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
     #if _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     //in case the mesh is uniform (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) -> use simple trilinear interpolation
     if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {
-      return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      return;
     } 
 
     //if the point of interest is deep inside the block or all neighbors of the block has the same resolution level -> use simple trilinear interpolation
     if ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) {
       //all blocks around has the same level of the resolution
-      return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      return;
     }
     else if ((1.0<iLoc)&&(iLoc<_BLOCK_CELLS_X_-1) && (1.0<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-1) && (1.0<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-1)) {
       //the point is deep inside the block
-      return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      return;
     }
     else if (node->RefinmentLevel==node->minNeibRefinmentLevel) {
       if  ((0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) && (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5)) {
         //1. the point is deeper than a half cell size insode the block
         //2. the block is geometrically largest among the neibours
         //3. -> it is only the intermal points of the block that will be used in the stencil
-        return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+        GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+        return;
       }
       else  {
         //the block is largest between the neibours
@@ -174,7 +176,8 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        return GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil);
+        return;
       }
     }
     else {
@@ -283,7 +286,8 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
           xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
         }
 
-        return GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock);
+        GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil);
+        return;
       }
 
       //2.threre is no a coarser block that can be used for interpolation
@@ -303,7 +307,8 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
         xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
       }
 
-      return GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node);
+      GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil);
+      return;
 
 
   /*    // check if all cells are available for tri-liniar interpolation using the data from the block
@@ -328,7 +333,8 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
     #elif _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__SWMF_
     if ( ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) ||
         (0.5<iLoc)&&(iLoc<_BLOCK_CELLS_X_-0.5) && (0.5<jLoc)&&(jLoc<_BLOCK_CELLS_Y_-0.5) && (0.5<kLoc)&&(kLoc<_BLOCK_CELLS_Z_-0.5) ) {
-      return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
+      return;
     }
 
     // if the point of interest is very close to the cell center
@@ -336,15 +342,15 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
     if( fabs(iLoc-0.5-(long)iLoc) < PrecisionCellCenter &&
         fabs(jLoc-0.5-(long)jLoc) < PrecisionCellCenter &&
         fabs(kLoc-0.5-(long)kLoc) < PrecisionCellCenter   ){
-      return PIC::InterpolationRoutines::CellCentered::
-        Constant::InitStencil(XyzIn_D,node);
+          PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil); 
+          return;
     }
 
     //re-init variables in the INTERFACE and flush the Stencil
     INTERFACE::iBlockFoundCurrent=0;
     for(int iBlock = 0; iBlock < INTERFACE::nBlockFoundMax; iBlock++ ) INTERFACE::BlockFound[iBlock] = NULL;
 
-    PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].flush();
+    Stencil.flush();
     INTERFACE::last=node;
 
     //prepare the call of FORTRAN interpolate_amr subroutine
@@ -381,31 +387,30 @@ PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::
 
       //retrieve the pointer to the current cell
       if ((block=INTERFACE::BlockFound[iBlock]->block)==NULL) {
-        return PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node);
+        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+        return;
       }
 
       cell=block->GetCenterNode(_getCenterNodeLocalNumber(ind[0],ind[1],ind[2]));
 
       if (cell==NULL) {
         //there is no enough information to build up linear interpolation -> use constant interpolation
-        return PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node);
+        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node,Stencil);
+        return;
       }
 
       int nd=_getCenterNodeLocalNumber(ind[0],ind[1],ind[2]);
-      PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].AddCell(WeightStencil[iCellStencil],INTERFACE::BlockFound[iBlock]->block->GetCenterNode(nd),nd);
+      Stencil.AddCell(WeightStencil[iCellStencil],INTERFACE::BlockFound[iBlock]->block->GetCenterNode(nd),nd);
     }
     #else  //_PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
     exit(__LINE__,__FILE__,"Error: the option is unknown");
     #endif //_PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_
   }
   else exit(__LINE__,__FILE__,"ERROR: cell centered linear interpolation is currently available only through interface, add corresponding block to the input file!");
-
-
-  return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
 }
 
 //triliniar interpolation used inside blocks
-PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
 
@@ -419,8 +424,7 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
   #endif
 
   //flush the stencil
-  PIC::InterpolationRoutines::CellCentered::cStencil* StencilTable=PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
-  StencilTable->flush();
+  Stencil.flush();
 
   //determine the aray of the cell's pointer that will be used in the interpolation stencil
   double w[3],InterpolationWeight,totalInterpolationWeight=0.0;
@@ -471,29 +475,28 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
         exit(__LINE__,__FILE__,"Error: the option is not defined");
       }
 
-      StencilTable->AddCell(InterpolationWeight,cell,nd);
+      Stencil.AddCell(InterpolationWeight,cell,nd);
       totalInterpolationWeight+=InterpolationWeight;
     }
   }
 
-  if (StencilTable->Length==0) {
+  if (Stencil.Length==0) {
     //no cell have been found -> use a canstarnt interpolation stencil
-    return PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node);
+    PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
+    return;
   }
   else if (StencilTable->Length!=8) {
     //the interpolated stencil containes less that 8 elements -> the interpolation weights have to be renormalized
     #pragma ivdep
-    for (int i=0;i<StencilTable->Length;i++) {
-      StencilTable->Weight[i]/=totalInterpolationWeight;
+    for (int i=0;i<Stencil.Length;i++) {
+      Stencil.Weight[i]/=totalInterpolationWeight;
     }
   }
-
-  return StencilTable;
 }
 
 
 
-PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
   int iStencil,jStencil,kStencil,i,j,k,nd,idim;
   double xLoc[3],xStencil[3],dx[3];
 
@@ -552,7 +555,8 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
           }
 
           node=PIC::Mesh::mesh.findTreeNode(xTest,node);
-          return PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(xTest,node);
+          PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(xTest,node,Stencil);
+          return;
         }
 
         switch (iStencil+2*jStencil+4*kStencil) {
@@ -646,18 +650,15 @@ PIC::InterpolationRoutines::CellCentered::cStencil *PIC::InterpolationRoutines::
   #endif
 
   //flush the stencil
-  PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].flush();
+  Stencil.flush();
 
   for (int iCell=0;iCell<StencilElementCounter;iCell++) {
-    PIC::InterpolationRoutines::CellCentered::StencilTable[ThreadOpenMP].AddCell(StencilWeight[iCell]/summStencilElementWeight,StencilCellTable[iCell],StencilCellIDTable[iCell]);
+    Stencil.AddCell(StencilWeight[iCell]/summStencilElementWeight,StencilCellTable[iCell],StencilCellIDTable[iCell]);
   }
-
-
-  return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
 }
 
 //init stencil for the corner based interpolation
-PIC::InterpolationRoutines::CornerBased::cStencil *PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CornerBased::cStencil &Stencil) {
   int iStencil,jStencil,kStencil,iX[3],nd,idim;
   double w,xLoc[3],dx[3],*xMinNode,*xMaxNode;
   PIC::Mesh::cDataCornerNode* CornerNode;
@@ -690,11 +691,10 @@ PIC::InterpolationRoutines::CornerBased::cStencil *PIC::InterpolationRoutines::C
   int ThreadOpenMP=0;
   #endif
 
-  PIC::InterpolationRoutines::CornerBased::cStencil& Stencil=PIC::InterpolationRoutines::CornerBased::StencilTable[ThreadOpenMP];
   Stencil.flush();
 
   //return an empty stencil if the block is not allocated
-  if ((block=node->block)==NULL) return PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
+  if ((block=node->block)==NULL) return; // PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
 
   for (iStencil=0;iStencil<2;iStencil++) for (jStencil=0;jStencil<2;jStencil++) for (kStencil=0;kStencil<2;kStencil++) {
     //get the local ID of the 'corner node'
@@ -778,5 +778,4 @@ PIC::InterpolationRoutines::CornerBased::cStencil *PIC::InterpolationRoutines::C
   }
 
   Stencil.Normalize();
-  return PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
 }
