@@ -1517,6 +1517,59 @@ Check=
 
 <#
 
+#>
+Name=test/fast-wave_multithread_UpdateJMassMatrix
+Time=3
+ExeptionCode=SKIP{pgcc}
+ExeptionCode=SKIP{gcc}@@(0+valeriy)
+
+Outs=
+
+Keys=-link-option=./share/lib/libSHARE.a -compiler-option=-I${PTDIR}/share/Library/src/ -I${PTDIR}/srcInterface/
+
+Compile=
+>>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_compile..." > test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+>>>cd ./share/; mkdir -p lib
+>>>cd ./share/Library/src; make LIB
+>>>./Config.pl -application=test/fast-wave_multithread ${TESTfast-wave_multithread_UpdateJMassMatrixKEYS}
+>>>@rm -rf srcTemp
+>>>-@($(MAKE) -j8  amps)
+>>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_compile... done" >> test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+
+
+Check=
+>>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_check..." >> test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+
+<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
+
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
+<<<endif
+
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat \
+>>>output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_multithread_UpdateJMassMatrix--protons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff;)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
+>>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_multithread_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff)
+
+>>>mv $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
+>>>mv $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
+
+>>>@cat test_fast-wave_multithread_UpdateJMassMatrix--protons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff  test_fast-wave_multithread_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff > test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+
+>>>@ls -l test_fast-wave_multithread_UpdateJMassMatrix--protons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+>>>@ls -l test_fast-wave_multithread_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+>>>@ls -l test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
+>>>@echo Test test_fast-wave_multithread_UpdateJMassMatrix has finished: `date`
+
+<#
+
+
 
 #>
 Name=test/fast-wave-openmp
