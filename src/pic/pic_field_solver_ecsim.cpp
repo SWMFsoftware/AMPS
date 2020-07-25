@@ -20,6 +20,7 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 
 #include "pic.h"
+#include "array_3d.h"
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__ON_
 #include <immintrin.h>
@@ -1809,6 +1810,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
 
+          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+          //interpolate the magnetic field from center nodes to particle location
+//          MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+
+          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+          //interpolate the magnetic field from center nodes to particle location
+ //         MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+          #endif
+
+
       while (ptrNext!=-1) {
         double LocalParticleWeight;
         ptr=ptrNext;
@@ -1831,19 +1844,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           double temp[3], B[3]={0.0,0.0,0.0};
 
           #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
+      //    PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+          PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
 
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
+      //    PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+          MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
           #endif
 
-          int Length=MagneticFieldStencil->Length;
-          double *Weight_table=MagneticFieldStencil->Weight;
-          int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
+          int Length=MagneticFieldStencil.Length;
+          double *Weight_table=MagneticFieldStencil.Weight;
+          int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
 
           for (int iStencil=0;iStencil<Length;iStencil++) {
             double *B_temp,Weight=Weight_table[iStencil];
@@ -2231,6 +2244,17 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
 
+          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+          //interpolate the magnetic field from center nodes to particle location
+          //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+
+          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+          //interpolate the magnetic field from center nodes to particle location
+         // MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+          #endif
+
       while (ptrNext!=-1) {
         double LocalParticleWeight;
         ptr=ptrNext;
@@ -2253,19 +2277,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           double temp[3];
 
           #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
+         // PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+          PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
 
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
+          //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
           #endif
 
-          int Length=MagneticFieldStencil->Length;
-          double *Weight_table=MagneticFieldStencil->Weight;
-          int *LocalCellID_table=MagneticFieldStencil->LocalCellID;
+          int Length=MagneticFieldStencil.Length;
+          double *Weight_table=MagneticFieldStencil.Weight;
+          int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
 
           B_v=_mm256_setzero_pd();
 
@@ -2881,7 +2905,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           ParticleEnergyTable[this_thread_id]+=CellData->ParticleEnergy;
 
           for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
-            if (CellData->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData->cflCell[iSp];
+            if (CellData->cflCell[iSp]>cflTable[this_thread_id][iSp]) cflTable[this_thread_id][iSp]=CellData->cflCell[iSp];
           }
 
           //decrease the length of the table
@@ -3032,14 +3056,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       if (t==NULL) exit(__LINE__,__FILE__);
 
-
-while (cell_table_lock[thread].test_and_set(std::memory_order_acquire)==false);
-
+      while (cell_table_lock[thread].test_and_set(std::memory_order_acquire)==false);
 
       CellDataTable[thread]=t;
       AvailableCellDataTable[thread]=false;
 
-copy_lock.clear(std::memory_order_release);
+      copy_lock.clear(std::memory_order_release);
 
       //release the semaphore
       if (sem_post(manager_sem)<0) {
@@ -3050,21 +3072,203 @@ copy_lock.clear(std::memory_order_release);
   };
 
   //////////////////////////////////////
+#if _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  static int nMeshModificationCounter=-1;
 
+  //determine whether the mesh/domain decomposition have been changed
+  int localMeshChangeFlag,globalMeshChangeFlag;
+
+  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
+  MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+
+  struct cProcessData {
+    int i,j,k;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+  };
+
+  static cProcessData *ProcessData=NULL;
+
+  const int thread_id_table_size=4;
+  static int SetStartIndex[8]={0,0,0,0, 0,0,0,0};
+  static int SetLength[8]={0,0,0,0, 0,0,0,0}; 
+
+
+  if (globalMeshChangeFlag!=0) {
+    //the mesh has changed
+    array_3d<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> NodePtrTable3D;
+    int nGlobalBlockXYZ,ActualResolutionLevel;
+
+    nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+
+    if (ProcessData!=NULL) delete [] ProcessData;
+    ProcessData=new cProcessData[DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+
+    ActualResolutionLevel=DomainBlockDecomposition::BlockTable[0]->RefinmentLevel;
+    nGlobalBlockXYZ=1<<ActualResolutionLevel;
+
+    NodePtrTable3D.Deallocate();
+    NodePtrTable3D.init(nGlobalBlockXYZ,nGlobalBlockXYZ,nGlobalBlockXYZ);
+    NodePtrTable3D=NULL;
+
+    for (int ib=0;ib<DomainBlockDecomposition::nLocalBlocks;ib++) {
+      int i,j,k;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[ib];
+
+      if ((node->block!=NULL)&&(node->Thread==PIC::ThisThread)) {
+        i=node->xMinGlobalIndex[0]/node->NodeGeometricSizeIndex;
+        j=node->xMinGlobalIndex[1]/node->NodeGeometricSizeIndex;
+        k=node->xMinGlobalIndex[2]/node->NodeGeometricSizeIndex;
+
+        NodePtrTable3D(i,j,k)=node;
+      }
+    }
+
+
+    int cell_index=0;
+    int set_index=0;
+
+    for (int iStart=0;iStart<2;iStart++) for (int jStart=0;jStart<2;jStart++) for (int kStart=0;kStart<2;kStart++) {
+      int nCellsX,nCellsY,nCellsZ;
+      int cell_cnt=0;
+
+      SetStartIndex[set_index]=cell_index;
+      SetLength[set_index]=0;
+
+      nCellsX=_BLOCK_CELLS_X_*nGlobalBlockXYZ;
+      nCellsY=_BLOCK_CELLS_Y_*nGlobalBlockXYZ;
+      nCellsZ=_BLOCK_CELLS_Z_*nGlobalBlockXYZ;
+
+
+      for (int i=iStart;i<nCellsX;i+=2) for (int j=jStart;j<nCellsY;j+=2) for (int k=kStart;k<nCellsZ;k+=2) {
+        //Determine the index of the block
+        int iBlockX,jBlockY,kBlockZ;
+
+        iBlockX=i/_BLOCK_CELLS_X_;
+        jBlockY=j/_BLOCK_CELLS_Y_;
+        kBlockZ=k/_BLOCK_CELLS_Z_;
+
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NodePtrTable3D(iBlockX,jBlockY,kBlockZ);
+
+        if (node!=NULL) {
+          cProcessData p;
+
+          p.i=i%_BLOCK_CELLS_X_;
+          p.j=j%_BLOCK_CELLS_Y_;
+          p.k=k%_BLOCK_CELLS_Z_;
+
+          p.node=node;
+
+          ProcessData[cell_index++]=p;
+          SetLength[set_index]++;
+
+        }
+      }
+
+      set_index++;
+    }
+  }
+
+  alignas(64) double ParticleEnergyTable[thread_id_table_size]; // [PIC::nTotalThreadsOpenMP];
+  alignas(64) double *cflTable[thread_id_table_size]; //[PIC::nTotalSpecies];
+  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=0;i<thread_id_table_size;i++) cflTable[i]=cflTable_base+PIC::nTotalSpecies*i;
+
+  for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+      cflTable[i][iSp]=0.0;
+    }
+  }
+
+
+  Thread::Sync::cBarrier barrier(thread_id_table_size);
+
+  auto process_and_save = [&] (int this_thread_id) {
+    double *cfl=cflTable[this_thread_id];
+    double *ParticleEnergy=ParticleEnergyTable+this_thread_id;
+
+    for (int set_index=0;set_index<8;set_index++) {
+      cProcessData *pData=ProcessData+SetStartIndex[set_index]+this_thread_id*(SetLength[set_index]/thread_id_table_size);
+      int pDataLength=SetLength[set_index]/thread_id_table_size;
+
+      if (this_thread_id==thread_id_table_size-1) pDataLength=SetLength[set_index]-this_thread_id*(SetLength[set_index]/thread_id_table_size);
+
+      barrier.Sync();
+
+      for (int iset=0;iset<pDataLength;iset++,pData++) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=pData->node;
+        cCellData CellData;
+
+        if (ProcessCell(pData->i,pData->j,pData->k,node,&CellData,0,1)==true) {
+          //copy the data
+          double *target,*source;
+          int idim,ii;
+
+          for (int icor=0;icor<8;icor++) {
+            *ParticleEnergy+=CellData.ParticleEnergy;
+
+            for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+              if (CellData.cflCell[iSp]>cfl[iSp]) cfl[iSp]=CellData.cflCell[iSp];
+            }
+
+            target=CellData.CornerData[icor].CornerJ_ptr;
+            source=CellData.CornerData[icor].CornerJ;
+
+            for (idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+            target=CellData.CornerData[icor].CornerMassMatrix_ptr;
+            source=CellData.CornerData[icor].CornerMassMatrix;
+
+            for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+            if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+              target=CellData.CornerData[icor].SpecData_ptr;
+              source=CellData.CornerData[icor].SpecData;
+
+              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+            }
+          }
+        }
+      }
+    }
+  };
+
+
+  //start threads
+  std::thread tTable[thread_id_table_size];
+
+  for (int i=0;i<thread_id_table_size;i++) {
+    tTable[i]=std::thread(process_and_save,i);
+  }
+
+  for (int i=0;i<thread_id_table_size;i++) {
+    tTable[i].join();
+  }
+
+
+#else //  UpdateJMassMatrix - _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_
   cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
   cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
 
+  const int thread_id_table_size= PIC::nTotalThreadsOpenMP;
+
   bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
   double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
-  double **cflTable=new double* [PIC::nTotalSpecies];
 
-  for (int s=0;s<PIC::nTotalSpecies;s++) cflTable[s]=new double [PIC::nTotalThreadsOpenMP];
-  
+  double *cflTable[thread_id_table_size]; //[PIC::nTotalSpecies];
+  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=0;i<thread_id_table_size;i++) cflTable[i]=cflTable_base+PIC::nTotalSpecies*i;
+
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
     ParticleEnergyTable[i]=0.0;
 
-    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
-      cflTable[iSp][i]=0.0;
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) { 
+      cflTable[i][iSp]=0.0;
+    }
   }		 		 
 
 
@@ -3167,7 +3371,7 @@ copy_lock.clear(std::memory_order_release);
                 ParticleEnergyTable[this_thread_id]+=CellData_TH->ParticleEnergy;
 
                 for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
-                  if (CellData_TH->cflCell[iSp]>cflTable[iSp][this_thread_id]) cflTable[iSp][this_thread_id]=CellData_TH->cflCell[iSp];
+                  if (CellData_TH->cflCell[iSp]>cflTable[this_thread_id][iSp]) cflTable[this_thread_id][iSp]=CellData_TH->cflCell[iSp];
                 }
 
                 target=CellData_TH->CornerData[icor].CornerJ_ptr;
@@ -3221,16 +3425,19 @@ copy_lock.clear(std::memory_order_release);
 #if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
   copy_manager.set_quit();
 #endif
+#endif //UpdateJMassMatrix - _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_
 
 
 
 
   //reduce the particle energy table
-  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) ParticleEnergy+=ParticleEnergyTable[i];
+  for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
 
   //find the max cfl among all threads
-  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++)
-    cfl_process[iSp] = *max_element(cflTable[iSp], cflTable[iSp]+PIC::nTotalThreadsOpenMP);
+  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) { 
+    cfl_process[iSp]=cflTable[0][iSp];
+    for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp]; 
+  }
 
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:
@@ -3280,13 +3487,7 @@ copy_lock.clear(std::memory_order_release);
   }
 
 
-  //delete temp buffers 
-  for (int s=0;s<PIC::nTotalSpecies;s++) delete [] cflTable[s];
-
-  delete [] cflTable;
-
   CumulativeTiming::UpdateJMassMatrixTime_MPI.UpdateTimer();
-
 }
 
 
