@@ -388,4 +388,10 @@ at the end of each time step
 //At this stage, cCopyManager is functional but still experimental
 #define  _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ _PIC_MODE_OFF_ 
 
+
+//in the case MPI only is used - use multithreading in UpdateJMassMatrix
+#define _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ _PIC_MODE_OFF_
+
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
+
