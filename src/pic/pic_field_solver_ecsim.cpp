@@ -3081,6 +3081,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
   MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
+  
+  if (_AMR_MESH_TYPE_!=_AMR_MESH_TYPE__UNIFORM_) {
+    exit(__LINE__,__FILE__,"_PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ == _PIC_MODE_ON_ can be used only with _AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_");
+  }
+
 
   struct cProcessData {
     int i,j,k;
@@ -3240,11 +3245,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   //start threads
   std::thread tTable[thread_id_table_size];
 
-  for (int i=0;i<thread_id_table_size;i++) {
+  for (int i=1;i<thread_id_table_size;i++) {
     tTable[i]=std::thread(process_and_save,i);
   }
 
-  for (int i=0;i<thread_id_table_size;i++) {
+  process_and_save(0);
+
+  for (int i=1;i<thread_id_table_size;i++) {
     tTable[i].join();
   }
 
