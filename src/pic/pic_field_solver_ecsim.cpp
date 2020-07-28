@@ -1851,7 +1851,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
       //    PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
-          MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
           #endif
 
           int Length=MagneticFieldStencil.Length;
