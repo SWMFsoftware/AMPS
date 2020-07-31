@@ -66,54 +66,95 @@ void PIC::Mover::TotalParticleAcceleration_default(double *accl,int spec,long in
 //====================================================
 //Set B for B_Center/B_Corner
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
+void PIC::Mover::SetBlock_B(double *B_Center,double *B_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+  if (!node->block) return;
+
+  #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
+  for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+    for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
+      for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+        int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+        if (!node->block->GetCenterNode(LocalCenterId)) continue;
+
+        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        double * ptr =  (double*)(offset+PrevBOffset);
+
+        memcpy(B_Center+LocalCenterId*3,ptr,3*sizeof(double));
+      }
+    }
+  }
+
+  #elif  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+  for (int k=0;k<=_BLOCK_CELLS_Z_;k++) {
+    for (int j=0;j<=_BLOCK_CELLS_Y_;j++)  {
+      for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
+        int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+        if (!node->block->GetCornerNode(LocalCornerId)) continue;
+
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+        double * ptr =  (double*)(offset+PrevBOffset);
+
+        memcpy(B_Corner+LocalCornerId*3,ptr,3*sizeof(double));
+      }
+    }
+  }
+  #endif
+}
+
+void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
+  double *B_Center=NULL,*B_Corner=NULL;
 
   if (!node->block) return;
   int threadId = 0;
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   threadId = omp_get_thread_num();
-  #endif 
+  #endif
 
   #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_ 
   if (node == PIC::Mover::lastNode_B_center[threadId]) return;
 
-  for (int k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-    for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
-      for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-        int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
-        if (!node->block->GetCenterNode(LocalCenterId)) continue; 
-        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-        double * ptr =  (double*)(offset+PrevBOffset);
-        memcpy(&PIC::Mover::B_Center[threadId][LocalCenterId*3],ptr,3*sizeof(double));
-      }
-    }
-  }
+  PIC::Mover::lastNode_B_center[threadId]=node;
+  B_Center=PIC::Mover::B_Center[threadId];
 
   #elif  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_  
   if (node == PIC::Mover::lastNode_B_corner[threadId]) return;
 
-  for (int k=0;k<=_BLOCK_CELLS_Z_;k++) {
-    for (int j=0;j<=_BLOCK_CELLS_Y_;j++)  {
-      for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
+  PIC::Mover::lastNode_B_corner[threadId]=node;
+  B_Corner=PIC::Mover::B_Corner[threadId];
+  #endif
+
+  SetBlock_B(B_Center,B_Corner,node);
+}
+//====================================================
+//Set E for E_Corner
+void PIC::Mover::SetBlock_E(double *E_corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
+
+  if (!node->block) return;
+  int threadId = 0;
+
+  #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+  for (int k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+    for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
+      for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
         int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
-        if (!node->block->GetCornerNode(LocalCornerId)) continue; 
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
-        double * ptr =  (double*)(offset+PrevBOffset);
-        memcpy(&PIC::Mover::B_Corner[threadId][LocalCornerId*3],ptr,3*sizeof(double));
+        if (!node->block->GetCornerNode(LocalCornerId)) continue;
+
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+        double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
+
+        memcpy(E_corner+LocalCornerId*3,ptr,3*sizeof(double));
       }
     }
   }
-  #else 
-  exit(__LINE__,__FILE__,"Error: with the given configutaion the function should not be called at all");
+  #else
+  exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
   #endif
-} 
-//====================================================
-//Set E for E_Corner
-void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
-  using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
-  if (!node->block) return;
+}
+
+void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
   int threadId = 0;
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -122,24 +163,111 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
 
   #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   if (node == PIC::Mover::lastNode_E_corner[threadId]) return;
+   PIC::Mover::lastNode_E_corner[threadId]=node;
 
-  for (int k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-    for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
-      for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-        int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
-        if (!node->block->GetCornerNode(LocalCornerId)) continue;
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-        double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
-        memcpy(&PIC::Mover::E_Corner[threadId][LocalCornerId*3],ptr,3*sizeof(double));
+  SetBlock_E(PIC::Mover::E_Corner[threadId],node);
+  #else
+  exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
+  #endif
+}
+
+#endif
+
+//====================================================
+//launch multi-threaded Lapenta particle mover
+
+void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+  int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
+
+  static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
+  double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
+
+  memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(ElectricChargeTable,PIC::MolecularData::ElectricChargeTable,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(TimeStepTable,PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+
+  if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: that function is valid only for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_");
+
+  int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  long int ParticleList,ptr;
+  int s;
+  double LocalTimeStep;
+
+  chrono::high_resolution_clock::time_point start_time;
+  PIC::Mesh::cDataBlockAMR *block;
+
+  double E_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+  double B_center[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+  double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+
+  //shift particle localtion 
+  for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
+    start_time=chrono::high_resolution_clock::now();
+    node=BlockTable[iblock];
+
+    if ((block=node->block)==NULL) continue;
+
+    #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+    PIC::Mover::SetBlock_E(E_corner,node);
+    PIC::Mover::SetBlock_B(B_center,B_corner,node);
+    #endif
+
+    for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      ParticleList=block->FirstCellParticleTable[i];
+
+      while (ParticleList!=-1) {
+        ptr=ParticleList;
+        ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
+
+        ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
+        s=PIC::ParticleBuffer::GetI(ParticleData);
+        LocalTimeStep=TimeStepTable[s];
+
+        PIC::Mover::Lapenta2017(ParticleData,ptr,ElectricChargeTable[s],MolMass[s],TimeStepTable[s],E_corner,B_corner,B_center,node,&PIC::Mesh::mesh);
+      }
+    }
+
+    //update time counter 
+    #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+    node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
+    #endif
+  }
+
+
+  barrier_middle.Sync();
+
+  //update the particle lists
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh.DomainBoundaryLayerNodesList;
+  int ThisThread=PIC::ThisThread;
+
+  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if (thread!=ThisThread) {
+    node=DomainBoundaryLayerNodesList[thread];
+    int node_cnt=0;
+
+    for (;node!=NULL;node=node->nextNodeThisThread,node_cnt++) if (node_cnt%thread_id_table_size==this_thread_id) {
+      if ((block=node->block)==NULL) continue;
+
+      for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+        block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+        block->tempParticleMovingListTable[i]=-1;
       }
     }
   }
-  #else 
-  exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
-  #endif
-} 
 
-#endif
+  for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
+    node=BlockTable[iblock];
+
+   if ((block=node->block)==NULL) continue;
+
+    for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+      block->tempParticleMovingListTable[i]=-1;
+    }
+  }
+}
+ 
 
 //====================================================
 //move all existing particles
@@ -153,6 +281,27 @@ void PIC::Mover::MoveParticles() {
   static unsigned long int nTotalCalls=0;
     
   nTotalCalls++;
+  #endif
+
+  //launch multi-threaded Lapenta particle mover
+  #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+
+  int this_thread_id;
+  int thread_id_table_size=4;
+
+  std::thread tTable[thread_id_table_size];
+
+  for (int i=1;i<thread_id_table_size;i++) {
+    tTable[i]=std::thread(LapentaMultiThreadedMover,i,thread_id_table_size);
+  }
+
+  LapentaMultiThreadedMover(0,thread_id_table_size);
+ 
+  for (int i=1;i<thread_id_table_size;i++)  tTable[i].join();
+
+  return;
+  #endif
   #endif
 
 
@@ -1232,7 +1381,15 @@ int iTemp,jTemp,kTemp;
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
@@ -1618,7 +1775,15 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
@@ -1883,7 +2048,16 @@ exit(__LINE__,__FILE__,"not implemented");
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
@@ -3579,7 +3753,15 @@ ProcessPhotoChemistry:
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);

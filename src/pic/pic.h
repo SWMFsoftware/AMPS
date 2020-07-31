@@ -102,6 +102,9 @@ $MARKER:SPECIES-MACRO-DEFINIETION-USED-IN-SIMULATION$
 
 #include "meshAMRinternalSurface.h"
 
+//macro function to access the pointer to the particle data
+#define _GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer) (particle_data_buffer+ptr*particle_data_length) 
+
 namespace PIC {
 
   //Global constants of the PIC solver
@@ -2759,7 +2762,9 @@ namespace PIC {
 
       //tempParticleMovingListTable is used only when _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       //when _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_ tempParticleMovingListTableThreadOffset is used instead
-      #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+      #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+      std::atomic<long int> tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+      #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       long int tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       #endif
 
@@ -3784,7 +3789,10 @@ namespace PIC {
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_corner;
 
     void SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+    void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+    void SetBlock_B(double *B_Center,double *B_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
     //the return codes of the moving procedures
     #define _PARTICLE_REJECTED_ON_THE_FACE_ -1
@@ -3879,6 +3887,9 @@ namespace PIC {
 
     //particle mover that is used in iPIC3D (G. Lapenta/JournalofComputationalPhysics334(2017)349–366)
     int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+    int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,double ElectricCharge,double Mass,double dt,
+       double* E_Corner,double* B_Corner,double* B_Center,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh);
   }
 
 
@@ -4634,7 +4645,13 @@ namespace PIC {
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
 
       //interpolation functions
-      void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil);
+      void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil,double *InterpolationCoefficientTable);
+
+      inline void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil) {
+        double InterpolationCoefficientTable[8];
+
+        InitStencil(x,node,cStencil,InterpolationCoefficientTable);
+      }
 
       inline cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
         #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -4643,7 +4660,7 @@ namespace PIC {
         int ThreadOpenMP=0;
         #endif 
 
-        InitStencil(x,node,PIC::InterpolationRoutines::CornerBased::StencilTable[ThreadOpenMP]);
+        InitStencil(x,node,PIC::InterpolationRoutines::CornerBased::StencilTable[ThreadOpenMP],InterpolationCoefficientTable_LocalNodeOrder);
         return PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
       }
     }

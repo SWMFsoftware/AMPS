@@ -1676,13 +1676,30 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  std::function<bool(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,cCellData*,int,int)> ProcessCell; 
+  std::function<bool(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,cCellData*,int,int,double*,double*,int,PIC::ParticleBuffer::byte*)> ProcessCell; 
 
 #if  _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) -> bool {
+  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) -> bool {
     double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
     double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
+
+
+
+/*
+  int  num_cores=sysconf(_SC_NPROCESSORS_ONLN);
+  int code_id=rnd()*num_cores;
+
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(code_id,&cpuset);
+
+  pthread_t current_thread=pthread_self();
+
+  pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
+*/
+
+
 
     auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
@@ -1783,7 +1800,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       long int ptrNext=ptr;
       PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
-      ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+      ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
 
       char *offset[8];
 
@@ -1810,17 +1827,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
 
-          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-//          MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+      #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+      PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+      //interpolate the magnetic field from center nodes to particle location
+      //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
 
-          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
- //         MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-          #endif
+      #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+      PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+      //interpolate the magnetic field from center nodes to particle location
+      //MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+      #endif
 
+      PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
 
       while (ptrNext!=-1) {
         double LocalParticleWeight;
@@ -1836,20 +1854,20 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
         if (ptrNext!=-1) {
-          ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
-          PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
+          ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
+          //PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
         }
 
         if (cnt%size_pack==id_pack) {
           double temp[3], B[3]={0.0,0.0,0.0};
 
           #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-      //    PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
+          //PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
           PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
 
           #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-      //    PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
+          //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
           //interpolate the magnetic field from center nodes to particle location
           PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
           #endif
@@ -1885,12 +1903,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           }
           
           double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
-          double * WeightPG;
+          double WeightPG[8];
           double c0,QdT_over_2m_squared;
           double mass;
 
-          chargeQ = PIC::MolecularData::GetElectricCharge(spec)*charge_conv;
-          mass= PIC::MolecularData::GetMass(spec)*mass_conv;
+          chargeQ = ChargeTable[spec]*charge_conv;
+          mass= MassTable[spec]*mass_conv;
           //effect of particle weight
 
           chargeQ *= LocalParticleWeight;
@@ -1934,14 +1952,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           alpha[7]=c0*(P[0]+BB[2][1]);
           alpha[8]=c0*(1.0+BB[2][2]);
 
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-
-          WeightPG=InterpolationCoefficientTable_LocalNodeOrder;
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
    
-          #ifndef __PGI
-          _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
-          #endif
-	  
           double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
           vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
@@ -2113,7 +2125,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   };
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 
-  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack) -> bool {
+  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) -> bool {
     double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
     double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
     bool res=false;
@@ -2217,7 +2229,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       long int ptrNext=ptr;
       PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
-      ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+      ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
 
       char *offset[8];
 
@@ -2244,16 +2256,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
 
-          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-          //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+      #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+      PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+      //interpolate the magnetic field from center nodes to particle location
+      //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
 
-          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-         // MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-          #endif
+      #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+      PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+      //interpolate the magnetic field from center nodes to particle location
+      // MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+      #endif
+
+      PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
+
 
       while (ptrNext!=-1) {
         double LocalParticleWeight;
@@ -2269,8 +2284,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
         if (ptrNext!=-1) {
-          ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
-          PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
+          ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
         }
 
         if (cnt%size_pack==id_pack) {
@@ -2314,12 +2328,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
 
           double QdT_over_m,QdT_over_2m,chargeQ;
-          double * WeightPG;
+          double WeightPG[8];
           double c0,QdT_over_2m_squared;
           double mass;
 
-          chargeQ = PIC::MolecularData::GetElectricCharge(spec)*charge_conv;
-          mass= PIC::MolecularData::GetMass(spec)*mass_conv;
+          chargeQ = ChargeTable[spec]*charge_conv;
+          mass= MassTable[spec]*mass_conv;
           //effect of particle weight
 
           chargeQ *= LocalParticleWeight;
@@ -2392,9 +2406,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
                   );
 
 
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-
-          WeightPG=InterpolationCoefficientTable_LocalNodeOrder;
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
           #ifndef __PGI
           _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
@@ -2572,9 +2584,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           alpha_1v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[1]),B_v,_mm256_set_pd(0.0,-P[0],1.0,P[2])));
           alpha_2v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
 
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+          PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
 
-          WeightPG=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
+          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
           #ifndef __PGI
           _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
@@ -3195,6 +3207,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     double *cfl=cflTable[this_thread_id];
     double *ParticleEnergy=ParticleEnergyTable+this_thread_id;
 
+    double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+    for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
+
+
     for (int set_index=0;set_index<8;set_index++) {
       cProcessData *pData=ProcessData+SetStartIndex[set_index]+this_thread_id*(SetLength[set_index]/thread_id_table_size);
       int pDataLength=SetLength[set_index]/thread_id_table_size;
@@ -3207,7 +3223,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=pData->node;
         cCellData CellData;
 
-        if (ProcessCell(pData->i,pData->j,pData->k,node,&CellData,0,1)==true) {
+        if (ProcessCell(pData->i,pData->j,pData->k,node,&CellData,0,1,MassTable,ChargeTable,PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer)==true) {
           //copy the data
           double *target,*source;
           int idim,ii;
@@ -3264,6 +3280,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
   double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
+
+  //the next is needed to eliminate false sharing in the multi-thread mode
+  double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+  for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
 
   double *cflTable[thread_id_table_size]; //[PIC::nTotalSpecies];
   double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
@@ -3346,7 +3366,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
       CellData_TH->clean();
-      CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellData_TH,0,1);
+      CellProcessingFlagTable[this_thread_id]=ProcessCell(i,j,k,node,CellData_TH,0,1,MassTable,ChargeTable,PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer);
 
       if (CellProcessingFlagTable[this_thread_id]==true) { // (CellData!=NULL) {
         double *target,*source;
@@ -3790,7 +3810,16 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                   if (PIC::Mesh::mesh.fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
                   
                   PIC::Mesh::cDataBlockAMR * block=newNode->block;
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+
+
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+                 PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+                 long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+ip+_BLOCK_CELLS_X_*(jp+_BLOCK_CELLS_Y_*kp),ptr);
+                 PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+                 if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
                   tempFirstCellParticlePtr=block->tempParticleMovingListTable+ip+_BLOCK_CELLS_X_*(jp+_BLOCK_CELLS_Y_*kp);
                   tempFirstCellParticle=(*tempFirstCellParticlePtr);
                   

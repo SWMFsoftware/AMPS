@@ -391,6 +391,7 @@ at the end of each time step
 
 //in the case MPI only is used - use multithreading in UpdateJMassMatrix
 #define _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ _PIC_MODE_OFF_
+#define _PIC_MOVER__MPI_MULTITHREAD_ _PIC_MODE_OFF_
 
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

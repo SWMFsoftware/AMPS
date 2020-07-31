@@ -515,7 +515,17 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);

@@ -658,12 +658,12 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 }
 
 //init stencil for the corner based interpolation
-void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CornerBased::cStencil &Stencil) {
+void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CornerBased::cStencil &Stencil,double *InterpolationCoefficientTable) {
   int iStencil,jStencil,kStencil,iX[3],nd,idim;
   double w,xLoc[3],dx[3],*xMinNode,*xMaxNode;
   PIC::Mesh::cDataCornerNode* CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
-  
+
   if (node==NULL) node=PIC::Mesh::mesh.findTreeNode(x);
 
   xMinNode=node->xmin;
@@ -705,36 +705,36 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
       switch (iStencil+2*jStencil+4*kStencil) {
       case 0+0*2+0*4:
         w=(1.0-xLoc[0])*(1.0-xLoc[1])*(1.0-xLoc[2]);
-        InterpolationCoefficientTable_LocalNodeOrder[0]=w;
+        InterpolationCoefficientTable[0]=w;
         break;
       case 1+0*2+0*4:
         w=xLoc[0]*(1.0-xLoc[1])*(1.0-xLoc[2]);
-        InterpolationCoefficientTable_LocalNodeOrder[1]=w;
+        InterpolationCoefficientTable[1]=w;
         break;
       case 0+1*2+0*4:
         w=(1.0-xLoc[0])*xLoc[1]*(1.0-xLoc[2]);
-        InterpolationCoefficientTable_LocalNodeOrder[3]=w;
+        InterpolationCoefficientTable[3]=w;
         break;
       case 1+1*2+0*4:
         w=xLoc[0]*xLoc[1]*(1.0-xLoc[2]);
-        InterpolationCoefficientTable_LocalNodeOrder[2]=w;
+        InterpolationCoefficientTable[2]=w;
         break;
 
       case 0+0*2+1*4:
         w=(1.0-xLoc[0])*(1.0-xLoc[1])*xLoc[2];
-        InterpolationCoefficientTable_LocalNodeOrder[4]=w;
+        InterpolationCoefficientTable[4]=w;
         break;
       case 1+0*2+1*4:
         w=xLoc[0]*(1.0-xLoc[1])*xLoc[2];
-        InterpolationCoefficientTable_LocalNodeOrder[5]=w;
+        InterpolationCoefficientTable[5]=w;
         break;
       case 0+1*2+1*4:
         w=(1.0-xLoc[0])*xLoc[1]*xLoc[2];
-        InterpolationCoefficientTable_LocalNodeOrder[7]=w;
+        InterpolationCoefficientTable[7]=w;
         break;
       case 1+1*2+1*4:
         w=xLoc[0]*xLoc[1]*xLoc[2];
-        InterpolationCoefficientTable_LocalNodeOrder[6]=w;
+        InterpolationCoefficientTable[6]=w;
         break;
 
       default:
@@ -746,29 +746,29 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
     else {
       switch (iStencil+2*jStencil+4*kStencil) {
       case 0+0*2+0*4:
-        InterpolationCoefficientTable_LocalNodeOrder[0]=0.0;
+        InterpolationCoefficientTable[0]=0.0;
         break;
       case 1+0*2+0*4:
-        InterpolationCoefficientTable_LocalNodeOrder[1]=0.0;
+        InterpolationCoefficientTable[1]=0.0;
         break;
       case 0+1*2+0*4:
-        InterpolationCoefficientTable_LocalNodeOrder[3]=0.0;
+        InterpolationCoefficientTable[3]=0.0;
         break;
       case 1+1*2+0*4:
-        InterpolationCoefficientTable_LocalNodeOrder[2]=0.0;
+        InterpolationCoefficientTable[2]=0.0;
         break;
 
       case 0+0*2+1*4:
-        InterpolationCoefficientTable_LocalNodeOrder[4]=0.0;
+        InterpolationCoefficientTable[4]=0.0;
         break;
       case 1+0*2+1*4:
-        InterpolationCoefficientTable_LocalNodeOrder[5]=0.0;
+        InterpolationCoefficientTable[5]=0.0;
         break;
       case 0+1*2+1*4:
-        InterpolationCoefficientTable_LocalNodeOrder[7]=0.0;
+        InterpolationCoefficientTable[7]=0.0;
         break;
       case 1+1*2+1*4:
-        InterpolationCoefficientTable_LocalNodeOrder[6]=0.0;
+        InterpolationCoefficientTable[6]=0.0;
         break;
 
       default:
