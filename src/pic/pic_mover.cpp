@@ -202,10 +202,24 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   double B_center[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
   double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
 
-  //shift particle localtion 
+  PIC::Mover::cLapentaInputData data;
+
+  data.E_Corner=E_corner;
+  data.B_Center=B_center;
+  data.B_Corner=B_corner;
+  data.MolMass=MolMass;
+  data.ElectricChargeTable=ElectricChargeTable;
+  data.TimeStepTable=TimeStepTable;
+  data.ParticleDataLength=ParticleDataLength;
+  data.ParticleDataBuffer=ParticleDataBuffer;
+  data.mesh=&PIC::Mesh::mesh;
+
+
+  //shift particle locations 
   for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
     start_time=chrono::high_resolution_clock::now();
     node=BlockTable[iblock];
+    data.node=node;
 
     if ((block=node->block)==NULL) continue;
 
@@ -220,12 +234,9 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
       while (ParticleList!=-1) {
         ptr=ParticleList;
         ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
-
         ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
-        s=PIC::ParticleBuffer::GetI(ParticleData);
-        LocalTimeStep=TimeStepTable[s];
 
-        PIC::Mover::Lapenta2017(ParticleData,ptr,ElectricChargeTable[s],MolMass[s],TimeStepTable[s],E_corner,B_corner,B_center,node,&PIC::Mesh::mesh);
+        PIC::Mover::Lapenta2017(ParticleData,ptr,&data);
       }
     }
 

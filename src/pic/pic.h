@@ -3886,10 +3886,25 @@ namespace PIC {
     int Markidis2010(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
     //particle mover that is used in iPIC3D (G. Lapenta/JournalofComputationalPhysics334(2017)349–366)
+
+    struct cLapentaInputData {
+      double *E_Corner;
+      double *B_Center;
+      double *B_Corner;
+      double *MolMass;
+      double *ElectricChargeTable;
+      double *TimeStepTable;
+
+      int ParticleDataLength;
+      PIC::ParticleBuffer::byte *ParticleDataBuffer;
+      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=&PIC::Mesh::mesh;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+    };
+
+
     int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
-    int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,double ElectricCharge,double Mass,double dt,
-       double* E_Corner,double* B_Corner,double* B_Center,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh);
+    int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data); 
   }
 
 

@@ -822,30 +822,37 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
 int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
 
-  int spec,threadId=0;
-  double ElectricCharge,Mass; 
-
-  spec=PIC::ParticleBuffer::GetI(ParticleData);
-  ElectricCharge=PIC::MolecularData::GetElectricCharge(spec);
-  Mass=PIC::MolecularData::GetMass(spec);
-
+  int threadId=0;
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   threadId = omp_get_thread_num();
   #endif
 
-
   double *E_Corner=(PIC::Mover::E_Corner!=NULL) ? PIC::Mover::E_Corner[threadId] : NULL; 
   double *B_Corner=(PIC::Mover::B_Corner!=NULL) ? PIC::Mover::B_Corner[threadId] : NULL;
   double *B_Center=(PIC::Mover::B_Center!=NULL) ? PIC::Mover::B_Center[threadId] : NULL;
 
-  return Lapenta2017(ParticleData,ptr,ElectricCharge,Mass,dtTotal,E_Corner,B_Corner,B_Center,startNode,&PIC::Mesh::mesh);
+  cLapentaInputData data;
+
+  data.E_Corner=E_Corner;
+  data.B_Center=B_Center;
+  data.B_Corner=B_Corner;
+  data.MolMass=PIC::MolecularData::MolMass;
+  data.ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
+  data.TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
+
+  data.ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  data.ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  data.mesh=&PIC::Mesh::mesh;
+  data.node=startNode;
+
+  return Lapenta2017(ParticleData,ptr,&data); 
 }
 
-int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,double ElectricCharge,double Mass,double dtTotal,
-  double* E_Corner,double* B_Corner,double* B_Center,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh) {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
+int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data) {
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=data->node,*newNode=NULL;
   int idim,i,j,k,spec;
+  double dtTotal;
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   double vInit[3],xInit[3],vFinal[3],xFinal[3];
@@ -859,6 +866,18 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   PIC::ParticleBuffer::GetV(vInit,ParticleData);
   PIC::ParticleBuffer::GetX(xInit,ParticleData);
   spec=PIC::ParticleBuffer::GetI(ParticleData);
+
+
+  switch (_SIMULATION_TIME_STEP_MODE_) {
+  case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
+    dtTotal=data->TimeStepTable[spec];
+    break;
+  case _SINGLE_GLOBAL_TIME_STEP_:
+    dtTotal=data->TimeStepTable[0]; 
+    break;
+  default:
+    dtTotal=startNode->block->GetLocalTimeStep(spec);
+  }
 
   //the description of the boundaries of the block faces
   struct cExternalBoundaryFace {
@@ -883,10 +902,10 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
       double cE0=0.0,cE1=0.0;
 
       for (idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim];
+        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim];
 
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
       }
 
       ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -940,10 +959,10 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
       Weight=ElectricFieldStencil.Weight;
 
       for (int iStencil=0;iStencil<Length;iStencil++) {
-        double *tempE1=E_Corner+3*LocalCellID[iStencil];
+        double *tempE1=data->E_Corner+3*LocalCellID[iStencil];
 
         #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-        double *tempB1=B_Corner+3*LocalCellID[iStencil];
+        double *tempB1=data->B_Corner+3*LocalCellID[iStencil];
         #endif
        
         #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
@@ -976,7 +995,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
       Weight=MagneticFieldStencil.Weight;
 
       for (int iStencil=0;iStencil<Length;iStencil++) {
-        double *tempB1 = B_Center+3*LocalCellID[iStencil];
+        double *tempB1 = data->B_Center+3*LocalCellID[iStencil];
 
         #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
@@ -1009,8 +1028,8 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     charge_conv=1.0/ElectronCharge;
   }
   
-  chargeQ = ElectricCharge*charge_conv; 
-  mass= Mass*mass_conv;
+  chargeQ = data->ElectricChargeTable[spec]*charge_conv; 
+  mass= data->MolMass[spec]*mass_conv;
   QdT_over_m=chargeQ*dtTotal/mass;
   QdT_over_2m=0.5*QdT_over_m;
   QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
@@ -1096,7 +1115,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   xFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dtTotal),vFinal_v,xInit_v);
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_
 
-  newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+  newNode=data->mesh->findTreeNode(xFinal,startNode);
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
@@ -1116,7 +1135,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     for (idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
 
     //determine the block of the particle location
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=data->mesh->findTreeNode(xFinal,startNode);
 
     //apply the boundary condition
     code=ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,BoundaryElement);
@@ -1127,10 +1146,10 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     }
   }
   else {
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=data->mesh->findTreeNode(xFinal,startNode);
   }
 #else
-  newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+  newNode=data->mesh->findTreeNode(xFinal,startNode);
 #endif //_TARGET_ == _TARGET_NONE_
 
 
@@ -1181,7 +1200,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
            vInit[idim]+=tVelocityIncrement*(vFinal[idim]-vInit[idim]);
          }
 
-         newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+         newNode=data->mesh->findTreeNode(xInit,startNode);
 
          if (newNode==NULL) {
            //the partcle is outside of the domain -> correct particle location and determine the newNode;
@@ -1196,7 +1215,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
              if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
            }
 
-           newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+           newNode=data->mesh->findTreeNode(xInit,startNode);
 
            if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
          }
@@ -1254,7 +1273,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (data->mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
 
@@ -1282,8 +1301,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr); 
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-   
-  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,_GetParticleDataPointer(tempFirstCellParticle,data->ParticleDataLength,data->ParticleDataBuffer));
 
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
