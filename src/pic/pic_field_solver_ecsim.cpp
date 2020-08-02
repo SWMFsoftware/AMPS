@@ -3089,9 +3089,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   //determine whether the mesh/domain decomposition have been changed
   int localMeshChangeFlag,globalMeshChangeFlag;
-
+  
   localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
-  MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+
+  if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) { 
+    MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    if (globalMeshChangeFlag==localMeshChangeFlag) exit(__LINE__,__FILE__,"Error: globalMeshChangeFlag and localMeshChangeFlag are not consistent: PIC::Mesh::mesh.nMeshModificationCounter are not properly syncronized"); 
+  }
+  else globalMeshChangeFlag=localMeshChangeFlag;
 
   
   if (_AMR_MESH_TYPE_!=_AMR_MESH_TYPE__UNIFORM_) {
