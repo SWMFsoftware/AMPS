@@ -3210,16 +3210,30 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
     for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
 
+    static atomic<int> iset_max;
 
     for (int set_index=0;set_index<8;set_index++) {
-      cProcessData *pData=ProcessData+SetStartIndex[set_index]+this_thread_id*(SetLength[set_index]/thread_id_table_size);
-      int pDataLength=SetLength[set_index]/thread_id_table_size;
+      cProcessData *pData;
+      int increment,iset_max_thread,iset=0;
 
-      if (this_thread_id==thread_id_table_size-1) pDataLength=SetLength[set_index]-this_thread_id*(SetLength[set_index]/thread_id_table_size);
 
+      increment=SetLength[set_index]/(10*thread_id_table_size);
+      if (increment==0) increment=SetLength[set_index]/(5*thread_id_table_size);
+      if (increment==0) increment=SetLength[set_index]/thread_id_table_size; 
+      if (increment==0) increment=1;
+
+      iset_max=0;
       barrier.Sync();
 
-      for (int iset=0;iset<pDataLength;iset++,pData++) {
+
+do {
+  iset=iset_max.fetch_add(increment);
+  pData=ProcessData+SetStartIndex[set_index]+iset;
+  
+  iset_max_thread=iset+increment;
+  if (iset_max_thread>SetLength[set_index]) iset_max_thread=SetLength[set_index]; 
+
+      for (;iset<iset_max_thread;iset++,pData++) {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=pData->node;
         cCellData CellData;
 
@@ -3254,6 +3268,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
           }
         }
       }
+}
+while (iset_max_thread<SetLength[set_index]);
+
+
+barrier.Sync();
+
     }
   };
 

@@ -216,7 +216,28 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
 
 
   //shift particle locations 
-  for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
+  static Thread::Sync::cBarrier barrier(thread_id_table_size);
+  static atomic<int> iblock_max;
+  int iblock,iblock_max_thread;
+  int increment;
+
+  iblock_max=0;
+  barrier.Sync();
+
+  increment=nlocal_blocks/(10*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/thread_id_table_size;
+  if (increment==0) increment=1;
+
+
+do {
+
+  iblock=iblock_max.fetch_add(increment);
+  iblock_max_thread=iblock+increment;
+  if (iblock_max_thread>nlocal_blocks) iblock_max_thread=nlocal_blocks; 
+
+
+  for (;iblock<iblock_max_thread;iblock++)  {
     start_time=chrono::high_resolution_clock::now();
     node=BlockTable[iblock];
     data.node=node;
@@ -245,7 +266,8 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
     node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
     #endif
   }
-
+}
+while (iblock_max_thread<nlocal_blocks);
 
   barrier_middle.Sync();
 
