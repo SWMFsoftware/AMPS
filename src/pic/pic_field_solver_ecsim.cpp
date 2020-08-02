@@ -3336,7 +3336,7 @@ barrier.Sync();
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
 #pragma omp parallel default(none) shared (copy_manager_ptr,CellDataTable_Bank0,CellDataTable_Bank1,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-		ParticleEnergyTable,cflTable) firstprivate (ProcessCell,mesh_ptr,ThisThread,BlockTable)
+		ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,ProcessCell,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
   {
 
     int this_thread_id=omp_get_thread_num();

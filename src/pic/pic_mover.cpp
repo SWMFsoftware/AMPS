@@ -176,6 +176,7 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 //====================================================
 //launch multi-threaded Lapenta particle mover
 
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
 void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
   int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
@@ -300,7 +301,7 @@ while (iblock_max_thread<nlocal_blocks);
     }
   }
 }
- 
+#endif 
 
 //====================================================
 //move all existing particles
@@ -319,6 +320,7 @@ void PIC::Mover::MoveParticles() {
   //launch multi-threaded Lapenta particle mover
   #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
 
   int this_thread_id;
   int thread_id_table_size=4;
@@ -334,6 +336,7 @@ void PIC::Mover::MoveParticles() {
   for (int i=1;i<thread_id_table_size;i++)  tTable[i].join();
 
   return;
+  #endif
   #endif
   #endif
 
