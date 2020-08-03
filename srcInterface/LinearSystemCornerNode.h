@@ -23,6 +23,10 @@
 #ifndef _LINEARSYSTEMCORNERNODE_H_
 #define _LINEARSYSTEMCORNERNODE_H_
 
+#ifndef _PIC_MATMUL_MPI_MULTITHREAD_
+#define _PIC_MATMUL_MPI_MULTITHREAD_ _PIC_MODE_OFF_
+#endif
+
 class cLinearSystemCornerNodeDataRequestListElement {
 public:
   int CornerNodeID;
@@ -1048,6 +1052,176 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 }
 
+
+
+
+#if _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_ON_
+template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
+int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
+int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
+  double **RecvExchangeBufferTable;
+
+  ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
+  RecvExchangeBufferTable[PIC::ThisThread]=x;
+
+  auto ProcessRow = [this,length,RecvExchangeBufferTable,p]  (int thread_id_table_size) {
+    static Thread::Sync::cBarrier barrier(thread_id_table_size);
+
+    double **LocalRecvExchangeBufferTable;
+
+    LocalRecvExchangeBufferTable=new double*[PIC::nTotalThreads];
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBufferTable[thread];
+
+    int irow,increment,irow_max_thread,iset=0;
+
+    if (increment==0) increment=MatrixRowTableLength/(5*thread_id_table_size);
+    if (increment==0) increment=MatrixRowTableLength/thread_id_table_size;
+    if (increment==0) increment=1;
+
+    atomic<int> irow_max;
+
+    irow_max=0;
+
+    barrier.Sync();
+
+    do {
+      irow=irow_max.fetch_add(increment);
+
+      irow_max_thread=irow+increment;
+      if (irow_max_thread>MatrixRowTableLength) irow_max_thread=MatrixRowTableLength;
+
+      for (;irow<irow_max_thread;irow++) {
+
+        int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
+        cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
+
+        double res=0.0;
+        int iElement=0;
+        cStencilElementData *data,*data_next,*data_next_next=NULL;
+        double *u_vect,*u_vect_next;
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+        //add most of the vector
+        for (;iElement+3<iElementMax;iElement+=4) {
+          alignas(32) double a[4],b[4],*r;
+          __m256d av,bv,cv,rv;
+
+          data=ElementDataTable+iElement;
+          av=_mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
+
+          bv=_mm256_set_pd(
+              LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+          );
+
+
+          cv=_mm256_mul_pd(av,bv);
+          rv=_mm256_hadd_pd(cv,cv);
+
+          r=(double*)&rv;
+          res+=r[1]+r[2];
+        }
+
+#elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+        //add most of the vector
+        for (;iElement+7<iElementMax;iElement+=8) {
+          __m512d av,bv,cv;
+
+          data=ElementDataTable+iElement;
+
+          av=_mm512_set_pd(
+              (data+7)->MatrixElementValue,(data+6)->MatrixElementValue,(data+5)->MatrixElementValue,(data+4)->MatrixElementValue,
+              (data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
+
+          bv=_mm512_set_pd(
+              LocalRecvExchangeBufferTable[(data+7)->Thread][(data+7)->iVar+NodeUnknownVariableVectorLength*(data+7)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+6)->Thread][(data+6)->iVar+NodeUnknownVariableVectorLength*(data+6)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+5)->Thread][(data+5)->iVar+NodeUnknownVariableVectorLength*(data+5)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+4)->Thread][(data+4)->iVar+NodeUnknownVariableVectorLength*(data+4)->UnknownVectorIndex],
+
+              LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+          );
+
+          cv=_mm512_mul_pd(av,bv);
+          res+=_mm512_reduce_add_pd(cv);
+        }
+
+        //add the rest of the vector
+        for (;iElement+3<iElementMax;iElement+=4) {
+          alignas(32) double a[4],b[4],*r;
+          __m256d av,bv,cv,rv;
+
+          data=ElementDataTable+iElement;
+
+          av=_mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
+
+          bv=_mm256_set_pd(
+              LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
+              LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+          );
+
+          cv=_mm256_mul_pd(av,bv);
+          rv=_mm256_hadd_pd(cv,cv);
+
+          r=(double*)&rv;
+          res+=r[1]+r[2];
+        }
+#endif
+
+        //add the rest of the vector
+        for (;iElement<iElementMax;iElement++) {
+          data=ElementDataTable+iElement;
+          res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+        }
+
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+        if (irow>=length) exit(__LINE__,__FILE__,"Error: out of bound");
+#endif
+
+        p[irow]=res;
+      }
+
+    }
+    while  (irow_max_thread<MatrixRowTableLength);
+
+    delete [] LocalRecvExchangeBufferTable;
+  };
+
+
+  //start threads
+  int thread_id_table_size=4;
+  std::thread tTable[thread_id_table_size];
+
+  for (int i=1;i<thread_id_table_size;i++) {
+    tTable[i]=std::thread(ProcessRow,thread_id_table_size);
+  }
+
+  ProcessRow(thread_id_table_size);
+
+  for (int i=1;i<thread_id_table_size;i++) {
+    tTable[i].join();
+  }
+
+
+  RecvExchangeBufferTable[PIC::ThisThread]=NULL;
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
+    delete [] RecvExchangeBufferTable[thread];
+  }
+
+  delete [] RecvExchangeBufferTable;
+}
+
+
+#else //_PIC_MATMUL_MPI_MULTITHREAD_
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
@@ -1197,8 +1371,8 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   }
 
   delete [] RecvExchangeBufferTable;
-
 }
+#endif //_PIC_MATMUL_MPI_MULTITHREAD_
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
