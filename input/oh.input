@@ -1,7 +1,7 @@
 
 #main  
 
-SpeciesList=H !,H_ENA_V1,H_ENA_V2,H_ENA_V3 ! to add multiple species based on ENA velocity to run code faster
+SpeciesList=H,H_ENA_V1,H_ENA_V2,H_ENA_V3 ! to add multiple species based on ENA velocity to run code faster
 
 
 !settings of the directories
@@ -54,10 +54,10 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 #endUserDefinitions
 
 #General
-  ReferenceInjectionParticleNumber=200
+  ReferenceInjectionParticleNumber=200000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
-  InitialSampleLength=100
+  InitialSampleLength=1
 
 
   BlockCells=5,5,5
