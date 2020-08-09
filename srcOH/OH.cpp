@@ -335,27 +335,45 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
   ParentTimeStep=0.0;
   exit(__LINE__,__FILE__,"Error: the time step node is not defined");
 #endif
+  double WeightLoss,tWeightQuantumLoss;
 
-  if (ReactionOccurredFlag==true) {
-    //reaction is theoretically possible;
-    //determine whether the reaction has occurred by comparing the local time step with the partent particle life time
+  double InitWeightQuantum=0.001;
+  double WeightQuantum=InitWeightQuantum;
+  double EventLimiter=10;
 
-    if (rnd()<exp(-ParentTimeStep/ParentLifeTime)) {
-      //the particle is remain in the system
-      ReactionOccurredFlag=false;
-    }
+
+  WeightLoss=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*(1.0-exp(-ParentTimeStep/ParentLifeTime));
+  tWeightQuantumLoss=(int)(WeightLoss/WeightQuantum);  
+
+  if (tWeightQuantumLoss>EventLimiter) {
+    WeightQuantum*=tWeightQuantumLoss/EventLimiter;
+    tWeightQuantumLoss=EventLimiter;
   }
 
-  if (ReactionOccurredFlag==true) {
+
+
+  int nWeightQuantumLoss=(int)tWeightQuantumLoss;
+
+  tWeightQuantumLoss-=nWeightQuantumLoss; 
+  if (rnd()<tWeightQuantumLoss) nWeightQuantumLoss++; 
+
+  PIC::CPLR::InitInterpolationStencil(xParent,node);
+
+  double vp[3];
+    double PlasmaBulkVelocity[3];
+    double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
+
+
+auto SimulateReaction = [&] () { 
     //inject the products of the reaction
     double ParentTimeStep,ParentParticleWeight;
 
     // new particle comes from solar wind and has random velocity from proton Maxwellian distribution
-    double PlasmaBulkVelocity[3];
-    double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
-    double vp[3];
+//    double PlasmaBulkVelocity[3];
+//    double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
 
-    PIC::CPLR::InitInterpolationStencil(xParent,node);
+
+//    PIC::CPLR::InitInterpolationStencil(xParent,node);
 
     //determine with shich ions fluid that partice will interact with
     int ifluid_interact=0;
@@ -416,7 +434,7 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 #endif
 
     //account for the parent particle correction factor
-    ParentParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+    ParentParticleWeight*=WeightQuantum;
 
     // calculating the random velocity of the proton from the maxwellian velocity of the local plasma
     PIC::CPLR::GetBackgroundPlasmaVelocity(ifluid_interact,PlasmaBulkVelocity);
@@ -450,35 +468,99 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
 
-    // creating new neutral particle with the velocity of the selected proton
-    PIC::ParticleBuffer::SetV(vp,ParticleData);
+
 
     if ((isfinite(vp[0])==false)||(isfinite(vp[1])==false)||(isfinite(vp[2])==false)) exit(__LINE__,__FILE__,"Error: out of range");  
 
+
+    //consider a possibility ofr clearing a new particle 
+    bool CreateNewParticle=false;
+    int NewParticleSpec;
+    double nNewparticles_d;
+
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {
-      PIC::ParticleBuffer::SetI(_H_ENA_V3_SPEC_,ParticleData);
+//      PIC::ParticleBuffer::SetI(_H_ENA_V3_SPEC_,ParticleData);
+
+      if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V3_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V3_SPEC_])) {
+        CreateNewParticle=true;
+        NewParticleSpec=_H_ENA_V3_SPEC_;  
+      }
     }
     else if (_H_ENA_V2_SPEC_ >=0 && sqrt(vp2)>=150.0E3 && sqrt(vp2)<500.0E3) {
-      PIC::ParticleBuffer::SetI(_H_ENA_V2_SPEC_,ParticleData);
+//      PIC::ParticleBuffer::SetI(_H_ENA_V2_SPEC_,ParticleData);
+
+      if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V2_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V2_SPEC_])) {
+        CreateNewParticle=true;
+        NewParticleSpec=_H_ENA_V2_SPEC_;
+      }
     }
     else if (_H_ENA_V1_SPEC_ >=0 && sqrt(vp2)>=50.0E3 && sqrt(vp2)<150.0E3) {
-      PIC::ParticleBuffer::SetI(_H_ENA_V1_SPEC_,ParticleData);
+//      PIC::ParticleBuffer::SetI(_H_ENA_V1_SPEC_,ParticleData);
+
+      if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V1_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V1_SPEC_])) {
+        CreateNewParticle=true;
+        NewParticleSpec=_H_ENA_V1_SPEC_;
+      }
     }
     else {
-      PIC::ParticleBuffer::SetI(_H_SPEC_,ParticleData);
+//      PIC::ParticleBuffer::SetI(_H_SPEC_,ParticleData);
+
+      if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_])) {
+        CreateNewParticle=true;
+        NewParticleSpec=_H_SPEC_;
+      }
     }
 
-    // tagging the particle to the right population that it was created
-    OH::SetOriginTag(OH::GetEnaOrigin(PlasmaNumberDensity,PlasmaPressure,PlasmaBulkVelocity), ParticleData);
+    if (CreateNewParticle==true) {
+      long int new_ptr;
+      int nNewparticles=nNewparticles_d;
+      PIC::ParticleBuffer::byte *NewParticleData;
+
+      nNewparticles_d-=nNewparticles;
+      if (rnd()<nNewparticles_d) nNewparticles++; 
+
+      for (int np=0;np<nNewparticles;np++) { 
+        new_ptr=PIC::ParticleBuffer::GetNewParticle();
+        NewParticleData=PIC::ParticleBuffer::GetParticleDataPointer(new_ptr);
+
+        PIC::ParticleBuffer::CloneParticle(NewParticleData,ParticleData);
+        PIC::ParticleBuffer::SetV(vp,NewParticleData); 
+        PIC::ParticleBuffer::SetI(NewParticleSpec,NewParticleData);
+        PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,NewParticleData);
+  
+        // tagging the particle to the right population that it was created
+        OH::SetOriginTag(OH::GetEnaOrigin(PlasmaNumberDensity,PlasmaPressure,PlasmaBulkVelocity), NewParticleData);
+
+        //add the particle to the list of the particles existing in the system after reaction
+        PIC::ParticleBuffer::SetNext(FirstParticleCell,NewParticleData);
+        PIC::ParticleBuffer::SetPrev(-1,NewParticleData);
+
+        if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(new_ptr,FirstParticleCell);
+        FirstParticleCell=new_ptr;
+      }
+    }
+  };
+
+
+  for (int i=0;i<nWeightQuantumLoss;i++) SimulateReaction();
+
+  //determine whether the original particle need to be deleted
+  double new_weight_correction=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*exp(-ParentTimeStep/ParentLifeTime);
+
+  if (new_weight_correction<InitWeightQuantum) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
   }
+  else {
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(new_weight_correction,ParticleData);
 
-  //add the particle to the list of the particles existing in the system after reaction
-  PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr);
-  PIC::ParticleBuffer::SetPrev(-1,ptr);
+    //add the particle to the list of the particles existing in the system after reaction
+    PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr);
+    PIC::ParticleBuffer::SetPrev(-1,ptr);
 
-  if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
-  FirstParticleCell=ptr;
+    if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
+    FirstParticleCell=ptr;
+  }
 }
 
 
