@@ -1746,7 +1746,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     double CellVolume=1;
     double dx[3];
 
-    auto InterpolationCoefficientTable_LocalNodeOrder=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
     auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
     #pragma ivdep
@@ -2182,7 +2181,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
     double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
 
-    auto InterpolationCoefficientTable_LocalNodeOrder=PIC::InterpolationRoutines::CornerBased::InterpolationCoefficientTable_LocalNodeOrder;
     auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
 
