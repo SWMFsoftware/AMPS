@@ -710,8 +710,11 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
       
       double xLoc[3]={xp,yp,zp};
       // double xLoc[3]={1,1.5,1};
-      PIC::InterpolationRoutines::CornerBased::cStencil CornerStencil(false);
-      CornerStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xLoc,NULL));
+
+      PIC::InterpolationRoutines::CornerBased::cStencil CornerStencil;
+      PIC::InterpolationRoutines::CornerBased::InitStencil(xLoc,NULL,CornerStencil); 
+
+ //     CornerStencil=*(PIC::InterpolationRoutines::CornerBased::InitStencil(xLoc,NULL));
      
       char * DataPtr_I[8];
       for (int iSt=0; iSt<CornerStencil.Length;iSt++)
