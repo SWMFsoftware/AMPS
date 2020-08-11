@@ -131,8 +131,8 @@ int main(int argc,char **argv) {
     fstream foutCenterBased,foutCornerBased;
     bool open_file = true;
 
-    PIC::InterpolationRoutines::CellCentered::cStencil *CenterBasedStencil;
-    PIC::InterpolationRoutines::CornerBased::cStencil *CornerBasedStencil;
+    PIC::InterpolationRoutines::CellCentered::cStencil CenterBasedStencil;
+    PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
 
     if (PIC::ThisThread==0) for (iCase=0;iCase<nCase;iCase++) {
       amps_init();
@@ -159,15 +159,15 @@ int main(int argc,char **argv) {
         }
 
         //get the interpolation stencil
-        CenterBasedStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x0,NULL);
-        CornerBasedStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(x0,NULL);
+        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x0,NULL,CenterBasedStencil);
+        PIC::InterpolationRoutines::CornerBased::InitStencil(x0,NULL,CornerBasedStencil);
 
         //check order of interpolation
-        for (int icell=0; icell<CenterBasedStencil->Length; icell++) {
-          xcell=CenterBasedStencil->cell[icell]->GetX();
+        for (int icell=0; icell<CenterBasedStencil.Length; icell++) {
+          xcell=CenterBasedStencil.cell[icell]->GetX();
           fix_coords(xcell);
 
-          for (i=0; i<3; i++) x1CenterBased[i]+=xcell[i]*CenterBasedStencil->Weight[icell];
+          for (i=0; i<3; i++) x1CenterBased[i]+=xcell[i]*CenterBasedStencil.Weight[icell];
         }
 
         for (diff=0.0,i=0;i<3;i++) diff+=pow((x1CenterBased[i]-x0[i])/(0.5*(x1CenterBased[i]+x0[i])),2);
@@ -177,20 +177,20 @@ int main(int argc,char **argv) {
         if (diff>0.001) {
           foutCenterBased << "iCase="   << iCase << " iPoint=" << iPoint  << " x=" << x0[0] << " " << x0[1] << " " << x0[2] << " diff=" << diff << "\nStencil:\n";
 
-          for (int icell=0; icell<CenterBasedStencil->Length; icell++) {
-            xcell = CenterBasedStencil->cell[icell]->GetX();
+          for (int icell=0; icell<CenterBasedStencil.Length; icell++) {
+            xcell = CenterBasedStencil.cell[icell]->GetX();
             fix_coords(xcell);
 
-            foutCenterBased << "Cell " << icell << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CenterBasedStencil->Weight[icell] << endl;
+            foutCenterBased << "Cell " << icell << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CenterBasedStencil.Weight[icell] << endl;
           }
         }
 
         //check the corner-based interpolation procedure
-        for (int iCorner=0; iCorner<CornerBasedStencil->Length; iCorner++) {
-          xcell=CornerBasedStencil->cell[iCorner]->GetX();
+        for (int iCorner=0; iCorner<CornerBasedStencil.Length; iCorner++) {
+          xcell=CornerBasedStencil.cell[iCorner]->GetX();
           fix_coords(xcell);
 
-          for (i=0; i<3; i++) x1CornerBased[i]+=xcell[i]*CornerBasedStencil->Weight[iCorner];
+          for (i=0; i<3; i++) x1CornerBased[i]+=xcell[i]*CornerBasedStencil.Weight[iCorner];
         }
 
         for (diff=0.0,i=0;i<3;i++) diff+=pow((x1CornerBased[i]-x0[i])/(0.5*(x1CornerBased[i]+x0[i])),2);
@@ -200,11 +200,11 @@ int main(int argc,char **argv) {
         if (diff>0.001) {
           foutCornerBased << "iCase="   << iCase << " iPoint=" << iPoint  << " x=" << x0[0] << " " << x0[1] << " " << x0[2] << " diff=" << diff << "\nStencil:\n";
 
-          for (int iCorner=0; iCorner<CornerBasedStencil->Length; iCorner++) {
-            xcell = CornerBasedStencil->cell[iCorner]->GetX();
+          for (int iCorner=0; iCorner<CornerBasedStencil.Length; iCorner++) {
+            xcell = CornerBasedStencil.cell[iCorner]->GetX();
             fix_coords(xcell);
 
-            foutCornerBased << "Cell " << iCorner << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CornerBasedStencil->Weight[iCorner] << endl;
+            foutCornerBased << "Cell " << iCorner << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CornerBasedStencil.Weight[iCorner] << endl;
           }
         }
 
