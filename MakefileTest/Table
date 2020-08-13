@@ -1675,7 +1675,7 @@ Check=
 
 
 #>
-Name=test/fast-wave-openmp
+Name=test/fast-wave-openmp@@(0+) 
 Time=3
 
 Outs=
