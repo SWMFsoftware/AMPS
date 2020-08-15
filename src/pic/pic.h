@@ -3792,7 +3792,7 @@ namespace PIC {
     void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
-    void SetBlock_B(double *B_Center,double *B_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+    void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
     //the return codes of the moving procedures
     #define _PARTICLE_REJECTED_ON_THE_FACE_ -1
