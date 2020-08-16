@@ -2131,6 +2131,7 @@ Check=
 #>
 Name=SEP3D
 Time=2
+ExeptionCode=SKIP{icc}
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
