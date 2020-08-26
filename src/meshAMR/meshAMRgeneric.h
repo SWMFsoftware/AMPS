@@ -2650,7 +2650,7 @@ Start:
 
     flag=false;
     
-    for (idim=0;idim<_MESH_DIMENSION_;idim++) {
+    if (res!=NULL) for (idim=0;idim<_MESH_DIMENSION_;idim++) {
       if (x[idim]<res->xmin[idim]) ix[idim]--,flag=true; 
       if (x[idim]>=res->xmax[idim]) ix[idim]++,flag=true; 
     }
