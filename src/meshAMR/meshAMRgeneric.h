@@ -2635,15 +2635,31 @@ Start:
 
     //get the global index of the searched point
     int idim,ix[3];
+    cTreeNodeAMR<cBlockAMR>  *res;
+    bool flag; 
+
 
     for (idim=0;idim<_MESH_DIMENSION_;idim++) {
       ix[idim]=floor((x[idim]-xGlobalMin[idim])/dx_max_refinment[idim]);
 
-      if ((x[idim]<startNode->xmin[idim])&&(ix[idim]==startNode->xMinGlobalIndex[idim])) ix[idim]-=1;  
-      if ((x[idim]>startNode->xmax[idim])&&(ix[idim]<startNode->xMinGlobalIndex[idim]+startNode->NodeGeometricSizeIndex)) ix[idim]=startNode->xMinGlobalIndex[idim]+startNode->NodeGeometricSizeIndex;       
+//      if ((x[idim]<startNode->xmin[idim])&&(ix[idim]==startNode->xMinGlobalIndex[idim])) ix[idim]-=1;  
+//      if ((x[idim]>startNode->xmax[idim])&&(ix[idim]<startNode->xMinGlobalIndex[idim]+startNode->NodeGeometricSizeIndex)) ix[idim]=startNode->xMinGlobalIndex[idim]+startNode->NodeGeometricSizeIndex;       
     }
 
-    return findTreeNode(ix,startNode);
+    res=findTreeNode(ix,startNode);
+
+    flag=false;
+    
+    for (idim=0;idim<_MESH_DIMENSION_;idim++) {
+      if (x[idim]<res->xmin[idim]) ix[idim]--,flag=true; 
+      if (x[idim]>=res->xmax[idim]) ix[idim]++,flag=true; 
+    }
+
+    if (flag==true) {
+      res=findTreeNode(ix,res);  
+    }
+   
+    return res;
   }
 
 
