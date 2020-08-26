@@ -542,7 +542,12 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
         StencilNode=PIC::Mesh::mesh.findTreeNode(xStencil,StencilNode);
 
-        if (StencilNode==NULL) {
+        bool return_const_stencil=false;
+
+        if (StencilNode==NULL) return_const_stencil=true;
+        else if (StencilNode->IsUsedInCalculationFlag==false) return_const_stencil=true; 
+
+        if (return_const_stencil==true) {
           //verify that the point is inside the domain, and return a "constant" ctencil
           double xTest[3];
 
