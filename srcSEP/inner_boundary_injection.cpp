@@ -145,6 +145,41 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     } 
 
 
+    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_RelativisticBoris) if ((SEP::Offset::Momentum>=0)||(SEP::Offset::CosPitchAngle>=0)) {
+       PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+       double B[3]={0.0,0.0,0.0},b[3],Vsw[3]={0.0,0.0,0.0};
+       double p,mu;
+       int idim;
+
+       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,startNode,Stencil);
+
+       for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+         double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+         double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+
+         for (idim=0;idim<3;idim++) {
+           B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
+           Vsw[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
+         }
+       }
+
+       memcpy(b,B,3*sizeof(double));
+       Vector3D::Normalize(b);
+
+       mu=Vector3D::DotProduct(b,v)/Vector3D::Length(v);  
+
+       double p_sw_frame[3],v_sw_pfame[3];
+
+       for (idim=0;idim<3;idim++) v_sw_pfame[idim]=v[idim]-Vsw[idim]; 
+       Relativistic::Vel2Momentum(p_sw_frame,v_sw_pfame,PIC::MolecularData::GetMass(spec));
+
+       p=Vector3D::DotProduct(b,p_sw_frame); 
+      
+       *((double*)(newParticleData+SEP::Offset::Momentum))=p;
+       *((double*)(newParticleData+SEP::Offset::CosPitchAngle))=mu;
+    }
+
+
     //inject the particle into the system
     _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode);
   }

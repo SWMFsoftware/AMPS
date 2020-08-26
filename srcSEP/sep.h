@@ -44,9 +44,26 @@ namespace SEP {
 
   extern int ParticleTrajectoryCalculation;
 
+  //calcualtion of the drift velocity
+  extern int b_times_div_absB_offset;
+  extern int CurlB_offset;
+  extern int b_b_Curl_B_offset;
 
+  //offsets of the momentum and cos(pitch angle) in particle state vector
+  namespace Offset {
+    extern int Momentum,CosPitchAngle;
+  }
 
+  //request data in the particle state vector
+  void RequestParticleData();
+
+  int RequestStaticCellData(int);
+  void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node);
+  void InitDriftVelData();
+
+  //particle mover
   int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover_FocusedTransport(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
   namespace Sampling {
     using namespace Exosphere::Sampling;

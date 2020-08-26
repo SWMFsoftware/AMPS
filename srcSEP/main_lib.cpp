@@ -67,6 +67,10 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init() {
   PIC::InitMPI();
 
+SEP::RequestParticleData();
+
+  //request storage for calculating the drift velocity
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(SEP::RequestStaticCellData);
 
   //SetUp the alarm
 //  PIC::Alarm::SetAlarm(2000);
