@@ -74,6 +74,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   RecoverParticleData=off  \\ !on, off
     file=AMPS.restart
 
+  define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
+
   !DomainBoundaryParticleIntersection=SpecularReflection \\ !!delete, SpecularReflection, PeriodicCondition, user-defined \\ default is user-defined \\
   !  function = OH::user_set_face_boundary
 

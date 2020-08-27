@@ -63,6 +63,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   BlockCells=5,5,5
   GhostCells=2,2,2
 
+  define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
+
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
@@ -99,7 +101,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   DomainDXmin = 1.8E13;			  !default=1.8E13
   DomainDXMax = 1.8E13;			  !default=1.8E13
 
-  VelocityDistributionSampling=on \\ !on, off
+  VelocityDistributionSampling=off \\ ! on \\ !on, off
     x=(4.0E+13,0.0,-2.0E+13), (0.0,2.0E+6,0.0), (-2.0E+6,0.0,0.0) \\ 
     nSampleIntervals=500 \\
     vmin=-40e3, vmax=40e3
