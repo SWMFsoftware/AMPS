@@ -219,7 +219,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
 
   memcpy(b,B,3*sizeof(double));
-  Vector3D::Normalize(b);
+  absB=Vector3D::Normalize(b);
 
   Vector3D::GetNormFrame(ex,ey,b); 
 
@@ -394,6 +394,9 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   p_middle=p_init-0.5*dtTotal*p_init*(0.5*(1.0-mu2)*(dVsw_xdx+dVsw_ydy)+mu2*dVsw_zdz); 
   mu_middle=mu_init+0.5*dtTotal*0.5*(1-mu2)*(-v/absB*dAbsBdz+mu_init*(dVsw_xdx+dVsw_ydy-2.0*dVsw_zdz));
 
+  if (mu_middle>1.0) mu_middle=1.0;
+  else if (mu_middle<-1.0) mu_middle=-1.0; 
+
   for (idim=0;idim<3;idim++) x_middle[idim]=x_init[idim]+0.5*dtTotal*v*b[idim];
 
   //second half
@@ -436,6 +439,10 @@ if (trajectory_teminated==true) {
   mu2=mu_middle*mu_middle;
   p_final=p_init-dtTotal*p_middle*(0.5*(1.0-mu2)*(dVsw_xdx+dVsw_ydy)+mu2*dVsw_zdz);
   mu_final=mu_init+dtTotal*0.5*(1-mu2)*(-v/absB*dAbsBdz+mu_middle*(dVsw_xdx+dVsw_ydy-2.0*dVsw_zdz));
+
+  if (mu_final>1.0) mu_final=1.0;
+  else if (mu_final<-1.0) mu_final=-1.0;
+
   
 
   for (idim=0;idim<3;idim++) x_final[idim]=x_init[idim]+dtTotal*v*b[idim];
