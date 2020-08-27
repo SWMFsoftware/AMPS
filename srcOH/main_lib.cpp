@@ -364,7 +364,7 @@ void amps_time_step(){
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) 
+       if ((PIC::Mesh::mesh.ThisThread==0)&&(_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_!=_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_)) 
 	 cout << "AMPS: Output file " << PIC::DataOutputFileNumber<< " is done" << endl;
      }
      
