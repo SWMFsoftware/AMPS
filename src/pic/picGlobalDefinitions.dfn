@@ -219,6 +219,7 @@ species number (between reactions). Each segment is saved in the trajectory file
 //the mode of the output of the AMPS' macroscopic data file (1. Tecplot Ascii or 2. binary restart file of the sampled data for the further readout and translation into TECPLOT data format)
 #define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_               0
 #define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_  1
+#define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_                         2
 
 //the type of the stencil that is used for interpolating of the models cell centered data onto cell corners
 #define _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE__DEFAULT_      0
