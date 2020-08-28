@@ -127,6 +127,8 @@ void exit(long int nline, const char* fname, const char* msg) {
   printf("$PREFIX:%s",str);
 
   PrintErrorLog(str);
+
+  MPI_Abort(MPI_GLOBAL_COMMUNICATOR,t2);
   exit(0);
 }
 
