@@ -647,9 +647,7 @@ Not_Inside_Sphere:
      BlockIntersectionCode=BlockIntersection(xBlockMinInit,xBlockMaxInit,EPS);
      *IntersectionStatus=BlockIntersectionCode;
 
-     if (BlockIntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_) return 0.0;
-
-     if (BlockIntersectionCode==_AMR_BLOCK_INSIDE_DOMAIN_) {
+     if ((BlockIntersectionCode==_AMR_BLOCK_INSIDE_DOMAIN_)||(BlockIntersectionCode==_AMR_BLOCK_OUTSIDE_DOMAIN_)) {
        for (res=1.0,idim=0;idim<3;idim++) res*=xBlockMaxInit[idim]-xBlockMinInit[idim];
        return res;
      }
