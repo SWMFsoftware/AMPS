@@ -513,6 +513,31 @@ Check=
 <#
 
 
+#>
+Name=SEP--focused_transport
+Time=4
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Compile=
+>>>@echo "test_SEP--focused_transport_compile..." > test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+>>>./Config.pl -application=test/sep_focused_transport -spice-path=nospice   -amps-test=on
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP--focused_transport_compile... done" >> test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+
+Check=
+>>>@echo "SEP--focused_transport_check..." >> test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+>>>@${TESTSEP--focused_transportDIR}/../utility/ReduceFile.pl ${TESTSEP--focused_transportDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--focused_transportDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/Parker_spiral--boris_relativistic-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--focused_transport-REF}.ref_np`ls $(TESTSEP--focused_transportDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+
+
+>>>@ls -l test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+>>>@echo Test SEP--focused_transport has finished: `date`
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=Moon
