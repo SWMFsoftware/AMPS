@@ -404,7 +404,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   bool trajectory_teminated=false;
 
-  if (startNode==NULL) trajectory_teminated=true;
+  if ((startNode==NULL)||(x_middle[0]*x_middle[0]+x_middle[1]*x_middle[1]+x_middle[2]*x_middle[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
 
 if (trajectory_teminated==true) {
@@ -449,7 +449,7 @@ if (trajectory_teminated==true) {
 
   startNode=PIC::Mesh::mesh.findTreeNode(x_final,startNode);
 
-  if (startNode==NULL) trajectory_teminated=true;
+  if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
 
 if (trajectory_teminated==true) {
