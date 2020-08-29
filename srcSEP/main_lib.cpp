@@ -67,7 +67,7 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init() {
   PIC::InitMPI();
 
-SEP::RequestParticleData();
+  SEP::RequestParticleData();
 
   //request storage for calculating the drift velocity
   PIC::IndividualModelSampling::RequestStaticCellData.push_back(SEP::RequestStaticCellData);
@@ -410,6 +410,16 @@ SEP::RequestParticleData();
           if ((cell=block->GetCenterNode(LocalCellNumber))!=NULL) {
             cell->GetX(x);
             SEP::ParkerSpiral::GetB(B,x);
+
+            if (cell->Measure==0.0) {
+              PIC::Mesh::mesh.InitCellMeasureBlock(startNode); 
+
+              if (cell->Measure==0.0) {
+                PIC::Mesh::mesh.CenterNodes.deleteElement(cell);
+                startNode->block->SetCenterNode(NULL,LocalCellNumber);
+                continue;
+              }
+            }
 
             data=(double*)(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset); 
 
