@@ -453,7 +453,7 @@ Check=
 >>>@echo "SEP--Multiple_Parker_spiral--boris_relativistic_check..." >> test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff
 >>>@${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/../utility/ReduceFile.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/Multiple_Parker_spiral--boris_relativistic-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.ref_np`ls $(TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Multiple_Parker_spiral--boris_relativistic-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.ref_np`ls $(TESTSEP--Multiple_Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff 
 
 
 >>>@ls -l test_SEP--Multiple_Parker_spiral--boris_relativistic${TESTSEP--Multiple_Parker_spiral--boris_relativistic-REF}.diff 
@@ -479,7 +479,7 @@ Check=
 >>>@echo "SEP--Parker_spiral--boris_relativistic_check..." >> test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff
 >>>@${TESTSEP--Parker_spiral--boris_relativisticDIR}/../utility/ReduceFile.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/Parker_spiral--boris_relativistic-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker_spiral--boris_relativistic-REF}.ref_np`ls $(TESTSEP--Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--boris_relativisticDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker_spiral--boris_relativistic-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker_spiral--boris_relativistic-REF}.ref_np`ls $(TESTSEP--Parker_spiral--boris_relativisticDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff 
 
 
 >>>@ls -l test_SEP--Parker_spiral--boris_relativistic${TESTSEP--Parker_spiral--boris_relativistic-REF}.diff 
@@ -505,7 +505,7 @@ Check=
 >>>@echo "SEP--Parker_spiral--field_line_check..." >> test_SEP--Parker_spiral--field_line${TESTSEP--Parker_spiral--field_line-REF}.diff
 >>>@${TESTSEP--Parker_spiral--field_lineDIR}/../utility/ReduceFile.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP/SEP--Parker_spiral--field_line-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker_spiral--field_line-REF}.ref_np`ls $(TESTSEP--Parker_spiral--field_lineDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--field_line${TESTSEP--Parker_spiral--field_line-REF}.diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--field_lineDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/SEP--Parker_spiral--field_line-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker_spiral--field_line-REF}.ref_np`ls $(TESTSEP--Parker_spiral--field_lineDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--field_line${TESTSEP--Parker_spiral--field_line-REF}.diff 
 
 
 >>>@ls -l test_SEP--Parker_spiral--field_line${TESTSEP--Parker_spiral--field_line-REF}.diff 

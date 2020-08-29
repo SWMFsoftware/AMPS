@@ -58,7 +58,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   InitialSampleLength=400
 
 
-  BlockCells=5,5,5
+  BlockCells=6,6,6
   GhostCells=2,2,2
 
   NastranSurfaceUserData=on !!!on, off
@@ -68,6 +68,13 @@ CouplerMode=T96 !ices !!off, ices, swmf
    
 
 #endGeneral
+
+#interface
+
+  cell_centered_linear_interpolation_mode=amps
+  cell_centered_linear_interpolation_src=default
+
+#endinterface
 
 #ParticleCollisions 
   model = off ! HS !!off !HS ! HS, off
