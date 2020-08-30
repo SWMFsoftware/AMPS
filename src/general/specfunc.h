@@ -562,6 +562,10 @@ namespace Relativistic {
     return 1.0/sqrt(1.0-(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])/(SpeedOfLight*SpeedOfLight));
   }
 
+  inline double GetGamma(double Speed) {
+    return 1.0/sqrt(1.0-Speed*Speed/(SpeedOfLight*SpeedOfLight));
+  }
+
   inline double Speed2Momentum(double Speed,double mass) {
     return mass*Speed/sqrt(1.0-(Speed*Speed)/(SpeedOfLight*SpeedOfLight));
   }
