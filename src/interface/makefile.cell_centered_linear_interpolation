@@ -10,7 +10,6 @@ CELL_CENTERED_LINEAR_INTERPOLATION_OBJ_EXTERNAL=\
   ModMpiInterfaces.o 				\
   ModMpi.o					\
   ModIoUnit.o					\
-  ModUtility_c.o 				\
   ModUtility.o					\
   ModInterpolateAMR.o
 
