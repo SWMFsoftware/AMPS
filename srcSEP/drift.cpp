@@ -192,7 +192,7 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
 //Focused transport mover He-2019-AJL 
 
 
-int SEP::ParticleMover_FocusedTransport(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
+int SEP::ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   PIC::ParticleBuffer::byte *ParticleData;
   int spec;
 
@@ -493,4 +493,254 @@ if (trajectory_teminated==true) {
 
   return _PARTICLE_MOTION_FINISHED_;
 }
+
+
+int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  struct cGetCoefficientManager {
+    double Dln_B_Dt,dln_B_ds,Dln_rho_B_Dt,b_Du_Dt;
+    double* x0;
+    double l,t,b[3];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
+  }; 
+
+  auto GetCoefficients = [&] (cGetCoefficientManager* mng,double time_offset) {
+    PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+    int idim;
+    double B[3]={0.0,0.0,0.0},Vsw[3]={0.0,0.0,0.0};
+
+    PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(mng->x0,mng->Node,Stencil);
+
+    for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+
+      for (idim=0;idim<3;idim++) {
+        B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
+        Vsw[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
+      }
+    }
+
+    memcpy(mng->b,B,3*sizeof(double));
+    Vector3D::Normalize(mng->b);
+
+    //d/ds 
+    //s+
+    double ds=0.0,xtest[3],tB[3],B_splus,B_sminus;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* tNode;
+
+    for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]+mng->l*mng->b[idim],tB[idim]=0.0;
+
+    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+
+    if (tNode->IsUsedInCalculationFlag==true) {
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
+      ds+=mng->l;
+    }
+    else {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(mng->x0,mng->Node,Stencil);
+    }
+
+    for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+
+      for (idim=0;idim<3;idim++) tB[idim]+=Stencil.Weight[iStencil]*ptr[idim];
+    }
+
+    B_splus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
+
+    //s-
+    for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]-mng->l*mng->b[idim],tB[idim]=0.0;
+
+    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+
+    if (tNode->IsUsedInCalculationFlag==true) {
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
+      ds+=mng->l;
+    }
+    else {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(mng->x0,mng->Node,Stencil);
+    }
+
+    for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      
+      for (idim=0;idim<3;idim++) tB[idim]+=Stencil.Weight[iStencil]*ptr[idim];
+    }
+
+    B_sminus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
+
+    mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0;
+
+
+    ///Dt+
+    double B_tplus,rho_B_tplus,B_tminus,rho_B_tminus,rho_tplus=0.0,rho_tminus=0.0,Vsw_tplus[3]={0.0,0.0,0.0},Vsw_tminus[3]={0.0,0.0,0.0}; 
+
+    for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]+mng->t*Vsw[idim],tB[idim]=0.0;
+
+    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+
+    if (tNode->IsUsedInCalculationFlag==true) {
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
+    }
+    else {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(mng->x0,mng->Node,Stencil);
+    }
+
+    for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+
+      for (idim=0;idim<3;idim++) {
+        tB[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
+        Vsw_tplus[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
+      }
+
+      rho_tplus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset)));
+    }
+
+    B_tplus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
+    
+
+    ///Dt-
+    for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]-mng->t*Vsw[idim],tB[idim]=0.0;
+
+    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+
+    if (tNode->IsUsedInCalculationFlag==true) {
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
+    }
+    else {
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(mng->x0,mng->Node,Stencil);
+    }
+
+    for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+
+      for (idim=0;idim<3;idim++) {
+        tB[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
+        Vsw_tminus[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
+      }
+
+      rho_tminus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset)));
+    }
+
+    B_tminus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
+
+
+    mng->Dln_B_Dt=log(B_tplus/B_tminus)/(2.0*mng->t);
+    mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0; 
+    mng->Dln_rho_B_Dt=log((rho_tplus/B_tplus)/(rho_tminus/B_tminus))/(2.0*mng->t),
+    mng->b_Du_Dt=(mng->b[0]*(Vsw_tplus[0]-Vsw_tminus[0])+mng->b[1]*(Vsw_tplus[1]-Vsw_tminus[1])+mng->b[2]*(Vsw_tplus[2]-Vsw_tminus[2]))/(2.0*mng->t);
+  };
+
+
+
+  cGetCoefficientManager mng;
+
+  mng.l=min((startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_,min((startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_,(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_));
+  mng.t=0.25*dtTotal;
+
+  //first half step
+  double v_par_init,v_par_middle;
+  double p_par_init,p_par_middle,p_par_final,p_norm_init,p_norm_middle,p_norm_final; 
+  double x_init[3],x_middle[3],x_final[3];
+  double p,m_i,mass,speed;
+  int idim,spec;
+  bool trajectory_teminated=false;
+
+  
+  PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
+
+  spec=PIC::ParticleBuffer::GetI(ParticleData);
+  mass=PIC::MolecularData::GetMass(spec); 
+
+  PIC::ParticleBuffer::GetX(x_init,ParticleData);
+  p_norm_init=*((double*)(ParticleData+SEP::Offset::p_norm));
+  p_par_init=*((double*)(ParticleData+SEP::Offset::p_par));
+
+  p=sqrt(p_par_init*p_par_init+p_norm_init*p_norm_init);
+  speed=Relativistic::Momentum2Speed(p,mass);
+  m_i=mass*Relativistic::GetGamma(speed);
+
+  mng.x0=x_init;
+  GetCoefficients(&mng,0.0);
+
+  p_norm_middle=p_norm_init+0.25*dtTotal*(mng.Dln_B_Dt+mng.dln_B_ds*v_par_init)*p_norm_init; 
+  p_par_middle=p_par_init+0.5*dtTotal*(-p_norm_init*p_norm_init/(2.0*m_i)*mng.dln_B_ds+mng.Dln_rho_B_Dt*p_par_init-m_i*mng.b_Du_Dt);  
+  
+  for (idim=0;idim<3;idim++) x_middle[idim]=x_init[idim]+0.5*dtTotal*v_par_init*mng.b[idim]; 
+
+  startNode=PIC::Mesh::mesh.findTreeNode(x_middle,startNode);
+
+  if ((startNode==NULL)||(x_middle[0]*x_middle[0]+x_middle[1]*x_middle[1]+x_middle[2]*x_middle[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
+  else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
+
+  if (trajectory_teminated==true) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_LEFT_THE_DOMAIN_;
+  }
+  
+  //send half step
+  p=sqrt(p_par_middle*p_par_middle+p_norm_middle*p_norm_middle);
+  speed=Relativistic::Momentum2Speed(p,mass);
+  m_i=mass*Relativistic::GetGamma(speed);
+
+  v_par_middle=speed*p_par_middle/p;
+
+  mng.x0=x_middle;
+  GetCoefficients(&mng,0.5*dtTotal);
+
+  p_norm_final=p_norm_init+0.5*dtTotal*(mng.Dln_B_Dt+mng.dln_B_ds*v_par_middle)*p_norm_middle;
+  p_par_final=p_par_init+dtTotal*(-p_norm_middle*p_norm_middle/(2.0*m_i)*mng.dln_B_ds+mng.Dln_rho_B_Dt*p_par_middle-m_i*mng.b_Du_Dt);
+ 
+
+  for (idim=0;idim<3;idim++) x_final[idim]=x_init[idim]+dtTotal*v_par_middle*mng.b[idim];
+
+  startNode=PIC::Mesh::mesh.findTreeNode(x_final,startNode);
+
+  if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
+  else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
+
+  if (trajectory_teminated==true) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_LEFT_THE_DOMAIN_;
+  }
+
+
+  PIC::ParticleBuffer::SetX(x_final,ParticleData);
+  *((double*)(ParticleData+SEP::Offset::p_par))=p_par_final;
+  *((double*)(ParticleData+SEP::Offset::p_norm))=p_norm_final;
+
+
+  PIC::Mesh::cDataBlockAMR *block;
+  int i,j,k;
+
+  if (PIC::Mesh::mesh.fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+  if ((block=startNode->block)==NULL) {
+    exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
+  }
+
+
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+
+  tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+  #else
+    exit(__LINE__,__FILE__,"Error: the option is not defined");
+  #endif
+
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
 

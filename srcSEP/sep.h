@@ -11,6 +11,12 @@
 
 #include <math.h>
 
+#define _SEP_MOVER_DEFUALT_              0
+#define _SEP_MOVER_BOROVIKOV_2019_ARXIV_ 1
+#define _SEP_MOVER_HE_2019_AJL_          2 
+
+#define _SEP_MOVER_ _SEP_MOVER_HE_2019_AJL_
+
 #include "pic.h"
 
 
@@ -52,6 +58,7 @@ namespace SEP {
   //offsets of the momentum and cos(pitch angle) in particle state vector
   namespace Offset {
     extern int Momentum,CosPitchAngle;
+    extern int p_par,p_norm;
   }
 
   //request data in the particle state vector
@@ -61,9 +68,27 @@ namespace SEP {
   void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node);
   void InitDriftVelData();
 
+
+  int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
   //particle mover
-  int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover_FocusedTransport(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+    switch(_SEP_MOVER_) {
+    case _SEP_MOVER_DEFUALT_:
+      ParticleMover_default(ptr,dtTotal,startNode);
+      break;
+    case _SEP_MOVER_BOROVIKOV_2019_ARXIV_:
+      ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
+      break;
+    case _SEP_MOVER_HE_2019_AJL_:
+      ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not found");
+    }
+  }
 
   namespace Sampling {
     using namespace Exosphere::Sampling;
