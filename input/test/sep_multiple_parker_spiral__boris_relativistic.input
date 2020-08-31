@@ -65,6 +65,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   ControlParticleInsideNastranSurface=off !!!on,of
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) SEP::ParticleMover(ptr,LocalTimeStep,node)
+  define _SEP_MOVER_ _SEP_MOVER_DEFUALT_
    
 
 #endGeneral
