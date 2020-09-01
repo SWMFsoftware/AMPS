@@ -145,7 +145,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     } 
 
 
-    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_RelativisticBoris) if ((SEP::Offset::Momentum>=0)||(SEP::Offset::CosPitchAngle>=0)) {
+    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_RelativisticBoris) if ((SEP::Offset::Momentum>=0)||(SEP::Offset::CosPitchAngle>=0)||(SEP::Offset::p_par>=0)) {
        PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
        double B[3]={0.0,0.0,0.0},b[3],Vsw[3]={0.0,0.0,0.0};
        double p,mu;
@@ -175,8 +175,17 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 
        p=Vector3D::DotProduct(b,p_sw_frame); 
       
-       *((double*)(newParticleData+SEP::Offset::Momentum))=p;
-       *((double*)(newParticleData+SEP::Offset::CosPitchAngle))=mu;
+       if (SEP::Offset::Momentum>=0) {
+         *((double*)(newParticleData+SEP::Offset::Momentum))=p;
+         *((double*)(newParticleData+SEP::Offset::CosPitchAngle))=mu;
+       }
+       else if (SEP::Offset::p_par>=0) {
+         *((double*)(newParticleData+SEP::Offset::p_par))=p;
+
+         Vector3D::Orthogonalize(b,p_sw_frame); 
+         *((double*)(newParticleData+SEP::Offset::p_norm))=Vector3D::Length(p_sw_frame); 
+       }
+
     }
 
 
