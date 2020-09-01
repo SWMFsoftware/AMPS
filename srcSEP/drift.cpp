@@ -569,9 +569,6 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     B_sminus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
 
-    mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0;
-
-
     ///Dt+
     double B_tplus,rho_B_tplus,B_tminus,rho_B_tminus,rho_tplus=0.0,rho_tminus=0.0,Vsw_tplus[3]={0.0,0.0,0.0},Vsw_tminus[3]={0.0,0.0,0.0}; 
 
@@ -628,10 +625,26 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     B_tminus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
 
 
-    mng->Dln_B_Dt=log(B_tplus/B_tminus)/(2.0*mng->t);
-    mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0; 
-    mng->Dln_rho_B_Dt=log((rho_tplus/B_tplus)/(rho_tminus/B_tminus))/(2.0*mng->t),
-    mng->b_Du_Dt=(mng->b[0]*(Vsw_tplus[0]-Vsw_tminus[0])+mng->b[1]*(Vsw_tplus[1]-Vsw_tminus[1])+mng->b[2]*(Vsw_tplus[2]-Vsw_tminus[2]))/(2.0*mng->t);
+    if ((B_tplus>0.0)&&(B_tminus>0.0)) {
+      mng->Dln_B_Dt=log(B_tplus/B_tminus)/(2.0*mng->t);
+      mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0;
+
+      if ((rho_tplus>0.0)&&(rho_tminus>0.0)) {
+        mng->Dln_rho_B_Dt=log((rho_tplus/B_tplus)/(rho_tminus/B_tminus))/(2.0*mng->t),
+        mng->b_Du_Dt=(mng->b[0]*(Vsw_tplus[0]-Vsw_tminus[0])+mng->b[1]*(Vsw_tplus[1]-Vsw_tminus[1])+mng->b[2]*(Vsw_tplus[2]-Vsw_tminus[2]))/(2.0*mng->t);
+      }
+      else {
+        mng->Dln_rho_B_Dt=0.0;
+        mng->b_Du_Dt=0.0;
+      }
+    }
+    else {
+      mng->Dln_B_Dt=0.0;
+      mng->dln_B_ds=0.0;
+
+      mng->b_Du_Dt=0.0;
+      mng->Dln_rho_B_Dt=0.0; 
+    } 
   };
 
 
@@ -663,7 +676,10 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
   speed=Relativistic::Momentum2Speed(p,mass);
   m_i=mass*Relativistic::GetGamma(speed);
 
+  v_par_init=speed*p_par_init/p;
+
   mng.x0=x_init;
+  mng.Node=startNode;
   GetCoefficients(&mng,0.0);
 
   p_norm_middle=p_norm_init+0.25*dtTotal*(mng.Dln_B_Dt+mng.dln_B_ds*v_par_init)*p_norm_init; 
@@ -689,6 +705,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
   v_par_middle=speed*p_par_middle/p;
 
   mng.x0=x_middle;
+  mng.Node=startNode; 
   GetCoefficients(&mng,0.5*dtTotal);
 
   p_norm_final=p_norm_init+0.5*dtTotal*(mng.Dln_B_Dt+mng.dln_B_ds*v_par_middle)*p_norm_middle;
