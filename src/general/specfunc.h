@@ -370,7 +370,7 @@ namespace Vector3D {
     return sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   }
 
-  inline double MultiplyScalar(double t,double *x) {
+  inline void MultiplyScalar(double t,double *x) {
     for (int i=0;i<3;i++) x[i]*=t;
   }
 
