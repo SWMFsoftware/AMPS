@@ -86,6 +86,11 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 #block ../input/oh.input.pl !process the settings of the Outer Heliosphere model
 
   SourceRegionNumber=4
+
+  PrePopulateDomain=on \\ !on,off
+    n=1.0E4 \\
+    T=100 \\
+    v=(0,0,0)
   
   ! user defined global time step
   UserGlobalTimeStep=-1.0   ! default = -1.0 (i.e. use time step defined by AMPS)

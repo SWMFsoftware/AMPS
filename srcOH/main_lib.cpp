@@ -24,6 +24,10 @@
 #include "OH.h"
 
 
+bool flag_prepopulate_domain=false;
+double density_prepopulate_domain=0.0;
+double temp_prepopulate_domain=0.0;
+double bulk_vel_prepopulate_domain[3];
 
 
 //the parameters of the domain
@@ -109,8 +113,6 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
    if (spec!=_H_SPEC_) return 0; //inject only spec=0
 
    double v[3];
-
-
    double ModelParticlesInjectionRate;
 
    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
@@ -343,6 +345,11 @@ void amps_init() {
      OH::Sampling::DistributionFunctionSample::Init();
      PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(OH::Sampling::DistributionFunctionSample::SampleDistributionFunction,OH::Sampling::DistributionFunctionSample::printDistributionFunction);
      PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(OH::Sampling::DistributionFunctionSample::Sample2dDistributionFunction,OH::Sampling::DistributionFunctionSample::print2dDistributionFunction);
+   }
+
+   //prepopulate the domain if needed
+   if (flag_prepopulate_domain==true) {
+     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain);
    }
 
 }

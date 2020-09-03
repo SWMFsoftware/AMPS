@@ -275,6 +275,58 @@ while ($line=<InputFile>) {
     
     ampsConfigLib::ChangeValueOfVariable("int OH::Sampling::OriginLocation::nSampledOriginLocations",$InputLine,"main/OH.cpp")
   }
+
+  #prepopulate the computational domain 
+  elsif ($InputLine eq "PREPOPULATEDOMAIN") {
+
+    $InputComment=~s/[=();,]/ /g;
+    chomp($InputComment);
+
+    ($InputLine,$InputComment)=split(' ',$InputComment,2); 
+
+    if ($InputLine eq "ON") {
+      ampsConfigLib::ChangeValueOfVariable("bool flag_prepopulate_domain","true","main/main_lib.cpp");
+
+      while (defined $InputComment) {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+        if (!defined $InputLine) {
+          last;
+        }
+
+        if ($InputLine eq "N") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double density_prepopulate_domain",$InputLine,"main/main_lib.cpp"); 
+        }
+        elsif ($InputLine eq "T") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double temp_prepopulate_domain",$InputLine,"main/main_lib.cpp"); 
+        }
+        elsif ($InputLine eq "V") {
+          my ($v0,$v1,$v2,@v);
+
+          ($v0,$v1,$v2,$InputComment)=split(' ',$InputComment,4);
+
+          $v[0]=$v0;
+          $v[1]=$v1;
+          $v[2]=$v2;
+   
+          ampsConfigLib::ChangeValueOfArray("double bulk_vel_prepopulate_domain\\[3\\]",\@v,"main/main_lib.cpp"); 
+        }
+        elsif  ($InputLine ne "OFF") {
+          warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+          die "$InputLine: Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+    }
+    elsif ($InputLine ne "OFF") {
+      warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+      die "$InputLine: Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }
+  
+
+  }
+
   
   elsif ($InputLine eq "#ENDBLOCK") {
     last;

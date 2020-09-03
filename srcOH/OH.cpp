@@ -4,10 +4,10 @@
 #include "pic.h"
 
 // user defined global time step
-double OH::UserGlobalTimeStep = -1.0;
+double OH::UserGlobalTimeStep = 3.154e7;
 
 //  injection boundary condition
-double OH::InjectionVelocity[3] = {26.3E3, 0.0, -2.3E3};
+double OH::InjectionVelocity[3] = {0.0, 0.0, 0.0};
 double OH::InjectionNDensity    = 0.18E6;
 double OH::InjectionTemperature = 6519;
 
