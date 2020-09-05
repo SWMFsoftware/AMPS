@@ -87,6 +87,9 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   SourceRegionNumber=4
 
+  ChargeExchange::InitWeightQuantum=0.001
+  ChargeExchange::EventLimiter=10
+
   PrePopulateDomain=on \\ !on,off
     n=1.0E4 \\
     T=100 \\

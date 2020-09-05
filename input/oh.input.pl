@@ -78,7 +78,7 @@ while ($line=<InputFile>) {
   $InputLine=uc($InputLine);
   chomp($InputLine);
  
-  $InputLine=~s/[=()]/ /g;
+  $InputLine=~s/[=():,]/ /g;
   ($InputLine,$InputComment)=split(' ',$InputLine,2);
   $InputLine=~s/ //g;
   
@@ -273,8 +273,29 @@ while ($line=<InputFile>) {
   elsif ($InputLine eq "SOURCEREGIONNUMBER") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
     
-    ampsConfigLib::ChangeValueOfVariable("int OH::Sampling::OriginLocation::nSampledOriginLocations",$InputLine,"main/OH.cpp")
+    ampsConfigLib::ChangeValueOfVariable("int OH::Sampling::OriginLocation::nSampledOriginLocations",$InputLine,"main/OH.cpp"); 
   }
+
+  #parameters of the charge-exchange model
+  elsif ($InputLine eq "CHARGEEXCHANGE") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+    if ($InputLine eq "INITWEIGHTQUANTUM") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      ampsConfigLib::ChangeValueOfVariable("double InitWeightQuantum",$InputLine,"main/OH.cpp"); 
+    }
+    elsif ($InputLine eq "EVENTLIMITER") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      ampsConfigLib::ChangeValueOfVariable("double EventLimiter",$InputLine,"main/OH.cpp");
+    }
+    else {
+      warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+      die "$InputLine: Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }
+  }
+
 
   #prepopulate the computational domain 
   elsif ($InputLine eq "PREPOPULATEDOMAIN") {
