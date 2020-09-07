@@ -425,7 +425,82 @@ void PIC::Parallel::ExchangeParticleData() {
     if (RecvParticleDataBuffer[thread]!=NULL) delete [] RecvParticleDataBuffer[thread]; 
   }
 
-} 
+
+
+  //in case AMPS is compiled in the debugger mode, source particles to eliminate the randomness of the particles in the particle lists
+  //caused by the randomness of the particle data exchange time
+
+
+  auto SortParticleCellList = [&] (int iCell,int jCell,int kCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node) {
+
+    class cParticleDescriptor {
+    public:
+      long int ptr;
+      unsigned long int checksum;
+
+      bool operator < (const cParticleDescriptor& p) const {
+        return checksum<p.checksum;
+      }
+    };
+
+    //put together the particle list
+    vector <cParticleDescriptor> ParticleList;
+    cParticleDescriptor p;
+    long int Particle;
+    CRC32 sig;
+
+
+    Particle=Node->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
+
+    while (Particle!=-1) {
+      p.ptr=Particle;
+      p.checksum=PIC::ParticleBuffer::GetParticleSignature(Particle,&sig,false);
+      sig.clear();
+
+      ParticleList.push_back(p);
+      Particle=PIC::ParticleBuffer::GetNext(Particle);
+    }
+
+
+    //sort the list
+    std::sort(ParticleList.begin(),ParticleList.end(),
+        [](cParticleDescriptor& a,cParticleDescriptor& b) {return a.checksum>b.checksum;});
+
+    //create the sorted list
+    int ip,ipmax=ParticleList.size();
+
+    Node->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]=ParticleList[0].ptr;
+
+    for (ip=0;ip<ipmax;ip++) {
+      PIC::ParticleBuffer::SetPrev((ip!=0) ? ParticleList[ip-1].ptr : -1,ParticleList[ip].ptr);
+      PIC::ParticleBuffer::SetNext((ip!=ipmax-1) ? ParticleList[ip+1].ptr : -1,ParticleList[ip].ptr);
+    }
+  };
+
+  auto SortParticleList = [&] () {
+    int nLocalNode;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node;
+    int i,j,k;
+
+
+    for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      Node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
+      if (Node->block!=NULL) {
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+          if (Node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+            SortParticleCellList(i,j,k,Node);
+          }
+        }
+      }
+    }
+  };
+
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    SortParticleList();
+  }
+
+ }
 
 
 
