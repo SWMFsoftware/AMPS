@@ -319,15 +319,15 @@ void PIC::Mover::MoveParticles() {
   int this_thread_id;
   int thread_id_table_size=4;
   
-  std::thread tTable[thread_id_table_size];
+  std::thread tTable[_PIC_NUMBER_STD_THREADS_];
   
-  for (int i=1;i<thread_id_table_size;i++) {
-    tTable[i]=std::thread(LapentaMultiThreadedMover,i,thread_id_table_size);
+  for (int i=1;i<_PIC_NUMBER_STD_THREADS_;i++) {
+    tTable[i]=std::thread(LapentaMultiThreadedMover,i,_PIC_NUMBER_STD_THREADS_);
   }
   
-  LapentaMultiThreadedMover(0,thread_id_table_size);
+  LapentaMultiThreadedMover(0,_PIC_NUMBER_STD_THREADS_);
   
-  for (int i=1;i<thread_id_table_size;i++)  tTable[i].join();
+  for (int i=1;i<_PIC_NUMBER_STD_THREADS_;i++)  tTable[i].join();
   
   return;
 #endif

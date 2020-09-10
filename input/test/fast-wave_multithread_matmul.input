@@ -6,6 +6,8 @@
   define _PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ _PIC_MODE_ON_
   define _PIC_MOVER__MPI_MULTITHREAD_ _PIC_MODE_ON_
   define _PIC_MATMUL_MPI_MULTITHREAD_ _PIC_MODE_ON_
+
+  MultiThread::ThreadNumber=5
 #endGeneral
 
 #end

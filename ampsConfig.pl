@@ -1398,6 +1398,20 @@ sub ReadGeneralBlock {
       ($s0,$s1,$s2)=split(' ',$InputLine,3);
       ampsConfigLib::ChangeValueOfVariable("long int PIC::RequiredSampleLength",$s1,"pic/pic.cpp");
     }
+
+    ###the number of the std::threads used in the multithread mode
+    elsif ($InputLine eq "MULTITHREAD") {
+       ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+       if ($InputLine eq "THREADNUMBER") {
+         ($InputLine,$InputComment)=split(' ',$InputComment,2);
+         ampsConfigLib::RedefineMacro("_PIC_NUMBER_STD_THREADS_",$InputLine,"pic/picGlobal.dfn");
+       }
+       else {
+         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+         die "The option is unknown ($line)\n";
+       } 
+     }
     
     ### SAMPLEOUTPUTMODE ### 
     elsif ($InputLine eq "SAMPLEOUTPUTMODE") {

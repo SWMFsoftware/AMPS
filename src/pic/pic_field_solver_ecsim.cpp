@@ -3114,9 +3114,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   static cProcessData *ProcessData=NULL;
 
-  const int thread_id_table_size=4;
-  static int SetStartIndex[8]={0,0,0,0, 0,0,0,0};
-  static int SetLength[8]={0,0,0,0, 0,0,0,0}; 
+  const int thread_id_table_size=_PIC_NUMBER_STD_THREADS_;
+  static int SetStartIndex[2*_PIC_NUMBER_STD_THREADS_];
+  static int SetLength[2*_PIC_NUMBER_STD_THREADS_]; 
 
 
   if (globalMeshChangeFlag!=0) {
