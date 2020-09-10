@@ -13817,6 +13817,42 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
     fclose(f);
   }
+
+  double GetTotalVolume() {
+    double res,ThreadVolume=0.0;
+
+    std::function<void(cTreeNodeAMR<cBlockAMR> *,double *)> GetThreadVolume;
+
+    GetThreadVolume = [&] (cTreeNodeAMR<cBlockAMR> *node,double *vol) -> void {
+       if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+          cBlockAMR *block;
+
+          if ((node->Thread==ThisThread)&&(node->IsUsedInCalculationFlag==true)&&((block=node->block)!=NULL)) {
+            int i,j,k,LocalCellNumber;
+            cCenterNode *cell;           
+
+            for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) { 
+              LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+              if ((cell=block->GetCenterNode(LocalCellNumber))!=NULL) *vol+=cell->Measure;
+            }
+          }
+        }
+        else {
+          int iDownNode;
+          cTreeNodeAMR<cBlockAMR> *downNode;
+
+          for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=node->downNode[iDownNode])!=NULL) {
+            GetThreadVolume(downNode,vol);
+          }
+        }
+      }; 
+
+      GetThreadVolume(rootTree,&ThreadVolume);
+      MPI_Allreduce(&ThreadVolume,&res,1,MPI_DOUBLE,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+      return res;
+    }
+
 };
 
 
