@@ -90,10 +90,9 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   ChargeExchange::InitWeightQuantum=0.001
   ChargeExchange::EventLimiter=10
 
-  PrePopulateDomain=on \\ !on,off
-    n=1.0E4 \\
-    T=100 \\
-    v=(0,0,0)
+  PrePopulateDomain=off \\ !on,off
+    n=1.0E4,T=100,v=(0,0,0) \\
+    ModelParticleNumber=1000000
   
   ! user defined global time step
   UserGlobalTimeStep=-1.0   ! default = -1.0 (i.e. use time step defined by AMPS)

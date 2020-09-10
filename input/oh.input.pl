@@ -323,6 +323,10 @@ while ($line=<InputFile>) {
           ($InputLine,$InputComment)=split(' ',$InputComment,2);
           ampsConfigLib::ChangeValueOfVariable("double temp_prepopulate_domain",$InputLine,"main/main_lib.cpp"); 
         }
+        elsif ($InputLine eq "MODELPARTICLENUMBER") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int n_model_particles_prepopulate_domain",$InputLine,"main/main_lib.cpp");
+        }
         elsif ($InputLine eq "V") {
           my ($v0,$v1,$v2,@v);
 

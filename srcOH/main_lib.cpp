@@ -28,6 +28,7 @@ bool flag_prepopulate_domain=false;
 double density_prepopulate_domain=0.0;
 double temp_prepopulate_domain=0.0;
 double bulk_vel_prepopulate_domain[3];
+int n_model_particles_prepopulate_domain=1;
 
 
 //the parameters of the domain
@@ -349,6 +350,10 @@ void amps_init() {
 
    //prepopulate the domain if needed
    if (flag_prepopulate_domain==true) {
+     //set the particle weight  
+     PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh.GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
+
+     //pre-populate the domain
      PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain);
    }
 
