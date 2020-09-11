@@ -182,7 +182,7 @@ Determine if this is a restart run.
 
   </command>
 
-  <command name="TIMESTEPPING" required="T">
+  <command name="TIMESTEPPING">
     <parameter name="useSWMFDt" type="logical" />
     <parameter name="useFixedDt" type="logical" /> 
     <parameter name="fixedDt" type="real"/>
