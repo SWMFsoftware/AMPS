@@ -60,6 +60,9 @@ namespace OH {
   int GetEnaOrigin(double PlasmaNumberDensity, double PlasmaPressure, double *PlasmaBulkVelocity);
   void InitializeParticleWithEnaOriginTag(long int ptr, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode, int iInjectionMode);
 
+  // functions to select Vp used in charge exchange calculations
+  double VpDistribution(double *x, double *vh, double *up, double vth);
+  void sampleVp(double *x, double *vh, double *up, double tp, int spec);
 
   void Init_BeforeParser();
 
