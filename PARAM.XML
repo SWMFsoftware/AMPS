@@ -206,6 +206,12 @@ used.
 This command sets the charge per mass in normalized unit for electrons.
 
 Default value is shown.
-    </command>
+  </command>
+
+  <command name="TEST">
+    <parameter name="DoTest" type="logical" default="F"/>
+#TEST
+T                       DoTest
+  </command>
 
 </commandList>
