@@ -228,13 +228,17 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   double xtest[3],t[3]={0.0,0.0,0.0};
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* tNode;
   double dz=0.0,dy=0.0,dx=0.0;
+  bool NodeAvailabilityFlag;
 
   ///z+
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]+l*b[idim];
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node); 
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dz+=l;
   }
@@ -257,7 +261,10 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dz+=l;
   }
@@ -280,7 +287,10 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dy+=l;
   }
@@ -298,7 +308,10 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dy+=l;
   }
@@ -315,7 +328,10 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dx+=l;
   }
@@ -332,7 +348,10 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
   tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
 
-  if (tNode->IsUsedInCalculationFlag==true) {
+  if (tNode==NULL) NodeAvailabilityFlag=false;
+  else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+  if (NodeAvailabilityFlag==true) {
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     dx+=l;
   }
@@ -527,12 +546,16 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     //s+
     double ds=0.0,xtest[3],tB[3],B_splus,B_sminus;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* tNode;
+    bool NodeAvailabilityFlag; 
 
     for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]+mng->l*mng->b[idim],tB[idim]=0.0;
 
     tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
 
-    if (tNode->IsUsedInCalculationFlag==true) {
+    if (tNode==NULL) NodeAvailabilityFlag=false;
+    else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+    if (NodeAvailabilityFlag==true) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
       ds+=mng->l;
     }
@@ -553,7 +576,10 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
 
-    if (tNode->IsUsedInCalculationFlag==true) {
+    if (tNode==NULL) NodeAvailabilityFlag=false;
+    else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+    if (NodeAvailabilityFlag==true) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
       ds+=mng->l;
     }
@@ -576,7 +602,10 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
 
-    if (tNode->IsUsedInCalculationFlag==true) {
+    if (tNode==NULL) NodeAvailabilityFlag=false;
+    else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+    if (NodeAvailabilityFlag==true) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     }
     else {
@@ -603,7 +632,10 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
 
-    if (tNode->IsUsedInCalculationFlag==true) {
+    if (tNode==NULL) NodeAvailabilityFlag=false;
+    else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
+
+    if (NodeAvailabilityFlag==true) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     }
     else {

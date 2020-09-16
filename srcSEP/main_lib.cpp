@@ -25,7 +25,6 @@
 //#include <VT.h>
 
 //the particle class
-#include "pic.h"
 #include "constants.h"
 #include "sep.h"
 
@@ -64,7 +63,7 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 
 
-void amps_init() {
+void amps_init_mesh() {
   PIC::InitMPI();
 
   SEP::RequestParticleData();
@@ -369,6 +368,9 @@ void amps_init() {
   PIC::Mesh::mesh.InitCellMeasure();
 
 
+}
+
+void amps_init() {
 
 
 
@@ -438,8 +440,10 @@ void amps_init() {
     }
   };
 
-  InitMagneticField(PIC::Mesh::mesh.rootTree);
-  PIC::Mesh::mesh.outputMeshDataTECPLOT("magnetic-field.dat",0);
+  if (_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_) {
+    InitMagneticField(PIC::Mesh::mesh.rootTree);
+    PIC::Mesh::mesh.outputMeshDataTECPLOT("magnetic-field.dat",0);
+  }
 
 
   MPI_Barrier(MPI_COMM_WORLD);

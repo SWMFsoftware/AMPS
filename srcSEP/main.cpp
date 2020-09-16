@@ -25,18 +25,19 @@
 //#include <VT.h>
 
 //the particle class
-#include "pic.h"
 #include "constants.h"
 #include "sep.h"
 
 
 void amps_init();
+void amps_init_mesh();
 void amps_time_step();
 
 
 int main(int argc,char **argv) {
   //      MPI_Init(&argc,&argv);
 
+  amps_init_mesh();
   amps_init();
 
   int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
