@@ -300,7 +300,22 @@ public:
 
     //allocate a new memory chunk for the element's data and update the stack list
     dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+    if (dataBufferList[dataBufferListPointer]==NULL) {
+      char msg[1000];
+
+      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
+      exit(__LINE__,__FILE__,msg);
+    } 
+
     elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+    if (elementStackList[dataBufferListPointer]==NULL) {
+      char msg[1000];
+
+      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
+      exit(__LINE__,__FILE__,msg);
+    }
 
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     MemoryAllocation+=sizeof(T*)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -621,7 +636,22 @@ public:
       long int offset=t.AssociatedDataLength();
 
       associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+
+      if (associatedDataBufferList[BaseElementStack.dataBufferListPointer]==NULL) {
+        char msg[1000];
+
+        sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset*sizeof(char));
+      } 
+
+
       associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+      if (associatedDataStackList[BaseElementStack.dataBufferListPointer]==NULL) {
+        char msg[1000];
+
+        sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(char*));
+      }
+
 
       BaseElementStack.MemoryAllocation+=(offset*sizeof(char)+sizeof(char*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
