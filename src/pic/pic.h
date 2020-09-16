@@ -4774,10 +4774,12 @@ namespace PIC {
     namespace SWMF {
       extern int MagneticFieldOffset,TotalDataLength,BulkVelocityOffset,PlasmaPressureOffset;
       extern int PlasmaNumberDensityOffset,PlasmaTemperatureOffset;
+      extern int AlfvenWaveI01Offset;
 
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
       extern int nCommunicatedIonFluids;
+      extern bool OhCouplingFlag,IhCouplingFlag;
       //the flug if 'false; by default and is teruned to 'true' after the first coupling procedure (used to pospond initialization of AMPS till the backround field information is exported to AMPS)
       extern bool FirstCouplingOccured;
 

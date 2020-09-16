@@ -14,7 +14,6 @@ using namespace std;
 #include "pic.h"
 
 namespace AMPS2SWMF {
-
   namespace PARAMIN {
     int read_paramin(stringstream *param);
 

@@ -4,7 +4,7 @@
 !==========================================================================
 module PT_wrapper
 
-  use CON_coupler, ONLY: PT_, Grid_C, iCompSourceCouple
+  use CON_coupler, ONLY: OH_,IH_,PT_, Couple_CC,Grid_C, iCompSourceCouple
 
   implicit none
 
@@ -28,6 +28,10 @@ module PT_wrapper
   public:: PT_put_from_oh
   public:: PT_get_for_oh
   public:: PT_put_from_oh_dt
+
+  ! IH coupling
+  public:: PT_put_from_ih
+  public:: PT_put_from_ih_dt
 
 contains
 
@@ -150,14 +154,23 @@ contains
     integer, intent(out):: iDecompOut ! decomposition index
 
     integer:: nVarCouple
+    integer:: IhCouplingCode
+    integer:: OhCouplingCode 
     
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
     !--------------------------------------------------------------------------
     if(iCompSourceCouple /= PT_)then
        nVarCouple = Grid_C(iCompSourceCouple)%nVar
        !write(*,*)'!!!', NameSub, i_proc(), ' nVarCouple=', nVarCouple
+
+       IhCouplingCode=0
+       OhCouplingCode=0
+
+       if (Couple_CC(OH_,PT_)%DoThis) OhCouplingCode=1 
+       if (Couple_CC(IH_,PT_)%DoThis) IhCouplingCode=1 
+
        ! Pass number of fluids to this incorrectly named subroutine
-       call amps_from_oh_init(nVarCouple / 5)
+       call amps_from_oh_init(nVarCouple / 5,OhCouplingCode,IhCouplingCode)
     end if
     
     nDimOut    = 3
@@ -262,6 +275,39 @@ contains
     end if
 
   end subroutine PT_put_from_oh
+
+  subroutine PT_put_from_ih( &
+       NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
+
+    character(len=*), intent(inout):: NameVar ! List of variables
+    integer,          intent(inout):: nVar    ! Number of variables in Data_VI
+    integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
+    real,    intent(in), optional:: Data_VI(:,:)    ! Recv data array
+    integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
+
+    real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+
+    character(len=*), parameter :: NameSub='PT_put_from_ih'
+    !--------------------------------------------------------------------------
+    if(present(Pos_DI))then
+       ! set number of grid points on this processor
+       call amps_get_center_point_number(nPoint)
+
+       ! allocate position array
+       allocate(Pos_DI(3,nPoint))
+
+       ! get point positions from AMPS
+       call amps_get_center_point_coordinates(Pos_DI)
+
+    elseif(present(Data_VI))then
+       call amps_recieve_batsrus2amps_center_point_data(&
+            NameVar//char(0), nVar, Data_VI, iPoint_I)
+    else
+       call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
+    end if
+
+  end subroutine PT_put_from_ih
+
   !============================================================================
   subroutine PT_put_from_oh_dt(Dt)
 
@@ -271,6 +317,15 @@ contains
     call amps_impose_global_time_step(Dt)
 
   end subroutine PT_put_from_oh_dt
+
+  subroutine PT_put_from_ih_dt(Dt)
+
+    real,    intent(in):: Dt
+    character(len=*), parameter :: NameSub='PT_put_from_ih_dt'
+    !--------------------------------------------------------------------------
+!   call amps_impose_global_time_step(Dt)
+
+  end subroutine PT_put_from_ih_dt
 
   !============================================================================
   subroutine PT_get_for_oh(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &

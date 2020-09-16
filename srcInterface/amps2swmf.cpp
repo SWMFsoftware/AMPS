@@ -31,7 +31,6 @@
 
 using namespace std;
 
-
 void amps_init();
 void amps_init_mesh();
 void amps_time_step();
@@ -50,8 +49,8 @@ extern "C" {
   void amps_save_restart_();
   void amps_finalize_();
 
-  //init coupling with SW?F/OH
-  void amps_from_oh_init_(int *nIonFluids); 
+  //init coupling with SWMF
+  void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode); 
   
   //get fluid number from other SWMF component
   void amps_get_fluid_number_(int * nVarIn);
@@ -256,12 +255,16 @@ extern "C" {
     if (call_amps_flag==true) amps_time_step();
   }
 
-  void  amps_from_oh_init_(int *nIonFluids) {
+  void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {
     static bool init_flag=false;
 
     if (init_flag==true) return;
 
     init_flag=true;
+
+    //the the coupling flags 
+    if (*OhCouplingCode==1) PIC::CPLR::SWMF::OhCouplingFlag=true;
+    if (*IhCouplingCode==1) PIC::CPLR::SWMF::IhCouplingFlag=true; 
 
     //set the total number of the ion fluids
     PIC::CPLR::SWMF::nCommunicatedIonFluids=*nIonFluids; 

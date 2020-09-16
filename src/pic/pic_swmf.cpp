@@ -27,7 +27,16 @@
 
 using namespace std;
 
-int PIC::CPLR::SWMF::MagneticFieldOffset=-1,PIC::CPLR::SWMF::PlasmaNumberDensityOffset=-1,PIC::CPLR::SWMF::BulkVelocityOffset=-1,PIC::CPLR::SWMF::PlasmaPressureOffset=-1,PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
+int PIC::CPLR::SWMF::MagneticFieldOffset=-1;
+int PIC::CPLR::SWMF::PlasmaNumberDensityOffset=-1;
+int PIC::CPLR::SWMF::BulkVelocityOffset=-1;
+int PIC::CPLR::SWMF::PlasmaPressureOffset=-1;
+int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
+int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
+
+bool PIC::CPLR::SWMF::OhCouplingFlag=false;
+bool PIC::CPLR::SWMF::IhCouplingFlag=false;
+
 int PIC::CPLR::SWMF::TotalDataLength=0;
 double PIC::CPLR::SWMF::MeanPlasmaAtomicMass=1.0*_AMU_;
 bool PIC::CPLR::SWMF::FirstCouplingOccured=false;
@@ -67,17 +76,25 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
   PlasmaTemperatureOffset=offset+TotalDataLength*sizeof(double);
   TotalDataLength+=nCommunicatedIonFluids;
 
+  if (IhCouplingFlag==true) {
+    AlfvenWaveI01Offset=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=2;
+  }
+
   return TotalDataLength*sizeof(double);
-
-
 }
 
 void PIC::CPLR::SWMF::PrintVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"gmN\",\"gmP\",\"gmVx\",\"gmVy\",\"gmVz\",\"gmBx\",\"gmBy\",\"gmBz\"");
+
+  if (IhCouplingFlag==true) {
+     fprintf(fout,",\"AlfvenWaveI01\", \"AlfvenWaveI02\"");
+  } 
+
 }
 
 void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode) {
-  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0;
+  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0;
   int i,idim;
   char *SamplingBuffer;
 
@@ -88,12 +105,22 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
 
     P+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaPressureOffset)))*InterpolationCoeficients[i];
     Rho+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset)))*InterpolationCoeficients[i];
+
+    if (IhCouplingFlag==true) {
+      i01+=((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[0]*InterpolationCoeficients[i];
+      i02+=((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]*InterpolationCoeficients[i];
+    }
   }
 
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+MagneticFieldOffset,B,3*sizeof(double));
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+BulkVelocityOffset,V,3*sizeof(double));
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaPressureOffset,&P,sizeof(double));
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset,&Rho,sizeof(double));
+
+  if (IhCouplingFlag==true) {
+    ((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[0]=i01;
+    ((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]=i02;
+  }
 }
 
 void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -151,6 +178,23 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
     }
     else pipe->send(t);
   }
+
+  //AlfvenWave
+  if (IhCouplingFlag==true) {
+    double tt[2];
+
+    if (pipe->ThisThread==CenterNodeThread) {
+      for (int i=0;i<2;i++) tt[i]=((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[i];
+    }
+
+    if (pipe->ThisThread==0) {
+      if (CenterNodeThread!=0) pipe->recv(tt,2,CenterNodeThread);
+
+      fprintf(fout,"%e %e ",tt[0],tt[1]);
+    }
+    else pipe->send(tt,2);
+  }
+
 }
 
 
@@ -182,9 +226,7 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
   PIC::Mesh::cDataCenterNode *cell;
 
   //init the cell processing flags
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -194,9 +236,7 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
     }
   }
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL)  {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -219,9 +259,7 @@ void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
   *nCenterPoints=0;
 
   //count the number of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -235,9 +273,7 @@ void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
     }
   }
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -263,9 +299,7 @@ void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x) {
   ResetCenterPointProcessingFlag();
 
   //get coordinated of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -280,9 +314,7 @@ void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x) {
     }
   }
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -311,7 +343,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
   ResetCenterPointProcessingFlag();
 
   //determine the relation between SWMF's AMPS' variables
-  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1;
+  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1,I01_SWMF2AMPS=-1;
   int i0=0,i1=0,n=0;
   char vname[200];
 
@@ -331,6 +363,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     if ((strcmp(vname,"mx")==0)||(strcmp(vname,"swhmx")==0))  Vx_SWMF2AMPS=n;
     if ((strcmp(vname,"bx")==0)||(strcmp(vname,"swhbx")==0))  Bx_SWMF2AMPS=n;
     if ((strcmp(vname,"p")==0)||(strcmp(vname,"swhp")==0))   P_SWMF2AMPS=n;
+    if (strcmp(vname,"i01")==0)   I01_SWMF2AMPS=n;
 
     n++;
     i0=i1;
@@ -341,9 +374,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
   if ((Rho_SWMF2AMPS==-1)||(Vx_SWMF2AMPS==-1)||(Bx_SWMF2AMPS==-1)||(P_SWMF2AMPS==-1)) exit(__LINE__,__FILE__,"Error: background plasma macroscopic parameter is not found"); 
 
   //get coordinated of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
@@ -356,7 +387,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
             //convert momentum into velocity
             if ((Vx_SWMF2AMPS!=-1)&&(offset>=0)) {
               if (Rho_SWMF2AMPS!=-1) {
-                for (idim=0;idim<3;idim++) (data[offset+Rho_SWMF2AMPS]>0.0) ? data[offset+Vx_SWMF2AMPS+idim]/=data[offset+Rho_SWMF2AMPS] : 0.0;
+                for (idim=0;idim<3;idim++) data[offset+Vx_SWMF2AMPS+idim]=(data[offset+Rho_SWMF2AMPS]>0.0) ? data[offset+Vx_SWMF2AMPS+idim]/data[offset+Rho_SWMF2AMPS] : 0.0;
               }
               else for (idim=0;idim<3;idim++) data[offset+Vx_SWMF2AMPS+idim]=0.0;
             }
@@ -373,6 +404,12 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
 
             //get pressure
             *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=((offset>=0)&&(P_SWMF2AMPS>=0)) ? data[offset+P_SWMF2AMPS] : 0.0;
+
+            //AlfvenWave
+            if ((offset>=0)&&(I01_SWMF2AMPS>=0)) { 
+              ((double*)(cell->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[0]=data[offset+I01_SWMF2AMPS+0]; 
+              ((double*)(cell->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]=data[offset+I01_SWMF2AMPS+1];
+            }
 
 
             //bulk velocity and magnetic field
@@ -397,9 +434,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     }
   }
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
-    block=node->block;
-
+  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) {
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
