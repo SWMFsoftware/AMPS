@@ -15,7 +15,9 @@
 #define _SEP_MOVER_BOROVIKOV_2019_ARXIV_ 1
 #define _SEP_MOVER_HE_2019_AJL_          2 
 
-#define _SEP_MOVER_ _SEP_MOVER_HE_2019_AJL_
+#ifndef _SEP_MOVER_
+#define _SEP_MOVER_ _SEP_MOVER_DEFUALT_ 
+#endif
 
 #include "pic.h"
 
