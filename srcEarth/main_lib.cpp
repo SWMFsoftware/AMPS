@@ -37,7 +37,8 @@ double yMaxDomain=5; //the minimum size of the domain in the direction perpendic
 double dxMinSphere=0.5,dxMaxSphere=0.5;
 double dxMinGlobal=1,dxMaxGlobal=1;
 
-extern int nZenithElements,nAzimuthalElements;
+int nZenithElements=200;
+int nAzimuthalElements=200;
 
 
 //sodium surface production
