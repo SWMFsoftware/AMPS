@@ -5506,8 +5506,9 @@ namespace PIC {
 
        for (iStencil=0;iStencil<Stencil.Length;iStencil++) {
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-         exit(__LINE__,__FILE__,"not implemented");
-
+         //exit(__LINE__,__FILE__,"not implemented");
+	 //avoid the code crash, not implemented for swmf mode
+	 for (idim=0;idim<DATAFILE::Offset::MagneticFieldGradient.nVars;idim++) t[idim]=0.0;
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          DATAFILE::GetBackgroundMagneticFieldGradient(t,Stencil.cell[iStencil], Time);
 
