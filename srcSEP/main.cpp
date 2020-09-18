@@ -50,6 +50,11 @@ int main(int argc,char **argv) {
   }
 
 
+  char fname[400];
+
+  sprintf(fname,"%s/test_SEP.dat",PIC::OutputDataFileDirectory);
+  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+
   cout << "End of the run:" << PIC::nTotalSpecies << endl;
 
   MPI_Finalize();
