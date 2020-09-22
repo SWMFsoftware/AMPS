@@ -1,34 +1,44 @@
-//$Id$
+//$Id: ChargeExchange_LindsayStebbings.cpp,v 1.1 2015/03/31 21:38:21 dborovik Exp $
 #include "ChargeExchange.h"
 
-//Define defaut values of macro used in calculating of the life time
-#ifndef _H_ENA_V1_SPEC_
-#define _H_ENA_V1_SPEC_ _H_SPEC_
-#endif
-
-#ifndef _H_ENA_V2_SPEC_
-#define _H_ENA_V2_SPEC_ _H_SPEC_
-#endif
-
-#ifndef _H_ENA_V3_SPEC_
-#define _H_ENA_V3_SPEC_ _H_SPEC_
-#endif
-
-double ChargeExchange::LindsayStebbings::LifeTime(int spec,double* vParticle,double* vPlasma,double PlasmaTemperature,double PlasmaNumberDensity) {
+double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
+                                                  double* vParticle,
+                                                  double* vPlasma,
+                                                  double   PlasmaTemperature,
+                                                  double   PlasmaNumberDensity) {
   // for notation see Lindsay & Stebbings, JGR, vol. 110, A12213, 2005
-  double a1 =4.15,a2=0.531,a3=67.3,v2=0.0,energy,sigma,c;
+  double a1 = 4.15, a2 = 0.531, a3 = 67.3, v_th, v_rel,v_rel2, energy, omega=0.0, sigma;
 
   // this model is for atomic hydrogen and three charge exchange species only
-  if ((spec != _H_SPEC_) && (spec != _H_ENA_V1_SPEC_) && (spec != _H_ENA_V2_SPEC_) && (spec != _H_ENA_V3_SPEC_)) return 1.0E+100;
- 
-  for (int idim = 0; idim < 3; idim++ ) v2 += pow(vParticle[idim]-vPlasma[idim], 2.0);
+  if(spec != _H_SPEC_ && spec != _H_ENA_V1_SPEC_ && spec != _H_ENA_V2_SPEC_ && spec != _H_ENA_V3_SPEC_) return 1E+100;
 
-  if (v2 < 1E-8) return 1E+20; // to avoid division by zero
 
-  energy = 0.5 * _MASS_(_H_) * v2 /eV2J / 1000; // energy in keV
-  c=(energy > 4.0) ? pow(1.0-exp(-a3/energy), 4.5) : c = 1.0; // error < 1E-6
-  sigma=(energy>1E-10) ? pow(a1-a2*log(energy),2.0)*c* 1E-20 : pow(a1 + a2*23.026, 2.0) * 1.0E-20; // m^2; to avoid computing log() in vicinity of energy = 0: substitute log(energy) with (-10*log(10))
+  // calculating V_rel according to eq. 8 of Heerkhuisen et al. 2006
+  v_th = sqrt(2.0 * Kbol * PlasmaTemperature / _MASS_(_H_));
+  for(int idim = 0; idim < 3; idim++ )
+    omega += pow(vParticle[idim]-vPlasma[idim], 2.0);
+  omega = pow(omega, 0.5) / v_th;
+  if(omega > 1E-2)
+    v_rel = v_th* ( exp(-omega*omega)/sqrtPi + (omega + 0.5/omega)*erf(omega));
+  else
+    // Taylor expansion in vicinity of omega = 0 to avoid divison by zero;
+    // relative error < 1E-4
+    v_rel = v_th* 2.0 * (1.0 + omega*omega/3.0) / sqrtPi;
 
-  return 1.0/(PlasmaNumberDensity*pow(v2,0.5)*sigma);
-} 
+  v_rel2=v_rel*v_rel;
 
+  if(v_rel2 < 1E-8) return 1E+20; // to avoid division by zero
+  energy = 0.5 * _MASS_(_H_) * v_rel2 /eV2J / 1000; // energy in keV
+  double c;
+  if (energy > 4.0)
+    c = pow(1 - exp( -a3/energy ), 4.5);
+  else
+    c = 1.0; // error < 1E-6
+  if(energy > 1E-10)
+    sigma = pow(a1 - a2*log(energy), 2.0) * c * 1E-20; // m^2
+  else
+    // to avoid computing log() in vicinity of energy = 0:
+    // substitute log(energy) with (-10*log(10))
+    sigma = pow(a1 + a2*23.026, 2.0) * 1E-20; // m^2
+  return 1.0 / (PlasmaNumberDensity * v_rel * sigma);
+}
