@@ -36,6 +36,9 @@ void amps_init_mesh();
 void amps_time_step();
 
 
+//the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
+double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0}; 
+
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
@@ -48,6 +51,13 @@ extern "C" {
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
   void amps_save_restart_();
   void amps_finalize_();
+
+  //determine whether a point belongs to a fomain of a particlelar SWMF component 
+  bool IsDomainSC(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;}
+  bool IsDomainIH(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]>=23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;} 
+
+  //set the location of the Earth. The function is caled by the coupler 
+  void set_earth_locaton_hgi_(double *x) {for (int idim=0;idim<3;idim++) AMPS2SWMF::xEarthHgi[idim]=x[idim];}
 
   //init coupling with SWMF
   void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode); 
@@ -99,6 +109,14 @@ extern "C" {
 
   }
 
+  void amps_get_center_point_number_sc_(int *nCenterPoints) {
+    PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainSC);
+  }
+
+  void amps_get_center_point_number_ih_(int *nCenterPoints) {
+    PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainIH);
+  }
+
   void amps_get_center_point_coordinates_(double *x) {
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -107,6 +125,14 @@ extern "C" {
     //PIC::CPLR::FLUID::GetCenterPointCoordinates(x);
 #endif 
 
+  }
+
+  void amps_get_center_point_coordinates_sc_(double *x) {
+    PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainSC);
+  }
+
+  void amps_get_center_point_coordinates_ih_(double *x) {
+    PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainIH);
   }
 
 
@@ -119,7 +145,14 @@ extern "C" {
 #endif 
   }
 
-  
+  void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index) {
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,IsDomainSC);
+  }
+
+  void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index) {
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,IsDomainIH);
+  }
+
   void amps_get_corner_point_number_(int *nCornerPoints) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
     PIC::CPLR::FLUID::GetCornerPointNumber(nCornerPoints);

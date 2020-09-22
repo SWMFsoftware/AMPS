@@ -4,7 +4,7 @@
 !==========================================================================
 module PT_wrapper
 
-  use CON_coupler, ONLY: OH_,IH_,PT_, Couple_CC,Grid_C, iCompSourceCouple
+  use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC,Grid_C, iCompSourceCouple
 
   implicit none
 
@@ -33,6 +33,20 @@ module PT_wrapper
   public:: PT_put_from_ih
   public:: PT_put_from_ih_dt
 
+  ! SC coupling
+  public:: PT_put_from_sc 
+  public:: PT_put_from_sc_dt
+
+  !the table of locations used for coupling with SC 
+  real,allocatable:: locPos_DI_sc(:,:)
+
+  !codes describeing status of coupling with particular components of the SWMF 
+  integer:: IhCouplingCode
+  integer:: OhCouplingCode
+  integer:: ScCouplingCode 
+
+
+
 contains
 
   subroutine PT_set_param(CompInfo, TypeAction)
@@ -50,6 +64,7 @@ contains
     character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     character (len=*), parameter :: NameSub='PT_set_param'
+
     !-------------------------------------------------------------------------
     select case(TypeAction)
     case('VERSION')
@@ -99,6 +114,8 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
 
+    Grid_C(PT_)%TypeCoord="HGI" 
+
   end subroutine PT_init_session
 
   !============================================================================
@@ -138,9 +155,17 @@ contains
     real, intent(in):: TimeSimulationLimit ! simulation time not to be exceeded
 
     character(len=*), parameter :: NameSub='PT_run'
+    real:: xEarth(3)
     !-------------------------------------------------------------------------
-    call AMPS_timestep(TimeSimulation, TimeSimulationLimit) 
 
+    !update the location of the Earth in the coupled on the AMPS side when boupling with IH as active 
+    if (IhCouplingCode==1) then 
+      call GetEarthLocation(xEarth) 
+      call set_earth_locaton_hgi(xEarth)
+    end if
+
+    !call AMPS  
+    call AMPS_timestep(TimeSimulation, TimeSimulationLimit) 
   end subroutine PT_run
 
   !============================================================================
@@ -154,8 +179,7 @@ contains
     integer, intent(out):: iDecompOut ! decomposition index
 
     integer:: nVarCouple
-    integer:: IhCouplingCode
-    integer:: OhCouplingCode 
+    integer:: nCommunicatedFluids
     
     character(len=*), parameter :: NameSub = 'PT_get_grid_info'
     !--------------------------------------------------------------------------
@@ -165,12 +189,29 @@ contains
 
        IhCouplingCode=0
        OhCouplingCode=0
+       ScCouplingCode=0
 
-       if (Couple_CC(OH_,PT_)%DoThis) OhCouplingCode=1 
-       if (Couple_CC(IH_,PT_)%DoThis) IhCouplingCode=1 
+       nCommunicatedFluids=nVarCouple / 5 
+
+       if (Couple_CC(OH_,PT_)%DoThis) then 
+         OhCouplingCode=1 
+         Grid_C(PT_)%TypeCoord='HGI'
+       end if 
+
+
+       if (Couple_CC(IH_,PT_)%DoThis) then 
+         IhCouplingCode=1 
+         Grid_C(PT_)%TypeCoord='HGI'
+       end if
+
+
+       if (Couple_CC(SC_,PT_)%DoThis) ScCouplingCode=1
+
+       if (iCompSourceCouple == IH_) nCommunicatedFluids=1 
+       if (iCompSourceCouple == SC_) nCommunicatedFluids=1 
 
        ! Pass number of fluids to this incorrectly named subroutine
-       call amps_from_oh_init(nVarCouple / 5,OhCouplingCode,IhCouplingCode)
+       call amps_from_oh_init(nCommunicatedFluids,OhCouplingCode,IhCouplingCode)
     end if
     
     nDimOut    = 3
@@ -291,22 +332,110 @@ contains
     !--------------------------------------------------------------------------
     if(present(Pos_DI))then
        ! set number of grid points on this processor
-       call amps_get_center_point_number(nPoint)
+       call amps_get_center_point_number_ih(nPoint)
 
        ! allocate position array
        allocate(Pos_DI(3,nPoint))
 
        ! get point positions from AMPS
-       call amps_get_center_point_coordinates(Pos_DI)
+       call amps_get_center_point_coordinates_ih(Pos_DI)
 
     elseif(present(Data_VI))then
-       call amps_recieve_batsrus2amps_center_point_data(&
+       call amps_recieve_batsrus2amps_center_point_data_ih(&
             NameVar//char(0), nVar, Data_VI, iPoint_I)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
 
   end subroutine PT_put_from_ih
+
+  subroutine PT_put_from_sc( &
+       NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
+
+   use CON_time,ONLY: tSimulation 
+!   use CON_axes,ONLY: init_axes 
+
+    use ModUtilities,ONLY: split_string 
+
+    character(len=*), intent(inout):: NameVar ! List of variables
+    integer,          intent(inout):: nVar    ! Number of variables in Data_VI
+    integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
+    real,    intent(in), optional:: Data_VI(:,:)    ! Recv data array
+    integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
+
+    real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+
+    integer::i,iB,iV,ip 
+    real::xHGR(3),xHGI(3),bHGI(3),vHGI(3) 
+    real,dimension(:,:),allocatable :: hgiData_VI
+    character(len=*), parameter :: NameSub='PT_put_from_sc'
+    character(len=50),allocatable:: locNameVar(:)
+    !--------------------------------------------------------------------------
+    if(present(Pos_DI))then
+       ! set number of grid points on this processor
+       call amps_get_center_point_number_sc(nPoint)
+
+       !Set axis to convert from HGI -> HGR frame of raference
+
+       ! allocate position array
+       allocate(Pos_DI(3,nPoint))
+
+       !convert positions from HGI (AMPS) to HGR (SC) frame of reference 
+!      call init_axes(iSimulation)
+    
+       ! get point positions from AMPS
+       call amps_get_center_point_coordinates_sc(Pos_DI)
+
+       do i=1,nPoint
+         xHGI(:)=Pos_DI(:,nPoint)
+!        call ConvertX_HGI_HGR(xHGR,xHGI)
+!        Pos_DI(:,nPoint)=xHGR(:)
+       end do
+
+       if (allocated(locPos_DI_sc)) then 
+         deallocate(locPos_DI_sc)
+       end if
+
+       allocate (locPos_DI_sc(3,nPoint))
+       locPos_DI_sc=Pos_DI 
+    elseif(present(Data_VI))then
+       allocate (hgiData_VI(nVar,nPoint)) 
+       hgiData_VI=Data_VI 
+       
+       !Ratate plasma velocity and magnetic field vector from HGR (SC) -> HGI (PT) 
+       allocate(locNameVar(nVar))
+       call split_string(NameVar,locNameVar) 
+
+       do i=1,nVar
+        if (locNameVar(i)=='mx') iV=i 
+        if (locNameVar(i)=='bx') iB=i
+       end do
+
+       deallocate(locNameVar)
+
+
+       do i=1,nPoint
+         ip=iPoint_I(i)
+
+         if (ip>0) then
+           call ConvertX_HGR_HGI(hgiData_VI(iB:iB+3,ip),Data_VI(iB:iB+3,ip)) 
+           call ConvertVel_HGR_HGI(hgiData_VI(iV:iV+3,ip),Data_VI(iV:iV+3,ip),locPos_DI_sc(:,ip),tSimulation)
+         end if
+       end do
+
+!      !remove the location buffer 
+!      deallocate(locPos_DI_sc)
+
+       call amps_recieve_batsrus2amps_center_point_data_sc(&
+            NameVar//char(0), nVar, Data_VI, iPoint_I)
+
+       deallocate(hgiData_VI)
+    else
+       call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
+    end if
+
+  end subroutine PT_put_from_sc 
+
 
   !============================================================================
   subroutine PT_put_from_oh_dt(Dt)
@@ -326,6 +455,15 @@ contains
 !   call amps_impose_global_time_step(Dt)
 
   end subroutine PT_put_from_ih_dt
+
+  subroutine PT_put_from_sc_dt(Dt)
+
+    real,    intent(in):: Dt
+    character(len=*), parameter :: NameSub='PT_put_from_sc_dt'
+    !--------------------------------------------------------------------------
+!   call amps_impose_global_time_step(Dt)
+
+  end subroutine PT_put_from_sc_dt
 
   !============================================================================
   subroutine PT_get_for_oh(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &
@@ -351,3 +489,63 @@ contains
   end subroutine PT_get_for_oh
 
 end module PT_wrapper
+
+subroutine ConvertX_HGI_HGR(xHGR,xHGI)
+
+   use  CON_axes 
+
+   real, intent(in) :: xHGI(3)  ! Position vectors
+   real, intent(out) :: xHGR(3)  ! Position vectors
+
+xHGR=matmul(HgrHgi_DD,xHGI)
+
+!  xHGR=matmul(xHGI,HgiHgr_DD)
+end subroutine ConvertX_HGI_HGR
+
+
+subroutine ConvertX_HGR_HGI(xHGI,xHGR)
+   use  CON_axes, ONLY:HgrHgi_DD
+
+   implicit none
+
+   real, intent(out) :: xHGI(3)  ! Position vectors
+   real, intent(in) :: xHGR(3)  ! Position vectors
+
+
+
+   xHGI=matmul(xHGR,HgrHgi_DD)
+end subroutine ConvertX_HGR_HGI
+
+subroutine ConvertVel_HGR_HGI(vHGI,vHGR,xHGR,TimeSim)
+   use  CON_axes, ONLY:transform_velocity
+
+   implicit none
+
+   real, intent(out) :: vHGI(3) ! Position vector
+  
+   real, intent(in) :: xHGR(3)  ! Position vector
+   real, intent(in) :: vHGR(3)  ! Velocity vector 
+   real, intent(in) :: TimeSim  ! Simulation time
+
+   vHGI=transform_velocity(TimeSim,vHGR,xHGR,'HGR','HGI')
+end subroutine ConvertVel_HGR_HGI
+
+subroutine GetEarthLocation(xEarthHgi) 
+   use CON_axes
+   use CON_time,ONLY: tSimulation
+
+   implicit none
+
+   real,intent(out)::xEarthHgi(3)
+
+!   call set_hgi_gse_d_planet(tSimulation)
+  
+   ! Calculate the planet position in HGI                                                                                                   
+   ! In GSE shifted to the center of the Sun the planet is at (-d,0,0)                                                                      
+   xEarthHgi = matmul(HgiGse_DD, (/-cAU*SunEMBDistance, 0.0, 0.0/))
+end subroutine GetEarthLocation
+
+
+
+
+

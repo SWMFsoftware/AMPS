@@ -248,7 +248,7 @@ void PIC::CPLR::SWMF::ResetCenterPointProcessingFlag() {
 }
 
 
-void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
+void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints,fTestPointInsideDomain TestPointInsideDomain) {
   int thread,i,j,k;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
@@ -266,8 +266,14 @@ void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
-            (*nCenterPoints)++;
-            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==true) {
+              (*nCenterPoints)++;
+              cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            }
           }
         }
     }
@@ -280,8 +286,14 @@ void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
-            (*nCenterPoints)++;
-            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==true) {
+              (*nCenterPoints)++;
+              cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            }
           }
         }
     }
@@ -289,7 +301,7 @@ void PIC::CPLR::SWMF::GetCenterPointNumber(int *nCenterPoints) {
 
 }
 
-void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x) {
+void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x,fTestPointInsideDomain TestPointInsideDomain) {
   int thread,i,j,k,cnt=0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
@@ -306,9 +318,15 @@ void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x) {
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
-            cell->GetX(x+3*cnt);
-            cnt++;
-            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==true) {
+              cell->GetX(x+3*cnt);
+              cnt++;
+              cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            }
           }
         }
     }
@@ -321,16 +339,22 @@ void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x) {
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
-            cell->GetX(x+3*cnt);
-            cnt++;
-            cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==true) {
+              cell->GetX(x+3*cnt);
+              cnt++;
+              cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
+            }
           }
         }
     }
   }
 }
 
-void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes, double *data,int *index) {
+void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes, double *data,int *index,fTestPointInsideDomain TestPointInsideDomain) {
   int thread,i,j,k,idim,offset,cnt=0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
@@ -381,6 +405,13 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==false) continue; 
+
+
             offset=nVarialbes*(index[cnt++]-1);
             cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
 
@@ -441,6 +472,13 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
           cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) if (cell->nodeDescriptor.nodeProcessedFlag==_OFF_AMR_MESH_) {
+            bool inside_domain_flag;
+
+            inside_domain_flag=(TestPointInsideDomain!=NULL) ? TestPointInsideDomain(cell->GetX()) : true;
+
+            if (inside_domain_flag==false) continue;
+
+
             offset=nVarialbes*(index[cnt++]-1);
             cell->nodeDescriptor.nodeProcessedFlag=_ON_AMR_MESH_;
 

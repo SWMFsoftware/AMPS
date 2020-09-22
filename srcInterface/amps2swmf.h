@@ -14,6 +14,10 @@ using namespace std;
 #include "pic.h"
 
 namespace AMPS2SWMF {
+
+  //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
+  extern double xEarthHgi[3]; 
+
   namespace PARAMIN {
     int read_paramin(stringstream *param);
 

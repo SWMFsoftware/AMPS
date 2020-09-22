@@ -4794,10 +4794,12 @@ namespace PIC {
       void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
 
       //prepare the list of the coordinates for the interpolation
+      typedef bool (*fTestPointInsideDomain)(double*); 
+
       void ResetCenterPointProcessingFlag();
-      void GetCenterPointNumber(int *nCenterPoints);
-      void GetCenterPointCoordinates(double *x);
-      void RecieveCenterPointData(char* ValiableList, int nVarialbes,double *data,int *index);
+      void GetCenterPointNumber(int *nCenterPoints,fTestPointInsideDomain TestPointInsideDomain=NULL);
+      void GetCenterPointCoordinates(double *x,fTestPointInsideDomain TestPointInsideDomain=NULL);
+      void RecieveCenterPointData(char* ValiableList, int nVarialbes,double *data,int *index,fTestPointInsideDomain TestPointInsideDomain=NULL);
 
       //send AMPS's data to SWMF: multiple user-defined send routines could be implemeted
 /*
