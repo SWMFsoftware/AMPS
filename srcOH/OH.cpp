@@ -720,9 +720,11 @@ int OH::GetEnaOrigin(double PlasmaNumberDensity, double PlasmaPressure, double *
 // the distribution to select the proton particle is taken from eq 2.13 of Malama 1991                                   
 double OH::VpDistribution(double *vp, double *vh, double *up, double vth)
 {
-  double erel = 0.5*1.674*pow(10.,-27)*(pow(vh[0]-vp[0],2)+pow(vh[1]-vp[1],2)+pow(vh[2]-vp[2],2))*6.2415*pow(10.0,15); // in keV                                                    
-  double sigma = pow(4.15-0.531*log(erel),2)*pow(1-exp(-67.3/erel),4.5)*pow(10.0,-20); // cross section in m^2                                                                   
-  return sqrt(pow(vh[0]-vp[0],2)+pow(vh[1]-vp[1],2)+pow(vh[2]-vp[2],2))*sigma*exp(-(pow(vp[0]-up[0],2)+pow(vp[1]-up[1],2)+pow(vp[2]-up[2],2))/pow(vth,2)); // velocity in m/s          
+  double erel = 0.5*1.674E-27*((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*6.2415E15; // in keV
+
+  double sigma = (4.15-0.531*log(erel))*(4.15-0.531*log(erel))*pow(1-exp(-67.3/erel),4.5)*1E-20; // cross section in m^2
+
+  return sqrt((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*sigma*exp(-((vp[0]-up[0])*(vp[0]-up[0])+(vp[1]-up[1])*(vp[1]-up[1])+(vp[2]-up[2])*(vp[2]-up[2]))/(vth*vth)); // velocity in m/s
 }
 
 // sampling the 3D distribution function from Malama 1991 using the Accept-Reject Method
@@ -733,13 +735,14 @@ void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec)
   
   // M (holds normalization costants for both distributions), g(vp) is the maxwellian distribution
   double sup[3] = {up[0]-3.*vth,up[1]-3.*vth,up[2]-3.*vth};
-  double M=OH::VpDistribution(sup,vh,up,vth)/exp(-(pow(sup[0]-up[0],2)+pow(sup[1]-up[1],2)+pow(sup[2]-up[2],2))/pow(vth,2));
+  double M=OH::VpDistribution(sup,vh,up,vth)/exp(-((sup[0]-up[0])*(sup[0]-up[0])+(sup[1]-up[1])*(sup[1]-up[1])+(sup[2]-up[2])*(sup[2]-up[2]))/(vth*vth));
 
   while (accepted < 1) {
     // generating vp as sampled from g(vp)
     PIC::Distribution::MaxwellianVelocityDistribution(vp,up,tp,spec);
 
-    if (rnd() < OH::VpDistribution(vp,vh,up,vth)/(M*exp(-(pow(vp[0]-up[0],2)+pow(vp[1]-up[1],2)+pow(vp[2]-up[2],2))/pow(vth,2)))) {
+    if (rnd() < OH::VpDistribution(vp,vh,up,vth)/(M*exp(-((vp[0]-up[0])*(vp[0]-up[0])+(vp[1]-up[1])*(vp[1]-up[1])+(vp[2]-up[2])*(vp[2]-up[2]))/(vth*vth))))
+    {
       accepted = 1;
     }
   }
