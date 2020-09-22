@@ -42,7 +42,7 @@ const double xMaxDomain=250;
 const double dxMinGlobal=DebugRunMultiplier*2.0,dxMaxGlobal=DebugRunMultiplier*10.0;
 const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRunMultiplier*2.0/10.0;
 
-
+const double MarkNotUsedRadiusLimit=100.0;
 
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
@@ -311,7 +311,7 @@ void amps_init_mesh() {
 
       r=Vector3D::Length(x);
 
-      if (r>10.0*_RADIUS_(_SUN_)) {
+      if (r>MarkNotUsedRadiusLimit*_RADIUS_(_SUN_)) {
         list<SEP::cFieldLine>::iterator it;
         double d2,t;
         
@@ -324,7 +324,7 @@ void amps_init_mesh() {
           if ((d2min<0.0)||(d2min>d2)) d2min=d2;
         }
 
-        dmax=10.0*_RADIUS_(_SUN_)+15.0/200.0*(r-10.0*_RADIUS_(_SUN_));
+        dmax=MarkNotUsedRadiusLimit*_RADIUS_(_SUN_)+MarkNotUsedRadiusLimit/200.0*(r-50.0*_RADIUS_(_SUN_));
 
         if (d2min>dmax*dmax) {
           not_used_list->push_back(startNode); 
