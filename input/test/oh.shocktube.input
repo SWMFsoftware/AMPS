@@ -54,7 +54,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 #endUserDefinitions
 
 #General
-  ReferenceInjectionParticleNumber=1e5
+  ReferenceInjectionParticleNumber=100000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
@@ -62,6 +62,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   BlockCells=5,5,5
   GhostCells=2,2,2
+
+  !define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
@@ -74,37 +76,40 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   RecoverParticleData=off  \\ !on, off
     file=AMPS.restart
 
-  define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
-
-  !DomainBoundaryParticleIntersection=SpecularReflection \\ !!delete, SpecularReflection, PeriodicCondition, user-defined \\ default is user-defined \\
-  !  function = OH::user_set_face_boundary
+  !DomainBoundaryParticleIntersection=PeriodicCondition \\ !!delete, SpecularReflection, PeriodicCondition, user-defined \\ default is user-defined \\
+  !function = OH::user_set_face_boundary
+   define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
 
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
-
-!  DomainBoundaryParticleIntersection=SpecularReflection \\ !user-defined \\ !delete \\ !!delete, SpecularReflection, PeriodicCondition,user-defined \\
-!  function = werew
 
 #endGeneral
 
 #block ../input/oh.input.pl !process the settings of the Outer Heliosphere model
 
   SourceRegionNumber=4
-  
+
+  ChargeExchange::InitWeightQuantum=0.0001
+  ChargeExchange::EventLimiter=10
+
+  PrePopulateDomain=on \\ !on,off
+  n=0.18E6,T=6519,v=(100E3,0,0) \\
+  ModelParticleNumber=1000000 
+ 
   ! user defined global time step
-  UserGlobalTimeStep=-1.0   ! default = -1.0 (i.e. use time step defined by AMPS)
+  UserGlobalTimeStep=3.154e7   ! default = -1.0 (i.e. use time step defined by AMPS)
 
   !injection of the neutrals
-  InjectionVelocity=(100E3,0.0,0.0); !default=(26.3E3,0.0,-2.3E3)
+  InjectionVelocity=(0.0,0.0,0.0);!default=(26.3E3,0.0,-2.3E3)
   InjectionNDensity= 0.18E6;		!default=0.18E6
-  InjectionTemperature=1000;		!default=6519
+  InjectionTemperature=6519;		!default=6519
   
   !domain settings
-  DomainXMin=(-3E13,-3E13,-3E13); !(-2E13,-8E11,-8E11);!default=(-8E13,-2E13,-2E13)
-  DomainXMax=(3E13,3E13,3E13); !( 2E13, 8E11, 8E11);!default=( 8E13, 2E13, 2E13)
-  DomainDXmin = 1.5E13;			  !default=5E12
-  DomainDXMax = 1.5E13;			  !default=5E12
+  DomainXMin=(-3E13,-3E13,-3E13);!default=(-2.25E14,-2.25E14,-2.25E14)
+  DomainXMax=( 3E13, 3E13, 3E13);!default=( 2.25E14, 2.25E14, 2.25E14)
+  DomainDXmin = 1.5E13;			  !default=1.8E13
+  DomainDXMax = 1.5E13;			  !default=1.8E13
 
-  VelocityDistributionSampling=off \\ !on, off
+  VelocityDistributionSampling=off \\ ! on \\ !on, off
     x=(4.0E+13,0.0,-2.0E+13), (0.0,2.0E+6,0.0), (-2.0E+6,0.0,0.0) \\ 
     nSampleIntervals=500 \\
     vmin=-40e3, vmax=40e3
