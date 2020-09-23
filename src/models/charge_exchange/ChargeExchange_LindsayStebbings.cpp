@@ -16,8 +16,8 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
   // calculating V_rel according to eq. 8 of Heerkhuisen et al. 2006
   v_th = sqrt(2.0 * Kbol * PlasmaTemperature / _MASS_(_H_));
   for(int idim = 0; idim < 3; idim++ )
-    omega += pow(vParticle[idim]-vPlasma[idim], 2.0);
-  omega = pow(omega, 0.5) / v_th;
+    omega += (vParticle[idim]-vPlasma[idim])*(vParticle[idim]-vPlasma[idim]);
+  omega = sqrt(omega) / v_th;
   if(omega > 1E-2)
     v_rel = v_th* ( exp(-omega*omega)/sqrtPi + (omega + 0.5/omega)*erf(omega));
   else
@@ -35,10 +35,10 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
   else
     c = 1.0; // error < 1E-6
   if(energy > 1E-10)
-    sigma = pow(a1 - a2*log(energy), 2.0) * c * 1E-20; // m^2
+    sigma = (a1 - a2*log(energy)) * (a1 - a2*log(energy)) * c * 1E-20; // m^2
   else
     // to avoid computing log() in vicinity of energy = 0:
     // substitute log(energy) with (-10*log(10))
-    sigma = pow(a1 + a2*23.026, 2.0) * 1E-20; // m^2
+    sigma = (a1 + a2*23.026) * (a1 + a2*23.026) * 1E-20; // m^2
   return 1.0 / (PlasmaNumberDensity * v_rel * sigma);
 }
