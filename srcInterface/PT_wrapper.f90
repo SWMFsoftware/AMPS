@@ -37,9 +37,6 @@ module PT_wrapper
   public:: PT_put_from_sc 
   public:: PT_put_from_sc_dt
 
-  !the table of locations used for coupling with SC 
-  real,allocatable:: locPos_DI_sc(:,:)
-
   !codes describeing status of coupling with particular components of the SWMF 
   integer:: IhCouplingCode
   integer:: OhCouplingCode
@@ -114,7 +111,7 @@ contains
 
     character(len=*), parameter :: NameSub='PT_init_session'
 
-    Grid_C(PT_)%TypeCoord="HGI" 
+    Grid_C(PT_)%TypeCoord='HGI' 
 
   end subroutine PT_init_session
 
@@ -349,14 +346,7 @@ contains
 
   end subroutine PT_put_from_ih
 
-  subroutine PT_put_from_sc( &
-       NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI)
-
-   use CON_time,ONLY: tSimulation 
-!   use CON_axes,ONLY: init_axes 
-
-    use ModUtilities,ONLY: split_string 
-
+  subroutine PT_put_from_sc(NameVar, nVar, nPoint, Data_VI, iPoint_I, Pos_DI) 
     character(len=*), intent(inout):: NameVar ! List of variables
     integer,          intent(inout):: nVar    ! Number of variables in Data_VI
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
@@ -365,75 +355,22 @@ contains
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
 
-    integer::i,iB,iV,ip 
-    real::xHGR(3),xHGI(3),bHGI(3),vHGI(3) 
-    real,dimension(:,:),allocatable :: hgiData_VI
     character(len=*), parameter :: NameSub='PT_put_from_sc'
-    character(len=50),allocatable:: locNameVar(:)
     !--------------------------------------------------------------------------
-    if(present(Pos_DI))then
+    if (present(Pos_DI)) then
        ! set number of grid points on this processor
        call amps_get_center_point_number_sc(nPoint)
-
-       !Set axis to convert from HGI -> HGR frame of raference
 
        ! allocate position array
        allocate(Pos_DI(3,nPoint))
 
-       !convert positions from HGI (AMPS) to HGR (SC) frame of reference 
-!      call init_axes(iSimulation)
-    
        ! get point positions from AMPS
        call amps_get_center_point_coordinates_sc(Pos_DI)
-
-       do i=1,nPoint
-         xHGI(:)=Pos_DI(:,nPoint)
-!        call ConvertX_HGI_HGR(xHGR,xHGI)
-!        Pos_DI(:,nPoint)=xHGR(:)
-       end do
-
-       if (allocated(locPos_DI_sc)) then 
-         deallocate(locPos_DI_sc)
-       end if
-
-       allocate (locPos_DI_sc(3,nPoint))
-       locPos_DI_sc=Pos_DI 
-    elseif(present(Data_VI))then
-       allocate (hgiData_VI(nVar,nPoint)) 
-       hgiData_VI=Data_VI 
-       
-       !Ratate plasma velocity and magnetic field vector from HGR (SC) -> HGI (PT) 
-       allocate(locNameVar(nVar))
-       call split_string(NameVar,locNameVar) 
-
-       do i=1,nVar
-        if (locNameVar(i)=='mx') iV=i 
-        if (locNameVar(i)=='bx') iB=i
-       end do
-
-       deallocate(locNameVar)
-
-
-       do i=1,nPoint
-         ip=iPoint_I(i)
-
-         if (ip>0) then
-           call ConvertX_HGR_HGI(hgiData_VI(iB:iB+3,ip),Data_VI(iB:iB+3,ip)) 
-           call ConvertVel_HGR_HGI(hgiData_VI(iV:iV+3,ip),Data_VI(iV:iV+3,ip),locPos_DI_sc(:,ip),tSimulation)
-         end if
-       end do
-
-!      !remove the location buffer 
-!      deallocate(locPos_DI_sc)
-
-       call amps_recieve_batsrus2amps_center_point_data_sc(&
-            NameVar//char(0), nVar, Data_VI, iPoint_I)
-
-       deallocate(hgiData_VI)
+    elseif (present(Data_VI)) then
+       call amps_recieve_batsrus2amps_center_point_data_sc(NameVar//char(0), nVar, Data_VI, iPoint_I) 
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
-
   end subroutine PT_put_from_sc 
 
 
