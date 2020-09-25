@@ -242,7 +242,13 @@ void amps_init_mesh(){
   
   //generate only the tree
   PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
+  //PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
+  if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
+    PIC::BC::ExternalBoundary::Periodic::Init(OH::DomainXMin,OH::DomainXMax,localResolution);
+  }else{
+    PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
+  }
+
   PIC::Mesh::mesh.memoryAllocationReport();
   
   
@@ -306,10 +312,13 @@ void amps_init() {
    PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
    PIC::ParticleWeightTimeStep::initTimeStep();
 
-   //create the list of mesh nodes where the injection boundary conditinos are applied
-   PIC::BC::BlockInjectionBCindicatior=BoundingBoxParticleInjectionIndicator;
-   PIC::BC::userDefinedBoundingBlockInjectionFunction=BoundingBoxInjection;
-   PIC::BC::InitBoundingBoxInjectionBlockList();
+
+   if (_PIC_BC__PERIODIC_MODE_!=_PIC_BC__PERIODIC_MODE_ON_) {
+     //create the list of mesh nodes where the injection boundary conditinos are applied
+     PIC::BC::BlockInjectionBCindicatior=BoundingBoxParticleInjectionIndicator;
+     PIC::BC::userDefinedBoundingBlockInjectionFunction=BoundingBoxInjection;
+     PIC::BC::InitBoundingBoxInjectionBlockList();
+   }
    
    //set up the particle weight
    PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=BoundingBoxInjectionRate;
