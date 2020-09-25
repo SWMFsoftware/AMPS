@@ -57,6 +57,19 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
   int npart,idim;
 
   for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      bool BoundaryBlock=false;
+      
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+	  BoundaryBlock=true;
+	  break;
+	}
+      
+      if (BoundaryBlock==true) continue;
+    }
+
     memcpy(cellList,node->block->GetCenterNodeList(),cellListLength*sizeof(PIC::Mesh::cDataCenterNode*));
 
     xmin=node->xmin,xmax=node->xmax;

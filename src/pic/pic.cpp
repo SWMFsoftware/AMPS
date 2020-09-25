@@ -304,6 +304,11 @@ int PIC::TimeStep() {
 #if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
     ParticleMovingTime=MPI_Wtime();
     PIC::Mover::MoveParticles();
+
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+      PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+    }
+
     ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
     RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
@@ -1353,7 +1358,11 @@ void PIC::Sampling::Sampling() {
 
         if (DataOutputFileNumber>=FirstPrintedOutputFile) {
           if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_) {
-            if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+            if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) {
+              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
+
+              PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+            }
           }
         }
 
