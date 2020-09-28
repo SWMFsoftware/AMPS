@@ -80,18 +80,25 @@ cp -r BATL Intel/AMPS/
 cd $WorkDir/Tmp_AMPS_test/GNU/AMPS                                         
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
+utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
 #cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
 #echo AMPS was checked out on $CheckoutTime > test_amps.log
 #./Config.pl -f-link-option=-lc++ -install -compiler=pgf90,pgccmpicxx  -link-option=-lc++    >>& test_amps.log    
 
 #Execute the tests
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllGNU.sh & 
-$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllIntel.sh &   
-#$WorkDir/Tmp_AMPS_test/AMPS/utility/TestScripts/Valeriy/AllPGI.sh &
+cd $WorkDir/Tmp_AMPS_test
+rm -rf Amps*Complete
+rm -rf runlog scheduler
+
+cp AMPS/utility/TestScripts/Valeriy/scheduler.cpp .
+g++ ./scheduler.cpp -o scheduler -lpthread
+
+./scheduler -threads 10  -path /Users/vtenishe/Tmp_AMPS_test -TestScriptsPath Valeriy -ParallelTestExecutionThreads 6 -intel -gcc > runlog 
 
 
