@@ -511,7 +511,7 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
   //update the 'ghost' cells and 'ghost' blocks
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData();
+    PIC::Parallel::UpdateGhostBlockData();
     break;
   default:
     PIC::Mesh::mesh.ParallelBlockDataExchange();
@@ -3512,10 +3512,11 @@ barrier.Sync();
     PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
     PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
     PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrixSpeciesData,UnpackBlockData_JMassMatrixSpeciesData);
+    PIC::Parallel::ProcessBlockBoundaryNodes(); 
+
     break;
   case _PIC_MODE_OFF_:
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_JMassMatrix,UnpackBlockData_JMassMatrix);
+    PIC::Parallel::ProcessBlockBoundaryNodes(); 
   }
 
   PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
@@ -4025,9 +4026,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
   PIC::Parallel::BPManager.pointBufferSize = sizeof(double); 
   PIC::Parallel::BPManager.copy_node_to_buffer = copy_net_charge_to_buffer;
   PIC::Parallel::BPManager.add_buffer_to_node = add_net_charge_to_node;
-  PIC::BC::ExternalBoundary::UpdateData(PackBlockData_netCharge,UnpackBlockData_netCharge);
+
+  PIC::Parallel::ProcessBlockBoundaryNodes();
   PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
-  
 }
 
 
@@ -4152,7 +4153,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_phi,UnpackBlockData_phi);
+    PIC::Parallel::UpdateGhostBlockData(PackBlockData_phi,UnpackBlockData_phi);
     break;
   }
 
@@ -4319,7 +4320,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_B,UnpackBlockData_B);
+    PIC::Parallel::UpdateGhostBlockData(PackBlockData_B,UnpackBlockData_B);
     break;
   }
 }
@@ -4599,7 +4600,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData(PackBlockData_E,UnpackBlockData_E);
+    PIC::Parallel::UpdateGhostBlockData(PackBlockData_E,UnpackBlockData_E);
     break;
   }
  

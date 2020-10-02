@@ -327,7 +327,8 @@ int PIC::TimeStep() {
 #endif  
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-  PIC::BC::ExternalBoundary::UpdateData();
+  PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+  PIC::Parallel::UpdateGhostBlockData();
   #endif
  
   //update elecrtic and magnetic fields
@@ -372,8 +373,11 @@ int PIC::TimeStep() {
   if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
     PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
   
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ )
-    PIC::BC::ExternalBoundary::UpdateData();
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ ) { 
+    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+  }
+
+
   PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   
 
@@ -390,7 +394,8 @@ int PIC::TimeStep() {
   #endif
   //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-  PIC::BC::ExternalBoundary::UpdateData();
+  PIC::Parallel::ProcessBlockBoundaryNodes(); 
+
   #endif
 
   FieldSolverTime=MPI_Wtime()-FieldSolverTime;

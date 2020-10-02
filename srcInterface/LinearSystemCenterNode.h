@@ -909,7 +909,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
       break;
 
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData(fPackBlockData,fUnpackBlockData);
+      PIC::Parallel::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
       break;
     }
   }

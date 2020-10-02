@@ -238,31 +238,37 @@ void PIC::BC::ExternalBoundary::UpdateData() {
 void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
+
   using namespace PIC::BC::ExternalBoundary::Periodic;
   //exchange particle data
   ExchangeParticles();
 
-  #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
-  //update associated data accounting for the periodic boundary conditions
-  PIC::Parallel::ProcessCornerBlockBoundaryNodes();
-  PIC::Parallel::ProcessCenterBlockBoundaryNodes();
-  #else
+  PIC::Parallel::ProcessBlockBoundaryNodes();
 
-  switch (_PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE_) {
-  case _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__Yuxi_: 
-    PIC::Parallel::ProcessCornerBlockBoundaryNodes_new();
-    PIC::Parallel::ProcessCenterBlockBoundaryNodes_new();
-    break;
-  case _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__DEFAULT_:
-    PIC::Parallel::ProcessCornerBlockBoundaryNodes();
-    PIC::Parallel::ProcessCenterBlockBoundaryNodes();
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
-  }
 
-  #endif
-  
+  PIC::Parallel::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
+}
+
+
+void PIC::Parallel::UpdateGhostBlockData() {
+  UpdateGhostBlockData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
+}
+
+void PIC::Parallel::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) { 
+
+    if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
+
+    //update the associated data in the subdomain 'boundary layer' of blocks
+    PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+}
+
+void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
+  UpdateGhostBlockData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
+}
+
+void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
 #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   int iBlockPair,RealBlockThread,GhostBlockThread;  
@@ -309,8 +315,6 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
 
 
 #endif
-  //update the associated data in the subdomain 'boundary layer' of blocks
-  PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
 }
 
 //process the data update for the 'ghost' block

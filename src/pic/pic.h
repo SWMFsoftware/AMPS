@@ -3983,6 +3983,13 @@ namespace PIC {
        void CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
      }
 
+
+     //update data in the 'ghost blocks'
+     void UpdateGhostBlockData();
+     void UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+                      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
+
+
      namespace CenterBlockBoundaryNodes {
        extern bool ActiveFlag;
        void SetActiveFlag(bool flag);
@@ -3996,6 +4003,8 @@ namespace PIC {
      void ExchangeParticleData();
 
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
+     void ProcessBlockBoundaryNodes(); 
+
      void ProcessCornerBlockBoundaryNodes();     
      void ProcessCornerBlockBoundaryNodes_old(); 
      void ProcessCenterBlockBoundaryNodes();
@@ -6217,6 +6226,11 @@ namespace PIC {
         //default function for copying the corner node associated data
         void CopyCornerNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
         void CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
+
+      //manager of the information update between the real and ghost blocks
+      void UpdateGhostBlockData();
+      void UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+                      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
       }
 
     }

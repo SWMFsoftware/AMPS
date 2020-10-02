@@ -3377,3 +3377,29 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     }
   }
 }
+
+//================================================================================
+void PIC::Parallel::ProcessBlockBoundaryNodes() {
+  #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
+  //update associated data accounting for the periodic boundary conditions
+  PIC::Parallel::ProcessCornerBlockBoundaryNodes();
+  PIC::Parallel::ProcessCenterBlockBoundaryNodes();
+  #else
+
+  switch (_PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE_) {
+  case _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__Yuxi_:
+    ProcessCornerBlockBoundaryNodes_new();
+    ProcessCenterBlockBoundaryNodes_new();
+    break;
+  case _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__DEFAULT_:
+    ProcessCornerBlockBoundaryNodes();
+    ProcessCenterBlockBoundaryNodes();
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  #endif
+}
+
+
