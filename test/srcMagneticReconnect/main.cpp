@@ -398,7 +398,7 @@ void SetIC() {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData();
+      PIC::Parallel::UpdateGhostBlockData();
       break;
     }
 }
@@ -608,7 +608,7 @@ int main(int argc,char **argv) {
       break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData();
+      PIC::Parallel::UpdateGhostBlockData();
       break;
   }
   //PIC::FieldSolver::Init(); 
@@ -631,7 +631,7 @@ int main(int argc,char **argv) {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData();
+      PIC::Parallel::UpdateGhostBlockData();
       break;
   }
   
@@ -676,7 +676,7 @@ int main(int argc,char **argv) {
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData();
+      PIC::Parallel::UpdateGhostBlockData();
       break;
     }
     PIC::Sampling::Sampling();
