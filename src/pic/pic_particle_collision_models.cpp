@@ -97,7 +97,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
   double cellMeasure;
   int thread;
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
   //particle lists
@@ -502,7 +502,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf() {
   double cellMeasure;
   int thread;
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
   //particle lists

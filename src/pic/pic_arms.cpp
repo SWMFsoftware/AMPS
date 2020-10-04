@@ -66,7 +66,7 @@ void PIC::CPLR::DATAFILE::ARMS::LoadDataFile(const char *fname,cTreeNodeAMR<PIC:
   static double *Xpos, *Zpos;
   static double ***Data;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     // read data file using class CiFileOperations (see src/general/ifileopr.h)
     CiFileOperations fin;
     char fullname[_MAX_STRING_LENGTH_PIC_];
@@ -270,7 +270,7 @@ void PIC::CPLR::DATAFILE::ARMS::LoadDataFile(const char *fname,cTreeNodeAMR<PIC:
     }
   }
   
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     // deallocate data containers
     delete [] Xpos;
     delete [] Zpos;  

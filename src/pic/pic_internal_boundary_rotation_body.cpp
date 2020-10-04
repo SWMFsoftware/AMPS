@@ -44,7 +44,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::RotationBody::R
   RotationBodyDescriptor.BoundaryElement=(void*)newRotationBody;
   RotationBodyDescriptor.BondaryType=_INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_;
 
-  PIC::Mesh::mesh.RegisterInternalBoundary(RotationBodyDescriptor);
+  PIC::Mesh::mesh->RegisterInternalBoundary(RotationBodyDescriptor);
 
   return RotationBodyDescriptor;
 }

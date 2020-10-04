@@ -55,7 +55,7 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    
    //init the random number generator is needed
-   if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh.rootTree);
+   if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh->rootTree);
 
    //update the local block list
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
@@ -119,7 +119,7 @@ int PIC::TimeStep() {
 
            PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
            sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
-           PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,*s);
+           PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,*s);
 
            //preplot the recovered file if needed
            if (Restart::SamplingData::PreplotRecoveredData==true) {
@@ -518,7 +518,7 @@ int PIC::TimeStep() {
     PIC::BC::nTotalInjectedParticles=0;
 
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
@@ -526,7 +526,7 @@ int PIC::TimeStep() {
 
 
 
-      ExchangeBuffer=new cExchangeStatisticData[PIC::Mesh::mesh.nTotalThreads];
+      ExchangeBuffer=new cExchangeStatisticData[PIC::Mesh::mesh->nTotalThreads];
       MPI_Gather((char*)&localRunStatisticData,sizeof(cExchangeStatisticData),MPI_CHAR,(char*)ExchangeBuffer,sizeof(cExchangeStatisticData),MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
 
 
@@ -566,10 +566,10 @@ int PIC::TimeStep() {
       //detemine the earliest time that a thread has passed the point of collecting the runtime statistical information
       double minCheckPointTime=-1.0;
 
-      for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if ((minCheckPointTime<0.0)||(minCheckPointTime>ExchangeBuffer[thread].Latency)) minCheckPointTime=ExchangeBuffer[thread].Latency;
+      for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if ((minCheckPointTime<0.0)||(minCheckPointTime>ExchangeBuffer[thread].Latency)) minCheckPointTime=ExchangeBuffer[thread].Latency;
 
 
-      for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+      for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
         ExchangeBuffer[thread].Latency-=minCheckPointTime;
 
         fprintf(PIC::DiagnospticMessageStream,"$PREFIX: %12d %12d %10e %10e %10e %10e %10e %10e %10e %10e %12d %12d %10e %10e %10e %10e %10e %10e\n",
@@ -602,7 +602,7 @@ int PIC::TimeStep() {
         if (MaxLatency<ExchangeBuffer[thread].Latency) MaxLatency=ExchangeBuffer[thread].Latency;
       }
 
-      MeanLatency/=PIC::Mesh::mesh.nTotalThreads;
+      MeanLatency/=PIC::Mesh::mesh->nTotalThreads;
       PIC::Parallel::CumulativeLatency+=MeanLatency*nInteractionsAfterRunStatisticExchange;
       if (nExchangeStatisticsIterationNumberSteps!=0) nTotalInjectedParticels/=nExchangeStatisticsIterationNumberSteps;
 
@@ -625,7 +625,7 @@ int PIC::TimeStep() {
         MPI_Gather(PIC::BC::ParticleProductionRate+spec,1,MPI_DOUBLE,ParticleProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleMassProductionRate+spec,1,MPI_DOUBLE,ParticleMassProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
-        for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+        for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
           nInjectedParticleExchangeBuffer[0]+=nInjectedParticleExchangeBuffer[thread];
           ParticleProductionRateExchangeBuffer[0]+=ParticleProductionRateExchangeBuffer[thread];
           ParticleMassProductionRateExchangeBuffer[0]+=ParticleMassProductionRateExchangeBuffer[thread];
@@ -705,12 +705,12 @@ int PIC::TimeStep() {
       CMPI_channel pipe(10000);
       vector<PIC::fExchangeExecutionStatistics>::iterator fptr;
 
-      if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+      if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
       else pipe.openSend(0);
 
       for (fptr=PIC::ExchangeExecutionStatisticsFunctions.begin();fptr!=PIC::ExchangeExecutionStatisticsFunctions.end();fptr++) (*fptr)(&pipe,nInteractionsAfterRunStatisticExchange);
 
-      if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+      if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
       else pipe.closeSend();
     }
 
@@ -718,7 +718,7 @@ int PIC::TimeStep() {
     int EmergencyLoadRebalancingFlag=false;
     switch (_PIC_EMERGENCY_LOAD_REBALANCING_MODE_) {
     case _PIC_MODE_ON_: 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         if (PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime) {
           EmergencyLoadRebalancingFlag=true;
         }
@@ -739,7 +739,7 @@ int PIC::TimeStep() {
       MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (EmergencyLoadRebalancingFlag==true || testRebalancing) {
-        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
+        if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
 
         //correct the node's load balancing measure
         if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) { 
@@ -770,14 +770,14 @@ int PIC::TimeStep() {
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         PIC::Parallel::RebalancingTime=MPI_Wtime();
 
-        PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+        PIC::Mesh::mesh->CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
         PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
         PIC::DomainBlockDecomposition::UpdateBlockTable();
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
 
-        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
+        if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
       }
     
       break;
@@ -838,7 +838,7 @@ void PIC::Sampling::Sampling() {
 
   if ((_PIC_SAMPLING_MODE_ == _PIC_MODE_ON_)&&(RuntimeSamplingSwitch==true)) { //<-- begining of the particle sample section
 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
     PIC::Mesh::cDataCenterNode *cell;
     PIC::Mesh::cDataBlockAMR *block;
@@ -1005,7 +1005,7 @@ void PIC::Sampling::Sampling() {
                 //the particle must be within the computational domain and outside of the internal boundarues
                 list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryListIterator;
 
-                for (InternalBoundaryListIterator=PIC::Mesh::mesh.InternalBoundaryList.begin();InternalBoundaryListIterator!=PIC::Mesh::mesh.InternalBoundaryList.end();InternalBoundaryListIterator++) {
+                for (InternalBoundaryListIterator=PIC::Mesh::mesh->InternalBoundaryList.begin();InternalBoundaryListIterator!=PIC::Mesh::mesh->InternalBoundaryList.end();InternalBoundaryListIterator++) {
                   cInternalBoundaryConditionsDescriptor InternalBoundaryDescriptor;
                   double x[3];
                   double *x0Sphere,radiusSphere;
@@ -1018,7 +1018,7 @@ void PIC::Sampling::Sampling() {
                     #if DIM == 3
                     ((cInternalSphericalData*)(InternalBoundaryDescriptor.BoundaryElement))->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
 
-                    if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh.EPS,2)) {
+                    if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh->EPS,2)) {
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Sphere: x0=" << x0Sphere[0] << ", " << x0Sphere[1] << ", " << x0Sphere[2] << ", R=" << radiusSphere << endl;
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Position: x=" << x[0] << ", " << x[1] << ", " << x[2] << endl;
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Distance from the center of the sphere: " << sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)) << endl;
@@ -1260,7 +1260,7 @@ void PIC::Sampling::Sampling() {
   //Output the data flow file if needed
   if ((CollectingSampleCounter==RequiredSampleLength)||(PIC::Alarm::WallTimeExeedsLimit==true)) {
     //exchnge the sampling data
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
 
     //check different sampling modes
     #if _PIC_SAMPLING_MODE_ == _PIC_MODE_ON_
@@ -1269,7 +1269,7 @@ void PIC::Sampling::Sampling() {
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
 
-      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
         PIC::Mesh::cDataBlockAMR *block=node->block;
 
         if (!block) continue;
@@ -1356,7 +1356,7 @@ void PIC::Sampling::Sampling() {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
         sprintf(fname,"%s/pic.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
           fflush(stdout);
         }
@@ -1369,12 +1369,12 @@ void PIC::Sampling::Sampling() {
 //presence of the line changes the reference solution significantly, so it is commented for now
 //              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
 
-              PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+              PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
             }
           }
         }
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"done.\n");
           fflush(stdout);
         }
@@ -1448,14 +1448,14 @@ void PIC::Sampling::Sampling() {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
         sprintf(fname,"%s/pic.Sphere=%ld.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,iSphericalSurface,ChemSymbol,s,DataOutputFileNumber);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
           fflush(stdout);
         }
 
         PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface)->PrintSurfaceData(fname,s);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"done.\n");
           fflush(stdout);
         }
@@ -1489,7 +1489,7 @@ void PIC::Sampling::Sampling() {
 
     nTotalSimulatedParticles=PIC::ParticleBuffer::NAllPart;
 
-    if (PIC::Mesh::mesh.ThisThread!=0) {
+    if (PIC::Mesh::mesh->ThisThread!=0) {
       pipe.openSend(0);
 
       pipe.send(nTotalSimulatedParticles);
@@ -1499,7 +1499,7 @@ void PIC::Sampling::Sampling() {
     else {
       pipe.openRecvAll();
 
-      for (int thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+      for (int thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
         nTotalSimulatedParticles+=pipe.recv<long int>(thread);
       }
 
@@ -1551,7 +1551,7 @@ void PIC::Sampling::Sampling() {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
       PIC::Parallel::RebalancingTime=MPI_Wtime();
 
-      PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+      PIC::Mesh::mesh->CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
       PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
       PIC::DomainBlockDecomposition::UpdateBlockTable();
 
@@ -1573,14 +1573,14 @@ void PIC::Sampling::Sampling() {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
       sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-CompleteSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
         fflush(stdout);
       }
 
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"done.\n");
         fflush(stdout);
       }
@@ -1592,14 +1592,14 @@ void PIC::Sampling::Sampling() {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
       sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-TempSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
         fflush(stdout);
       }
 
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"done.\n");
         fflush(stdout);
       }
@@ -1623,7 +1623,7 @@ void PIC::Sampling::Sampling() {
 //====================================================
 //the run time signal and exeptions handler
 void PIC::SignalHandler(int sig) {
-  cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh.ThisThread << endl;
+  cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh->ThisThread << endl;
 
   switch (sig) {
   case SIGFPE :
@@ -1693,17 +1693,17 @@ void PIC::Init_BeforeParser() {
   InterpolationRoutines::Init();
 
   //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
-  PIC::Mesh::mesh.fDefaultPackBlockData=PIC::Mesh::PackBlockData;
-  PIC::Mesh::mesh.fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
+  PIC::Mesh::mesh->fDefaultPackBlockData=PIC::Mesh::PackBlockData;
+  PIC::Mesh::mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
 
-  PIC::Mesh::mesh.fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
-  PIC::Mesh::mesh.fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
-  PIC::Mesh::mesh.fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
+  PIC::Mesh::mesh->fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
+  PIC::Mesh::mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
+  PIC::Mesh::mesh->fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
 
   //set function that are used for moving blocks during the domain re-decomposition
-  PIC::Mesh::mesh.fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
-  PIC::Mesh::mesh.fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
-  PIC::Mesh::mesh.fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+  PIC::Mesh::mesh->fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
+  PIC::Mesh::mesh->fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
+  PIC::Mesh::mesh->fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
 
 
   //Init the random number generator
@@ -1772,7 +1772,7 @@ void PIC::Init_BeforeParser() {
 
     sprintf(PIC::DiagnospticMessageStreamName,"%s/thread=%i.log",PIC::DiagnospticMessageStreamName,PIC::ThisThread);
     PIC::DiagnospticMessageStream=fopen(PIC::DiagnospticMessageStreamName,"w");
-    PIC::Mesh::mesh.DiagnospticMessageStream=PIC::DiagnospticMessageStream;
+    PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
   }
 
   //create the output directory if needed
@@ -1959,7 +1959,7 @@ void PIC::Init_BeforeParser() {
 
   //Init manager of the periodic boundary conditions that is called by the mesh generator after each domain decomposition procedure
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-    PIC::Mesh::mesh.UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
+    PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
   }
 
   //Init the field solver
@@ -1976,12 +1976,12 @@ void PIC::Init_AfterParser() {
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
     //set the interpolation retine for constructing of the stencil when output the model data file
     if (_PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE_ == _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE__LINEAR_) {
-      PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+      PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
     }
   }
 
   //flush the sampling buffers
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
     if (!block) continue;
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {

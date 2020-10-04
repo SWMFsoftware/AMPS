@@ -32,7 +32,7 @@ void PIC::UserParticleProcessing::Processing() {
 #pragma omp single
      {
 #endif //_COMPILATION_MODE_
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     if (node->block!=NULL) {
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_

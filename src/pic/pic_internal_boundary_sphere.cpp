@@ -125,7 +125,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Sphere::Registe
   SphereDescriptor.BoundaryElement=(void*)newSphere;
   SphereDescriptor.BondaryType=_INTERNAL_BOUNDARY_TYPE_SPHERE_;
 
-  PIC::Mesh::mesh.RegisterInternalBoundary(SphereDescriptor);
+  PIC::Mesh::mesh->RegisterInternalBoundary(SphereDescriptor);
 
   return SphereDescriptor;
 }

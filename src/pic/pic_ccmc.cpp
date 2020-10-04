@@ -521,14 +521,14 @@ void PIC::CCMC::LoadParticles() {
       case PIC::CCMC::DEF::SOURCE::TYPE::Sphere:
         //verify the the origin of the sphere is inside the domain
         for (idim=0;idim<3;idim++) {
-          if ((ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[idim]<PIC::Mesh::mesh.rootTree->xmin[idim])  ||
-          (ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[idim]>PIC::Mesh::mesh.rootTree->xmax[idim])) { 
+          if ((ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[idim]<PIC::Mesh::mesh->rootTree->xmin[idim])  ||
+          (ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[idim]>PIC::Mesh::mesh->rootTree->xmax[idim])) { 
             //the origin of the sphere is outside of thedomain => terminate execution
 
             char message[1000];
             double *x=ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin;
-            double *xmin=PIC::Mesh::mesh.rootTree->xmin;
-            double *xmax=PIC::Mesh::mesh.rootTree->xmax; 
+            double *xmin=PIC::Mesh::mesh->rootTree->xmin;
+            double *xmax=PIC::Mesh::mesh->rootTree->xmax; 
 
             sprintf(message," Error: injection sphere is outside of the domain. Redefine the location of the injection spherical region.\nThe origin of the sphere: %e, %e, %e.\nThe domain limits: xmin= %e, %e, %e, and xmax=%e, %e, %e\n",x[0],x[1],x[2], xmin[0],xmin[1],xmin[2], xmax[0],xmax[1],xmax[2]); 
 
@@ -546,14 +546,14 @@ void PIC::CCMC::LoadParticles() {
           x[1]=r*sin(phi)*cosTheta+ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[1];
           x[2]=r*sinTheta+ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Spherical.Origin[2];
         }
-        while ((t=PIC::Mesh::mesh.findTreeNode(x,t))==NULL);
+        while ((t=PIC::Mesh::mesh->findTreeNode(x,t))==NULL);
 
         break;
       case PIC::CCMC::DEF::SOURCE::TYPE::Circle:
         //verify the the origin of the sphere is inside the domain
         for (idim=0;idim<3;idim++) {
-          if ((ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Circle.Origin[idim]<PIC::Mesh::mesh.rootTree->xmin[idim])  ||
-          (ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Circle.Origin[idim]>PIC::Mesh::mesh.rootTree->xmax[idim])) {
+          if ((ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Circle.Origin[idim]<PIC::Mesh::mesh->rootTree->xmin[idim])  ||
+          (ParticleInjection::InjectionDescriptorList[iInjectionEntry].SpatialDistribution.Circle.Origin[idim]>PIC::Mesh::mesh->rootTree->xmax[idim])) {
             exit(__LINE__,__FILE__,"Error: injection Circle is outside of the domain. Redefine the location of the injection spherical region");
           }
         }
@@ -566,7 +566,7 @@ void PIC::CCMC::LoadParticles() {
 
           for (idim=0;idim<3;idim++) x[idim]=Circle->Origin[idim]+r*(sin(phi)*Circle->e0[idim]+cos(phi)*Circle->e1[idim]);
         }
-        while ((t=PIC::Mesh::mesh.findTreeNode(x,t))==NULL);
+        while ((t=PIC::Mesh::mesh->findTreeNode(x,t))==NULL);
 
         break;
       case PIC::CCMC::DEF::SOURCE::TYPE::Quadrilateral:
@@ -596,7 +596,7 @@ void PIC::CCMC::LoadParticles() {
                 xLocal[0]*Quadrilateral->dX0[idim]*e0SignTable[iTriangle]+
                 xLocal[1]*Quadrilateral->dX1[idim]*e1SignTable[iTriangle];
 
-              if ((x[idim]<PIC::Mesh::mesh.rootTree->xmin[idim])||(x[idim]>PIC::Mesh::mesh.rootTree->xmax[idim])) {
+              if ((x[idim]<PIC::Mesh::mesh->rootTree->xmin[idim])||(x[idim]>PIC::Mesh::mesh->rootTree->xmax[idim])) {
                 //the point is outside of the domain
                 InsideDomainFlag=false;
                 break;
@@ -621,7 +621,7 @@ void PIC::CCMC::LoadParticles() {
             xLocal[0]*Quadrilateral->dX0[idim]*e0SignTable[iTriangle]+
             xLocal[1]*Quadrilateral->dX1[idim]*e1SignTable[iTriangle];
         }
-        while ((t=PIC::Mesh::mesh.findTreeNode(x,t))==NULL);
+        while ((t=PIC::Mesh::mesh->findTreeNode(x,t))==NULL);
 
         break;
 
@@ -661,8 +661,8 @@ void PIC::CCMC::LoadParticles() {
       //determine the block and processor number for the particle
       static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
 
-      node=PIC::Mesh::mesh.findTreeNode(x,node);
-      if (node->Thread!=PIC::Mesh::mesh.ThisThread) continue;
+      node=PIC::Mesh::mesh->findTreeNode(x,node);
+      if (node->Thread!=PIC::Mesh::mesh->ThisThread) continue;
 
       //create and inject the particle into the system
       long int newParticle;
@@ -743,7 +743,7 @@ int PIC::CCMC::TraceParticles() {
         int i,j,k;
         long int ptr,ptrNext;
 
-        for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+        for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
           block=node->block;
 
           if (block==NULL) continue;

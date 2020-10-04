@@ -79,8 +79,8 @@ bool PIC::Debugger::InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startN
   long int ptr;
   static long int nAllCountedParticles=0;
 
-  if (startNode==NULL) startNode=PIC::Mesh::mesh.rootTree;
-  if (startNode==PIC::Mesh::mesh.rootTree) nAllCountedParticles=0;
+  if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
+  if (startNode==PIC::Mesh::mesh->rootTree) nAllCountedParticles=0;
 
 
   for (nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) InfiniteLoop(startNode->downNode[nDownNode]);
@@ -116,7 +116,7 @@ bool PIC::Debugger::InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startN
     }
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //collect the information from all processors;
     int Flag,FlagTable[PIC::nTotalThreads];
 
@@ -147,10 +147,10 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
   static char* ParticleAllocationTable=NULL;
   static long int* ptrPrevTable=NULL;
 
-  if (startNode==NULL) startNode=PIC::Mesh::mesh.rootTree;
+  if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
 
   //create table of allocated/not-allocated flag table
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     long int cnt=0;
 
     nAllCountedParticles=0;
@@ -260,7 +260,7 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
     }
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     for (ptr=0;ptr<PIC::ParticleBuffer::MaxNPart;ptr++) {
       if ((ParticleAllocationTable[ptr]&2)==0) {
         exit(__LINE__,__FILE__,"Error: found particles that is not referenced at all");
@@ -287,7 +287,7 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
 
 
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -357,7 +357,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
   static int nCallCounter=0;
 
   if (startNode==NULL) {
-    startNode=PIC::Mesh::mesh.rootTree;
+    startNode=PIC::Mesh::mesh->rootTree;
     EntryCounter=0;
     CheckSum.clear();
 
@@ -454,7 +454,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
   }
 
   //output the checksum
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     pipe.flush();
 
     if (PIC::ThisThread==0) {
@@ -501,7 +501,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
   static int nCallCounter=0;
 
   if (startNode==NULL) {
-    startNode=PIC::Mesh::mesh.rootTree;
+    startNode=PIC::Mesh::mesh->rootTree;
     EntryCounter=0;
     CheckSum.clear();
 
@@ -600,7 +600,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
   }
 
   //output the checksum
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     pipe.flush();
 
     if (PIC::ThisThread==0) {
@@ -633,7 +633,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
   for (i=0;i<PIC::ParticleBuffer::ParticleDataLength;i++) ParticleBuffer[i]=0;
 
   //loop through all blocks
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     if ((node->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
 
       if (node->Thread!=0) {
@@ -737,7 +737,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
   cAMRnodeID nodeid;
 
   if (fout==NULL) {
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 
       if (PIC::ThisThread==0) {
         node->AMRnodeID.Checksum(&Checksum);
@@ -768,7 +768,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
     }
   }
   else {
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 
       node->AMRnodeID.Checksum(&Checksum);
       AddPartcle2Checksum(&Checksum,ParticleBuffer,node);
@@ -818,12 +818,12 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
   fprintf(fout,"VARIABLES=\"NodeTempID\", \"Thread\", \"Face Neib\", \"Edge Neib\", \"Corner Neib\"\n");
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     fprintf(fout,"node->Temp_ID=%ld, thread=%i\n",node->Temp_ID,node->Thread);
 
     //face neib
     for (iface=0;iface<6;iface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
-      if ((neibNode=node->GetNeibFace(iface,i,j,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibFace(iface,i,j,PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"iface=%i,i=%i,j=%i,neib=%i\n",iface,i,j,id);
@@ -831,7 +831,7 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
     //edge neib
     for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) {
-      if ((neibNode=node->GetNeibEdge(iedge,i,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibEdge(iedge,i,PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"iedge=%i,i=%i,neib=%i\n",iface,i,id);
@@ -839,7 +839,7 @@ void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,
 
     //corner
     for (icorner=0;icorner<8;icorner++) {
-      if ((neibNode=node->GetNeibCorner(icorner,&PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
+      if ((neibNode=node->GetNeibCorner(icorner,PIC::Mesh::mesh))!=NULL) id=neibNode->Temp_ID;
       else id=-1;
 
       fprintf(fout,"icorner=%i,neib=%i\n",icorner,id);
@@ -876,7 +876,7 @@ void PIC::Debugger::ParticleDebugData::AddParticleDebugData(long int ptr,cTreeNo
     p.initCheckSum=PIC::ParticleBuffer::GetParticleSignature(ptr);
 
     x=PIC::ParticleBuffer::GetX(ptr);
-    PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node,false);
+    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
 
     p.i=i;
     p.j=j;
@@ -1043,7 +1043,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
   unsigned long int p=PIC::Debugger::GetParticlePopulationSignature(nline,fname);
 
   //'corner' data
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_+1;k++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_+1;j++)  {
         for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_+1;i++) {
@@ -1081,7 +1081,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
   }
 
   //'center' data
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
          for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
@@ -1283,7 +1283,7 @@ int PIC::Debugger::GetParticleNumberInLists(bool CurrentThreadOnly) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int ptr,i,j,k,nTotalParticles=0;
 
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if ((node->block!=NULL) && ((CurrentThreadOnly==false)||(node->Thread==PIC::ThisThread)) ) {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if ((node->block!=NULL) && ((CurrentThreadOnly==false)||(node->Thread==PIC::ThisThread)) ) {
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -1327,14 +1327,14 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
   int periodic_bc_pair_ghost_block=-1;
 
   auto ReleasePeriodicBCFlags = [&] () {
-    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_real_block);
-    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_ghost_block);
+    PIC::Mesh::mesh->rootTree->ReleaseFlag(periodic_bc_pair_real_block);
+    PIC::Mesh::mesh->rootTree->ReleaseFlag(periodic_bc_pair_ghost_block);
   };
 
 
   auto ReservePeriodicBCFlags = [&] () {
-    periodic_bc_pair_real_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
-    periodic_bc_pair_ghost_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
+    periodic_bc_pair_real_block=PIC::Mesh::mesh->rootTree->CheckoutFlag();
+    periodic_bc_pair_ghost_block=PIC::Mesh::mesh->rootTree->CheckoutFlag();
 
     if ((periodic_bc_pair_real_block==-1)||(periodic_bc_pair_ghost_block==-1)) exit(__LINE__,__FILE__,"Error: cannot reserve a flag");
   };
@@ -1354,7 +1354,7 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
       ResetPeriodicBCFlags(downNode);
     }
 
-    if (startNode==PIC::Mesh::mesh.rootTree) {
+    if (startNode==PIC::Mesh::mesh->rootTree) {
       //loop throught the list of the block pairs used to impose the periodic BC
       int iBlockPair,RealBlockThread,GhostBlockThread;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *RealBlock,*GhostBlock;
@@ -1451,10 +1451,10 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
 
   //loop through all blocks
   ReservePeriodicBCFlags();
-  ResetPeriodicBCFlags(PIC::Mesh::mesh.rootTree);
+  ResetPeriodicBCFlags(PIC::Mesh::mesh->rootTree);
 
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     if (node->TestFlag(periodic_bc_pair_ghost_block)==false) {
       CenterNodeBlockCheckSum(node);
       CornerNodeBlockCheckSum(node);
@@ -1568,7 +1568,7 @@ void PIC::Debugger::OrderParticleLists() {
     }
   };
 
-  ProcessBlock(PIC::Mesh::mesh.rootTree);
+  ProcessBlock(PIC::Mesh::mesh->rootTree);
 }
 
 

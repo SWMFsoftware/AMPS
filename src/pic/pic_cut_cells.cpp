@@ -62,9 +62,9 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   if (ThisThread==nTotalThreads-1) nFinishFace=nBoundaryTriangleFaces;
 
   //evaluate the distance size of the domain
-  double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0],2)+
-      pow(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1],2)+
-      pow(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2],2));
+  double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
+      pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
+      pow(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2],2));
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none) shared(nStartFace,nFinishFace,BoundaryTriangleFaces,lDomain) \
@@ -154,9 +154,9 @@ bool PIC::Mesh::IrregularSurface::CheckPointInsideDomain_default(double *x,PIC::
   if (SurfaceTriangulation==NULL) return true;
 
   //evaluate the distance size of the domain
-  double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0],2)+
-      pow(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1],2)+
-      pow(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2],2));
+  double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
+      pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
+      pow(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2],2));
 
   //generate the direction of the search
   for (l=0.0,idim=0;idim<3;idim++) {
@@ -181,14 +181,14 @@ unsigned int PIC::Mesh::IrregularSurface::GetCutFaceDistributionSignature(cTreeN
   static int BlockCounter;
 
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)||(startNode==NULL)) {
+  if ((startNode==PIC::Mesh::mesh->rootTree)||(startNode==NULL)) {
     Signature.clear();
     Signature_ListOrderDependent.clear();
     BlockCounter=0;
 
     if (startNode==NULL) {
-      if (PIC::Mesh::mesh.rootTree==NULL) return 0;
-      else startNode=PIC::Mesh::mesh.rootTree;
+      if (PIC::Mesh::mesh->rootTree==NULL) return 0;
+      else startNode=PIC::Mesh::mesh->rootTree;
     }
   }
 
@@ -248,7 +248,7 @@ unsigned int PIC::Mesh::IrregularSurface::GetCutFaceDistributionSignature(cTreeN
   }
 
   //output calculated signatures
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     char msg[300];
 
     sprintf(msg,"Cut-Face Distribution Signature (cut-face list order independent) (line=%i, file=%s)",nline,fname);
@@ -399,9 +399,9 @@ void PIC::Mesh::IrregularSurface::CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh:
   static cProcessCutFaceData ProcessCutFaceData;
      
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     ProcessCutFaceData.AllocateDataTable(); 
-    ProcessCutFaceData.ResetTempPointerTable(PIC::Mesh::mesh.rootTree);
+    ProcessCutFaceData.ResetTempPointerTable(PIC::Mesh::mesh->rootTree);
   }
 
   //move to the botton of the tree
@@ -421,7 +421,7 @@ void PIC::Mesh::IrregularSurface::CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh:
     bool found;
 
     //connection through corners
-    for (iCorner=0;iCorner<(1<<DIM);iCorner++) if ((neibNode=startNode->GetNeibCorner(iCorner,&PIC::Mesh::mesh))!=NULL) {
+    for (iCorner=0;iCorner<(1<<DIM);iCorner++) if ((neibNode=startNode->GetNeibCorner(iCorner,PIC::Mesh::mesh))!=NULL) {
       for (found=false,iNeib=0;iNeib<ProcessedNodeCounter;iNeib++) if (neibNode==ProcessedNeibBlockTable[iNeib]) {
         found=true;
         break;
@@ -435,7 +435,7 @@ void PIC::Mesh::IrregularSurface::CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh:
     }
   
     //connection through edges 
-    for (iEdge=0;iEdge<12;iEdge++) for (i=0;i<2;i++) if ((neibNode=startNode->GetNeibEdge(iEdge,i,&PIC::Mesh::mesh))!=NULL) {
+    for (iEdge=0;iEdge<12;iEdge++) for (i=0;i<2;i++) if ((neibNode=startNode->GetNeibEdge(iEdge,i,PIC::Mesh::mesh))!=NULL) {
       for (found=false,iNeib=0;iNeib<ProcessedNodeCounter;iNeib++) if (neibNode==ProcessedNeibBlockTable[iNeib]) {
         found=true;
         break;
@@ -449,7 +449,7 @@ void PIC::Mesh::IrregularSurface::CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh:
     }
 
     //connection through faces   
-    for (iFace=0;iFace<6;iFace++) for (i=0;i<2;i++) for (j=0;j<2;j++) if ((neibNode=startNode->GetNeibFace(iFace,i,j,&PIC::Mesh::mesh))!=NULL) {
+    for (iFace=0;iFace<6;iFace++) for (i=0;i<2;i++) for (j=0;j<2;j++) if ((neibNode=startNode->GetNeibFace(iFace,i,j,PIC::Mesh::mesh))!=NULL) {
       for (found=false,iNeib=0;iNeib<ProcessedNodeCounter;iNeib++) if (neibNode==ProcessedNeibBlockTable[iNeib]) {
         found=true;
         break;
@@ -465,8 +465,8 @@ void PIC::Mesh::IrregularSurface::CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh:
     if (ProcessedNodeCounter>ProcessedNeibBlockTableLength) exit(__LINE__,__FILE__,"Error: the counting is wrong"); 
   } 
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
-    ProcessCutFaceData.SetTempCutFacePointers(PIC::Mesh::mesh.rootTree);
+  if (startNode==PIC::Mesh::mesh->rootTree) {
+    ProcessCutFaceData.SetTempCutFacePointers(PIC::Mesh::mesh->rootTree);
   }
 }
  
@@ -556,7 +556,7 @@ double PIC::Mesh::IrregularSurface::GetClosestDistance(double *x,double *xCloses
     //the closest point to the face is that along the normal check intersecion of the line along the normal with the surface element
     for (idim=0;idim<DIM;idim++) l[idim]=-ExternNormal[idim];
 
-    if (CutCell::BoundaryTriangleFaces[iFace].RayIntersection(x,l,IntersectionTime,xIntersection,PIC::Mesh::mesh.EPS)==true) {
+    if (CutCell::BoundaryTriangleFaces[iFace].RayIntersection(x,l,IntersectionTime,xIntersection,PIC::Mesh::mesh->EPS)==true) {
       for (c=0.0,idim=0;idim<DIM;idim++) c+=pow(x[idim]-xIntersection[idim],2);
 
       t=sqrt(c);

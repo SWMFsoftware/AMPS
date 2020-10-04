@@ -270,7 +270,7 @@ void ElectricallyChargedDust::TotalGrainAcceleration(double *accl,int spec,long 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   long int nd;
 
-  if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+  if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
     exit(__LINE__,__FILE__,"Error: the cell is not found");
   }
 
@@ -337,7 +337,7 @@ return _GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_;
   int i,j,k;
   long int LocalCellNumber;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   cell=initNode->block->GetCenterNode(LocalCellNumber);
 
   //ICES plasma data
@@ -497,8 +497,8 @@ long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,
       }
 
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-      InjectionFlag=(startNode->Thread==PIC::Mesh::mesh.ThisThread) ? true : false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+      InjectionFlag=(startNode->Thread==PIC::Mesh::mesh->ThisThread) ? true : false;
     }
 
     GrainMass=4.0/3.0*Pi*MeanDustDensity*pow(GrainRadius,3);
@@ -937,10 +937,10 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::Init(dou
   for (nProbe=0;nProbe<nProbeLocations;nProbe++) {
     for (idim=0;idim<DIM;idim++) SamplingLocations[nProbe][idim]=ProbeLocations[nProbe][idim];
 
-    SampleNodes[nProbe]=PIC::Mesh::mesh.findTreeNode(SamplingLocations[nProbe]);
+    SampleNodes[nProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[nProbe]);
     if (SampleNodes[nProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh.fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
+    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
     if (SampleLocalCellNumber[nProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 
@@ -974,7 +974,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleDi
     //    ptr=block->GetCenterNode(SampleLocalCellNumber[nProbe])->FirstCellParticle;
     int i,j,k;
 
-    PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
+    PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
     ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
     while (ptr!=-1) {
@@ -1043,12 +1043,12 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
   double norm=0.0,c;
   char str[_MAX_STRING_LENGTH_PIC_];
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
 
 
   for (nProbe=0;nProbe<nSamplingLocations;nProbe++) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       sprintf(str,"%s/pic.DUST.SizeDistribution.out=%i.nSamplePoint=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber,nProbe);
       fout=fopen(str,"w");
 
@@ -1067,7 +1067,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
 
 
       //collect the sampled information from other processors
-      for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (iInterval=0;iInterval<nSamplingIntervals;iInterval++)  {
+      for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) for (iInterval=0;iInterval<nSamplingIntervals;iInterval++)  {
         offset=iInterval*SamplingIntervalDataLength;
 
         for (nVariable=0;nVariable<SamplingIntervalDataLength;nVariable++) SamplingBuffer[nProbe][nVariable+offset]+=pipe.recv<double>(thread);
@@ -1131,7 +1131,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
     }
   }
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -1149,7 +1149,7 @@ int ElectricallyChargedDust::DustChargingProcessor_SteadyState(double *xInit,dou
 
   int i,j,k;
   double swVel[3];
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *finalNode=PIC::Mesh::mesh.findTreeNode(xFinal,initNode);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *finalNode=PIC::Mesh::mesh->findTreeNode(xFinal,initNode);
 
   //the procesure is applied only to dust
   if ((spec<_DUST_SPEC_) || (spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) return _GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
@@ -1184,7 +1184,7 @@ int ElectricallyChargedDust::DustChargingProcessor_SteadyState(double *xInit,dou
 
 
     //recalculate the dust charge
-    if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,finalNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+    if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,finalNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
 
     //get the grain electric potential
     char localParticleData[PIC::ParticleBuffer::ParticleDataLength];
@@ -1551,7 +1551,7 @@ void ElectricallyChargedDust::Sampling::SampleParticleData(char *ParticleData,do
 //===============================================================================================================================
 //re-sort dust grains over appropriate velocity groups
 void ElectricallyChargedDust::GrainVelocityGroup::AdjustParticleVelocityGroup() {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
   long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];

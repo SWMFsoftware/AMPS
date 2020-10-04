@@ -348,7 +348,7 @@ int ElectricallyChargedDust::Charging::UpdateGrainCharge(double *xInit,double *x
 
   int i,j,k;
   double swVel[3];
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *finalNode=PIC::Mesh::mesh.findTreeNode(xFinal,initNode);
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *finalNode=PIC::Mesh::mesh->findTreeNode(xFinal,initNode);
 
   if (_DUST__CHARGING_MODE_ == _DUST__CHARGING_MODE__OFF_) {
     //dust charing modeling is turned off
@@ -358,7 +358,7 @@ int ElectricallyChargedDust::Charging::UpdateGrainCharge(double *xInit,double *x
     //the procesure is applied only to dust
     if ((spec<_DUST_SPEC_) || (spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) return _GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
 
-    if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,finalNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+    if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,finalNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
 
     //get the grain electric potential
     char localParticleData[PIC::ParticleBuffer::ParticleDataLength];

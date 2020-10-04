@@ -37,7 +37,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::NastranSurface:
   NastranSurfaceDescriptor.BoundaryElement=(void*)newNastranSurface;
   NastranSurfaceDescriptor.BondaryType=_INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_;
 
-  PIC::Mesh::mesh.RegisterInternalBoundary(NastranSurfaceDescriptor);
+  PIC::Mesh::mesh->RegisterInternalBoundary(NastranSurfaceDescriptor);
 
   return NastranSurfaceDescriptor;
 }

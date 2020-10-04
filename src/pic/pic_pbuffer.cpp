@@ -525,8 +525,8 @@ void PIC::ParticleBuffer::CheckParticleList() {
   #endif
 
 
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
-    node=(thread==PIC::Mesh::mesh.ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
     if (node==NULL) continue;
 
@@ -656,7 +656,7 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
 
   switch (InitMode) {
   case _PIC_INIT_PARTICLE_MODE__ADD2LIST_:
-    PIC::Mesh::mesh.fingCellIndex(x,iCell,jCell,kCell,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
+    PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
     FirstCellParticle=((cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node)->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
     SetNext(FirstCellParticle,ptr);
@@ -732,7 +732,7 @@ void PIC::ParticleBuffer::DeleteAllParticles() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int ptr,i,j,k,next;
 
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++) {
         for (i=0;i<_BLOCK_CELLS_X_;i++) {

@@ -70,11 +70,11 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTab
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
 #if DIM == 3
-cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> PIC::Mesh::mesh;
+cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
 #elif DIM == 2
-cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  PIC::Mesh::mesh;
+cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
 #else
-cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  PIC::Mesh::mesh;
+cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
 #endif
 
 
@@ -246,7 +246,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 
       for (int idim=0;idim<3;idim++) {
         xTest[idim]=x[idim];
-        if (xTest[idim]==PIC::Mesh::mesh.xGlobalMax[idim]) xTest[idim]-=1.0E-10*(PIC::Mesh::mesh.xGlobalMax[idim]-PIC::Mesh::mesh.xGlobalMin[idim]);
+        if (xTest[idim]==PIC::Mesh::mesh->xGlobalMax[idim]) xTest[idim]-=1.0E-10*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim]);
       }
 
       PIC::CPLR::InitInterpolationStencil(xTest,NULL);
@@ -375,8 +375,21 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
   }
 }
 
-void PIC::Mesh::initCellSamplingDataBuffer() {
+__host__ __device__
+void PIC::Mesh::AllocateMesh() {
+  if (mesh==NULL) {
+    //allocate mesh
+    #if DIM == 3
+    mesh=new cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #elif DIM == 2
+    mesh=new cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #else
+    mesh=new cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #endif
+  }
+}
 
+void PIC::Mesh::initCellSamplingDataBuffer() {
 //  if (cDataBlockAMR::totalAssociatedDataLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the blocks associated data offsets");
 
   //local time step
@@ -503,11 +516,11 @@ void PIC::Mesh::Init(double* xMin,double* xMax,fLocalMeshResolution ResolutionFu
   for (int idim=0;idim<DIM;idim++) xmin[idim]=xMin[idim],xmax[idim]=xMax[idim];
 
   LocalMeshResolution=ResolutionFunction;
-  mesh.init(xMin,xMax,LocalMeshResolution);
+  mesh->init(xMin,xMax,LocalMeshResolution);
 }
 
 void PIC::Mesh::buildMesh() {
-  mesh.buildMesh();
+  mesh->buildMesh();
 }
 
 
@@ -660,7 +673,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
         bool flag=false;
 
-        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
         if (flag==true) {
           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -893,7 +906,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
        if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
          iface=iFaceTable[i];
 
-         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
            //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
            switch (iface) {
@@ -1060,7 +1073,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     bool flag=false; 
 
     if ((pipe==NULL)&&(SendDataBuffer==NULL)) flag=true;
-    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
     if (flag==true) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -1189,7 +1202,7 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
     Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
     if  (Particle!=-1) {
-      LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(iCell,jCell,kCell);
+      LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
       pipe->send(_CENTRAL_NODE_NUMBER_SIGNAL_);
       pipe->send(LocalCellNumber);
 
@@ -1283,7 +1296,7 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   for (int i=0;i<3;i++) {
     iface=iFaceTable[i];
 
-    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {
@@ -1404,7 +1417,7 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
     switch (Signal) {
     case _CENTRAL_NODE_NUMBER_SIGNAL_ :
       pipe->recv(LocalCellNumber,From);
-      PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,i,j,k);
+      PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,i,j,k);
       break;
     case _NEW_PARTICLE_SIGNAL_ :
       pipe->recv(buffer,PIC::ParticleBuffer::ParticleDataLength,From);
@@ -1424,10 +1437,10 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
 void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-  if (LastMeshModificationID==PIC::Mesh::mesh.nMeshModificationCounter) return; //no modification of the mesh is made
+  if (LastMeshModificationID==PIC::Mesh::mesh->nMeshModificationCounter) return; //no modification of the mesh is made
 
   //calculate the new number of the blocks
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     nLocalBlocks++;
   }
 
@@ -1436,12 +1449,12 @@ void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
 
   //populate the block pointer buffer
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     BlockTable[nLocalBlocks++]=node;
   }
 
   //update the domain decomposition table ID
-  LastMeshModificationID=PIC::Mesh::mesh.nMeshModificationCounter;
+  LastMeshModificationID=PIC::Mesh::mesh->nMeshModificationCounter;
 
   //rebuld the matrix of the linear equatuion solver that has a 'global' matrix distributed over multiple MPI processes
   for (auto f : PIC::LinearSolverTable) f->RebuildMatrix();
@@ -1618,15 +1631,15 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *)startNodeIn;
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)||(startNode==NULL)) {
+  if ((startNode==PIC::Mesh::mesh->rootTree)||(startNode==NULL)) {
     Signature.clear();
     CutFaceNumberSignature.clear();
     NeibCutFaceListDescriptorList.clear();
     BottomNodeCounter=0;
 
     if (startNode==NULL) {
-      if (PIC::Mesh::mesh.rootTree==NULL) return 0;
-      else startNode=PIC::Mesh::mesh.rootTree;
+      if (PIC::Mesh::mesh->rootTree==NULL) return 0;
+      else startNode=PIC::Mesh::mesh->rootTree;
     }
   }
 
@@ -1661,7 +1674,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
   }
 
   //output calculated signatures
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     char msg[300];
 
     sprintf(msg,"Mesh AMR Tree Signature (line=%i, file=%s)",nline,fname);
@@ -1682,14 +1695,14 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
 void PIC::Mesh::SetCornerNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
 
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
-      PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+      PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
 
       if (CornerNode!=NULL) memcpy(CornerNode->GetAssociatedDataBufferPointer()+DataBufferOffset,DataBuffer,DataBufferLength);
     }
@@ -1712,14 +1725,14 @@ void PIC::Mesh::SetCornerNodeAssociatedDataValue(double NewValue,int ResetElemen
 void PIC::Mesh::SetCenterNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
 
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=-1;i<_BLOCK_CELLS_X_+1;i++) for (j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
-      PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+      PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 
       if (CenterNode!=NULL) memcpy(CenterNode->GetAssociatedDataBufferPointer()+DataBufferOffset,DataBuffer,DataBufferLength);
     }

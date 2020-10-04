@@ -102,12 +102,12 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::SetLocation(do
   Lat_xSecondary=(Pi/2.0-Lat_xSecondary)*180.0/Pi;
   Lon_xSecondary*=180.0/Pi;
 
-  if ((node=PIC::Mesh::mesh.findTreeNode(x))==NULL) {
+  if ((node=PIC::Mesh::mesh->findTreeNode(x))==NULL) {
     iCell=-1; jCell=-1; kCell=-1;
     node = NULL;
     return;
   }else{ 
-    PIC::Mesh::mesh.fingCellIndex(x,iCell,jCell,kCell,node);
+    PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,node);
   }
 
 }
@@ -168,7 +168,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Sampling() {
   ptr=block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
   if (ptr!=-1) {
-    Measure=(block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(iCell,jCell,kCell)))->Measure;
+    Measure=(block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell)))->Measure;
 
     ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
     spec=PIC::ParticleBuffer::GetI(ParticleData);

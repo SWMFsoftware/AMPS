@@ -52,7 +52,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
        xFace[0]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
        xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
 
-       if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh.EPS)) {
+       if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
          dtExit=dt,nExitFace=0;
 
          xFaceExitLocal[0]=xFace[0]/e1;
@@ -69,7 +69,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
       xFace[0]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
       xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
 
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh.EPS)) {
+      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e1+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
         dtExit=dt,nExitFace=1;
 
         xFaceExitLocal[0]=xFace[0]/e1;
@@ -87,7 +87,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
       xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
       xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
 
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh.EPS)) {
+      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
         dtExit=dt,nExitFace=2;
 
         xFaceExitLocal[0]=xFace[0]/e0;
@@ -104,7 +104,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
       xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
       xFace[1]=(x0Ray[2]+dt*lRay[2]-xBlockMin[2]); // /e2;
 
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh.EPS)) {
+      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e2+PIC::Mesh::mesh->EPS)) {
         dtExit=dt,nExitFace=3;
 
         xFaceExitLocal[0]=xFace[0]/e0;
@@ -122,7 +122,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
       xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
       xFace[1]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
 
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh.EPS)) {
+      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh->EPS)) {
         dtExit=dt,nExitFace=4;
 
         xFaceExitLocal[0]=xFace[0]/e0;
@@ -139,7 +139,7 @@ bool PIC::RayTracing::GetBlockExitPoint(double *xBlockMin,double *xBlockMax,doub
       xFace[0]=(x0Ray[0]+dt*lRay[0]-xBlockMin[0]); // /e0;
       xFace[1]=(x0Ray[1]+dt*lRay[1]-xBlockMin[1]); // /e1;
 
-      if ((xFace[0]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh.EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh.EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh.EPS)) {
+      if ((xFace[0]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[0]<=e0+PIC::Mesh::mesh->EPS)  && (xFace[1]>=0.0-PIC::Mesh::mesh->EPS)&&(xFace[1]<=e1+PIC::Mesh::mesh->EPS)) {
         dtExit=dt,nExitFace=5;
 
         xFaceExitLocal[0]=xFace[0]/e0;
@@ -175,7 +175,7 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
 	//determine the initial block
 	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
 
-	node=PIC::Mesh::mesh.findTreeNode(xStart);
+	node=PIC::Mesh::mesh->findTreeNode(xStart);
 	if (node==NULL) return false;
 
 	//increment the call counter
@@ -193,7 +193,7 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
         TriangleFace=t->TriangleFace;
 
         if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
-          if (TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh.EPS)==true) return false;
+          if (TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh->EPS)==true) return false;
         }
       }
 		}
@@ -206,11 +206,11 @@ bool PIC::RayTracing::TestDirectAccess(double *xStart,double *xTarget) {
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
 		  jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-		  node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
+		  node=node->GetNeibFace(nExitFace,iFace,jFace,PIC::Mesh::mesh);
 		}
 		else {
 		  PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,l,xNodeExit,xFaceExitLocal,nExitFace);
-		  node=PIC::Mesh::mesh.findTreeNode(xNodeExit,node);
+		  node=PIC::Mesh::mesh->findTreeNode(xNodeExit,node);
 		}
 
 		memcpy(x,xNodeExit,3*sizeof(double));
@@ -237,7 +237,7 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
   //determine the initial block
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
 
-  node=PIC::Mesh::mesh.findTreeNode(xStart);
+  node=PIC::Mesh::mesh->findTreeNode(xStart);
   if (node==NULL) return false;
 
   //increment the call counter
@@ -257,7 +257,7 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
 
         if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
           if ( ((MeshFileID<0)||(TriangleFace->MeshFileID==MeshFileID)) && ((ParallelCheck==false)||((++cnt)%PIC::nTotalThreads==PIC::ThisThread)) ) {
-            code=TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh.EPS);
+            code=TriangleFace->RayIntersection(x,l,IntersectionTime,PIC::Mesh::mesh->EPS);
             if ((TriangleFace!=(PIC::Mesh::IrregularSurface::cTriangleFace*)ExeptionFace) && (code==true)) IntersectionCounter++;
           }
         }
@@ -272,11 +272,11 @@ int PIC::RayTracing::CountFaceIntersectionNumber(double *xStart,double *xTarget,
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
       jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-      node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
+      node=node->GetNeibFace(nExitFace,iFace,jFace,PIC::Mesh::mesh);
     }
     else {
       PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,l,xNodeExit,xFaceExitLocal,nExitFace);
-      node=PIC::Mesh::mesh.findTreeNode(xNodeExit,node);
+      node=PIC::Mesh::mesh->findTreeNode(xNodeExit,node);
     }
 
     memcpy(x,xNodeExit,3*sizeof(double));
@@ -305,7 +305,7 @@ int PIC::RayTracing::FindFistIntersectedFace(double *x0Ray,double *lRay,double *
   }
 
   //find the node
-  node=PIC::Mesh::mesh.findTreeNode(x0Ray);
+  node=PIC::Mesh::mesh->findTreeNode(x0Ray);
   if (node==NULL) return false;
 
   //increment the call counter
@@ -329,7 +329,7 @@ int PIC::RayTracing::FindFistIntersectedFace(double *x0Ray,double *lRay,double *
 
         if ((ParallelCheck==false)||((++cnt)%PIC::nTotalThreads==PIC::ThisThread)) {
           if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
-            code=TriangleFace->RayIntersection(x0Ray,lRay,IntersectionTime,xIntersectionTemp,PIC::Mesh::mesh.EPS);
+            code=TriangleFace->RayIntersection(x0Ray,lRay,IntersectionTime,xIntersectionTemp,PIC::Mesh::mesh->EPS);
 
             if ((TriangleFace!=(PIC::Mesh::IrregularSurface::cTriangleFace*)ExeptionFace) && (code==true)) {
               if ((minIntersectionTimeTriangleFace==NULL) || (IntersectionTime>minIntersectionTime)) {
@@ -352,11 +352,11 @@ int PIC::RayTracing::FindFistIntersectedFace(double *x0Ray,double *lRay,double *
       iFace=(xFaceExitLocal[0]<0.5) ? 0 : 1;
       jFace=(xFaceExitLocal[1]<0.5) ? 0 : 1;
 
-      node=node->GetNeibFace(nExitFace,iFace,jFace,&PIC::Mesh::mesh);
+      node=node->GetNeibFace(nExitFace,iFace,jFace,PIC::Mesh::mesh);
     }
     else {
       PIC::RayTracing::GetBlockExitPoint(node->xmin,node->xmax,x,lRay,xNodeExit,xFaceExitLocal,nExitFace);
-      node=PIC::Mesh::mesh.findTreeNode(xNodeExit,node);
+      node=PIC::Mesh::mesh->findTreeNode(xNodeExit,node);
     }
 
     memcpy(x,xNodeExit,3*sizeof(double));

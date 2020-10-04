@@ -260,7 +260,7 @@ void PIC::Parallel::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC:
     if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
 
     //update the associated data in the subdomain 'boundary layer' of blocks
-    PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+    PIC::Mesh::mesh->ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
@@ -468,7 +468,7 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::BC::ExternalBoundary::Periodic::fin
     }
   }
 
-  return PIC::Mesh::mesh.findTreeNode(xTrueCenter);
+  return PIC::Mesh::mesh->findTreeNode(xTrueCenter);
 }
 
 //Initialize the periodic boundary manager
@@ -502,7 +502,7 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
   if (PIC::ThisThread==0) printf("\n");
   
   //initiate the mesh  
-  PIC::Mesh::mesh.init(xminDomain,xmaxDomain,ModifiedLocalResolution);
+  PIC::Mesh::mesh->init(xminDomain,xmaxDomain,ModifiedLocalResolution);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable){
@@ -709,7 +709,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
 void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> &BlockVector, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * startNode=NULL){
   int NullNodeNum=0;
 
-  if (startNode==NULL) startNode=PIC::Mesh::mesh.rootTree;
+  if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
 
   for (int i=0;i<8;i++){
     if (startNode->downNode[i]!=NULL) {
@@ -719,7 +719,7 @@ void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<c
     }
   }
 
-  if ((NullNodeNum==8)&&(PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_)) {
+  if ((NullNodeNum==8)&&(PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_)) {
     BlockVector.push_back(startNode);
   }
 }

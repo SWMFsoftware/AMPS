@@ -22,7 +22,7 @@ void Exosphere::ExchangeSurfaceAreaDensity() {
     double TotalFlux_LOCAL[PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber];
     double TotalFlux_GLOBAL[PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber];
 
-    cInternalSphericalData *Sphere=(cInternalSphericalData*)(PIC::Mesh::mesh.InternalBoundaryList.begin()->BoundaryElement);
+    cInternalSphericalData *Sphere=(cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.begin()->BoundaryElement);
 
     memcpy(TotalFlux_LOCAL,Sphere->SurfaceElementAdsorptionFluxDOWN[spec],PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*sizeof(double));
     memcpy(TotalFlux_GLOBAL,Sphere->SurfaceElementDesorptionFluxUP[spec],PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber*sizeof(double));

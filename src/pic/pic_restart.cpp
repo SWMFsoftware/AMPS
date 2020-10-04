@@ -41,7 +41,7 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   //init the MPI channel and open the restart file
   CMPI_channel pipe(mpiBufferSize);
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     pipe.openRecvAll();
 
     fRestart=fopen(fname,"w");
@@ -53,10 +53,10 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   }
   
   //save the restart information
-  SaveBlock(PIC::Mesh::mesh.rootTree,&pipe,fRestart);
+  SaveBlock(PIC::Mesh::mesh->rootTree,&pipe,fRestart);
 
   //close the MPI channel and the restart file
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     pipe.closeRecvAll();
     fclose(fRestart);
   }
@@ -183,7 +183,7 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
   fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
   fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
 
-  SamplingData::ReadBlock(PIC::Mesh::mesh.rootTree,fRestart);
+  SamplingData::ReadBlock(PIC::Mesh::mesh->rootTree,fRestart);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -245,13 +245,13 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   CMPI_channel pipe(10000000);
 
   //open the restart file
-  if (PIC::Mesh::mesh.ThisThread==0) fRestart=fopen(fname,"w");
+  if (PIC::Mesh::mesh->ThisThread==0) fRestart=fopen(fname,"w");
 
   //call the user-defined function for saving additional data into the restart file
   if (UserAdditionalRestartDataSave!=NULL) UserAdditionalRestartDataSave(fRestart);
 
   //open the pipe
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     //save the end-of-the-user-data-marker
     fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
 
@@ -260,10 +260,10 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   else pipe.openSend(0);
 
   //save the restart information
-  SaveParticleDataBlock(PIC::Mesh::mesh.rootTree,&pipe,fRestart);
+  SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,&pipe,fRestart);
 
   //close the MPI channel and the restart file
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     pipe.closeRecvAll();
     fclose(fRestart);
   }
@@ -440,7 +440,7 @@ void PIC::Restart::ReadParticleData(const char* fname) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
   }
 
-  ReadParticleDataBlock(PIC::Mesh::mesh.rootTree,fRestart);
+  ReadParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -456,7 +456,7 @@ unsigned long PIC::Restart::GetParticleDataCheckSum() {
   //at the begining of the calculation CheckSum is located on the root thread
   int PrevNodeThread=0;
 
-  GetParticleDataBlockCheckSum(PIC::Mesh::mesh.rootTree,&CheckSum,PrevNodeThread);
+  GetParticleDataBlockCheckSum(PIC::Mesh::mesh->rootTree,&CheckSum,PrevNodeThread);
   MPI_Bcast(&CheckSum,sizeof(CRC32),MPI_CHAR,PrevNodeThread,MPI_GLOBAL_COMMUNICATOR);
 
   if (PIC::ThisThread==0) {

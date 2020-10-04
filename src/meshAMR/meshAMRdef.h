@@ -230,6 +230,7 @@ public:
     ::exit(1);
   }
 
+  __host__ __device__
   virtual ~cAMRexit() { }
 };
 

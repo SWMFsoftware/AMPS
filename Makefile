@@ -295,8 +295,13 @@ amps_after_build: LIB_after_build
 	$(MAKE) amps_link
 
 amps_link:
+ifeq ($(COMPILE.mpicxx),nvcc)
+	nvcc -arch=sm_72 -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
+	mpif90 -o res -Mnomain amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ -lcudart share/lib/libSHARE.a
+else
 	${AMPSLINKER} -o amps srcTemp/main/main.a srcTemp/libAMPS.a \
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}
+endif
 
 .PHONY: test
 test:

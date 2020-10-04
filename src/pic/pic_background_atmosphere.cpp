@@ -202,7 +202,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor() {
     double CollisionTimeFraction;
   };
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataCenterNode *cell;
 
   //the buffer of particles that occuping the local cell
@@ -639,7 +639,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::RemoveThermalBackgroundPart
   long int next,prev,ptr,LocalCellNumber;
   PIC::ParticleBuffer::byte *pdata;
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
   //filter particles
   while (node!=NULL) {

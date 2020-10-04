@@ -155,7 +155,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::ResetCellProcessingFlag(cTreeNodeAMR<PIC::Mes
 int PIC::CPLR::DATAFILE::TECPLOT::CountInterpolatedPointNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   static int nExtractedPoints=0;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     nExtractedPoints=0;
     ResetCellProcessingFlag();
   }
@@ -229,7 +229,7 @@ int PIC::CPLR::DATAFILE::TECPLOT::CreateScript(const char *ScriptBaseName,const 
 
 
   //init the datapoint number
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     nDataPointLeft=CountInterpolatedPointNumber(startNode);
     ResetCellProcessingFlag();
   }
@@ -334,7 +334,7 @@ int PIC::CPLR::DATAFILE::TECPLOT::CreateScript(const char *ScriptBaseName,const 
 
 
   //close the script file
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     if (fScript!=NULL) fclose(fScript);
   }
 
@@ -352,7 +352,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
   static bool FirstPassFlag=true;
 
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     data=new double [nTotalVarlablesTECPLOT];
     nLoadedDataFile=0,nLoadedDataPoints=0;
     FirstPassFlag=true;
@@ -506,7 +506,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
     for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) LoadDataFile(fname,nTotalOutputFiles,startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     delete [] data;
     nLoadedDataFile=0,nLoadedDataPoints=0;
     fin.closefile();
@@ -521,10 +521,10 @@ void PIC::CPLR::SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
   static CMPI_channel pipe;
   static FILE *fout=NULL;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     pipe.init(1000000);
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       pipe.openRecvAll();
       fout=fopen(fname,"w");
     }
@@ -591,8 +591,8 @@ void PIC::CPLR::SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
     for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) SaveCenterNodeAssociatedData(fname,startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       pipe.closeRecvAll();
       fclose(fout);
     }
@@ -608,7 +608,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
   static FILE *fData=NULL;
   static int CenterNodeAssociatedLength;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     fData=fopen(fname,"r");
 
     PIC::Mesh::cDataCenterNode cell;
@@ -664,7 +664,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
     for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) LoadCenterNodeAssociatedData(fname,startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     fclose(fData);
   }
 }
@@ -674,7 +674,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
 void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
   //create and output the mesh signature
-  unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+  unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
   if (PIC::ThisThread==0) printf("$PREFIX: Import Background data (tecplot): mesh signature=0x%lx, fname=%s\n",MeshSignature,fname);
 

@@ -2168,6 +2168,10 @@ namespace PIC {
     class cDataCenterNode;
     class cDataCornerNode;
 
+    //allocate mesh 
+    __host__ __device__
+    void AllocateMesh();
+
     //get the AMR tree signature
     unsigned int GetMeshTreeSignature(void *startNode,int nline,const char* fname);
 
@@ -2939,11 +2943,11 @@ namespace PIC {
 
     //the computational mesh
     #if DIM == 3
-    extern cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
+    extern __device__ cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
     #elif DIM == 2
-    extern cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
+    extern cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
     #else
-    extern cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
+    extern cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
     #endif
 
     //init the computational mesh
@@ -3102,7 +3106,7 @@ namespace PIC {
 
       //propagate the information of the cut faces to the neibbouring nodes
       extern int nCutFaceInformationCopyAttempts;
-      void CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+      void CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
       //determine the signature of the cut-face distribution in the mesh
       unsigned int GetCutFaceDistributionSignature(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,int nline,const char* fname);
@@ -3897,7 +3901,7 @@ namespace PIC {
 
       int ParticleDataLength;
       PIC::ParticleBuffer::byte *ParticleDataBuffer;
-      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=&PIC::Mesh::mesh;
+      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=PIC::Mesh::mesh;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
     };
 
@@ -3926,29 +3930,29 @@ namespace PIC {
     //when the global particle weight/time step are used, the following are the buffers where these parameters are stored
     extern double *GlobalParticleWeight,*GlobalTimeStep;
 
-    double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
-    void initParticleWeight(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    void SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void initParticleWeight(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    void SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     double GetGlobalTimeStep(int spec);
 
     void initParticleWeight_ConstantWeight();
-    void initParticleWeight_ConstantWeight(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void initParticleWeight_ConstantWeight(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     void initParticleWeight_ConstantDensity(int spec,double NumberDensity,double TotalModelParticleNumber);
 
 
-    void initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     void copyLocalParticleWeightDistribution(int specTarget,int specSource,double ProportionaltyCoefficient=1.0);
     void copyLocalTimeStepDistribution(int specTarger,int specSource,double ProportionaltyCoefficient=1.0);
 
     //adjust particle weight so Weight/dT=const in all blocks (need to be called after the time step and particle weight are initialized
-    void AdjustParticleWeight_ConstantWeightOverTimeStep(int spec,double WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void AdjustParticleWeight_ConstantWeightOverTimeStep(int spec,double WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     void AdjustParticleWeight_ConstantWeightOverTimeStep_KeepMinParticleWeight(int spec);
 
-    double GetMinLocalParticleWeightValue(int spec,double &WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    double GetMinLocalParticleWeightValue(int spec,double &WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
   }
 
   //in case of time-dependent model runs with glocal time stop for all specis -> count the physical time of the simulation
@@ -4081,7 +4085,7 @@ namespace PIC {
          std::list<XYZTree::zNode*> zList;
             
          void addZNode(double z, XYZTree::leafNode * leaf){
-           double eps = 0.3*PIC::Mesh::mesh.EPS;
+           double eps = 0.3*PIC::Mesh::mesh->EPS;
            if (zList.empty()) {
              XYZTree::zNode * node = new XYZTree::zNode(z,leaf);
              zList.push_back(node);
@@ -4137,7 +4141,7 @@ namespace PIC {
          double x;
          std::list<XYZTree::yNode*> yList;
          void addYNode(double y, double z, XYZTree::leafNode * leaf){
-           double eps=PIC::Mesh::mesh.EPS;
+           double eps=PIC::Mesh::mesh->EPS;
            if (yList.empty()) {
              XYZTree::yNode * node = new XYZTree::yNode(y,z,leaf);
              yList.push_back(node);
@@ -4198,7 +4202,7 @@ namespace PIC {
        void addXNode(double x, double y, double z, XYZTree::leafNode * leaf){
             
          if (leaf->DataBuffer==NULL) return;
-         double eps=PIC::Mesh::mesh.EPS;
+         double eps=PIC::Mesh::mesh->EPS;
          if (xList.empty()) {
            XYZTree::xNode * node = new XYZTree::xNode(x,y,z,leaf);
            xList.push_back(node);
@@ -5103,8 +5107,8 @@ namespace PIC {
 
       //save/read the background data binary file
       bool BinaryFileExists(const char *fNameBase);
-      void SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-      void LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+      void SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+      void LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
 
       //print the background variables into AMPS' output file
@@ -5113,7 +5117,7 @@ namespace PIC {
       void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
 
       //test the data file reader by comparing the reading results with the reference data
-      void SaveTestReferenceData(const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+      void SaveTestReferenceData(const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
       //initialize the data file reader
       void Init();
@@ -5239,7 +5243,7 @@ namespace PIC {
         long int getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
         //create the trajectory file
-        void createCellCenterCoordinateList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void createCellCenterCoordinateList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //evaluate the ion flux at the surface of the spehrical interval body
         void EvaluateSurfaceIonFlux(double ShiftFactor=1.0);
@@ -5275,8 +5279,8 @@ namespace PIC {
         void retriveDSMCdata(const char *Case,const char *DataFile,const char *MeshFile);
 
 
-        void readSWMFdata(const double MeanIonMass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree); //MeanIonMass -> the mean ion mass of the plasma flow in [amu]
-        void readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void readSWMFdata(const double MeanIonMass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree); //MeanIonMass -> the mean ion mass of the plasma flow in [amu]
+        void readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //user defined pre-processor of the data that is readed by ICES
         typedef void (*fDSMCdataPreProcessor)(double *x,cDataNodeDSMC& data);
@@ -5303,11 +5307,11 @@ namespace PIC {
         //init the reader
         void Init();
 
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
         void GetDomainLimits(double *xmin,double *xmax,const char *fname);
 
         namespace LFM {
-          void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+          void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
           void GetDomainLimits(double *xmin,double *xmax,const char *fname);
         }
 
@@ -5316,7 +5320,7 @@ namespace PIC {
       namespace ARMS {
         void Init();
         double GetFileTime(const char *fname);
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
       }
 
 
@@ -5333,8 +5337,8 @@ namespace PIC {
         void Init(const char *fname);
 
         void GetDomainLimits(double *xmin,double *xmax);
-        void LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 	
 	
         //the offsets of the physical variables in the .idl file
@@ -5387,13 +5391,13 @@ namespace PIC {
         void SetDomainLimitsSPHERICAL(double rmin,double rmax);
         void ExtractData(const char *fname);
 
-        void ResetCellProcessingFlag(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void ResetCellProcessingFlag(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //function CreatePointList: 1. calculates the number of the points the will be interpolated and 2. is fScript!=NULL save tham into fScript
         int CountInterpolatedPointNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
-        int CreateScript(const char *ScriptBaseName,const char* DataFileTECPLOT,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-        void LoadDataFile(const char *fname,int nTotalOutputFiles,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        int CreateScript(const char *ScriptBaseName,const char* DataFileTECPLOT,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+        void LoadDataFile(const char *fname,int nTotalOutputFiles,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //the function call all nessesary methods of the TECPLOT namespace to export the data
         void ImportData(const char* fname);
@@ -5401,8 +5405,8 @@ namespace PIC {
     }
 
     //save and load the center node associated data from the AMPS' data buffers
-    void SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    void LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    void LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     inline void GetBackgroundElectricField(double *E, double Time = NAN) {
       double t[3];
@@ -6113,7 +6117,7 @@ namespace PIC {
     extern long int *nInjectedParticles;
     extern double *ParticleProductionRate,*ParticleMassProductionRate;
 
-    void InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+    void InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
     //model the particle injection for the current time step
     void InjectionBoundaryConditions();
@@ -6141,7 +6145,7 @@ namespace PIC {
         extern bool InjectionBlocksListInitFlag;
 
         //init the list of the injection blocks
-        void InitBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+        void InitBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
         //particle injection functions
         int InjectBlock(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,int nInjectionFace=-1);

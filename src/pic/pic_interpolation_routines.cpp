@@ -55,7 +55,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
 
   //find the block
   if (node==NULL) {
-    node=PIC::Mesh::mesh.findTreeNode(x);
+    node=PIC::Mesh::mesh->findTreeNode(x);
 
     if (node==NULL) exit(__LINE__,__FILE__,"Error: the location is outside of the computational domain");
     if (node->block==NULL) {
@@ -73,7 +73,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
   }
 
   //find cell
-  nd = PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node,false);
+  nd = PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
   cell=node->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
 
   //add the cell to the stencil
@@ -103,7 +103,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
     //find the block if needed
     if (node==NULL) {
-      node=PIC::Mesh::mesh.findTreeNode(XyzIn_D);
+      node=PIC::Mesh::mesh->findTreeNode(XyzIn_D);
 
       if (node==NULL) exit(__LINE__,__FILE__,"Error: the location is outside of the computational domain");
       if (node->block==NULL) {
@@ -213,7 +213,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         }
 
         //check blocks connected through the face
-        NeibNode=node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh);
+        NeibNode=node->GetNeibFace(iFace,0,0,PIC::Mesh::mesh);
 
         if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
           //found a coarser block
@@ -231,7 +231,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         static const int faceEdges[6][4]={{4,11,7,8},{5,10,6,9},{0,9,3,8},{1,10,2,11},{0,5,1,4},{3,6,2,7}};
 
         if (CoarserBlock==NULL) for (int iEdge=0;iEdge<4;iEdge++) {
-          NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0,&PIC::Mesh::mesh);
+          NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0,PIC::Mesh::mesh);
 
           if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
             //found a coarser block
@@ -251,7 +251,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         static const int FaceNodeMap[6][4]={ {0,2,4,6}, {1,3,5,7}, {0,1,4,5}, {2,3,6,7}, {0,1,2,3}, {4,5,6,7}};
 
         if (CoarserBlock==NULL) for (int iCorner=0;iCorner<4;iCorner++) {
-          NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner],&PIC::Mesh::mesh);
+          NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner],PIC::Mesh::mesh);
 
           if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
             //found a coarser block
@@ -540,7 +540,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
       for (kStencil=0;kStencil<2;kStencil++) {
         xStencil[2]=xStencilMin[2]+kStencil*(xStencilMax[2]-xStencilMin[2]);
 
-        StencilNode=PIC::Mesh::mesh.findTreeNode(xStencil,StencilNode);
+        StencilNode=PIC::Mesh::mesh->findTreeNode(xStencil,StencilNode);
 
         bool return_const_stencil=false;
 
@@ -555,11 +555,11 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
           for (int idim=0;idim<3;idim++) {
             xTest[idim]=x[idim];
 
-            if (xTest[idim]<=PIC::Mesh::mesh.xGlobalMin[idim]) xTest[idim]+=0.1*(PIC::Mesh::mesh.xGlobalMax[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
-            if (xTest[idim]>=PIC::Mesh::mesh.xGlobalMax[idim]) xTest[idim]-=0.1*(PIC::Mesh::mesh.xGlobalMax[idim]-PIC::Mesh::mesh.xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
+            if (xTest[idim]<=PIC::Mesh::mesh->xGlobalMin[idim]) xTest[idim]+=0.1*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
+            if (xTest[idim]>=PIC::Mesh::mesh->xGlobalMax[idim]) xTest[idim]-=0.1*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
           }
 
-          node=PIC::Mesh::mesh.findTreeNode(xTest,node);
+          node=PIC::Mesh::mesh->findTreeNode(xTest,node);
           PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(xTest,node,Stencil);
           return;
         }
@@ -599,7 +599,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
         if (StencilNode->RefinmentLevel==node->RefinmentLevel) {
           //both blocks have the save refinment levels
 
-          nd=PIC::Mesh::mesh.fingCellIndex(xStencil,i,j,k,StencilNode,false);
+          nd=PIC::Mesh::mesh->fingCellIndex(xStencil,i,j,k,StencilNode,false);
           cell=StencilNode->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) {
@@ -669,7 +669,7 @@ void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR
   PIC::Mesh::cDataCornerNode* CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (node==NULL) node=PIC::Mesh::mesh.findTreeNode(x);
+  if (node==NULL) node=PIC::Mesh::mesh->findTreeNode(x);
 
   xMinNode=node->xmin;
   xMaxNode=node->xmax;

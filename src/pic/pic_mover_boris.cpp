@@ -34,14 +34,14 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
   if (startNode->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not initialized");
 
   // flag: true - exit if a point is not found in the block / false: don't
-  nd = PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false);
+  nd = PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
 
   // fail-safe check: if a point isn't found, try seacrhing in other blocks
   if (nd==-1) {
     // try to found the block the point is in;
     // starting point for search is block startNode
-    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-    nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false);
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+    nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
     // if still not found => exit
 
     if (nd==-1) exit(__LINE__,__FILE__,"Error: the cell is not found");
@@ -157,10 +157,10 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
       double cE0=0.0,cE1=0.0;
 
       for (idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim];
+        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
 
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
       }
 
       ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -281,14 +281,14 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
     int code;
 
     static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
-        ((cInternalSphericalData*)(PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
-    static void* BoundaryElement=PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement;
+        ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+    static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
 
     //move the particle location at the surface of the sphere
     for (idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
 
     //determine the block of the particle location
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
     //apply the boundary condition
     code=ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,BoundaryElement);
@@ -299,10 +299,10 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
     }
   }
   else {
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
   }
 #else 
-  newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 #endif //_TARGET_ == _TARGET_NONE_
 
 
@@ -339,7 +339,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
                  cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
                }
 
-               if ((cE0<-PIC::Mesh::mesh.EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh.EPS) || (cE1<-PIC::Mesh::mesh.EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh.EPS)) continue;
+               if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
 
                nIntersectionFace=nface,dtIntersection=dt;
              }
@@ -349,26 +349,26 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
          if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
          for (idim=0,tVelocityIncrement=((dtIntersection/dtTotal<1) ? dtIntersection/dtTotal : 1);idim<3;idim++) {
-           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
+           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh->EPS;
            vInit[idim]+=tVelocityIncrement*(vFinal[idim]-vInit[idim]);
          }
 
-         newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+         newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
          if (newNode==NULL) {
            //the partcle is outside of the domain -> correct particle location and determine the newNode;
            double xmin[3],xmax[3];
            int ii;
 
-           memcpy(xmin,PIC::Mesh::mesh.xGlobalMin,3*sizeof(double));
-           memcpy(xmax,PIC::Mesh::mesh.xGlobalMax,3*sizeof(double));
+           memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+           memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
            for (ii=0;ii<3;ii++) {
-             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh.EPS;
-             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
+             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;
+             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
            }
 
-           newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+           newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
            if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
          }
@@ -494,7 +494,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -581,10 +581,10 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
       double cE0=0.0,cE1=0.0;
 
       for (idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim];
+        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
 
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
       }
 
       ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -631,14 +631,14 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
     int code;
 
     static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
-        ((cInternalSphericalData*)(PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
-    static void* BoundaryElement=PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement;
+        ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+    static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
 
     //move the particle location at the surface of the sphere
     for (idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
 
     //determine the block of the particle location
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
     //apply the boundary condition
     code=ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,BoundaryElement);
@@ -649,10 +649,10 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
     }
   }
   else {
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
   }
 #else
-  newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 #endif //_TARGET_ == _TARGET_NONE_
 
 
@@ -689,7 +689,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
                  cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
                }
 
-               if ((cE0<-PIC::Mesh::mesh.EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh.EPS) || (cE1<-PIC::Mesh::mesh.EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh.EPS)) continue;
+               if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
 
                nIntersectionFace=nface,dtIntersection=dt;
              }
@@ -699,26 +699,26 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
          if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
          for (idim=0,tVelocityIncrement=((dtIntersection/dtTotal<1) ? dtIntersection/dtTotal : 1);idim<3;idim++) {
-           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
+           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh->EPS;
            vInit[idim]+=tVelocityIncrement*(vFinal[idim]-vInit[idim]);
          }
 
-         newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+         newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
          if (newNode==NULL) {
            //the partcle is outside of the domain -> correct particle location and determine the newNode;
            double xmin[3],xmax[3];
            int ii;
 
-           memcpy(xmin,PIC::Mesh::mesh.xGlobalMin,3*sizeof(double));
-           memcpy(xmax,PIC::Mesh::mesh.xGlobalMax,3*sizeof(double));
+           memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+           memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
            for (ii=0;ii<3;ii++) {
-             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh.EPS;
-             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
+             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;
+             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
            }
 
-           newNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+           newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
            if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
          }
@@ -769,7 +769,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -843,7 +843,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
 
   data.ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
   data.ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
-  data.mesh=&PIC::Mesh::mesh;
+  data.mesh=PIC::Mesh::mesh;
   data.node=startNode;
 
   return Lapenta2017(ParticleData,ptr,&data); 
@@ -1128,8 +1128,8 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     int code;
 
     static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
-        ((cInternalSphericalData*)(PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
-    static void* BoundaryElement=PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement;
+        ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+    static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
 
     //move the particle location at the surface of the sphere
     for (idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
@@ -1186,7 +1186,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
                  cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
                }
 
-               if ((cE0<-PIC::Mesh::mesh.EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh.EPS) || (cE1<-PIC::Mesh::mesh.EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh.EPS)) continue;
+               if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
 
                nIntersectionFace=nface,dtIntersection=dt;
              }
@@ -1196,7 +1196,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
          if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
          for (idim=0,tVelocityIncrement=((dtIntersection/dtTotal<1) ? dtIntersection/dtTotal : 1);idim<3;idim++) {
-           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
+           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh->EPS;
            vInit[idim]+=tVelocityIncrement*(vFinal[idim]-vInit[idim]);
          }
 
@@ -1207,12 +1207,12 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
            double xmin[3],xmax[3];
            int ii;
 
-           memcpy(xmin,PIC::Mesh::mesh.xGlobalMin,3*sizeof(double));
-           memcpy(xmax,PIC::Mesh::mesh.xGlobalMax,3*sizeof(double));
+           memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+           memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
            for (ii=0;ii<3;ii++) {
-             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh.EPS;
-             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
+             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;
+             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
            }
 
            newNode=data->mesh->findTreeNode(xInit,startNode);

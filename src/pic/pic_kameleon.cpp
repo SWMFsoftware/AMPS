@@ -84,7 +84,7 @@ void PIC::CPLR::DATAFILE::KAMELEON::LoadDataFile(const char *fname,cTreeNodeAMR<
   double ConversionDensity  = 1E6;
   double ConversionPressure = 1E-9;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
 
     //open the file
     char DataFileFullName[_MAX_STRING_LENGTH_PIC_];
@@ -168,7 +168,7 @@ void PIC::CPLR::DATAFILE::KAMELEON::LoadDataFile(const char *fname,cTreeNodeAMR<
   }
 
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //de-allocate the interpolation procedure
     //delete lfm;
     delete interpolator;
@@ -185,12 +185,12 @@ void PIC::CPLR::DATAFILE::KAMELEON::LoadDataFile(const char *fname,cTreeNodeAMR<
       exit(__LINE__,__FILE__,"ERROR: magnetic field gradient can't be computed with 0th order interpolation method");
       #endif
 
-      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
         PIC::CPLR::DATAFILE::GenerateMagneticFieldGradient(node);
       }
 
       //Exchange derived data betwenn the boundary nodes
-      PIC::Mesh::mesh.ParallelBlockDataExchange();
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
     }
 
   }

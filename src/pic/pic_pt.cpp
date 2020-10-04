@@ -334,7 +334,7 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
   fTemporatyTrajectoryList=fopen(str,"w");
 
   //calculate the number of the particles that will be placed into the list
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -361,7 +361,7 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
   fwrite(&length,sizeof(unsigned long int),1,fTemporatyTrajectoryList);
 
   //save the list
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -769,7 +769,7 @@ void PIC::ParticleTracker::SetDefaultParticleTrackingFlag(void* StartNodeVoid) {
   long int ptr;
 
   StartNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) StartNodeVoid;
-  if (StartNode==NULL) StartNode=PIC::Mesh::mesh.rootTree;
+  if (StartNode==NULL) StartNode=PIC::Mesh::mesh->rootTree;
 
   //serch the tree
   for (i=0;i<(1<<DIM);i++) if ((downNode=StartNode->downNode[i])!=NULL) SetDefaultParticleTrackingFlag(downNode);
@@ -876,7 +876,7 @@ void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(void* StartNodeVoid)
   PIC::ParticleBuffer::byte* ParticleData;
 
   StartNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) StartNodeVoid;
-  if (StartNode==NULL) StartNode=PIC::Mesh::mesh.rootTree;
+  if (StartNode==NULL) StartNode=PIC::Mesh::mesh->rootTree;
 
   //serch the tree
   for (i=0;i<(1<<DIM);i++) if ((downNode=StartNode->downNode[i])!=NULL) ApplyTrajectoryTrackingCondition(downNode);

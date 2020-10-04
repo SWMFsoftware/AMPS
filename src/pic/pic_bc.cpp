@@ -30,7 +30,7 @@ bool PIC::BC::ExternalBoundary::OpenFlow::InjectionBlocksListInitFlag=false;
 //====================================================
 //create the list of blocks where the injection BCs are applied
 void PIC::BC::InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     if (boundingBoxInjectionBlocksList.size()!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the 'boundingBoxInjectionBlocksList' list");
     if (BlockInjectionBCindicatior==NULL) exit(__LINE__,__FILE__,"Error: 'BlockInjectionBCindicatior' is not defined");
   }
@@ -67,7 +67,7 @@ void PIC::BC::InjectionBoundaryConditions() {
   if (userDefinedBoundingBlockInjectionFunction!=NULL) for (nodeptr=boundingBoxInjectionBlocksList.begin(),end=boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
     node=*nodeptr;
 
-    if (node->Thread==PIC::Mesh::mesh.ThisThread) {
+    if (node->Thread==PIC::Mesh::mesh->ThisThread) {
       nTotalInjectedParticles+=userDefinedBoundingBlockInjectionFunction(node);
 
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
@@ -88,7 +88,7 @@ void PIC::BC::InjectionBoundaryConditions() {
   //reset the processing flag in the internal surface boundaries
   list<cInternalBoundaryConditionsDescriptor>::iterator descriptor;
 
-  for (descriptor=PIC::Mesh::mesh.InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh.InternalBoundaryList.end();descriptor++) {
+  for (descriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();descriptor++) {
     switch (descriptor->BondaryType) {
     case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
       ((cInternalSphericalData*)(descriptor->BoundaryElement))->ProcessedBCflag=false;
@@ -118,7 +118,7 @@ void PIC::BC::InjectionBoundaryConditions() {
   cInternalRotationBodyData *RotationBody;
   cInternalNastranSurfaceData *NastranSurface;
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((bc=node->InternalBoundaryDescriptorList)!=NULL) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((bc=node->InternalBoundaryDescriptorList)!=NULL) {
     for (;bc!=NULL;bc=bc->nextInternalBCelement) {
       switch (bc->BondaryType) {
       case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
@@ -251,10 +251,10 @@ void PIC::BC::ExternalBoundary::OpenFlow::InitBlockList(cTreeNodeAMR<PIC::Mesh::
   bool ExternalFaces[6];
   int nface;
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)&&(InjectionBlocksListInitFlag==true)) return;
+  if ((startNode==PIC::Mesh::mesh->rootTree)&&(InjectionBlocksListInitFlag==true)) return;
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
       for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
         InjectionBlocksList.push_back(startNode);
         break;
@@ -267,7 +267,7 @@ void PIC::BC::ExternalBoundary::OpenFlow::InitBlockList(cTreeNodeAMR<PIC::Mesh::
     for (int i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) InitBlockList(downNode);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) InjectionBlocksListInitFlag=true;
+  if (startNode==PIC::Mesh::mesh->rootTree) InjectionBlocksListInitFlag=true;
 }
 
 
@@ -288,7 +288,7 @@ int PIC::BC::ExternalBoundary::OpenFlow::InjectBlock(int spec,cTreeNodeAMR<PIC::
 
   double ModelParticlesInjectionRate,SurfaceArea;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -347,7 +347,7 @@ int PIC::BC::ExternalBoundary::OpenFlow::InjectBlock(int spec,cTreeNodeAMR<PIC::
       if (ModelParticlesInjectionRate>0.0) {
         ModelParticlesInjectionRate*=SurfaceArea/ParticleWeight;
 
-        PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+        PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
         //adjust the coordinate frame
         switch (nface) {
@@ -432,7 +432,7 @@ void PIC::BC::ExternalBoundary::OpenFlow::Inject() {
   for (nodeptr=InjectionBlocksList.begin(),end=InjectionBlocksList.end();nodeptr!=end;nodeptr++) {
     node=*nodeptr;
 
-    if (node->Thread==PIC::Mesh::mesh.ThisThread) for (spec=0;spec<PIC::nTotalSpecies;spec++) if (BoundaryInjectionFlag[spec]==true) {
+    if (node->Thread==PIC::Mesh::mesh->ThisThread) for (spec=0;spec<PIC::nTotalSpecies;spec++) if (BoundaryInjectionFlag[spec]==true) {
       nInjectedParticles+=InjectBlock(spec,node);
 
       //account for the source rate

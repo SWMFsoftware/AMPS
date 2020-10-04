@@ -136,8 +136,8 @@ void PIC::Parallel::ExchangeParticleData() {
 
     nTotalSendParticles=0;
 
-    if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
-      for (sendNode=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) if (sendNode->block!=NULL) {
+    if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+      for (sendNode=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) if (sendNode->block!=NULL) {
         FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
 
         for (int kCell=0;kCell<kCellMax;kCell++) for (int jCell=0;jCell<jCellMax;jCell++) for (int iCell=0;iCell<iCellMax;iCell++) {
@@ -212,7 +212,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
       if ((node==NULL)||(node_id!=it->node_id)) {
         node_id=it->node_id;
-        node=PIC::Mesh::mesh.findAMRnodeWithID(node_id);
+        node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
       }
 
       ptr=node->block->FirstCellParticleTable[it->iCell+_BLOCK_CELLS_X_*(it->jCell+_BLOCK_CELLS_Y_*it->kCell)]; 
@@ -241,7 +241,7 @@ void PIC::Parallel::ExchangeParticleData() {
     for (icell=0;icell<nTotalSendCells;icell++) {
       if ((node==NULL)||(node_id!=MessageDescriptorTable[icell].node_id)) { 
         node_id=MessageDescriptorTable[icell].node_id;
-        node=PIC::Mesh::mesh.findAMRnodeWithID(node_id);
+        node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
       }
 
       p=MessageDescriptorTable+icell;      
@@ -262,10 +262,10 @@ void PIC::Parallel::ExchangeParticleData() {
   MPI_Request SendRequestTable[3*PIC::nTotalThreads];
   int SendRequestTableLength=0;
 
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) SendMessageDescriptorTable[thread]=NULL; 
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) SendMessageDescriptorTable[thread]=NULL; 
 
   //send send_descriptor and particle data
-  for (To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+  for (To=0;To<PIC::Mesh::mesh->nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
     int i,n_sent_cells,nTotalSendParticles;
     list<MPI_Aint> SendParticleList;
     list<cMessageDescriptorList> MessageDescriptorList;
@@ -308,7 +308,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
   for (int thread=0;thread<PIC::nTotalThreads;thread++) RecvDataInfoMap[thread]=-1; //,RecvCellNumber[thread]=0;
 
-  for (From=0;From<PIC::nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh.ParallelSendRecvMap[From][PIC::ThisThread]==true)) {
+  for (From=0;From<PIC::nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh->ParallelSendRecvMap[From][PIC::ThisThread]==true)) {
     MPI_Irecv(RecvDataInfo+From,sizeof(cSendDataInfo),MPI_BYTE,From,9,MPI_GLOBAL_COMMUNICATOR,RecvRequestDataInfoTable+RecvRequestDataInfoTableLength);
     RecvDataInfoMap[RecvRequestDataInfoTableLength]=From;
 
@@ -412,7 +412,7 @@ void PIC::Parallel::ExchangeParticleData() {
   MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
 
   //delete particle that were send out 
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if (SendMessageDescriptorTable[thread]!=NULL) {
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if (SendMessageDescriptorTable[thread]!=NULL) {
     RemoveSentParticles(SendMessageDescriptorTable[thread],SendDataInfo[thread].nTotalSendCells); 
 
     delete [] SendMessageDescriptorTable[thread];
@@ -541,7 +541,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //  //determine whether the mesh/domain decomposition have been changed
 //  int localMeshChangeFlag,globalMeshChangeFlag;
 //
-//  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
+//  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter) ? 0 : 1;
 //  MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 //
 //  static int * nPointsToComm=NULL;
@@ -558,7 +558,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //  if (globalMeshChangeFlag!=0) {
 //    //the mesh or the domain decomposition has been modified. Need to create a new communucation table
-//    bool meshModifiedFlag_CountMeshElements=PIC::Mesh::mesh.meshModifiedFlag_CountMeshElements;
+//    bool meshModifiedFlag_CountMeshElements=PIC::Mesh::mesh->meshModifiedFlag_CountMeshElements;
 //    double StartTime=MPI_Wtime();
 //
 //
@@ -573,10 +573,10 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //    int  nPointsToCommThisThread = 0;
 //    //determine the new length of the table
-//    //    for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+//    //    for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 //    for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
 //      node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-//      double eps = 0.3*PIC::Mesh::mesh.EPS;
+//      double eps = 0.3*PIC::Mesh::mesh->EPS;
 //      double dx[3];
 //      int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 //      for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
@@ -602,7 +602,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //              }// for (iface=0;iface<6;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++)
 //      }//if (node->Thread==PIC::ThisThread)
-//    }//for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
+//    }//for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
 //
 //    nPointsToComm[PIC::ThisThread] = nPointsToCommThisThread;
 //
@@ -641,14 +641,14 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //    double * tempPnt = SendCoordBuff;
 //    char ** tempDataBuffPnt = SendDataBuffPointerBuff;
-//    //    for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+//    //    for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
 //    for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
 //      node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 //
 //      if (node->Thread==PIC::ThisThread && node->block) {
 //        double dx[3];
 //        int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-//        double eps = 0.3*PIC::Mesh::mesh.EPS;
+//        double eps = 0.3*PIC::Mesh::mesh->EPS;
 //        for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
 //
 //        for (iface=0;iface<6;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
@@ -690,7 +690,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //        }// for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++)
 //      }//if (node->Thread==PIC::ThisThread)
-//    }//for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
+//    }//for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
 //
 //
 //    iProcessCnt=0;
@@ -923,8 +923,8 @@ void PIC::Parallel::ExchangeParticleData() {
 //    // Tree.printTree();
 //    //printf("thisthread:%d,iSt:%d,totalNodes:%d\n",PIC::ThisThread,iSt,totalNodes);
 //    //update the coundater
-//    nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
-//    PIC::Mesh::mesh.meshModifiedFlag_CountMeshElements=meshModifiedFlag_CountMeshElements;
+//    nMeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
+//    PIC::Mesh::mesh->meshModifiedFlag_CountMeshElements=meshModifiedFlag_CountMeshElements;
 //    PIC::Parallel::RebalancingTime+=MPI_Wtime()-StartTime;
 //  }
 //
@@ -959,8 +959,8 @@ void PIC::Parallel::ExchangeParticleData() {
 //  if (PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData!=NULL) {
 //
 //    if (LoadList!=NULL) delete [] LoadList;
-//    LoadList=new int [PIC::Mesh::mesh.nTotalThreads];
-//    for (int i=0;i<PIC::Mesh::mesh.nTotalThreads;i++) LoadList[i]=0;
+//    LoadList=new int [PIC::Mesh::mesh->nTotalThreads];
+//    for (int i=0;i<PIC::Mesh::mesh->nTotalThreads;i++) LoadList[i]=0;
 //
 //    sumProcessBufferNumber = 0;
 //    //print out the thread distribution of process stencils
@@ -973,7 +973,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //    }
 //
 //    int sumLoad=0;
-//    for (int i=0;i<PIC::Mesh::mesh.nTotalThreads;i++) {
+//    for (int i=0;i<PIC::Mesh::mesh->nTotalThreads;i++) {
 //      //  printf("thread:%d, loadlist[%d],%d",PIC::ThisThread,i,LoadList[i]);
 //      sumLoad+=LoadList[i];
 //    }
@@ -1316,7 +1316,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
       if (k==-1) k=0;
       idx = i+2*(j+2*k);
       
-      nodeNeib = node->GetNeibCorner(idx,&PIC::Mesh::mesh);      
+      nodeNeib = node->GetNeibCorner(idx,PIC::Mesh::mesh);      
     }else if(nZeros == 1){
       // Edges
       int idx = -1; 
@@ -1337,18 +1337,18 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 	if(i == -1 && j ==  1) idx = 11; 
       }
 
-      nodeNeib = node->GetNeibEdge(idx,0,&PIC::Mesh::mesh); 
+      nodeNeib = node->GetNeibEdge(idx,0,PIC::Mesh::mesh); 
       
     }else if(nZeros == 2){
       // Faces
-      if(i == -1) nodeNeib = node->GetNeibFace(0,0,0,&PIC::Mesh::mesh);
-      if(i ==  1) nodeNeib = node->GetNeibFace(1,0,0,&PIC::Mesh::mesh);
+      if(i == -1) nodeNeib = node->GetNeibFace(0,0,0,PIC::Mesh::mesh);
+      if(i ==  1) nodeNeib = node->GetNeibFace(1,0,0,PIC::Mesh::mesh);
 
-      if(j == -1) nodeNeib = node->GetNeibFace(2,0,0,&PIC::Mesh::mesh);
-      if(j ==  1) nodeNeib = node->GetNeibFace(3,0,0,&PIC::Mesh::mesh);
+      if(j == -1) nodeNeib = node->GetNeibFace(2,0,0,PIC::Mesh::mesh);
+      if(j ==  1) nodeNeib = node->GetNeibFace(3,0,0,PIC::Mesh::mesh);
 
-      if(k == -1) nodeNeib = node->GetNeibFace(4,0,0,&PIC::Mesh::mesh);
-      if(k ==  1) nodeNeib = node->GetNeibFace(5,0,0,&PIC::Mesh::mesh);
+      if(k == -1) nodeNeib = node->GetNeibFace(4,0,0,PIC::Mesh::mesh);
+      if(k ==  1) nodeNeib = node->GetNeibFace(5,0,0,PIC::Mesh::mesh);
     }else{
       nodeNeib = NULL; 
     }
@@ -1697,7 +1697,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
     double coef; 
     while(offset < recvBufferSizePerProc[ii]){
       nodeId = *((cAMRnodeID*)(recvBuffer[ii]+offset)); offset += sizeof(cAMRnodeID);
-      node = PIC::Mesh::mesh.findAMRnodeWithID(nodeId);
+      node = PIC::Mesh::mesh->findAMRnodeWithID(nodeId);
 
       iNeib = *((int*)(recvBuffer[ii]+offset)); offset += sizeof(int);
       jNeib = *((int*)(recvBuffer[ii]+offset)); offset += sizeof(int);
@@ -1791,7 +1791,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
   //determine whether the mesh/domain decomposition have been changed
   int localMeshChangeFlag,globalMeshChangeFlag;
 
-  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
+  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter) ? 0 : 1;
   MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
   static int * nPointsToComm=NULL;
@@ -1808,7 +1808,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
 
   if (globalMeshChangeFlag!=0) {
     //the mesh or the domain decomposition has been modified. Need to create a new communucation table
-    bool meshModifiedFlag_CountMeshElements=PIC::Mesh::mesh.meshModifiedFlag_CountMeshElements;
+    bool meshModifiedFlag_CountMeshElements=PIC::Mesh::mesh->meshModifiedFlag_CountMeshElements;
     double StartTime=MPI_Wtime();
 
    
@@ -1823,10 +1823,10 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
  
     int  nPointsToCommThisThread = 0;
     //determine the new length of the table
-    //    for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    //    for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
-      double eps = 0.3*PIC::Mesh::mesh.EPS;
+      double eps = 0.3*PIC::Mesh::mesh->EPS;
       double dx[3];
       int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
       for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
@@ -1852,7 +1852,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
         
         }// for (iface=0;iface<6;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++)
       }//if (node->Thread==PIC::ThisThread)
-    }//for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
+    }//for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
 
     nPointsToComm[PIC::ThisThread] = nPointsToCommThisThread;
 
@@ -1897,14 +1897,14 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     double * tempPnt = SendCoordBuff;
     char ** tempDataBuffPnt = SendDataBuffPointerBuff;
 
-    //    for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    //    for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
       if (node->Thread==PIC::ThisThread && node->block) { 
         double dx[3];
         int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-        double eps = 0.3*PIC::Mesh::mesh.EPS;
+        double eps = 0.3*PIC::Mesh::mesh->EPS;
         for (int idim=0; idim<3; idim++) dx[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
 
         for (iface=0;iface<6;iface++)  for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {          
@@ -1942,7 +1942,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
 
         }// for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++)
       }//if (node->Thread==PIC::ThisThread)
-    }//for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
+    }//for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)
     
     
     iProcessCnt=0;
@@ -2170,8 +2170,8 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     // Tree.printTree();
     //printf("thisthread:%d,iSt:%d,totalNodes:%d\n",PIC::ThisThread,iSt,totalNodes);  
     //update the coundater
-    nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
-    PIC::Mesh::mesh.meshModifiedFlag_CountMeshElements=meshModifiedFlag_CountMeshElements;
+    nMeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
+    PIC::Mesh::mesh->meshModifiedFlag_CountMeshElements=meshModifiedFlag_CountMeshElements;
     PIC::Parallel::RebalancingTime+=MPI_Wtime()-StartTime;
   }
 
@@ -2196,8 +2196,8 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
   if (globalMeshChangeFlag!=0 && PIC::Parallel::CenterBlockBoundaryNodes::ProcessCenterNodeAssociatedData!=NULL){
 
     if (LoadList!=NULL) delete [] LoadList;
-    LoadList=new int [PIC::Mesh::mesh.nTotalThreads];
-    for (int i=0;i<PIC::Mesh::mesh.nTotalThreads;i++) LoadList[i]=0;
+    LoadList=new int [PIC::Mesh::mesh->nTotalThreads];
+    for (int i=0;i<PIC::Mesh::mesh->nTotalThreads;i++) LoadList[i]=0;
     
     sumProcessBufferNumber = 0;
     //print out the thread distribution of process stencils 
@@ -2210,7 +2210,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     }
     
     int sumLoad=0;
-    for (int i=0;i<PIC::Mesh::mesh.nTotalThreads;i++) {
+    for (int i=0;i<PIC::Mesh::mesh->nTotalThreads;i++) {
       //  printf("thread:%d, loadlist[%d],%d",PIC::ThisThread,i,LoadList[i]);
       sumLoad+=LoadList[i];
     }
@@ -2544,7 +2544,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   auto ResetCornerNodeProcessedFlag = [&] () {
     int i,j,k,iface;
     
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
       PIC::Mesh::cDataBlockAMR *block=node->block;
       
       if (block!=NULL) for (iface=0;iface<6;iface++) for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
@@ -2559,14 +2559,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   int periodic_bc_pair_ghost_block=-1;
   
   auto ReleasePeriodicBCFlags = [&] () {
-    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_real_block);
-    PIC::Mesh::mesh.rootTree->ReleaseFlag(periodic_bc_pair_ghost_block);
+    PIC::Mesh::mesh->rootTree->ReleaseFlag(periodic_bc_pair_real_block);
+    PIC::Mesh::mesh->rootTree->ReleaseFlag(periodic_bc_pair_ghost_block);
   };
   
   
   auto ReservePeriodicBCFlags = [&] () {
-    periodic_bc_pair_real_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
-    periodic_bc_pair_ghost_block=PIC::Mesh::mesh.rootTree->CheckoutFlag();
+    periodic_bc_pair_real_block=PIC::Mesh::mesh->rootTree->CheckoutFlag();
+    periodic_bc_pair_ghost_block=PIC::Mesh::mesh->rootTree->CheckoutFlag();
     
     if ((periodic_bc_pair_real_block==-1)||(periodic_bc_pair_ghost_block==-1)) exit(__LINE__,__FILE__,"Error: cannot reserve a flag");
   };
@@ -2586,7 +2586,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       ResetPeriodicBCFlags(downNode);
     }
     
-    if (startNode==PIC::Mesh::mesh.rootTree) {
+    if (startNode==PIC::Mesh::mesh->rootTree) {
       //loop throught the list of the block pairs used to impose the periodic BC
       int iBlockPair,RealBlockThread,GhostBlockThread;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *RealBlock,*GhostBlock;
@@ -2614,7 +2614,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     int cntStencilData=0;
     
     
-    if (startNode==PIC::Mesh::mesh.rootTree) {
+    if (startNode==PIC::Mesh::mesh->rootTree) {
       nTotalStencils=0;
       StencilList=NULL,StencilList_last=NULL;
       StencilElementStack.resetStack();
@@ -2677,21 +2677,21 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                 case 0:
                  // NeibTable=startNode->neibNodeFace;
                   
-                  startNode->GetFaceNeibTable(NeibTable,&PIC::Mesh::mesh);
+                  startNode->GetFaceNeibTable(NeibTable,PIC::Mesh::mesh);
  
                   NeibTableLength=6*4;
                   break;
                 case 1:
                 //  NeibTable=startNode->neibNodeCorner;
 
-                  startNode->GetCornerNeibTable(NeibTable,&PIC::Mesh::mesh);
+                  startNode->GetCornerNeibTable(NeibTable,PIC::Mesh::mesh);
 
                   NeibTableLength=8;
                   break;
                 case 2:
                  // NeibTable=startNode->neibNodeEdge;
 
-                  startNode->GetEdgeNeibTable(NeibTable,&PIC::Mesh::mesh); 
+                  startNode->GetEdgeNeibTable(NeibTable,PIC::Mesh::mesh); 
 
                   NeibTableLength=12*2;
                   break;
@@ -2749,14 +2749,14 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
                     case 0:
                      // NeibTable=GhostBlock->neibNodeFace;
 
-                      GhostBlock->GetFaceNeibTable(NeibTable,&PIC::Mesh::mesh);
+                      GhostBlock->GetFaceNeibTable(NeibTable,PIC::Mesh::mesh);
 
                       NeibTableLength=6*4;
                       break;
                     case 1:
                       //NeibTable=GhostBlock->neibNodeCorner;
 
-                      GhostBlock->GetCornerNeibTable(NeibTable,&PIC::Mesh::mesh); 
+                      GhostBlock->GetCornerNeibTable(NeibTable,PIC::Mesh::mesh); 
 
 
                       NeibTableLength=8;
@@ -2765,7 +2765,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 //                      NeibTable=GhostBlock->neibNodeEdge;
 
 
-                      GhostBlock->GetEdgeNeibTable(NeibTable,&PIC::Mesh::mesh);
+                      GhostBlock->GetEdgeNeibTable(NeibTable,PIC::Mesh::mesh);
 
 
                       NeibTableLength=12*2;
@@ -2882,7 +2882,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     }
     
     
-    if (startNode==PIC::Mesh::mesh.rootTree) {
+    if (startNode==PIC::Mesh::mesh->rootTree) {
       delete [] LocalCornerNodeAssociatedDataPointerTable;
       delete [] LocalContributingThreadTable;
       
@@ -3064,9 +3064,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   static int nMeshModificationCounter=-1;
   int localMeshChangeFlag,globalMeshChangeFlag;
 
-  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
+  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter) ? 0 : 1;
   MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-  nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+  nMeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
 
 
   static MPI_Datatype *send_to_process=NULL,*recv_to_process=NULL;
@@ -3140,7 +3140,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     ResetCornerNodeProcessedFlag();
 
     ReservePeriodicBCFlags();
-    ResetPeriodicBCFlags(PIC::Mesh::mesh.rootTree);
+    ResetPeriodicBCFlags(PIC::Mesh::mesh->rootTree);
 
     //evalaute the size of the global data buffers
     GlobalContributingThreadTableLength=0;
@@ -3155,7 +3155,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       GlobalCornerNodeAssociatedDataPointerTable=NULL,GlobalContributingThreadTable=NULL,GlobalMPI_StatusTable=NULL,GlobalMPI_RequestTable=NULL;
     }
 
-    BuildStencilTable(PIC::Mesh::mesh.rootTree,false);
+    BuildStencilTable(PIC::Mesh::mesh->rootTree,false);
 
     //allocate the global data buffers
     GlobalCornerNodeAssociatedDataPointerTable=new char* [GlobalCornerNodeAssociatedDataPointerTableLength];
@@ -3168,7 +3168,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     GlobalCornerNodeAssociatedDataPointerTableLength=0;
 
     ResetCornerNodeProcessedFlag();
-    BuildStencilTable(PIC::Mesh::mesh.rootTree,true);
+    BuildStencilTable(PIC::Mesh::mesh->rootTree,true);
     ReleasePeriodicBCFlags();
   }
 

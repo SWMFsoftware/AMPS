@@ -75,7 +75,7 @@ void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataB
 
 void PIC::Rnd::CenterNode::Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (node==NULL) {
-    node=PIC::Mesh::mesh.rootTree;
+    node=PIC::Mesh::mesh->rootTree;
   }
 
   //set the seed flag

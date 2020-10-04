@@ -19,13 +19,13 @@ void PIC::ColumnIntegration::Init() {
   double *xmin,*xmax,e0Length,e1Length;
   int nface,i;
 
-  if (PIC::Mesh::mesh.rootTree==NULL) exit(__LINE__,__FILE__,"Error: the mesh should be initialized before this point");
+  if (PIC::Mesh::mesh->rootTree==NULL) exit(__LINE__,__FILE__,"Error: the mesh should be initialized before this point");
   if (DIM!=3) exit(__LINE__,__FILE__,"Error: the model is implemented only for DIM=3");
 
   InitializedFlag=true;
 
-  xmin=PIC::Mesh::mesh.xGlobalMin;
-  xmax=PIC::Mesh::mesh.xGlobalMax;
+  xmin=PIC::Mesh::mesh->xGlobalMin;
+  xmax=PIC::Mesh::mesh->xGlobalMax;
 
   //set up the definitions of the bounding faces
   for (nface=0;nface<6;nface++) {
@@ -75,7 +75,7 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
            c1+=(x2PlaneNodeIndex[nface][idim]-x0PlaneNodeIndex[nface][idim])*(x0[idim]+t*l[idim]-BoundingBoxFace[nface].x[idim]);
          }
 
-         if ((c0>-PIC::Mesh::mesh.EPS)&&(c0<BoundingBoxFace[nface].e0Length+PIC::Mesh::mesh.EPS) && (c1>-PIC::Mesh::mesh.EPS)&&(c1<BoundingBoxFace[nface].e1Length+PIC::Mesh::mesh.EPS)) {
+         if ((c0>-PIC::Mesh::mesh->EPS)&&(c0<BoundingBoxFace[nface].e0Length+PIC::Mesh::mesh->EPS) && (c1>-PIC::Mesh::mesh->EPS)&&(c1<BoundingBoxFace[nface].e1Length+PIC::Mesh::mesh->EPS)) {
            IntersectionTime.push_back(t);
          }
 
@@ -100,7 +100,7 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
 
 
 
-  for (InternalBoundaryDescriptor=PIC::Mesh::mesh.InternalBoundaryList.begin();InternalBoundaryDescriptor!=PIC::Mesh::mesh.InternalBoundaryList.end();InternalBoundaryDescriptor++) {
+  for (InternalBoundaryDescriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();InternalBoundaryDescriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();InternalBoundaryDescriptor++) {
     switch (InternalBoundaryDescriptor->BondaryType) {
     case _INTERNAL_BOUNDARY_TYPE_SPHERE_: case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
 
@@ -186,18 +186,18 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
   //determine weather the point 'x0' is within the computational domain
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* x0Node;
 
-  x0Node=PIC::Mesh::mesh.findTreeNode(x0);
+  x0Node=PIC::Mesh::mesh->findTreeNode(x0);
 
   if (x0Node==NULL) {
     //the point 'x0' is outside of the domain
     for (idim=0;idim<3;idim++) xStart[idim]=x0[idim]+IntersectionTime[0]*l[idim],xFinish[idim]=x0[idim]+IntersectionTime[1]*l[idim];
 
     //check if the 'start' and 'finish' nodes are within the domain
-    while ((xStartNode=PIC::Mesh::mesh.findTreeNode(xStart))==NULL) {
+    while ((xStartNode=PIC::Mesh::mesh->findTreeNode(xStart))==NULL) {
       for (idim=0;idim<3;idim++) xStart[idim]+=(xFinish[idim]-xStart[idim])/100000;
     }
 
-    while ((xFinishNode=PIC::Mesh::mesh.findTreeNode(xFinish))==NULL) {
+    while ((xFinishNode=PIC::Mesh::mesh->findTreeNode(xFinish))==NULL) {
       for (idim=0;idim<3;idim++) xFinish[idim]-=(xFinish[idim]-xStart[idim])/100000;
     }
 
@@ -209,7 +209,7 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
 
     for (idim=0;idim<3;idim++) xStart[idim]=x0[idim],xFinish[idim]=x0[idim]+IntersectionTime[0]*l[idim];
 
-    while ((xFinishNode=PIC::Mesh::mesh.findTreeNode(xFinish))==NULL) {
+    while ((xFinishNode=PIC::Mesh::mesh->findTreeNode(xFinish))==NULL) {
       for (idim=0;idim<3;idim++) xFinish[idim]-=(xFinish[idim]-xStart[idim])/100000;
     }
 
@@ -249,7 +249,7 @@ void PIC::ColumnIntegration::GetCoulumnIntegral(double *ResultVector,int ResultV
 
 //  MPI_Bcast(&IntegrationPathLength,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 //  MPI_Bcast(x,3,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-  xStartNode=PIC::Mesh::mesh.findTreeNode(x,xStartNode);
+  xStartNode=PIC::Mesh::mesh->findTreeNode(x,xStartNode);
 
   //get the first value of the integrand function
   if (xNode->Thread==PIC::ThisThread) {
@@ -272,7 +272,7 @@ void PIC::ColumnIntegration::GetCoulumnIntegral(double *ResultVector,int ResultV
 //    MPI_Bcast(&IntegrationFinished,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
     for (idim=0;idim<3;idim++) x[idim]+=dl*lNormalized[idim];
-    xNode=PIC::Mesh::mesh.findTreeNode(x,xNode);
+    xNode=PIC::Mesh::mesh->findTreeNode(x,xNode);
 
     if (xNode==NULL) break;
 
