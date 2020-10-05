@@ -66,7 +66,7 @@
 #endif
 
 //the limits of the comlutational domain
-extern double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
+extern __device__ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
 
 class cBasicNode : public cStackElementBase, public cAMRexit {
@@ -2330,6 +2330,7 @@ public:
   }  
 
 
+  __host__ __device__
   cMeshAMRgeneric() {
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) _MESH_AMR_XMAX_[idim]=0.0,_MESH_AMR_XMIN_[idim]=0.0;
 
@@ -2345,8 +2346,10 @@ public:
      //user-defined criterion for node splitting
      UserNodeSplitCriterion=NULL;
 
+     #ifndef __CUDA_ARCH__
      //set the defaul value of the diagnostic stream
      DiagnospticMessageStream=stdout;
+     #endif
 
      //init UserProcessParallelNodeDistributionList
      UserProcessParallelNodeDistributionList=NULL;

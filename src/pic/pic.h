@@ -2169,7 +2169,7 @@ namespace PIC {
     class cDataCornerNode;
 
     //allocate mesh 
-    __host__ __device__
+    __global__
     void AllocateMesh();
 
     //get the AMR tree signature
