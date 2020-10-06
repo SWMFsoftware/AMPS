@@ -28,6 +28,18 @@ LINK_SWMF_SHARED_LIB=off
 #use AVX instructions in the calculations 
 AVXMODE=off
 
+#individual compiled modules 
+COMPILE_ELECTRON_IMPACT=off
+COMPILE_SPUTTERING=off
+COMPILE_DUST=off
+COMPILE_CHARGE_EXCHANGE=off
+COMPILE_PHOTOLYTIC_REACTIONS=off
+COMPILE_EXOSPHERE=off
+COMPILE_SURFACE=off
+
+#the list of directories where object files are located
+LINK_DIRECTORY_LIST=  
+
 include Makefile.conf
 include Makefile.def
 
@@ -75,7 +87,7 @@ CWD=${MYDIR}
 
 AMPSLINKLIB= 
 
-EXTRALINKEROPTIONS=
+EXTRALINKEROPTIONS= 
 
 ifeq ($(LINK_SWMF_SHARED_LIB),on)
 	AMPSLINKER=${LINK.f90}
@@ -259,24 +271,53 @@ endif
 	cd ${WSD}/meshAMR;                     $(MAKE) SEARCH_C="${SEARCH_C}" 
 	cd ${WSD}/pic;                         $(MAKE) SEARCH_C="${SEARCH_C}" SEARCH="${SEARCH_F}" 
 	cd ${WSD}/species;                     $(MAKE) SEARCH_C="${SEARCH_C}"
+
+ifeq ($(COMPILE_EXOSPHERE),on)
 	cd ${WSD}/models/exosphere;            $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/exosphere/*.o
+endif
+
+ifeq ($(COMPILE_SURFACE),on)
 	cd ${WSD}/models/surface;              $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/surface/*.o
+endif
+
+ifeq ($(COMPILE_ELECTRON_IMPACT),on)
 	cd ${WSD}/models/electron_impact;      $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/electron_impact/*.o
+endif
+
+ifeq ($(COMPILE_SPUTTERING),on)
 	cd ${WSD}/models/sputtering;           $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/sputtering/*.o
+endif
+
+ifeq ($(COMPILE_DUST),on)
 	cd ${WSD}/models/dust;                 $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/dust/*.o
+endif
+
+ifeq ($(COMPILE_CHARGE_EXCHANGE),on)
 	cd ${WSD}/models/charge_exchange;      $(MAKE) SEARCH_C="${SEARCH_C}"
-	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}" 
+	LINK_DIRECTORY_LIST+=models/charge_exchange/*.o
+endif
+
+ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
+	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}"
+	LINK_DIRECTORY_LIST+=models/photolytic_reactions/*.o
+endif
+
 	cd ${WSD}/main; $(MAKE) SEARCH_C="${SEARCH_C}"
 	cp -f ${WSD}/main/mainlib.a ${WSD}/libAMPS.a
 
 ifeq ($(SPICE),nospice)
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o models/exosphere/*.o models/surface/*.o models/electron_impact/*.o models/sputtering/*.o models/dust/*.o models/charge_exchange/*.o models/photolytic_reactions/*.o
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) 
 else
 	rm -rf ${WSD}/tmpSPICE
 	mkdir ${WSD}/tmpSPICE
 	cp ${SPICE}/lib/cspice.a ${WSD}/tmpSPICE
 	cd ${WSD}/tmpSPICE; ar -x cspice.a
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o models/exosphere/*.o models/surface/*.o models/electron_impact/*.o models/sputtering/*.o models/dust/*.o models/charge_exchange/*.o models/photolytic_reactions/*.o tmpSPICE/*.o
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) tmpSPICE/*.o
 endif
 
 ifeq ($(INTERFACE),on)
@@ -296,8 +337,8 @@ amps_after_build: LIB_after_build
 
 amps_link:
 ifeq ($(COMPILE.mpicxx),nvcc)
-	nvcc -arch=sm_72 -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
-	mpif90 -o amps -Mnomain amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ -lcudart share/lib/libSHARE.a
+	nvcc -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
+	mpif90 -o amps -g  -Mnomain amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ -lcudart share/lib/libSHARE.a
 else
 	${AMPSLINKER} -o amps srcTemp/main/main.a srcTemp/libAMPS.a \
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}

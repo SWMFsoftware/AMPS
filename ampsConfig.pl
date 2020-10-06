@@ -510,6 +510,20 @@ sub ReadMainBlock {
         die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
       }
     }   
+
+
+    #delect the physical models to compile with the current run
+    elsif ($s0 eq "COMPILEMODULE") { 
+      ($s0,$s1)=split(' ',$s1,2);
+
+      add_line_makefile_local("COMPILE_$s0", 0);
+
+      my @ModuleList=('EXOSPHEERE', 'SURFACE', 'ELECTRON_IMPACT','SPUTTERING', 'DUST', 'CHARGE_EXCHANGE', 'PHOTOLYTIC_REACTION');
+
+      if (!grep($s0,@ModuleList) {
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }  
+    }
     elsif ($s0 eq "MOVERINTEGRATORMODE") {
       $s1=~s/[();]/ /g;
       ($s0,$s1)=split(' ',$s1,2);
