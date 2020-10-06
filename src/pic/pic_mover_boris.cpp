@@ -17,11 +17,11 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
   
 //#if _FORCE_LORENTZ_MODE_ == _PIC_MODE_ON_
   // find electro-magnetic field
-  double E[3],B[3];
+  double E[3]={0.0,0.0,0.0},B[3]={0.0,0.0,0.0};
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__OFF_ 
   // if no coupler is used -> use characteristic values
-  memcpy(E,Exosphere::swE_Typical,3*sizeof(double));
-  memcpy(B,Exosphere::swB_Typical,3*sizeof(double));
+//  memcpy(E,Exosphere::swE_Typical,3*sizeof(double));
+//  memcpy(B,Exosphere::swB_Typical,3*sizeof(double));
 #else 
   // if coupler is used -> get values from it
   //......................................................................
