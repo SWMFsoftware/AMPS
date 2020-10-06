@@ -520,7 +520,7 @@ sub ReadMainBlock {
 
       my @ModuleList=('EXOSPHEERE', 'SURFACE', 'ELECTRON_IMPACT','SPUTTERING', 'DUST', 'CHARGE_EXCHANGE', 'PHOTOLYTIC_REACTION');
 
-      if (!grep($s0,@ModuleList) {
+      if (!grep($s0,@ModuleList)) {
         die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
       }  
     }
