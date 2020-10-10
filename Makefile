@@ -256,6 +256,9 @@ tar:
 ${WSD}:
 	./ampsConfig.pl -input ${InputFileAMPS} -no-compile 
 	./utility/CheckMacro.pl ${WSD} -in-place
+	cd srcTemp/pic;../../utility/change-ext cpp cu  
+	cd srcTemp/meshAMR;../../utility/change-ext cpp cu 
+	cd srcTemp/main;../../utility/change-ext cpp cu
 
 LIB: 
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
