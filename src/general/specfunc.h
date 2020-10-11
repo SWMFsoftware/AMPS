@@ -735,5 +735,54 @@ namespace Thread {
 }
 
 
+//allocation/deallocation objects
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_new(T* &buff,int length) {
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  buff=(T*)malloc(length*sizeof(T));
+
+  for (int i=0;i<length;i++) new(buff+i)T();
+ }
+
+template<typename T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_allocate(T* &buff,int length) {
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  buff=(T*)malloc(length*sizeof(T));
+ }
+
+template<typename T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amsp_delete(T* &buff) {
+  if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
+
+  free(buff);
+  buff=NULL;
+}
+
+#if _CUDA_MODE_ == _ON_ 
+/*
+class to launch lambdas on GPU
+Exampel of usage:
+auto set_AllowBlockAllocation_gpu = [=] __device__ (){
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+
+  printf("Setting AllowBlockAllocation=false  done....\n");
+};
+ 
+kernel<<<1,1>>>(set_AllowBlockAllocation_gpu);
+*/                                 
+
+template<class F>
+__global__
+void kernel(F f){
+  f();
+}
+
+#endif
+
 #endif
    

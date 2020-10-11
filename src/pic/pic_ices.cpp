@@ -48,32 +48,32 @@ void PIC::CPLR::DATAFILE::ICES::Init() {
   if (NeutralBullVelocityOffset!=-1) exit(__LINE__,__FILE__,"Error: the model is already initialied");
 
   if (NeutralBullVelocityOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralBullVelocityOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=3*sizeof(double);
+    NeutralBullVelocityOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=3*sizeof(double);
     TotalAssociatedDataLength+=3*sizeof(double);
   }
 
   if (NeutralNumberDensityOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralNumberDensityOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+    NeutralNumberDensityOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
     TotalAssociatedDataLength+=sizeof(double);
   }
 
   if (NeutralTemperatureOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralTemperatureOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+    NeutralTemperatureOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
     TotalAssociatedDataLength+=sizeof(double);
   }
 
   //!!The data center associated data can contain only 'double' type data -> memory reserved for DataStatusOffsetDSMC as for double
-  DataStatusOffsetDSMC=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+  DataStatusOffsetDSMC=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
   TotalAssociatedDataLength+=sizeof(double);
 #endif
 

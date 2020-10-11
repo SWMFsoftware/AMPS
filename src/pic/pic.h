@@ -54,7 +54,7 @@
 #endif
 
 
-using namespace std;
+//using namespace std;
 
 #ifndef _PIC_
 #define _PIC_
@@ -112,10 +112,10 @@ namespace PIC {
   static const int nTotalSpecies=1;
 
   //The currect and total number of processors used in the simulation
-  extern int ThisThread,nTotalThreads;
+  extern _TARGET_DEVICE_ int ThisThread,nTotalThreads;
 
   //the total number of the OpenMP threads (when OpneMP is used in the model run)
-  extern int nTotalThreadsOpenMP;
+  extern _TARGET_DEVICE_ int nTotalThreadsOpenMP;
 
   //The path to the input data of the user-defined physical models
   extern char UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_];
@@ -1609,7 +1609,7 @@ namespace PIC {
     #include "picParticleDataMacro.h"
 
     //the total length of a data allocated for a particle
-    extern long int ParticleDataLength;
+    extern _TARGET_DEVICE_ long int ParticleDataLength;
 
     //The particle buffer's internal data
     extern byte *ParticleDataBuffer;
@@ -2261,24 +2261,29 @@ namespace PIC {
     void AddVaraibleListFunction(fPrintVariableListCenterNode f);
     
     //the class defining the 'central node' that contains the sampling data
+    namespace cDataCenterNode_static_data {
+      extern _TARGET_DEVICE_ int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset; 
+      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector; 
+    }
+
     class cDataCenterNode : public cBasicCenterNode {
     public:
       //parameters that defines the parameters of the associated data used for sampling and code running
-      static int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset;
+      //static int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset;
       
       //      long int FirstCellParticle,tempParticleMovingList;
       
       char *associatedDataPointer;
       unsigned char FlagTable;
-      static unsigned char FlagTableStatusVector;
+      //static unsigned char FlagTableStatusVector;
 
       //reserve and release flag
       static bool CheckoutFlag(int ibit) {
         unsigned char mask=1<<ibit;
         bool res=false;
 
-        if ((FlagTableStatusVector&mask)==0) {
-          FlagTableStatusVector|=mask;
+        if ((cDataCenterNode_static_data::FlagTableStatusVector&mask)==0) {
+          cDataCenterNode_static_data::FlagTableStatusVector|=mask;
           res=true;
         }
 
@@ -2289,7 +2294,7 @@ namespace PIC {
         unsigned char mask=1<<ibit;
 
         mask=~mask;
-        FlagTableStatusVector&=mask;
+        cDataCenterNode_static_data::FlagTableStatusVector&=mask;
       }
 
       //set and test the flags
@@ -2324,7 +2329,7 @@ namespace PIC {
       std::atomic_flag lock_associated_data;
 
       inline int AssociatedDataLength() {
-        return totalAssociatedDataLength;
+        return cDataCenterNode_static_data::totalAssociatedDataLength;
       }
       
       void SetAssociatedDataBufferPointer(char* ptr) {
@@ -2341,11 +2346,11 @@ namespace PIC {
       void cleanDataBuffer() {
         cBasicCenterNode::cleanDataBuffer();
 	
-        int i,length=totalAssociatedDataLength/sizeof(double);
+        int i,length=cDataCenterNode_static_data::totalAssociatedDataLength/sizeof(double);
         double *ptr;
         for (i=0,ptr=(double*)associatedDataPointer;i<length;i++,ptr++) *ptr=0.0;
 	
-        if (totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
+        if (cDataCenterNode_static_data::totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
       }
       
       //init the buffers
@@ -2603,22 +2608,32 @@ namespace PIC {
 
   
     //the class that contains the run information for the cell's corners
+    //
+
+    namespace cDataCornerNode_static_data {
+
+      //parameters that defines the parameters of the associated data used for sampling and code running
+      extern _TARGET_DEVICE_ int totalAssociatedDataLength;
+      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector; 
+
+    }  
+ 
     class cDataCornerNode : public cBasicCornerNode {
     public:
       //parameters that defines the parameters of the associated data used for sampling and code running
-       static int totalAssociatedDataLength;
+      // static int totalAssociatedDataLength;
 
        char *associatedDataPointer;
        unsigned char FlagTable;
-       static unsigned char FlagTableStatusVector;
+//       static unsigned char FlagTableStatusVector;
 
        //reserve and release flag
        static bool CheckoutFlag(int ibit) {
          unsigned char mask=1<<ibit;
          bool res=false;
 
-         if ((FlagTableStatusVector&mask)==0) {
-           FlagTableStatusVector|=mask;
+         if ((cDataCornerNode_static_data::FlagTableStatusVector&mask)==0) {
+           cDataCornerNode_static_data::FlagTableStatusVector|=mask;
            res=true;
          }
 
@@ -2635,7 +2650,7 @@ namespace PIC {
          unsigned char mask=1<<ibit;
 
          mask=~mask;
-         FlagTableStatusVector&=mask;
+         cDataCornerNode_static_data::FlagTableStatusVector&=mask;
        }
 
        //set and test the flags
@@ -2681,7 +2696,7 @@ namespace PIC {
 //       #endif
 
        inline int AssociatedDataLength() {
-         return totalAssociatedDataLength;
+         return cDataCornerNode_static_data::totalAssociatedDataLength;
        }
 
        void SetAssociatedDataBufferPointer(char* ptr) {
@@ -2700,11 +2715,11 @@ namespace PIC {
        void cleanDataBuffer() {
          cBasicCornerNode::cleanDataBuffer();
 
-         int i,length=totalAssociatedDataLength/sizeof(double);
+         int i,length=cDataCornerNode_static_data::totalAssociatedDataLength/sizeof(double);
          double *ptr;
          for (i=0,ptr=(double*)associatedDataPointer;i<length;i++,ptr++) *ptr=0.0;
 
-         if (totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
+         if (cDataCornerNode_static_data::totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
        }
 
       cDataCornerNode() : cBasicCornerNode() {
@@ -2718,27 +2733,42 @@ namespace PIC {
     //the data stored in a block
     //1. Local Time Step [NS]: depending on the model mode there will be a 'global' time step for the simulation, 'global' time step for the cell or individual time step for each simulated species
     //2. Local particle weight [NS]: depending on the model mode there will be a 'global' weight for the simulation, 'global' weight for the cell or individual weigh for each simulated species
+    class cDataBlockAMR;    
+
+    namespace cDataBlockAMR_static_data {
+       typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
+
+       extern _TARGET_DEVICE_ int LocalTimeStepOffset,LocalParticleWeightOffset;
+       extern _TARGET_DEVICE_ int totalAssociatedDataLength;
+       extern _TARGET_DEVICE_ fPackBlockData PackBlockData,UnpackBlockData;
+       extern _TARGET_DEVICE_ int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+       extern _TARGET_DEVICE_ bool InternalDataInitFlag;
+
+       extern _TARGET_DEVICE_ int LoadBalancingMeasureOffset;
+       extern _TARGET_DEVICE_ int UserAssociatedDataOffset;
+    }    
+
     class cDataBlockAMR : public cBasicBlockAMR<cDataCornerNode,cDataCenterNode> {
     public:
-      static int LocalTimeStepOffset,LocalParticleWeightOffset;
+      //static int LocalTimeStepOffset,LocalParticleWeightOffset;
       char *associatedDataPointer;
-      static int totalAssociatedDataLength;
+      //static int totalAssociatedDataLength;
 
-      typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
-      static fPackBlockData PackBlockData,UnpackBlockData;
+      //typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
+      //static fPackBlockData PackBlockData,UnpackBlockData;
 
     private:
-      static int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+      //static int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
 
     public:
-      static int LoadBalancingMeasureOffset;
-      static int UserAssociatedDataOffset;
+      //static int LoadBalancingMeasureOffset;
+      //static int UserAssociatedDataOffset;
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
       bool ActiveFlag; //used for debugging to prevent repeatable de-allocation of the block
 
       //the flag defined whether all internal data is allocated
-      static bool InternalDataInitFlag;
+      //static bool InternalDataInitFlag;
 
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
@@ -2750,6 +2780,8 @@ namespace PIC {
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
       cTempParticleMovingListMultiThreadTable *GetTempParticleMovingListMultiThreadTable(int thread,int i,int j,int k) {
         cTempParticleMovingListMultiThreadTable* res;
+
+        using namespace cDataBlockAMR_static_data;
 
         switch (_PIC_TEMP_PARTICLE_LIST_MODE_) {
         case _PIC_TEMP_PARTICLE_LIST_MODE__SHARED_:
@@ -2773,10 +2805,14 @@ namespace PIC {
       #endif
 
       int AssociatedDataLength() {
+        using namespace cDataBlockAMR_static_data;
+
         return totalAssociatedDataLength;
       }
 
       void SetAssociatedDataBufferPointer(char* ptr) {
+        using namespace cDataBlockAMR_static_data;
+
         associatedDataPointer=ptr;
       }
 
@@ -2787,6 +2823,8 @@ namespace PIC {
 
 
       static void InitInternalData() {
+        using namespace cDataBlockAMR_static_data;
+
         if (InternalDataInitFlag==false) {
           totalAssociatedDataLength=0;
 
@@ -2826,6 +2864,8 @@ namespace PIC {
       }
 
       static int RequestInternalBlockData(int length) {
+        using namespace cDataBlockAMR_static_data;
+
         if (InternalDataInitFlag==false) InitInternalData();
 
         int res=totalAssociatedDataLength;
@@ -2836,6 +2876,8 @@ namespace PIC {
 
 
       cDataBlockAMR () : cBasicBlockAMR<cDataCornerNode,cDataCenterNode> () {
+        using namespace cDataBlockAMR_static_data;
+
         if (InternalDataInitFlag==false) InitInternalData();
         ActiveFlag=false;
       }
@@ -2851,6 +2893,8 @@ namespace PIC {
 
       //clean the sampling buffers
       void cleanDataBuffer() {
+        using namespace cDataBlockAMR_static_data;
+
         int i,length=(totalAssociatedDataLength-UserAssociatedDataOffset)/sizeof(double);
         double *ptr;
 
@@ -2891,6 +2935,8 @@ namespace PIC {
 
       //print into a output file the blocks' parameters: the local time step, the local weight
       void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int BlockThread) {
+        using namespace cDataBlockAMR_static_data;
+
 
         struct cOutputData {
           double dtLocal,wLocal;
@@ -2927,11 +2973,11 @@ namespace PIC {
 
     //return time step and the particle's weights
     inline double GetLocalTimeStep(int spec,cDataBlockAMR* block) {
-      return *(spec+(double*)(cDataBlockAMR::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
+      return *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
     }
 
     inline void SetLocalTimeStep(double dt,int spec,cDataBlockAMR* block) {
-      *(spec+(double*)(cDataBlockAMR::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
+      *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
     }
 
     double GetLocalParticleWeight(int,cDataBlockAMR*);
@@ -2956,10 +3002,16 @@ namespace PIC {
     void loadMesh(char*);
 
     //pack and un-pack blocks data
+    _TARGET_HOST_ _TARGET_DEVICE_
     int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer);
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
     int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
@@ -2989,13 +3041,17 @@ namespace PIC {
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
     namespace BlockElementSendMask {
-      extern int CommunicationDepthLarge,CommunicationDepthSmall;
+      extern _TARGET_DEVICE_ int CommunicationDepthLarge,CommunicationDepthSmall;
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitLayerBlockBasic(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
       void Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
 
       namespace CornerNode {
+        _TARGET_HOST_ _TARGET_DEVICE_
         int GetSize();
 
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
@@ -3033,6 +3089,7 @@ namespace PIC {
       }
 
       namespace CenterNode {
+        _TARGET_HOST_ _TARGET_DEVICE_
         int GetSize();
 
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
@@ -3076,8 +3133,13 @@ namespace PIC {
       const int _NEW_PARTICLE_SIGNAL_=       2;
       const int _END_COMMUNICATION_SIGNAL_=  3;
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
     }
 
@@ -3450,7 +3512,9 @@ namespace PIC {
 
     //reserve memoty in a cell associated data buffer for non-sampling data
     typedef int (*fRequestStaticCellData)(int);
-    extern vector<fRequestStaticCellData> RequestStaticCellData,RequestStaticCellCornerData;
+
+
+    extern _TARGET_DEVICE_ amps_vector<fRequestStaticCellData> *RequestStaticCellData,*RequestStaticCellCornerData;
 
     //the list of user defined sampling procedures
     typedef void (*fSamplingProcedure)();
@@ -4667,7 +4731,7 @@ namespace PIC {
     //corner based interpolation routines
     namespace CornerBased {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCornerNode> cStencil;
-      extern cStencil* StencilTable;
+      extern _TARGET_DEVICE_ cStencil* StencilTable;
 
       //The table contains weight for each node and the order of local is enforced.
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
@@ -4696,7 +4760,7 @@ namespace PIC {
     //cell center interpolation routines
     namespace CellCentered {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCenterNode> cStencil;
-      extern cStencil* StencilTable;
+      extern _TARGET_DEVICE_ cStencil* StencilTable;
 
       //types of the cell ceneterd interpolating rourines implemented in AMPS
       namespace Constant {
@@ -4774,6 +4838,7 @@ namespace PIC {
 
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     void Init();
   }
 
@@ -5869,6 +5934,8 @@ namespace PIC {
       int RequestDataBuffer(int);
       void Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void Init();
 
       cRndSeedContainer *GetSeedPtr(char* CenterNodeAssociatedDataBufferPointer);

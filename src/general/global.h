@@ -32,6 +32,26 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 //inlcude settings of the general block
 #include "../../.general.conf"
 
+//defive 'vector' and 'list'
+#if _CUDA_MODE_ == _ON_
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/sort.h>
+
+template<class T>
+using amps_vector=thrust::device_vector<T>;
+
+//#define amps_vector thrust::device_vector
+
+#else
+#include <vector>
+
+template<class T>
+using amps_vector=std::vector<T>;
+
+
+
+#endif
 
 #endif
 

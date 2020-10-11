@@ -113,6 +113,7 @@ foreach (@Arguments) {
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
      print "-avx=[256,512,off]\t\t\tsettings for using AVX instructions\n";
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
+     print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
      exit;
    }
    
@@ -277,6 +278,15 @@ foreach (@Arguments) {
     require "./utility/TestScripts/RemoveNightlyTest.pl";     
     next;
   } 
+
+  if (/^-cuda$/i) {
+    add_line_general_conf("#undef _TARGET_GLOBAL_ \n#define _TARGET_GLOBAL_ __global__");
+    add_line_general_conf("#undef _TARGET_HOST_ \n#define _TARGET_HOST_ __host__");
+    add_line_general_conf("#undef _TARGET_DEVICE_ \n#define _TARGET_DEVICE_ __device__");
+    add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
+
+    next;
+  }
 
   if (/^-avx=(.*)$/) {
     my $t;

@@ -1688,7 +1688,22 @@ void PIC::InitMPI() {
 
 _TARGET_GLOBAL_
 void AllocateMesh() {
-   PIC::Mesh::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+  amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::mesh,1);
+
+
+//PIC::IndividualModelSampling::RequestStaticCellData=
+//(amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>*)malloc(sizeof(amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>));
+
+
+//////  amps_allocate<amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> >(PIC::IndividualModelSampling::RequestStaticCellData,1);
+//  PIC::IndividualModelSampling::RequestStaticCellData->clear();
+
+
+
+
+//////  amps_allocate<amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>*>(PIC::IndividualModelSampling::RequestStaticCellCornerData,1); 
+  //PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
+
 
   //intialize the interpolation module
   PIC::InterpolationRoutines::Init();
@@ -1715,6 +1730,13 @@ void PIC::Init_BeforeParser() {
 
   //initiate MPI
   InitMPI();
+
+
+  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+  PIC::IndividualModelSampling::RequestStaticCellData->clear();
+
+  PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+  PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
   #if _CUDA_MODE_ == _ON_
   AllocateMesh<<<1,1>>>(); 

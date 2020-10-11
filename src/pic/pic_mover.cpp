@@ -470,11 +470,11 @@ void PIC::Mover::MoveParticles() {
     //reset the balancing counters
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      if (node->block!=NULL) {*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+node->block->LoadBalancingMeasureOffset))=0.0;
+      if (node->block!=NULL) {*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset))=0.0;
       }
     }
 
-    int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset;
+    int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
     PIC::Mesh::cDataBlockAMR *block;
@@ -548,7 +548,7 @@ void PIC::Mover::MoveParticles() {
     //sum-up the balancing measure
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+node->block->LoadBalancingMeasureOffset));
+      node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset));
     }
   };
 

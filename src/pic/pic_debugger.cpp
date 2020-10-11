@@ -338,7 +338,7 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
 //==========================================================================================
 //get checksum of the corner and center node associated data
 unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
-  return PIC::Debugger::SaveCornerNodeAssociatedDataSignature(0,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
+  return PIC::Debugger::SaveCornerNodeAssociatedDataSignature(0,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
 }
 
 
@@ -482,7 +482,7 @@ unsigned long int PIC::Debugger::GetCenterNodeAssociatedDataSignature(long int n
 }
 
 unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
-  return SaveCenterNodeAssociatedDataSignature(0,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
+  return SaveCenterNodeAssociatedDataSignature(0,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
 }
 
 
@@ -911,7 +911,7 @@ void PIC::Debugger::ParticleDebugData::AddParticleDebugData(long int ptr,cTreeNo
             CheckSum.clear();
 
             CornerNode=node->block->GetCornerNode(_getCornerNodeLocalNumber(p.i+di,p.j+dj,p.k+dk));
-            CheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+            CheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
 
             p.CornerNodeChecksum[di][dj][dk]=CheckSum.checksum();
           }
@@ -931,7 +931,7 @@ void PIC::Debugger::ParticleDebugData::AddParticleDebugData(long int ptr,cTreeNo
             CheckSum.clear();
 
             CenterNode=node->block->GetCenterNode(_getCenterNodeLocalNumber(p.i+di,p.j+dj,p.k+dk));
-            CheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+            CheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
 
             p.CenterNodeChecksum[1+di][1+dj][1+dk]=CheckSum.checksum();
           }
@@ -1054,7 +1054,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
           if (node->Thread==PIC::ThisThread) {
             if (node->block!=NULL) {
               CornerNode=node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-              CheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+              CheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
             }
 
             cs=CheckSum.checksum();
@@ -1092,7 +1092,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
            if (node->Thread==PIC::ThisThread) {
              if (node->block!=NULL) {
                CenterNode=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-               CheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+               CheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
              }
 
              cs=CheckSum.checksum();
@@ -1393,7 +1393,7 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
         PIC::Mesh::cDataCenterNode *CenterNode;
 
         CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-        if (CenterNode!=NULL) CenterNodeCheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+        if (CenterNode!=NULL) CenterNodeCheckSum.add(CenterNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
       }
     }
 
@@ -1430,7 +1430,7 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
         PIC::Mesh::cDataCornerNode *CornerNode;
 
         CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-        if (CornerNode!=NULL) CornerNodeCheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+        if (CornerNode!=NULL) CornerNodeCheckSum.add(CornerNode->GetAssociatedDataBufferPointer(),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
       }
     }
 

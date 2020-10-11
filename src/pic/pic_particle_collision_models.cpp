@@ -119,7 +119,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
   }
 
   //global offsets
-  int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset;
+  int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
   //simulate particle's collisions
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -524,7 +524,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf() {
   }
 
   //global offsets
-  int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset;
+  int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
   //simulate particle's collisions
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_

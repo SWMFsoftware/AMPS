@@ -2331,7 +2331,7 @@ public:
 
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  cMeshAMRgeneric() {
+  void ExplicitConstructor() {
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) _MESH_AMR_XMAX_[idim]=0.0,_MESH_AMR_XMIN_[idim]=0.0;
 
      //set the default value for the 'interpolation functions'
@@ -2415,6 +2415,10 @@ public:
 
      //Flag: populate center and corner 'ghost' nodes that are outside of the domain. The feature is needed when the code is used in the embedded PIC mode
      PopulateOutsideDomainNodesFlag=false;
+  }
+
+  cMeshAMRgeneric() {
+    ExplicitConstructor();
   }
 
   //register the 'internal boundary' (the surface determining cut cells)

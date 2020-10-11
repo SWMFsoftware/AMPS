@@ -377,7 +377,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 
   InitDiscritizationStencil();
 
-  CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+  CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
   //register the linear system solver with the core 
   PIC::RegisterLinearSolver(&Solver); 
@@ -390,8 +390,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   }
   else {
     PIC::CPLR::DATAFILE::Offset::MagneticField.active=true;
-    PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;   
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
+    PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;   
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
     CurrentBOffset =0;
     PrevBOffset = 3*sizeof(double);
   }
@@ -400,41 +400,41 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   netChargeNewIndex = 7;
   divEIndex = 8;
   phiIndex = 9;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=4*sizeof(double);
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=4*sizeof(double);
 
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
     exit(__LINE__,__FILE__,"Error: reinitialization of the electric field offset");
   }
   else {
     PIC::CPLR::DATAFILE::Offset::ElectricField.active=true;
-    PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
     CurrentEOffset=0;
-    PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::ElectricField.nVars*sizeof(double);
+    PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::ElectricField.nVars*sizeof(double);
     OffsetE_HalfTimeStep=3*sizeof(double);
   }
 
   //allocate memory for Jx,Jy,Jz
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=3*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=3*sizeof(double);
   //J starts from PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset
   JxOffsetIndex = 6;
   JyOffsetIndex = 7;
   JzOffsetIndex = 8;
   
   //allocate memory for 81 mass matrix elements
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=243*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=243*sizeof(double);
   MassMatrixOffsetIndex = 9;
 
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_  
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=10*sizeof(double)*PIC::nTotalSpecies;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=10*sizeof(double)*PIC::nTotalSpecies;
   SpeciesDataIndex = new int[PIC::nTotalSpecies];
   for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) 
     SpeciesDataIndex[iSp]=9+243+iSp*10; // 10 vars for each species
 #endif
   
 #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-  OffsetB_corner = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength-
+  OffsetB_corner = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength-
     PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength += 6*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength += 6*sizeof(double);
 #endif
 
   PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
@@ -448,7 +448,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   
   //  PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC(); 
 
-  CornerNodeAssociatedDataOffsetLast=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength-1; //CornerNodeAssociatedDataOffsetLast still belongs to the solver
+  CornerNodeAssociatedDataOffsetLast=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength-1; //CornerNodeAssociatedDataOffsetLast still belongs to the solver
 }
 
 //set the initial conditions
@@ -3509,7 +3509,7 @@ barrier.Sync();
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:
     PIC::Parallel::BPManager.isCorner = true;
-    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
     PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
     PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
     PIC::Parallel::ProcessBlockBoundaryNodes(); 
@@ -5573,7 +5573,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x,
 //-------------------------------------
 void PIC::FieldSolver::Electromagnetic::ECSIM::copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr) {
   char *nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
-  const int pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+  const int pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength; 
 
   memcpy(bufferPtr, nodePtr, pointBufferSize);
 }

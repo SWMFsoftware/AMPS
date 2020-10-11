@@ -334,14 +334,14 @@ void PIC::CPLR::DATAFILE::Init() {
 
   //init the offset table and request memory
   int RelativeOffset=0;
-  CenterNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+  CenterNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
   //init the data offsets
   if (Offset::PlasmaNumberDensity.allocate==true) {
     Offset::PlasmaNumberDensity.active=true;
     Offset::PlasmaNumberDensity.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::PlasmaNumberDensity.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaNumberDensity.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaNumberDensity.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaNumberDensity.nVars;
   }
@@ -353,7 +353,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaBulkVelocity.active=true;
     Offset::PlasmaBulkVelocity.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::PlasmaBulkVelocity.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaBulkVelocity.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaBulkVelocity.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaBulkVelocity.nVars;
   }
@@ -365,7 +365,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaTemperature.active=true;
     Offset::PlasmaTemperature.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::PlasmaTemperature.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaTemperature.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaTemperature.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaTemperature.nVars;
   }
@@ -377,7 +377,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaIonPressure.active=true;
     Offset::PlasmaIonPressure.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::PlasmaIonPressure.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaIonPressure.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaIonPressure.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaIonPressure.nVars;
   }
@@ -389,7 +389,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaElectronPressure.active=true;
     Offset::PlasmaElectronPressure.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::PlasmaElectronPressure.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaElectronPressure.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaElectronPressure.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaElectronPressure.nVars;
   }
@@ -401,7 +401,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::MagneticField.active=true;
     Offset::MagneticField.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::MagneticField.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::MagneticField.nVars*sizeof(double);
     RelativeOffset+=Offset::MagneticField.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::MagneticField.nVars;
   }
@@ -412,7 +412,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::ElectricField.active=true;
     Offset::ElectricField.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::ElectricField.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::ElectricField.nVars*sizeof(double);
     RelativeOffset+=Offset::ElectricField.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::ElectricField.nVars;
   }
@@ -424,7 +424,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::MagneticFieldGradient.active=true;
     Offset::MagneticFieldGradient.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::MagneticFieldGradient.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::MagneticFieldGradient.nVars*sizeof(double);
     RelativeOffset+=Offset::MagneticFieldGradient.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::MagneticFieldGradient.nVars;
   }
@@ -435,7 +435,7 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::MagneticFluxFunction.active=true;
     Offset::MagneticFluxFunction.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=Offset::MagneticFluxFunction.nVars*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::MagneticFluxFunction.nVars*sizeof(double);
     RelativeOffset+=Offset::MagneticFluxFunction.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::MagneticFluxFunction.nVars;
   }
@@ -443,7 +443,7 @@ void PIC::CPLR::DATAFILE::Init() {
 
   if (_PIC_DATAFILE__TIME_INTERPOLATION_MODE_==_PIC_MODE_ON_) {
     // double the reserved memory for time inteprolation mode
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=nTotalBackgroundVariables*sizeof(double);
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nTotalBackgroundVariables*sizeof(double);
   }
   
   if (nTotalBackgroundVariables==0) {

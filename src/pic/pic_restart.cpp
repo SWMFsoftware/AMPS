@@ -122,11 +122,11 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
           SamplingData=cell->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
 
           if (PIC::ThisThread==0) {
-            fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,fRestart);
+            fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
           }
           else {
             //send the sampling information to the root processor
-            pipe->send(SamplingData,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+            pipe->send(SamplingData,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
           }
             }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
         
@@ -140,23 +140,23 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
               SamplingData=corner->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
               
               if (PIC::ThisThread==0) {
-                fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,fRestart);
+                fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
               }
               else {
                 //send the sampling information to the root processor
-                pipe->send(SamplingData,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+                pipe->send(SamplingData,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
               }
             }//for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++)
       }
       else if (PIC::ThisThread==0) {
         //recieve the sampling information from other processor and save it into a file
         for (i=0;i<nAllocatedCells;i++) {
-          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,node->Thread);
-          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,fRestart);
+          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,node->Thread);
+          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
         }
         for (i=0;i<nAllocatedCorners;i++) {
-          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,node->Thread);
-          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,fRestart);
+          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,node->Thread);
+          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
         }
       }
       
@@ -212,7 +212,7 @@ void PIC::Restart::SamplingData::ReadBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
             
             if (cell!=NULL) {
               SamplingData=cell->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,fRestart);
+              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
             }
           }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
       
@@ -222,14 +222,14 @@ void PIC::Restart::SamplingData::ReadBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
             
             if (corner!=NULL) {
               SamplingData=corner->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,fRestart);
+              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
             }
           }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
     }
     else {
       //skip the data for this block
-      fseek(fRestart,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength*nAllocatedCells,SEEK_CUR);
-      fseek(fRestart,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength*nAllocatedCorners,SEEK_CUR);
+      fseek(fRestart,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength*nAllocatedCells,SEEK_CUR);
+      fseek(fRestart,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength*nAllocatedCorners,SEEK_CUR);
     }
   }
   else {

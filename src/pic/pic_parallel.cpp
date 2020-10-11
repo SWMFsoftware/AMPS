@@ -31,11 +31,11 @@ PIC::Parallel::BoundaryProcessManager PIC::Parallel::BPManager;
 
 //default function forprocessing of the corner node associated data
 void PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
 }
 
 void PIC::Parallel::CornerBlockBoundaryNodes::CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
 }
 
 //-----------------------------------------------------------------
@@ -49,11 +49,11 @@ PIC::Parallel::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CopyCornerNo
 
 //default function forprocessing of the corner node associated data
 void PIC::Parallel::CopyCornerNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
 }
 
 void PIC::Parallel::CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
 }
 */ 
 
@@ -1022,9 +1022,9 @@ void PIC::Parallel::ExchangeParticleData() {
 //    }
 //
 //    processRecvDataBuffer= new char * [sumProcessBufferNumber];
-//    processRecvDataBuffer[0] = new char [sumProcessBufferNumber*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
+//    processRecvDataBuffer[0] = new char [sumProcessBufferNumber*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
 //    for (int i=1;i<sumProcessBufferNumber;i++) {
-//      processRecvDataBuffer[i]=i*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+processRecvDataBuffer[0];
+//      processRecvDataBuffer[i]=i*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+processRecvDataBuffer[0];
 //    }
 //
 //    if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
@@ -1035,8 +1035,8 @@ void PIC::Parallel::ExchangeParticleData() {
 //      }
 //
 //      copyRecvDataBuffer=new char * [CopyDataBufferDest.size()];
-//      copyRecvDataBuffer[0]=new char [CopyDataBufferDest.size()*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
-//      for (int i=1;i<CopyDataBufferDest.size();i++) copyRecvDataBuffer[i]=copyRecvDataBuffer[0]+i*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+//      copyRecvDataBuffer[0]=new char [CopyDataBufferDest.size()*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
+//      for (int i=1;i<CopyDataBufferDest.size();i++) copyRecvDataBuffer[i]=copyRecvDataBuffer[0]+i*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
 //    }
 //
 //
@@ -1086,7 +1086,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //          }
 //
 //          for (iThread=1;iThread<St->StencilLength;iThread++) {
-//            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
+//            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
 //            iProcessBuffer++;
 //          }
 //
@@ -1097,13 +1097,13 @@ void PIC::Parallel::ExchangeParticleData() {
 //          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++){
 //            PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData(St->AssociatedDataPointer,*it);
 //          }
-//          MPI_Isend(St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
+//          MPI_Isend(St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
 //
 //          //start the recv data request
 //          if (PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData!=NULL) {
-//            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+//            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
 //          }else{
-//            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+//            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,St->StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
 //          }
 //          iCopyBuffer++;
 //          // }//for
@@ -1135,7 +1135,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //            //if  finished one stencil processing, send it back
 //            if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
 //              for (iThread=1;iThread<StencilTable[wholeStencilIndex]->StencilLength;iThread++) {
-//                MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+//                MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
 //                iProcessSendBuffer++;
 //              }
 //              nProcessStencilDone++;
@@ -1196,7 +1196,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //
 //          if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
 //            for (iThread=1;iThread<StencilTable[wholeStencilIndex]->StencilLength;iThread++) {
-//              MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+//              MPI_Isend(StencilTable[wholeStencilIndex]->AssociatedDataPointer,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex]->StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
 //              iProcessSendBuffer++;
 //            }
 //            nProcessStencilDone++;
@@ -1235,7 +1235,7 @@ void PIC::Parallel::ExchangeParticleData() {
 //          }
 //        }else{
 //          for (it=St->localDataPntArr.begin();it!=St->localDataPntArr.end();it++)
-//            memcpy(*it,St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+//            memcpy(*it,St->AssociatedDataPointer,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
 //        }
 //      }
 //    }
@@ -2258,9 +2258,9 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
     }
     
     processRecvDataBuffer= new char * [sumProcessBufferNumber];
-    processRecvDataBuffer[0] = new char [sumProcessBufferNumber*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength];
+    processRecvDataBuffer[0] = new char [sumProcessBufferNumber*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength];
     for (int i=1;i<sumProcessBufferNumber;i++) {
-      processRecvDataBuffer[i]=i*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+processRecvDataBuffer[0];
+      processRecvDataBuffer[i]=i*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+processRecvDataBuffer[0];
     }
 
     if (PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData!=NULL) {
@@ -2271,8 +2271,8 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
       }
       
       copyRecvDataBuffer=new char * [CopyDataBufferDest.size()];
-      copyRecvDataBuffer[0]=new char [CopyDataBufferDest.size()*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength];
-      for (int i=1;i<CopyDataBufferDest.size();i++) copyRecvDataBuffer[i]=copyRecvDataBuffer[0]+i*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+      copyRecvDataBuffer[0]=new char [CopyDataBufferDest.size()*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength];
+      for (int i=1;i<CopyDataBufferDest.size();i++) copyRecvDataBuffer[i]=copyRecvDataBuffer[0]+i*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
     }
     
     
@@ -2323,7 +2323,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           }
         
           for (iThread=1;iThread<StencilTable[iStencil].StencilLength;iThread++) {
-            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
+            MPI_Irecv(processRecvDataBuffer[iProcessBuffer],PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[iThread],iStencil,MPI_GLOBAL_COMMUNICATOR,processRecvList+iProcessBuffer);
             iProcessBuffer++;
           }
           
@@ -2334,13 +2334,13 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           for (it=StencilTable[iStencil].localDataPntArr.begin();it!=StencilTable[iStencil].localDataPntArr.end();it++){
             PIC::Parallel::CenterBlockBoundaryNodes::ProcessCenterNodeAssociatedData(StencilTable[iStencil].AssociatedDataPointer,*it);                  
           }
-          MPI_Isend(StencilTable[iStencil].AssociatedDataPointer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
+          MPI_Isend(StencilTable[iStencil].AssociatedDataPointer,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,processSendList+iCopyBuffer);
             
           //start the recv data request
           if (PIC::Parallel::CenterBlockBoundaryNodes::CopyCenterNodeAssociatedData!=NULL) {
-            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+            MPI_Irecv(copyRecvDataBuffer[iCopyBuffer],PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
           }else{
-            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
+            MPI_Irecv(CopyDataBufferDest[iCopyBuffer],PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[iStencil].StencilThreadTable[0],iStencil,MPI_GLOBAL_COMMUNICATOR,copyRecvList+iCopyBuffer);
           }
           iCopyBuffer++;
           // }//for
@@ -2372,7 +2372,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
             //if  finished one stencil processing, send it back
             if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
               for (iThread=1;iThread<StencilTable[wholeStencilIndex].StencilLength;iThread++) {        
-                MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+                MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
                 iProcessSendBuffer++;
               }
               nProcessStencilDone++;
@@ -2433,7 +2433,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
                 
           if (StencilFinishedBufferNumber[processStencilIndex]==ProcessStencilBufferNumber[processStencilIndex]){
             for (iThread=1;iThread<StencilTable[wholeStencilIndex].StencilLength;iThread++) {        
-              MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
+              MPI_Isend(StencilTable[wholeStencilIndex].AssociatedDataPointer,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,StencilTable[wholeStencilIndex].StencilThreadTable[iThread],wholeStencilIndex,MPI_GLOBAL_COMMUNICATOR,copySendList+iProcessSendBuffer);
               iProcessSendBuffer++;
             }
             nProcessStencilDone++;
@@ -2470,7 +2470,7 @@ void PIC::Parallel::ProcessCenterBlockBoundaryNodes() {
           }
         }else{
           for (it=StencilTable[iSt].localDataPntArr.begin();it!=StencilTable[iSt].localDataPntArr.end();it++)
-            memcpy(*it,StencilTable[iSt].AssociatedDataPointer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+            memcpy(*it,StencilTable[iSt].AssociatedDataPointer,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
         }
       }
     }
@@ -2894,12 +2894,12 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   //------------------------------------  Allocate/Deallocate data buffers: begin -------------------------
   auto AllocateStencilDataBuffers = [&] (cStencilData* Stencil) {
     if (Stencil->RecvDataBuffer==NULL) {
-      Stencil->Accumulator=new char [PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
+      Stencil->Accumulator=new char [PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
 
       Stencil->RecvDataBuffer=new char* [Stencil->ContributingThreadTableLength];
-      Stencil->RecvDataBuffer[0]=new char [Stencil->ContributingThreadTableLength*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
+      Stencil->RecvDataBuffer[0]=new char [Stencil->ContributingThreadTableLength*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
       
-      for (int iThread=1;iThread<Stencil->ContributingThreadTableLength;iThread++) Stencil->RecvDataBuffer[iThread]=Stencil->RecvDataBuffer[iThread-1]+PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+      for (int iThread=1;iThread<Stencil->ContributingThreadTableLength;iThread++) Stencil->RecvDataBuffer[iThread]=Stencil->RecvDataBuffer[iThread-1]+PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
     }
   };
   
@@ -2937,7 +2937,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   
   //------------------------------------  Send Processed Local Stencil: begin -------------------------------------
   auto InitSendProcessedLocalStencilData = [&] (cStencilData* Stencil,int Tag) {
-    MPI_Isend(Stencil->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,Stencil->ProcessingThread,Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request);
+    MPI_Isend(Stencil->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,Stencil->ProcessingThread,Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request);
     Stencil->SendCompleted=false;
   };
   
@@ -2965,7 +2965,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
     //Init Recv operation
     for (iThread=0;iThread<Stencil->ContributingThreadTableLength;iThread++) {
-      MPI_Irecv(Stencil->RecvDataBuffer[iThread],PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,Stencil->ContributingThreadTable[iThread],Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request+iThread);
+      MPI_Irecv(Stencil->RecvDataBuffer[iThread],PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,Stencil->ContributingThreadTable[iThread],Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request+iThread);
     }
     
     Stencil->RecvCompleted=false;
@@ -2999,7 +2999,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
     
     //send local processed corner node data to contributing MPI processes
     for (iThread=0;iThread<Stencil->ContributingThreadTableLength;iThread++) {
-      MPI_Isend(Stencil->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,MPI_BYTE,Stencil->ContributingThreadTable[iThread],Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request+iThread);
+      MPI_Isend(Stencil->CornerNodeAssociatedDataPointerTable[0],PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,MPI_BYTE,Stencil->ContributingThreadTable[iThread],Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request+iThread);
     }
     
     Stencil->SendCompleted=false;
@@ -3025,7 +3025,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
   //------------------------------------  Init Recv Complete processed CornerNode data: begin ----------------
   auto InitRecvProcessedStencilData  = [&] (cStencilData* Stencil,int Tag) {
-    MPI_Irecv(Stencil->Accumulator,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,MPI_BYTE,Stencil->ProcessingThread,Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request);
+    MPI_Irecv(Stencil->Accumulator,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,MPI_BYTE,Stencil->ProcessingThread,Tag,MPI_GLOBAL_COMMUNICATOR,Stencil->Request);
     Stencil->RecvCompleted=false;
   };
   
@@ -3240,7 +3240,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
         for (cnt=0,it=SendToProcess[To].begin();it!=SendToProcess[To].end();it++,cnt++) offset_table[cnt]=*it;
 
-        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,send_to_process+To);
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,offset_table,MPI_BYTE,send_to_process+To);
 
         MPI_Type_commit(send_to_process+To);
         delete [] offset_table;
@@ -3257,7 +3257,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
         for (cnt=0,it=SendProcessed[To].begin();it!=SendProcessed[To].end();it++,cnt++) offset_table[cnt]=*it;
 
-        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,send_processed+To);
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,offset_table,MPI_BYTE,send_processed+To);
 
         MPI_Type_commit(send_processed+To);
         delete [] offset_table;
@@ -3274,7 +3274,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
         for (cnt=0,it=RecvToProcess[From].begin();it!=RecvToProcess[From].end();it++,cnt++) offset_table[cnt]=*it;
 
-        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_to_process+From);
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_to_process+From);
 
         MPI_Type_commit(recv_to_process+From);
         delete [] offset_table;
@@ -3291,7 +3291,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
         for (cnt=0,it=RecvProcessed[From].begin();it!=RecvProcessed[From].end();it++,cnt++) offset_table[cnt]=*it;
 
-        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_processed+From);
+        MPI_Type_create_hindexed_block(size,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,offset_table,MPI_BYTE,recv_processed+From);
 
         MPI_Type_commit(recv_processed+From);
         delete [] offset_table;
