@@ -748,14 +748,6 @@ void amps_new(T* &buff,int length) {
 
 template<typename T>
 _TARGET_HOST_ _TARGET_DEVICE_
-void amps_allocate(T* &buff,int length) {
-  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
-
-  buff=(T*)malloc(length*sizeof(T));
- }
-
-template<typename T>
-_TARGET_HOST_ _TARGET_DEVICE_
 void amsp_delete(T* &buff) {
   if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
 
