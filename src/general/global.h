@@ -23,6 +23,12 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 //using AVX instructions in calculations
 #define _AVX_INSTRUCTIONS_USAGE_MODE_  _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 
+//macros used for CUDA
+#define _TARGET_GLOBAL_
+#define _TARGET_HOST_ 
+#define _TARGET_DEVICE_
+#define _CUDA_MODE_ _OFF_
+
 //inlcude settings of the general block
 #include "../../.general.conf"
 

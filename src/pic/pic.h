@@ -2169,7 +2169,7 @@ namespace PIC {
     class cDataCornerNode;
 
     //allocate mesh 
-    __global__
+    _TARGET_GLOBAL_
     void AllocateMesh();
 
     //get the AMR tree signature
@@ -2943,7 +2943,7 @@ namespace PIC {
 
     //the computational mesh
     #if DIM == 3
-    extern __device__ cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
+    extern _TARGET_DEVICE_ cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
     #elif DIM == 2
     extern cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
     #else

@@ -1684,20 +1684,21 @@ void PIC::InitMPI() {
 }
 
 //init the particle solver
-void PIC::Init_BeforeParser() {
 
-  //initiate MPI
-  InitMPI();
+
+_TARGET_GLOBAL_
+void AllocateMesh() {
+   PIC::Mesh::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
 
   //intialize the interpolation module
-  InterpolationRoutines::Init();
+  PIC::InterpolationRoutines::Init();
 
   //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
   PIC::Mesh::mesh->fDefaultPackBlockData=PIC::Mesh::PackBlockData;
-  PIC::Mesh::mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
+  PIC::Mesh::mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData;
 
   PIC::Mesh::mesh->fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
-  PIC::Mesh::mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
+  PIC::Mesh::mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize;
   PIC::Mesh::mesh->fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
 
   //set function that are used for moving blocks during the domain re-decomposition
@@ -1708,6 +1709,18 @@ void PIC::Init_BeforeParser() {
 
   //Init the random number generator
   if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+}
+
+void PIC::Init_BeforeParser() {
+
+  //initiate MPI
+  InitMPI();
+
+  #if _CUDA_MODE_ == _ON_
+  AllocateMesh<<<1,1>>>(); 
+  #else 
+  AllocateMesh();
+  #endif 
 
 /*
   //init the particle buffer

@@ -230,7 +230,7 @@ public:
     ::exit(1);
   }
 
-  __host__ __device__
+  _TARGET_HOST_ _TARGET_DEVICE_
   virtual ~cAMRexit() { }
 };
 

@@ -87,7 +87,7 @@ CWD=${MYDIR}
 
 AMPSLINKLIB= 
 
-EXTRALINKEROPTIONS= 
+EXTRALINKEROPTIONS=
 
 ifeq ($(LINK_SWMF_SHARED_LIB),on)
 	AMPSLINKER=${LINK.f90}
@@ -256,9 +256,13 @@ tar:
 ${WSD}:
 	./ampsConfig.pl -input ${InputFileAMPS} -no-compile 
 	./utility/CheckMacro.pl ${WSD} -in-place
+
+ifeq ($(COMPILE.mpicxx),nvcc)
 	cd srcTemp/pic;../../utility/change-ext cpp cu  
 	cd srcTemp/meshAMR;../../utility/change-ext cpp cu 
 	cd srcTemp/main;../../utility/change-ext cpp cu
+	cd srcTemp/general;../../utility/change-ext cpp cu
+endif
 
 LIB: 
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)

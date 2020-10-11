@@ -66,7 +66,7 @@
 #endif
 
 //the limits of the comlutational domain
-extern __device__ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
+extern _TARGET_DEVICE_ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
 
 class cBasicNode : public cStackElementBase, public cAMRexit {
@@ -2330,7 +2330,7 @@ public:
   }  
 
 
-  __host__ __device__
+  _TARGET_HOST_ _TARGET_DEVICE_
   cMeshAMRgeneric() {
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) _MESH_AMR_XMAX_[idim]=0.0,_MESH_AMR_XMIN_[idim]=0.0;
 

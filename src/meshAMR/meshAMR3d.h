@@ -22,7 +22,7 @@ class cMeshAMR3d : public cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR> {
 public:
 
 
-  __host__ __device__
+  _TARGET_HOST_ _TARGET_DEVICE_
   cMeshAMR3d() : cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR> () {
   }
 
