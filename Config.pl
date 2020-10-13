@@ -114,6 +114,7 @@ foreach (@Arguments) {
      print "-avx=[256,512,off]\t\t\tsettings for using AVX instructions\n";
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
+     print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
      exit;
    }
    
@@ -285,6 +286,11 @@ foreach (@Arguments) {
     add_line_general_conf("#undef _TARGET_DEVICE_ \n#define _TARGET_DEVICE_ __device__");
     add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
 
+    next;
+  }
+
+  if (/^-no-signals/i) {
+    add_line_general_conf("#undef _INTERSEPT_OS_SIGNALS_ \n#define _INTERSEPT_OS_SIGNALS_ _OFF_"); 
     next;
   }
 

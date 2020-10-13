@@ -23,6 +23,9 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 //using AVX instructions in calculations
 #define _AVX_INSTRUCTIONS_USAGE_MODE_  _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 
+//intersept operating system signals
+#define _INTERSEPT_OS_SIGNALS_  _ON_
+
 //macros used for CUDA
 #define _TARGET_GLOBAL_
 #define _TARGET_HOST_ 

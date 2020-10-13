@@ -13900,6 +13900,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     TreeDescriptor=NULL;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_ 
   void BuildTreeWithDescriptor(double *xmin, double *xmax,cSplitTable* TreeDescriptor, int &TreeDescriptorLength) {
     int TreeDescriptorIndex=0;
     std::function<void(cTreeNodeAMR<cBlockAMR>*)> ProcessBlock;

@@ -1807,7 +1807,10 @@ void PIC::Init_BeforeParser() {
 
     sprintf(PIC::DiagnospticMessageStreamName,"%s/thread=%i.log",PIC::DiagnospticMessageStreamName,PIC::ThisThread);
     PIC::DiagnospticMessageStream=fopen(PIC::DiagnospticMessageStreamName,"w");
-    PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
+
+    if (PIC::Mesh::mesh!=NULL) {
+      PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
+    }
   }
 
   //create the output directory if needed
@@ -1947,9 +1950,11 @@ void PIC::Init_BeforeParser() {
   //init sections of the particle solver
 
   //set up the signal handler
-  signal(SIGFPE,SignalHandler);
-  signal(SIGSEGV,SignalHandler);
-  signal(SIGBUS,SignalHandler);
+  if (_INTERSEPT_OS_SIGNALS_==_ON_) {
+    signal(SIGFPE,SignalHandler);
+    signal(SIGSEGV,SignalHandler);
+    signal(SIGBUS,SignalHandler);
+  }
 
 
   //init coupler 
@@ -1994,7 +1999,7 @@ void PIC::Init_BeforeParser() {
 
   //Init manager of the periodic boundary conditions that is called by the mesh generator after each domain decomposition procedure
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-    PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
+    if (PIC::Mesh::mesh!=NULL) PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
   }
 
   //Init the field solver
