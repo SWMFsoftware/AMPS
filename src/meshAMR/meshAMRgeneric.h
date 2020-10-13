@@ -65,6 +65,13 @@
   #define _getCenterNodeLocalNumber(i,j,k) (i+_GHOST_CELLS_X_+_TOTAL_BLOCK_CELLS_X_*(j+_GHOST_CELLS_Y_+(k+_GHOST_CELLS_Z_)*_TOTAL_BLOCK_CELLS_Y_))
 #endif
 
+
+  //class use to grerate mesh tree descriptor
+  class cSplitTable {
+  public:
+    unsigned char SplitTable[8];
+  };
+
 //the limits of the comlutational domain
 extern _TARGET_DEVICE_ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
@@ -13855,6 +13862,85 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
       return res;
     }
+
+
+   //grerate mesh tree descriptor
+  cSplitTable* CreateTreeDescriptor(cSplitTable* &TreeDescriptor,int &TreeDescriptorLength) {
+    list<cSplitTable> TreeDescriptorList;
+    list<cSplitTable>::iterator it;
+    int cnt;
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> ProcessBlock;
+
+    ProcessBlock =  [&] (cTreeNodeAMR<cBlockAMR>* bl) -> void {
+      cSplitTable t;
+
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++)  if (bl->downNode[nd]!=NULL) {
+        t.SplitTable[nd]=1;
+      } else {
+        t.SplitTable[nd]=0;
+      }
+
+      TreeDescriptorList.push_back(t);
+
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (t.SplitTable[nd]==1) ProcessBlock(bl->downNode[nd]);
+    }; 
+
+    TreeDescriptorLength=0;
+    ProcessBlock(rootTree);
+
+    TreeDescriptorLength=TreeDescriptorList.size();
+    TreeDescriptor=new cSplitTable[TreeDescriptorLength];
+
+    for (cnt=0,it=TreeDescriptorList.begin();it!=TreeDescriptorList.end();it++,cnt++) TreeDescriptor[cnt]=*it;
+  }
+
+  void ReleaseTreeDescriptor(cSplitTable* &TreeDescriptor) {
+    delete [] TreeDescriptor;
+
+    TreeDescriptor=NULL;
+  }
+
+  void BuildTreeWithDescriptor(double *xmin, double *xmax,cSplitTable* TreeDescriptor, int &TreeDescriptorLength) {
+    int TreeDescriptorIndex=0;
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> ProcessBlock;
+
+    //init mesh 
+    init(xmin,xmax,NULL); 
+
+    //create the tree
+    ProcessBlock = [&] (cTreeNodeAMR<cBlockAMR>* bl) -> void {
+      cSplitTable t;
+      bool split_flag=false;
+
+      t=TreeDescriptor[TreeDescriptorIndex++];
+
+      //determine whether the block need to ne split
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (t.SplitTable[nd]==1) {
+        split_flag=true;
+        break;
+      }
+
+      if (split_flag==true) {
+        //the block need to be split; go to the next level
+        bool FoundDownBlock=false;
+
+        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++)  if (bl->downNode[nd]!=NULL) {
+          FoundDownBlock=true;
+          break;
+        }
+
+        if (FoundDownBlock==false) {
+          //the block is not split yet -> split it
+          splitTreeNode(bl);
+        }
+
+        //go the the next level of the tree
+        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (bl->downNode[nd]!=NULL) ProcessBlock(bl->downNode[nd]);
+      }
+    };
+
+    ProcessBlock(rootTree);  
+  }
 
 };
 
