@@ -94,10 +94,19 @@ $MARKER:SPECIES-MACRO-DEFINIETION-USED-IN-SIMULATION$
 //include the appropriate mesh header
 #if DIM == 3
 #include "meshAMR3d.h"
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
 #elif DIM == 2
 #include "meshAMR2d.h"
-#else 
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
+#else
 #include "meshAMR1d.h"
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
 #endif
 
 #include "meshAMRinternalSurface.h"
@@ -2988,13 +2997,7 @@ namespace PIC {
     void switchSamplingBuffers();
 
     //the computational mesh
-    #if DIM == 3
-    extern _TARGET_DEVICE_ cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
-    #elif DIM == 2
-    extern cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
-    #else
-    extern cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > *mesh;
-    #endif
+    extern _TARGET_DEVICE_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR> *mesh;
 
     //init the computational mesh
     void Init(double*,double*,fLocalMeshResolution);

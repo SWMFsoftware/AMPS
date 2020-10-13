@@ -13865,7 +13865,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
 
    //grerate mesh tree descriptor
-  cSplitTable* CreateTreeDescriptor(cSplitTable* &TreeDescriptor,int &TreeDescriptorLength) {
+  void CreateTreeDescriptor(cSplitTable* &TreeDescriptor,int &TreeDescriptorLength) {
     list<cSplitTable> TreeDescriptorList;
     list<cSplitTable>::iterator it;
     int cnt;
