@@ -47,6 +47,35 @@ include Makefile.def
 #include the local $(MAKE)file (defined the AMPS' compiling variables)  
 include Makefile.local
 
+#determine the list of the directories to be compiled
+ifeq ($(COMPILE_EXOSPHERE),on)
+        LINK_DIRECTORY_LIST+=models/exosphere/*.o
+endif
+
+ifeq ($(COMPILE_SURFACE),on)
+        LINK_DIRECTORY_LIST+=models/surface/*.o
+endif
+
+ifeq ($(COMPILE_ELECTRON_IMPACT),on)
+        LINK_DIRECTORY_LIST+=models/electron_impact/*.o
+endif
+
+ifeq ($(COMPILE_SPUTTERING),on)
+        LINK_DIRECTORY_LIST+=models/sputtering/*.o
+endif
+
+ifeq ($(COMPILE_DUST),on)
+        LINK_DIRECTORY_LIST+=models/dust/*.o
+endif
+
+ifeq ($(COMPILE_CHARGE_EXCHANGE),on)
+        LINK_DIRECTORY_LIST+=models/charge_exchange/*.o
+endif
+
+ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
+        LINK_DIRECTORY_LIST+=models/photolytic_reactions/*.o
+endif
+
 #the default value of the c++ compiler flags
 SEARCH_C=-DMPI_ON  -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
 
@@ -281,37 +310,30 @@ endif
 
 ifeq ($(COMPILE_EXOSPHERE),on)
 	cd ${WSD}/models/exosphere;            $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/exosphere/*.o
 endif
 
 ifeq ($(COMPILE_SURFACE),on)
 	cd ${WSD}/models/surface;              $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/surface/*.o
 endif
 
 ifeq ($(COMPILE_ELECTRON_IMPACT),on)
 	cd ${WSD}/models/electron_impact;      $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/electron_impact/*.o
 endif
 
 ifeq ($(COMPILE_SPUTTERING),on)
 	cd ${WSD}/models/sputtering;           $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/sputtering/*.o
 endif
 
 ifeq ($(COMPILE_DUST),on)
 	cd ${WSD}/models/dust;                 $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/dust/*.o
 endif
 
 ifeq ($(COMPILE_CHARGE_EXCHANGE),on)
 	cd ${WSD}/models/charge_exchange;      $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/charge_exchange/*.o
 endif
 
 ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
 	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}"
-	LINK_DIRECTORY_LIST+=models/photolytic_reactions/*.o
 endif
 
 	cd ${WSD}/main; $(MAKE) SEARCH_C="${SEARCH_C}"
