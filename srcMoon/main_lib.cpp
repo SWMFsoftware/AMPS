@@ -25,12 +25,6 @@
 
 //$Id$
 
-template<class F>
-__global__
-void kernel(F f){
-	f();
-}
-
 
 //#include <saturn.h>
 
@@ -915,8 +909,6 @@ void amps_init() {
   //  MPI_Init(&argc,&argv);
     PIC::InitMPI();
 
-    PIC::Mesh::AllocateMesh<<<1,1>>>();
-
 
     //SetUp the alarm
   //  PIC::Alarm::SetAlarm(2000);
@@ -1233,17 +1225,6 @@ void amps_init() {
 
 
     //generate only the tree
-
-
-     auto set_AllowBlockAllocation_gpu = [=] __device__ (){
-        PIC::Mesh::mesh->AllowBlockAllocation=false;
-
-        printf("Setting AllowBlockAllocation=false  done....\n");
-     };
-
-     kernel<<<1,1>>>(set_AllowBlockAllocation_gpu);
-
-
     PIC::Mesh::mesh->AllowBlockAllocation=false;
     PIC::Mesh::mesh->init(xmin,xmax,localResolution);
     PIC::Mesh::mesh->memoryAllocationReport();
