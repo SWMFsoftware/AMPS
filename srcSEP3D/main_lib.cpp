@@ -108,45 +108,45 @@ void amps_init_mesh() {
 
 
 	//generate only the tree
-	PIC::Mesh::mesh.AllowBlockAllocation=false;
-	PIC::Mesh::mesh.init(DomainXMin,DomainXMax,localResolution);
-	PIC::Mesh::mesh.memoryAllocationReport();
+	PIC::Mesh::mesh->AllowBlockAllocation=false;
+	PIC::Mesh::mesh->init(DomainXMin,DomainXMax,localResolution);
+	PIC::Mesh::mesh->memoryAllocationReport();
 
-	if (PIC::Mesh::mesh.ThisThread==0) {
-		PIC::Mesh::mesh.buildMesh();
-		PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+	if (PIC::Mesh::mesh->ThisThread==0) {
+		PIC::Mesh::mesh->buildMesh();
+		PIC::Mesh::mesh->saveMeshFile("mesh.msh");
 		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	}
 	else {
 		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-		PIC::Mesh::mesh.readMeshFile("mesh.msh");
+		PIC::Mesh::mesh->readMeshFile("mesh.msh");
 	}
 
-	PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+	PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-	PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-	PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+	PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+	PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 	//initialize the blocks
-	PIC::Mesh::mesh.AllowBlockAllocation=true;
-	PIC::Mesh::mesh.AllocateTreeBlocks();
+	PIC::Mesh::mesh->AllowBlockAllocation=true;
+	PIC::Mesh::mesh->AllocateTreeBlocks();
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
 	//init the volume of the cells'
-	PIC::Mesh::mesh.InitCellMeasure();
+	PIC::Mesh::mesh->InitCellMeasure();
 
 	//read the data file
 	if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)
@@ -177,7 +177,7 @@ void amps_init(){
   
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
   
   //init the particle buffer
   PIC::ParticleBuffer::Init(10000000);
@@ -200,7 +200,7 @@ void amps_init(){
   }
 #endif
     
-  PIC::Mesh::mesh.outputMeshDataTECPLOT("plasma-data.dat",0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("plasma-data.dat",0);
 
 }
 

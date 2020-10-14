@@ -93,10 +93,10 @@ namespace TransportEquation {
 
 
     RhsSupportTable_CornerNodes[0].Coefficient=1.0; 
-    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
  //   RhsSupportTable_CornerNodes[1].Coefficient=0.1;
- //   RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+ //   RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
 
     RhsSupportLength_CornerNodes=1;
@@ -119,7 +119,7 @@ return ;
     MatrixRowNonZeroElementTable[0].iVar=0;
 
     RhsSupportTable_CornerNodes[0].Coefficient=1.0;
-    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength_CornerNodes=1;
     RhsSupportLength_CenterNodes=0; 
@@ -181,24 +181,24 @@ return ;
 
     //right-hand side
     RhsSupportTable_CornerNodes[0].Coefficient=c[0];
-    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportTable_CornerNodes[1].Coefficient=-c[0];
-    RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
 
     RhsSupportTable_CornerNodes[2].Coefficient=c[1];
-    RhsSupportTable_CornerNodes[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportTable_CornerNodes[3].Coefficient=-c[1];
-    RhsSupportTable_CornerNodes[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
 
     RhsSupportTable_CornerNodes[4].Coefficient=c[2];
-    RhsSupportTable_CornerNodes[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
 
     RhsSupportTable_CornerNodes[5].Coefficient=-c[2];
-    RhsSupportTable_CornerNodes[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable_CornerNodes[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
 
     RhsSupportLength_CornerNodes=6;
@@ -376,7 +376,7 @@ void SetIC(int nVars) {
       for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) {
         node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
-        offset=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+        offset=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
         x[0]=node->xmin[0]+(i*(node->xmax[0]-node->xmin[0]))/_BLOCK_CELLS_X_;
         x[1]=node->xmin[1]+(j*(node->xmax[1]-node->xmin[1]))/_BLOCK_CELLS_Y_;
@@ -432,7 +432,7 @@ int main(int argc,char **argv) {
   NextCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
   PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
   
-  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+  PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
   //seed the random number generator
   rnd_seed(100);
 
@@ -440,9 +440,9 @@ int main(int argc,char **argv) {
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
   sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
 
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
   PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
@@ -456,28 +456,28 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -490,11 +490,11 @@ int main(int argc,char **argv) {
 
   //PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
@@ -504,7 +504,7 @@ int main(int argc,char **argv) {
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   if (PIC::ThisThread==0) printf("test1\n");
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
 
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
   
@@ -541,7 +541,7 @@ int main(int argc,char **argv) {
   //solve the transport equation
   //set the initial conditions for the transport equation
   SetIC(1);
-  PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
 
 
 
@@ -552,7 +552,7 @@ int main(int argc,char **argv) {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
         int i,j,k;
 
-        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
          flag=true;
          break;
         }
@@ -562,8 +562,8 @@ int main(int argc,char **argv) {
         for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
           char *source,*target;
 
-           source=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();  
-           target=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+           source=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();  
+           target=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
            *(double*)(target+NextCornerNodeOffset)=*(double*)(source+CurrentCornerNodeOffset);
         } 
@@ -577,7 +577,7 @@ PIC::BC::ExternalBoundary::UpdateData();
 
       char fname[100];
       sprintf(fname,"%s/test.out=%i.dat",PIC::OutputDataFileDirectory,niter);
-      if (niter%5==0) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,0);
+      if (niter%5==0) PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
     }
 
 
@@ -588,24 +588,24 @@ PIC::BC::ExternalBoundary::UpdateData();
 
   for (int niter=0;niter<200;niter++) {
 
-//PIC::Mesh::mesh.outputMeshDataTECPLOT("1.dat",0);
+//PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);
 
     TransportEquation::TimeStep();
 
-//PIC::Mesh::mesh.outputMeshDataTECPLOT("2.dat",0);
+//PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
 
     int t=CurrentCornerNodeOffset;
     CurrentCornerNodeOffset=NextCornerNodeOffset;
     NextCornerNodeOffset=t;
 
-///PIC::Mesh::mesh.outputMeshDataTECPLOT("3.dat",0);
+///PIC::Mesh::mesh->outputMeshDataTECPLOT("3.dat",0);
 
  //   PIC::BC::ExternalBoundary::Periodic::UpdateData();
 //    SolverTransportEquation.UpdateRhs(UpdateRhsTransportEquation);
 
     char fname[100];
     sprintf(fname,"%s/Transport.out=%i.dat",PIC::OutputDataFileDirectory,niter);
-    if (niter%10==0) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,0);
+    if (niter%10==0) PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
   }
  
 
@@ -613,10 +613,10 @@ PIC::BC::ExternalBoundary::UpdateData();
 
   
   for (int iPar=0;iPar<parSize; iPar++ ){
-    newNode=PIC::Mesh::mesh.findTreeNode(xparticle[iPar]);
+    newNode=PIC::Mesh::mesh->findTreeNode(xparticle[iPar]);
     
     if (newNode->Thread==PIC::ThisThread) {
-      PIC::Mesh::mesh.fingCellIndex(xparticle[iPar],i,j,k,newNode);
+      PIC::Mesh::mesh->fingCellIndex(xparticle[iPar],i,j,k,newNode);
       
       newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
       

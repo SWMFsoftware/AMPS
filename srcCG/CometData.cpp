@@ -19,10 +19,10 @@ int Comet::CometData::nMaxLoadedSpecies=0;
 void Comet::CometData::WriteBinaryOutput(const char *fNameBase,int s,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,FILE *fout) {
   static CMPI_channel pipe;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     pipe.init(1000000);
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       pipe.openRecvAll();
     }
     else pipe.openSend(0); 
@@ -57,7 +57,7 @@ void Comet::CometData::WriteBinaryOutput(const char *fNameBase,int s,cTreeNodeAM
 	  SendCellFlag=false; 
 	  for (idim=0;idim<4;idim++) data[idim]=0.0;
 	}
-        nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         if (SendCellFlag==true) {
 	  if ((CenterNode=startNode->block->GetCenterNode(nd))!=NULL) {
 	    data[0]=startNode->block->GetCenterNode(nd)->GetNumberDensity(s)*PIC::MolecularData::GetMass(s);
@@ -105,8 +105,8 @@ void Comet::CometData::WriteBinaryOutput(const char *fNameBase,int s,cTreeNodeAM
   }
   
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       pipe.closeRecvAll();
     }
     else pipe.closeSend();
@@ -121,7 +121,7 @@ void Comet::CometData::LoadBinaryFile(const char *fNameBase) {
   char fname[400];
   FILE *fData;
 
-  sprintf(fname,"%s/amr.sig=0x%lx.f=%s.CenterNodeOutputData.bin",PIC::CPLR::DATAFILE::path,PIC::Mesh::mesh.getMeshSignature(),fNameBase);
+  sprintf(fname,"%s/amr.sig=0x%lx.f=%s.CenterNodeOutputData.bin",PIC::CPLR::DATAFILE::path,PIC::Mesh::mesh->getMeshSignature(),fNameBase);
   fData=fopen(fname,"r");
 
   if (fData==NULL) {
@@ -137,7 +137,7 @@ void Comet::CometData::LoadBinaryFile(const char *fNameBase) {
   if (nNeutrals>nMaxLoadedSpecies) exit(__LINE__,__FILE__,"Error: nNeutrals>nMaxLoadedSpecies. Solution: increase Comet::CometData::nMaxLoadedSpecies to accomodate all speces that are loaded from a binary file");
 
   //load the background data for each species
-  for (int iSpecies=0;iSpecies<nNeutrals;iSpecies++) LoadBinaryFile_Internal(iSpecies,fData,PIC::Mesh::mesh.rootTree);
+  for (int iSpecies=0;iSpecies<nNeutrals;iSpecies++) LoadBinaryFile_Internal(iSpecies,fData,PIC::Mesh::mesh->rootTree);
 
   //close the data file
   fclose(fData);
@@ -153,7 +153,7 @@ void Comet::CometData::LoadBinaryFile_Internal(int iSpecies,FILE* fData,cTreeNod
   int i,j,k,nd;
   PIC::Mesh::cDataCenterNode *CenterNode;
   
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     PIC::Mesh::cDataCenterNode cell;
     CenterNodeAssociatedLength=cell.AssociatedDataLength();
   }
@@ -192,7 +192,7 @@ void Comet::CometData::LoadBinaryFile_Internal(int iSpecies,FILE* fData,cTreeNod
 	    if (savedLoadCellFlag==true) {
 	      //determine whether the cell data needed to be read                                                                                
 	      //locate the cell                                                                                                                  
-	      nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+	      nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
 	      
 	      if ((CenterNode=startNode->block->GetCenterNode(nd))!=NULL) {
 		//read the data                                                                                                                  
@@ -309,10 +309,10 @@ void Comet::CometData::PrintCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *nod
   if (FirstCallFlag==true) {
     checksum.clear();
 
-    node=PIC::Mesh::mesh.rootTree;
+    node=PIC::Mesh::mesh->rootTree;
     FirstCallFlag=false;
 
-    if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+    if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
     else pipe.openSend(0);
   }
 
@@ -339,7 +339,7 @@ void Comet::CometData::PrintCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *nod
     for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) PrintCheckSum(node->downNode[nDownNode]);
   }
 
-  if (node==PIC::Mesh::mesh.rootTree) {
+  if (node==PIC::Mesh::mesh->rootTree) {
     if (PIC::ThisThread==0) pipe.closeRecvAll();
     else pipe.closeSend();
 

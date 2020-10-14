@@ -101,9 +101,9 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
     
-    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 
-    if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) continue; 
+    if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) continue; 
     if (startNode->block->GetLocalTimeStep(spec)/LocalTimeStep<rnd()) continue;
 
     //generate the particle velocity
@@ -221,8 +221,8 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 
     InjectParticles-=ParticleWeight;
 
-    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-    if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) continue;
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+    if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) continue;
 
     //generate the particle velocity
 //    PIC::Distribution::InjectMaxwellianDistribution(v,vbulk,Temp,ExternalNormal,NA);

@@ -111,8 +111,8 @@ namespace Titan {
       x_LOCAL_SO_OBJECT[2]=xform[2][0]*x_LOCAL_IAU_OBJECT[0]+xform[2][1]*x_LOCAL_IAU_OBJECT[1]+xform[2][2]*x_LOCAL_IAU_OBJECT[2];
       
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
       
       const double SourceTemperature = 161.0, NumericalTemperature = 161.0*5.0;
       double speed=0.0, ParticleWeightCorrection=0.0;
@@ -210,8 +210,8 @@ namespace Titan {
       
       
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
       
       //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
        
@@ -329,8 +329,8 @@ namespace Titan {
 		x_LOCAL_SO_OBJECT[2]=xform[2][0]*x_LOCAL_IAU_OBJECT[0]+xform[2][1]*x_LOCAL_IAU_OBJECT[1]+xform[2][2]*x_LOCAL_IAU_OBJECT[2];
 
 		//determine if the particle belongs to this processor
-		startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-		if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+		startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+		if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 		
 		//generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
 		
@@ -440,8 +440,8 @@ namespace Titan {
 
 
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
      //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
 //   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,ImpactVaporization_SourceTemeprature[spec],ExternalNormal,spec);

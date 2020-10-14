@@ -32,7 +32,7 @@ void OH::Sampling::DistributionFunctionSample::Init() {
   if (SamplingInitializedFlag==true) exit(__LINE__,__FILE__,"Error: DistributionFunctionSample is already initialized");
 
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_OFF_
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
   return;
 #endif
 
@@ -151,10 +151,10 @@ void OH::Sampling::DistributionFunctionSample::Init() {
   for (nProbe=0;nProbe<nSampleLocations;nProbe++) {
 //    for (idim=0;idim<DIM;idim++) SamplingLocations[nProbe][idim]=ProbeLocations[nProbe][idim];
 
-    SampleNodes[nProbe]=PIC::Mesh::mesh.findTreeNode(SamplingLocations[nProbe]);
+    SampleNodes[nProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[nProbe]);
     if (SampleNodes[nProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh.fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
+    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
     if (SampleLocalCellNumber[nProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 
@@ -200,10 +200,10 @@ void OH::Sampling::DistributionFunctionSample::SampleDistributionFunction() {
       PIC::ParticleBuffer::byte *ParticleData;
       int i,j,k, OriginID;
 
-      PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
+      PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
       ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-//      if (PIC::Mesh::mesh.fingCellIndex(SampleLocalCellNumber[nProbe],i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+//      if (PIC::Mesh::mesh->fingCellIndex(SampleLocalCellNumber[nProbe],i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 //      ptr=node->block->GetCenterNode(SampleLocalCellNumber[nProbe])->FirstCellParticle;
 
       // loop through all particles in the cell
@@ -261,7 +261,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
   double norm=0.0,dInterval=0.0;
   char str[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
 
   // loop over all  species
@@ -271,7 +271,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
       PIC::MolecularData::GetChemSymbol(ChemSymbol,spec);
       // loop over number of points (nSampledLocation) want distribution function at
       for (nProbe=0;nProbe<nSampleLocations;nProbe++) {
-	if (PIC::Mesh::mesh.ThisThread==0) {
+	if (PIC::Mesh::mesh->ThisThread==0) {
 	  sprintf(str,"%s/pic.%s.s=%i.VelocityDistributionFunction.nSamplePoint=%ld.out=%i.dat",PIC::OutputDataFileDirectory,ChemSymbol,spec,nProbe,DataOutputFileNumber);
 	  fout=fopen(str,"w");
 	  
@@ -297,7 +297,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
 	  fprintf(fout,",\"f(|V|) (Total Solution)\",\"f(V2) (Total Solution)\"\n");
 	
 	  //collect the sampled information from other processors
-	  for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++){
+	  for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++){
 	    for (int iSource=0;iSource<OH::Sampling::OriginLocation::nSampledOriginLocations+1;iSource++) {
 	      for (nVariable=0;nVariable<SampleDataLength;nVariable++) {
 		offset=GetSampleDataOffset(spec,iSource,nVariable);
@@ -381,7 +381,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
     }
   }
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -398,11 +398,11 @@ void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int Dat
 
   sprintf(printChar, "%s", printCharIN);
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
 
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     sprintf(str,"%s/pic.%s.out=%i.dat",PIC::OutputDataFileDirectory,
 	    this->fname,DataOutputFileNumber);
     fout=fopen(str,printChar);
@@ -417,7 +417,7 @@ void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int Dat
     fprintf(fout,"ZONE T=\"%s\" I=%i, J=%i, DATAPACKING=POINT\n",this->zoneName,this->N1-1,this->N2-1);
     
     //collect the sampled information from other processors
-    for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++)
+    for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++)
       for (int i1=0;i1<this->N1-1;i1++)      
 	for (int i2=0;i2<this->N2-1;i2++) 
 	  this->Buffer[i1][i2]+=pipe.recv<double>(thread);
@@ -457,7 +457,7 @@ void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int Dat
 
   }
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -479,7 +479,7 @@ void OH::Sampling::DistributionFunctionSample::Sample2dDistributionFunction() {
       PIC::ParticleBuffer::byte *ParticleData;
       int i,j,k, OriginID;
 
-      PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
+      PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
       ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
       // loop through all particles in the cell

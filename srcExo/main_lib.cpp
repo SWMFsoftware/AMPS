@@ -183,8 +183,8 @@ int Exoplanet::LossProcesses::ThermalParticleReleasingProcessor(double *xInit,do
 
 
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL;  
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-      if (startNode->Thread==PIC::Mesh::mesh.ThisThread) {
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+      if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
       
          //generate a particle ~ line#1724
          !!!PIC::ParticleBuffer::SetX(xFinal,(PIC::ParticleBuffer::byte*)tempParticleData); //particle buffer

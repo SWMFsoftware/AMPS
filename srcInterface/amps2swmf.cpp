@@ -71,9 +71,9 @@ extern "C" {
 
   //return the number of the AMPS' mesh rebalancing operations
   void amps_mesh_id_(int* id) {
-    //*id=PIC::Mesh::mesh.nParallelListRedistributions;
-    PIC::Mesh::mesh.SyncMeshID();
-    *id=PIC::Mesh::mesh.GetMeshID();
+    //*id=PIC::Mesh::mesh->nParallelListRedistributions;
+    PIC::Mesh::mesh->SyncMeshID();
+    *id=PIC::Mesh::mesh->GetMeshID();
     //*id=aa;
   }
 
@@ -352,7 +352,7 @@ extern "C" {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
 
-    node=PIC::Mesh::mesh.findTreeNode(x,node);
+    node=PIC::Mesh::mesh->findTreeNode(x,node);
     *thread=(node!=NULL) ? node->Thread : -1;
 #endif
 
@@ -361,7 +361,7 @@ extern "C" {
     double pic_D[3]; 
 
     PIC::CPLR::FLUID::FluidInterface.mhd_to_Pic_Vec(x, pic_D);
-    node=PIC::Mesh::mesh.findTreeNode(pic_D,node);
+    node=PIC::Mesh::mesh->findTreeNode(pic_D,node);
     *thread=(node!=NULL) ? node->Thread : -2;
 
     if (node){

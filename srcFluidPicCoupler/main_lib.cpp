@@ -139,7 +139,7 @@ void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
 
   if (FirstCellParticleTable==NULL) {
-    if (node->block) PIC::Mesh::mesh.DeallocateBlock(node);
+    if (node->block) PIC::Mesh::mesh->DeallocateBlock(node);
     return;
   }
 
@@ -153,7 +153,7 @@ void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     }
   }
   
-  PIC::Mesh::mesh.DeallocateBlock(node);
+  PIC::Mesh::mesh->DeallocateBlock(node);
 
 }
 
@@ -167,7 +167,7 @@ void init_from_restart(){
 
 void saveRestartData(FILE* fname){                                                                                    
   // Only the root processor can write.                                                                                 
-  if (PIC::Mesh::mesh.ThisThread==0) {                                                                                
+  if (PIC::Mesh::mesh->ThisThread==0) {                                                                                
     fwrite(&PIC::CPLR::FLUID::iCycle, sizeof(long int),1, fname);
     fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,sizeof(int),1,fname);
     fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset,sizeof(int),1,fname);
@@ -188,7 +188,7 @@ void deallocateBlocks(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock;
   std::vector<int> deallocatedBlockIndexArr; 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
@@ -219,9 +219,9 @@ void deallocateBlocks(){
   
   
   if (nDeallocatedBlocks!=0) {
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,deleteBlockParticle,false,NULL);
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,deleteBlockParticle,false,NULL);
   }else{
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
   }
 
   delete [] nodeTable;
@@ -236,7 +236,7 @@ void  dynamicAllocateBlocks(){
   //printf("dynamic allocate blocks called\n");
   deallocateBlocks();
 
-  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     if (node->IsUsedInCalculationFlag==true) continue;
     double xmiddle[3];
     //   bool isOutside=false;
@@ -269,11 +269,11 @@ void  dynamicAllocateBlocks(){
 
   //list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;
   if (nAllocatedBlocks!=0) {
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nAllocatedBlocks,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(nodeTable,nAllocatedBlocks,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
     delete [] nodeTable;
     nodeTable = NULL;
   }else{
-    PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(NULL,0,NULL,true,&PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList);
   }
  
 
@@ -286,10 +286,10 @@ void  dynamicAllocateBlocks(){
 
   if (nGlobalAllocatedBlocks!=0) { 
     //reset the parallel load measure such that the used-in-simulation nodes are uniformly distributed between all MPI processes
-    PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
+    PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
 
     //create the new domain decomposition
-    PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+    PIC::Mesh::mesh->CreateNewParallelDistributionLists();
     PIC::DomainBlockDecomposition::UpdateBlockTable();
   }
 
@@ -319,7 +319,7 @@ void initNewBlocks() {
     //       PIC::ThisThread, (*it)->Thread, (*it)->xmin[0],(*it)->xmin[1],(*it)->xmin[2],(*it)->block);
     
     int iBlock=-1;
-    //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
 
@@ -339,7 +339,7 @@ void initNewBlocks() {
             int ind[3]={i,j,k};
             double x[3];
 
-	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
 	    if (CornerNode!=NULL){
 
 	      for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+ind[idim]*dx[idim];
@@ -392,7 +392,7 @@ void initNewBlocks() {
   
   //PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
 
-  //if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+  //if (nMeshCounter!=PIC::Mesh::mesh->nMeshModificationCounter){
   if(PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.size()!=0){
     //printf("main_lib test1\n");
 
@@ -403,7 +403,7 @@ void initNewBlocks() {
     }
 
     PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
-    //nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+    //nMeshCounter=PIC::Mesh::mesh->nMeshModificationCounter;
   }
 
   PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList.clear();
@@ -878,12 +878,12 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
     int nxcg, nycg, nzcg, npcel, nRandom = 7;
     int index_G[3]; 
     //assuming it is uniform
-    nxcg=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/dx[0];
-    nycg=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/dx[1]; 
-    nzcg=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/dx[2];
+    nxcg=(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0])/dx[0];
+    nycg=(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1])/dx[1]; 
+    nzcg=(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2])/dx[2];
     
     
-    GetGlobalCellIndex(index_G , xCenter, dx, PIC::Mesh::mesh.xGlobalMin);
+    GetGlobalCellIndex(index_G , xCenter, dx, PIC::Mesh::mesh->xGlobalMin);
     npcel = cellParNumPerSp;
     rndNum.set_seed((iSp + 3) * nRandom * npcel *
                             (nxcg * nycg * nzcg * PIC::CPLR::FLUID::iCycle + 
@@ -1047,7 +1047,7 @@ long int setFixedParticle_BC(){
 
   char fullname[STRING_LENGTH];
   sprintf(fullname,"test_fixedbc_before_iter=%d.dat",cnt);
-  //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                          
+  //PIC::Mesh::mesh->outputMeshDataTECPLOT(fullname,0);                                                                          
   
   long nParticleDeleted=0, nParticleCreated=0;
     
@@ -1072,7 +1072,7 @@ long int setFixedParticle_BC(){
   for (int iFace=0;iFace<6;iFace++){
     
     int iBlk=-1;
-    //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       //for (int iBlk=0; iBlk<PIC::DomainBlockDecomposition::nLocalBlocks;iBlk++){
 
       //cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::DomainBlockDecomposition::BlockTable[iBlk];
@@ -1085,7 +1085,7 @@ long int setFixedParticle_BC(){
       iBlk++;
       //if (node->GetNeibFace(iFace,0,0)!=NULL) continue;
       //if (node->GetNeibFace(iFace,0,0)!=NULL && node->GetNeibFace(iFace,0,0)->Thread!=-1) continue;
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   nodeTemp = node->GetNeibFace(iFace,0,0,&PIC::Mesh::mesh);
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   nodeTemp = node->GetNeibFace(iFace,0,0,PIC::Mesh::mesh);
       if (nodeTemp!=NULL){
 	if (nodeTemp->IsUsedInCalculationFlag!=false) continue;
       }
@@ -1144,7 +1144,7 @@ long int setFixedParticle_BC(){
             }
  
             
-            //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+            //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh->xGlobalMin, PIC::Mesh::mesh->xGlobalMax, 0, 0)) continue;
             if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(x,dx,node)) continue;
             
             // printf("boundary cell x:%e,%e,%e, isBoundaryCell:%s\n",x[0],x[1],x[2], 
@@ -1171,7 +1171,7 @@ long int setFixedParticle_BC(){
   }
 
   sprintf(fullname,"test_fixedbc_after_iter=%d.dat",cnt);
-  //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                cnt++;         
+  //PIC::Mesh::mesh->outputMeshDataTECPLOT(fullname,0);                                                                cnt++;         
   if (PIC::ThisThread==0) printf("setfixed bc done\n");
 
   //fclose(fPartData);
@@ -1188,7 +1188,7 @@ void setFixedE_BC_half(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
@@ -1218,7 +1218,7 @@ void setFixedE_BC_half(){
           if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
 
-          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 
@@ -1247,7 +1247,7 @@ void setFixedE_BC_curr(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
  
@@ -1275,7 +1275,7 @@ void setFixedE_BC_curr(){
           if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
           
-          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
                 
@@ -1303,7 +1303,7 @@ void setFixedB_center_BC(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
   
@@ -1326,11 +1326,11 @@ void setFixedB_center_BC(){
             x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
           }
 
-          //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh.xGlobalMin, PIC::Mesh::mesh.xGlobalMax, 0, 0)) continue;
+          //if (!isBoundaryCell(x, dx, PIC::Mesh::mesh->xGlobalMin, PIC::Mesh::mesh->xGlobalMax, 0, 0)) continue;
           if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(x,dx,node)) continue;
 
 
-          PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+          PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
           if (CenterNode!=NULL){
             char *  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
                 
@@ -1366,7 +1366,7 @@ void setFixedB_corner_BC(){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iBlock=0;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {   
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {   
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
  
@@ -1392,7 +1392,7 @@ void setFixedB_corner_BC(){
           if (!PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(x,node)) continue;
 
 
-          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+          PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
           if (CornerNode!=NULL){
             char *  offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
                 
@@ -1427,7 +1427,7 @@ void CleanParticles(){
   
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
    
      long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
@@ -1480,7 +1480,7 @@ long int PrepopulateDomain() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -1653,7 +1653,7 @@ void SetIC() {
 
     int nCells[3] ={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
    
-    //for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    //for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
  
@@ -1665,7 +1665,7 @@ void SetIC() {
       if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
 	bool BoundaryBlock=false;
 	
-	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+	for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
 	    //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	    BoundaryBlock=true;
 	    break;
@@ -1684,7 +1684,7 @@ void SetIC() {
 	    
             int ind[3]={i,j,k};
             
-	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
 	    if (CornerNode!=NULL){
               
 	      offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
@@ -1741,7 +1741,7 @@ void SetIC() {
       /*
       for (k=-1;k<_BLOCK_CELLS_Z_+1;k++) for (j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (i=-1;i<_BLOCK_CELLS_X_+1;i++) {
             int ind[3]={i,j,k};
-	    PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+	    PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 	    if (CenterNode!=NULL){
 	      offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
@@ -1788,7 +1788,7 @@ long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
 
   int iBlock=0;
   
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
   
@@ -1797,7 +1797,7 @@ long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -1884,7 +1884,7 @@ void amps_init_mesh() {
 #endif
 
 
-  PIC::Mesh::mesh.PopulateOutsideDomainNodesFlag=true;
+  PIC::Mesh::mesh->PopulateOutsideDomainNodesFlag=true;
 
   //seed the random number generator
   rnd_seed(100);
@@ -1911,13 +1911,13 @@ void amps_init_mesh() {
     PIC::CPLR::FLUID::FluidInterface.getrPlanet();
   */
   
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
     PIC::BC::ExternalBoundary::Periodic::Init(xMin,xMax,BulletLocalResolution);
   }else{
-    PIC::Mesh::mesh.init(xMin,xMax,BulletLocalResolution);
+    PIC::Mesh::mesh->init(xMin,xMax,BulletLocalResolution);
   }
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   /*
   //generate mesh or read from file
@@ -1932,28 +1932,28 @@ void amps_init_mesh() {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-      PIC::Mesh::mesh.buildMesh();
-      PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      PIC::Mesh::mesh->buildMesh();
+      PIC::Mesh::mesh->saveMeshFile("mesh.msh");
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Mesh::mesh.readMeshFile("mesh.msh");
+      PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -1961,20 +1961,20 @@ void amps_init_mesh() {
     }
   }
   */
-  PIC::Mesh::mesh.buildMesh();
+  PIC::Mesh::mesh->buildMesh();
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   PIC::Mesh::initCellSamplingDataBuffer();
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  //PIC::Mesh::mesh.AllowBlockAllocation=true;
-  //PIC::Mesh::mesh.AllocateTreeBlocks();
-  //PIC::Mesh::mesh.InitCellMeasure();
+  //PIC::Mesh::mesh->AllowBlockAllocation=true;
+  //PIC::Mesh::mesh->AllocateTreeBlocks();
+  //PIC::Mesh::mesh->InitCellMeasure();
 
   //experiment of staircase blocks
   /*
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
     double xmiddle[3];
     //   bool isOutside=false;
     for (int idim=0;idim<3;idim++){
@@ -1983,7 +1983,7 @@ void amps_init_mesh() {
 
     if (IsOutside(xmiddle))  {
       //printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
-      PIC::Mesh::mesh.DeallocateBlock(node);
+      PIC::Mesh::mesh->DeallocateBlock(node);
       node->Thread = -1;
       node->block = NULL;
     }
@@ -1992,7 +1992,7 @@ void amps_init_mesh() {
   
   /*
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode)  {
     double xmiddle[3];
     //   bool isOutside=false;
     for (int idim=0;idim<3;idim++){
@@ -2001,7 +2001,7 @@ void amps_init_mesh() {
 
     if (IsOutside(xmiddle))  {
       //printf("deallocate block at xmiddle:%e,%e,%e\n",xmiddle[0],xmiddle[1],xmiddle[2]);
-      PIC::Mesh::mesh.DeallocateBlock(node);
+      PIC::Mesh::mesh->DeallocateBlock(node);
       node->IsUsedInCalculationFlag=false;
       node->block = NULL;
     }
@@ -2012,7 +2012,7 @@ void amps_init_mesh() {
   if (_PIC_DYNAMIC_ALLOCATING_BLOCKS_== _PIC_MODE_ON_){
    
     std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> deallocatedBlockArr; 
-    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
       
       double xmiddle[3];
       //   bool isOutside=false;
@@ -2039,23 +2039,23 @@ void amps_init_mesh() {
   
   
     if (nDeallocatedBlocks!=0) {
-      PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,NULL,false,NULL);
+      PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(nodeTable,nDeallocatedBlocks,NULL,false,NULL);
     }else{
-      PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
+      PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(NULL,0,NULL,false,NULL);
     }
   
     delete [] nodeTable;
   }
 
   //coupling send info from amps to fluid
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
   //blocks need to be allocated after the final domain decomposition map is created
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
+  PIC::Mesh::mesh->InitCellMeasure();
 
 
   PIC::CPLR::FLUID::SendCenterPointData.push_back(SendDataToFluid);
@@ -2082,7 +2082,7 @@ void amps_init(){
 
   //PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=PIC::CPLR::FLUID::dt;
   if (PIC::ThisThread==0) printf("test1\n");
-  //PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
+  //PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
   
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
     PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
@@ -2127,7 +2127,7 @@ void amps_init(){
   if (PIC::ThisThread==0) printf("test5\n");
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -2149,14 +2149,14 @@ void amps_init(){
      
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
     PIC::BC::ExternalBoundary::UpdateData();
     break;
   }
-  //PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
+  //PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
   
 
   int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
@@ -2181,7 +2181,7 @@ void amps_init(){
    
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -2207,7 +2207,7 @@ void amps_time_step(){
   char fullname[STRING_LENGTH];
   sprintf(fullname,"test_pic_coupler_data_iter=%d.dat",cnt);
   cnt++;
-  //PIC::Mesh::mesh.outputMeshDataTECPLOT(fullname,0);                                                                         
+  //PIC::Mesh::mesh->outputMeshDataTECPLOT(fullname,0);                                                                         
   // printf("done: output what read from GM\n");                               
   if (PIC::ThisThread==0) printf(" Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
          niter++,
@@ -2220,7 +2220,7 @@ void amps_time_step(){
  
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
     break;
 
   case _PIC_BC__PERIODIC_MODE_ON_:

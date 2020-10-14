@@ -309,55 +309,55 @@ int main(int argc,char **argv) {
 
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax, MOP::GetLocalMeshResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax, MOP::GetLocalMeshResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 
 
-  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
+  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
 
   //============================== DEBUG =========================
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
     while (node!=NULL) {
       if (node->Temp_ID==2478) {
         cout << __FILE__<< "@" << __LINE__ << endl;
 
-        PIC::Mesh::mesh.InitCellMeasure(node);
+        PIC::Mesh::mesh->InitCellMeasure(node);
       }
 
       node=node->nextNodeThisThread;
@@ -411,11 +411,11 @@ int main(int argc,char **argv) {
   }*/
 
 
-//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
-//  PIC::Mesh::mesh.outputMeshDataTECPLOT("mesh.data.dat",_DUST_SPEC_);
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",_DUST_SPEC_);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
 
   //init the background fileds
@@ -454,7 +454,7 @@ int main(int argc,char **argv) {
 
 
 //============================== DEBUG =========================
-  /* cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * */  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  /* cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * */  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
 /*  while (node!=NULL) {
     if (node->Temp_ID==2478) {
@@ -497,7 +497,7 @@ int main(int argc,char **argv) {
   }
 
 
-  PIC::Mesh::mesh.outputMeshDataTECPLOT("ices.data.dat",0);*/
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("ices.data.dat",0);*/
 /*-------------------------  END ICES --------------------------------*/
 
   //create the reference file with the extracted data
@@ -521,10 +521,10 @@ int main(int argc,char **argv) {
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
      }
 
-     if (PIC::Mesh::mesh.ThisThread==0) {
+     if (PIC::Mesh::mesh->ThisThread==0) {
        time_t TimeValue=time(NULL);
        tm *ct=localtime(&TimeValue);
 

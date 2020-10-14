@@ -52,7 +52,7 @@ int main(int argc,char **argv) {
   char fname[400];
   sprintf(fname,"%s/test_Mercury-ions_background.dat",PIC::OutputDataFileDirectory);
   PIC::CPLR::DATAFILE::SaveTestReferenceData(fname);
-  //PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.data.dat",0);
+  //PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.data.dat",0);
 
   //time step
   static int LastDataOutputFileNumber=0;
@@ -69,7 +69,7 @@ int main(int argc,char **argv) {
   for (long int niter=0;niter<nTotalIterations;niter++) {
     PIC::TimeStep();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
@@ -82,7 +82,7 @@ int main(int argc,char **argv) {
 
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
     }
 
   }
@@ -103,7 +103,7 @@ int main(int argc,char **argv) {
 
   runtime+=clock();
 
-  if(PIC::Mesh::mesh.ThisThread==0)
+  if(PIC::Mesh::mesh->ThisThread==0)
     cout << "Total AMPS runtime is "
 	 << (double)runtime / CLOCKS_PER_SEC << endl;
 

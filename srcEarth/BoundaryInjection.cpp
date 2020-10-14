@@ -19,7 +19,7 @@ bool Earth::BoundingBoxInjection::InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDa
  double ExternalNormal[3],ModelParticlesInjectionRate=0.0;
  int nface,spec;
 
- if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+ if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
    for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
      startNode->GetExternalNormal(ExternalNormal,nface);
 
@@ -47,7 +47,7 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
  double v[3];
  double ModelParticlesInjectionRate;
 
- if ((Earth::CutoffRigidity::DomainBoundaryParticleProperty::ApplyInjectionPhaseSpaceLimiting==true)&&(PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_)) {
+ if ((Earth::CutoffRigidity::DomainBoundaryParticleProperty::ApplyInjectionPhaseSpaceLimiting==true)&&(PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_)) {
    ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
    LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -77,7 +77,7 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
 
        if (ModelParticlesInjectionRate>0.0) {
          ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
-         PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+         PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
          //shift the initial value of the BlockSurfaceArea
          TimeCounter=rnd()*log(rnd())/ModelParticlesInjectionRate;
@@ -161,7 +161,7 @@ double Earth::BoundingBoxInjection::InjectionRate(int spec,cTreeNodeAMR<PIC::Mes
 
   double ModelParticlesInjectionRate=0.0;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -195,7 +195,7 @@ void Earth::BoundingBoxInjection::InitBoundingBoxInjectionTable(double** &Bounda
     for (nTotalBoundaryInjectionFaces=0,nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
       node=*nodeptr;
 
-      if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+      if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
        for (int nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
          nTotalBoundaryInjectionFaces++;
        }
@@ -237,10 +237,10 @@ void Earth::BoundingBoxInjection::InitBoundingBoxInjectionTable(double** &Bounda
    for (iBoundaryFace=0,nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
      node=*nodeptr;
 
-     if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+     if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
        for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
          for (spec=0;spec<PIC::nTotalSpecies;spec++) {
-           if (node->Thread==PIC::Mesh::mesh.ThisThread) {
+           if (node->Thread==PIC::Mesh::mesh->ThisThread) {
              node->GetExternalNormal(ExternalNormal,nface);
              FaceSurfaceArea=node->GetBlockFaceSurfaceArea(nface);
 

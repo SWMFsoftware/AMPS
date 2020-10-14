@@ -323,7 +323,7 @@ namespace Moon {
 
       exit(__LINE__,__FILE__,"check the numbers!");
 
-      if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
 

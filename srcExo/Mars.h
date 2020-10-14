@@ -358,7 +358,7 @@ static double v[3]={sqrt(vbulkspeed/3),sqrt(vbulkspeed/3),sqrt(vbulkspeed/3)};
          double ExternalNormal[3]={-sqrt(vbulkspeed/3)/vbulkspeed,-sqrt(vbulkspeed/3)/vbulkspeed,-sqrt(vbulkspeed/3)/vbulkspeed}; //-vbulk normalizaed by length of vbulk
 
 
- // if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+ // if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     //for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       //startNode->GetExternalNormal(ExternalNormal,nface);
       //BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);

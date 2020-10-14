@@ -176,7 +176,7 @@ Below is one example of applying the functions.
 
 void saveRestartData(FILE* fname){
 // Only the root processor can write.
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     fwrite(&iterNumber, sizeof(long int),1, fname);
     std::cout<<"save iter number="<<iterNumber<<std::endl;
   }

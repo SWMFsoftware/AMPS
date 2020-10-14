@@ -49,48 +49,48 @@ void amps_init() {
   }
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(XMin,XMax,localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(XMin,XMax,localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
   
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
   
   char filename[100];
   sprintf(filename,"%s%i%s","mesh.case=",iCase,".dat");
   
-  PIC::Mesh::mesh.outputMeshTECPLOT(filename);
+  PIC::Mesh::mesh->outputMeshTECPLOT(filename);
   
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
   
   #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
   #endif
   
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
   
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
   
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
   
   #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
   #endif
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 }
 //-----------------------------------------------------------------------------
 //if x is a ghost cell center, may need to fix its coordinates 

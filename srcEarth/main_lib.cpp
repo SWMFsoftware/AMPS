@@ -258,9 +258,9 @@ void amps_init_mesh() {
  
  
  //generate only the tree
- PIC::Mesh::mesh.AllowBlockAllocation=false;
- PIC::Mesh::mesh.init(xmin,xmax,localResolution);
- PIC::Mesh::mesh.memoryAllocationReport();
+ PIC::Mesh::mesh->AllowBlockAllocation=false;
+ PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+ PIC::Mesh::mesh->memoryAllocationReport();
  
  
  char mesh[200]="";
@@ -272,47 +272,47 @@ void amps_init_mesh() {
  
  if (fmesh!=NULL) {
    fclose(fmesh);
-   PIC::Mesh::mesh.readMeshFile(mesh);
+   PIC::Mesh::mesh->readMeshFile(mesh);
  }
  else {
    NewMeshGeneratedFlag=true;
    
-   if (PIC::Mesh::mesh.ThisThread==0) {
-     PIC::Mesh::mesh.buildMesh();
-     PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+   if (PIC::Mesh::mesh->ThisThread==0) {
+     PIC::Mesh::mesh->buildMesh();
+     PIC::Mesh::mesh->saveMeshFile("mesh.msh");
      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
    }
    else {
      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-     PIC::Mesh::mesh.readMeshFile("mesh.msh");
+     PIC::Mesh::mesh->readMeshFile("mesh.msh");
    }
  }
  
- if (NewMeshGeneratedFlag==true) PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+ if (NewMeshGeneratedFlag==true) PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
  
- PIC::Mesh::mesh.memoryAllocationReport();
- PIC::Mesh::mesh.GetMeshTreeStatistics();
+ PIC::Mesh::mesh->memoryAllocationReport();
+ PIC::Mesh::mesh->GetMeshTreeStatistics();
  
 #ifdef _CHECK_MESH_CONSISTENCY_
- PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+ PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
  
- PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
- PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+ PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+ PIC::Mesh::mesh->CreateNewParallelDistributionLists();
  
  //initialize the blocks
- PIC::Mesh::mesh.AllowBlockAllocation=true;
- PIC::Mesh::mesh.AllocateTreeBlocks();
+ PIC::Mesh::mesh->AllowBlockAllocation=true;
+ PIC::Mesh::mesh->AllocateTreeBlocks();
  
- PIC::Mesh::mesh.memoryAllocationReport();
- PIC::Mesh::mesh.GetMeshTreeStatistics();
+ PIC::Mesh::mesh->memoryAllocationReport();
+ PIC::Mesh::mesh->GetMeshTreeStatistics();
  
 #ifdef _CHECK_MESH_CONSISTENCY_
- PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+ PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
  
  //init the volume of the cells'
- PIC::Mesh::mesh.InitCellMeasure();
+ PIC::Mesh::mesh->InitCellMeasure();
 
  //init the cutoff rigidity data
  Earth::CutoffRigidity::Init_BeforeParser();
@@ -330,14 +330,14 @@ void amps_init_mesh() {
 
 /*
  //print out the mesh file
- PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+ PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 */
  
  //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
  if (NewMeshGeneratedFlag==true) {
-   unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+   unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
    
-   if (PIC::Mesh::mesh.ThisThread==0) {
+   if (PIC::Mesh::mesh->ThisThread==0) {
      char command[300];
      
      sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -399,7 +399,7 @@ void amps_init_mesh() {
    }
    
    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-   if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
    
    //output final data
    //create the list of mesh nodes where the injection boundary conditions are applied
@@ -452,12 +452,12 @@ void amps_init_mesh() {
            exit(__LINE__,__FILE__,"ERROR: magnetic field gradient can't be computed with 0th order interpolation method");
            #endif
 
-           for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+           for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
              PIC::CPLR::DATAFILE::GenerateMagneticFieldGradient(node);
            }
 
            //Exchange derived data betwenn the boundary nodes
-           PIC::Mesh::mesh.ParallelBlockDataExchange();
+           PIC::Mesh::mesh->ParallelBlockDataExchange();
          }
 
          PIC::CPLR::DATAFILE::SaveBinaryFile("EARTH-BATSRUS");
@@ -518,7 +518,7 @@ void amps_init_mesh() {
                  k=kMin+S1%(kMax-kMin+1);
 
                  //locate the cell
-                 nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+                 nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
                  if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
                  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
 
@@ -555,7 +555,7 @@ void amps_init_mesh() {
          }
        } SetBackgroundMagneticField;
 
-       SetBackgroundMagneticField.Set(PIC::Mesh::mesh.rootTree);
+       SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
        //PIC::CPLR::DATAFILE::SaveBinaryFile("EARTH-T96");
      }
 
@@ -573,7 +573,7 @@ void amps_init_mesh() {
 
 
 //  if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_) {
-//    PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
+//    PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
 //  }
 
 

@@ -88,7 +88,7 @@ double localParticleInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
   static double v[3]={2.0e3,000.0,000.0},n=5.0E6,temp=20.0;
 
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -111,7 +111,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
   static double vNA[3]={2.0e3,0.0,0.0},nNA=5.0E6,tempNA=20.0;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(nNA,tempNA,vNA,ExternalNormal,_H2O_SPEC_);
@@ -140,7 +140,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
 
   double ModelParticlesInjectionRate;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -155,7 +155,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
       if (ModelParticlesInjectionRate>0.0) {
         ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-        PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+        PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
         while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
           //generate the new particle position on the face
@@ -347,14 +347,14 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 		  CutCell::BoundaryTriangleFaces[nface].GetRandomPosition(x);
 
 	  	//place the point inside the domain
-		  for (int idim=0;idim<3;idim++) x[idim]+=0.001*PIC::Mesh::mesh.EPS*CutCell::BoundaryTriangleFaces[nface].ExternalNormal[idim];
+		  for (int idim=0;idim<3;idim++) x[idim]+=0.001*PIC::Mesh::mesh->EPS*CutCell::BoundaryTriangleFaces[nface].ExternalNormal[idim];
     }
     while (PositionGenerated==false);
 
 
     //determine if the particle belongs to this processor
-    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-    if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+    if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
     //get the velocity vector
 //    for (int idim=0;idim<3;idim++) v[idim]=500.0*CutCell::BoundaryTriangleFaces[nface].ExternalNormal[idim];
@@ -433,13 +433,13 @@ int main(int argc,char **argv) {
   for (int i=0;i<3;i++) xmin[i]*=2.0,xmax[i]*=2.0;
 
 
-  PIC::Mesh::mesh.CutCellSurfaceLocalResolution=SurfaceResolution;
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->CutCellSurfaceLocalResolution=SurfaceResolution;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
 
-  //PIC::Mesh::mesh.buildMesh();
+  //PIC::Mesh::mesh->buildMesh();
 
   //generate mesh or read from file
   char mesh[200]="amr.sig=0xd7058cc2a680a3a2.mesh.bin";
@@ -451,25 +451,25 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(mesh);
+    PIC::Mesh::mesh->readMeshFile(mesh);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 
 
@@ -477,11 +477,11 @@ int main(int argc,char **argv) {
 
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 
   //init the external normals of the cut faces
@@ -516,16 +516,16 @@ int main(int argc,char **argv) {
 
   //output the volume mesh
   sprintf(fname,"%s/VolumeMesh.dat",PIC::OutputDataFileDirectory);
-  PIC::Mesh::mesh.outputMeshTECPLOT(fname);
+  PIC::Mesh::mesh->outputMeshTECPLOT(fname);
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -581,7 +581,7 @@ int main(int argc,char **argv) {
 
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
     }
 
   }

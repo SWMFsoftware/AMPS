@@ -248,10 +248,10 @@ int main(int argc,char **argv) {
 
   for (int i=0;i<3;i++) xmin[i]=-0.5e5,xmax[i]=0.5e5;
 
-  PIC::Mesh::mesh.CutCellSurfaceLocalResolution=SurfaceResolution;
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->CutCellSurfaceLocalResolution=SurfaceResolution;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file                                                                                                                
   char mesh[_MAX_STRING_LENGTH_PIC_]="amr.sig=0x73712d6492b3417e.mesh.bin";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";                                                              
@@ -267,34 +267,34 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
-    if (PIC::Mesh::mesh.ThisThread==0) {
-      PIC::Mesh::mesh.buildMesh();    
-      PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      PIC::Mesh::mesh->buildMesh();    
+      PIC::Mesh::mesh->saveMeshFile("mesh.msh");
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Mesh::mesh.readMeshFile("mesh.msh");
+      PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 
 
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 
   //init the volume of the cells'
@@ -302,9 +302,9 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin                                                             
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -345,7 +345,7 @@ int main(int argc,char **argv) {
   sphericalHarmonic = new double [nDev];
 
   //Use illumination model
-  if (PIC::Mesh::mesh.ThisThread==0) printf("Initialize Arrays \n");
+  if (PIC::Mesh::mesh->ThisThread==0) printf("Initialize Arrays \n");
   static double **C;
 
   C = new double* [nPixelsX*nPixelsY];
@@ -417,7 +417,7 @@ int main(int argc,char **argv) {
     scDistance=sqrt(xObservation[0]*xObservation[0]+xObservation[1]*xObservation[1]+xObservation[2]*xObservation[2]);
     sunDistance=sqrt(xSun[0]*xSun[0]+xSun[1]*xSun[1]+xSun[2]*xSun[2]);
     rAU=sunDistance/_AU_;
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       printf("xSun[0]=%e xSun[1]=%e xSun[2]=%e rAU=%e scDistance=%e\n",xSun[0],xSun[1],xSun[2],rAU,scDistance);
       printf("xObservation[0]=%e xObservation[1]=%e xObservation[2]=%e\n",xObservation[0],xObservation[1],xObservation[2]);
     }

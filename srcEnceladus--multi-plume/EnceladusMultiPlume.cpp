@@ -265,16 +265,16 @@ bool EnceladusMultiPlume::GenerateInitialGrainParameters(double *x,double *v,dou
 
 
   //check if the particle position is outside of Enceladus
-  register double c=(_RADIUS_(_TARGET_)+PIC::Mesh::mesh.EPS)/sqrt(x_LOCAL[0]*x_LOCAL[0]+x_LOCAL[1]*x_LOCAL[1]+x_LOCAL[2]*x_LOCAL[2]);
+  register double c=(_RADIUS_(_TARGET_)+PIC::Mesh::mesh->EPS)/sqrt(x_LOCAL[0]*x_LOCAL[0]+x_LOCAL[1]*x_LOCAL[1]+x_LOCAL[2]*x_LOCAL[2]);
   for (idim=0;idim<3;idim++) x_LOCAL[idim]*=c;
 
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
   //copy the position and velocity vectors to the global variables
   memcpy(v,v_LOCAL,3*sizeof(double));
   memcpy(x,x_LOCAL,3*sizeof(double));
 
-  return (startNode->Thread==PIC::Mesh::mesh.ThisThread) ? true : false;*/
+  return (startNode->Thread==PIC::Mesh::mesh->ThisThread) ? true : false;*/
 }
 
 

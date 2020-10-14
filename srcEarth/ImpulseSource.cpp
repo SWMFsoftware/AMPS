@@ -55,8 +55,8 @@ long int Earth::ImpulseSource::InjectParticles() {
       ImpulseSourceData[iSource].ProcessedFlag=true;
 
       //inject energetic particles
-      startNode=PIC::Mesh::mesh.findTreeNode(ImpulseSourceData[iSource].x);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) continue;
+      startNode=PIC::Mesh::mesh->findTreeNode(ImpulseSourceData[iSource].x);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) continue;
 
       //determine the number of the injected particles
       spec=ImpulseSourceData[iSource].spec;

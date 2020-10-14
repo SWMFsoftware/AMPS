@@ -42,7 +42,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
   static double v[3]={-1000.0,000.0,000.0},n=5.0E6,temp=8.0E4;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(n,temp,v,ExternalNormal,0); //the check is performed for cpecies with the index '0' regardless of the species type
@@ -141,9 +141,9 @@ void amps_init_mesh() {
   }
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
   char mesh[200]="!!!!amr.sig=0xd7058cc2a680a3a2.mesh.bin";
@@ -155,59 +155,59 @@ void amps_init_mesh() {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(mesh);
+    PIC::Mesh::mesh->readMeshFile(mesh);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       std::cout << "The mesh file  does not exist. Generating the mesh...  "  << std::endl << std::flush;
     }
 
-    PIC::Mesh::mesh.buildMesh();
+    PIC::Mesh::mesh->buildMesh();
 
-    if (PIC::Mesh::mesh.ThisThread==0)  {
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0)  {
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      // PIC::Mesh::mesh.readMeshFile("mesh.msh");
+      // PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
 
 
   }
 
   //allocate the mesh data buffers
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -221,7 +221,7 @@ void amps_init_mesh() {
   PIC::BC::BlockInjectionBCindicatior=BoundingBoxParticleInjectionIndicator;
   PIC::BC::InitBoundingBoxInjectionBlockList();
 
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
   if (PIC::ThisThread==0) cout << "AMPS' Initialization is complete" << endl;
 
 }
@@ -351,7 +351,7 @@ void amps_init() {
 
 //    if (_H_PLUS_SPEC_!=-1) PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_PLUS_SPEC_]*=10;
 
-//  PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
+//  PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
 }
 
 

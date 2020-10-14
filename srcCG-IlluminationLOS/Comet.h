@@ -76,7 +76,7 @@ namespace Comet {
       memcpy(x_LOCAL,x,3*sizeof(double));
       memcpy(v_LOCAL,v,3*sizeof(double));
    
-      nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode);
+      nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode);
       
       //the gravity force
 #if _PIC_MODEL__3DGRAVITY__MODE_ == _PIC_MODEL__3DGRAVITY__MODE__ON_

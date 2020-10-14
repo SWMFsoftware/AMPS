@@ -57,8 +57,8 @@ long int MOP::SaturninanSystem::Enceladus::InjectParticles() {
 
   //etermine the current location of the source
   //inject energetic particles
-  startNode=PIC::Mesh::mesh.findTreeNode(xEnceladus);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return nTotalInjectedParticles;
+  startNode=PIC::Mesh::mesh->findTreeNode(xEnceladus);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return nTotalInjectedParticles;
 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_

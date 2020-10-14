@@ -207,12 +207,12 @@ void countNumbers(){
   for (int iPoint=0;iPoint<dataPoints;iPoint++){
     printf("x:%f,%f,%f\n",x[0],x[1],x[2]);
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-    newNode=PIC::Mesh::mesh.findTreeNode(x);
+    newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
     printf("i,j,k:%d,%d,%d\n",i,j,k);
-    int nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+    int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");
 
     offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -230,12 +230,12 @@ void countNumbers(){
   for (int iPoint=0;iPoint<dataPoints;iPoint++){
     printf("x:%f,%f,%f\n",x[0],x[1],x[2]);
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-    newNode=PIC::Mesh::mesh.findTreeNode(x);
+    newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
 
-    int nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+    int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");
 
     offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -281,7 +281,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
     double waveWidth=2.0;
     */
     bool externalBlockFlag=false;
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) {
       externalBlockFlag=true; 
       nExternalBlock++;
     }
@@ -294,7 +294,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k);
 	    
         //locate the cell
-        nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
         offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -314,7 +314,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*k;
 
         //locate the cell
-        nd=PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k);
         if ((CornerNode=startNode->block->GetCornerNode(nd))==NULL) continue;
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
         offset=CornerNode->GetAssociatedDataBufferPointer();
@@ -356,7 +356,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
   
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     // only propagate waves in the user defined region
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) return;
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) return;
     
     double *xNodeMin=startNode->xmin;
     double *xNodeMax=startNode->xmax;
@@ -372,7 +372,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k);
 	    
         //locate the cell
-        nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
 
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
@@ -380,7 +380,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         //find the location of the corresponding point at previous time step
         for (int iDim=0; iDim<3; iDim++) xInterpolate[iDim]=xLOCAL[iDim]-v[iDim]*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 	
-	      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *tempNode=PIC::Mesh::mesh.findTreeNode(xInterpolate,startNode);
+	      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *tempNode=PIC::Mesh::mesh->findTreeNode(xInterpolate,startNode);
 
 	   
         //PIC::CPLR::InitInterpolationStencil(xInterpolate,startNode);
@@ -414,7 +414,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*k;
 
         //locate the cell
-        nd=PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k);
         if ((CornerNode=startNode->block->GetCornerNode(nd))==NULL) continue;
 
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
@@ -458,26 +458,26 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
 
 void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, double waveWidth, double *vProp){
     //init center wave data
-  InitCenterData(0,nVars,PIC::Mesh::mesh.rootTree, waveCenter, waveNumber, waveWidth);
-  InitCenterData(1,nVars,PIC::Mesh::mesh.rootTree, waveCenter, waveNumber, waveWidth);
+  InitCenterData(0,nVars,PIC::Mesh::mesh->rootTree, waveCenter, waveNumber, waveWidth);
+  InitCenterData(1,nVars,PIC::Mesh::mesh->rootTree, waveCenter, waveNumber, waveWidth);
  
   
 
-  PIC::Mesh::mesh.ParallelBlockDataExchange();
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
    
   char wave_init_fname[STRING_LENGTH];
   sprintf(wave_init_fname,"test%d-wave-init.dat",iTest);   
 
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_init_fname,0);
 
   PIC::BC::ExternalBoundary::UpdateData();
  
   sprintf(wave_init_fname,"test%d-wave-init-updated.dat",iTest);
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_init_fname,0);
   
   
   for (int iter=0; iter<1; iter++) {
-    PropagateCenterData(vProp,nVars,PIC::Mesh::mesh.rootTree);
+    PropagateCenterData(vProp,nVars,PIC::Mesh::mesh->rootTree);
 
     int temp=CurrentCenterNodeOffset;
     CurrentCenterNodeOffset=NextCenterNodeOffset;
@@ -492,7 +492,7 @@ void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, d
     if (iter%5==0){
       char wave_fname[STRING_LENGTH];
       sprintf(wave_fname,"test%d-wave%d.dat",iTest,iter);
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_fname,0);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_fname,0);
     }
     
     PIC::TimeStep();
@@ -524,7 +524,7 @@ return;
 
   // set  bc for the lower boundary
   /*
-  for (int iDim=0;iDim<3;iDim++) if ((node->GetNeibFace(iDim*2,0,0,&PIC::Mesh::mesh)==NULL) && index[iDim]==0 ) {
+  for (int iDim=0;iDim<3;iDim++) if ((node->GetNeibFace(iDim*2,0,0,PIC::Mesh::mesh)==NULL) && index[iDim]==0 ) {
     //the point is located at the boundary of the domain
     MatrixRowNonZeroElementTable[0].i=i,MatrixRowNonZeroElementTable[0].j=j,MatrixRowNonZeroElementTable[0].k=k,MatrixRowNonZeroElementTable[0].MatrixElementValue=1.0;
     MatrixRowNonZeroElementTable[0].iVar=0;
@@ -544,14 +544,14 @@ return;
     int jMax =2;
     int sign=1;
     // set bc for the neihbor cell of higher boundary
-    if (index[ii]== nCell[ii]-1 && node->GetNeibFace(2*ii+1,0,0,&PIC::Mesh::mesh)==NULL) {
+    if (index[ii]== nCell[ii]-1 && node->GetNeibFace(2*ii+1,0,0,PIC::Mesh::mesh)==NULL) {
       jMax = 1;
       sign = 1; 
       nDirBoundary++;
       rhs -= 100; //boundary condition
     }
 
-    if (index[ii]== 0 && node->GetNeibFace(2*ii,0,0,&PIC::Mesh::mesh)==NULL) {
+    if (index[ii]== 0 && node->GetNeibFace(2*ii,0,0,PIC::Mesh::mesh)==NULL) {
       jMax = 1;
       sign = -1; 
       nDirBoundary++;
@@ -606,7 +606,7 @@ return;
   }
 
   //populate the spencil
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the left boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -618,7 +618,7 @@ return;
     NonZeroElementsFound=1;
     RhsSupportLength=0;
   }
-  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
+  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the right boundary
     //x-direction
 
@@ -634,7 +634,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[0].Coefficient=-c;
-      RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[0].Coefficient=-c;
@@ -650,7 +650,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[1].Coefficient=-c;
-    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     //y-direction
     if (j+1<_BLOCK_CELLS_Y_) {
@@ -663,7 +663,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[2].Coefficient=-c;
-      RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[2].Coefficient=-c;
@@ -679,7 +679,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[3].Coefficient=-c;
-    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
     //z-direction
     if (k+1<_BLOCK_CELLS_Z_) {
@@ -692,7 +692,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[4].Coefficient=-c;
-      RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[4].Coefficient=-c;
@@ -708,7 +708,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[5].Coefficient=-c;
-    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
     //self
     MatrixRowNonZeroElementTable[ElementCounter].i=i;
@@ -720,7 +720,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[6].Coefficient=6.0*c;
-    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=7;
     NonZeroElementsFound=ElementCounter;
@@ -735,7 +735,7 @@ return;
     MatrixRowNonZeroElementTable[0].iVar=0;
 
     RhsSupportTable[0].Coefficient=-c;
-    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[1].i=i-1;
     MatrixRowNonZeroElementTable[1].j=j;
@@ -744,7 +744,7 @@ return;
     MatrixRowNonZeroElementTable[1].iVar=0;
 
     RhsSupportTable[1].Coefficient=-c;
-    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     //y-direction
     MatrixRowNonZeroElementTable[2].i=i;
@@ -754,7 +754,7 @@ return;
     MatrixRowNonZeroElementTable[2].iVar=0;
 
     RhsSupportTable[2].Coefficient=-c;
-    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[3].i=i;
     MatrixRowNonZeroElementTable[3].j=j-1;
@@ -763,7 +763,7 @@ return;
     MatrixRowNonZeroElementTable[3].iVar=0;
 
     RhsSupportTable[3].Coefficient=-c;
-    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
     //z-direction
     MatrixRowNonZeroElementTable[4].i=i;
@@ -773,7 +773,7 @@ return;
     MatrixRowNonZeroElementTable[4].iVar=0;
 
     RhsSupportTable[4].Coefficient=-c;
-    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[5].i=i;
     MatrixRowNonZeroElementTable[5].j=j;
@@ -782,7 +782,7 @@ return;
     MatrixRowNonZeroElementTable[5].iVar=0;
 
     RhsSupportTable[5].Coefficient=-c;
-    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
     //self
     MatrixRowNonZeroElementTable[6].i=i;
@@ -792,7 +792,7 @@ return;
     MatrixRowNonZeroElementTable[6].iVar=0;
 
     RhsSupportTable[6].Coefficient=6.0*c;
-    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=7;
     NonZeroElementsFound=7;
@@ -866,12 +866,12 @@ return;
 
 
   //boundary
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) ||
-      ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) ||
-      ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ||
-      ((i==_BLOCK_CELLS_X_)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) ||
-      ((j==_BLOCK_CELLS_Y_)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) ||
-      ((k==_BLOCK_CELLS_Z_)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,PIC::Mesh::mesh)==NULL)) ||
+      ((j==0)&&(node->GetNeibFace(2,0,0,PIC::Mesh::mesh)==NULL)) ||
+      ((k==0)&&(node->GetNeibFace(4,0,0,PIC::Mesh::mesh)==NULL)) ||
+      ((i==_BLOCK_CELLS_X_)&&(node->GetNeibFace(1,0,0,PIC::Mesh::mesh)==NULL)) ||
+      ((j==_BLOCK_CELLS_Y_)&&(node->GetNeibFace(3,0,0,PIC::Mesh::mesh)==NULL)) ||
+      ((k==_BLOCK_CELLS_Z_)&&(node->GetNeibFace(5,0,0,PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -893,7 +893,7 @@ return;
     }
 
     RhsSupportTable[0].Coefficient=1.0;
-    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=1;
     NonZeroElementsFound=StencilTableLength;
@@ -908,7 +908,7 @@ return;
     MatrixRowNonZeroElementTable[0].iVar=0;
 
     RhsSupportTable[0].Coefficient=0.0;
-    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[1].i=i-1;
     MatrixRowNonZeroElementTable[1].j=j;
@@ -917,7 +917,7 @@ return;
     MatrixRowNonZeroElementTable[1].iVar=0;
 
     RhsSupportTable[1].Coefficient=0.0;
-    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     //y-direction
     MatrixRowNonZeroElementTable[2].i=i;
@@ -927,7 +927,7 @@ return;
     MatrixRowNonZeroElementTable[2].iVar=0;
 
     RhsSupportTable[2].Coefficient=0.0;
-    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[3].i=i;
     MatrixRowNonZeroElementTable[3].j=j-1;
@@ -936,7 +936,7 @@ return;
     MatrixRowNonZeroElementTable[3].iVar=0;
 
     RhsSupportTable[3].Coefficient=0.0;
-    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
     //z-direction
     MatrixRowNonZeroElementTable[4].i=i;
@@ -946,7 +946,7 @@ return;
     MatrixRowNonZeroElementTable[4].iVar=0;
 
     RhsSupportTable[4].Coefficient=0.0;
-    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[5].i=i;
     MatrixRowNonZeroElementTable[5].j=j;
@@ -955,7 +955,7 @@ return;
     MatrixRowNonZeroElementTable[5].iVar=0;
 
     RhsSupportTable[5].Coefficient=0.0;
-    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
     //self
     MatrixRowNonZeroElementTable[6].i=i;
@@ -965,7 +965,7 @@ return;
     MatrixRowNonZeroElementTable[6].iVar=0;
 
     RhsSupportTable[6].Coefficient=1.0;
-    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=7;
     NonZeroElementsFound=7;*/
@@ -979,7 +979,7 @@ return;
 
   /*
   //populate the spencil
-  if ( ((i==0)&&(node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)==NULL)) ) {
+  if ( ((i==0)&&(node->GetNeibFace(0,0,0,PIC::Mesh::mesh)==NULL)) || ((j==0)&&(node->GetNeibFace(2,0,0,PIC::Mesh::mesh)==NULL)) || ((k==0)&&(node->GetNeibFace(4,0,0,PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the left boundary
     MatrixRowNonZeroElementTable[0].i=i;
     MatrixRowNonZeroElementTable[0].j=j;
@@ -991,7 +991,7 @@ return;
     NonZeroElementsFound=1;
     RhsSupportLength=0;
   }
-  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)==NULL)) ) {
+  else if ( ((i==_BLOCK_CELLS_X_-1)&&(node->GetNeibFace(1,0,0,PIC::Mesh::mesh)==NULL)) || ((j==_BLOCK_CELLS_Y_-1)&&(node->GetNeibFace(3,0,0,PIC::Mesh::mesh)==NULL)) || ((k==_BLOCK_CELLS_Z_-1)&&(node->GetNeibFace(5,0,0,PIC::Mesh::mesh)==NULL)) ) {
     //the point is at the right boundary
     //x-direction
 
@@ -1007,7 +1007,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[0].Coefficient=0.0;
-      RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[0].Coefficient=c;
@@ -1023,7 +1023,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[1].Coefficient=0;
-    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     //y-direction
     if (j+1<_BLOCK_CELLS_Y_) {
@@ -1036,7 +1036,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[2].Coefficient=0.0;
-      RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[2].Coefficient=c;
@@ -1052,7 +1052,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[3].Coefficient=0.0;
-    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
     //z-direction
     if (k+1<_BLOCK_CELLS_Z_) {
@@ -1065,7 +1065,7 @@ return;
       ElementCounter++;
 
       RhsSupportTable[4].Coefficient=0.0;
-      RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+      RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
     }
     else {
       RhsSupportTable[4].Coefficient=c;
@@ -1081,7 +1081,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[5].Coefficient=0.0;
-    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
     //self
     MatrixRowNonZeroElementTable[ElementCounter].i=i;
@@ -1093,7 +1093,7 @@ return;
     ElementCounter++;
 
     RhsSupportTable[6].Coefficient=1.0;
-    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=7;
     NonZeroElementsFound=ElementCounter;
@@ -1108,7 +1108,7 @@ return;
     MatrixRowNonZeroElementTable[0].iVar=0;
 
     RhsSupportTable[0].Coefficient=0.0;
-    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[0].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i+1,j,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[1].i=i-1;
     MatrixRowNonZeroElementTable[1].j=j;
@@ -1117,7 +1117,7 @@ return;
     MatrixRowNonZeroElementTable[1].iVar=0;
 
     RhsSupportTable[1].Coefficient=0.0;
-    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[1].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i-1,j,k))->GetAssociatedDataBufferPointer();
 
     //y-direction
     MatrixRowNonZeroElementTable[2].i=i;
@@ -1127,7 +1127,7 @@ return;
     MatrixRowNonZeroElementTable[2].iVar=0;
 
     RhsSupportTable[2].Coefficient=0.0;
-    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[2].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j+1,k))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[3].i=i;
     MatrixRowNonZeroElementTable[3].j=j-1;
@@ -1136,7 +1136,7 @@ return;
     MatrixRowNonZeroElementTable[3].iVar=0;
 
     RhsSupportTable[3].Coefficient=0.0;
-    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[3].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j-1,k))->GetAssociatedDataBufferPointer();
 
     //z-direction
     MatrixRowNonZeroElementTable[4].i=i;
@@ -1146,7 +1146,7 @@ return;
     MatrixRowNonZeroElementTable[4].iVar=0;
 
     RhsSupportTable[4].Coefficient=0.0;
-    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[4].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k+1))->GetAssociatedDataBufferPointer();
 
     MatrixRowNonZeroElementTable[5].i=i;
     MatrixRowNonZeroElementTable[5].j=j;
@@ -1155,7 +1155,7 @@ return;
     MatrixRowNonZeroElementTable[5].iVar=0;
 
     RhsSupportTable[5].Coefficient=0.0;
-    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[5].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k-1))->GetAssociatedDataBufferPointer();
 
     //self
     MatrixRowNonZeroElementTable[6].i=i;
@@ -1165,7 +1165,7 @@ return;
     MatrixRowNonZeroElementTable[6].iVar=0;
 
     RhsSupportTable[6].Coefficient=1.0;
-    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+    RhsSupportTable[6].AssociatedDataPointer=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
     RhsSupportLength=7;
     NonZeroElementsFound=7;
@@ -1221,7 +1221,7 @@ void SetIC(int nVars) {
       for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) {
         node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
-        offset=node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+        offset=node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
 
         x[0]=node->xmin[0]+(i*(node->xmax[0]-node->xmin[0]))/_BLOCK_CELLS_X_;
         x[1]=node->xmin[1]+(j*(node->xmax[1]-node->xmin[1]))/_BLOCK_CELLS_Y_;
@@ -1239,7 +1239,7 @@ void SetIC(int nVars) {
   }
 
   //exchange data in the 'ghost' blocks
-  PIC::Mesh::mesh.ParallelBlockDataExchange();
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
 }
 
 int main(int argc,char **argv) {
@@ -1267,7 +1267,7 @@ int main(int argc,char **argv) {
   NextCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
   PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
   
-  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+  PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
   //seed the random number generator
   rnd_seed(100);
 
@@ -1283,10 +1283,10 @@ int main(int argc,char **argv) {
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
   sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
 
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
   //PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
@@ -1300,28 +1300,28 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -1334,11 +1334,11 @@ int main(int argc,char **argv) {
 
   //PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
+  PIC::Mesh::mesh->InitCellMeasure();
 
  
 //  cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode> Solver2(2,CurrentCornerNodeOffset+sizeof(double));
@@ -1361,7 +1361,7 @@ int main(int argc,char **argv) {
 
   linear_solver_matvec_c = SolverTimeDependent_matvec;
 
-  PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
 
   for (int niter=0;niter<200;niter++) {
 //    SolverTimeDependent.Solve(SetInitialGuess,ProcessFinalSolutionTimeDependent);
@@ -1372,12 +1372,12 @@ int main(int argc,char **argv) {
     CurrentCornerNodeOffset=NextCornerNodeOffset;
     NextCornerNodeOffset=t;
 
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
     SolverTimeDependent.UpdateRhs(UpdateRhs);
 
     char fname[100];
     sprintf(fname,"%s/Diffusion.out=%i.dat",PIC::OutputDataFileDirectory,niter);
-    if (niter%10==0) PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,0);
+    if (niter%10==0) PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
   }
 
 
@@ -1395,7 +1395,7 @@ int main(int argc,char **argv) {
 
 
   if (PIC::ThisThread==0) printf("test1\n");
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
 
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
 
@@ -1425,12 +1425,12 @@ int main(int argc,char **argv) {
  
 
   // countNumbers();
-  PIC::Mesh::mesh.ParallelBlockDataExchange();
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
   
   char wave_init_fname[STRING_LENGTH];
   sprintf(wave_init_fname,"test-solver-init.dat");   
 
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_init_fname,0);
 
  
   MPI_Finalize();

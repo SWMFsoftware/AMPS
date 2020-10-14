@@ -19,7 +19,7 @@ bool SEP::ParticleSource::OuterBoundary::BoundingBoxParticleInjectionIndicator(c
   return false;
 
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(nNA,tempNA,vNA,ExternalNormal,_O_SPEC_);
@@ -48,7 +48,7 @@ long int SEP::ParticleSource::OuterBoundary::BoundingBoxInjection(int spec,cTree
 
   double ModelParticlesInjectionRate;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -63,7 +63,7 @@ long int SEP::ParticleSource::OuterBoundary::BoundingBoxInjection(int spec,cTree
       if (ModelParticlesInjectionRate>0.0) {
         ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-        PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+        PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
         while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
           //generate the new particle position on the face
@@ -119,7 +119,7 @@ double SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate(int spec,cTr
   double ModelParticlesInjectionRate=0.0;
   static double vNA[3]={0.0,0.0,0.0},nNA=5.0E6,tempNA=1.0E5;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
   startNode->GetExternalNormal(ExternalNormal,nface);
   BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);

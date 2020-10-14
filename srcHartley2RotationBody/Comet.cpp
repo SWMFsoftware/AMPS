@@ -267,7 +267,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   /*  int i,j,k,nd,cnt=0,spec;
   double NumberDensity;
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {
@@ -402,8 +402,8 @@ bool Comet::GenerateParticlePropertiesBjorn(int spec,PIC::ParticleBuffer::byte* 
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -585,8 +585,8 @@ bool Comet::GenerateParticlePropertiesHartley2(int spec, double *x_SO_OBJECT,dou
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -732,8 +732,8 @@ bool Comet::GenerateParticlePropertiesJet(int spec, double *x_SO_OBJECT,double *
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -875,8 +875,8 @@ bool Comet::GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -1037,8 +1037,8 @@ bool Comet::GenerateParticlePropertiesJet(int spec, double *x_SO_OBJECT,double *
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -1187,8 +1187,8 @@ bool Comet::GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double
   
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -1438,7 +1438,7 @@ double Comet::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,b
   }
 
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
 //  PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity,x,nd,node);
 //  BackgroundPlasmaNumberDensity=PIC::CPLR::GetBackgroundPlasmaNumberDensity(x,nd,node);
 

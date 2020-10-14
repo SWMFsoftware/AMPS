@@ -65,10 +65,10 @@ void SampleSurfaceElement(double *x,double *sample) {
   int i,j,k;
   long int LocalCellNumber,nface;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL;  
-  startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
-  if (startNode->Thread==PIC::Mesh::mesh.ThisThread) {
+  startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+  if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
-    LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false);
+    LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
     long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;
@@ -99,11 +99,11 @@ void PrintSampledSurfaceElementSurfaceTriangulationMesh(const char *fname,double
   int i,j,k;
   long int LocalCellNumber;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL;  
-  startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 
-  if (startNode->Thread==PIC::Mesh::mesh.ThisThread) {
+  if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
-    LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false);
+    LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
     long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;
@@ -292,7 +292,7 @@ int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::c
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
     double x[3];
     TriangleCutFace->GetCenterPosition(x);
-    node=PIC::Mesh::mesh.findTreeNode(x,node);
+    node=PIC::Mesh::mesh->findTreeNode(x,node);
     LocalTimeStep=node->block->GetLocalTimeStep(spec);
  //    LocalTimeStep=Comet::CG->maxIntersectedNodeTimeStep[spec];
 #else
@@ -366,7 +366,7 @@ double localParticleInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
   static double v[3]={000.0,2.0e3,000.0},n=5.0E6,temp=20.0;
 
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -389,7 +389,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
   static double vNA[3]={000.0,2.0e3,0.0},nNA=5.0E6,tempNA=20.0;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(nNA,tempNA,vNA,ExternalNormal,_O2_SPEC_);
@@ -418,7 +418,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
 
   double ModelParticlesInjectionRate;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -433,7 +433,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
       if (ModelParticlesInjectionRate>0.0) {
         ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-        PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+        PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
         while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
           //generate the new particle position on the face
@@ -643,10 +643,10 @@ int main(int argc,char **argv) {
     }
   }
 
-  PIC::Mesh::mesh.CutCellSurfaceLocalResolution=SurfaceResolution;
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->CutCellSurfaceLocalResolution=SurfaceResolution;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
 
   //generate mesh or read from file
@@ -661,27 +661,27 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
   if (_COMET_SAMPLE_ROSINA_DATA_ != _PIC_MODE_ON_)  {
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
 
 #if _READ_NEUTRALS_FROM_BINARY_MODE_ == _READ_NEUTRALS_FROM_BINARY_MODE_ON_
@@ -692,24 +692,24 @@ int main(int argc,char **argv) {
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 
   //init the volume of the cells'
   PIC::Mesh::IrregularSurface::CheckPointInsideDomain=PIC::Mesh::IrregularSurface::CheckPointInsideDomain_default;
-  PIC::Mesh::mesh.InitCellMeasure(PIC::UserModelInputDataPath);
+  PIC::Mesh::mesh->InitCellMeasure(PIC::UserModelInputDataPath);
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -1044,7 +1044,7 @@ int main(int argc,char **argv) {
   //output the volume mesh
   char fname[_MAX_STRING_LENGTH_PIC_];
   sprintf(fname,"%s/VolumeMesh.dat",PIC::OutputDataFileDirectory);
-//  PIC::Mesh::mesh.outputMeshTECPLOT(fname);
+//  PIC::Mesh::mesh->outputMeshTECPLOT(fname);
 
 #if  _TRACKING_SURFACE_ELEMENT_MODE_ == _TRACKING_SURFACE_ELEMENT_MODE_ON_
   const int nLocations=2;
@@ -1054,13 +1054,13 @@ int main(int argc,char **argv) {
     {0.0,0.0,10.0e3},
     {10.0e3,10.0e3,10.0e3}};
 
-  //  if (PIC::Mesh::mesh.ThisThread==0) {
+  //  if (PIC::Mesh::mesh->ThisThread==0) {
     for (int i=0;i<nLocations;i++) FlushElementSampling(SampleElement[i]);
     //}
 #endif
   
 
-    PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.data.dat",0);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.data.dat",0);
 
 
   int LastDataOutputFileNumber=-1;
@@ -1219,7 +1219,7 @@ int main(int argc,char **argv) {
 
 
 #if  _TRACKING_SURFACE_ELEMENT_MODE_ == _TRACKING_SURFACE_ELEMENT_MODE_ON_
-    //    if (PIC::Mesh::mesh.ThisThread==0) {
+    //    if (PIC::Mesh::mesh->ThisThread==0) {
       for (int i=0;i<nLocations;i++) SampleSurfaceElement(SampleLocations[i],SampleElement[i]);
       // }
 #endif
@@ -1235,12 +1235,12 @@ int main(int argc,char **argv) {
 
       static FILE *fbin;
       char fnamebin[400];
-      sprintf(fnamebin,"%s/amr.sig=0x%lx.f=%s.CenterNodeOutputData.bin",PIC::CPLR::DATAFILE::path,PIC::Mesh::mesh.getMeshSignature(),"CG-Binary-Output");
+      sprintf(fnamebin,"%s/amr.sig=0x%lx.f=%s.CenterNodeOutputData.bin",PIC::CPLR::DATAFILE::path,PIC::Mesh::mesh->getMeshSignature(),"CG-Binary-Output");
       fbin=fopen(fnamebin,"w");
 
       if (PIC::ThisThread==0) fwrite(&PIC::nTotalSpecies,sizeof(int),1,fbin); //save number of species from file
 
-      for (int s=0;s<1;s++) Comet::CometData::WriteBinaryOutput("CG-Binary-Output",s,startNode=PIC::Mesh::mesh.rootTree,fbin);
+      for (int s=0;s<1;s++) Comet::CometData::WriteBinaryOutput("CG-Binary-Output",s,startNode=PIC::Mesh::mesh->rootTree,fbin);
 
       fclose(fbin);
 #endif
@@ -1249,10 +1249,10 @@ int main(int argc,char **argv) {
 #if _SAMPLE_BACKFLUX_MODE_ == _SAMPLE_BACKFLUX_MODE__ON_      
       char fname2[_MAX_STRING_LENGTH_PIC_];
 
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "Printing backflux sampling output " << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "Printing backflux sampling output " << endl;
       
       sprintf(fname2,"%s/SurfaceTriangulation_Backflux.dat",PIC::OutputDataFileDirectory);
-      if (PIC::Mesh::mesh.ThisThread==0) PrintBackFluxSurfaceTriangulationMesh(fname2);
+      if (PIC::Mesh::mesh->ThisThread==0) PrintBackFluxSurfaceTriangulationMesh(fname2);
 
       FlushBackfluxSampling();
 #endif      
@@ -1261,7 +1261,7 @@ int main(int argc,char **argv) {
       for (int counter=0;counter<nLocations;counter++) {
 	char fnameElement[_MAX_STRING_LENGTH_PIC_];
 
-	if (PIC::Mesh::mesh.ThisThread==0) cout << "Printing Sampled Surface Element output " << endl;
+	if (PIC::Mesh::mesh->ThisThread==0) cout << "Printing Sampled Surface Element output " << endl;
 	
 	sprintf(fnameElement,"%s/SurfaceTriangulation_SampledElement_%i.dat",PIC::OutputDataFileDirectory,counter);
 	PrintSampledSurfaceElementSurfaceTriangulationMesh(fnameElement,SampleLocations[counter],SampleElement[counter]);
@@ -1282,12 +1282,12 @@ int main(int argc,char **argv) {
       if (_COMET_SAMPLE_ROSINA_DATA_==_PIC_MODE_ON_) Comet::SunLocationUpdate::Processor();
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
     }
 
 
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 

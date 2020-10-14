@@ -52,8 +52,8 @@ bool Europa::Plume::GenerateParticleProperties(int spec,PIC::ParticleBuffer::byt
 
   if (PlumeSourceRate[spec]<0.0) return false;
 
-  startNode=PIC::Mesh::mesh.findTreeNode(xSource_SO,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(xSource_SO,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
   //calculate velocity of the injected particle in the IAU frame (relative to the surface of Europa)
   double BulkVelocity[3]={0.0,0.0,0.0};

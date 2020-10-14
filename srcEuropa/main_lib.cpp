@@ -301,7 +301,7 @@ double localParticleInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 	/*
   if (spec!=NA) return 0.0;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -323,7 +323,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 	static double vNA[3]={0.0,000.0,000.0},nNA=5.0E6,tempNA=8.0E4;
 
-	if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+	if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
 		for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
 			startNode->GetExternalNormal(ExternalNormal,nface);
 			ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(nNA,tempNA,vNA,ExternalNormal,_O_PLUS_HIGH_SPEC_);
@@ -355,7 +355,7 @@ long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
   
   double ModelParticlesInjectionRate;
   
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
     
@@ -370,7 +370,7 @@ long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
 	if (ModelParticlesInjectionRate>0.0) {
 	  ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 	  
-	  PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+	  PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 	  
 	  while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
 	    //generate the new particle position on the face
@@ -473,8 +473,8 @@ bool GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJECT,doub
     
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -1050,9 +1050,9 @@ PIC::InitMPI();
 
 
 	//generate only the tree
-	PIC::Mesh::mesh.AllowBlockAllocation=false;
-	PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-	PIC::Mesh::mesh.memoryAllocationReport();
+	PIC::Mesh::mesh->AllowBlockAllocation=false;
+	PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+	PIC::Mesh::mesh->memoryAllocationReport();
 
 
 	char mesh[200]="";
@@ -1064,56 +1064,56 @@ PIC::InitMPI();
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(mesh);
+    PIC::Mesh::mesh->readMeshFile(mesh);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
-	cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
+	cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
- if (NewMeshGeneratedFlag==true) PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+ if (NewMeshGeneratedFlag==true) PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-	PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-	PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+	PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+	PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 	//initialize the blocks
-	PIC::Mesh::mesh.AllowBlockAllocation=true;
-	PIC::Mesh::mesh.AllocateTreeBlocks();
+	PIC::Mesh::mesh->AllowBlockAllocation=true;
+	PIC::Mesh::mesh->AllocateTreeBlocks();
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
 	//init the volume of the cells'
-	PIC::Mesh::mesh.InitCellMeasure();
+	PIC::Mesh::mesh->InitCellMeasure();
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -1214,17 +1214,17 @@ void amps_init() {
    //PIC::ChemicalReactions::PhotolyticReactions::SetSpeciesTotalPhotolyticLifeTime(sodiumPhotoionizationLifeTime,_O2_SPEC_);
    
    
-   //	PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
-   //	PIC::Mesh::mesh.outputMeshDataTECPLOT("mesh.data.dat",0);
+   //	PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+   //	PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",0);
    
    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-   if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
    
    
    
    
    //output final data
-   //  PIC::Mesh::mesh.outputMeshDataTECPLOT("final.data.dat",0);
+   //  PIC::Mesh::mesh->outputMeshDataTECPLOT("final.data.dat",0);
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
    //set the User Definted injection function for dust
    PIC::BC::UserDefinedParticleInjectionFunction=DustInjection;
@@ -1378,7 +1378,7 @@ void amps_init() {
   //#ifdef _ICES_LOAD_DATA_
   
   PIC::CPLR::ICES::readSWMFdata(1.0);
-  //  PIC::Mesh::mesh.outputMeshDataTECPLOT("ices.data.dat",0);
+  //  PIC::Mesh::mesh->outputMeshDataTECPLOT("ices.data.dat",0);
   
 
   //output the solar wind ion flux at the palnet's surface
@@ -1450,7 +1450,7 @@ void amps_init() {
 
 
   if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_) {
-    PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
   }
 
 
@@ -1615,7 +1615,7 @@ void amps_time_step () {
     
     
     LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-    if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+    if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
   }
   
   

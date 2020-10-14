@@ -163,7 +163,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 
     for (int s=0;s<PIC::nTotalSpecies;s++) {
       minTimeStep[s]=-1.0,maxTimeStep[s]=-1.0;
-      GetTimeStepLimits(minTimeStep[s],maxTimeStep[s],s,PIC::Mesh::mesh.rootTree);
+      GetTimeStepLimits(minTimeStep[s],maxTimeStep[s],s,PIC::Mesh::mesh->rootTree);
 
       if (PIC::ThisThread==0){
         cout << "spec=" << s << ", minTimeStep=" << minTimeStep[s] << ", maxTimeStep=" << maxTimeStep[s] << ": The time step range that will be actually used is (" << TimeStepMinValue << "," << maxTimeStep[s] << ")" << endl;
@@ -379,58 +379,58 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
 
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_COMM_WORLD);
   }
   else {
     MPI_Barrier(MPI_COMM_WORLD);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 
 
-  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
+  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   //PIC::Sampling::minIterationNumberForDataOutput=15000;
 
 
   //============================== DEBUG =========================
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
     while (node!=NULL) {
       if (node->Temp_ID==2478) {
         cout << __FILE__<< "@" << __LINE__ << endl;
 
-        PIC::Mesh::mesh.InitCellMeasure(node);
+        PIC::Mesh::mesh->InitCellMeasure(node);
       }
 
       node=node->nextNodeThisThread;
@@ -497,11 +497,11 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
 
-//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
-//  PIC::Mesh::mesh.outputMeshDataTECPLOT("mesh.data.dat",_C_SPEC_);
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",_C_SPEC_);
 
   MPI_Barrier(MPI_COMM_WORLD);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
 
 
@@ -539,7 +539,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
 //============================== DEBUG =========================
-  /* cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * */  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  /* cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * */  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
   while (node!=NULL) {
     if (node->Temp_ID==2478) {
@@ -574,7 +574,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new lample length is " << PIC::RequiredSampleLength << endl;
      }
   }
 

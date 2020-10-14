@@ -193,43 +193,43 @@ void amps_init() {
 
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   //init the PIC solver
   PIC::Init_AfterParser();
@@ -256,12 +256,12 @@ void amps_init() {
       break;
     }
 
-    weight=density*pow(2.0*DomainLength,3)/(GetTotalCellNumber(PIC::Mesh::mesh.rootTree)*nParticlePerCell);
-    PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,weight,PIC::Mesh::mesh.rootTree);
+    weight=density*pow(2.0*DomainLength,3)/(GetTotalCellNumber(PIC::Mesh::mesh->rootTree)*nParticlePerCell);
+    PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,weight,PIC::Mesh::mesh->rootTree);
   }
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer
   PIC::ParticleBuffer::Init(10000000);
@@ -272,13 +272,13 @@ void GetTotalCollisionFreq(double CollisionFreq[PIC::nTotalSpecies][PIC::nTotalS
   int i,j,k,s0,s1;
   char* SamplingData;
 
-  if (PIC::Mesh::mesh.rootTree==startNode) {
+  if (PIC::Mesh::mesh->rootTree==startNode) {
     for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) CollisionFreq[s0][s1]=0.0;
   }
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (startNode->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-      SamplingData=startNode->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+
+      SamplingData=startNode->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+
         PIC::Mesh::collectingCellSampleDataPointerOffset;
 
       for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++)  {
@@ -304,7 +304,7 @@ void ResetTotalCollisionFreq(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) 
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (startNode->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-      SamplingData=startNode->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+
+      SamplingData=startNode->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+
         PIC::Mesh::collectingCellSampleDataPointerOffset;
 
       for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++)  {
@@ -349,7 +349,7 @@ int main(int argc,char **argv) {
     //sample relative speed
     if (n==0) {
       //the relative velocity sampling length is sufficient even for a single iteration
-      SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+      SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
       sprintf(fname,"%s/test_ModelCollisionTest--test1.dat",PIC::OutputDataFileDirectory);
       PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
@@ -359,13 +359,13 @@ int main(int argc,char **argv) {
     PIC::MolecularCollisions::ParticleCollisionModel::ntc();
 
     //remove all particles
-    DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+    DeleteAllParticles(PIC::Mesh::mesh->rootTree);
   }
 
   //collect the collision frequentcy from all processors and output into a file
   double CollisionFreq[PIC::nTotalSpecies][PIC::nTotalSpecies];
 
-  GetTotalCollisionFreq(CollisionFreq,PIC::Mesh::mesh.rootTree);
+  GetTotalCollisionFreq(CollisionFreq,PIC::Mesh::mesh->rootTree);
 
   if (PIC::ThisThread==0) {
     sprintf(fname,"%s/test_ModelCollisionTest--test1-1.dat",PIC::OutputDataFileDirectory);
@@ -393,8 +393,8 @@ int main(int argc,char **argv) {
       MPI_Reduce(&tLocal,&tGlobal,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (PIC::ThisThread==0) {
-        cout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh.rootTree) << "  ";
-        fout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh.rootTree) << "  ";
+        cout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh->rootTree) << "  ";
+        fout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh->rootTree) << "  ";
       }
     }
 
@@ -457,7 +457,7 @@ int main(int argc,char **argv) {
   PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp);
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
-  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
   if (PIC::ThisThread==0) {
     sprintf(fname,"%s/test_ModelCollisionTest--test2-1.dat",PIC::OutputDataFileDirectory);
@@ -507,7 +507,7 @@ int main(int argc,char **argv) {
   }
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
-  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
   sprintf(fname,"%s/test_ModelCollisionTest--test2.dat",PIC::OutputDataFileDirectory);
   PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
@@ -554,7 +554,7 @@ int main(int argc,char **argv) {
   if (PIC::ThisThread==0) fout.close();
 
   //remove all particles
-  DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+  DeleteAllParticles(PIC::Mesh::mesh->rootTree);
 
   //======================= TEST 2 ENDS: RELATIVE VELOCITY AFTER MULTIPLE COLLISIONS WHEN INITAL TEMEPRATURE OF ALL SPECIES IS THE SAME =======
 
@@ -566,7 +566,7 @@ int main(int argc,char **argv) {
 
   for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
   PIC::ParticleWeightTimeStep::initTimeStep();
-  ResetTotalCollisionFreq(PIC::Mesh::mesh.rootTree);
+  ResetTotalCollisionFreq(PIC::Mesh::mesh->rootTree);
 
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
@@ -577,7 +577,7 @@ int main(int argc,char **argv) {
     //sample relative speed
     if (n==0) {
       //the relative velocity sampling length is sufficient even for a single iteration
-      SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+      SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
       sprintf(fname,"%s/test_ModelCollisionTest--test3.dat",PIC::OutputDataFileDirectory);
       PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
@@ -587,11 +587,11 @@ int main(int argc,char **argv) {
     PIC::MolecularCollisions::ParticleCollisionModel::ntc();
 
     //remove all particles
-    DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+    DeleteAllParticles(PIC::Mesh::mesh->rootTree);
   }
 
   //collect the collision frequentcy from all processors and output into a file
-  GetTotalCollisionFreq(CollisionFreq,PIC::Mesh::mesh.rootTree);
+  GetTotalCollisionFreq(CollisionFreq,PIC::Mesh::mesh->rootTree);
 
   if (PIC::ThisThread==0) {
     sprintf(fname,"%s/test_ModelCollisionTest--test3-1.dat",PIC::OutputDataFileDirectory);
@@ -619,8 +619,8 @@ int main(int argc,char **argv) {
       MPI_Reduce(&tLocal,&tGlobal,1,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (PIC::ThisThread==0) {
-        cout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh.rootTree) << "  ";
-        fout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh.rootTree) << "  ";
+        cout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh->rootTree) << "  ";
+        fout << tGlobal/nTotalTestIterations/GetTotalCellNumber(PIC::Mesh::mesh->rootTree) << "  ";
       }
     }
 
@@ -683,7 +683,7 @@ int main(int argc,char **argv) {
   PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp);
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
-  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
   if (PIC::ThisThread==0) {
     sprintf(fname,"%s/test_ModelCollisionTest--test4-1.dat",PIC::OutputDataFileDirectory);
@@ -733,7 +733,7 @@ int main(int argc,char **argv) {
   }
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
-  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh.rootTree);
+  SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
 
   sprintf(fname,"%s/test_ModelCollisionTest--test4.dat",PIC::OutputDataFileDirectory);
   PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
@@ -780,7 +780,7 @@ int main(int argc,char **argv) {
   if (PIC::ThisThread==0) fout.close();
 
   //remove all particles
-  DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+  DeleteAllParticles(PIC::Mesh::mesh->rootTree);
 
   //======================= TEST 4 ENDS: RELATIVE VELOCITY AFTER MULTIPLE COLLISIONS WHEN INITAL TEMEPRATURE OF ALL SPECIES IS THE SAME (SPECIES DEPENDENT TIME STEP) =======
 

@@ -68,7 +68,7 @@ int main(int argc,char **argv) {
 
 
   for (long int niter=0;niter<nTotalIterations;niter++) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
        TimeValue=time(NULL);
        ct=localtime(&TimeValue);
 

@@ -119,7 +119,7 @@ void Moon::Sampling::VelocityDistribution::Sampling() {
         int spec;
         double *v,*x,LocalParticleWeight,VelocityLineOfSight,HeliocentricRadialVelocity,c,cellMeasure,rHeliocentric,Speed;
 
-        ncell=PIC::Mesh::mesh.fingCellIndex(xLSO,i,j,k,xNode);
+        ncell=PIC::Mesh::mesh->fingCellIndex(xLSO,i,j,k,xNode);
         cellMeasure=xNode->block->GetCenterNode(ncell)->Measure;
 //        dl=IntegrationStep2CellSizeRatio*xNode->GetCharacteristicCellSize();
 
@@ -182,7 +182,7 @@ void Moon::Sampling::VelocityDistribution::Sampling() {
       //break the loop if the new point is within the Moon or outside of the computational domain
       if (xLSO[0]*xLSO[0]+xLSO[0]*xLSO[0]+xLSO[0]*xLSO[0]<_RADIUS_(_TARGET_)*_RADIUS_(_TARGET_)) break;
 
-      xNode=PIC::Mesh::mesh.findTreeNode(xLSO,xNode);
+      xNode=PIC::Mesh::mesh->findTreeNode(xLSO,xNode);
     }
 
 
@@ -334,7 +334,7 @@ void Moon::Sampling::VelocityDistribution::OutputSampledData(int DataOutputFileN
 
 
   //close the file
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     fclose(fout);
     fclose(fMAP);
   }
