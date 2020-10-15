@@ -20,11 +20,11 @@ extern "C"{
     if(INTERFACE::iBlockFoundCurrent==0) {
       // find the node containg the point
       node = NULL;
-      node = PIC::Mesh::mesh.findTreeNode(Xyz_D);
+      node = PIC::Mesh::mesh->findTreeNode(Xyz_D);
     }
     else{
       node = NULL;
-      node = PIC::Mesh::mesh.findTreeNode(Xyz_D, INTERFACE::BlockFound[0]);
+      node = PIC::Mesh::mesh->findTreeNode(Xyz_D, INTERFACE::BlockFound[0]);
     }
 
     // if node is not found => point is outside of the domain, break
