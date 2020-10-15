@@ -154,6 +154,11 @@ foreach (@Arguments) {
     
     `cp -f input/$application.* input/species.input .`;
 
+     #set defailt compilation module flags in Makefile.local
+     `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
+     `rm Makefile.local`; 
+     `mv Makefile.local.new Makefile.local`;
+
      #remove path from the name of the input file is such exists
      my @list;
 
@@ -285,6 +290,7 @@ foreach (@Arguments) {
     add_line_general_conf("#undef _TARGET_HOST_ \n#define _TARGET_HOST_ __host__");
     add_line_general_conf("#undef _TARGET_DEVICE_ \n#define _TARGET_DEVICE_ __device__");
     add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
+    add_line_general_conf("#undef _CUDA_MANAGED_\n#define _CUDA_MANAGED_ __managed__"); 
 
     next;
   }

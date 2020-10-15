@@ -31,6 +31,7 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 #define _TARGET_HOST_ 
 #define _TARGET_DEVICE_
 #define _CUDA_MODE_ _OFF_
+#define _CUDA_MANAGED_ 
 
 //inlcude settings of the general block
 #include "../../.general.conf"
