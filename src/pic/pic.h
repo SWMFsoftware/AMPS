@@ -3714,9 +3714,9 @@ namespace PIC {
 
   //the namespace contained the domain decomposition information used for loop parallelization in OpenMP
   namespace DomainBlockDecomposition {
-    extern unsigned int nLocalBlocks;
+    extern _TARGET_DEVICE_ unsigned int nLocalBlocks;
     extern int LastMeshModificationID;
-    extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
+    extern _TARGET_DEVICE_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
 
     void UpdateBlockTable();
   }
@@ -5104,15 +5104,15 @@ namespace PIC {
       namespace Offset {
         extern bool InitFlag;
 
-        extern cOffsetElement PlasmaNumberDensity;
-        extern cOffsetElement PlasmaBulkVelocity;
-        extern cOffsetElement PlasmaTemperature;
-        extern cOffsetElement PlasmaIonPressure;
-        extern cOffsetElement PlasmaElectronPressure;
-        extern cOffsetElement MagneticField;
-        extern cOffsetElement ElectricField;
-        extern cOffsetElement MagneticFieldGradient;
-        extern cOffsetElement MagneticFluxFunction;
+        extern _CUDA_MANAGED_ cOffsetElement PlasmaNumberDensity;
+        extern _CUDA_MANAGED_ cOffsetElement PlasmaBulkVelocity;
+        extern _CUDA_MANAGED_ cOffsetElement PlasmaTemperature;
+        extern _CUDA_MANAGED_ cOffsetElement PlasmaIonPressure;
+        extern _CUDA_MANAGED_ cOffsetElement PlasmaElectronPressure;
+        extern _CUDA_MANAGED_ cOffsetElement MagneticField;
+        extern _CUDA_MANAGED_ cOffsetElement ElectricField;
+        extern _CUDA_MANAGED_ cOffsetElement MagneticFieldGradient;
+        extern _CUDA_MANAGED_ cOffsetElement MagneticFluxFunction;
 
 
         inline void SetAllocate(bool flag,cOffsetElement* offset) {
@@ -6601,30 +6601,31 @@ namespace FieldSolver {
             typedef void (*fUserDefinedFieldBC)();
             typedef long int (*fUserDefinedParticleBC)();
             typedef long int (*fUserDefinedSetBlockParticle)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *node);
-            extern fUserDefinedSetBlockParticle setBlockParticle;
-            extern fUserDefinedParticleBC setParticle_BC;
-            extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
-            extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
-            extern int CurrentEOffset, OffsetE_HalfTimeStep;
-            extern int CurrentBOffset, PrevBOffset;
-            extern int OffsetB_corner;            
-            extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> Solver;
-            extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> PoissonSolver;
-            extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
+
+            extern _TARGET_DEVICE_ fUserDefinedSetBlockParticle setBlockParticle;
+            extern _TARGET_DEVICE_ fUserDefinedParticleBC setParticle_BC;
+            extern _TARGET_DEVICE_ fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
+            extern _TARGET_DEVICE_ fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
+            extern _TARGET_DEVICE_ int CurrentEOffset, OffsetE_HalfTimeStep;
+            extern _TARGET_DEVICE_ int CurrentBOffset, PrevBOffset;
+            extern _TARGET_DEVICE_ int OffsetB_corner;            
+            extern _TARGET_DEVICE_ cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> *Solver;
+            extern _TARGET_DEVICE_ cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> *PoissonSolver;
+            //extern _TARGET_DEVICE_ list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
 
             //extern cLinearSystemCornerNode Solver;
-            extern bool DoDivECorrection;
-            extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
-            extern int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
-            extern int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
-            extern int MassMatrixOffsetIndex;
-            extern int * SpeciesDataIndex;
-            extern int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
+            extern _TARGET_DEVICE_ bool DoDivECorrection;
+            extern _TARGET_DEVICE_ int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
+            extern _TARGET_DEVICE_ int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
+            extern _TARGET_DEVICE_ int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
+            extern _TARGET_DEVICE_ int MassMatrixOffsetIndex;
+            extern _TARGET_DEVICE_ int * SpeciesDataIndex;
+            extern _TARGET_DEVICE_ int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
           
-            extern int netChargeOldIndex,netChargeNewIndex, divEIndex, phiIndex;
-            extern double cDt;
-            extern double theta;
-            extern double LightSpeed;
+            extern _TARGET_DEVICE_ int netChargeOldIndex,netChargeNewIndex, divEIndex, phiIndex;
+            extern _CUDA_MANAGED_ double cDt;
+            extern _CUDA_MANAGED_ double theta;
+            extern _CUDA_MANAGED_ double LightSpeed;
 
             //timing of the solver execution
             namespace CumulativeTiming {
@@ -6644,24 +6645,26 @@ namespace FieldSolver {
             }
 
             //location of the solver's data in the corner node associated data vector
-            extern int CornerNodeAssociatedDataOffsetBegin,CornerNodeAssociatedDataOffsetLast;  //CornerNodeAssociatedDataOffsetLast still belongs to the solver
+            extern _CUDA_MANAGED_ int CornerNodeAssociatedDataOffsetBegin,CornerNodeAssociatedDataOffsetLast;  //CornerNodeAssociatedDataOffsetLast still belongs to the solver
 
             //stencils used for building the matrix
-            extern cStencil::cStencilData LaplacianStencil[3];
-            extern cStencil::cStencilData GradDivStencil[3][3];
-            extern cStencil::cStencilData GradDivStencil375[3][3];
+            extern _TARGET_DEVICE_ cStencil::cStencilData *LaplacianStencil;
+            extern _TARGET_DEVICE_ cStencil::cStencilData **GradDivStencil;
+            extern _TARGET_DEVICE_ cStencil::cStencilData **GradDivStencil375;
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
             void PoissonMatvec(double* VecIn, double * VecOut, int n);
 
             //construct the matrix stencil
+            _TARGET_DEVICE_
             void GetStencil(int i,int j,int k,int iVar,
               cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,int& NonZeroElementsFound,double& rhs,
               cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
               cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes,
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
+            _TARGET_DEVICE_
             void PoissonGetStencil(int i, int j, int k, int iVar,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cMatrixRowNonZeroElementTable* MatrixRowNonZeroElementTable,
               int& NonZeroElementsFound,double& rhs,cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CornerNodes,int& RhsSupportLength_CornerNodes,
               cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>::cRhsSupportTable* RhsSupportTable_CenterNodes,int& RhsSupportLength_CenterNodes, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
@@ -6674,6 +6677,7 @@ namespace FieldSolver {
             
             //init the solver
             void Init();
+
             void Init_IC();
 
             typedef void (*fUserDefinedDynamicAllocateBlocks)();
@@ -6699,7 +6703,7 @@ namespace FieldSolver {
             void UpdateOldNetCharge();
             void ComputeDivE();
 	    
-            extern double corrCoeff;
+            extern _TARGET_DEVICE_ double corrCoeff;
 
             //update the matrix element
             void UpdateMatrixElement(cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1>::cMatrixRow* row);

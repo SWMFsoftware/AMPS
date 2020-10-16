@@ -357,12 +357,12 @@ public:
   //static fneibNodeCorner neibNodeCorner;
 
   template <typename T>
-  void GetCornerNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  void GetCornerNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
     for (int i=0;i<(1<<_MESH_DIMENSION_);i++) NeibTable[i]=neibNodeCorner(i,mesh_ptr);
   } 
 
   template <typename T>
-  void GetFaceNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  void GetFaceNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
     int nTotalFaces;
 
     switch (_MESH_DIMENSION_) {
@@ -381,7 +381,7 @@ public:
   }
 
   template <typename T>
-  void GetEdgeNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  void GetEdgeNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
 
     switch (_MESH_DIMENSION_) {
     case 3:
@@ -447,7 +447,7 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,const T& mesh_ptr) {
+   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,T* mesh_ptr) {
      int ix[3];
 
      switch (_MESH_DIMENSION_) {
@@ -506,7 +506,7 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,const T& mesh_ptr) {
+   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,T* mesh_ptr) {
      int ix[3];
 
      //numberic patter:
@@ -603,7 +603,7 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeEdge (int i,const T& mesh_ptr) {
+   cTreeNodeAMR<cBlockAMR>* neibNodeEdge (int i,T* mesh_ptr) {
      int ix[3];
 
      int isegment,iedge;
@@ -933,7 +933,7 @@ public:
 
   //determine the minimum and maximum resolution levels of the neighbor blocks
   template <typename T>
-  void SetNeibRefinmentLevelLimits(const T mesh_ptr) {
+  void SetNeibRefinmentLevelLimits(T* mesh_ptr) {
     cTreeNodeAMR* node;
     int i;
 
@@ -988,7 +988,7 @@ public:
 
 
   template<typename T>
-  cTreeNodeAMR *GetNeibCorner(int nCornerNode,const T mesh_ptr) {
+  cTreeNodeAMR *GetNeibCorner(int nCornerNode,T* mesh_ptr) {
     cTreeNodeAMR *res;
 
 #if _MESH_DIMENSION_ == 1
@@ -1035,7 +1035,7 @@ public:
   }
 
   template <typename T>
-  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,const T mesh_ptr) {
+  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,T* mesh_ptr) {
     cTreeNodeAMR* res;
 
 #if _MESH_DIMENSION_ == 1
@@ -1068,7 +1068,7 @@ public:
   }
 
   template<typename T>
-  inline cTreeNodeAMR *GetNeibEdge(int nedge,int iEdge,T mesh_ptr) {
+  inline cTreeNodeAMR *GetNeibEdge(int nedge,int iEdge,T* mesh_ptr) {
     cTreeNodeAMR *res;
 
 #if _MESH_DIMENSION_ == 1
@@ -1102,7 +1102,7 @@ public:
 
 
   template <typename T>
-  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,const T mesh_ptr) {
+  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,T* mesh_ptr) {
     cTreeNodeAMR *res=NULL;
 
 #if _MESH_DIMENSION_ == 1
@@ -1196,7 +1196,7 @@ public:
 
   //check if a node is a neighbor of the 'this node'
   template <typename T>
-  bool CheckNeibNode(cTreeNodeAMR* neibNode,const T mesh_ptr) {
+  bool CheckNeibNode(cTreeNodeAMR* neibNode,T* mesh_ptr) {
     //check the connections through the corner nodes
     for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (GetNeibCorner(nd,mesh_ptr)==neibNode) {
       return true;
@@ -1220,7 +1220,7 @@ public:
 
     //check connections through the edges
 #if _MESH_DIMENSION_ == 3
-    for (int nedge=0;nedge<12;nedge++) for (i=0;i<2;i++) if (GetNeibEdge(nedge,i)==neibNode) {
+    for (int nedge=0;nedge<12;nedge++) for (i=0;i<2;i++) if (GetNeibEdge(nedge,i,this)==neibNode) {
       return true;
     }
 #endif
@@ -3322,7 +3322,7 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
       if (neibNode!=NULL) {
         found=false;
 
-        for (nedgeNeib=0;nedgeNeib<12;nedgeNeib++) if (found==false) for (iEdgeNeib=0;iEdgeNeib<2;iEdgeNeib++) if (neibNode->GetNeibEdge(nedgeNeib,iEdgeNeib)==startNode) {
+        for (nedgeNeib=0;nedgeNeib<12;nedgeNeib++) if (found==false) for (iEdgeNeib=0;iEdgeNeib<2;iEdgeNeib++) if (neibNode->GetNeibEdge(nedgeNeib,iEdgeNeib,this)==startNode) {
           found=true;
           break;
         }
@@ -13250,45 +13250,45 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     }
 
     //connection through edges
-    for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) if ((neibNode=node->GetNeibEdge(iedge,i))!=NULL) {
+    for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) if ((neibNode=node->GetNeibEdge(iedge,i,this))!=NULL) {
       switch (iedge) {
       case 0:
-        if (neibNode->GetNeibEdge(2,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(2,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 1:
-        if (neibNode->GetNeibEdge(3,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(3,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 2:
-        if (neibNode->GetNeibEdge(0,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(0,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 3:
-        if (neibNode->GetNeibEdge(1,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(1,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 4:
-        if (neibNode->GetNeibEdge(6,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(6,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 5:
-        if (neibNode->GetNeibEdge(7,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(7,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 6:
-        if (neibNode->GetNeibEdge(4,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(4,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 7:
-        if (neibNode->GetNeibEdge(5,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(5,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 8:
-        if (neibNode->GetNeibEdge(10,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(10,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 9:
-        if (neibNode->GetNeibEdge(11,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(11,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 10:
-        if (neibNode->GetNeibEdge(8,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(8,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 11:
-        if (neibNode->GetNeibEdge(9,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(9,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       }
     }

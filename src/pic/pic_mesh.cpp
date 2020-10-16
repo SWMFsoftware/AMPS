@@ -63,9 +63,9 @@ int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellS
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops
-unsigned int PIC::DomainBlockDecomposition::nLocalBlocks=0;
+_TARGET_DEVICE_ unsigned int PIC::DomainBlockDecomposition::nLocalBlocks=0;
 int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
-cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTable=NULL;
+_TARGET_DEVICE_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTable=NULL;
 
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
