@@ -377,32 +377,6 @@ void PIC::FieldSolver::Init() {
   if (IsInit) exit(__LINE__,__FILE__,"Error: The field solver already initialized");
 
 
-auto AllocateData = [=] {
-PIC::FieldSolver::Electromagnetic::ECSIM::Solver=new cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1>;
-PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver=new cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>;
-
-PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil=new cStencil::cStencilData[3];
-
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil=new cStencil::cStencilData*[3];
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[0]=new cStencil::cStencilData[9]; 
-
-Electromagnetic::ECSIM::GradDivStencil[1]=Electromagnetic::ECSIM::GradDivStencil[0]+3;
-Electromagnetic::ECSIM::GradDivStencil[2]=Electromagnetic::ECSIM::GradDivStencil[0]+6;
-
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375=new cStencil::cStencilData*[3];
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]=new cStencil::cStencilData[9];
-
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[1]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+3;
-PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[2]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+6;
-
-}; 
-
-#if _CUDA_MODE_ == _OFF_
-AllocateData();
-#else 
-
-#endif
-
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
     PIC::FieldSolver::Electromagnetic::ECSIM::Init();
@@ -419,6 +393,22 @@ AllocateData();
 //Magnetic field is in the center nodes
 //Electric field is in the corner nodes
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
+
+  //allocate data used by the field solver
+  Solver=new cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1>;
+  PoissonSolver=new cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>;
+
+  LaplacianStencil=new cStencil::cStencilData[3];
+
+  GradDivStencil=new cStencil::cStencilData*[3];
+  GradDivStencil[0]=new cStencil::cStencilData[9];
+  GradDivStencil[1]=Electromagnetic::ECSIM::GradDivStencil[0]+3;
+  GradDivStencil[2]=Electromagnetic::ECSIM::GradDivStencil[0]+6;
+
+  GradDivStencil375=new cStencil::cStencilData*[3];
+  GradDivStencil375[0]=new cStencil::cStencilData[9];
+  GradDivStencil375[1]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+3;
+  GradDivStencil375[2]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+6;
 
   InitDiscritizationStencil();
 
