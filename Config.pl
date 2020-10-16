@@ -3,11 +3,23 @@
 #  portions used with permission 
 #  For more information, see http://csem.engin.umich.edu/tools/swmf
 
+use strict;
+use warnings;
+use Cwd;
+use Scalar::Util qw/looks_like_number/;
+use Cwd qw(cwd);
+
+use lib cwd;
+use ampsConfigLib;
+
+
 # Allow in-place editing                                                        
 $^I = "";
 
 # Add local directory to search                                                 
 push @INC, ".";
+push @INC, "./share/Scripts";
+
 
 use strict;
 
@@ -26,7 +38,7 @@ our $TestName;
 our @Compilers;
 
 
-my $config     = "share/Scripts/Config.pl";
+my $config     = "./share/Scripts/Config.pl";
 #check util and share
 my $GITCLONE = "git clone"; my $GITDIR = "git\@gitlab.umich.edu:swmf_software";
 
