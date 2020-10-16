@@ -91,7 +91,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
         for (spec=0;spec<PIC::nTotalSpecies;spec++) if (InjectionFlag[spec]==true) res[spec]+=InjectionRate[spec];
       }
 
-      for (spec=0;spec<PIC::nTotalSpecies;spec++) *(spec+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()))=res[spec];
+      for (spec=0;spec<PIC::nTotalSpecies;spec++) *(spec+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()))=res[spec];
     }
   }
 }
@@ -101,7 +101,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
 double PIC::VolumeParticleInjection::GetCellInjectionRate(int spec,PIC::Mesh::cDataCenterNode *cell) {
   if (nRegistratedInjectionProcesses==0) return 0.0;
 
-  return *(spec+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()));
+  return *(spec+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()));
 }
 
 double PIC::VolumeParticleInjection::GetBlockInjectionRate(int spec,PIC::Mesh::cDataBlockAMR *block) {

@@ -599,7 +599,7 @@ return;
   double c=0.05;
 
   if (StateVectorBS==NULL) {
-    StateVectorBS=new char[PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
+    StateVectorBS=new char[PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
 
     *((double*)(StateVectorBS+CurrentCornerNodeOffset))=ValueBC;
     *((double*)(StateVectorBS+NextCornerNodeOffset))=ValueBC;
@@ -822,7 +822,7 @@ return;
   double c=0.05;
 
   if (StateVectorBS==NULL) {
-    StateVectorBS=new char[PIC::Mesh::cDataCornerNode::totalAssociatedDataLength];
+    StateVectorBS=new char[PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength];
 
     *((double*)(StateVectorBS+CurrentCornerNodeOffset))=ValueBC;
     *((double*)(StateVectorBS+NextCornerNodeOffset))=ValueBC;
@@ -1257,15 +1257,15 @@ int main(int argc,char **argv) {
 #endif
 
 
-  CurrentCenterNodeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=nVars*sizeof(double);
-  NextCenterNodeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=nVars*sizeof(double);
+  CurrentCenterNodeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
+  NextCenterNodeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
 
-  CurrentCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
-  NextCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
+  CurrentCornerNodeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
+  NextCornerNodeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
   
   PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
   //seed the random number generator

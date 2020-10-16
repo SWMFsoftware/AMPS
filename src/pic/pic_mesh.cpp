@@ -457,7 +457,7 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 
   //the volume partilce injection: save the volume particle injection rate
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-  PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
   PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double)*PIC::nTotalSpecies;
 #endif
 
