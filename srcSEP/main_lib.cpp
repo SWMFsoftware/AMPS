@@ -69,7 +69,7 @@ void amps_init_mesh() {
   SEP::RequestParticleData();
 
   //request storage for calculating the drift velocity
-  PIC::IndividualModelSampling::RequestStaticCellData.push_back(SEP::RequestStaticCellData);
+  PIC::IndividualModelSampling::RequestStaticCellData->push_back(SEP::RequestStaticCellData);
 
   //SetUp the alarm
 //  PIC::Alarm::SetAlarm(2000);
