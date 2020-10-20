@@ -2269,7 +2269,7 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 //set up the particle time step
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  *(spec+(double *)(associatedDataPointer+LocalTimeStepOffset))=dt;
+  *(spec+(double *)(associatedDataPointer+PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
   if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
@@ -2301,7 +2301,7 @@ double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;
-  res=spec+(double *)(associatedDataPointer+LocalTimeStepOffset);
+  res=spec+(double *)(associatedDataPointer+PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset);
   return *res;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   return  PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
