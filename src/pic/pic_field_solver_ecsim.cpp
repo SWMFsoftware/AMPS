@@ -4972,14 +4972,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
   else pipe->send(t,3);
 }
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(const double* VecIn, double * VecOut, int n){
+void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
   Solver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
 
-void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(const double* VecIn, double * VecOut, int n){
+void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
   PoissonSolver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
