@@ -6578,8 +6578,8 @@ namespace FieldSolver {
             extern cStencil::cStencilData GradDivStencil375[3][3];
 
             // matrix operation for the matrix solver
-            void matvec(double* VecIn, double * VecOut, int n);
-            void PoissonMatvec(double* VecIn, double * VecOut, int n);
+            void matvec(const double* VecIn, double * VecOut, int n);
+            void PoissonMatvec(const double* VecIn, double * VecOut, int n);
 
             //construct the matrix stencil
             void GetStencil(int i,int j,int k,int iVar,
