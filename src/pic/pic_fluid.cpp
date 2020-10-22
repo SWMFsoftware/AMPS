@@ -26,7 +26,7 @@
 
 #include "pic.h"
 
-//using namespace std;
+using namespace std;
 
 bool PIC::CPLR::FLUID::FirstCouplingOccured=false;
 list<PIC::CPLR::FLUID::fSendCenterPointData> PIC::CPLR::FLUID::SendCenterPointData;

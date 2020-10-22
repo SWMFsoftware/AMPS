@@ -25,7 +25,7 @@
 
 #include "pic.h"
 
-//using namespace std;
+using namespace std;
 
 int PIC::CPLR::SWMF::MagneticFieldOffset=-1;
 int PIC::CPLR::SWMF::PlasmaNumberDensityOffset=-1;
@@ -200,7 +200,7 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
 
 void PIC::CPLR::SWMF::init() {
   //request sampling buffer and particle fields
-  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
 
   //print out of the otuput file
   PIC::Mesh::AddVaraibleListFunction(PrintVariableList);

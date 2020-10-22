@@ -202,15 +202,7 @@ int PIC::TimeStep() {
 #endif
 #endif
 
-  auto DoSampling = [=] () {
-    PIC::Sampling::Sampling();
-  };
-
-  #if _CUDA_MODE_ == _OFF_ 
-  DoSampling();
-  #else 
-
-  #endif
+  PIC::Sampling::Sampling();
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -227,83 +219,66 @@ int PIC::TimeStep() {
 
   //inject particle through the domain's boundaries
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  PIC::BC::InjectionBoundaryConditions();
 
-  auto DoBC = [=] () {
-    PIC::BC::InjectionBoundaryConditions();
+  //inject particles into the volume of the domain
+#if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
+  if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
+#endif
 
-    //inject particles into the volume of the domain
-    #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-    if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
-    #endif
+  //call a user-defined injection function
+  if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
+  }
 
-    //call a user-defined injection function
-    if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
-      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-      PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
-    }
-
-    //the extra injection process by the exosphere model (src/models/exosphere)
-    if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
-      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-      PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
-    }
-  }; 
+  //the extra injection process by the exosphere model (src/models/exosphere)
+  if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
+  }
 
   InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
   RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
 
-  #if _CUDA_MODE_ == _OFF_ 
-  DoBC();
-  #else 
-
-  #endif
-
 
   //simulate particle collisions
-  if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) { 
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    ParticleCollisionTime=MPI_Wtime();
+#if _PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  ParticleCollisionTime=MPI_Wtime();
 
-    auto DoCollisionModel = [=] () {
-      #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
-      PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-      #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__MF_
-      PIC::MolecularCollisions::ParticleCollisionModel::mf();
-      #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_
-      PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-      #else
-      exit(__LINE__,__FILE__,"Error: the option is not implemented");
-      #endif
-    };
+  #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
+  PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+  #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__MF_
+  PIC::MolecularCollisions::ParticleCollisionModel::mf();
+  #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_
+  PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+  #else
+  exit(__LINE__,__FILE__,"Error: the option is not implemented");
+  #endif
 
-    #if _CUDA_MODE_ == _OFF_
-    DoCollisionModel();
-    #else 
-
-    #endif 
-
-    ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
-    RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
-  }
+  ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
+  RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
+#endif
 
   //simulate collisions with the background atmosphere
-  #if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_  
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    BackgroundAtmosphereCollisionTime=MPI_Wtime();
+#if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  BackgroundAtmosphereCollisionTime=MPI_Wtime();
 
-    #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
-    MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
-    #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
-    MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
-    #else
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
-    #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
+  #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
+  MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
+  #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
+  MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
+  #else
+  exit(__LINE__,__FILE__,"Error: the option is unknown");
+  #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
 
-    BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
-    RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
-  #elif _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__STOPPING_POWER_  
-    MolecularCollisions::StoppingPowerModel::ModelProcessor();
-  #endif 
+  BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
+  RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
+#elif _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__STOPPING_POWER_
+  MolecularCollisions::StoppingPowerModel::ModelProcessor();
+#endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
 
   //particle photochemistry model
   #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
@@ -328,23 +303,10 @@ int PIC::TimeStep() {
   
 #if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
     ParticleMovingTime=MPI_Wtime();
-
-    auto DoMoveParticles = [=] () {
-      PIC::Mover::MoveParticles();
-    };
-
-    #if _CUDA_MODE_ == _OFF_
-    DoMoveParticles();
-    #else 
-
-    #endif
+    PIC::Mover::MoveParticles();
 
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      #if _CUDA_MODE_ ==_OFF_
       PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-      #else 
-
-      #endif
     }
 
     ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
@@ -358,31 +320,15 @@ int PIC::TimeStep() {
     
     //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-   ParticleExchangeTime=MPI_Wtime();
-
-
-   #if _CUDA_MODE_ == _OFF_
-   PIC::Parallel::ExchangeParticleData();
-   #else 
-
-   #endif
-
-
-
+  ParticleExchangeTime=MPI_Wtime();
+  PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 #endif  
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-
-  #if _CUDA_MODE_ == _OFF_ 
-    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-    PIC::Parallel::UpdateGhostBlockData();
-  #else 
-
-  #endif
-
-
+  PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+  PIC::Parallel::UpdateGhostBlockData();
   #endif
  
   //update elecrtic and magnetic fields
@@ -392,38 +338,18 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   FieldSolverTime=MPI_Wtime();
 
-  auto DoFieldSolverTimeStep = [=] {
-    switch (_PIC_FIELD_SOLVER_MODE_) {
-    case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
-      FieldSolver::Electromagnetic::ECSIM::TimeStep();
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
-    }
-  }; 
-
-  #if _CUDA_MODE_ == _OFF_ 
-  DoFieldSolverTimeStep();
-  #else 
-
-  #endif 
+  switch (_PIC_FIELD_SOLVER_MODE_) {
+  case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
+    FieldSolver::Electromagnetic::ECSIM::TimeStep();
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
+  }
 
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   ParticleMovingTime=MPI_Wtime();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.Start();
-
-  auto DoMoveParticleECSIM = [=] {
-    PIC::Mover::MoveParticles();
-  };
-
-  #if _CUDA_MODE_ == _OFF_ 
-  DoMoveParticleECSIM();
-  #else 
-
-  #endif 
-
-
-
+  PIC::Mover::MoveParticles();
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
@@ -436,61 +362,24 @@ int PIC::TimeStep() {
   //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
-
-  auto DoExchangeParticleData = [=] {
-    PIC::Parallel::ExchangeParticleData();
-  };
-
-  #if _CUDA_MODE_ == _OFF_
-  DoExchangeParticleData();
-  #else 
-
-  #endif
-
-
+  PIC::Parallel::ExchangeParticleData();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 
-  auto FieldSoverTask1 = [=] {
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) { 
-      PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
-    }
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+    PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
   
-    if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection) { 
-      PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
-    }
-  }; 
+  if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
+    PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
   
-  #if _CUDA_MODE_ == _OFF_
-  FieldSoverTask1(); 
-  #else 
-
-  #endif
-
-
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ ) { 
-    auto FieldSolverTask2 = [=] {
-      PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-    };
-
-    #if _CUDA_MODE_ == _OFF_
-    FieldSolverTask2();
-    #else 
-
-
-    #endif
+    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
   }
 
-  auto DoUpdateJMassMatrix = [=] {
-    PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
-  };
-  
-  #if _CUDA_MODE_ == _OFF_
-  DoUpdateJMassMatrix();
-  #else 
 
-  #endif
+  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  
 
   PIC::CPLR::FLUID::iCycle++;
   {// Output
@@ -505,16 +394,7 @@ int PIC::TimeStep() {
   #endif
   //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-
-  auto DoProcessBlockBoundaryNodes = [=] {
-    PIC::Parallel::ProcessBlockBoundaryNodes(); 
-  };
-
-  #if _CUDA_MODE_ == _OFF_
-  DoProcessBlockBoundaryNodes();
-  #else 
-
-  #endif
+  PIC::Parallel::ProcessBlockBoundaryNodes(); 
 
   #endif
 
@@ -1808,22 +1688,7 @@ void PIC::InitMPI() {
 
 _TARGET_GLOBAL_
 void AllocateMesh() {
-  amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::mesh,1);
-
-
-//PIC::IndividualModelSampling::RequestStaticCellData=
-//(amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>*)malloc(sizeof(amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>));
-
-
-//////  amps_allocate<amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> >(PIC::IndividualModelSampling::RequestStaticCellData,1);
-//  PIC::IndividualModelSampling::RequestStaticCellData->clear();
-
-
-
-
-//////  amps_allocate<amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>*>(PIC::IndividualModelSampling::RequestStaticCellCornerData,1); 
-  //PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
-
+   PIC::Mesh::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
 
   //intialize the interpolation module
   PIC::InterpolationRoutines::Init();
@@ -1850,13 +1715,6 @@ void PIC::Init_BeforeParser() {
 
   //initiate MPI
   InitMPI();
-
-
-  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
-  PIC::IndividualModelSampling::RequestStaticCellData->clear();
-
-  PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
-  PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
   #if _CUDA_MODE_ == _ON_
   AllocateMesh<<<1,1>>>(); 
@@ -1927,10 +1785,7 @@ void PIC::Init_BeforeParser() {
 
     sprintf(PIC::DiagnospticMessageStreamName,"%s/thread=%i.log",PIC::DiagnospticMessageStreamName,PIC::ThisThread);
     PIC::DiagnospticMessageStream=fopen(PIC::DiagnospticMessageStreamName,"w");
-
-    if (PIC::Mesh::mesh!=NULL) {
-      PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
-    }
+    PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
   }
 
   //create the output directory if needed
@@ -2070,11 +1925,9 @@ void PIC::Init_BeforeParser() {
   //init sections of the particle solver
 
   //set up the signal handler
-  if (_INTERSEPT_OS_SIGNALS_==_ON_) {
-    signal(SIGFPE,SignalHandler);
-    signal(SIGSEGV,SignalHandler);
-    signal(SIGBUS,SignalHandler);
-  }
+  signal(SIGFPE,SignalHandler);
+  signal(SIGSEGV,SignalHandler);
+  signal(SIGBUS,SignalHandler);
 
 
   //init coupler 
@@ -2119,7 +1972,7 @@ void PIC::Init_BeforeParser() {
 
   //Init manager of the periodic boundary conditions that is called by the mesh generator after each domain decomposition procedure
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-    if (PIC::Mesh::mesh!=NULL) PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
+    PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
   }
 
   //Init the field solver
@@ -2269,7 +2122,7 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 //set up the particle time step
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  *(spec+(double *)(associatedDataPointer+PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
+  *(spec+(double *)(associatedDataPointer+LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
   if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
@@ -2301,7 +2154,7 @@ double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;
-  res=spec+(double *)(associatedDataPointer+PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset);
+  res=spec+(double *)(associatedDataPointer+LocalTimeStepOffset);
   return *res;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   return  PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];

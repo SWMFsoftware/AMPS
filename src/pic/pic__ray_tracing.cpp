@@ -18,7 +18,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-//using namespace std;
+using namespace std;
 
 #include "constants.h"
 #include "specfunc.h"

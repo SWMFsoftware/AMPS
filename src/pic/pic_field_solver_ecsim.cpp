@@ -50,9 +50,9 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 
 
-double _TARGET_DEVICE_ PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
-//list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
+list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedDynamicAllocateBlocks PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedInitNewBlocks PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks;
@@ -61,8 +61,8 @@ PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::
 PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
 PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
-cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> *PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
-cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  *PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
+cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
+cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
@@ -99,9 +99,9 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
 int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
-cStencil::cStencilData *PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil; //[3];
-cStencil::cStencilData **PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil; ///[3][3];
-cStencil::cStencilData **PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375; //  [3][3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[3][3];
+cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[3][3];
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -133,52 +133,34 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
 
 
 //location of the solver's data in the corner node associated data vector
-int _CUDA_MANAGED_ PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
+int PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
 
-double _TARGET_DEVICE_ dtTotal = 0.0;
-double _CUDA_MANAGED_ PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
-double _CUDA_MANAGED_ PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
+double dtTotal = 0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
+double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
 double epsilon0=8.85418782e-12;
 double mu0=1.25663706e-6;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_  
-double _CUDA_MANAGED_ PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
+double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-double _CUDA_MANAGED_ PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
+double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
 #endif
 
 double TotalParticleEnergy=0.0;
 double TotalWaveEnergy=0.0;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
-_TARGET_DEVICE_
 double E_conv = 1;
-
-_TARGET_DEVICE_
 double B_conv = 1;
-
-_TARGET_DEVICE_
 double mass_conv =1.0/_AMU_;
-
-_TARGET_DEVICE_
 double charge_conv=1.0/ElectronCharge;
-
-_TARGET_DEVICE_
 double length_conv=1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-_TARGET_DEVICE_
 double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
-
-_TARGET_DEVICE_
 double B_conv = 1e4;
-
-_TARGET_DEVICE_
 double mass_conv = 1e3;
-
-_TARGET_DEVICE_
 double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
-
-_TARGET_DEVICE_
 double length_conv=1e2; 
 #endif
 
@@ -376,7 +358,6 @@ bool IsInit=false;
 void PIC::FieldSolver::Init() {
   if (IsInit) exit(__LINE__,__FILE__,"Error: The field solver already initialized");
 
-
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
     PIC::FieldSolver::Electromagnetic::ECSIM::Init();
@@ -394,28 +375,12 @@ void PIC::FieldSolver::Init() {
 //Electric field is in the corner nodes
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 
-  //allocate data used by the field solver
-  Solver=new cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1>;
-  PoissonSolver=new cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>;
-
-  LaplacianStencil=new cStencil::cStencilData[3];
-
-  GradDivStencil=new cStencil::cStencilData*[3];
-  GradDivStencil[0]=new cStencil::cStencilData[9];
-  GradDivStencil[1]=Electromagnetic::ECSIM::GradDivStencil[0]+3;
-  GradDivStencil[2]=Electromagnetic::ECSIM::GradDivStencil[0]+6;
-
-  GradDivStencil375=new cStencil::cStencilData*[3];
-  GradDivStencil375[0]=new cStencil::cStencilData[9];
-  GradDivStencil375[1]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+3;
-  GradDivStencil375[2]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+6;
-
   InitDiscritizationStencil();
 
   CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
   //register the linear system solver with the core 
-  PIC::RegisterLinearSolver(Solver); 
+  PIC::RegisterLinearSolver(&Solver); 
 
   //set function for timing of the field solver
   PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable.push_back(CumulativeTiming::Print);
@@ -553,10 +518,7 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
   }
 }
 
-_TARGET_DEVICE_
 int MassMatrixOffsetTable[3][81];
-
-_TARGET_DEVICE_
 bool initMassMatrixOffsetTable=false;
 
 void computeMassMatrixOffsetTable(){
@@ -3591,9 +3553,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
   ComputeNetCharge(true);
   ComputeDivE();
   SetBoundaryChargeDivE();
-  PoissonSolver->UpdateRhs(PoissonUpdateRhs);
+  PoissonSolver.UpdateRhs(PoissonUpdateRhs);
   linear_solver_matvec_c = PoissonMatvec;
-  PoissonSolver->Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
+  PoissonSolver.Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
                       PIC::CPLR::FLUID::EFieldIter,PackBlockData_phi,UnpackBlockData_phi);
   SetBoundaryPHI();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
@@ -4558,10 +4520,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C_Block(cTreeNodeA
 
 //compute E^(n+1)  from E^(n+theta) and E^n
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
-double WaveEnergySum =0.0;
-
-auto DoTask = [=] (double *WaveEnergySum) {
-
+  double WaveEnergySum =0.0;
   double CellVolume=1.0;
 
   int CellCounter,CellCounterMax=DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
@@ -4632,15 +4591,8 @@ auto DoTask = [=] (double *WaveEnergySum) {
     Bx0=CurrentB_Ptr[BxOffsetIndex];
     By0=CurrentB_Ptr[ByOffsetIndex];
     Bz0=CurrentB_Ptr[BzOffsetIndex];
-    *WaveEnergySum += ((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
+    WaveEnergySum += ((Ex*Ex+Ey*Ey+Ez*Ez)*E_conv*E_conv+(Bx0*Bx0+By0*By0+Bz0*Bz0)*B_conv*B_conv)*0.125/Pi*CellVolume;
   }
-};
-
-#if _CUDA_MODE_ == _OFF_
-DoTask(&WaveEnergySum);
-#else
-
-#endif
     
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
@@ -4817,11 +4769,11 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
-  Solver->Reset();
-  Solver->BuildMatrix(GetStencil);
+  Solver.Reset();
+  Solver.BuildMatrix(GetStencil);
   if (DoDivECorrection){
-    PoissonSolver->Reset();
-    PoissonSolver->BuildMatrix(PoissonGetStencil);
+    PoissonSolver.Reset();
+    PoissonSolver.BuildMatrix(PoissonGetStencil);
   }
 }
 
@@ -4886,15 +4838,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
     PIC::CPLR::FLUID::write_output(timeNow,true);
   }
   */
-  Solver->UpdateRhs(UpdateRhs); 
-  Solver->UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
+  Solver.UpdateRhs(UpdateRhs); 
+  Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
   CumulativeTiming::SolveTime.Start();
   linear_solver_matvec_c = matvec;
 
   if (PIC::ThisThread==0) printf("---------------Solving E field-----------\n");
 
-  Solver->Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
+  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
 
   CumulativeTiming::SolveTime.UpdateTimer();
   CumulativeTiming::UpdateBTime.Start();
@@ -5022,25 +4974,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
-
-auto DoTask = [=] {
-  Solver->MultiplyVector(VecOut,VecIn,n);
-};
-
-#if _CUDA_MODE_ == _OFF_ 
-DoTask();
-#else 
-
-#endif
-
-
+  Solver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
-  PoissonSolver->MultiplyVector(VecOut,VecIn,n);
+  PoissonSolver.MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 

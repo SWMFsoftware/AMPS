@@ -11,8 +11,8 @@
 
 #include "pic.h"
 
-int _TARGET_DEVICE_ PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge=2;
-int _TARGET_DEVICE_ PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall=1;
+int PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge=2;
+int PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall=1;
 
 
 void PIC::Mesh::BlockElementSendMask::Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {
@@ -26,14 +26,10 @@ void PIC::Mesh::BlockElementSendMask::Set(bool flag,unsigned char* CenterNodeMas
   for (i=0,imax=CornerNode::GetSize();i<imax;i++) CornerNodeMask[i]=m;
 }
 
-_TARGET_HOST_ _TARGET_DEVICE_
 int PIC::Mesh::BlockElementSendMask::CornerNode::GetSize() {return 1+((_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1))/8;}
-
-_TARGET_HOST_ _TARGET_DEVICE_
 int PIC::Mesh::BlockElementSendMask::CenterNode::GetSize() {return 1+(_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_)/8;}
 
 //Init Mask for the Layer Block
-_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {
   int i,j,k;
   cTreeNodeAMR<cDataBlockAMR>* neibNode;
@@ -93,7 +89,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBloc
 
 
 
-_TARGET_HOST_ _TARGET_DEVICE_
+
 void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {
   int i,j,k,iface,iedge,icorner,imin,imax,jmin,jmax,kmin,kmax,ii,jj,kk;
   cTreeNodeAMR<cDataBlockAMR>* neibNode;
