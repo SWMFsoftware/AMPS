@@ -21,7 +21,7 @@ int PIC::Rnd::CenterNode::RequestDataBuffer(int OffsetIn) {
 
 void PIC::Rnd::CenterNode::Init() {
   //reserve memory to store the seed in the center node state vector
-  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
+  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
 }
 
 void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {

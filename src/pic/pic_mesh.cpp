@@ -69,14 +69,8 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTab
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
-#if DIM == 3
-_TARGET_DEVICE_ cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
-#elif DIM == 2
-cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
-#else
-cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
-#endif
 
+_TARGET_DEVICE_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
 
 //the user defined functions for output of the 'ceneter node' data into a data file
 vector<PIC::Mesh::fPrintVariableListCenterNode> PIC::Mesh::PrintVariableListCenterNode;
@@ -466,16 +460,16 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 #endif
 
   //allocate the model requested static (not sampling) cell data
-  if (PIC::IndividualModelSampling::RequestStaticCellData.size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellData.size();i++) {
-      PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellData[i](PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
+  if (PIC::IndividualModelSampling::RequestStaticCellData->size()!=0) {
+    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellData->size();i++) {
+      PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=(*PIC::IndividualModelSampling::RequestStaticCellData)[i](PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
     }
   }
 
   //allocate the model requested static (not sampling) cell's corner data
-  if (PIC::IndividualModelSampling::RequestStaticCellCornerData.size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellCornerData.size();i++) {
-      PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellCornerData[i](PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
+  if (PIC::IndividualModelSampling::RequestStaticCellCornerData->size()!=0) {
+    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellCornerData->size();i++) {
+      PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=(*PIC::IndividualModelSampling::RequestStaticCellCornerData)[i](PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
     }
   }
 }

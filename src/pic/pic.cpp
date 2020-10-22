@@ -1716,6 +1716,12 @@ void PIC::Init_BeforeParser() {
   //initiate MPI
   InitMPI();
 
+  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+  PIC::IndividualModelSampling::RequestStaticCellData->clear();
+
+  PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+  PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
+
   #if _CUDA_MODE_ == _ON_
   AllocateMesh<<<1,1>>>(); 
   #else 
@@ -1925,9 +1931,11 @@ void PIC::Init_BeforeParser() {
   //init sections of the particle solver
 
   //set up the signal handler
-  signal(SIGFPE,SignalHandler);
-  signal(SIGSEGV,SignalHandler);
-  signal(SIGBUS,SignalHandler);
+  if (_INTERSEPT_OS_SIGNALS_==_ON_) {
+    signal(SIGFPE,SignalHandler);
+    signal(SIGSEGV,SignalHandler);
+    signal(SIGBUS,SignalHandler);
+  }
 
 
   //init coupler 
