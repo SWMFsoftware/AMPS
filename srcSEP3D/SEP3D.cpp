@@ -251,11 +251,11 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
   double norm=0.0,dInterval=0.0;
   char str[_MAX_STRING_LENGTH_PIC_];
   
-  if (MS::mesh.ThisThread==0) pipe.openRecvAll();
+  if (MS::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
   
   
-  if (MS::mesh.ThisThread==0) {
+  if (MS::mesh->ThisThread==0) {
     sprintf(str,"%s.dat",fname);
     fout=fopen(str,"w");
     
@@ -263,7 +263,7 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
     fprintf(fout,"VARIABLES=\"Energy\",\"f\"\n");
     
     //collect the sampled information from other processors
-    for (thread=1;thread<MS::mesh.nTotalThreads;thread++) 
+    for (thread=1;thread<MS::mesh->nTotalThreads;thread++) 
       for (int iBin=0; iBin<nBin; iBin++) 
 	Distribution[iBin]+=pipe.recv<double>(thread);
     
