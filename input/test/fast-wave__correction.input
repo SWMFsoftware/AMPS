@@ -13,6 +13,14 @@ makefile  MPIRUN=mpirun -np 4
 
 makefile LINK_SWMF_SHARED_LIB=on
 
+ExcludeModule=ELECTRON_IMPACT
+ExcludeModule=SPUTTERING
+ExcludeModule=DUST
+ExcludeModule=CHARGE_EXCHANGE
+ExcludeModule=PHOTOLYTIC_REACTIONS
+ExcludeModule=EXOSPHERE
+ExcludeModule=SURFACE
+
 !makefile ExternalModules=models/exosphere
 ProjectSourceDirectory=test/srcFastWave 
 WorkingSourceDirectory=srcTemp   !. !srcTemp !the location of the code that will be compiled (current directory == ".")
@@ -57,16 +65,17 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   InitialSampleLength=20
   TestRunTotalIteration=50
 
-  NastranSurfaceUserData=on
   
+  MeshType=uniform !uniform,non-uniform
   BlockCells=16,8,4
   GhostCells=2,2,2
   CommunicationDepth=2,2
   divediscretization=yuxi
   CorrectionFactorDivE=0.9
 
-  NastranSurfaceUserData=on !on !!!on, off
-  ControlParticleInsideNastranSurface=off !!!on,of
+  !InternalBoundary=off
+  NastranSurfaceUserData=off !on !!!on, off
+  ControlParticleInsideNastranSurface=off !!!on,off
 
   TrajectoryTracing=off !on
   MaxSampledTrajectoryNumber=25000
