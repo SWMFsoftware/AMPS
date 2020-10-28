@@ -464,7 +464,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
     //sort the list
     std::sort(ParticleList.begin(),ParticleList.end(),
-        [](cParticleDescriptor& a,cParticleDescriptor& b) {return a.checksum>b.checksum;});
+        [](const cParticleDescriptor& a,const cParticleDescriptor& b) {return a.checksum>b.checksum;});
 
     //create the sorted list
     int ip,ipmax=ParticleList.size();
