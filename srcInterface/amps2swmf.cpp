@@ -115,11 +115,17 @@ extern "C" {
     
     switch (AMPS2SWMF::ComponentID) {
     case _AMPS_SWMF_PC_:
+      system("mkdir -p PC");
+      system("mkdir -p PC/restartOUT"); 
+
       PIC::Restart::SamplingData::Save("PC/restartOUT/restart_field.dat");
       PIC::Restart::SaveParticleData("PC/restartOUT/restart_particle.dat");
       break;
 
     case _AMPS_SWMF_PT_:
+      system("mkdir -p PT");
+      system("mkdir -p PT/restartOUT");
+
       PIC::Restart::SamplingData::Save("PT/restartOUT/restart_field.dat");
       PIC::Restart::SaveParticleData("PT/restartOUT/restart_particle.dat");
       break;

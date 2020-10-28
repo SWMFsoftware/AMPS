@@ -48,6 +48,9 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
     pipe.openRecvAll();
 
     fRestart=fopen(fname,"w");
+
+    if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
+
     fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
     fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
   }
