@@ -87,7 +87,7 @@ int PIC::TimeStep() {
    }
    
    //recover the sampling data from the sampling data restart file, print the TECPLOT files and quit
-   if (_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_==_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_ON_) {
+   if ((_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_==_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_ON_)||(PIC::Restart::LoadRestartSWMF==true)) {
      static bool RestartFileReadFlag=false;
 
      if (RestartFileReadFlag==false) {
@@ -114,19 +114,21 @@ int PIC::TimeStep() {
          Restart::SamplingData::Read(RecoveryEntry->first.c_str());
          MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-         for (list<int>::iterator s=RecoveryEntry->second.begin();s!=RecoveryEntry->second.end();s++) {
-           char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
+         if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__TECPLOT_ASCII_) {
+           for (list<int>::iterator s=RecoveryEntry->second.begin();s!=RecoveryEntry->second.end();s++) {
+             char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
 
-           PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
-           sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
-           PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,*s);
+             PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
+             sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
+             PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,*s);
 
-           //preplot the recovered file if needed
-           if (Restart::SamplingData::PreplotRecoveredData==true) {
-             char cmd[_MAX_STRING_LENGTH_PIC_];
+             //preplot the recovered file if needed
+             if (Restart::SamplingData::PreplotRecoveredData==true) {
+               char cmd[_MAX_STRING_LENGTH_PIC_];
 
-             sprintf(cmd,"preplot %s",fname);
-             system(cmd);
+               sprintf(cmd,"preplot %s",fname);
+               system(cmd);
+             }
            }
          }
        }
@@ -147,7 +149,7 @@ int PIC::TimeStep() {
    }
 
    //recover the particle data restart file
-   if (_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ON_) {
+   if ((_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ON_)||(PIC::Restart::LoadRestartSWMF==true)) {
      static bool RestartFileReadFlag=false;
 
      if (RestartFileReadFlag==false) {

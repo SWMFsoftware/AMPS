@@ -5942,6 +5942,9 @@ namespace PIC {
     //calcualte the check sum of the save/read particle data
     unsigned long GetParticleDataCheckSum();
     void GetParticleDataBlockCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,CRC32* CheckSum,int &PrevNodeThread);
+
+    //flag: read particle restart file when run as a component of the SWMF
+    extern bool LoadRestartSWMF; 
   }
 
   //chemical reactions

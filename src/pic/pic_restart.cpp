@@ -21,6 +21,9 @@ PIC::Restart::fUserAdditionalRestartData PIC::Restart::UserAdditionalRestartData
 
 char PIC::Restart::UserAdditionalRestartDataCompletedMarker[PIC::Restart::UserAdditionalRestartDataCompletedMarkerLength]="PARTICLE-RESTART-FILE--END-USER-ADDITIONAL";
 
+//flag: read particle restart file when run as a component of the SWMF
+bool PIC::Restart::LoadRestartSWMF=false;
+
 //-------------------------------------- Set user function for saving.reading additional restart data ---------------------------------
 void PIC::Restart::SetUserAdditionalRestartData(PIC::Restart::fUserAdditionalRestartData fRead,PIC::Restart::fUserAdditionalRestartData fSave) {
   UserAdditionalRestartDataSave=fSave;
