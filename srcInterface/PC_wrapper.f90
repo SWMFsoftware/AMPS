@@ -45,7 +45,13 @@ contains
 
     ! Contains the PARAM.in segment
     character(len=lStringLine), allocatable :: StringLineF_I(:) 
+
+    character (len=*), parameter :: NameSub='PT_set_param'
+    character (len=2) ComponentName
     !-------------------------------------------------------------------------
+
+    ComponentName=CompInfo%name
+    call amps_set_component_name(ComponentName)
 
     !call AMPS_TimeStep()
 

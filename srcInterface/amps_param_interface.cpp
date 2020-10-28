@@ -17,7 +17,23 @@ int AMPS2SWMF::PARAMIN::read_paramin(stringstream *param) {//(int argc, char **a
     get_next_command(param,&Command);
     if (Command == "") continue;
 
-    if (Command == "#TEST"){
+    if (Command == "#RESTART") {
+       PIC::Restart::LoadRestartSWMF=true;
+
+       switch (AMPS2SWMF::ComponentID) {
+       case _AMPS_SWMF_PC_:
+         sprintf(PIC::Restart::recoverParticleDataRestartFileName,"%s","PC/restartOUT/restart_particle.dat");
+         sprintf(PIC::Restart::SamplingData::RestartFileName,"%s","PC/restartOUT/restart_field.dat");
+         break;
+       case _AMPS_SWMF_PT_:
+         sprintf(PIC::Restart::recoverParticleDataRestartFileName,"%s","PT/restartOUT/restart_particle.dat");
+         sprintf(PIC::Restart::SamplingData::RestartFileName,"%s","PT/restartOUT/restart_field.dat");
+         break;
+       default:
+         exit(__LINE__,__FILE__,"Error: the option is unlnown");
+       }
+    }
+    else if (Command == "#TEST"){
       read_var(param,"DoTest",   &TestVar);
 
       if (TestVar==true) {
