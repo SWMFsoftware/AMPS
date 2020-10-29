@@ -39,18 +39,36 @@ void amps_time_step();
 //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
 double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0}; 
 
+char AMPS2SWMF::ComponentName[10]="";
+int AMPS2SWMF::ComponentID=_AMPS_SWMF_UNDEFINED_; 
+
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
   void amps_dynamic_allocate_blocks();
   void amps_dynamic_init_blocks();
 #endif
+
+
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit);
   int initamps_();
   void amps_impose_global_time_step_(double *Dt);
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
   void amps_save_restart_();
   void amps_finalize_();
+
+  //set the component name 
+  void amps_set_component_name_(char* l) {
+//    sprintf(AMPS2SWMF::ComponentName,"%s",l);
+
+    for (int i=0;i<2;i++) AMPS2SWMF::ComponentName[i]=l[i];
+    AMPS2SWMF::ComponentName[2]=0;
+
+
+    if (strcmp("PC",AMPS2SWMF::ComponentName)==0) AMPS2SWMF::ComponentID=_AMPS_SWMF_PC_;
+    else if (strcmp("PT",AMPS2SWMF::ComponentName)==0) AMPS2SWMF::ComponentID=_AMPS_SWMF_PT_;
+    else exit(__LINE__,__FILE__,"Error: the component code is umnknown");  
+  } 
 
   //determine whether a point belongs to a fomain of a particlelar SWMF component 
   bool IsDomainSC(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;}
@@ -93,10 +111,31 @@ extern "C" {
   }
   
   void amps_save_restart_(){
-    //printf("amps_save_restart start\n");
-    PIC::Restart::SamplingData::Save("PC/restartOUT/restart_field.dat");
-    PIC::Restart::SaveParticleData("PC/restartOUT/restart_particle.dat");
-    //printf("amps_save_restart end\n");
+    printf("amps_save_restart start\n");
+    
+    switch (AMPS2SWMF::ComponentID) {
+    case _AMPS_SWMF_PC_:
+      system("mkdir -p PC");
+      system("mkdir -p PC/restartOUT"); 
+
+      PIC::Restart::SamplingData::Save("PC/restartOUT/restart_field.dat");
+      PIC::Restart::SaveParticleData("PC/restartOUT/restart_particle.dat");
+      break;
+
+    case _AMPS_SWMF_PT_:
+      system("mkdir -p PT");
+      system("mkdir -p PT/restartOUT");
+
+      PIC::Restart::SamplingData::Save("PT/restartOUT/restart_field.dat");
+      PIC::Restart::SaveParticleData("PT/restartOUT/restart_particle.dat");
+      break;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unlnown"); 
+    }
+
+ 
+    printf("amps_save_restart end\n");
   }
 
   void amps_get_center_point_number_(int *nCenterPoints) {
@@ -285,7 +324,10 @@ extern "C" {
     static long int counter=0;
     counter++;
 
-    if (call_amps_flag==true) amps_time_step();
+    if (call_amps_flag==true) {
+      amps_time_step();
+      PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
+    }
   }
 
   void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {

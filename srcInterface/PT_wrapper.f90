@@ -61,8 +61,12 @@ contains
     character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     character (len=*), parameter :: NameSub='PT_set_param'
+    character (len=2) ComponentName
 
     !-------------------------------------------------------------------------
+    ComponentName=CompInfo%name
+    call amps_set_component_name(ComponentName)  
+
     select case(TypeAction)
     case('VERSION')
        call put(CompInfo,&
@@ -138,6 +142,8 @@ contains
     character(len=*), parameter :: NameSub='PT_save_restart'
     !-------------------------------------------------------------------------
     !!! PT should save restart files !!!
+
+    call amps_save_restart()
     
   end subroutine PT_save_restart
 

@@ -13,7 +13,15 @@ using namespace std;
 
 #include "pic.h"
 
+//AMPS component code 
+#define _AMPS_SWMF_UNDEFINED_ -1
+#define _AMPS_SWMF_PT_ 0
+#define _AMPS_SWMF_PC_ 1 
+
 namespace AMPS2SWMF {
+  //the name of hte component within the SWMF (PT/PC)
+  extern char ComponentName[10];
+  extern int ComponentID;
 
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 

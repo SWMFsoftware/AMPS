@@ -87,7 +87,7 @@ int PIC::TimeStep() {
    }
    
    //recover the sampling data from the sampling data restart file, print the TECPLOT files and quit
-   if (_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_==_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_ON_) {
+   if ((_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_==_PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_ON_)||(PIC::Restart::LoadRestartSWMF==true)) {
      static bool RestartFileReadFlag=false;
 
      if (RestartFileReadFlag==false) {
@@ -147,7 +147,7 @@ int PIC::TimeStep() {
    }
 
    //recover the particle data restart file
-   if (_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ON_) {
+   if ((_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ON_)||(PIC::Restart::LoadRestartSWMF==true)) {
      static bool RestartFileReadFlag=false;
 
      if (RestartFileReadFlag==false) {
