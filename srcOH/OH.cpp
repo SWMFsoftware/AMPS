@@ -480,32 +480,24 @@ auto SimulateReaction = [&] () {
 
     // adding neutral to correct species depending on its velocity
     if (_H_ENA_V3_SPEC_ >= 0 && sqrt(vp2) >= 500.0E3) {
-//      PIC::ParticleBuffer::SetI(_H_ENA_V3_SPEC_,ParticleData);
-
       if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V3_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V3_SPEC_])) {
         CreateNewParticle=true;
         NewParticleSpec=_H_ENA_V3_SPEC_;  
       }
     }
     else if (_H_ENA_V2_SPEC_ >=0 && sqrt(vp2)>=150.0E3 && sqrt(vp2)<500.0E3) {
-//      PIC::ParticleBuffer::SetI(_H_ENA_V2_SPEC_,ParticleData);
-
       if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V2_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V2_SPEC_])) {
         CreateNewParticle=true;
         NewParticleSpec=_H_ENA_V2_SPEC_;
       }
     }
     else if (_H_ENA_V1_SPEC_ >=0 && sqrt(vp2)>=50.0E3 && sqrt(vp2)<150.0E3) {
-//      PIC::ParticleBuffer::SetI(_H_ENA_V1_SPEC_,ParticleData);
-
       if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_ENA_V1_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_ENA_V1_SPEC_])) {
         CreateNewParticle=true;
         NewParticleSpec=_H_ENA_V1_SPEC_;
       }
     }
     else {
-//      PIC::ParticleBuffer::SetI(_H_SPEC_,ParticleData);
-
       if (rnd()<(nNewparticles_d=ParentParticleWeight/ParentTimeStep*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_SPEC_]/PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_])) {
         CreateNewParticle=true;
         NewParticleSpec=_H_SPEC_;
@@ -517,8 +509,17 @@ auto SimulateReaction = [&] () {
       int nNewparticles=nNewparticles_d;
       PIC::ParticleBuffer::byte *NewParticleData;
 
-      nNewparticles_d-=nNewparticles;
-      if (rnd()<nNewparticles_d) nNewparticles++; 
+      if (nNewparticles_d<1.0) {
+        nNewparticles=1;
+      }
+      else {
+        nNewparticles=nNewparticles_d; 
+
+        nNewparticles_d-=nNewparticles;
+        if (rnd()<nNewparticles_d) nNewparticles++; 
+      }
+
+      Exosphere::ChemicalModel::TotalSourceRate[NewParticleSpec]+=nNewparticles*PIC::ParticleWeightTimeStep::GlobalParticleWeight[NewParticleSpec]/PIC::ParticleWeightTimeStep::GlobalTimeStep[NewParticleSpec];
 
       for (int np=0;np<nNewparticles;np++) { 
         new_ptr=PIC::ParticleBuffer::GetNewParticle();
@@ -547,6 +548,17 @@ auto SimulateReaction = [&] () {
 
   //determine whether the original particle need to be deleted
   double new_weight_correction=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*exp(-ParentTimeStep/ParentLifeTime);
+  double ParentParticleWeight;
+
+  switch (_SIMULATION_PARTICLE_WEIGHT_MODE_) {
+  case _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_: 
+    ParentParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the weight mode is node defined");
+  }
+
+  Exosphere::ChemicalModel::TotalLossRate[spec]+=ParentParticleWeight*(PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)-new_weight_correction)/ParentTimeStep;
 
   if (new_weight_correction<InitWeightQuantum) {
     PIC::ParticleBuffer::DeleteParticle(ptr);
