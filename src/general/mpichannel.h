@@ -200,6 +200,8 @@ public:
   template<class T> inline void send(T* data,int nsend) {
     int length=nsend*sizeof(T);
 
+    if (length==0) return;
+
     if (length>max_MPIbuffer_size) {
       exit(__LINE__,"Error: the length of the data vector exeeds that of the internal data buffer. Need to increase the size of the data buffer used when initialize the channel obsect.");
     }
@@ -275,6 +277,8 @@ public:
 
   template<class T> inline T* recvPointer(int nrecv,int thread) {
     int length=nrecv*sizeof(T);
+
+    if (length==0) return NULL;
 
     if (recvptr[thread]>=RecvDataLength[thread]) {
 
