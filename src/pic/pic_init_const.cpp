@@ -5,8 +5,8 @@
 #include "pic.h"
 
 //int PIC::nTotalSpecies=0;
-int PIC::nTotalThreadsOpenMP=1;
-int PIC::ThisThread=0,PIC::nTotalThreads=1;
+int _TARGET_DEVICE_ PIC::nTotalThreadsOpenMP=1;
+int _CUDA_MANAGED_ PIC::ThisThread=0,PIC::nTotalThreads=1;
 
 //the list containing the functions used to exchange the run time execution statistics
 vector<PIC::fExchangeExecutionStatistics> PIC::ExchangeExecutionStatisticsFunctions;
@@ -17,7 +17,7 @@ vector<PIC::IndividualModelSampling::fSamplingProcedure> PIC::IndividualModelSam
 vector<PIC::IndividualModelSampling::fPrintVariableList> PIC::IndividualModelSampling::PrintVariableList;
 vector<PIC::IndividualModelSampling::fInterpolateCenterNodeData> PIC::IndividualModelSampling::InterpolateCenterNodeData;
 vector<PIC::IndividualModelSampling::fPrintSampledData> PIC::IndividualModelSampling::PrintSampledData;
-vector<PIC::IndividualModelSampling::fRequestStaticCellData> *PIC::IndividualModelSampling::RequestStaticCellData,*PIC::IndividualModelSampling::RequestStaticCellCornerData;
+amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> _TARGET_DEVICE_ *PIC::IndividualModelSampling::RequestStaticCellData,*PIC::IndividualModelSampling::RequestStaticCellCornerData;
 vector<PIC::Datum::cDatumSampled*>PIC::IndividualModelSampling::DataSampledList;
 
 //generic particle transformation

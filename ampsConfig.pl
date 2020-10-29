@@ -1537,8 +1537,8 @@ sub ReadGeneralBlock {
         die "Line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
       }
 
-      ampsConfigLib::ChangeValueOfVariable("int PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall",$s0,"pic/pic_block_send_mask.cpp");
-      ampsConfigLib::ChangeValueOfVariable("int PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge",$s1,"pic/pic_block_send_mask.cpp");
+      ampsConfigLib::ChangeValueOfVariable("int _CUDA_MANAGED_ PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall",$s0,"pic/pic_block_send_mask.cpp");
+      ampsConfigLib::ChangeValueOfVariable("int _CUDA_MANAGED_ PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge",$s1,"pic/pic_block_send_mask.cpp");
     }
     
     ### DIVE discretization ###

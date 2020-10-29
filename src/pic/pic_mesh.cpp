@@ -38,33 +38,33 @@ namespace PIC {
 }
 
 //init the block's global data
-int PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset=0;
-int PIC::Mesh::cDataBlockAMR_static_data::LocalParticleWeightOffset=0;
-int PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength=0;
-bool PIC::Mesh::cDataBlockAMR_static_data::InternalDataInitFlag=false;
-int PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LocalParticleWeightOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength=0;
+bool _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::InternalDataInitFlag=false;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset=0;
 
 //init the cells' global data
-int PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength=0;
-int PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=0;
 
 //init the cell corner's global data
-int PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength=0;
 
 //in case OpenMP is used: tempParticleMovingListTableThreadOffset is the offset in the associatedDataPointer vector to the position when the temporary particle list begins
-int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset=-1;
-int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableLength=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset=-1;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableLength=0;
 
-int PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
 
 //the offsets to the sampled data stored in 'center nodes'
 int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops
-unsigned int PIC::DomainBlockDecomposition::nLocalBlocks=0;
-int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
-cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTable=NULL;
+unsigned int _TARGET_DEVICE_ PIC::DomainBlockDecomposition::nLocalBlocks=0;
+int _TARGET_DEVICE_ PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
+cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecomposition::BlockTable=NULL;
 
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
@@ -519,6 +519,7 @@ void PIC::Mesh::buildMesh() {
 
 
 //pack block data for the data syncronization
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
@@ -529,6 +530,7 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
@@ -541,6 +543,7 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
@@ -552,6 +555,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* SendDataBuffer,
@@ -759,6 +763,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 }
 
 //unpack data for the data syncronization
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
@@ -769,6 +774,7 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
@@ -781,6 +787,7 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
@@ -791,6 +798,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
       iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* RecvDataBuffer,

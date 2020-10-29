@@ -11,8 +11,8 @@
 
 #include "pic.h"
 
-int PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge=2;
-int PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall=1;
+int _CUDA_MANAGED_ PIC::Mesh::BlockElementSendMask::CommunicationDepthLarge=2;
+int _CUDA_MANAGED_ PIC::Mesh::BlockElementSendMask::CommunicationDepthSmall=1;
 
 
 void PIC::Mesh::BlockElementSendMask::Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {

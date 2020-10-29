@@ -27,10 +27,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;   
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
+  _TARGET_DEVICE_ _TARGET_HOST_
   void initMemoryBlock() {
     long int i,j;
 
@@ -77,6 +79,7 @@ public:
     dataBufferListPointer++;
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   void resetStack() {
     long int databank,offset;
 
@@ -90,6 +93,7 @@ public:
 
 
   //get the entry pointer and counting number
+  _TARGET_DEVICE_ _TARGET_HOST_
   long int GetEntryCountingNumber(T* ptr) {
     long int nMemoryBank,res=-1;
 
@@ -104,6 +108,7 @@ public:
     return -1;
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   T* GetEntryPointer(long int countingNumber) {
     long int nMemoryBank,offset;
 
@@ -115,6 +120,7 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
       delete [] dataBufferList[i];
@@ -187,13 +193,14 @@ public:
   }
    
 
-  
+  _TARGET_DEVICE_ _TARGET_HOST_ 
   void init() {
     clear();
     initMemoryBlock();
   }
     
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -201,10 +208,12 @@ public:
     dataBufferList=0,dataBufferList=NULL,dataBufferListSize=0,dataBufferListPointer=0;
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   cStack() {
     explicitConstructor();
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   ~cStack() {
     clear();
   }
@@ -214,6 +223,7 @@ public:
   long int usedElements() {return elementStackPointer;}
 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   T* newElement() {
     T* res;
 
@@ -231,6 +241,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void deleteElement(T* delElement) {
     if (sizeof(T)==0) return;
 

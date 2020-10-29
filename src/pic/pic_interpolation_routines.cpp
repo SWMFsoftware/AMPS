@@ -10,8 +10,8 @@
 
 #include "pic.h"
 
-PIC::InterpolationRoutines::CellCentered::cStencil* PIC::InterpolationRoutines::CellCentered::StencilTable=NULL;
-PIC::InterpolationRoutines::CornerBased::cStencil* PIC::InterpolationRoutines::CornerBased::StencilTable=NULL;
+PIC::InterpolationRoutines::CellCentered::cStencil _TARGET_DEVICE_*PIC::InterpolationRoutines::CellCentered::StencilTable=NULL;
+PIC::InterpolationRoutines::CornerBased::cStencil _TARGET_DEVICE_ *PIC::InterpolationRoutines::CornerBased::StencilTable=NULL;
 
 int PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::iBlockFoundCurrent=0;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::BlockFound[PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::nBlockFoundMax];
@@ -31,6 +31,7 @@ extern "C"{
 
 
 //initialize the interpolation module
+_TARGET_DEVICE_
 void PIC::InterpolationRoutines::Init() {
 
   //init the stencil table

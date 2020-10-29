@@ -19,6 +19,7 @@ int PIC::Rnd::CenterNode::RequestDataBuffer(int OffsetIn) {
   return sizeof(cRndSeedContainer);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::Rnd::CenterNode::Init() {
   //reserve memory to store the seed in the center node state vector
   PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);

@@ -64,6 +64,7 @@ void inline UnpackExitErrorCode(int& Line,int& FunctionCode) {
 }
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void exit(long int,const char*,const char* =NULL);
 void PrintLineMark(long int,char*,char* =NULL);
 

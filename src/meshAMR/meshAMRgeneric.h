@@ -73,7 +73,7 @@
   };
 
 //the limits of the comlutational domain
-extern _TARGET_DEVICE_ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
+extern _CUDA_MANAGED_ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
 
 class cBasicNode : public cStackElementBase, public cAMRexit {
@@ -506,6 +506,7 @@ public:
 
 
    template <typename T>
+   _TARGET_HOST_ _TARGET_DEVICE_
    cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,T* mesh_ptr) {
      int ix[3];
 
@@ -1035,6 +1036,7 @@ public:
   }
 
   template <typename T>
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,T* mesh_ptr) {
     cTreeNodeAMR* res;
 
@@ -1102,6 +1104,7 @@ public:
 
 
   template <typename T>
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,T* mesh_ptr) {
     cTreeNodeAMR *res=NULL;
 
@@ -1187,6 +1190,7 @@ public:
   cTreeNodeAMR *GetDownNode(int i,int j,int k) {return downNode[i+2*(j+k*2)];} 
   void SetDownNode(cTreeNodeAMR* node,int i,int j,int k) {downNode[i+2*(j+k*2)]=node;}  
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   bool lastBranchFlag() {
     //if _BOTTOM_BRANCH_TREE_ -> the node is on the bottom of the tree
     for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (downNode[nDownNode]!=NULL) return !_BOTTOM_BRANCH_TREE_;
@@ -1287,7 +1291,8 @@ public:
     #endif
   }
 
-  inline cCenterNode *GetCenterNode(long int nd) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cCenterNode *GetCenterNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCenterNodes=_TOTAL_BLOCK_CELLS_X_;
@@ -1310,11 +1315,13 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cCenterNode *GetCenterNode(int i,int j,int k) {
     return GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetCenterNode(cCenterNode* nodeptr,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1349,6 +1356,8 @@ public:
 	 return cornerNodes;
   }
 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cCornerNode *GetCornerNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1364,7 +1373,8 @@ public:
     return cornerNodes[nd];
   }
 
-  inline cCornerNode *GetCornerNode(int i,int j,int k) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cCornerNode *GetCornerNode(int i,int j,int k) {
     return GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
   }
 
@@ -1394,14 +1404,17 @@ public:
     #endif
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline static int getCornerNodeLocalNumber(int i,int j,int k) {
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
-  inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
+  _TARGET_DEVICE_ _TARGET_HOST_ 
+  static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_ 
   inline void getCenterNodeCoordinate(int& i,int& j,int& k,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1978,14 +1991,18 @@ public:
     setMeshName(mname);
   }
 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline long int getCornerNodeLocalNumber(int i,int j,int k) {
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline static void convertCenterNodeLocalNumber2LocalCoordinates(int LocalNumber,int &i,int &j, int &k) {
     k=LocalNumber/(_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_);
     LocalNumber-=k*_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_;
@@ -2640,6 +2657,7 @@ Start:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     if (startNode==NULL) startNode=rootTree;
 
