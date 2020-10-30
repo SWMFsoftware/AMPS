@@ -611,7 +611,7 @@ void PIC::ParticleBuffer::CheckParticleList() {
 
 //==========================================================
 //initiate the new particle
-int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorrectionFactor,int *spec,PIC::ParticleBuffer::byte* ParticleData,int InitMode,void *node) {
+int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorrectionFactor,int *spec,PIC::ParticleBuffer::byte* ParticleData,int InitMode,void *node,fUserInitParticle UserInitParticleFunction) {
   int ptr,ptrSpec;
   byte* ptrData;
 
@@ -631,6 +631,9 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
   if (v!=NULL) SetV(v,ptrData);
   if (spec!=NULL) SetI(*spec,ptrData);
   if (WeightCorrectionFactor!=NULL) SetIndividualStatWeightCorrection(*WeightCorrectionFactor,ptrData);
+
+  //call the user-defined function to initiate the partcles
+  if (UserInitParticleFunction!=NULL) UserInitParticleFunction(ptrData); 
 
   //determine the species number
   ptrSpec=(spec!=NULL) ? *spec : GetI(ptrData);
