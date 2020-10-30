@@ -58,6 +58,8 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     if (PIC::nTotalSpecies == 1) {
 
       CharacteristicSpeed=sqrt(pow(OH::InjectionVelocity[0],2)+pow(OH::InjectionVelocity[1],2)+pow(OH::InjectionVelocity[2],2));
+
+      if (CharacteristicSpeed==0.0) CharacteristicSpeed=25.0E3;
     }
     else CharacteristicSpeed=25.0E3;
     break;
@@ -299,6 +301,11 @@ void amps_init_mesh(){
 
 }
 
+
+void SetDefaultOriginID(PIC::ParticleBuffer::byte *ParticleData) {
+  OH::SetOriginTag(0,ParticleData);
+}  
+
 void amps_init() {
  
   
@@ -363,7 +370,7 @@ void amps_init() {
      PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh.GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
 
      //pre-populate the domain
-     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain);
+     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,SetDefaultOriginID);
    }
 
 }
