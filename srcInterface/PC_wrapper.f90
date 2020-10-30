@@ -36,7 +36,6 @@ contains
     use CON_comp_info
     use ModReadParam
 
-    character (len=*), parameter :: NameSub='PC_set_param'
     integer :: iComm,iProc,nProc,nThread
 
     ! Arguments
@@ -46,7 +45,7 @@ contains
     ! Contains the PARAM.in segment
     character(len=lStringLine), allocatable :: StringLineF_I(:) 
 
-    character (len=*), parameter :: NameSub='PT_set_param'
+    character (len=*), parameter :: NameSub='PC_set_param'
     character (len=2) ComponentName
     !-------------------------------------------------------------------------
 
