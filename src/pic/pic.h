@@ -1672,7 +1672,10 @@ namespace PIC {
     //so, in the defineition of the function 'node' is void* but in pic_buffer.cpp this argument is transformed to cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
     #define _PIC_INIT_PARTICLE_MODE__ADD2LIST_  0
     #define _PIC_INIT_PARTICLE_MODE__MOVE_      1
-    int InitiateParticle(double *x,double *v,double* WeightCorrectionFactor,int *spec,byte* ParticleData,int InitMode,void *node);
+
+    typedef void (*fUserInitParticle)(byte*);
+    int InitiateParticle(double *x,double *v,double* WeightCorrectionFactor,int *spec,byte* ParticleData,int InitMode,void *node,fUserInitParticle=NULL);
+
 
 
     // Operations related to species ID
@@ -5989,7 +5992,7 @@ namespace PIC {
   //prepopulate the domain
   namespace InitialCondition {
     //constant number density
-    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature);
+    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
     // put a single particle (for each thread)
     long int PutParticle(int spec, double *x, double *v);
   }

@@ -28,7 +28,7 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
   return 1;  
 }
 
-long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature) {
+long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
@@ -100,7 +100,7 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
         for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta)+Velocity[idim];
 
         //initiate the new particle
-        PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+        PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node,UserInitParticleFunction);
       }
       //end of the particle injection block
     }
