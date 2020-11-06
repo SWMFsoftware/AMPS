@@ -5,6 +5,7 @@
 module PT_wrapper
 
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC,Grid_C, iCompSourceCouple
+  use,intrinsic :: ieee_arithmetic
 
   implicit none
 
@@ -423,11 +424,21 @@ contains
     real, intent(in) :: Xyz_DI(nDimIn,nPoint)  ! Position vectors
     real, intent(out):: Data_VI(nVarIn,nPoint) ! Data array
 
+    integer::i,j
+
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
     ! Overly long ame that violates Fortran 90 rules !!!
     call amps_send_batsrus2amps_center_point_data( &
          NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, Data_VI)
+
+    do i = 1,nVarIn
+      do j=1,nPoint  
+       if (ieee_is_nan(Data_VI(i,j))) then   
+         call CON_stop(NameSub//': nan')
+       end if 
+      end do
+    end do
 
   end subroutine PT_get_for_oh
 
