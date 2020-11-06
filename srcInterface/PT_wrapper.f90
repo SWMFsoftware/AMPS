@@ -437,6 +437,10 @@ contains
        if (ieee_is_nan(Data_VI(i,j))) then   
          call CON_stop(NameSub//': nan')
        end if 
+
+       if (.not.ieee_is_finite(Data_VI(i,j))) then
+         call CON_stop(NameSub//': not finite')
+       end if
       end do
     end do
 
