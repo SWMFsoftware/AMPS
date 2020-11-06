@@ -465,6 +465,8 @@ auto SimulateReaction = [&] () {
       vp2+=vp[idim]*vp[idim];
     }
 
+    if ((isfinite(c)==false)||(isfinite(vh2)==false)||(isfinite(vp2)==false)) exit(__LINE__,__FILE__);
+
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
 

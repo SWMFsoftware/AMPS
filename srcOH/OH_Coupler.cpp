@@ -60,6 +60,11 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
         // copy energy source
         Data_VI[fluid_data_offset+energy_offset+pt*(*nVarIn)]=
           (*(ifluid+(double*)(AssociatedDataPointer+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceEnergyOffset)))/PIC::LastSampleLength;
+
+
+        if ((isfinite(Data_VI[fluid_data_offset+density_offset+pt*(*nVarIn)])==false)||(isfinite(Data_VI[fluid_data_offset+energy_offset+pt*(*nVarIn)])==false)) exit(__LINE__,__FILE__);  
+
+        for (int i=0;i<3;i++) if (isfinite(Data_VI[fluid_data_offset+i+momentum_offset+pt*(*nVarIn)])==false) exit(__LINE__,__FILE__);
       }
       else {
         Data_VI[fluid_data_offset+density_offset  +pt*(*nVarIn)]=0.0;
