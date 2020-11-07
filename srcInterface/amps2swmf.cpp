@@ -42,6 +42,12 @@ double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0};
 char AMPS2SWMF::ComponentName[10]="";
 int AMPS2SWMF::ComponentID=_AMPS_SWMF_UNDEFINED_; 
 
+//parameters of the current SWMF session
+int AMPS2SWMF::iSession=-1;
+double AMPS2SWMF::swmfTimeSimulation=-1.0;
+bool AMPS2SWMF::swmfTimeAccurate=true;
+
+
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
@@ -56,6 +62,8 @@ extern "C" {
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
   void amps_save_restart_();
   void amps_finalize_();
+
+  void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode);
 
   //set the component name 
   void amps_set_component_name_(char* l) {
@@ -108,6 +116,13 @@ extern "C" {
     #endif
 
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
+  }
+
+  void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode) {
+    AMPS2SWMF::iSession=*iSession;
+    AMPS2SWMF::swmfTimeSimulation=*TimeSimulation;
+
+    AMPS2SWMF::swmfTimeAccurate=(*swmfTimeAccurateMode==1) ? true : false;
   }
   
   void amps_save_restart_(){
@@ -250,8 +265,9 @@ extern "C" {
   }
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit) {
+    using namespace AMPS2SWMF;
+
     static bool InitFlag=false;
-    static double swmfTimeSimulation=-1.0;
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
     
@@ -311,6 +327,8 @@ extern "C" {
 
     bool call_amps_flag=true;
 
+do {
+
     switch (_PIC_COUPLER_MODE_) {
     case _PIC_COUPLER_MODE__SWMF_:
       call_amps_flag=coupler_swmf();
@@ -328,6 +346,10 @@ extern "C" {
       amps_time_step();
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
+}
+while ((swmfTimeAccurate==true)&&(call_amps_flag==true));
+
+
   }
 
   void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {

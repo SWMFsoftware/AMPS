@@ -23,6 +23,11 @@ namespace AMPS2SWMF {
   extern char ComponentName[10];
   extern int ComponentID;
 
+  //parameters of the current SWMF session
+  extern int iSession;
+  extern double swmfTimeSimulation;
+  extern bool swmfTimeAccurate;
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 

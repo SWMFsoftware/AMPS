@@ -5,6 +5,7 @@
 module PT_wrapper
 
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC,Grid_C, iCompSourceCouple
+  use CON_time
   use,intrinsic :: ieee_arithmetic
 
   implicit none
@@ -44,6 +45,9 @@ module PT_wrapper
   integer:: ScCouplingCode 
 
 
+  !coupling operation counter (need for debugging)
+  integer::nRecvFromOH=0
+  integer::nSentToOH=0
 
 contains
 
@@ -115,9 +119,17 @@ contains
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter :: NameSub='PT_init_session'
+    integer::code
 
     Grid_C(PT_)%TypeCoord='HGI' 
 
+    if (DoTimeAccurate) then 
+      code=1
+    else 
+      code=0
+    end if 
+    
+    call amps_init_session(iSession,TimeSimulation,code)
   end subroutine PT_init_session
 
   !============================================================================
@@ -144,7 +156,7 @@ contains
     !-------------------------------------------------------------------------
     !!! PT should save restart files !!!
 
-    call amps_save_restart()
+  !  call amps_save_restart()
     
   end subroutine PT_save_restart
 
@@ -297,11 +309,14 @@ contains
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
     real,    intent(in), optional:: Data_VI(:,:)    ! Recv data array
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
+    integer::i,j
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
 
     character(len=*), parameter :: NameSub='PT_put_from_oh'
     !--------------------------------------------------------------------------
+    nRecvFromOH=nRecvFromOH+1 
+
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
@@ -313,6 +328,21 @@ contains
        call amps_get_center_point_coordinates(Pos_DI) 
 
     elseif(present(Data_VI))then
+
+    do i = 1,nVar
+      do j=1,nPoint
+       if (ieee_is_nan(Data_VI(i,j))) then
+         call CON_stop(NameSub//': nan')
+       end if
+
+       if (.not.ieee_is_finite(Data_VI(i,j))) then
+         call CON_stop(NameSub//': not finite')
+       end if
+      end do
+    end do
+
+
+
        call amps_recieve_batsrus2amps_center_point_data(&
             NameVar//char(0), nVar, Data_VI, iPoint_I)
     else
@@ -428,7 +458,8 @@ contains
 
     character(len=*), parameter :: NameSub='PT_get_for_oh'
     !--------------------------------------------------------------------------
-    ! Overly long ame that violates Fortran 90 rules !!!
+    nSentToOH=nSentToOH+1 
+
     call amps_send_batsrus2amps_center_point_data( &
          NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, Data_VI)
 

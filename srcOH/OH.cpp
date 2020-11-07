@@ -442,6 +442,8 @@ auto SimulateReaction = [&] () {
     PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid_interact);
     PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
 
+    if ((isfinite(PlasmaNumberDensity)==false)||(isfinite(PlasmaPressure)==false)||(isfinite(PlasmaTemperature)==false)) exit(__LINE__,__FILE__);
+
     OH::sampleVp(vp,vParent,PlasmaBulkVelocity,PlasmaTemperature,spec);
 
     // charge exchange process transfers momentum and energy to plasma
@@ -596,21 +598,25 @@ int OH::user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nInt
   //setting User defined function to process particles leaving domain at certain faces
   //useful for 1D runs if just want flows in one direction
 
+  int res;
+
   // removing particles if hit faces perpandiulat to x axis
-  if (nIntersectionFace == 0 || nIntersectionFace == 1) return _PARTICLE_DELETED_ON_THE_FACE_; 
+  if (nIntersectionFace == 0 || nIntersectionFace == 1) res=_PARTICLE_DELETED_ON_THE_FACE_; 
 
   // keep and reflect particles if hit face perpandiculat to y or z axes
   // y axis reflection
   if (nIntersectionFace == 2 || nIntersectionFace == 3) {
     vInit[1]=-vInit[1];
-    return _PARTICLE_REJECTED_ON_THE_FACE_; // particles are not deleted but remain in domain
+    res=_PARTICLE_REJECTED_ON_THE_FACE_; // particles are not deleted but remain in domain
   }
 
   // z axis reflection
   if (nIntersectionFace == 4 || nIntersectionFace == 5) {
     vInit[2]=-vInit[2];
-    return _PARTICLE_REJECTED_ON_THE_FACE_;
+    res=_PARTICLE_REJECTED_ON_THE_FACE_;
   }
+
+  return res;
 }
 
 //-----------------------------------------------------------------------------
