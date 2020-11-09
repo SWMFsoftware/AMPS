@@ -347,7 +347,7 @@ do {
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
 }
-while ((swmfTimeAccurate==true)&&(call_amps_flag==true));
+while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
 
   }
