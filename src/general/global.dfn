@@ -4,6 +4,13 @@
 #define spherical_symmetry    2
 
 
+// Error handling macros
+#define MPI_CHECK(call) \
+  if((call) != MPI_SUCCESS) { \
+    cerr << "MPI error calling \""#call"\"\n"; \
+    exit(__LINE__,__FILE__); }
+
+
 //Compilation mode (pure MPI or MPI+OpenMP)
 #define _COMPILATION_MODE__MPI_     0
 #define _COMPILATION_MODE__HYBRID_  1
