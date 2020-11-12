@@ -18,6 +18,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include <fenv.h>
+
 //the particle class
 #include "pic.h"
 #include "constants.h"
@@ -208,6 +210,8 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
 
 
 void amps_init_mesh(){
+
+    feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
 
 
   PIC::InitMPI();
