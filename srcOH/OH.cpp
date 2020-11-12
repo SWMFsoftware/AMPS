@@ -742,6 +742,8 @@ double OH::VpDistribution(double *vp, double *vh, double *up, double vth)
 {
   double erel = 0.5*1.674E-27*((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*6.2415E15; // in keV
 
+  if (erel==0.0) return 0.0;
+
   double sigma = (4.15-0.531*log(erel))*(4.15-0.531*log(erel))*pow(1-exp(-67.3/erel),4.5)*1E-20; // cross section in m^2
 
   return sqrt((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*sigma*exp(-((vp[0]-up[0])*(vp[0]-up[0])+(vp[1]-up[1])*(vp[1]-up[1])+(vp[2]-up[2])*(vp[2]-up[2]))/(vth*vth)); // velocity in m/s
