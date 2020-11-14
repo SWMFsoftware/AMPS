@@ -787,6 +787,7 @@ Compile=
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
 >>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+<<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=4,4,4 -r=2,2,2 -ng=0 
@@ -801,7 +802,6 @@ Compile=
 <<<endif
 
 >>>cd BATL;make READAMRLIB
-<<<endif
 
 >>>@cd BATL; ./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME} -g=4,4,4 -r=2,2,2 -ng=0; make READAMRLIB 
 >>>@echo "Install AMPS......"  
@@ -826,6 +826,7 @@ Compile=
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
 >>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+<<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
@@ -840,7 +841,6 @@ Compile=
 <<<endif
 
 >>>cd BATL;make READAMRLIB
-<<<endif
 
 >>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
 
@@ -885,6 +885,7 @@ Compile=
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
 >>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+<<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
@@ -899,7 +900,6 @@ Compile=
 <<<endif
 
 >>>cd BATL;make READAMRLIB
-<<<endif
 
 >>>./Config.pl -application=test/earth-cutoff-rigidity  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
 
@@ -3544,6 +3544,7 @@ Compile=
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
 >>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+<<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
 >>>cd BATL;./Config.pl -install -compiler=ifort,iccmpicxx -g=8,8,8 -r=2,2,2 -ng=0
@@ -3558,7 +3559,6 @@ Compile=
 <<<endif
 
 >>>cd BATL;make READAMRLIB
-<<<endif
 
 >>>./Config.pl  -application=CG-BATSRUS-dust-coupling-test  -batl-path=${PTDIR}/BATL -swmf-path=${PTDIR}/SWMF -amps-test=on  $(TESTCG-BATSRUS-dust-couplingKEYS)
 >>>rm -rf srcTemp
