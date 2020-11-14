@@ -33,7 +33,7 @@ if($hostname_full =~ m/csrwks2018-0093.engin.umich.edu/) {
   $hostname = "valeriy";
 }
 
-if($hostname_full =~ m/csrsvr2019-0243/) {
+if($hostname_full =~ m/csrwks2019-0243/) {
   $hostname = "amps-gpu";
 }
 
