@@ -211,7 +211,9 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
 
 void amps_init_mesh(){
 
+#if defined(__linux__)
     feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
+#endif
 
 
   PIC::InitMPI();
