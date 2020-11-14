@@ -77,19 +77,23 @@ namespace SEP {
 
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+    int res;
+
     switch(_SEP_MOVER_) {
     case _SEP_MOVER_DEFUALT_:
-      ParticleMover_default(ptr,dtTotal,startNode);
+      res=ParticleMover_default(ptr,dtTotal,startNode);
       break;
     case _SEP_MOVER_BOROVIKOV_2019_ARXIV_:
-      ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
+      res=ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
       break;
     case _SEP_MOVER_HE_2019_AJL_:
-      ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
+      res=ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not found");
     }
+
+    return res;
   }
 
   namespace Sampling {
