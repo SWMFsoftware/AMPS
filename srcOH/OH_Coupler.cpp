@@ -81,6 +81,13 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
         for (int i=0;i<3;i++) if (isfinite(Data_VI[fluid_data_offset+i+momentum_offset+pt*(*nVarIn)])==false) exit(__LINE__,__FILE__);
       }
 
+
+      if (isfinite(Data_VI[fluid_data_offset+density_offset  +pt*(*nVarIn)])==false) exit(__LINE__,__FILE__);
+      if (isfinite(Data_VI[fluid_data_offset+0+momentum_offset+pt*(*nVarIn)])==false) exit(__LINE__,__FILE__);
+      if (isfinite(Data_VI[fluid_data_offset+1+momentum_offset+pt*(*nVarIn)])==false) exit(__LINE__,__FILE__); 
+      if (isfinite(Data_VI[fluid_data_offset+2+momentum_offset+pt*(*nVarIn)])==false) exit(__LINE__,__FILE__); 
+      if (isfinite(Data_VI[fluid_data_offset+energy_offset   +pt*(*nVarIn)])==false) exit(__LINE__,__FILE__); 
+
       fluid_data_offset+=package_length;
     }
   }
