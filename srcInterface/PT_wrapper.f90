@@ -309,7 +309,7 @@ contains
     integer,          intent(inout):: nPoint  ! Number of points in Pos_DI
     real,    intent(in), optional:: Data_VI(:,:)    ! Recv data array
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
-    integer::i,j
+    integer::i,j,jj  
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
 
@@ -331,13 +331,17 @@ contains
 
     do i = 1,nVar
       do j=1,nPoint
-       if (ieee_is_nan(Data_VI(i,j))) then
-         call CON_stop(NameSub//': nan')
-       end if
+       jj=iPoint_I(j) 
 
-       if (.not.ieee_is_finite(Data_VI(i,j))) then
-         call CON_stop(NameSub//': not finite')
-       end if
+       if (jj>0) then
+         if (ieee_is_nan(Data_VI(i,jj))) then
+           call CON_stop(NameSub//': nan')
+         end if
+
+         if (.not.ieee_is_finite(Data_VI(i,jj))) then
+           call CON_stop(NameSub//': not finite')
+         end if
+        end if 
       end do
     end do
 
