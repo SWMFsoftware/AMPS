@@ -160,7 +160,9 @@ int main(int argc, char* argv[]) {
     index_nvcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
+      sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
+
+//      sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
       index_nvcc_max=index++;
     }
   }
