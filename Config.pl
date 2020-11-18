@@ -115,6 +115,7 @@ foreach (@Arguments) {
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
      print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
+     print "-fexit=[exit,mpi_abort]\t\tselect function that will be used to terminate code in case of an error. In some systems mpi_abort() does not terminate the code, but in other systems exit() does not terminate the code\n"; 
      exit;
    }
    
@@ -223,6 +224,24 @@ foreach (@Arguments) {
     }
   }   
       
+  if (/^-fexit=(.*)$/i) {
+    my $t;
+    $t=lc($1);
+    add_line_amps_conf("OPENMP=$1");
+
+    if ($t eq "exit") {
+      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__EXIT_\n");
+      next;
+    }
+    elsif ($t eq "mpi_abort") {
+      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__MPI_ABORT_\n");
+      next;
+    }
+    else {
+      die "Option is unrecognized: -openmpfgf=($1)";
+    }
+  }     
+
   
   if (/^-batl-path=(.*)$/i)       {
       add_line_amps_conf("BATL=$1");

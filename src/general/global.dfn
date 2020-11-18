@@ -16,3 +16,7 @@
 
 #define _OFF_ 0
 #define _ON_  1
+
+//definition of the exit function used for terminating the code exection in case of an error
+#define _GENERIC_EXIT_FUNCTION__EXIT_      0
+#define _GENERIC_EXIT_FUNCTION__MPI_ABORT_ 1 

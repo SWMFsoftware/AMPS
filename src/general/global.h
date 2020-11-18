@@ -33,6 +33,9 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 #define _CUDA_MODE_ _OFF_
 #define _CUDA_MANAGED_ 
 
+//definition of the exit function used for terminating the code exection in case of an error
+#define _GENERIC_EXIT_FUNCTION_MODE_  _GENERIC_EXIT_FUNCTION__MPI_ABORT_    
+
 //inlcude settings of the general block
 #include "../../.general.conf"
 

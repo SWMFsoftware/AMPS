@@ -131,7 +131,14 @@ void exit(long int nline, const char* fname, const char* msg) {
 
   #ifndef __CUDA_ARCH__  
   PrintErrorLog(str);
-  MPI_Abort(MPI_GLOBAL_COMMUNICATOR,t2);
+
+  switch (_GENERIC_EXIT_FUNCTION_MODE_) {
+  case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_: 
+    MPI_Abort(MPI_GLOBAL_COMMUNICATOR,t2);
+    break;
+  default:
+    exit(0);
+  }
   #endif
 
   exit(0);
