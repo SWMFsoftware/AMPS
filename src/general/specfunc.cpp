@@ -134,7 +134,7 @@ void exit(long int nline, const char* fname, const char* msg) {
 
   switch (_GENERIC_EXIT_FUNCTION_MODE_) {
   case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_: 
-    MPI_Abort(MPI_GLOBAL_COMMUNICATOR,t2);
+    MPI_Abort(MPI_COMM_WORLD,t2);
     break;
   default:
     exit(0);
