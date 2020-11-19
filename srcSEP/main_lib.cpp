@@ -66,6 +66,7 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init_mesh() {
   PIC::InitMPI();
 
+PIC::Init_BeforeParser();
   SEP::RequestParticleData();
 
   //request storage for calculating the drift velocity
@@ -88,7 +89,7 @@ void amps_init_mesh() {
 
   //init the Mercury model
  ////::Init_BeforeParser();
-  PIC::Init_BeforeParser();
+//  PIC::Init_BeforeParser();
 
 //  ProtostellarNebula::OrbitalMotion::nOrbitalPositionOutputMultiplier=10;
 ///  ProtostellarNebula::Init_AfterParser();
