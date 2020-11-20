@@ -201,10 +201,12 @@ using namespace std;
 //the exist function with printing of the error message
 class cAMRexit {
 public:
+  _TARGET_HOST_ _TARGET_DEVICE_
   void exit(const long int nline, const char* fname,const char* msg=NULL) {
     char str[1000];
     int mpiInitFlag,ThisThread;
 
+#ifndef __CUDA_ARCH__
     if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,fname);
     else sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
 
@@ -226,12 +228,17 @@ public:
     printf("$PREFIX:file=%s, line=%ld\n",fname,nline);
     printf("$PREFIX:%s\n\n",msg);
 
-    fclose(errorlog);
+    fclose(errorlog); 
+#else
+    if (msg==NULL) printf(" exit: line=%ld, file=%s\n",nline,fname);
+    else printf(" exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
+#endif
+
     ::exit(1);
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
-  virtual ~cAMRexit() { }
+//  _TARGET_HOST_ _TARGET_DEVICE_
+//  virtual ~cAMRexit() { }
 };
 
 //the stack class to store the data structure of the mesh

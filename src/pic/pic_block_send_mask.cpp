@@ -30,9 +30,16 @@ int PIC::Mesh::BlockElementSendMask::CornerNode::GetSize() {return 1+((_TOTAL_BL
 int PIC::Mesh::BlockElementSendMask::CenterNode::GetSize() {return 1+(_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_)/8;}
 
 //Init Mask for the Layer Block
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {
   int i,j,k;
   cTreeNodeAMR<cDataBlockAMR>* neibNode;
+
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+  #else
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+  #endif
 
   #if DIM == 3
   static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -58,7 +65,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBloc
    for (int ipass=0;ipass<3;ipass++) {
     iface=iFaceTable[ipass];
 
-    if ((neibNode=Node->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (neibNode->RefinmentLevel<Node->RefinmentLevel) {
+    if ((neibNode=Node->GetNeibFace(iface,0,0,mesh))!=NULL) if (neibNode->RefinmentLevel<Node->RefinmentLevel) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {
@@ -89,12 +96,18 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlockBasic(cTreeNodeAMR<cDataBloc
 
 
 
-
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask) {
   int i,j,k,iface,iedge,icorner,imin,imax,jmin,jmax,kmin,kmax,ii,jj,kk;
   cTreeNodeAMR<cDataBlockAMR>* neibNode;
   bool flag;
   bool neib_found=false;
+
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+  #else
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+  #endif
 
   //set the default value
   Set(false,CenterNodeMask,CornerNodeMask);
@@ -107,7 +120,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
   //1. Set the CenterNode send mask
   //1.1 Loop through faces
   for (iface=0;iface<6;iface++) {
-    for (i=0,flag=false;(i<2)&&(flag==false);i++) for (j=0;(j<2)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j,PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
+    for (i=0,flag=false;(i<2)&&(flag==false);i++) for (j=0;(j<2)&&(flag==false);j++) if ((neibNode=Node->GetNeibFace(iface,i,j,mesh))!=NULL) if (neibNode->Thread==To) {
       flag=true;
       if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutionNeibFace[iface]=true;
       neib_found=true;
@@ -183,7 +196,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
 
   //1.2 Loop through edges
   for (iedge=0;iedge<12;iedge++) {
-    for (i=0,flag=false;(i<2)&&(flag==false);i++) if ((neibNode=Node->GetNeibEdge(iedge,i,PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
+    for (i=0,flag=false;(i<2)&&(flag==false);i++) if ((neibNode=Node->GetNeibEdge(iedge,i,mesh))!=NULL) if (neibNode->Thread==To) {
       flag=true;
       if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutinoNeibEdge[iedge]=true;
       neib_found=true;
@@ -336,7 +349,7 @@ void PIC::Mesh::BlockElementSendMask::InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>
 
   //1.3 Loop though corners
   //the following is the pattern of node numbering: GetNeibCorner(i+2*(j+2*k))
-  for (icorner=0;icorner<8;icorner++) if ((neibNode=Node->GetNeibCorner(icorner,PIC::Mesh::mesh))!=NULL) if (neibNode->Thread==To) {
+  for (icorner=0;icorner<8;icorner++) if ((neibNode=Node->GetNeibCorner(icorner,mesh))!=NULL) if (neibNode->Thread==To) {
     if (Node->RefinmentLevel>neibNode->RefinmentLevel) LowResolutionNeibCorner[icorner]=true;
     neib_found=true;
 

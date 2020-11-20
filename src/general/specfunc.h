@@ -742,9 +742,13 @@ _TARGET_HOST_ _TARGET_DEVICE_
 void amps_new(T* &buff,int length) {
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
 
+buff=new T [length];
+
+/*
   buff=(T*)malloc(length*sizeof(T));
 
   for (int i=0;i<length;i++) new(buff+i)T();
+*/
  }
 
 template<typename T>

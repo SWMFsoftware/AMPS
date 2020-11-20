@@ -6,7 +6,11 @@
 
 //int PIC::nTotalSpecies=0;
 int _TARGET_DEVICE_ PIC::nTotalThreadsOpenMP=1;
-int _CUDA_MANAGED_ PIC::ThisThread=0,PIC::nTotalThreads=1;
+
+
+int PIC::CPU::ThisThread=0,PIC::CPU::nTotalThreads=1;
+_TARGET_DEVICE_ int PIC::GPU::ThisThread=0;
+_TARGET_DEVICE_ int PIC::GPU::nTotalThreads=1;
 
 //the list containing the functions used to exchange the run time execution statistics
 vector<PIC::fExchangeExecutionStatistics> PIC::ExchangeExecutionStatisticsFunctions;

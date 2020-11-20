@@ -135,6 +135,7 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(int spec,cTr
     cInternalRotationBodyData *RotationBody;
     cInternalNastranSurfaceData *NastranSurface;
 
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     for (descriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();descriptor++) {
       switch (descriptor->BondaryType) {
       case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
@@ -167,6 +168,7 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(int spec,cTr
         exit(__LINE__,__FILE__,"Error: the boundary type is not recognized");
       }
     }
+    #endif
 
 
     //calcualte the total volume production rate
@@ -248,6 +250,7 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
 
 
 //      for (descriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();descriptor++) {
+      #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
       for (descriptor=startNode->InternalBoundaryDescriptorList;descriptor!=NULL;descriptor=descriptor->nextInternalBCelement) {
 
         switch (descriptor->BondaryType) {
@@ -281,6 +284,8 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
           exit(__LINE__,__FILE__,"Error: the boundary type is not recognized");
         }
       }
+      #endif 
+
     }
 
   }
@@ -293,8 +298,10 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
     //determine the global value for the 'maxIntersectedNodeTimeStep'
     if (startNode==PIC::Mesh::mesh->rootTree) {
       double buffer[PIC::nTotalThreads];
-      list<cInternalBoundaryConditionsDescriptor>::iterator ptr;
       int thread;
+
+      #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+      list<cInternalBoundaryConditionsDescriptor>::iterator ptr;
 
       for (ptr=PIC::Mesh::mesh->InternalBoundaryList.begin();ptr!=PIC::Mesh::mesh->InternalBoundaryList.end();ptr++) {
         for (s=0;s<PIC::nTotalSpecies;s++) {
@@ -374,6 +381,7 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
 
         }
       }
+      #endif
 
       //in the case of global time step, determine the minimum time step
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_

@@ -70,7 +70,8 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecompo
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
 
-_TARGET_DEVICE_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
+cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::CPU::mesh;
+_TARGET_DEVICE_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::GPU::mesh;
 
 //the user defined functions for output of the 'ceneter node' data into a data file
 vector<PIC::Mesh::fPrintVariableListCenterNode> PIC::Mesh::PrintVariableListCenterNode;
@@ -371,14 +372,14 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
 _TARGET_GLOBAL_ 
 void PIC::Mesh::AllocateMesh() {
-  if (mesh==NULL) {
+  if (GPU::mesh==NULL) {
     //allocate mesh
     #if DIM == 3
-    mesh=new cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    GPU::mesh=new cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
     #elif DIM == 2
-    mesh=new cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    GPU::mesh=new cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
     #else
-    mesh=new cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    GPU::mesh=new cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
     #endif
   }
 }
@@ -564,6 +565,14 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
 
   using namespace PIC::Mesh::cDataBlockAMR_static_data;
+
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+  #else
+  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+  #endif
+
+
   int SendBufferIndex=0;
 
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
@@ -673,7 +682,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
         bool flag=false;
 
-        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
         if (flag==true) {
           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -812,6 +821,13 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+  #else
+  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+  #endif
+
+
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {
      int iCell,jCell,kCell,iDataInterval;
      long int LocalCellNumber;
@@ -912,7 +928,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
        if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
          iface=iFaceTable[i];
 
-         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
            //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
            switch (iface) {
@@ -1081,7 +1097,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     bool flag=false; 
 
     if ((pipe==NULL)&&(SendDataBuffer==NULL)) flag=true;
-    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
     if (flag==true) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -1673,6 +1689,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
     }
 
     //add the list of the cut-faces accessable throught the block neibours
+    #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
     if (startNode->neibCutFaceListDescriptorList!=NULL) {
       int cnt=0;
 
@@ -1681,6 +1698,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
       NeibCutFaceListDescriptorList.add(BottomNodeCounter);
       NeibCutFaceListDescriptorList.add(cnt);
     }
+    #endif
   }
 
   //output calculated signatures

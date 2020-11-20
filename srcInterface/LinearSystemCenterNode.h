@@ -651,12 +651,18 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 _TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::DeleteDataBuffers() {
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::GPU;
+  #else
+  using namespace PIC::CPU;
+  #endif
+
   if (RecvExchangeBuffer!=NULL) {
     //clear the row stack
     MatrixRowStack.resetStack();
 
     //deallocate the allocated data buffers
-    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    for (int thread=0;thread<nTotalThreads;thread++) {
       if (RecvExchangeBuffer!=NULL) if (RecvExchangeBuffer[thread]!=NULL) {
         delete [] RecvExchangeBuffer[thread];
       }
@@ -697,7 +703,15 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 _TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Reset() {
-  Reset(PIC::Mesh::mesh->rootTree);
+
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+  #else
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+  #endif
+
+
+  Reset(mesh->rootTree);
 }
 
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
@@ -706,7 +720,14 @@ int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 _TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Reset(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
 
-  if ((startNode==PIC::Mesh::mesh->rootTree)&&(RecvExchangeBuffer!=NULL)) DeleteDataBuffers();
+  #ifdef __CUDA_ARCH__ 
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+  #else
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+  #endif
+
+
+  if ((startNode==mesh->rootTree)&&(RecvExchangeBuffer!=NULL)) DeleteDataBuffers();
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     PIC::Mesh::cDataBlockAMR *block=NULL;
@@ -714,7 +735,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 
     if ((block=startNode->block)!=NULL) {
       for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-        if ((CenterNode=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k)))!=NULL) {
+        if ((CenterNode=block->GetCenterNode(mesh->getCenterNodeLocalNumber(i,j,k)))!=NULL) {
           CenterNode->LinearSolverUnknownVectorIndex=-1;
         }
       }

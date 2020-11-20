@@ -31,7 +31,7 @@ extern "C"{
 
 
 //initialize the interpolation module
-_TARGET_DEVICE_
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::Init() {
 
   //init the stencil table

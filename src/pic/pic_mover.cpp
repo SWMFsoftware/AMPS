@@ -1015,6 +1015,7 @@ int iTemp,jTemp,kTemp;
 
 
     //Calculate the time of flight to the nearest internal surface
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (FirstBoundaryFlag==false) for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
       if (InternalBoundaryDescriptor==lastInternalBoundaryDescriptor) continue;
 
@@ -1117,7 +1118,7 @@ int iTemp,jTemp,kTemp;
         exit(__LINE__,__FILE__,"Error: undetermined internal boundary type");
       }
     }
-
+    #endif
 
 /*
 #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
@@ -2638,6 +2639,7 @@ if (nLoopCycle>100) {
 
 
     //Calculate the time of flight to the nearest internal surface
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (FirstBoundaryFlag==false) for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
       if (InternalBoundaryDescriptor==lastInternalBoundaryDescriptor) continue;
 
@@ -2738,6 +2740,7 @@ if (nLoopCycle>100) {
         exit(__LINE__,__FILE__,"Error: undetermined internal boundary type");
       }
     }
+    #endif
 
     //check intersection of the particle trajectory with the cut-faces
 //    cTriangleFace *IntersectionFace=NULL;
@@ -3651,6 +3654,7 @@ ProcessPhotoChemistry:
 
 
   //check if the particle is outside of the internal surfaces. In a case if the particle is inside an internal surface -> correct its position and exdcute the boundary condition procedure
+  #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
 
     switch (InternalBoundaryDescriptor->BondaryType) {
@@ -3723,6 +3727,7 @@ ProcessPhotoChemistry:
       exit(__LINE__,__FILE__,"Error: the option is not recognized");
     }
   }
+  #endif
 
 
 

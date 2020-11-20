@@ -123,7 +123,15 @@ namespace PIC {
   static const int nTotalSpecies=1;
 
   //The currect and total number of processors used in the simulation
-  extern _CUDA_MANAGED_ int ThisThread,nTotalThreads;
+  namespace CPU {
+    extern int ThisThread,nTotalThreads;
+  }
+
+  namespace GPU {
+    extern _TARGET_DEVICE_ int ThisThread,nTotalThreads;
+  } 
+
+  using namespace CPU;
 
   //the total number of the OpenMP threads (when OpneMP is used in the model run)
   extern _TARGET_DEVICE_ int nTotalThreadsOpenMP;
@@ -3017,7 +3025,15 @@ namespace PIC {
     void switchSamplingBuffers();
 
     //the computational mesh
-    extern _TARGET_DEVICE_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
+    namespace CPU { 
+      extern cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
+    }
+
+    namespace GPU {
+      extern _TARGET_DEVICE_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
+    }
+
+    using namespace CPU;
 
     //init the computational mesh
     void Init(double*,double*,fLocalMeshResolution);
@@ -4870,7 +4886,7 @@ namespace PIC {
 
     }
 
-    _TARGET_DEVICE_ 
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     void Init();
   }
 

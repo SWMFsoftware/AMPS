@@ -1819,6 +1819,14 @@ void PIC::SignalHandler(int sig) {
 }
 
 //====================================================
+
+_TARGET_GLOBAL_ 
+void SetThreadData(int inThisThread,int innTotalThreads) {
+  PIC::GPU::ThisThread=inThisThread;
+  PIC::GPU::nTotalThreads=innTotalThreads;
+}
+
+
 void PIC::InitMPI() {
 
   //check is MPI is initialized
@@ -1839,6 +1847,11 @@ void PIC::InitMPI() {
 
   ::ThisThread=ThisThread;
   ::TotalThreadsNumber=nTotalThreads;
+
+  #if _CUDA_MODE_ == _ON_
+  SetThreadData<<<1,1>>>(ThisThread,nTotalThreads);
+  cudaDeviceSynchronize();
+  #endif
 
   //determine the total number of the OpenMP threads
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -1862,29 +1875,45 @@ void PIC::InitMPI() {
 //init the particle solver
 
 
-_TARGET_GLOBAL_
+_TARGET_HOST_ _TARGET_DEVICE_
 void AllocateMesh() {
-   PIC::Mesh::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+
+  #ifdef __CUDA_ARCH__ 
+//  amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+  #else
+  PIC::Mesh::CPU::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+  #endif
+
 
   //intialize the interpolation module
   PIC::InterpolationRoutines::Init();
 
   //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
-  PIC::Mesh::mesh->fDefaultPackBlockData=PIC::Mesh::PackBlockData;
-  PIC::Mesh::mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData;
+  mesh->fDefaultPackBlockData=PIC::Mesh::PackBlockData;
+  mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData;
 
-  PIC::Mesh::mesh->fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
-  PIC::Mesh::mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize;
-  PIC::Mesh::mesh->fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
+  mesh->fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
+  mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize;
+  mesh->fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
 
   //set function that are used for moving blocks during the domain re-decomposition
-  PIC::Mesh::mesh->fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
-  PIC::Mesh::mesh->fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
-  PIC::Mesh::mesh->fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+  mesh->fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
+  mesh->fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
+  mesh->fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
 
 
   //Init the random number generator
   if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+}
+
+_TARGET_GLOBAL_ 
+void LanchAllocateMesh(cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>* ptr)  {
+
+  new(ptr)cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>();
+
+  AllocateMesh();
 }
 
 void PIC::Init_BeforeParser() {
@@ -1899,10 +1928,18 @@ void PIC::Init_BeforeParser() {
   PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
   #if _CUDA_MODE_ == _ON_
-  AllocateMesh<<<1,1>>>(); 
-  #else 
+
+  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *gpu_mesh_ptr;
+   
+  cudaMalloc(&gpu_mesh_ptr,sizeof(cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>));
+
+
+
+  LanchAllocateMesh<<<1,1>>>(gpu_mesh_ptr); 
+  cudaDeviceSynchronize();
+  #endif  
+
   AllocateMesh();
-  #endif 
 
 /*
   //init the particle buffer

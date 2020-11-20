@@ -784,6 +784,7 @@ void PIC::CPLR::DATAFILE::EvaluateSurfaceIonFlux(double ShiftFactor) {
   int i,j,k;
 
 
+  #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   for (d=PIC::Mesh::mesh->InternalBoundaryList.begin();d!=PIC::Mesh::mesh->InternalBoundaryList.end();d++) {
     if (d->BondaryType==_INTERNAL_BOUNDARY_TYPE_SPHERE_) {
       Sphere=(cInternalSphericalData*)d->BoundaryElement;
@@ -846,6 +847,7 @@ void PIC::CPLR::DATAFILE::EvaluateSurfaceIonFlux(double ShiftFactor) {
       exit(__LINE__,__FILE__,"Error: unknown internal boundary type");
     }
   }
+  #endif
 }
 
 //====================================================

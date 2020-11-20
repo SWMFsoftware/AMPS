@@ -30,6 +30,14 @@
 
 #include "meshAMRdef.h"
 
+#if _CUDA_MODE_ == _ON_
+#undef _INTERNAL_BOUNDARY_MODE_
+#define _INTERNAL_BOUNDARY_MODE_  _INTERNAL_BOUNDARY_MODE_OFF_
+
+#undef _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_
+#define _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_  _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_
+#endif
+
 
 //include the user defined data for the internal boundaries
 /*
@@ -687,19 +695,22 @@ public:
     CutCell::cTriangleFaceDescriptor* FirstTriangleCutFace;
   };
 
-#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_ 
+//#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_ 
   cCutFaceListDescriptor* neibCutFaceListDescriptorList;
   cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
-#else //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
-  static cCutFaceListDescriptor* neibCutFaceListDescriptorList;
-  static cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
-#endif 
+//#else //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
+//  static cCutFaceListDescriptor* neibCutFaceListDescriptorList;
+//  static cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
+//#endif 
 
   cTreeNodeAMR() {
 //    ActiveFlag=false;
     block=NULL,upNode=NULL;
     Temp_ID=-1;
+
+//    #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
     neibCutFaceListDescriptorList=NULL,neibCutFaceListDescriptorList_temp=NULL;
+//    #endif
 
     IsUsedInCalculationFlag=true;
 
@@ -1592,7 +1603,9 @@ public:
 
 
   //the internal surface triangulation (NASTRAN MESH)
+  #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ ==  _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
   cNASTRANmesh NsatranSurfaceMesh;
+  #endif
 
   //mesh modyfied flag -> is set to true each time the mesh is modified, the flag is set to false when the number of elements and the connectivity list are prepared
   bool meshModifiedFlag;
@@ -2442,6 +2455,7 @@ public:
   }
 
   //register the 'internal boundary' (the surface determining cut cells)
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   void RegisterInternalBoundary(cInternalBoundaryConditionsDescriptor Descriptor) {
     #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (rootTree!=NULL) exit(__LINE__,__FILE__,"Error: all internal surface must be registered before initialization of the mesh");
@@ -2464,7 +2478,11 @@ public:
     exit(__LINE__,__FILE__,"Error: internal boundary is allowed only when _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_");
     #endif
   }
-
+#else 
+void RegisterInternalBoundary(cInternalBoundaryConditionsDescriptor Descriptor) {
+  exit(__LINE__,__FILE__,"Error: shoulf not be used wirh _INTERNAL_BOUNDARY_MODE_ != _INTERNAL_BOUNDARY_MODE_ON_");
+}
+#endif
 
 
 /*
@@ -13971,15 +13989,15 @@ template <typename T>
 unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0;
 
 
-#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_ 
+//#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_ 
 //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
 
-template <typename T>
-typename cTreeNodeAMR<T>::cCutFaceListDescriptor* cTreeNodeAMR<T>::neibCutFaceListDescriptorList=NULL;
+//template <typename T>
+//typename cTreeNodeAMR<T>::cCutFaceListDescriptor* cTreeNodeAMR<T>::neibCutFaceListDescriptorList=NULL;
 
-template <typename T>
-typename cTreeNodeAMR<T>::cCutFaceListDescriptor*  cTreeNodeAMR<T>::neibCutFaceListDescriptorList_temp=NULL;
-#endif
+//template <typename T>
+//typename cTreeNodeAMR<T>::cCutFaceListDescriptor*  cTreeNodeAMR<T>::neibCutFaceListDescriptorList_temp=NULL;
+//#endif
 
 
 #if _AMR__CUT_CELL__MODE_ ==  _AMR__CUT_CELL__MODE__OFF_

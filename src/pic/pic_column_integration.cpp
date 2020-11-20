@@ -100,6 +100,7 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
 
 
 
+  #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   for (InternalBoundaryDescriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();InternalBoundaryDescriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();InternalBoundaryDescriptor++) {
     switch (InternalBoundaryDescriptor->BondaryType) {
     case _INTERNAL_BOUNDARY_TYPE_SPHERE_: case _INTERNAL_BOUNDARY_TYPE_1D_SPHERE_:
@@ -175,6 +176,7 @@ bool PIC::ColumnIntegration::FindIntegrationLimits(double *x0,double *l,double& 
       }
     }
   }
+  #endif
 
   //check if any intersections with the boundary of the domain have found
   if (IntersectionTime.size()==0) return false;
