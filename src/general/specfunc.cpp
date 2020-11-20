@@ -128,7 +128,7 @@ void exit(long int nline, const char* fname, const char* msg) {
 
   PrintErrorLog(str);
 
-  MPI_Abort(MPI_GLOBAL_COMMUNICATOR,t2);
+  MPI_Abort(MPI_COMM_WORLD,t2);
   exit(0);
 }
 
