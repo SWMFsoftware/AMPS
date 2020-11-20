@@ -102,6 +102,8 @@ int Europa::ParticleDomainBoundaryIntersection(long int ptr,double* xInit,double
   spec=PIC::ParticleBuffer::GetI(ptr);
   ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
   Europa::Sampling::TotalEscapeFlux[spec]+=ParticleWeight;
+
+  return _PARTICLE_DELETED_ON_THE_FACE_;
 }
 
 
