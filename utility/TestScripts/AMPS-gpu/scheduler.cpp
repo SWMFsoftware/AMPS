@@ -66,6 +66,8 @@ public:
 };
 
 
+//use the schedule only to run (no compiling)
+bool run_only_flag=false;
 
 int main(int argc, char* argv[]) {
   int i;
@@ -112,6 +114,9 @@ int main(int argc, char* argv[]) {
       if (++i>=argc) break;
       nTestRoutineThreads=(int)strtol(argv[i],&endptr,10);
     }
+    else if (strcmp("-run-only",argv[i])==0) { 
+      run_only_flag=true;  
+    }
     else {
       printf("Option %s is not found\n",argv[i]);
       exit(0);
@@ -142,7 +147,10 @@ int main(int argc, char* argv[]) {
     index_gcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
+//      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
+
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
+
       index_gcc_max=index++;
     }
   }
@@ -178,7 +186,9 @@ int main(int argc, char* argv[]) {
     cJobTableElement *JobTable;
 
     void run() {
-      system(cmd);
+      if (run_only_flag==false) {  
+        system(cmd);
+      }
 
       for (int i=job_index_min;i<=job_index_max;i++) JobTable[i].status=status_compiled;
     }
