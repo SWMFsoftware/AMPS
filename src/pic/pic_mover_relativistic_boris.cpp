@@ -269,7 +269,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
     //interaction with the faces of the block and internal surfaces
     //check whether the particle trajectory is intersected the spherical body
-#if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
+#if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_ 
     double rFinal2;
     static double rSphere=max(_RADIUS_(_TARGET_),Exosphere::Planet->Radius);
 

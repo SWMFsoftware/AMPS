@@ -272,7 +272,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
-#if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
+#if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_ 
   double rFinal2;
 
   //if the particle is inside the sphere -> apply the boundary condition procedure
@@ -622,7 +622,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
-#if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
+#if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_   
   double rFinal2;
 
   //if the particle is inside the sphere -> apply the boundary condition procedure
@@ -1119,7 +1119,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
-#if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
+#if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_ 
   double rFinal2;
 
   //if the particle is inside the sphere -> apply the boundary condition procedure
