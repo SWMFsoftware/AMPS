@@ -237,6 +237,12 @@ public:
     ::exit(1);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cAMRexit() {}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  ~cAMRexit() {}
+
 //  _TARGET_HOST_ _TARGET_DEVICE_
 //  virtual ~cAMRexit() { }
 };
@@ -245,6 +251,13 @@ public:
 class cStackElementBase {
 public: 
   int stack_element_id; 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cStackElementBase() {}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  ~cStackElementBase() {}
+
 };
 
 
@@ -270,10 +283,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;   
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
     long int i,j;
 
@@ -364,6 +379,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void resetStack() {
     long int databank,offset;
 
@@ -373,6 +389,7 @@ public:
   }
  
   //get the entry pointer and counting number
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetEntryCountingNumber(T* ptr) {
     return (ptr!=NULL) ? ptr->stack_element_id : -1;
 
@@ -391,6 +408,7 @@ public:
 */
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetEntryPointer(long int countingNumber) {
     long int nMemoryBank,offset;
 
@@ -402,6 +420,7 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
       delete [] dataBufferList[i];
@@ -474,12 +493,14 @@ public:
   }
    
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     initMemoryBlock();
   }
     
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -492,22 +513,31 @@ public:
 
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cAMRstack() {
     explicitConstructor();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int capasity() {return nMaxElements-elementStackPointer;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int totalSize() {return nMaxElements;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {return elementStackPointer;}
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetDataBufferListPointer() {
     return dataBufferListPointer;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetDataBufferList(int iMemoryBank) {
     return dataBufferList[iMemoryBank];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement(bool ForceElementNumberLimit=true) {
     T* res;
 
@@ -538,6 +568,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void deleteElement(T* delElement) {
     if (sizeof(T)==0) return;
 
@@ -547,7 +578,7 @@ public:
     delElement->cleanDataBuffer();
 
     if (elementStackPointer==0) {
-      cout << "$PREFIX:ERROR: stack pointer is 0 (line=" << __LINE__ << ", file=" << __FILE__ << ")" << endl;
+      printf("$PREFIX:ERROR: stack pointer is 0 (line=%i, file=%s)\n",__LINE__,__FILE__);
     } 
 
     long int elementStackBank,offset;
@@ -573,6 +604,7 @@ private:
 public:
   cAMRstack<T> BaseElementStack;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     T t;
 
@@ -611,6 +643,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
     T t;
 
@@ -670,6 +703,7 @@ public:
     BaseElementStack.initMemoryBlock() ;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void CheckAssociatedDataConsistency() {
     int iElement,elementStackBank,offset;
 
@@ -684,6 +718,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement() {
     T* res;
 
@@ -716,6 +751,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     T t;
     long int offset=t.AssociatedDataLength();
@@ -739,20 +775,24 @@ public:
     BaseElementStack.clear();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     BaseElementStack.clear();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {
     return BaseElementStack.usedElements();
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T*** GetElementStackList() {
     return BaseElementStack.elementStackList;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     associatedDataStackList=NULL;
     associatedDataBufferList=NULL;
@@ -761,18 +801,22 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
    cAssociatedDataAMRstack() {
       explicitConstructor();
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    int GetDataBufferListPointer() {
      return BaseElementStack.dataBufferListPointer;
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    T* GetDataBufferList(int iMemoryBank) {
      return BaseElementStack.dataBufferList[iMemoryBank];
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    void deleteElement(T* delElement) {
      if (delElement->AssociatedDataLength()!=0) {
        long int elementStackBank,offset;
@@ -824,10 +868,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
     long int i,j;
 
@@ -862,6 +908,7 @@ public:
   }
 
   //get the entry pointer and counting number
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetEntryCountingNumber(T* ptr) {
     long int nMemoryBank,res=-1;
 
@@ -876,6 +923,7 @@ public:
     return -1;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetEntryPointer(long int countingNumber) {
     long int nMemoryBank,offset;
 
@@ -887,6 +935,7 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
       delete [] dataBufferList[i];
@@ -940,12 +989,14 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     initMemoryBlock();
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -958,15 +1009,22 @@ public:
 
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cAMRheap() {
     explicitConstructor();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int capasity() {return nMaxElements-elementHeapPointer;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int totalSize() {return nMaxElements;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {return elementHeapPointer;}
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement() {
     T* res;
 

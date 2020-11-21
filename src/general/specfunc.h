@@ -169,6 +169,7 @@ private:
   int CallCounter;
 
   //generate the table of CRC remainders for all possible bytes 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void generare_crc_table() { 
     int i, j;
     unsigned long crc_accum;
@@ -182,6 +183,7 @@ private:
 
 public: 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   CRC32 () {
     CallCounter=0;
     crc_accum=0;
@@ -202,14 +204,17 @@ public:
   } 
 
   template <class T>
+  _TARGET_HOST_ _TARGET_DEVICE_
   void add(T t) {
     add(&t,1);
   } 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     crc_accum=0;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   unsigned long checksum() { 
     return crc_accum;
   }
