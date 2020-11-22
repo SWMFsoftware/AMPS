@@ -133,6 +133,7 @@ namespace PIC {
 
   using namespace CPU;
 
+
   //the total number of the OpenMP threads (when OpneMP is used in the model run)
   extern _TARGET_DEVICE_ int nTotalThreadsOpenMP;
 
@@ -2357,18 +2358,21 @@ namespace PIC {
       //atomic flag used for syncronization of the threads
       std::atomic_flag lock_associated_data;
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline int AssociatedDataLength() {
         using namespace cDataCenterNode_static_data;
 
         return totalAssociatedDataLength;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetAssociatedDataBufferPointer(char* ptr) {
         using namespace cDataCenterNode_static_data;
 
         associatedDataPointer=ptr;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
@@ -2376,6 +2380,7 @@ namespace PIC {
       int LinearSolverUnknownVectorIndex;
 
       //clean the sampling buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       void cleanDataBuffer() {
         using namespace cDataCenterNode_static_data;
 
@@ -2389,6 +2394,7 @@ namespace PIC {
       }
       
       //init the buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCenterNode() : cBasicCenterNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
@@ -2747,6 +2753,7 @@ namespace PIC {
        void PrintVariableList(FILE* fout,int DataSetNumber);
 
        //clean the sampling buffers
+       _TARGET_HOST_ _TARGET_DEVICE_
        void cleanDataBuffer() {
          using namespace cDataCornerNode_static_data;
 
@@ -2759,6 +2766,7 @@ namespace PIC {
          if (totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
        }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCornerNode() : cBasicCornerNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
@@ -2912,6 +2920,7 @@ namespace PIC {
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataBlockAMR () : cBasicBlockAMR<cDataCornerNode,cDataCenterNode> () {
         using namespace cDataBlockAMR_static_data;
 

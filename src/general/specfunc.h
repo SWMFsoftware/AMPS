@@ -756,6 +756,35 @@ buff=new T [length];
 */
  }
 
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_malloc(T* &buff,int length) {
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+//  #ifndef __CUDA_ARCH__
+  buff=(T*)malloc(length*sizeof(T));
+//  #else 
+//  T* t;
+
+//  cudaMalloc(&t,length*sizeof(T));
+//  buff=(T*)t;
+//  #endif
+}
+
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_free(T* &buff) {
+
+//  #ifndef __CUDA_ARCH__
+  free(buff);
+//  #else
+//  cudaFree(buff);
+//  #endif
+
+  buff=NULL;
+}
+
+
 template<typename T>
 _TARGET_HOST_ _TARGET_DEVICE_
 void amsp_delete(T* &buff) {
@@ -783,6 +812,25 @@ __global__
 void kernel(F f){
   f();
 }
+
+template<class F,class T1>
+__global__
+void kernel_1(F f,T1 t1){
+  f(t1);
+}
+
+template<class F,class T1,class T2>
+__global__
+void kernel_2(F f,T1 t1,T2 t2){
+  f(t1,t2);
+}
+
+
+template <class F,class T1, class T2,class T3,class T4>
+__global__ 
+void kernel_4(F f, T1 t1,T2 t2,T3 t3,T4 t4) {
+  f(t1,t2,t3,t4);
+};
 
 #endif
 

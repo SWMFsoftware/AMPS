@@ -1819,14 +1819,6 @@ void PIC::SignalHandler(int sig) {
 }
 
 //====================================================
-
-_TARGET_GLOBAL_ 
-void SetThreadData(int inThisThread,int innTotalThreads) {
-  PIC::GPU::ThisThread=inThisThread;
-  PIC::GPU::nTotalThreads=innTotalThreads;
-}
-
-
 void PIC::InitMPI() {
 
   //check is MPI is initialized
@@ -1849,7 +1841,16 @@ void PIC::InitMPI() {
   ::TotalThreadsNumber=nTotalThreads;
 
   #if _CUDA_MODE_ == _ON_
-  SetThreadData<<<1,1>>>(ThisThread,nTotalThreads);
+
+  auto SetThreadData = [=] _TARGET_DEVICE_ (int inThisThread,int innTotalThreads) {
+    PIC::GPU::ThisThread=inThisThread;
+    PIC::GPU::nTotalThreads=innTotalThreads;
+
+    ::deviceThisThread=inThisThread;
+    ::deviceTotalThreadsNumber=innTotalThreads;
+  }; 
+
+  kernel_2<<<1,1>>>(SetThreadData,ThisThread,nTotalThreads);
   cudaDeviceSynchronize();
   #endif
 

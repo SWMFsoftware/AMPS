@@ -296,19 +296,10 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList' 
     if (dataBufferListPointer==dataBufferListSize) {
- //     T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-
-T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-amps_malloc<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
-
-
+      T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
-//      T*** tmpStackList=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-T*** tmpStackList=NULL;
-amps_malloc<T**>(tmpStackList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
-
-
+      T*** tmpStackList=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
       MemoryAllocation+=sizeof(T**)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
 
       i=0;
@@ -318,14 +309,10 @@ amps_malloc<T**>(tmpStackList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE
       for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-//        delete [] dataBufferList;
-amps_free(dataBufferList);
-
+        delete [] dataBufferList;
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
 
-//        delete [] elementStackList;
-amps_free(elementStackList);
-
+        delete [] elementStackList;
         MemoryAllocation-=sizeof(T**)*dataBufferListSize;
       }
 
@@ -335,8 +322,7 @@ amps_free(elementStackList);
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
-//    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
-amps_malloc<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
+    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
 
     if (dataBufferList[dataBufferListPointer]==NULL) {
       char msg[1000];

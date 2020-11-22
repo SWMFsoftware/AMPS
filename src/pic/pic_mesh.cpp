@@ -38,11 +38,11 @@ namespace PIC {
 }
 
 //init the block's global data
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset=0;
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LocalParticleWeightOffset=0;
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength=0;
-bool _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::InternalDataInitFlag=false;
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LocalParticleWeightOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength=0;
+_TARGET_DEVICE_ bool PIC::Mesh::cDataBlockAMR_static_data::InternalDataInitFlag=false;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset=0;
 
 //init the cells' global data
 int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength=0;
@@ -52,10 +52,10 @@ int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeI
 int _TARGET_DEVICE_ PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength=0;
 
 //in case OpenMP is used: tempParticleMovingListTableThreadOffset is the offset in the associatedDataPointer vector to the position when the temporary particle list begins
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset=-1;
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableLength=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset=-1;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableLength=0;
 
-int _TARGET_DEVICE_ PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
 
 //the offsets to the sampled data stored in 'center nodes'
 int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;

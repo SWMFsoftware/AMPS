@@ -71,3 +71,8 @@ using amps_vector=std::vector<T>;
 
 #endif
 
+extern  int ThisThread;
+extern  int TotalThreadsNumber;
+extern _TARGET_DEVICE_  int deviceThisThread;
+extern _TARGET_DEVICE_  int deviceTotalThreadsNumber;
+

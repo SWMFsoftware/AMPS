@@ -576,19 +576,22 @@ int main(int argc,char **argv) {
   cudaMalloc(&device_xmax,3*sizeof(double));
   cudaMemcpy(device_xmax,PIC::Mesh::CPU::mesh->xGlobalMax,3*sizeof(double),cudaMemcpyHostToDevice);
 
+
+auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ (int i) {
+printf("sdf");
+};
+
+
+int eeee;
+  kernel_1<<<1,1>>>(AllocateMesh,eeee);
+
+
   auto BuildMeshDevice = [=] _TARGET_DEVICE_ (cSplitTable *dTreeDescriptorTable,int dTreeDescriptorLength,double *xmin,double *xmax)  {
     PIC::Mesh::GPU::mesh->BuildTreeWithDescriptor(xmin,xmax,dTreeDescriptorTable,TreeDescriptorLength); 
   };
 
-  kernel_4<<<1,1>>>(BuildMeshDevice,deviceTreeDescriptorTable,TreeDescriptorLength,device_xmin,device_xmax); 
+  kernel_4<<<1,1>>>(BuildMeshDevice,deviceTreeDescriptorTable,TreeDescriptorLength,xmin,xmax); 
   cudaDeviceSynchronize();
-
-
-  delete [] hostTreeDescriptorTable;
-
-  cudaFree(deviceTreeDescriptorTable);
-  cudaFree(device_xmin);
-  cudaFree(device_xmax);
 
   #endif
 

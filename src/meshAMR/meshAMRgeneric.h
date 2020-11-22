@@ -2221,6 +2221,7 @@ public:
  
 
   //the constructor
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init(double *xMin,double *xMax,double (*localResolutionFunction)(double*)) {
     int i,idim;
 
@@ -2290,7 +2291,9 @@ public:
 
 
     //add the boundary faces to the root node
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     DistributeBoundaryCutBlocks(rootTree,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces);
+    #endif
 
     accepltTreeNodeFunction=NULL;
     MeshName[0]='\0',MeshSignature=0;
@@ -2381,13 +2384,20 @@ public:
 
     switch (_AMR_PARALLEL_MODE_) {
     case _AMR_PARALLEL_MODE_ON_:
+      #ifndef __CUDA_ARCH__
       MPI_Initialized(&MPIinitFlag);
 
       if (MPIinitFlag==true) {
         MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&ThisThread);
         MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&nTotalThreads);
       }
-      else exit(__LINE__,__FILE__,"Error: MPI is not initialized");
+      else {
+        exit(__LINE__,__FILE__,"Error: MPI is not initialized");
+      }
+      #else 
+      ThisThread=::deviceThisThread;
+      nTotalThreads=::deviceTotalThreadsNumber; 
+      #endif
 
       ParallelNodesDistributionList=new cTreeNodeAMR<cBlockAMR>*[nTotalThreads];
 
@@ -14021,15 +14031,28 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_ 
-  void BuildTreeWithDescriptor(double *xmin, double *xmax,cSplitTable* TreeDescriptor, int &TreeDescriptorLength) {
-    int TreeDescriptorIndex=0;
-    std::function<void(cTreeNodeAMR<cBlockAMR>*)> ProcessBlock;
+  void BuildTreeWithDescriptor(double *xmin, double *xmax,cSplitTable* TreeDescriptor, int TreeDescriptorLength) {
 
     //init mesh 
     init(xmin,xmax,NULL); 
 
     //create the tree
-    ProcessBlock = [&] (cTreeNodeAMR<cBlockAMR>* bl) -> void {
+    class cProcessBlock {
+    public:
+    int TreeDescriptorIndex;
+    cSplitTable* TreeDescriptor;
+    cMeshAMRgeneric *mesh;
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    cProcessBlock(cSplitTable* t0,cMeshAMRgeneric *t1) {
+      TreeDescriptorIndex=0;
+      TreeDescriptor=t0;
+      mesh=t1;
+    }
+
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void DoIt(cTreeNodeAMR<cBlockAMR>* bl) {
       cSplitTable t;
       bool split_flag=false;
 
@@ -14052,15 +14075,17 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
         if (FoundDownBlock==false) {
           //the block is not split yet -> split it
-          splitTreeNode(bl);
+          mesh->splitTreeNode(bl);
         }
 
         //go the the next level of the tree
-        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (bl->downNode[nd]!=NULL) ProcessBlock(bl->downNode[nd]);
+        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (bl->downNode[nd]!=NULL) DoIt(bl->downNode[nd]);
       }
-    };
+    } 
+    } ProcessBlock(TreeDescriptor,this);
 
-    ProcessBlock(rootTree);  
+
+    ProcessBlock.DoIt(rootTree);  
   }
 
 };

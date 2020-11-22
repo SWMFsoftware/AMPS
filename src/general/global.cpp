@@ -6,3 +6,6 @@
 #include "global.h"
 
 MPI_Comm MPI_GLOBAL_COMMUNICATOR;
+
+_TARGET_DEVICE_  int deviceThisThread=0;
+_TARGET_DEVICE_  int deviceTotalThreadsNumber=1;
