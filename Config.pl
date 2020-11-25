@@ -311,6 +311,11 @@ foreach (@Arguments) {
     add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
     add_line_general_conf("#undef _CUDA_MANAGED_\n#define _CUDA_MANAGED_ __managed__"); 
 
+    #add stuff in Makefile.conf
+    open (MAKEFILE,">>Makefile.conf") || die "Cannot open Makefile.local\n";
+    print MAKEFILE ".SUFFIXES: .cu\n.cu.o:\n\tnvcc \${FLAGCC} \$< -o \$@";
+    close (MAKEFILE);
+
     next;
   }
 
@@ -351,7 +356,7 @@ foreach (@Arguments) {
 
   if (/^-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -374,7 +379,7 @@ foreach (@Arguments) {
   
   if (/^-f-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -397,7 +402,7 @@ foreach (@Arguments) {
   
   if (/^-cpp-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -421,7 +426,7 @@ foreach (@Arguments) {
   if (/^-compiler-option=(.*)$/) {
     my $options=$1; 
 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     `echo EXTRACOMPILEROPTIONS+=$options >> Makefile.local`;
     next;
   }
@@ -462,7 +467,7 @@ foreach (@Arguments) {
     my $Opt;
     my @OptList;
 
-    $options=~s/,/ /g;
+    $options=~s/:/ /g;
     @OptList=split(' ',$options);
 
     my $line;
