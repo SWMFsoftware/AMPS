@@ -27,6 +27,8 @@
 #include <vector>
 #include<functional>
 
+#include "array_1d.h"
+#include "array_3d.h"
 
 #include "meshAMRdef.h"
 
@@ -116,6 +118,7 @@ public:
 
 
   //get and set the nodes' positions
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double *GetX() {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
@@ -124,6 +127,7 @@ public:
     return x;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetX(double *l) {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
@@ -132,6 +136,7 @@ public:
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) l[idim]=x[idim];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetX(double *l) {
 
 
@@ -152,6 +157,7 @@ public:
 
 
   //clean the data buffers
+  _TARGET_HOST_ _TARGET_DEVICE_
   void cleanDataBuffer() {
     nodeDescriptor.nodeno=0;
     nodeDescriptor.nodeProcessedFlag=_AMR_FALSE_;
@@ -165,6 +171,7 @@ public:
   }
 
   //increment and decrement the node conenction's counter
+  _TARGET_HOST_ _TARGET_DEVICE_
   void incrementConnectionCounter() {
     if (nodeDescriptor.nNodeConnections==_MAX_CORNER_NODE_CONNECTION_) exit(__LINE__,__FILE__,"the node's connections exeeds _MAX_CORNER_NODE_CONNECTION_");
 
@@ -174,6 +181,7 @@ public:
 //    #endif
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   int getNodeConnectionNumber() {
 
 //    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
@@ -183,6 +191,7 @@ public:
 //    #endif
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   int decrementConnectionCounter() {
 
 //    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
@@ -205,6 +214,7 @@ class cBasicCenterNode : public cBasicNode {
 public: 
   double Measure;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void cleanDataBuffer() {
     Measure=-1.0;
 
@@ -1286,7 +1296,10 @@ template <class cCornerNode,class cCenterNode>
 class cBasicBlockAMR : public cStackElementBase,public cAMRexit {
 public:
   //the place holder for the structure that contained the associated data
+  _TARGET_HOST_ _TARGET_DEVICE_
   int AssociatedDataLength() {return 0;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   void SetAssociatedDataBufferPointer(char* ptr) {}
 
   _TARGET_DEVICE_ _TARGET_HOST_
@@ -4160,6 +4173,7 @@ struct cNeibDescriptor {
   cTreeNodeAMR<cBlockAMR>* node;
 };
 
+_TARGET_HOST_ _TARGET_DEVICE_ 
 void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *NeibList,int& nNeibListCounter, int nNeibListMax, cFraction iOffset, cFraction jOffset, cFraction kOffset,cFraction BlockSize) {
   cTreeNodeAMR<cBlockAMR>* downNode;
 
@@ -4295,8 +4309,8 @@ if (startNode->Temp_ID==77) {
 
 
 
-  cNeibDescriptor *neibptr,NeibList[nNeibListMax];
-
+  cNeibDescriptor *neibptr; //,NeibList[nNeibListMax];
+  array_1d<cNeibDescriptor> NeibList(nNeibListMax);
 
   cTreeNodeAMR<cBlockAMR> *t,*searchNode=startNode;
   int SearchNodeSize=1; //,nConditionsMet; //nConditionsMet,iSearchOffset=0,jSearchOffset=0,kSearchOffset=0;
@@ -4363,7 +4377,10 @@ if (startNode->Temp_ID==77) {
   }
 
 
-  double xSearchNode[_MESH_DIMENSION_];
+//  double xSearchNode[_MESH_DIMENSION_];
+
+
+  array_1d<double> xSearchNode(_MESH_DIMENSION_);
   cFraction SearchStartBlockSize;
 
   SearchStartBlockSize=SearchNodeSize;
@@ -4378,25 +4395,25 @@ if (startNode->Temp_ID==77) {
 
   for (k=kSearchMin;k<=kSearchMax;k++) {
     if (_MESH_DIMENSION_==3) {
-      xSearchNode[2]=searchNode->xmin[2]+(searchNode->xmax[2]-searchNode->xmin[2])*(0.5+k);
+      xSearchNode(2)=searchNode->xmin[2]+(searchNode->xmax[2]-searchNode->xmin[2])*(0.5+k);
       kSearchOffset=kOffset+_BLOCK_CELLS_Z_*k*SearchNodeSize;
     }
 
     for (j=jSearchMin;j<=jSearchMax;j++) {
       if (_MESH_DIMENSION_>=2) {
-        xSearchNode[1]=searchNode->xmin[1]+(searchNode->xmax[1]-searchNode->xmin[1])*(0.5+j);
+        xSearchNode(1)=searchNode->xmin[1]+(searchNode->xmax[1]-searchNode->xmin[1])*(0.5+j);
         jSearchOffset=jOffset+_BLOCK_CELLS_Y_*j*SearchNodeSize;
       }
 
       for (i=iSearchMin;i<=iSearchMax;i++) {
-        xSearchNode[0]=searchNode->xmin[0]+(searchNode->xmax[0]-searchNode->xmin[0])*(0.5+i);
+        xSearchNode(0)=searchNode->xmin[0]+(searchNode->xmax[0]-searchNode->xmin[0])*(0.5+i);
         iSearchOffset=iOffset+_BLOCK_CELLS_X_*i*SearchNodeSize;
 
-        t=findTreeNodeLimitedResolutionLevel(xSearchNode,searchNode->RefinmentLevel,searchNode);
+        t=findTreeNodeLimitedResolutionLevel(xSearchNode.get_data_ptr(),searchNode->RefinmentLevel,searchNode);
         if (t==NULL) continue;
         if (t->RefinmentLevel>searchNode->RefinmentLevel) exit(__LINE__,__FILE__,"Error: something is wrong in the serach procedure");
 
-        AddNodeNeighborList(t,NeibList,nNeibListCounter,nNeibListMax,iSearchOffset,jSearchOffset,kSearchOffset,SearchStartBlockSize);
+        AddNodeNeighborList(t,NeibList.get_data_ptr(),nNeibListCounter,nNeibListMax,iSearchOffset,jSearchOffset,kSearchOffset,SearchStartBlockSize);
       }
     }
   }
@@ -4602,13 +4619,17 @@ if (startNode->Temp_ID==77) {
 #endif
 
   long int nd;
-  cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
+//  cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
 
-  for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
+  cCornerNode *ptrCornerNode=NULL;
+  array_3d<cCornerNode *>CornerNodeMap(1+iCornerMax-iCornerMin,1+jCornerMax-jCornerMin,1+kCornerMax-kCornerMin);
 
+//  for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
+
+CornerNodeMap=NULL;
 
   for (nlist=0;nlist<nNeibListCounter;nlist++) {
-    neibptr=NeibList+nlist;
+    neibptr=NeibList.get_data_ptr()+nlist;
 
     for (k=kCornerMin;k<=kCornerMax;k++) {
       kOffset=neibptr->kOffset+neibptr->BlockSize*k;
@@ -4626,9 +4647,9 @@ if (startNode->Temp_ID==77) {
             joffset=jOffset.Nominator/jOffset.Denominator;
             koffset=kOffset.Nominator/kOffset.Denominator;
 
-            if ((CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]!=NULL)&&(CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]!=ptrCornerNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
+            if ((CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)!=NULL)&&(CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)!=ptrCornerNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
 
-            CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]=ptrCornerNode;
+            CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)=ptrCornerNode;
 
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
 #if _CHECK_MESH_CONSISTANCY_ == _ON_AMR_MESH_
@@ -4654,7 +4675,7 @@ if (startNode->Temp_ID==77) {
 
   for (k=kCornerMin;k<=kCornerMax;k++) for (j=jCornerMin;j<=jCornerMax;j++) for (i=iCornerMin;i<=iCornerMax;i++) {
     nd=getCornerNodeLocalNumber(i,j,k);
-    ptrCornerNode=CornerNodeMap[i-iCornerMin][j-jCornerMin][k-kCornerMin];
+    ptrCornerNode=CornerNodeMap(i-iCornerMin,j-jCornerMin,k-kCornerMin);
 
     if (ptrCornerNode==NULL) {
       //generate the coordinates ofthe new node
@@ -4698,12 +4719,17 @@ if (startNode->Temp_ID==77) {
   static const int kCenterMin=0,kCenterMax=0;
 #endif
 
-  cCenterNode *CenterNodeMap[1+iCenterMax-iCenterMin][1+jCenterMax-jCenterMin][1+kCenterMax-kCenterMin],*ptrCenterNode;
+  //cCenterNode *CenterNodeMap[1+iCenterMax-iCenterMin][1+jCenterMax-jCenterMin][1+kCenterMax-kCenterMin],*ptrCenterNode;
 
-  for (k=0;k<1+kCenterMax-kCenterMin;k++) for (j=0;j<1+jCenterMax-jCenterMin;j++) for (i=0;i<1+iCenterMax-iCenterMin;i++) CenterNodeMap[i][j][k]=NULL;
+  //for (k=0;k<1+kCenterMax-kCenterMin;k++) for (j=0;j<1+jCenterMax-jCenterMin;j++) for (i=0;i<1+iCenterMax-iCenterMin;i++) CenterNodeMap[i][j][k]=NULL;
+
+  cCenterNode *ptrCenterNode;
+  array_3d<cCenterNode*> CenterNodeMap(1+iCenterMax-iCenterMin,1+jCenterMax-jCenterMin,1+kCenterMax-kCenterMin);   
+
+  CenterNodeMap=NULL;
 
   for (nlist=0;nlist<nNeibListCounter;nlist++) {
-    neibptr=NeibList+nlist;
+    neibptr=NeibList.get_data_ptr()+nlist;
     if (neibptr->node->RefinmentLevel!=startNode->RefinmentLevel) continue;
 
     for (k=kCenterMin;k<=kCenterMax;k++) {
@@ -4718,9 +4744,9 @@ if (startNode->Temp_ID==77) {
           if ((ioffset>=iCenterMin)&&(ioffset<=iCenterMax)) {
             ptrCenterNode=neibptr->node->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k));
 
-            if ((CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]!=NULL)&&(CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]!=ptrCenterNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
+            if ((CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)!=NULL)&&(CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)!=ptrCenterNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
 
-            CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]=ptrCenterNode;
+            CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)=ptrCenterNode;
           }
         }
       }
@@ -4730,7 +4756,7 @@ if (startNode->Temp_ID==77) {
   //populate the center nodes of the new block
   for (k=kCenterMin;k<=kCenterMax;k++) for (j=jCenterMin;j<=jCenterMax;j++) for (i=iCenterMin;i<=iCenterMax;i++) {
     nd=getCenterNodeLocalNumber(i,j,k);
-    ptrCenterNode=CenterNodeMap[i-iCenterMin][j-jCenterMin][k-kCenterMin];
+    ptrCenterNode=CenterNodeMap(i-iCenterMin,j-jCenterMin,k-kCenterMin);
     if (ptrCenterNode==NULL) {
       //generate the coordinates of the new node
       x[0]=xminBlock[0]+(i+0.5)*dxBlock[0];

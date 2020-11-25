@@ -404,22 +404,11 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 double BulletLocalResolution(double *x) {                                                                                           
   double dist = xmax[0]-xmin[0];
 
-#ifndef _UNIFORM_MESH_
-#error ERROR: _UNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
 #if _TEST_MESH_MODE_==_UNIFORM_MESH_  
   double res = 3;
 #endif
 
-#ifndef _NONUNIFORM_MESH_
-#error ERROR: _NONUNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
+
 #if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
   double highRes = dist/32.0, lowRes= dist/2.0;     
   double res =(5-1)/dist*(x[0]-xmin[0])+1;  
@@ -444,44 +433,23 @@ int main(int argc,char **argv) {
   
   int RelativeOffset=0;
   
-#ifndef _NONUNIFORM_MESH_
-#error ERROR: _NONUNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
-#if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
-  printf("non-uniform mesh!\n");
-#endif
-#ifndef _UNIFORM_MESH_
-#error ERROR: _UNIFORM_MESH_ is used but not defined
-#endif
-#ifndef _TEST_MESH_MODE_
-#error ERROR: _TEST_MESH_MODE_ is used but not defined
-#endif
-#if _TEST_MESH_MODE_==_UNIFORM_MESH_
-  printf("uniform mesh!\n");
-#endif
+  switch (_TEST_MESH_MODE_) {
+  case _NONUNIFORM_MESH_:
+    printf("non-uniform mesh!\n");
+    break;
+  case _UNIFORM_MESH_: 
+    printf("uniform mesh!\n");
+  }
 
 
-#ifndef _PIC_MODE_ON_
-#error ERROR: _PIC_MODE_ON_ is used but not defined
-#endif
-#ifndef _CURRENT_MODE_
-#error ERROR: _CURRENT_MODE_ is used but not defined
-#endif
-#if _CURRENT_MODE_==_PIC_MODE_ON_
-  printf("current on!\n");
-#endif
-#ifndef _PIC_MODE_OFF_
-#error ERROR: _PIC_MODE_OFF_ is used but not defined
-#endif
-#ifndef _CURRENT_MODE_
-#error ERROR: _CURRENT_MODE_ is used but not defined
-#endif
-#if _CURRENT_MODE_==_PIC_MODE_OFF_
-  printf("current mode off!\n");
-#endif
+
+  switch (_CURRENT_MODE_) {
+  case _PIC_MODE_ON_: 
+    printf("current on!\n");
+    break;
+  case _PIC_MODE_OFF_: 
+    printf("current mode off!\n");
+  }
 
 
 
@@ -565,6 +533,52 @@ int main(int argc,char **argv) {
   int TreeDescriptorLength;
   double *device_xmin,*device_xmax;
 
+
+  //get/set the device limits
+  size_t pValue;
+
+  cudaThreadGetLimit(&pValue,cudaLimitStackSize);
+  cout << pValue << endl;
+
+  cudaThreadGetLimit(&pValue,cudaLimitMallocHeapSize);
+  cout << pValue << endl;
+
+
+  cudaDeviceGetLimit(&pValue,cudaLimitStackSize);
+  cout << pValue << endl;
+
+  cudaDeviceGetLimit(&pValue,cudaLimitMallocHeapSize);
+  cout << pValue << endl;
+
+
+  cudaThreadGetLimit(&pValue,cudaLimitStackSize);
+  pValue*=6;
+  cudaDeviceSetLimit(cudaLimitStackSize,pValue);
+
+  pValue=0;
+  cudaThreadGetLimit(&pValue,cudaLimitStackSize);
+  cout << pValue << endl;
+
+  cudaThreadGetLimit(&pValue,cudaLimitMallocHeapSize);
+  pValue*=100;
+  cudaDeviceSetLimit(cudaLimitMallocHeapSize,pValue);
+
+  pValue=0;
+  cudaThreadGetLimit(&pValue,cudaLimitMallocHeapSize);
+  cout << pValue << endl;
+
+  auto test_stack = [=] _TARGET_DEVICE_ (size_t t) {
+    cudaThreadLimitMallocHeapSize=t;
+
+    PIC::Mesh::GPU::mesh->treeNodes.initMemoryBlock();
+  };
+
+  kernel_1<<<1,1>>>(test_stack,pValue);
+  cudaDeviceSynchronize();
+
+
+
+  //create the AMR tree descriptor and send it to the device
   PIC::Mesh::CPU::mesh->CreateTreeDescriptor(hostTreeDescriptorTable,TreeDescriptorLength); 
 
   cudaMalloc(&deviceTreeDescriptorTable,TreeDescriptorLength*sizeof(cSplitTable)); 

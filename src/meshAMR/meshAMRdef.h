@@ -171,7 +171,7 @@
 
 
 //a stack class for the mesh elements
-#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 100
+#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 10
 #define _STACK_DEFAULT_BUFFER_LIST_SIZE_ 100
 
 //macro definition for the real and ghost blocks 
@@ -229,12 +229,13 @@ public:
     printf("$PREFIX:%s\n\n",msg);
 
     fclose(errorlog); 
+    ::exit(1);
 #else
     if (msg==NULL) printf(" exit: line=%ld, file=%s\n",nline,fname);
     else printf(" exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
-#endif
 
-    ::exit(1);
+    asm("trap;");
+#endif
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -242,9 +243,6 @@ public:
 
   _TARGET_HOST_ _TARGET_DEVICE_
   ~cAMRexit() {}
-
-//  _TARGET_HOST_ _TARGET_DEVICE_
-//  virtual ~cAMRexit() { }
 };
 
 //the stack class to store the data structure of the mesh
@@ -322,22 +320,35 @@ public:
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
-    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+#ifdef __CUDA_ARCH__
+//if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) || (cudaThreadLimitMallocHeapSize>sizeof(T)) ) {
+//  printf("set _STACK_DEFAULT_BUFFER_BUNK_SIZE_ below %i\n",cudaThreadLimitMallocHeapSize/sizeof(T));  
+//  exit(__LINE__,__FILE__);
+//}
+#endif
+
+
+//  dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+//amps_new<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_); 
+
+
+  int size=_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T);
+  dataBufferList[dataBufferListPointer]=(T*)malloc(size);
 
     if (dataBufferList[dataBufferListPointer]==NULL) {
-      char msg[1000];
-
-      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
-      exit(__LINE__,__FILE__,msg);
+      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
+      exit(__LINE__,__FILE__);
     } 
+
+  for (int i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) new(dataBufferList[dataBufferListPointer]+i)T();
 
     elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
 
     if (elementStackList[dataBufferListPointer]==NULL) {
-      char msg[1000];
-
-      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
-      exit(__LINE__,__FILE__,msg);
+      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
+      exit(__LINE__,__FILE__);
     }
 
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -645,9 +656,13 @@ public:
 
   _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
-    T t;
+//    T *t=new T[1];
+//    
+//
 
-    if (t.AssociatedDataLength()!=0) {
+    T *t=(T*)malloc(sizeof(T)); 
+  
+    if (t->AssociatedDataLength()!=0) {
       long int i=0,j=0;
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
@@ -674,7 +689,7 @@ public:
       }
 
       //allocate a new memory chunk for the element's data and update the stack list
-      long int offset=t.AssociatedDataLength();
+      long int offset=t->AssociatedDataLength();
 
       associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
 
@@ -701,6 +716,10 @@ public:
 
     //init the buffer for the stack object itself
     BaseElementStack.initMemoryBlock() ;
+
+    //delete thetemp buffer 
+    //delete [] t;
+    free(t);
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -900,6 +919,14 @@ public:
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
+
+#ifdef __CUDA_ARCH__
+if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) || (cudaThreadLimitMallocHeapSize>sizeof(T)) ) {
+  printf("set _STACK_DEFAULT_BUFFER_BUNK_SIZE_ below %i\n",cudaThreadLimitMallocHeapSize/sizeof(T));
+  exit(__LINE__,__FILE__);
+}
+#endif
+
     dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 

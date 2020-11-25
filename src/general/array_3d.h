@@ -23,6 +23,7 @@ protected:
 public:
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
   void Deallocate() {
     if ((data!=NULL)&&(locally_allocated_data_buiffer==true)) delete [] data;
 
@@ -30,6 +31,7 @@ public:
     locally_allocated_data_buiffer=false;
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
   void init (int n0,int n1,int n2) {
     if ((n0<=0)||(n1<=0)||(n2<=0)) {
       printf("Error: allocation of array_3d object\n");
@@ -37,6 +39,7 @@ public:
       exit(__LINE__,__FILE__);
     } 
 
+   #ifndef __CUDA_ARCH__
    try {
      data=new T[n0*n1*n2];
    }
@@ -44,12 +47,16 @@ public:
      printf("Memory Error: array_3d() cannot allocate %ld bytes\n", n0*n1*n2*sizeof(T));
      exit(__LINE__,__FILE__);
    }
+   #else 
+   data=new T[n0*n1*n2];
+   #endif
 
    size_dim0=n0,size_dim1=n1,size_dim2=n2;
    ndim1_ndim2=n1*n2;
    locally_allocated_data_buiffer=true;
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
   array_3d() {
     data=NULL;
     size_dim0=0,size_dim1=0,size_dim2=0;
@@ -58,11 +65,13 @@ public:
   };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
  ~array_3d() {
    Deallocate();
  };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   array_3d(int n0,int n1,int n2) {
     data=NULL;
     size_dim0=0,size_dim1=0,size_dim2=0;
@@ -72,6 +81,7 @@ public:
     init(n0,n1,n2);
   };
 
+_TARGET_HOST_ _TARGET_DEVICE_
   array_3d(T* t,int n0,int n1,int n2) {
     data=t;
 
@@ -82,12 +92,15 @@ public:
   };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   int size() const {
     return size_dim0*size_dim1*size_dim2;
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
   bool IsAllocated() {return (data!=NULL);}
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   int size(int idim) {
     int res=0;
 
@@ -107,6 +120,7 @@ public:
   }
   
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   inline T operator () (int i0,int i1,int i2) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
 
@@ -114,17 +128,20 @@ public:
   };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   inline T & operator () (int i0,int i1,int i2) {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
     return data[i0*ndim1_ndim2+size_dim2*i1+i2];
   };
 
+_TARGET_HOST_ _TARGET_DEVICE_
   inline T* operator () (int i0,int i1) {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)) exit(__LINE__,__FILE__,"Error: out of range");
     return data+i0*ndim1_ndim2+size_dim2*i1;
   };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   array_3d<T>& operator = (const array_3d<T>& v) {
     int i,imax;
 
@@ -135,6 +152,7 @@ public:
   };
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   array_3d<T>& operator = (T f) {
     int i,imax;
 

@@ -2288,18 +2288,26 @@ void PIC::Init_AfterParser() {
 
 //====================================================
 //set up the particle weight and time step
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
+
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::ParticleWeightTimeStep::GPU;
+  #else
+  using namespace PIC::ParticleWeightTimeStep::CPU;
+  #endif
+
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 
-  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+  if (GlobalParticleWeight==NULL) {
+    GlobalParticleWeight=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) GlobalParticleWeight[s]=-1.0;
   }
 
-  if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
+  if ((GlobalParticleWeight[spec]<0.0)||(GlobalParticleWeight[spec]>weight)) {
+    GlobalParticleWeight[spec]=weight;
   }
 
   #else
@@ -2307,14 +2315,23 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   #endif
 }
 
+_TARGET_HOST_ _TARGET_DEVICE_
 double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
+
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::ParticleWeightTimeStep::GPU;
+  #else
+  using namespace PIC::ParticleWeightTimeStep::CPU;
+  #endif
+
+
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   double *res;
   res=spec+(double *)(associatedDataPointer+LocalParticleWeightOffset);
   return *res;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 
-  return PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+  return GlobalParticleWeight[spec];
   #else
   exit(__LINE__,__FILE__,"not implemented");
   return 0.0;
@@ -2322,29 +2339,36 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 }
 
 //set up the particle time step
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::ParticleWeightTimeStep::GPU;
+  #else
+  using namespace PIC::ParticleWeightTimeStep::CPU;
+  #endif
+
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+  if (GlobalTimeStep==NULL) {
+    GlobalTimeStep=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) GlobalTimeStep[s]=-1.0;
   }
 
-  if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]>dt)) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]=dt;
+  if ((GlobalTimeStep[spec]<0.0)||(GlobalTimeStep[spec]>dt)) {
+    GlobalTimeStep[spec]=dt;
   }
   
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
+  if (GlobalTimeStep==NULL) {
+    GlobalTimeStep=new double [1];
+    GlobalTimeStep[0]=-1.0;
   }
 
-  if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>dt)) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=dt;
+  if ((GlobalTimeStep[0]<0.0)||(GlobalTimeStep[0]>dt)) {
+    GlobalTimeStep[0]=dt;
   }
 
   #else
@@ -2352,16 +2376,22 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #endif
 }
 
+_TARGET_HOST_ _TARGET_DEVICE_
 double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::ParticleWeightTimeStep::GPU;
+  #else
+  using namespace PIC::ParticleWeightTimeStep::CPU;
+  #endif
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;
   res=spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset);
   return *res;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  return  PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+  return  GlobalTimeStep[spec];
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
-  return  PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+  return  GlobalTimeStep[0];
   #else
   exit(__LINE__,__FILE__,"not implemented");
   #endif

@@ -76,3 +76,4 @@ extern  int TotalThreadsNumber;
 extern _TARGET_DEVICE_  int deviceThisThread;
 extern _TARGET_DEVICE_  int deviceTotalThreadsNumber;
 
+extern _TARGET_DEVICE_ int cudaThreadLimitMallocHeapSize; 

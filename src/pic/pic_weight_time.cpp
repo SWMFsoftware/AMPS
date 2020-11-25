@@ -17,7 +17,10 @@ PIC::ParticleWeightTimeStep::fUserDefinedExtraSourceRate PIC::ParticleWeightTime
 PIC::ParticleWeightTimeStep::fExosphereModelExtraSourceRate PIC::ParticleWeightTimeStep::ExosphereModelExtraSourceRate=NULL;
 
 //the global particle weight/time step
-double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
+double *PIC::ParticleWeightTimeStep::CPU::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::CPU::GlobalTimeStep=NULL;
+
+_TARGET_DEVICE_ double *PIC::ParticleWeightTimeStep::GPU::GlobalParticleWeight=NULL;
+_TARGET_DEVICE_ double *PIC::ParticleWeightTimeStep::GPU::GlobalTimeStep=NULL;
 
 //simulation time counter
 double PIC::SimulationTime::TimeCounter=0.0;
