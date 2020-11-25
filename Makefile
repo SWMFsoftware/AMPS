@@ -367,7 +367,7 @@ amps_after_build: LIB_after_build
 amps_link:
 ifeq ($(COMPILE.mpicxx),nvcc)
 	nvcc -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
-	mpif90 -o amps -g  -Mnomain amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ -lcudart share/lib/libSHARE.a
+	mpif90 -o amps -g  amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ share/lib/libSHARE.a ${EXTRALINKEROPTIONS_F} 
 else
 	${AMPSLINKER} -o amps srcTemp/main/main.a srcTemp/libAMPS.a \
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}
