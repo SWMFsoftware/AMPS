@@ -527,6 +527,7 @@ int main(int argc,char **argv) {
   PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
   PIC::ParticleWeightTimeStep::initTimeStep();
 
+/*
   //Init mesh on the device 
   #if _CUDA_MODE_==_ON_
   cSplitTable *hostTreeDescriptorTable=NULL,*deviceTreeDescriptorTable=NULL;
@@ -605,6 +606,7 @@ int main(int argc,char **argv) {
   cudaFree(device_xmax);
 
   #endif
+*/
 
   if (PIC::ThisThread==0) printf("test1\n");
   PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");

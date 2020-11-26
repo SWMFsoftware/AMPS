@@ -4093,6 +4093,7 @@ namespace PIC {
 
 
     //when the global particle weight/time step are used, the following are the buffers where these parameters are stored
+    /*
     namespace CPU {
       extern double *GlobalParticleWeight,*GlobalTimeStep;
     }
@@ -4101,7 +4102,11 @@ namespace PIC {
       extern _TARGET_DEVICE_ double *GlobalParticleWeight,*GlobalTimeStep;
     }
 
-    using namespace CPU;
+    //using namespace CPU;
+    */
+    
+
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_],GlobalTimeStep[_TOTAL_SPECIES_NUMBER_];
 
     double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);

@@ -922,6 +922,7 @@ public:
     int i;
 
     block=NULL,upNode=NULL;
+    IsUsedInCalculationFlag=true;
 
     for (i=0;i<(1<<_MESH_DIMENSION_);i++) downNode[i]=NULL;
   

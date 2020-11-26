@@ -54,13 +54,21 @@ void PrintErrorLog(long int,const char*,const char*);
 extern unsigned int ExitErrorCode;
 const int ExitErrorCodeSeparator=10000;
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void inline SetExitErrorCode(int Line,int FunctionCode) {
+  #ifndef __CUDA_ARCH__
   ExitErrorCode=FunctionCode+ExitErrorCodeSeparator*Line;
+  #endif
 }
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void inline UnpackExitErrorCode(int& Line,int& FunctionCode) {
+  #ifndef __CUDA_ARCH__
   Line=ExitErrorCode/ExitErrorCodeSeparator;
   FunctionCode=ExitErrorCode%ExitErrorCodeSeparator;
+  #else 
+  Line=0,FunctionCode=0;
+  #endif
 }
 
 
@@ -747,16 +755,42 @@ _TARGET_HOST_ _TARGET_DEVICE_
 void amps_new(T* &buff,int length) {
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
 
-//buff=new T [length];
-
-
-int size=length*sizeof(T);
-
-  buff=(T*)malloc(size);
+  buff=(T*)malloc(length*sizeof(T));
 
   for (int i=0;i<length;i++) new(buff+i)T();
-
  }
+
+template<class T>
+void amps_new_managed(T* &buff,int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  cudaMallocManaged(&t,length*sizeof(T)); 
+  buff=t;
+
+  for (int i=0;i<length;i++) new(buff+i)T();
+}
+
+template<class T>
+void amps_malloc_managed(T* &buff,int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  cudaMallocManaged(&t,length*sizeof(T));
+  buff=t;
+}
+
+template<typename T>
+void amps_free_managed(T* &buff) {
+  if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
+
+  cudaFree(buff);
+  buff=NULL;
+}
+
+
 
 template<class T>
 _TARGET_HOST_ _TARGET_DEVICE_
@@ -786,7 +820,6 @@ void amps_free(T* &buff) {
   buff=NULL;
 }
 
-
 template<typename T>
 _TARGET_HOST_ _TARGET_DEVICE_
 void amsp_delete(T* &buff) {
@@ -795,6 +828,7 @@ void amsp_delete(T* &buff) {
   free(buff);
   buff=NULL;
 }
+
 
 #if _CUDA_MODE_ == _ON_ 
 /*

@@ -294,10 +294,15 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList' 
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
+
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
-      T*** tmpStackList=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T*** tmpStackList=NULL; //=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_malloc_managed<T**>(tmpStackList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
       MemoryAllocation+=sizeof(T**)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
 
       i=0;
@@ -307,10 +312,14 @@ public:
       for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-        delete [] dataBufferList;
+//        delete [] dataBufferList;
+        amps_free_managed(dataBufferList);
+
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
 
-        delete [] elementStackList;
+//        delete [] elementStackList;
+        amps_free_managed(elementStackList);
+
         MemoryAllocation-=sizeof(T**)*dataBufferListSize;
       }
 
@@ -335,16 +344,19 @@ public:
 
 
   int size=_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T);
-  dataBufferList[dataBufferListPointer]=(T*)malloc(size);
+//  dataBufferList[dataBufferListPointer]=(T*)malloc(size);
+  amps_malloc_managed<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);  
+
 
     if (dataBufferList[dataBufferListPointer]==NULL) {
       printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
       exit(__LINE__,__FILE__);
     } 
 
-  for (int i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) new(dataBufferList[dataBufferListPointer]+i)T();
+//  for (int i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) new(dataBufferList[dataBufferListPointer]+i)T();
 
-    elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+//    elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
     if (elementStackList[dataBufferListPointer]==NULL) {
       printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
@@ -434,15 +446,21 @@ public:
   _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
-      delete [] dataBufferList[i];
-      delete [] elementStackList[i];
+     // delete [] dataBufferList[i];
+     // delete [] elementStackList[i];
+
+      amps_free_managed(dataBufferList[i]);
+      amps_free_managed(elementStackList[i]);
 
       MemoryAllocation-=(sizeof(T)+sizeof(T*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     if (dataBufferList!=NULL) {
-      delete [] dataBufferList;
-      delete [] elementStackList; 
+      //delete [] dataBufferList;
+      //delete [] elementStackList; 
+
+      amps_free_managed(dataBufferList);
+      amps_free_managed(elementStackList);
 
       MemoryAllocation-=(sizeof(T*)+sizeof(T**))*dataBufferListSize;
     }
@@ -667,8 +685,11 @@ public:
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
       if (BaseElementStack.dataBufferListPointer==BaseElementStack.dataBufferListSize) {
-        char** tmpDataList=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-        char*** tmpStackList=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        char** tmpDataList=NULL; //=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        amps_malloc_managed<char*>(tmpDataList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
+        char*** tmpStackList=NULL; //=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        amps_malloc_managed<char**>(tmpStackList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
         BaseElementStack.MemoryAllocation+=sizeof(char*)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
         BaseElementStack.MemoryAllocation+=sizeof(char**)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
@@ -678,8 +699,11 @@ public:
         for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
         if (associatedDataBufferList!=NULL) {
-          delete [] associatedDataBufferList;
-          delete [] associatedDataStackList;
+//          delete [] associatedDataBufferList;
+          amps_free_managed(associatedDataBufferList);
+
+     //     delete [] associatedDataStackList;
+          amps_free_managed(associatedDataStackList);
 
           BaseElementStack.MemoryAllocation-=(sizeof(char*)+sizeof(char**))*BaseElementStack.dataBufferListSize;
         }
@@ -691,7 +715,9 @@ public:
       //allocate a new memory chunk for the element's data and update the stack list
       long int offset=t->AssociatedDataLength();
 
-      associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+     // associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+
+      amps_malloc_managed<char>(associatedDataBufferList[BaseElementStack.dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset);
 
       if (associatedDataBufferList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
@@ -700,7 +726,8 @@ public:
       } 
 
 
-      associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      //associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      amps_malloc_managed<char*>(associatedDataStackList[BaseElementStack.dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
       if (associatedDataStackList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
@@ -900,7 +927,10 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+
+      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
       i=0;
@@ -910,7 +940,9 @@ public:
       for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-        delete [] dataBufferList;
+//        delete [] dataBufferList;
+        amps_free_managed(dataBufferList);
+
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
       }
 
@@ -927,7 +959,10 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
 }
 #endif
 
-    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+ //   dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+    amps_new_managed<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
+
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     nMaxElements+=_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -965,13 +1000,17 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
-      delete [] dataBufferList[i];
+  //    delete [] dataBufferList[i];
+
+      amps_free_managed(dataBufferList[i]);
 
       MemoryAllocation-=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     if (dataBufferList!=NULL) {
-      delete [] dataBufferList;
+    //  delete [] dataBufferList;
+
+      amps_free_managed(dataBufferList);
 
       MemoryAllocation-=sizeof(T*)*dataBufferListSize;
     }
