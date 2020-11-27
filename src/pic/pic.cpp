@@ -1819,6 +1819,14 @@ void PIC::SignalHandler(int sig) {
 }
 
 //====================================================
+
+_TARGET_GLOBAL_ 
+void SetThreadData(int inThisThread,int innTotalThreads) {
+  PIC::GPU::ThisThread=inThisThread;
+  PIC::GPU::nTotalThreads=innTotalThreads;
+}
+
+
 void PIC::InitMPI() {
 
   //check is MPI is initialized
@@ -1841,16 +1849,7 @@ void PIC::InitMPI() {
   ::TotalThreadsNumber=nTotalThreads;
 
   #if _CUDA_MODE_ == _ON_
-
-  auto SetThreadData = [=] _TARGET_DEVICE_ (int inThisThread,int innTotalThreads) {
-    PIC::GPU::ThisThread=inThisThread;
-    PIC::GPU::nTotalThreads=innTotalThreads;
-
-    ::deviceThisThread=inThisThread;
-    ::deviceTotalThreadsNumber=innTotalThreads;
-  }; 
-
-  kernel_2<<<1,1>>>(SetThreadData,ThisThread,nTotalThreads);
+  SetThreadData<<<1,1>>>(ThisThread,nTotalThreads);
   cudaDeviceSynchronize();
   #endif
 
@@ -1885,26 +1884,14 @@ void PIC::Init_BeforeParser() {
   PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
   PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
-
-  amps_new_managed<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::CPU::mesh,1);
-
-//amps_new<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::CPU::mesh,1);
-
-  auto SendMesh2Device = [=] _TARGET_DEVICE_ (cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh) {
-    PIC::Mesh::GPU::mesh=mesh;
-
-    //intialize the interpolation module
-    PIC::InterpolationRoutines::Init();
-  }; 
-
-  #if _CUDA_MODE_ == _ON_
-  kernel_1<<<1,1>>>(SendMesh2Device,PIC::Mesh::CPU::mesh);
-
-  cudaDeviceSynchronize();
-  #endif
-
-
-  auto AllocateMesh = [=]  (cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh) {
+  auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () {
+    #ifdef __CUDA_ARCH__ 
+    amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
+    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+    #else
+    PIC::Mesh::CPU::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+    #endif
 
     //intialize the interpolation module
     PIC::InterpolationRoutines::Init();
@@ -1926,13 +1913,13 @@ void PIC::Init_BeforeParser() {
     if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
   };
 
-//  #if _CUDA_MODE_ == _ON_
-//  kernel<<<1,1>>>(AllocateMesh); 
+  #if _CUDA_MODE_ == _ON_
+  kernel<<<1,1>>>(AllocateMesh); 
 
-//  cudaDeviceSynchronize();
-//  #endif
+  cudaDeviceSynchronize();
+  #endif
 
-  AllocateMesh(PIC::Mesh::CPU::mesh);
+  AllocateMesh();
 
 /*
   //init the particle buffer
@@ -2300,25 +2287,15 @@ void PIC::Init_AfterParser() {
 
 //====================================================
 //set up the particle weight and time step
-_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
-
-//  #ifdef __CUDA_ARCH__ 
-//  using namespace PIC::ParticleWeightTimeStep::GPU;
-//  #else
-//  using namespace PIC::ParticleWeightTimeStep::CPU;
-//  #endif
-
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 
-/*
-  if (GlobalParticleWeight==NULL) {
-    GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) GlobalParticleWeight[s]=-1.0;
+  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
   }
-*/
 
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
@@ -2329,16 +2306,7 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   #endif
 }
 
-_TARGET_HOST_ _TARGET_DEVICE_
 double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
-
-//  #ifdef __CUDA_ARCH__ 
-//  using namespace PIC::ParticleWeightTimeStep::GPU;
-//  #else
-//  using namespace PIC::ParticleWeightTimeStep::CPU;
-//  #endif
-
-
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   double *res;
   res=spec+(double *)(associatedDataPointer+LocalParticleWeightOffset);
@@ -2353,24 +2321,15 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 }
 
 //set up the particle time step
-_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
-//  #ifdef __CUDA_ARCH__ 
-//  using namespace PIC::ParticleWeightTimeStep::GPU;
-//  #else
-//  using namespace PIC::ParticleWeightTimeStep::CPU;
-//  #endif
-
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
-/*
-  if (GlobalTimeStep==NULL) {
-    GlobalTimeStep=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) GlobalTimeStep[s]=-1.0;
+  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
+    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
   }
-*/
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]=dt;
@@ -2378,12 +2337,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   
-/*
-  if (GlobalTimeStep==NULL) {
-    GlobalTimeStep=new double [1];
-    GlobalTimeStep[0]=-1.0;
+  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
+    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
   }
-*/
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=dt;
@@ -2394,13 +2351,7 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #endif
 }
 
-_TARGET_HOST_ _TARGET_DEVICE_
 double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
-//  #ifdef __CUDA_ARCH__ 
-//  using namespace PIC::ParticleWeightTimeStep::GPU;
-//  #else
-//  using namespace PIC::ParticleWeightTimeStep::CPU;
-//  #endif
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;
