@@ -766,7 +766,13 @@ void amps_new_managed(T* &buff,int length) {
 
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
 
+  #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T)); 
+  #else 
+  t=(T*)malloc(length*sizeof(T));
+  #endif
+
+
   buff=t;
 
   for (int i=0;i<length;i++) new(buff+i)T();
@@ -777,8 +783,13 @@ void amps_malloc_managed(T* &buff,int length) {
   T* t;
 
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
-
+ 
+  #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T));
+  #else
+  t=(T*)malloc(length*sizeof(T));
+  #endif
+
   buff=t;
 }
 
@@ -786,7 +797,12 @@ template<typename T>
 void amps_free_managed(T* &buff) {
   if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
 
+  #if _CUDA_MODE_ == _ON_
   cudaFree(buff);
+  #else 
+  free(buff);
+  #endif
+
   buff=NULL;
 }
 
