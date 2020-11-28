@@ -17,7 +17,11 @@ PIC::ParticleWeightTimeStep::fUserDefinedExtraSourceRate PIC::ParticleWeightTime
 PIC::ParticleWeightTimeStep::fExosphereModelExtraSourceRate PIC::ParticleWeightTimeStep::ExosphereModelExtraSourceRate=NULL;
 
 //the global particle weight/time step
-double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
+//double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
+
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_]={-1.0};
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalTimeStep[_TOTAL_SPECIES_NUMBER_]={-1.0}; 
+
 
 //simulation time counter
 double PIC::SimulationTime::TimeCounter=0.0;
@@ -467,10 +471,10 @@ void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,i
 //====================================================
 //set global particle constant weight
 void PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>GlobalParticleWeight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=GlobalParticleWeight;

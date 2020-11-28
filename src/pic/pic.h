@@ -133,6 +133,7 @@ namespace PIC {
 
   using namespace CPU;
 
+
   //the total number of the OpenMP threads (when OpneMP is used in the model run)
   extern _TARGET_DEVICE_ int nTotalThreadsOpenMP;
 
@@ -2327,6 +2328,7 @@ namespace PIC {
       }
 
       //set and test the flags
+      _TARGET_HOST_ _TARGET_DEVICE_
       bool TestFlag(int ibit) {
         unsigned char mask=1<<ibit;
 
@@ -2334,6 +2336,7 @@ namespace PIC {
         return (mask!=0) ? true : false;
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetFlag(bool flag,int ibit) {
         unsigned char mask=1<<ibit;
 
@@ -2347,7 +2350,10 @@ namespace PIC {
       }
 
       //set and read 'active flag': zero's bit of the 'FlagTable'
+      _TARGET_HOST_ _TARGET_DEVICE_
       bool TestActiveFlag() {return TestFlag(0);}
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetActiveFlag(bool flag) {SetFlag(flag,0);}
 
       //'processed' flag (second bit of 'FlagTable')
@@ -2357,18 +2363,21 @@ namespace PIC {
       //atomic flag used for syncronization of the threads
       std::atomic_flag lock_associated_data;
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline int AssociatedDataLength() {
         using namespace cDataCenterNode_static_data;
 
         return totalAssociatedDataLength;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetAssociatedDataBufferPointer(char* ptr) {
         using namespace cDataCenterNode_static_data;
 
         associatedDataPointer=ptr;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
@@ -2376,6 +2385,7 @@ namespace PIC {
       int LinearSolverUnknownVectorIndex;
 
       //clean the sampling buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       void cleanDataBuffer() {
         using namespace cDataCenterNode_static_data;
 
@@ -2389,11 +2399,14 @@ namespace PIC {
       }
       
       //init the buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCenterNode() : cBasicCenterNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
 
+        #ifndef __CUDA_ARCH__
         lock_associated_data.clear(std::memory_order_release);
+        #endif
       }
         
       // access sampled macroscopic parameters;
@@ -2658,6 +2671,7 @@ namespace PIC {
        //static unsigned char FlagTableStatusVector;
 
        //reserve and release flag
+       _TARGET_HOST_ _TARGET_DEVICE_
        static bool CheckoutFlag(int ibit) {
          using namespace cDataCornerNode_static_data;
  
@@ -2672,12 +2686,14 @@ namespace PIC {
          return res;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        static int CheckoutFlag() {
          for (int ibit=0;ibit<8;ibit++) if (CheckoutFlag(ibit)==true) return ibit;
 
          return -1;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        static void ReleaseFlag(int ibit) {
          using namespace cDataCornerNode_static_data;
          unsigned char mask=1<<ibit;
@@ -2687,6 +2703,7 @@ namespace PIC {
        }
 
        //set and test the flags
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestFlag(int ibit) {
          unsigned char mask=1<<ibit;
 
@@ -2694,6 +2711,7 @@ namespace PIC {
          return (mask!=0) ? true : false;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetFlag(bool flag,int ibit) {
          unsigned char mask=1<<ibit;
 
@@ -2707,16 +2725,25 @@ namespace PIC {
        }
 
        //set and read 'active flag': zero's bit of the 'FlagTable'
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestActiveFlag() {return TestFlag(0);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetActiveFlag(bool flag) {SetFlag(flag,0);}
 
        //subdomain modifiable flag: the corner node can be modified with in the subdomain (it does not at the 'right' boundary of any block that are located at the boundary of the subdomain
        //First bit of the 'FlagTable'
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestSubDomainModifiableFlag() {return TestFlag(1);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetSubDomainModifiableFlag(bool flag) {SetFlag(flag,1);}
 
        //'processed' flag (third bit of 'FlagTable')
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestProcessedFlag() {return TestFlag(2);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetProcessedFlag(bool flag) {SetFlag(flag,2);}
 
 
@@ -2728,16 +2755,19 @@ namespace PIC {
        int LinearSolverUnknownVectorIndex;
 //       #endif
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        inline int AssociatedDataLength() {
          using namespace cDataCornerNode_static_data;
 
          return totalAssociatedDataLength;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetAssociatedDataBufferPointer(char* ptr) {
          associatedDataPointer=ptr;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        inline char* GetAssociatedDataBufferPointer() {
          return associatedDataPointer;
        }
@@ -2747,6 +2777,7 @@ namespace PIC {
        void PrintVariableList(FILE* fout,int DataSetNumber);
 
        //clean the sampling buffers
+       _TARGET_HOST_ _TARGET_DEVICE_
        void cleanDataBuffer() {
          using namespace cDataCornerNode_static_data;
 
@@ -2759,11 +2790,15 @@ namespace PIC {
          if (totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
        }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCornerNode() : cBasicCornerNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
         SetSubDomainModifiableFlag(false);
+
+        #ifndef __CUDA_ARCH__
         lock_associated_data.clear(std::memory_order_release);
+        #endif
       }
     };
   
@@ -2844,21 +2879,25 @@ namespace PIC {
       long int tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       #endif
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       int AssociatedDataLength() {
         using namespace cDataBlockAMR_static_data;
         return totalAssociatedDataLength;
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetAssociatedDataBufferPointer(char* ptr) {
         associatedDataPointer=ptr;
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       static void InitInternalData() {
         using namespace cDataBlockAMR_static_data;
 
@@ -2900,6 +2939,7 @@ namespace PIC {
         }
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       static int RequestInternalBlockData(int length) {
         using namespace cDataBlockAMR_static_data;
  
@@ -2912,6 +2952,7 @@ namespace PIC {
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataBlockAMR () : cBasicBlockAMR<cDataCornerNode,cDataCenterNode> () {
         using namespace cDataBlockAMR_static_data;
 
@@ -2929,6 +2970,7 @@ namespace PIC {
       void recvMoveBlockAnotherProcessor(CMPI_channel *pipe,int From,void *Node);
 
       //clean the sampling buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       void cleanDataBuffer() {
         using namespace cDataBlockAMR_static_data;
 
@@ -2965,9 +3007,16 @@ namespace PIC {
 
 
       //set and get the local time step
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetLocalTimeStep(double dt, int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       double GetLocalTimeStep(int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetLocalParticleWeight(double weight, int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       double GetLocalParticleWeight(int spec);
 
       //print into a output file the blocks' parameters: the local time step, the local weight
@@ -3009,15 +3058,20 @@ namespace PIC {
     void SetCellSamplingDataRequest();
 
     //return time step and the particle's weights
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetLocalTimeStep(int spec,cDataBlockAMR* block) {
       return *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetLocalTimeStep(double dt,int spec,cDataBlockAMR* block) {
       *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     double GetLocalParticleWeight(int,cDataBlockAMR*);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     void SetLocalParticleWeight(double,int,cDataBlockAMR*);
 
     void flushCompletedSamplingBuffer(cDataCenterNode*);
@@ -3091,12 +3145,15 @@ namespace PIC {
   
       _TARGET_DEVICE_ _TARGET_HOST_
       void InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
+
+      _TARGET_DEVICE_ _TARGET_HOST_
       void Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
 
       namespace CornerNode {
         _TARGET_DEVICE_ _TARGET_HOST_
         int GetSize();
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3111,6 +3168,7 @@ namespace PIC {
         }
 
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void inline Set(bool flag,int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3135,6 +3193,7 @@ namespace PIC {
         _TARGET_DEVICE_ _TARGET_HOST_
         int GetSize();
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3148,6 +3207,7 @@ namespace PIC {
           return ((Mask[ibyte]&m)==0) ? false : true;
         }
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void inline Set(bool flag,int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -4033,7 +4093,10 @@ namespace PIC {
 
 
     //when the global particle weight/time step are used, the following are the buffers where these parameters are stored
-    extern double *GlobalParticleWeight,*GlobalTimeStep;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_],GlobalTimeStep[_TOTAL_SPECIES_NUMBER_];
+
+
+//    extern double *GlobalParticleWeight,*GlobalTimeStep;
 
     double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);

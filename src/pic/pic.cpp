@@ -1911,6 +1911,12 @@ void PIC::Init_BeforeParser() {
 
     //Init the random number generator
     if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+
+  //Time step/particle weight tables
+    for (int s=0;s<PIC::nTotalSpecies;s++) {
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+    }
   };
 
   #if _CUDA_MODE_ == _ON_
@@ -2292,10 +2298,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 
-  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
@@ -2326,10 +2332,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]=dt;
@@ -2337,10 +2343,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=dt;
