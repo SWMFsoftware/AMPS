@@ -70,8 +70,7 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecompo
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
 
-cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::CPU::mesh;
-_TARGET_DEVICE_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::GPU::mesh;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
 
 //the user defined functions for output of the 'ceneter node' data into a data file
 vector<PIC::Mesh::fPrintVariableListCenterNode> PIC::Mesh::PrintVariableListCenterNode;
@@ -370,6 +369,7 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
   }
 }
 
+/*
 _TARGET_GLOBAL_ 
 void PIC::Mesh::AllocateMesh() {
   if (GPU::mesh==NULL) {
@@ -383,6 +383,7 @@ void PIC::Mesh::AllocateMesh() {
     #endif
   }
 }
+*/
 
 void PIC::Mesh::initCellSamplingDataBuffer() {
 //  if (cDataBlockAMR::totalAssociatedDataLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the blocks associated data offsets");
@@ -566,11 +567,11 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
   using namespace PIC::Mesh::cDataBlockAMR_static_data;
 
-  #ifdef __CUDA_ARCH__ 
-  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
-  #else
-  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
-  #endif
+//  #ifdef __CUDA_ARCH__ 
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+//  #else
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+//  #endif
 
 
   int SendBufferIndex=0;
@@ -821,11 +822,11 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
-  #ifdef __CUDA_ARCH__ 
-  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
-  #else
-  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
-  #endif
+//  #ifdef __CUDA_ARCH__ 
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+//  #else
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+//  #endif
 
 
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {

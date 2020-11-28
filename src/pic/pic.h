@@ -3079,15 +3079,7 @@ namespace PIC {
     void switchSamplingBuffers();
 
     //the computational mesh
-    namespace CPU { 
-      extern cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
-    }
-
-    namespace GPU {
-      extern _TARGET_DEVICE_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
-    }
-
-    using namespace CPU;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
 
     //init the computational mesh
     void Init(double*,double*,fLocalMeshResolution);

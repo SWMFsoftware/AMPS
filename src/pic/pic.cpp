@@ -1884,14 +1884,19 @@ void PIC::Init_BeforeParser() {
   PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
   PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
-  auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () {
-    #ifdef __CUDA_ARCH__ 
-    amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
-    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
-    #else
-    PIC::Mesh::CPU::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
-    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
-    #endif
+ // auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () {
+//    #ifdef __CUDA_ARCH__ 
+//    amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
+//    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+//    #else
+//    PIC::Mesh::CPU::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+//    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+//    #endif
+
+
+    amps_new_managed<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::mesh,1);
+    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::mesh;
+
 
     //intialize the interpolation module
     PIC::InterpolationRoutines::Init();
@@ -1917,15 +1922,23 @@ void PIC::Init_BeforeParser() {
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
       PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
     }
-  };
+//  };
 
   #if _CUDA_MODE_ == _ON_
+  auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () { 
+    //intialize the interpolation module
+    PIC::InterpolationRoutines::Init();
+
+    //Init the random number generator
+    if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+  };
+
   kernel<<<1,1>>>(AllocateMesh); 
 
   cudaDeviceSynchronize();
   #endif
 
-  AllocateMesh();
+//  AllocateMesh();
 
 /*
   //init the particle buffer
