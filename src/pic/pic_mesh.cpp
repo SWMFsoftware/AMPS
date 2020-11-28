@@ -62,9 +62,9 @@ int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellS
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops
-unsigned int _TARGET_DEVICE_ PIC::DomainBlockDecomposition::nLocalBlocks=0;
-int _TARGET_DEVICE_ PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
-cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecomposition::BlockTable=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ unsigned int  PIC::DomainBlockDecomposition::nLocalBlocks=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecomposition::BlockTable=NULL;
 
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
@@ -1472,8 +1472,11 @@ void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   }
 
   //deallocate and allocat the block pointe buffer
-  if (BlockTable!=NULL) delete [] BlockTable;
-  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
+//  if (BlockTable!=NULL) delete [] BlockTable;
+//  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
+
+  if (BlockTable!=NULL) amps_free_managed(BlockTable);
+  amps_malloc_managed<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>(BlockTable,nLocalBlocks);
 
   //populate the block pointer buffer
   for (nLocalBlocks=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {

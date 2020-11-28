@@ -1629,11 +1629,11 @@ namespace PIC {
     #include "picParticleDataMacro.h"
 
     //the total length of a data allocated for a particle
-    extern _CUDA_MANAGED_ long int ParticleDataLength;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int ParticleDataLength;
 
     //The particle buffer's internal data
-    extern byte *ParticleDataBuffer;
-    extern long int MaxNPart,NAllPart,FirstPBufferParticle;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ byte *ParticleDataBuffer;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int MaxNPart,NAllPart,FirstPBufferParticle;
 
     //Request additional data for a particle
     void RequestDataStorage(long int &offset,int TotalDataLength);
@@ -3804,9 +3804,9 @@ namespace PIC {
 
   //the namespace contained the domain decomposition information used for loop parallelization in OpenMP
   namespace DomainBlockDecomposition {
-    extern _TARGET_DEVICE_ unsigned int nLocalBlocks;
-    extern _TARGET_DEVICE_ int LastMeshModificationID;
-    extern _TARGET_DEVICE_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned int nLocalBlocks;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int LastMeshModificationID;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
 
     void UpdateBlockTable();
   }

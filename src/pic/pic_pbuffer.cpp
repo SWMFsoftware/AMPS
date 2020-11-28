@@ -8,11 +8,11 @@
 
 #include "pic.h"
 
-long int _CUDA_MANAGED_ PIC::ParticleBuffer::ParticleDataLength=_PIC_PARTICLE_DATA__FULL_DATA_LENGTH_;
-PIC::ParticleBuffer::byte *PIC::ParticleBuffer::ParticleDataBuffer=NULL;
-long int PIC::ParticleBuffer::MaxNPart=0;
-long int PIC::ParticleBuffer::NAllPart=0;
-long int PIC::ParticleBuffer::FirstPBufferParticle=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::ParticleDataLength=_PIC_PARTICLE_DATA__FULL_DATA_LENGTH_;
+_TARGET_DEVICE_ _CUDA_MANAGED_ PIC::ParticleBuffer::byte *PIC::ParticleBuffer::ParticleDataBuffer=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::MaxNPart=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::NAllPart=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::FirstPBufferParticle=-1;
 
 int PIC::ParticleBuffer::Thread::NTotalThreads=0;
 long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::ParticleBuffer::Thread::FirstPBufferParticle=NULL;
@@ -41,7 +41,10 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   //allocate the memory for the buffer
   MaxNPart=BufrerLength;
-  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
+//  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
+
+  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+
 
   if (ParticleDataBuffer==NULL) {
     char msg[500];
