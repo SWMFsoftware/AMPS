@@ -6728,6 +6728,86 @@ namespace FieldSolver {
     namespace Electromagnetic {
         //Energy conserving field solver (same as used in the IPIC3D)
         namespace ECSIM {
+
+
+class cCellData {
+public:
+
+  class cCornerData {
+  public:
+    double *CornerJ_ptr;
+    double CornerJ[3];
+    double *CornerMassMatrix_ptr;
+    double CornerMassMatrix[243];
+    double *SpecData_ptr;
+    double SpecData[10*_TOTAL_SPECIES_NUMBER_];
+    PIC::Mesh::cDataCornerNode *CornerNode;
+
+    void clean() {
+      int i;
+
+      for (i=0;i<3;i++) CornerJ[i]=0.0;
+      for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
+      for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
+    }
+
+    void add(cCornerData* p) {
+      int i;
+      double *ptr;
+
+      for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
+      for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
+      for (i=0,ptr=p->SpecData;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]+=ptr[i];
+    }
+  };
+
+
+  cCornerData CornerData[8];
+  double ParticleEnergy;
+  double cflCell[PIC::nTotalSpecies];
+
+  void clean() {
+    ParticleEnergy=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) cflCell[iSp]=0.0;
+
+    for (int i=0;i<8;i++) CornerData[i].clean();
+  }
+
+  void Add(cCellData *p) {
+    ParticleEnergy+=p->ParticleEnergy;
+
+    class cSumData {
+    public:
+      cCornerData *target,*source;
+
+      void sum() {
+        target->add(source);
+      }
+    };
+
+    cSumData DataTable[8];
+    std::thread tTable[8];
+    int icor;
+
+    for (icor=0;icor<8;icor++) {
+      DataTable[icor].source=p->CornerData+icor;
+      DataTable[icor].target=this->CornerData+icor;
+
+      tTable[icor]=std::thread(&cSumData::sum,DataTable+icor);
+    }
+
+    for (icor=0;icor<8;icor++) {
+      tTable[icor].join();
+    }
+  }
+
+  cCellData() {
+    clean();
+  }
+};
+
+bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer);
           
             typedef void (*fUserDefinedFieldBC)();
             typedef long int (*fUserDefinedParticleBC)();
