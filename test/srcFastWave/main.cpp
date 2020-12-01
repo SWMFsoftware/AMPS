@@ -752,8 +752,10 @@ int main(int argc,char **argv) {
        }
      };
 
+#if _CUDA_MODE_ == _ON_
      kernel_2<<<3,128>>>(CreateParticlePopulationNumberTable,ParticlePopulationNumberTable,PIC::DomainBlockDecomposition::BlockTable);
      cudaDeviceSynchronize();
+#endif
 
      int total_number=0;
      
@@ -776,8 +778,10 @@ int main(int argc,char **argv) {
         total_number+=ParticlePopulationNumberTable[i];
       }
 
+#if _CUDA_MODE_ == _ON_ 
       kernel_3<<<3,128>>>(CreateParticlePopulationTable,ParticlePopulationTable,ParticleOffsetNumber,PIC::DomainBlockDecomposition::BlockTable); 
       cudaDeviceSynchronize();
+#endif
 
 
 
