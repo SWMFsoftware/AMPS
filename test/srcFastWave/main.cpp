@@ -646,6 +646,153 @@ int main(int argc,char **argv) {
     PIC::Sampling::Sampling();
 
     for (int niter=0;niter<totalIter;niter++) {
+
+
+      int *ParticlePopulationNumberTable=NULL;
+
+      amps_malloc_managed<int>(ParticlePopulationNumberTable,PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+
+      auto CreateParticlePopulationNumberTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (int *ParticleNumberTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) { 
+        int TableLength=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+        //get the thread global id
+        #ifdef __CUDA_ARCH__ 
+        int id=blockIdx.x*blockDim.x+threadIdx.x;
+        int increment=gridDim.x*blockDim.x;
+        int  SearchIndexLimit=warpSize*(1+TableLength/warpSize); 
+        #else 
+        int id=0,increment=1;
+        int SearchIndexLimit=TableLength;
+        #endif
+
+
+        for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
+          int nLocalNode,ii=icell;
+          int i,j,k;
+          long int ptr;
+
+          if (icell<TableLength) {
+            nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            j=ii/_BLOCK_CELLS_X_;
+            ii-=j*_BLOCK_CELLS_X_;
+
+            i=ii;
+
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
+            ParticleNumberTable[icell]=0;
+
+            if (node->block!=NULL) {
+              ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+               while (ptr!=-1) {
+                 ParticleNumberTable[icell]++;
+                 ptr=PIC::ParticleBuffer::GetNext(ptr);
+               }
+            }
+          }
+
+          #ifdef __CUDA_ARCH__
+          __syncwarp();	
+          #endif
+       }
+     }; 
+
+
+      auto CreateParticlePopulationTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (long int *ParticlePopulationTable,int *ParticleOffsetTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) {
+        int TableLength=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+        #ifdef __CUDA_ARCH__ 
+        int id=blockIdx.x*blockDim.x+threadIdx.x;
+        int increment=gridDim.x*blockDim.x;
+        int  SearchIndexLimit=warpSize*(1+TableLength/warpSize);
+        #else
+        int id=0,increment=1;
+        int SearchIndexLimit=TableLength;
+        #endif
+
+
+        for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
+          int nLocalNode,ii=icell;
+          int i,j,k,offset;
+          long int ptr;
+
+          if (icell<TableLength) {
+            nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            j=ii/_BLOCK_CELLS_X_;
+            ii-=j*_BLOCK_CELLS_X_;
+
+            i=ii;
+
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
+
+            if (node->block!=NULL) {
+              ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+              offset=ParticleOffsetTable[icell];
+
+               while (ptr!=-1) {
+                 ParticlePopulationTable[offset++]=ptr;
+                 ptr=PIC::ParticleBuffer::GetNext(ptr);
+               }
+            }
+          }
+
+          #ifdef __CUDA_ARCH__
+          __syncwarp();
+          #endif
+       }
+     };
+
+     kernel_2<<<3,128>>>(CreateParticlePopulationNumberTable,ParticlePopulationNumberTable,PIC::DomainBlockDecomposition::BlockTable);
+     cudaDeviceSynchronize();
+
+     int total_number=0;
+     
+     for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++)total_number+=ParticlePopulationNumberTable[i]; 
+
+     if (total_number!=PIC::ParticleBuffer::NAllPart) exit(__LINE__,__FILE__,"Error: the particle number is not consistent");
+
+
+      long int *ParticlePopulationTable=NULL;
+      int *ParticleOffsetNumber;
+
+      amps_malloc_managed<long int>(ParticlePopulationTable,PIC::ParticleBuffer::NAllPart);
+      amps_malloc_managed<int>(ParticleOffsetNumber,PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+    
+
+      total_number=0;
+
+      for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+        ParticleOffsetNumber[i]=total_number;
+        total_number+=ParticlePopulationNumberTable[i];
+      }
+
+      kernel_3<<<3,128>>>(CreateParticlePopulationTable,ParticlePopulationTable,ParticleOffsetNumber,PIC::DomainBlockDecomposition::BlockTable); 
+      cudaDeviceSynchronize();
+
+
+
+
+
+//      CreateParticlePopulationnumberTable(ParticlePopulationNumberTable,PIC::DomainBlockDecomposition::BlockTable); 
+
+total_number=0;
+for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++)total_number+=ParticlePopulationNumberTable[i];
+
+
+
+     amps_free_managed(ParticlePopulationNumberTable);
+
+
     
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);
     

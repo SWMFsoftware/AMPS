@@ -877,12 +877,17 @@ void kernel_2(F f,T1 t1,T2 t2){
   f(t1,t2);
 }
 
+template <class F,class T1, class T2,class T3>
+__global__
+void kernel_3(F f, T1 t1,T2 t2,T3 t3) {
+  f(t1,t2,t3);
+} 
 
 template <class F,class T1, class T2,class T3,class T4>
 __global__ 
 void kernel_4(F f, T1 t1,T2 t2,T3 t3,T4 t4) {
   f(t1,t2,t3,t4);
-};
+} 
 
 #endif
 

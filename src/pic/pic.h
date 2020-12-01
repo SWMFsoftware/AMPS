@@ -1727,14 +1727,41 @@ namespace PIC {
 
     // Operations related to the next particle in the stack
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline long int GetNext(long int ptr) {
+
+      #ifdef __CUDA_ARCH__
+      char *source;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      union {long int res; byte buf[sizeof(long int)];};
+
+      memcpy(&buf,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetNext(byte* ParticleDataStart) {
+
+      #ifdef __CUDA_ARCH__
+      char *source;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      union {long int res; byte buf[sizeof(long int)];};
+
+      memcpy(&buf,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetNext(long int next,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -1744,6 +1771,7 @@ namespace PIC {
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetNext(long int next,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
