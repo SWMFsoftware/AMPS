@@ -769,7 +769,8 @@ void amps_new_managed(T* &buff,int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T)); 
   #else 
-  t=(T*)malloc(length*sizeof(T));
+  buff=new T[length];
+  return;
   #endif
 
 
@@ -787,7 +788,10 @@ void amps_malloc_managed(T* &buff,int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T));
   #else
-  t=(T*)malloc(length*sizeof(T));
+//  t=(T*)malloc(length*sizeof(T));
+
+  buff=new T[length];
+  return;
   #endif
 
   buff=t;
@@ -800,7 +804,7 @@ void amps_free_managed(T* &buff) {
   #if _CUDA_MODE_ == _ON_
   cudaFree(buff);
   #else 
-  free(buff);
+  delete [] buff;
   #endif
 
   buff=NULL;
