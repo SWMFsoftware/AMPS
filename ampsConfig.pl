@@ -1044,7 +1044,14 @@ sub ReadGeneralBlock {
         die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
       }
     }
-        
+
+    #mask part of the value of the Seed to coarsen the set of the generated random numbers
+    #the practical mask values should be 0xf -> mask lower 4 birs, 0xff -> lover 8 bits, 0xfff -> lower 12 bits, etc
+    elsif ($InputLine eq "RNDSEEDCOARSENINGBITMASK") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+      ampsConfigLib::ChangeValueOfVariable("const int RndCoarseningBitMask",$InputLine,"general/rnd.h");
+    }
+    
     #set up the number of attempts for exchanges of the cut face information between the neibouring blocks
     elsif ($InputLine eq "NEIBNODECOPYCUTFACEDATA") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);

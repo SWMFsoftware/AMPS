@@ -21,6 +21,8 @@
 #include <omp.h>
 #endif //_PIC_COMPILATION_MODE_ == _PIC_COMPILATION_MODE__HYBRID_
 
+
+
 namespace RandomNumberGenerator {
   extern unsigned long int rndLastSeed;
   extern unsigned long int *rndLastSeedArray;
@@ -38,11 +40,15 @@ inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
   unsigned long int Seed=SeedIn->Seed;
 
+  //mask part of the value of the Seed to coarsen the set of the generated random numbers
+  //the practical mask values should be 0xf -> mask lower 4 birs, 0xff -> lover 8 bits, 0xfff -> lower 12 bits, etc
+  const int RndCoarseningBitMask=0;
+
   Seed*=48828125;
   Seed&=2147483647; // pow(2,31) - 1
   if (Seed==0) Seed=1;
-  res=double(Seed/2147483648.0); //(pow(2,31) - 1) + 1
 
+  res=double((Seed&(~RndCoarseningBitMask))/2147483648.0); //(pow(2,31) - 1) + 1
   SeedIn->Seed=Seed;
 
   return res;
