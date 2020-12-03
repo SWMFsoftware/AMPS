@@ -647,7 +647,7 @@ int main(int argc,char **argv) {
 
     for (int niter=0;niter<totalIter;niter++) {
 
-#if _CUDA_MODE_ == _ON_
+if (_CUDA_MODE_ == 12384) { ////_ON_
 
       int *ParticlePopulationNumberTable=NULL;
 
@@ -792,7 +792,7 @@ for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOC
 
 
      amps_free_managed(ParticlePopulationNumberTable);
-#endif
+}
 
     
       //PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);

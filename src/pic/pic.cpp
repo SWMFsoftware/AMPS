@@ -206,11 +206,11 @@ int PIC::TimeStep() {
     PIC::Sampling::Sampling();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   DoSampling();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -252,11 +252,11 @@ int PIC::TimeStep() {
   InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
   RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
 
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   DoBC();
-  #else 
-  exit(__LINE__,__FILE__);
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__);
+  //#endif
 
 
   //simulate particle collisions
@@ -276,11 +276,11 @@ int PIC::TimeStep() {
     #endif
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   DoCollisions();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif 
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif 
 
   ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
   RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
@@ -301,11 +301,11 @@ int PIC::TimeStep() {
     #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   DoBackgroundAtmosphere();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
   RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
@@ -315,11 +315,11 @@ int PIC::TimeStep() {
     MolecularCollisions::StoppingPowerModel::ModelProcessor();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   DoBackgroundAtmosphere();
-  #else
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 #endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
 
   //particle photochemistry model
@@ -331,11 +331,11 @@ int PIC::TimeStep() {
     ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
   };
 
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   DoPhotolyticReactions();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif 
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif 
 
   PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
   RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
@@ -350,11 +350,11 @@ int PIC::TimeStep() {
     PIC::UserParticleProcessing::Processing();
   };
 
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   DoUserParticleProcessing();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
   RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
@@ -374,11 +374,11 @@ int PIC::TimeStep() {
       }
     }; 
 
-    #if _CUDA_MODE_ == _OFF_
+    //#if _CUDA_MODE_ == _OFF_
     FIELD_SOLVER_Task1();
-    #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
-    #endif
+   // #else
+   // exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
 
 
     ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
@@ -399,11 +399,11 @@ int PIC::TimeStep() {
     PIC::Parallel::ExchangeParticleData();
   };
 
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   FIELD_SOLVER_Task2();
-  #else
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 
 
@@ -418,11 +418,11 @@ int PIC::TimeStep() {
     PIC::Parallel::UpdateGhostBlockData();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   FIELD_SOLVER_Task3();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+ // #else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   #endif
  
@@ -443,11 +443,11 @@ int PIC::TimeStep() {
     }
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   FIELD_SOLVER_Task4();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
@@ -458,11 +458,11 @@ int PIC::TimeStep() {
     PIC::Mover::MoveParticles();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   FIELD_SOLVER_Task5();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
@@ -478,11 +478,11 @@ int PIC::TimeStep() {
   ParticleExchangeTime=MPI_Wtime();
 
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   PIC::Parallel::ExchangeParticleData();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
@@ -497,11 +497,11 @@ int PIC::TimeStep() {
       PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   FIELD_SOLVER_Task6();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ ) { 
@@ -509,11 +509,11 @@ int PIC::TimeStep() {
       PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
     };
 
-    #if _CUDA_MODE_ == _OFF_ 
+    //#if _CUDA_MODE_ == _OFF_ 
     FIELD_SOLVER_Task7();
-    #else
-    exit(__LINE__,__FILE__,"Error: not implemented");
-    #endif
+    //#else
+    //exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
   }
 
 
@@ -521,19 +521,19 @@ int PIC::TimeStep() {
     PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
   };
  
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   FIELD_SOLVER_Task8();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
   
 
   PIC::CPLR::FLUID::iCycle++;
   {// Output
 
-    #if _CUDA_MODE_ == _ON_
-    exit(__LINE__,__FILE__,"Error: not implemented");
-    #endif
+    //#if _CUDA_MODE_ == _ON_
+    //exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
 
     double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
     if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
@@ -547,9 +547,9 @@ int PIC::TimeStep() {
   //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 
-  #if _CUDA_MODE_ == _ON_
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#if _CUDA_MODE_ == _ON_
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   PIC::Parallel::ProcessBlockBoundaryNodes(); 
 
@@ -600,11 +600,11 @@ int PIC::TimeStep() {
     PIC::SimulationTime::Update();
   };
 
-  #if _CUDA_MODE_ == _OFF_
+  //#if _CUDA_MODE_ == _OFF_
   DoUpdateSimulationTime();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
   //update data
@@ -620,11 +620,11 @@ int PIC::TimeStep() {
     PIC::FieldLine::Update();
   };
 
-  #if _CUDA_MODE_ == _OFF_ 
+  //#if _CUDA_MODE_ == _OFF_ 
   DoUpdateFieldLine();
-  #else 
-  exit(__LINE__,__FILE__,"Error: not implemented");
-  #endif
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 #endif//_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
   

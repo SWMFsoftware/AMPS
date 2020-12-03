@@ -134,8 +134,8 @@ namespace PIC {
   using namespace CPU;
 
 
-  //the total number of the OpenMP threads (when OpneMP is used in the model run)
-  extern _TARGET_DEVICE_ int nTotalThreadsOpenMP;
+//  //the total number of the OpenMP threads (when OpneMP is used in the model run)
+  extern _TARGET_DEVICE_ _CUDA_MANAGED_ int nTotalThreadsOpenMP;
 
   //The path to the input data of the user-defined physical models
   extern char UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_];

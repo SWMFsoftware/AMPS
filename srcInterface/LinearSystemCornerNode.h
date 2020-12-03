@@ -167,7 +167,7 @@ public:
 
 
   //void reset the data of the obsect to the default state
-  _TARGET_DEVICE_
+  _TARGET_HOST_ _TARGET_DEVICE_
   void DeleteDataBuffers();
 
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -965,7 +965,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
-_TARGET_DEVICE_
+_TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::DeleteDataBuffers() {
   #ifdef __CUDA_ARCH__ 
   using namespace PIC::GPU; 
