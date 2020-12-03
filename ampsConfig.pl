@@ -1045,13 +1045,16 @@ sub ReadGeneralBlock {
       }
     }
 
-    #mask part of the value of the Seed to coarsen the set of the generated random numbers
-    #the practical mask values should be 0xf -> mask lower 4 birs, 0xff -> lover 8 bits, 0xfff -> lower 12 bits, etc
-    elsif ($InputLine eq "RNDSEEDCOARSENINGBITMASK") {
+    #limit the precision of the random number generator
+    elsif ($InputLine eq "RNDPRECISIONLIMIT") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
-      ampsConfigLib::ChangeValueOfVariable("const int RndCoarseningBitMask",$InputLine,"general/rnd.h");
-    }
-    
+ 
+      if ($InputLine eq "ON") {
+         ampsConfigLib::RedefineMacro("_RND_LIMIT_PRESITION_MODE_","_RND_LIMIT_PRECISION_ON_","general/rnd.h");
+      }
+    }  
+
+
     #set up the number of attempts for exchanges of the cut face information between the neibouring blocks
     elsif ($InputLine eq "NEIBNODECOPYCUTFACEDATA") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
