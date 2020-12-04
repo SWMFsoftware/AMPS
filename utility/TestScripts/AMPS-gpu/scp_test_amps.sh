@@ -37,10 +37,17 @@ cd $WorkDir/Tmp_AMPS_test
 if (-e GNU) then 
   cd GNU/AMPS                                                                 #
   cp test_amps.log test_amps.log.bak
+  #./utility/TestScripts/CheckTests.pl
 
-  foreach f (test_amps_thread*.log) #
-    cat $f >> test_amps.log
-  end
+  echo "Processing GNU/AMPS"
+
+  if (-e test_amps_thread1.log) then
+    foreach f (test_amps_thread*.log) #
+      cat $f >> test_amps.log
+    end
+  endif
+
+  touch notest.diff
 
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
@@ -57,10 +64,17 @@ endif
 if (-e NVCC) then
   cd NVCC/AMPS                                                                 #
   cp test_amps.log test_amps.log.bak
+  #./utility/TestScripts/CheckTests.pl
 
-  foreach f (test_amps_thread*.log) #
-    cat $f >> test_amps.log
-  end
+  echo "Processing NVCC/AMPS"
+
+  if (-e test_amps_thread1.log) then
+    foreach f (test_amps_thread*.log) #
+      cat $f >> test_amps.log
+    end
+  endif
+
+  touch notest.diff
 
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
@@ -78,10 +92,17 @@ endif
 if (-e Intel) then
   cd Intel/AMPS                                                               #
   cp test_amps.log test_amps.log.bak
+  #./utility/TestScripts/CheckTests.pl
 
-  foreach f (test_amps_thread*.log) #
-    cat $f >> test_amps.log
-  end
+  echo "Processing Intel/AMPS"
+
+  if (-e test_amps_thread1.log) then
+    foreach f (test_amps_thread*.log) #
+      cat $f >> test_amps.log
+    end
+  endif
+
+  touch notest.diff
 
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
@@ -98,10 +119,17 @@ endif
 if (-e PGI) then
   cd PGI/AMPS                                                                 #
   cp test_amps.log test_amps.log.bak
+  #./utility/TestScripts/CheckTests.pl
 
-  foreach f (test_amps_thread*.log) #
-    cat $f >> test_amps.log
-  end
+  echo "Processing PGI/AMPS"
+
+  if (-e test_amps_thread1.log) then
+    foreach f (test_amps_thread*.log) #
+      cat $f >> test_amps.log
+    end
+  endif
+
+  touch notest.diff
 
   rm -rf test_amps.res
   ls -ltr  *diff > test_amps.res                                              #
@@ -111,4 +139,31 @@ if (-e PGI) then
 
   mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
+endif
+
+# CUDA compiled test
+#>CUDAAll #####################################################################
+if (-e CUDA) then
+  cd CUDA/AMPS                                                                 #
+  cp test_amps.log test_amps.log.bak
+  #./utility/TestScripts/CheckTests.pl
+
+  echo "Processing CUDA/AMPS"
+
+  if (-e test_amps_thread1.log) then
+    foreach f (test_amps_thread*.log) #
+      cat $f >> test_amps.log
+    end
+  endif
+
+  touch notest.diff
+
+  rm -rf test_amps.res
+  ls -ltr  *diff > test_amps.res                                              #
+  echo '===============================================' >> test_amps.res     #
+  head -100 *diff >> test_amps.res                                            #
+  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_cuda/  #
+
+  mv test_amps.log.bak test_amps.log
+  cd ../..
 endif
