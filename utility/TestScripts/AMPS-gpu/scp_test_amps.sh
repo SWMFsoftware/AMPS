@@ -47,12 +47,20 @@ if (-e GNU) then
     end
   endif
 
-  touch notest.diff
-
   rm -rf test_amps.res
-  ls -ltr  *diff > test_amps.res                                              #
-  echo '===============================================' >> test_amps.res     # 
-  head -100 *diff >> test_amps.res                                            #
+
+  set nonomatch
+
+  set val=( *diff)  
+
+  if ("$val" != "" ) then
+    ls -ltr  *diff > test_amps.res                                              #
+    echo '===============================================' >> test_amps.res     # 
+    head -100 *diff >> test_amps.res                                            #
+  else
+   touch test_amps.res
+  endif
+
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_gnu/  #
 
   mv test_amps.log.bak test_amps.log
@@ -74,12 +82,20 @@ if (-e NVCC) then
     end
   endif
 
-  touch notest.diff
-
   rm -rf test_amps.res
-  ls -ltr  *diff > test_amps.res                                              #
-  echo '===============================================' >> test_amps.res     #
-  head -100 *diff >> test_amps.res                                            #
+
+  set nonomatch
+  
+  set val=( *diff)
+
+  if ("$val" != "" ) then
+    ls -ltr  *diff > test_amps.res                                              #
+    echo '===============================================' >> test_amps.res     #
+    head -100 *diff >> test_amps.res                                            #
+  else
+    touch test_amps.res
+  endif
+
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_nvcc/  #
 
   mv test_amps.log.bak test_amps.log
@@ -102,12 +118,20 @@ if (-e Intel) then
     end
   endif
 
-  touch notest.diff
-
   rm -rf test_amps.res
-  ls -ltr  *diff > test_amps.res                                              #
-  echo '===============================================' >> test_amps.res     # 
-  head -100 *diff >> test_amps.res                                            #
+
+  set nonomatch
+
+  set val=( *diff)
+
+  if ("$val" != "" ) then 
+    ls -ltr  *diff > test_amps.res                                              #
+    echo '===============================================' >> test_amps.res     # 
+    head -100 *diff >> test_amps.res                                            #
+  else
+    touch test_amps.res
+  endif 
+
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_intel/#
 
   mv test_amps.log.bak test_amps.log
@@ -129,12 +153,20 @@ if (-e PGI) then
     end
   endif
 
-  touch notest.diff
-
   rm -rf test_amps.res
-  ls -ltr  *diff > test_amps.res                                              #
-  echo '===============================================' >> test_amps.res     # 
-  head -100 *diff >> test_amps.res                                            #
+
+  set nonomatch
+
+  set val=( *diff)
+
+  if ("$val" != "" ) then
+    ls -ltr  *diff > test_amps.res                                              #
+    echo '===============================================' >> test_amps.res     # 
+    head -100 *diff >> test_amps.res                                            #
+  else
+    touch test_amps.res
+  endif
+
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_pgi/  #
 
   mv test_amps.log.bak test_amps.log
@@ -156,12 +188,20 @@ if (-e CUDA) then
     end
   endif
 
-  touch notest.diff
-
   rm -rf test_amps.res
-  ls -ltr  *diff > test_amps.res                                              #
-  echo '===============================================' >> test_amps.res     #
-  head -100 *diff >> test_amps.res                                            #
+
+  set nonomatch
+
+  set val=( *diff)
+
+  if ("$val" != "" ) then
+    ls -ltr  *diff > test_amps.res                                              #
+    echo '===============================================' >> test_amps.res     #
+    head -100 *diff >> test_amps.res                                            #
+  else
+    touch test_amps.res
+  endif
+
   scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_cuda/  #
 
   mv test_amps.log.bak test_amps.log
