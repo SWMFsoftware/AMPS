@@ -20,6 +20,16 @@ long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::Pa
 PIC::ParticleBuffer::cOptionalParticleFieldAllocationManager PIC::ParticleBuffer::OptionalParticleFieldAllocationManager;
 int PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=-1,PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=-1;
 
+
+//the particle number in a cell
+_TARGET_DEVICE_ _CUDA_MANAGED_ int *PIC::ParticleBuffer::ParticleNumberTable=NULL;
+
+//offset in the ParticlePopulationTable to the location of the first particle populating a give cell
+_TARGET_DEVICE_ _CUDA_MANAGED_ int *PIC::ParticleBuffer::ParticleOffsetTable=NULL;
+
+//the particle table
+_TARGET_DEVICE_ _CUDA_MANAGED_ PIC::ParticleBuffer::cParticleTable *PIC::ParticleBuffer::ParticlePopulationTable=NULL; 
+
 //==========================================================
 //init the buffer
 void PIC::ParticleBuffer::Init(long int BufrerLength) {
@@ -815,14 +825,158 @@ int PIC::ParticleBuffer::GetCellParticleTable(long int* &ParticleIndexTable,int&
 }
 
 
+//==================================================================================================
+//create particle table
+void PIC::ParticleBuffer::CreateParticleTable() {
+
+
+      auto CreateParticlePopulationNumberTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (int *ParticleNumberTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) {
+        int TableLength=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+        //get the thread global id
+        #ifdef __CUDA_ARCH__
+        int id=blockIdx.x*blockDim.x+threadIdx.x;
+        int increment=gridDim.x*blockDim.x;
+        int  SearchIndexLimit=warpSize*(1+TableLength/warpSize);
+        #else
+        int id=0,increment=1;
+        int SearchIndexLimit=TableLength;
+        #endif
+
+
+        for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
+          int nLocalNode,ii=icell;
+          int i,j,k;
+          long int ptr;
+
+          if (icell<TableLength) {
+            nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            j=ii/_BLOCK_CELLS_X_;
+            ii-=j*_BLOCK_CELLS_X_;
+
+            i=ii;
+
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
+            ParticleNumberTable[icell]=0;
+
+            if (node->block!=NULL) {
+              ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+               while (ptr!=-1) {
+                 ParticleNumberTable[icell]++;
+                 ptr=PIC::ParticleBuffer::GetNext(ptr);
+               }
+            }
+          }
+
+          #ifdef __CUDA_ARCH__
+          __syncwarp();
+          #endif
+       }
+     };
 
 
 
+      auto CreateParticlePopulationTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (cParticleTable *ParticlePopulationTable,int *ParticleOffsetTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) {
+        int TableLength=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+        #ifdef __CUDA_ARCH__
+        int id=blockIdx.x*blockDim.x+threadIdx.x;
+        int increment=gridDim.x*blockDim.x;
+        int  SearchIndexLimit=warpSize*(1+TableLength/warpSize);
+        #else
+        int id=0,increment=1;
+        int SearchIndexLimit=TableLength;
+        #endif
 
 
+        for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
+          int nLocalNode,ii=icell;
+          int i,j,k,offset;
+          long int ptr;
+
+          if (icell<TableLength) {
+            nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+            ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+            j=ii/_BLOCK_CELLS_X_;
+            ii-=j*_BLOCK_CELLS_X_;
+
+            i=ii;
+
+            cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=BlockTable[nLocalNode];
+
+            if (node->block!=NULL) {
+              ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+              offset=ParticleOffsetTable[icell];
+
+               while (ptr!=-1) {
+                 ParticlePopulationTable[offset].ptr=ptr;
+                 ParticlePopulationTable[offset].icell=icell;
+
+                 offset++;
+                 ptr=PIC::ParticleBuffer::GetNext(ptr);
+               }
+            }
+          }
+
+          #ifdef __CUDA_ARCH__
+          __syncwarp();
+          #endif
+       }
+     };
 
 
+     if (ParticleNumberTable!=NULL) {
+       amps_free_managed(ParticleNumberTable);
+       amps_free_managed(ParticlePopulationTable);
+       amps_free_managed(ParticleOffsetTable);
+     }
 
+    amps_malloc_managed<int>(ParticleNumberTable,PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+      
+
+    #if _CUDA_MODE_ == _ON_
+    kernel_2<<<3,128>>>(CreateParticlePopulationNumberTable,ParticleNumberTable,PIC::DomainBlockDecomposition::BlockTable);
+    cudaDeviceSynchronize();
+    #else 
+    CreateParticlePopulationNumberTable(ParticleNumberTable,PIC::DomainBlockDecomposition::BlockTable);
+    #endif 
+
+    int total_number=0;
+
+    for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) total_number+=ParticleNumberTable[i];
+
+    if (total_number!=PIC::ParticleBuffer::NAllPart) exit(__LINE__,__FILE__,"Error: the particle number is not consistent");
+
+    //create the offset and the population tables
+    amps_malloc_managed<int>(ParticleOffsetTable,PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+    amps_malloc_managed<cParticleTable>(ParticlePopulationTable,total_number);  
+
+    total_number=0;
+
+    for (int i=0;i<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      ParticleOffsetTable[i]=total_number;
+      total_number+=ParticleNumberTable[i];
+    }
+
+
+    #if _CUDA_MODE_ == _ON_
+    kernel_3<<<3,128>>>(CreateParticlePopulationTable,ParticlePopulationTable,ParticleOffsetTable,PIC::DomainBlockDecomposition::BlockTable);
+    cudaDeviceSynchronize();
+    #else
+    CreateParticlePopulationTable(ParticlePopulationTable,ParticleOffsetTable,PIC::DomainBlockDecomposition::BlockTable);
+    #endif
+
+}
 
 
 

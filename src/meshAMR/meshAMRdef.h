@@ -498,19 +498,23 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     //allocate the stack's buffers
     long int i,j,elementCountingNumber;
 
-    elementStackList=new T** [dataBufferListSize];
+   // elementStackList=new T** [dataBufferListSize];
+    amps_malloc_managed<T**>(elementStackList,dataBufferListSize);
     MemoryAllocation+=sizeof(T**)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) elementStackList[i]=NULL;
 
-    dataBufferList=new T*[dataBufferListSize];
+ //   dataBufferList=new T*[dataBufferListSize];
+    amps_malloc_managed<T*>(dataBufferList,dataBufferListSize);
     MemoryAllocation+=sizeof(T*)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) dataBufferList[i]=NULL;
 
     for (i=0;i<dataBufferListPointer;i++) {
-      dataBufferList[i]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      //dataBufferList[i]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      amps_new_managed<T>(dataBufferList[i],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
-      elementStackList[i]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+      //elementStackList[i]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+      amps_new_managed<T*>(elementStackList[i],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T*)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 

@@ -1635,6 +1635,21 @@ namespace PIC {
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ byte *ParticleDataBuffer;
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int MaxNPart,NAllPart,FirstPBufferParticle;
 
+    //namespace combibes all GPU-relates data
+    struct cParticleTable {
+      int icell;
+      long int ptr;
+    };
+
+    //create a 'global' particle table 
+    void CreateParticleTable();
+    //the particle number in a cell
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int *ParticleNumberTable;
+    //offset in the ParticlePopulationTable to the location of the first particle populating a give cell
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int *ParticleOffsetTable; 
+    //the particle table
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cParticleTable *ParticlePopulationTable;
+      
     //Request additional data for a particle
     void RequestDataStorage(long int &offset,int TotalDataLength);
 
@@ -3835,6 +3850,31 @@ namespace PIC {
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned int nLocalBlocks;
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ int LastMeshModificationID;
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
+
+    //convert icell to cells' i,j,k and the block's indext in the BlockTable
+    _TARGET_HOST_ _TARGET_DEVICE_
+    inline void GetIcell2Ijk(int &i,int &j,int &k,int &iblock,int icell) {
+      int ii=icell;
+
+      iblock=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=iblock*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+      k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+      j=ii/_BLOCK_CELLS_X_;
+      ii-=j*_BLOCK_CELLS_X_;
+
+      i=ii;
+    }
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    inline void GetIjk2Icell(int &icell,int i, int j, int k, int iblock) {
+      icell=iblock*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      icell+=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      icell+=j*_BLOCK_CELLS_X_;
+      icell+=i;
+    }
 
     void UpdateBlockTable();
   }
