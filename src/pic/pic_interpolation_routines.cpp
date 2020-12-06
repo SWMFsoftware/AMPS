@@ -40,6 +40,7 @@ void PIC::InterpolationRoutines::Init() {
 }
 
 //determine stencil for the cell centered piecewise constant interpolation
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
   int i,j,k;
   long int nd;
@@ -62,15 +63,25 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
     if (node->block==NULL) {
       char msg[200];
 
+      #ifndef __CUDA_ARCH__
       sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
       exit(__LINE__,__FILE__,msg);
+      #else
+      printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+      exit(__LINE__,__FILE__);
+      #endif
     }
   }
   else if (node->block==NULL) {
     char msg[200];
 
+    #ifndef __CUDA_ARCH__
     sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
     exit(__LINE__,__FILE__,msg);
+    #else 
+    printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+    exit(__LINE__,__FILE__,msg); 
+    #endif
   }
 
   //find cell
@@ -85,6 +96,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
 }
 
 //determine the stencil for the cell centered linear interpolation using interpolation library from ../share/Library/src/
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn_D,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -110,15 +122,25 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       if (node->block==NULL) {
         char msg[200];
 
+        #ifndef __CUDA_ARCH__
         sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
         exit(__LINE__,__FILE__,msg);
+        #else
+        printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+        exit(__LINE__,__FILE__);
+        #endif
       }
     }
     else if (node->block==NULL) {
       char msg[200];
 
+      #ifndef __CUDA_ARCH__
       sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
       exit(__LINE__,__FILE__,msg);
+      #else 
+      printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+      exit(__LINE__,__FILE__);
+      #endif
     }
 
     //check whether the point is located deep in the block -> use three linear interpolation
@@ -411,6 +433,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 }
 
 //triliniar interpolation used inside blocks
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
@@ -497,6 +520,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
   int iStencil,jStencil,kStencil,i,j,k,nd,idim;
   double xLoc[3],xStencil[3],dx[3];
@@ -664,6 +688,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 }
 
 //init stencil for the corner based interpolation
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CornerBased::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CornerBased::cStencil &Stencil,double *InterpolationCoefficientTable) {
   int iStencil,jStencil,kStencil,iX[3],nd,idim;
   double w,xLoc[3],dx[3],*xMinNode,*xMaxNode;

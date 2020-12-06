@@ -1576,8 +1576,8 @@ namespace PIC {
     void Init();
 
     //mass of particles
-    extern double MolMass[_TOTAL_SPECIES_NUMBER_];
-    extern double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double MolMass[_TOTAL_SPECIES_NUMBER_];
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
 
     inline double GetMass(int spec) {return MolMass[spec];}
     inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
@@ -1707,10 +1707,12 @@ namespace PIC {
     // the first 7 bits will be used for specie ID, 
     // the last 8th bit will be used to control whether the particle 
     // has been allocated
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(byte* ParticleDataStart) {
       return ((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(long int ptr) {
       return ((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
     }
@@ -1783,7 +1785,16 @@ namespace PIC {
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      #else
+      union {long int loc_next; byte buf[sizeof(long int)];};
+      char *target;
+
+      loc_next=next;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,&buf,sizeof(long int)); 
+      #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -1793,49 +1804,110 @@ namespace PIC {
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      #else 
+      union {long int loc_next; byte buf[sizeof(long int)];};
+      char *target;
+
+      loc_next=next;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,&buf,sizeof(long int));
+      #endif 
     }
     //-------------------------------------------------------------------------
 
     // Operations related to the previous particle in the stack
     //-------------------------------------------------------------------------
-    inline long int GetPrev(long int ptr) {
-      return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+    _TARGET_HOST_ _TARGET_DEVICE_
+	inline long int GetPrev(long int ptr) {
+
+      #ifdef __CUDA_ARCH__
+      char *source;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      union {long int res; byte buf[sizeof(long int)];};
+
+      memcpy(&buf,source,sizeof(long int));
+
+      return res;
+      #endif
+
+
+    	return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetPrev(byte* ParticleDataStart) {
+
+      #ifdef __CUDA_ARCH__
+      char *source;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      union {long int res; byte buf[sizeof(long int)];};
+
+      memcpy(&buf,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetPrev(long int prev,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      #else
+      union {long int loc_prev; byte buf[sizeof(long int)];};
+      char *target;
+
+      loc_prev=prev;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,&buf,sizeof(long int));
+      #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetPrev(long int prev,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      #else
+      union {long int loc_prev; byte buf[sizeof(long int)];};
+      char *target;
+
+      loc_prev=prev;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,&buf,sizeof(long int));
+      #endif
     }
     //-------------------------------------------------------------------------
 
     // Operations related to the particle velocity
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double *GetV(long int ptr) {
       return (double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double *GetV(byte *ParticleDataStart) {
       return (double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetV(double* v,long int ptr) {
       memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -1845,6 +1917,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void GetV(double* v,byte *ParticleDataStart) {
       memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
 
@@ -1855,6 +1928,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,long int ptr) {
 /*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
         exit(__LINE__,__FILE__,"the velocity is too large");
@@ -1873,6 +1947,7 @@ namespace PIC {
       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,v,3*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,byte *ParticleDataStart) {
 /*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
         exit(__LINE__,__FILE__,"the velocity is too large");
@@ -1902,14 +1977,31 @@ namespace PIC {
       return (double*) (ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,long int ptr) {
+
+/*
+      #ifdef __CUDA_ARCH__
+      char *source;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_);
+      union {double res[DIM]; byte buf[DIM*sizeof(double)];};
+
+      memcpy(&buf,source,DIM*sizeof(double));
+      return;
+      #endif
+*/
+
+
       memcpy(x,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,byte *ParticleDataStart) {
       memcpy(x,ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetX(double* x,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -1919,6 +2011,7 @@ namespace PIC {
       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,x,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetX(double* x,byte *ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -4009,9 +4102,9 @@ namespace PIC {
     //if BackwardTimeIntegrationMode==_PIC_MODE_ON_ the particle trajectory will be integrated backward in time
     extern int BackwardTimeIntegrationMode;
 
-    extern double ** E_Corner;
-    extern double ** B_Center;
-    extern double ** B_Corner;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** E_Corner;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** B_Center;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** B_Corner;
 
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_E_corner;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_center;
@@ -4131,8 +4224,21 @@ namespace PIC {
     };
 
 
+
+  struct cExternalBoundaryFace {
+    double norm[3];
+    int nX0[3];
+    double e0[3],e1[3],x0[3];
+    double lE0,lE1;
+  };
+
+extern _TARGET_DEVICE_ _CUDA_MANAGED_ cExternalBoundaryFace *ExternalBoundaryFaceTable;
+
+
+//    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
+//    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data); 
   }
 
@@ -4908,8 +5014,10 @@ namespace PIC {
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
 
       //interpolation functions
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil,double *InterpolationCoefficientTable);
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil) {
         double InterpolationCoefficientTable[8];
 
@@ -4935,8 +5043,10 @@ namespace PIC {
 
       //types of the cell ceneterd interpolating rourines implemented in AMPS
       namespace Constant {
+        _TARGET_HOST_ _TARGET_DEVICE_
         void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4967,8 +5077,10 @@ namespace PIC {
         const double PrecisionCellCenter = 1.0e-3;
 
         //interpolation functions
+        _TARGET_HOST_ _TARGET_DEVICE_
         void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4980,8 +5092,10 @@ namespace PIC {
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
         } 
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4993,8 +5107,10 @@ namespace PIC {
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP; 
         }
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
