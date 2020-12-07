@@ -4244,6 +4244,15 @@ for (int i=0;i<sizeof(long int);i++) target[i]=source[i];
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
     void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
+    struct cExternalBoundaryFace {
+      double norm[3];
+      int nX0[3];
+      double e0[3],e1[3],x0[3];
+      double lE0,lE1;
+    };
+
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cExternalBoundaryFace ExternalBoundaryFaceTable[6];
+
     //the return codes of the moving procedures
     #define _PARTICLE_REJECTED_ON_THE_FACE_ -1
     #define _PARTICLE_DELETED_ON_THE_FACE_   0
@@ -4350,17 +4359,6 @@ for (int i=0;i<sizeof(long int);i++) target[i]=source[i];
       cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=PIC::Mesh::mesh;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
     };
-
-
-
-  struct cExternalBoundaryFace {
-    double norm[3];
-    int nX0[3];
-    double e0[3],e1[3],x0[3];
-    double lE0,lE1;
-  };
-
-extern _TARGET_DEVICE_ _CUDA_MANAGED_ cExternalBoundaryFace *ExternalBoundaryFaceTable;
 
 
     _TARGET_HOST_ _TARGET_DEVICE_

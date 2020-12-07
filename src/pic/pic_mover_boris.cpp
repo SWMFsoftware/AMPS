@@ -879,40 +879,6 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     dtTotal=startNode->block->GetLocalTimeStep(spec);
   }
 
-  //the description of the boundaries of the block faces
-  struct cExternalBoundaryFace {
-    double norm[3];
-    int nX0[3];
-    double e0[3],e1[3],x0[3];
-    double lE0,lE1;
-  };
-
-  static bool initExternalBoundaryFaceTable=false;
-
-  static cExternalBoundaryFace ExternalBoundaryFaceTable[6]={
-      {{-1.0,0.0,0.0}, {0,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{1.0,0.0,0.0}, {1,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0},
-      {{0.0,-1.0,0.0}, {0,0,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{0.0,1.0,0.0}, {0,1,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0},
-      {{0.0,0.0,-1.0}, {0,0,0}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}, {{0.0,0.0,1.0}, {0,0,1}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}
-  };
-
-  if (initExternalBoundaryFaceTable==false) {
-    initExternalBoundaryFaceTable=true;
-
-    for (int nface=0;nface<6;nface++) {
-      double cE0=0.0,cE1=0.0;
-
-      for (idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim];
-
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? data->mesh->rootTree->xmin[idim] : data->mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-      }
-
-      ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
-      ExternalBoundaryFaceTable[nface].lE1=sqrt(cE1);
-    }
-  }
-
   static long int nCall=0;
   nCall++;
 
