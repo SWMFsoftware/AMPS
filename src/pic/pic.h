@@ -1748,14 +1748,27 @@ namespace PIC {
     inline long int GetNext(long int ptr) {
 
       #ifdef __CUDA_ARCH__
-      char *source;
 
-      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      union {long int res; byte buf[sizeof(long int)];};
+long int res;
+char *source,*target;
 
-      memcpy(&buf,source,sizeof(long int));
+source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+target=(char*)&res;
+memcpy(target,source,sizeof(long int));
 
-      return res;
+return res;
+
+
+
+
+//      char *source;
+
+//      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+//      union {long int res; byte buf[sizeof(long int)];};
+
+//      memcpy(&buf,source,sizeof(long int));
+
+//      return res;
       #endif
 
       return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
@@ -1765,14 +1778,28 @@ namespace PIC {
     inline long int GetNext(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      char *source;
 
-      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      union {long int res; byte buf[sizeof(long int)];};
 
-      memcpy(&buf,source,sizeof(long int));
 
-      return res;
+long int res;
+char *source,*target;
+
+source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+target=(char*)&res;
+memcpy(target,source,sizeof(long int));
+
+return res;
+
+
+
+//      char *source;
+
+//      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+//      union {long int res; byte buf[sizeof(long int)];};
+
+//      memcpy(&buf,source,sizeof(long int));
+
+//      return res;
       #endif
 
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
@@ -1788,12 +1815,23 @@ namespace PIC {
       #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else
-      union {long int loc_next; byte buf[sizeof(long int)];};
-      char *target;
 
-      loc_next=next;
-      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,&buf,sizeof(long int)); 
+
+
+char *source,*target;
+
+source=(char*)&next;
+target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+memcpy(target,source,sizeof(long int));
+
+
+
+//      union {long int loc_next; byte buf[sizeof(long int)];};
+//      char *target;
+
+//      loc_next=next;
+//      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+//      memcpy(target,&buf,sizeof(long int)); 
       #endif
     }
     //.........................................................................
@@ -1805,14 +1843,36 @@ namespace PIC {
       #endif
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
-      #else 
-      union {long int loc_next; byte buf[sizeof(long int)];};
-      char *target;
+//      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
 
-      loc_next=next;
-      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,&buf,sizeof(long int));
+char *source,*target;
+
+source=(char*)&next;
+target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+memcpy(target,source,sizeof(long int));
+
+
+      #else 
+
+
+
+
+
+
+char *source,*target;
+
+source=(char*)&next;
+target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+memcpy(target,source,sizeof(long int));
+
+
+
+//      union {long int loc_next; byte buf[sizeof(long int)];};
+//      char *target;
+
+//      loc_next=next;
+//      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+//      memcpy(target,&buf,sizeof(long int));
       #endif 
     }
     //-------------------------------------------------------------------------
@@ -1823,14 +1883,25 @@ namespace PIC {
 	inline long int GetPrev(long int ptr) {
 
       #ifdef __CUDA_ARCH__
-      char *source;
 
-      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      union {long int res; byte buf[sizeof(long int)];};
+long int res;
+char *source,*target;
 
-      memcpy(&buf,source,sizeof(long int));
+source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+target=(char*)&res;
+memcpy(target,source,sizeof(long int));
 
-      return res;
+return res;
+
+
+//      char *source;
+
+//      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//      union {long int res; byte buf[sizeof(long int)];};
+
+//      memcpy(&buf,source,sizeof(long int));
+
+//      return res;
       #endif
 
 
@@ -1841,14 +1912,26 @@ namespace PIC {
     inline long int GetPrev(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      char *source;
 
-      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      union {long int res; byte buf[sizeof(long int)];};
 
-      memcpy(&buf,source,sizeof(long int));
+long int res;
+char *source,*target;
 
-      return res;
+source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+target=(char*)&res;
+memcpy(target,source,sizeof(long int));
+
+return res;
+
+
+//      char *source;
+
+//      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//      union {long int res; byte buf[sizeof(long int)];};
+
+//      memcpy(&buf,source,sizeof(long int));
+
+ //     return res;
       #endif
 
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
@@ -1863,14 +1946,32 @@ namespace PIC {
 
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
-      #else
-      union {long int loc_prev; byte buf[sizeof(long int)];};
-      char *target;
+//      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+//
 
-      loc_prev=prev;
-      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,&buf,sizeof(long int));
+
+char *source,*target;
+
+source=(char*)&prev;
+target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+memcpy(target,source,sizeof(long int));
+
+
+      #else
+
+char *source,*target;
+
+source=(char*)&prev;
+target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+memcpy(target,source,sizeof(long int));
+
+
+//      union {long int loc_prev; byte buf[sizeof(long int)];};
+//      char *target;
+
+//      loc_prev=prev;
+//      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//      memcpy(target,&buf,sizeof(long int));
       #endif
     }
     //.........................................................................
@@ -1883,14 +1984,41 @@ namespace PIC {
 
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
-      #else
-      union {long int loc_prev; byte buf[sizeof(long int)];};
-      char *target;
+//      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+//
 
-      loc_prev=prev;
-      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,&buf,sizeof(long int));
+
+char *source,*target;
+
+source=(char*)&prev;
+target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//memcpy(target,source,sizeof(long int));
+
+
+union {long int loc_prev;char buff[sizeof(long int)];};
+
+source=buff;
+loc_prev=prev;
+memcpy(target,source,sizeof(long int));
+
+      #else
+
+char *source,*target;
+
+source=(char*)&prev;
+target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//memcpy(target,source,sizeof(long int));
+
+for (int i=0;i<sizeof(long int);i++) target[i]=source[i];
+
+
+
+//      union {long int loc_prev; byte buf[sizeof(long int)];};
+//      char *target;
+
+//      loc_prev=prev;
+//      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+//      memcpy(target,&buf,sizeof(long int));
       #endif
     }
     //-------------------------------------------------------------------------
@@ -4235,10 +4363,10 @@ namespace PIC {
 extern _TARGET_DEVICE_ _CUDA_MANAGED_ cExternalBoundaryFace *ExternalBoundaryFaceTable;
 
 
-//    _TARGET_HOST_ _TARGET_DEVICE_
+    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
-//    _TARGET_HOST_ _TARGET_DEVICE_
+    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data); 
   }
 

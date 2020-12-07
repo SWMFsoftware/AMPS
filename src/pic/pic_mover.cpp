@@ -169,36 +169,35 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 
 //====================================================
 //launch multi-threaded Lapenta particle mover
-
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
 void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
   int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
-  
+
   static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
   double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
-  
+
   memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
   memcpy(ElectricChargeTable,PIC::MolecularData::ElectricChargeTable,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
   memcpy(TimeStepTable,PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
-  
+
   if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: that function is valid only for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_");
-  
+
   int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
   long int ParticleList,ptr;
   int s;
   double LocalTimeStep;
-  
+
   chrono::high_resolution_clock::time_point start_time;
   PIC::Mesh::cDataBlockAMR *block;
-  
+
   double E_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
   double B_C[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
   double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
-  
+
   PIC::Mover::cLapentaInputData data;
-  
+
   data.E_Corner=E_corner;
   data.B_Center=B_C;
   data.B_Corner=B_C;
@@ -208,54 +207,54 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   data.ParticleDataLength=ParticleDataLength;
   data.ParticleDataBuffer=ParticleDataBuffer;
   data.mesh=PIC::Mesh::mesh;
-  
-  
+
+
   //shift particle locations
   static Thread::Sync::cBarrier barrier(thread_id_table_size);
   static atomic<int> iblock_max;
   int iblock,iblock_max_thread;
   int increment;
-  
+
   iblock_max=0;
   barrier.Sync();
-  
+
   increment=nlocal_blocks/(10*thread_id_table_size);
   if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
   if (increment==0) increment=nlocal_blocks/thread_id_table_size;
   if (increment==0) increment=1;
-  
-  
+
+
   do {
-    
+
     iblock=iblock_max.fetch_add(increment);
     iblock_max_thread=iblock+increment;
     if (iblock_max_thread>nlocal_blocks) iblock_max_thread=nlocal_blocks;
-    
-    
+
+
     for (;iblock<iblock_max_thread;iblock++)  {
       start_time=chrono::high_resolution_clock::now();
       node=BlockTable[iblock];
       data.node=node;
-      
+
       if ((block=node->block)==NULL) continue;
-      
+
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
       PIC::Mover::SetBlock_E(E_corner,node);
       PIC::Mover::SetBlock_B(B_C,node);
 #endif
-      
+
       for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
         ParticleList=block->FirstCellParticleTable[i];
-        
+
         while (ParticleList!=-1) {
           ptr=ParticleList;
           ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
           ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
-          
+
           PIC::Mover::Lapenta2017(ParticleData,ptr,&data);
         }
       }
-      
+
       //update time counter
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
       node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
@@ -263,32 +262,195 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
     }
   }
   while (iblock_max_thread<nlocal_blocks);
-  
+
   barrier_middle.Sync();
-  
+
   //update the particle lists
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh->DomainBoundaryLayerNodesList;
   int ThisThread=PIC::ThisThread;
-  
+
   for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if (thread!=ThisThread) {
     node=DomainBoundaryLayerNodesList[thread];
     int node_cnt=0;
-    
+
     for (;node!=NULL;node=node->nextNodeThisThread,node_cnt++) if (node_cnt%thread_id_table_size==this_thread_id) {
       if ((block=node->block)==NULL) continue;
-      
+
       for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
         block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
         block->tempParticleMovingListTable[i]=-1;
       }
     }
   }
-  
+
   for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
     node=BlockTable[iblock];
-    
+
     if ((block=node->block)==NULL) continue;
-    
+
+    for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+      block->tempParticleMovingListTable[i]=-1;
+    }
+  }
+}
+#endif
+
+
+//====================================================
+//launch multi-threaded Lapenta particle mover
+#if _CUDA_MODE_ == _ON_
+
+_TARGET_DEVICE_ _CUDA_MANAGED_   double E_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+_TARGET_DEVICE_ _CUDA_MANAGED_   double B_C[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+_TARGET_DEVICE_ _CUDA_MANAGED_   double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+
+void LapentaMultiThreadedMoverGPU() {
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+  int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
+
+
+  int this_thread_id=0,thread_id_table_size=1;
+
+
+
+  static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
+  double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
+
+  memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(ElectricChargeTable,PIC::MolecularData::ElectricChargeTable,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(TimeStepTable,PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+
+  if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: that function is valid only for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_");
+
+  int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  long int ParticleList,ptr;
+  int s;
+  double LocalTimeStep;
+
+  chrono::high_resolution_clock::time_point start_time;
+  PIC::Mesh::cDataBlockAMR *block;
+
+  PIC::Mover::cLapentaInputData data;
+
+
+
+  data.E_Corner=E_corner;
+  data.B_Center=B_C;
+  data.B_Corner=B_C;
+  data.MolMass=PIC::MolecularData::MolMass;
+  data.ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
+  data.TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
+  data.ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  data.ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  data.mesh=PIC::Mesh::mesh;
+
+
+
+  //shift particle locations
+  static Thread::Sync::cBarrier barrier(thread_id_table_size);
+  static atomic<int> iblock_max;
+  int iblock,iblock_max_thread;
+  int increment;
+
+  iblock_max=0;
+  barrier.Sync();
+
+  increment=nlocal_blocks/(10*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/thread_id_table_size;
+  if (increment==0) increment=1;
+
+
+  do {
+
+    iblock=iblock_max.fetch_add(increment);
+    iblock_max_thread=iblock+increment;
+    if (iblock_max_thread>nlocal_blocks) iblock_max_thread=nlocal_blocks;
+
+
+    for (;iblock<iblock_max_thread;iblock++)  {
+      start_time=chrono::high_resolution_clock::now();
+      node=BlockTable[iblock];
+      data.node=node;
+
+      if ((block=node->block)==NULL) continue;
+
+#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+      PIC::Mover::SetBlock_E(E_corner,node);
+      PIC::Mover::SetBlock_B(B_C,node);
+#endif
+
+      auto RunBlock = [=] _TARGET_HOST_ _TARGET_DEVICE_ (PIC::Mesh::cDataBlockAMR *block,PIC::Mover::cLapentaInputData data) {
+
+      long int ParticleList,ptr;
+      PIC::ParticleBuffer::byte *ParticleData;
+
+      #ifdef __CUDA_ARCH__
+              int id=blockIdx.x*blockDim.x+threadIdx.x;
+              int increment=gridDim.x*blockDim.x;
+      #else
+      int id=0,increment=0;
+      #endif
+
+
+      //      for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+
+            for (int i=id;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i+=increment) {
+
+        ParticleList=block->FirstCellParticleTable[i];
+
+        while (ParticleList!=-1) {
+          ptr=ParticleList;
+          ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
+          ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
+
+          PIC::Mover::Lapenta2017(ParticleData,ptr,&data);
+        }
+      }
+      };
+
+
+      //RunBlock(block,&data);
+
+      kernel_2<<<1,256>>> (RunBlock,block,data);
+      cudaDeviceSynchronize();
+
+
+      //update time counter
+#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+      node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
+#endif
+    }
+  }
+  while (iblock_max_thread<nlocal_blocks);
+
+  barrier_middle.Sync();
+
+  //update the particle lists
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh->DomainBoundaryLayerNodesList;
+  int ThisThread=PIC::ThisThread;
+
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if (thread!=ThisThread) {
+    node=DomainBoundaryLayerNodesList[thread];
+    int node_cnt=0;
+
+    for (;node!=NULL;node=node->nextNodeThisThread,node_cnt++) if (node_cnt%thread_id_table_size==this_thread_id) {
+      if ((block=node->block)==NULL) continue;
+
+      for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+        block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+        block->tempParticleMovingListTable[i]=-1;
+      }
+    }
+  }
+
+  for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
+    node=BlockTable[iblock];
+
+    if ((block=node->block)==NULL) continue;
+
     for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
       block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
       block->tempParticleMovingListTable[i]=-1;
@@ -332,6 +494,12 @@ void PIC::Mover::MoveParticles() {
   return;
 #endif
 #endif
+#endif
+
+
+#if _CUDA_MODE_ == _ON_
+  LapentaMultiThreadedMoverGPU();
+  return;
 #endif
 
   //the table of increments for accessing the cells in the block

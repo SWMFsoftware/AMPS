@@ -887,9 +887,9 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     double lE0,lE1;
   };
 
-  static thread_local bool initExternalBoundaryFaceTable=false;
+  static bool initExternalBoundaryFaceTable=false;
 
-  static thread_local cExternalBoundaryFace ExternalBoundaryFaceTable[6]={
+  static cExternalBoundaryFace ExternalBoundaryFaceTable[6]={
       {{-1.0,0.0,0.0}, {0,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{1.0,0.0,0.0}, {1,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0},
       {{0.0,-1.0,0.0}, {0,0,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{0.0,1.0,0.0}, {0,1,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0},
       {{0.0,0.0,-1.0}, {0,0,0}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}, {{0.0,0.0,1.0}, {0,0,1}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}
@@ -1294,8 +1294,25 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
 
   }
 
+#ifdef __CUDA_ARCH__
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+
+  int tptr=ptr;
+  int *source=(int*)(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+
+  long int tempFirstCellParticle=atomicExch(source,tptr);
+
+  if (sizeof(long int )>sizeof(int)) {
+    *(source+1)=0;
+  }
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,_GetParticleDataPointer(tempFirstCellParticle,data->ParticleDataLength,data->ParticleDataBuffer));
+
+
+
+  #elif _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData); 
 
   long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr); 
