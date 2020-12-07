@@ -1748,27 +1748,14 @@ namespace PIC {
     inline long int GetNext(long int ptr) {
 
       #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
 
-long int res;
-char *source,*target;
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
 
-source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-target=(char*)&res;
-memcpy(target,source,sizeof(long int));
-
-return res;
-
-
-
-
-//      char *source;
-
-//      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-//      union {long int res; byte buf[sizeof(long int)];};
-
-//      memcpy(&buf,source,sizeof(long int));
-
-//      return res;
+      return res;
       #endif
 
       return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
@@ -1778,28 +1765,14 @@ return res;
     inline long int GetNext(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
 
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
 
-
-long int res;
-char *source,*target;
-
-source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-target=(char*)&res;
-memcpy(target,source,sizeof(long int));
-
-return res;
-
-
-
-//      char *source;
-
-//      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-//      union {long int res; byte buf[sizeof(long int)];};
-
-//      memcpy(&buf,source,sizeof(long int));
-
-//      return res;
+      return res;
       #endif
 
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
@@ -1816,22 +1789,11 @@ return res;
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else
 
+      char *source,*target;
 
-
-char *source,*target;
-
-source=(char*)&next;
-target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-memcpy(target,source,sizeof(long int));
-
-
-
-//      union {long int loc_next; byte buf[sizeof(long int)];};
-//      char *target;
-
-//      loc_next=next;
-//      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-//      memcpy(target,&buf,sizeof(long int)); 
+      source=(char*)&next;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,source,sizeof(long int));
       #endif
     }
     //.........................................................................
@@ -1843,36 +1805,13 @@ memcpy(target,source,sizeof(long int));
       #endif
 
       #ifndef __CUDA_ARCH__
-//      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
-
-char *source,*target;
-
-source=(char*)&next;
-target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-memcpy(target,source,sizeof(long int));
-
-
+      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else 
+      char *source,*target;
 
-
-
-
-
-
-char *source,*target;
-
-source=(char*)&next;
-target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-memcpy(target,source,sizeof(long int));
-
-
-
-//      union {long int loc_next; byte buf[sizeof(long int)];};
-//      char *target;
-
-//      loc_next=next;
-//      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-//      memcpy(target,&buf,sizeof(long int));
+      source=(char*)&next;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,source,sizeof(long int));
       #endif 
     }
     //-------------------------------------------------------------------------
@@ -1880,58 +1819,34 @@ memcpy(target,source,sizeof(long int));
     // Operations related to the previous particle in the stack
     //-------------------------------------------------------------------------
     _TARGET_HOST_ _TARGET_DEVICE_
-	inline long int GetPrev(long int ptr) {
+    inline long int GetPrev(long int ptr) {
 
       #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
 
-long int res;
-char *source,*target;
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
 
-source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-target=(char*)&res;
-memcpy(target,source,sizeof(long int));
-
-return res;
-
-
-//      char *source;
-
-//      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//      union {long int res; byte buf[sizeof(long int)];};
-
-//      memcpy(&buf,source,sizeof(long int));
-
-//      return res;
+      return res;
       #endif
 
-
-    	return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+      return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetPrev(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
 
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
 
-long int res;
-char *source,*target;
-
-source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-target=(char*)&res;
-memcpy(target,source,sizeof(long int));
-
-return res;
-
-
-//      char *source;
-
-//      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//      union {long int res; byte buf[sizeof(long int)];};
-
-//      memcpy(&buf,source,sizeof(long int));
-
- //     return res;
+      return res;
       #endif
 
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
@@ -1946,32 +1861,13 @@ return res;
 
 
       #ifndef __CUDA_ARCH__
-//      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
-//
-
-
-char *source,*target;
-
-source=(char*)&prev;
-target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-memcpy(target,source,sizeof(long int));
-
-
+      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
+      char *source,*target;
 
-char *source,*target;
-
-source=(char*)&prev;
-target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-memcpy(target,source,sizeof(long int));
-
-
-//      union {long int loc_prev; byte buf[sizeof(long int)];};
-//      char *target;
-
-//      loc_prev=prev;
-//      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//      memcpy(target,&buf,sizeof(long int));
+      source=(char*)&prev;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,source,sizeof(long int));
       #endif
     }
     //.........................................................................
@@ -1984,41 +1880,13 @@ memcpy(target,source,sizeof(long int));
 
 
       #ifndef __CUDA_ARCH__
-//      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
-//
-
-
-char *source,*target;
-
-source=(char*)&prev;
-target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//memcpy(target,source,sizeof(long int));
-
-
-union {long int loc_prev;char buff[sizeof(long int)];};
-
-source=buff;
-loc_prev=prev;
-memcpy(target,source,sizeof(long int));
-
+      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
+      char *source,*target;
 
-char *source,*target;
-
-source=(char*)&prev;
-target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//memcpy(target,source,sizeof(long int));
-
-for (int i=0;i<sizeof(long int);i++) target[i]=source[i];
-
-
-
-//      union {long int loc_prev; byte buf[sizeof(long int)];};
-//      char *target;
-
-//      loc_prev=prev;
-//      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-//      memcpy(target,&buf,sizeof(long int));
+      source=(char*)&prev;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,source,sizeof(long int));
       #endif
     }
     //-------------------------------------------------------------------------
@@ -2107,20 +1975,6 @@ for (int i=0;i<sizeof(long int);i++) target[i]=source[i];
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,long int ptr) {
-
-/*
-      #ifdef __CUDA_ARCH__
-      char *source;
-
-      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_);
-      union {double res[DIM]; byte buf[DIM*sizeof(double)];};
-
-      memcpy(&buf,source,DIM*sizeof(double));
-      return;
-      #endif
-*/
-
-
       memcpy(x,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
