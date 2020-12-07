@@ -1894,7 +1894,11 @@ void PIC::Init_BeforeParser() {
 //    #endif
 
 
-    amps_new_managed<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::mesh,1);
+    PIC::Mesh::MeshTableLength=1;
+
+    amps_new_managed<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::MeshTable,PIC::Mesh::MeshTableLength);
+    PIC::Mesh::mesh=PIC::Mesh::MeshTable;
+
     cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::mesh;
 
 
@@ -1913,6 +1917,8 @@ void PIC::Init_BeforeParser() {
     mesh->fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
     mesh->fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
     mesh->fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+
+    if (PIC::Mesh::MeshTableLength!=1) exit(__LINE__,__FILE__,"Error: initialization is not implemented for MeshTableLength!=1");
 
     //Init the random number generator
     if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();

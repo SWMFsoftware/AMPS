@@ -3197,6 +3197,11 @@ namespace PIC {
     void switchSamplingBuffers();
 
     //the computational mesh
+    //MeshTable, MeshTableLength -> vector containing meshes of all simulated regions
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *MeshTable;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int MeshTableLength;
+
+    //mesh -> is the pointed to the mesh discritizing a single computational region
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
 
     //init the computational mesh

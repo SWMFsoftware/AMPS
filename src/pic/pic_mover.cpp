@@ -65,6 +65,7 @@ void PIC::Mover::Init() {
 
    //the description of the boundaries of the block faces
    if (PIC::Mesh::mesh==NULL) exit(__LINE__,__FILE__,"Error: PIC::Mesh::mesh needs to be generated for the following initializations");
+   if (PIC::Mesh::MeshTableLength!=1) exit(__LINE__,__FILE__,"Error: initialization is not implemented for MeshTableLength!=1");
 
    for (int nface=0;nface<6;nface++) {
      double cE0=0.0,cE1=0.0;

@@ -70,7 +70,10 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DE
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
 
-_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::MeshTable=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::MeshTableLength=0;
+
 
 //the user defined functions for output of the 'ceneter node' data into a data file
 vector<PIC::Mesh::fPrintVariableListCenterNode> PIC::Mesh::PrintVariableListCenterNode;
