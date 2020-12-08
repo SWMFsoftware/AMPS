@@ -454,7 +454,9 @@ auto SimulateReaction = [&] () {
     offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
 
     double vh2 = 0.0, vp2 = 0.0;
-    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
+
+//    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
+    double c = (PlasmaNumberDensity>0.0) ? ParentParticleWeight/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)/CenterNode->Measure : 0.0;
 
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceDensityOffset))-=c*_MASS_(_H_);
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c*_MASS_(_H_);
