@@ -415,7 +415,7 @@ void LapentaMultiThreadedMoverGPU() {
               int id=blockIdx.x*blockDim.x+threadIdx.x;
               int increment=gridDim.x*blockDim.x;
       #else
-      int id=0,increment=0;
+      int id=0,increment=1;
       #endif
 
 
