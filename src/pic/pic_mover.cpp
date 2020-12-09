@@ -90,7 +90,8 @@ void PIC::Mover::TotalParticleAcceleration_default(double *accl,int spec,long in
 //====================================================
 //Set B for B_Center/B_Corner
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+_TARGET_HOST_ _TARGET_DEVICE_ 
+void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset) {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
 
   if (!node->block) return;
@@ -103,7 +104,7 @@ void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
       for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
         int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
         if (!node->block->GetCenterNode(LocalCenterId)) continue; 
-        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
         double * ptr =  (double*)(offset+PrevBOffset);
         memcpy(&B_C[LocalCenterId*3],ptr,3*sizeof(double));
       }
@@ -117,7 +118,7 @@ void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
       for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
         int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
         if (!node->block->GetCornerNode(LocalCornerId)) continue; 
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
         double * ptr =  (double*)(offset+PrevBOffset);
         memcpy(&B_C[LocalCornerId*3],ptr,3*sizeof(double));
       }
@@ -141,17 +142,18 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 
   switch (_PIC_FIELD_SOLVER_B_MODE_) {
   case _PIC_FIELD_SOLVER_B_CENTER_BASED_ :
-    SetBlock_B(PIC::Mover::B_Center[threadId],node);
+    SetBlock_B(PIC::Mover::B_Center[threadId],node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
     break;
   case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
-    SetBlock_B(PIC::Mover::B_Corner[threadId],node);
+    SetBlock_B(PIC::Mover::B_Corner[threadId],node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
     break;
   }
 }
 
 //====================================================
 //Set E for E_Corner
-void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+_TARGET_HOST_ _TARGET_DEVICE_
+void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int ElectricField_RelativeOffset){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   if (!node->block) return;
 
@@ -161,7 +163,7 @@ void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockA
       for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
         int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
         if (!node->block->GetCornerNode(LocalCornerId)) continue;
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
         double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
         memcpy(&E_Corner[LocalCornerId*3],ptr,3*sizeof(double));
       }
@@ -183,7 +185,7 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 //  if (node == PIC::Mover::lastNode_E_corner[threadId]) return;
 //   PIC::Mover::lastNode_E_corner[threadId]=node;
 
-  SetBlock_E(PIC::Mover::E_Corner[threadId],node);
+  SetBlock_E(PIC::Mover::E_Corner[threadId],node,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   #else
   exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
   #endif
@@ -223,8 +225,8 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   PIC::Mover::cLapentaInputData data;
 
   data.E_Corner=E_corner;
-  data.B_Center=B_C;
-  data.B_Corner=B_C;
+  data.B_C=B_C;
+//  data.B_Corner=B_C;
   data.MolMass=MolMass;
   data.ElectricChargeTable=ElectricChargeTable;
   data.TimeStepTable=TimeStepTable;
@@ -263,8 +265,8 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
       if ((block=node->block)==NULL) continue;
 
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-      PIC::Mover::SetBlock_E(E_corner,node);
-      PIC::Mover::SetBlock_B(B_C,node);
+      PIC::Mover::SetBlock_E(E_corner,node,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+      PIC::Mover::SetBlock_B(B_C,node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
 #endif
 
       for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
@@ -336,6 +338,8 @@ void LapentaMultiThreadedMoverGPU() {
 
   int this_thread_id=0,thread_id_table_size=1;
 
+  PIC::ParticleBuffer::CreateParticleTable();
+
 
 
   static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
@@ -361,8 +365,7 @@ void LapentaMultiThreadedMoverGPU() {
 
 
   data.E_Corner=E_corner;
-  data.B_Center=B_C;
-  data.B_Corner=B_C;
+  data.B_C=B_C;
   data.MolMass=PIC::MolecularData::MolMass;
   data.ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
   data.TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
@@ -387,70 +390,96 @@ void LapentaMultiThreadedMoverGPU() {
   if (increment==0) increment=1;
 
 
-  do {
 
-    iblock=iblock_max.fetch_add(increment);
-    iblock_max_thread=iblock+increment;
-    if (iblock_max_thread>nlocal_blocks) iblock_max_thread=nlocal_blocks;
+  auto ProcessParticleList = [=] _TARGET_HOST_ _TARGET_DEVICE_ (PIC::Mover::cLapentaInputData* data_table,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int i,j,k,icell,iblock,iblock_last=-1;
+    long int ParticleList,ptr;
+    PIC::ParticleBuffer::byte *ParticleData;
 
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
 
-    for (;iblock<iblock_max_thread;iblock++)  {
-      start_time=chrono::high_resolution_clock::now();
+    PIC::Mover::cLapentaInputData* data=data_table+id;
+
+    for (int ipart=id;ipart<PIC::ParticleBuffer::NAllPart;ipart+=increment) {
+      ptr=PIC::ParticleBuffer::ParticlePopulationTable[ipart].ptr;
+      icell=PIC::ParticleBuffer::ParticlePopulationTable[ipart].icell;
+
+      PIC::DomainBlockDecomposition::GetIcell2Ijk(i,j,k,iblock,icell);
+
       node=BlockTable[iblock];
-      data.node=node;
+      data->node=node;
 
-      if ((block=node->block)==NULL) continue;
+      #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+      if (iblock!=iblock_last) {
+        PIC::Mover::SetBlock_E(data->E_Corner,node,ElectricField_RelativeOffset);
+        PIC::Mover::SetBlock_B(data->B_C,node,MagneticField_RelativeOffset,ElectricField_RelativeOffset);
 
-#if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-      PIC::Mover::SetBlock_E(E_corner,node);
-      PIC::Mover::SetBlock_B(B_C,node);
-#endif
-
-      auto RunBlock = [=] _TARGET_HOST_ _TARGET_DEVICE_ (PIC::Mesh::cDataBlockAMR *block,PIC::Mover::cLapentaInputData data) {
-
-      long int ParticleList,ptr;
-      PIC::ParticleBuffer::byte *ParticleData;
-
-      #ifdef __CUDA_ARCH__
-              int id=blockIdx.x*blockDim.x+threadIdx.x;
-              int increment=gridDim.x*blockDim.x;
-      #else
-      int id=0,increment=1;
+        iblock_last=iblock;
+      }
       #endif
 
+      #ifdef __CUDA_ARCH__
+      __syncwarp;
+      #endif
 
-      //      for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
+      ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
 
-            for (int i=id;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i+=increment) {
+      PIC::Mover::Lapenta2017(ParticleData,ptr,data);
 
-        ParticleList=block->FirstCellParticleTable[i];
-
-        while (ParticleList!=-1) {
-          ptr=ParticleList;
-          ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
-          ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
-
-          PIC::Mover::Lapenta2017(ParticleData,ptr,&data);
-        }
-      }
-      };
-
-
-      //RunBlock(block,&data);
-
-      kernel_2<<<1,256>>> (RunBlock,block,data);
-      cudaDeviceSynchronize();
-
-
-      //update time counter
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
-#endif
+      #ifdef __CUDA_ARCH__
+      __syncwarp;
+      #endif
     }
-  }
-  while (iblock_max_thread<nlocal_blocks);
+  };
 
-  barrier_middle.Sync();
+
+  int nblocks=10;
+  int nthreads=320;
+
+  int data_table_length=nblocks*nthreads;
+  PIC::Mover::cLapentaInputData *data_table=NULL;
+
+  amps_malloc_managed<PIC::Mover::cLapentaInputData> (data_table,data_table_length);
+
+  for (int i=0;i<data_table_length;i++) {
+    PIC::Mover::cLapentaInputData *data=data_table+i;
+
+    data->E_Corner=NULL,data->B_C=NULL;
+
+    amps_malloc_managed<double>(data->E_Corner,(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3);
+    amps_malloc_managed<double>(data->B_C,(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3);
+
+    data->MolMass=PIC::MolecularData::MolMass;
+    data->ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
+    data->TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
+    data->ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+    data->ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+    data->mesh=PIC::Mesh::mesh;
+  }
+
+
+  #if _CUDA_MODE_ == _OFF_
+  ProcessParticleList(data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  #else
+  kernel_3<<<nblocks,nthreads>>>(ProcessParticleList,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset); 
+  cudaDeviceSynchronize();
+  #endif
+
+  for (int i=0;i<data_table_length;i++) {
+    PIC::Mover::cLapentaInputData *data=data_table+i;
+
+    amps_free_managed(data->E_Corner);
+    amps_free_managed(data->B_C);
+  }
+
+  amps_free_managed(data_table);
 
   //update the particle lists
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh->DomainBoundaryLayerNodesList;

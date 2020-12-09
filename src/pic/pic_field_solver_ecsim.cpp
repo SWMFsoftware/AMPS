@@ -66,9 +66,9 @@ cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  *PIC::FieldSolv
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;

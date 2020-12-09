@@ -835,8 +835,17 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   cLapentaInputData data;
 
   data.E_Corner=E_Corner;
-  data.B_Center=B_Center;
-  data.B_Corner=B_Corner;
+
+  switch (_PIC_FIELD_SOLVER_B_MODE_) {
+  case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
+    data.B_C=B_Center;
+    break;
+  case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
+    data.B_C=B_Corner;
+    break;
+  }
+
+
   data.MolMass=PIC::MolecularData::MolMass;
   data.ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
   data.TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
@@ -928,7 +937,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
         double *tempE1=data->E_Corner+3*LocalCellID[iStencil];
 
         #if  _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-        double *tempB1=data->B_Corner+3*LocalCellID[iStencil];
+        double *tempB1=data->B_C+3*LocalCellID[iStencil];
         #endif
        
         #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
@@ -961,7 +970,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
       Weight=MagneticFieldStencil.Weight;
 
       for (int iStencil=0;iStencil<Length;iStencil++) {
-        double *tempB1 = data->B_Center+3*LocalCellID[iStencil];
+        double *tempB1 = data->B_C+3*LocalCellID[iStencil];
 
         #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
@@ -981,6 +990,9 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     }
   }
 
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
 
   E[3]=0.0,B[3]=0.0;  //the line is important when AVX is used. The index [3] is correct since B and B are defined compatible with __m256d
 

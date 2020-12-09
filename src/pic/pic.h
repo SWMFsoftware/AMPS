@@ -4098,10 +4098,14 @@ namespace PIC {
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_corner;
 
     void SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
-    void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+
+    _TARGET_HOST_ _TARGET_DEVICE_ 
+    void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int ElectricField_RelativeOffset);
 
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
-    void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset);
 
     struct cExternalBoundaryFace {
       double norm[3];
@@ -4207,8 +4211,8 @@ namespace PIC {
 
     struct cLapentaInputData {
       double *E_Corner;
-      double *B_Center;
-      double *B_Corner;
+      double *B_C;
+    //  double *B_Corner;
       double *MolMass;
       double *ElectricChargeTable;
       double *TimeStepTable;
@@ -6957,8 +6961,10 @@ bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDa
             extern fUserDefinedParticleBC setParticle_BC;
             extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
             extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
-            extern int CurrentEOffset, OffsetE_HalfTimeStep;
-            extern int CurrentBOffset, PrevBOffset;
+            extern int CurrentEOffset; 
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetE_HalfTimeStep;
+            extern int CurrentBOffset;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int PrevBOffset;
             extern int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> *Solver;
             extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> *PoissonSolver;
