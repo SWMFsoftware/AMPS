@@ -81,7 +81,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
 
-  RndPrecisionLimit=on
+  RndPrecisionLimit=on,limit=1E-5
 
 #endGeneral
 
