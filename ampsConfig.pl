@@ -1052,6 +1052,17 @@ sub ReadGeneralBlock {
       if ($InputLine eq "ON") {
          ampsConfigLib::RedefineMacro("_RND_LIMIT_PRESITION_MODE_","_RND_LIMIT_PRECISION_ON_","general/rnd.h");
       }
+
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "LIMIT") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::RedefineMacro("_RND_LIMIT_PRECISION_",$InputLine,"general/rnd.h");
+       }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }     
     }  
 
 
