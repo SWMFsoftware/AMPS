@@ -69,34 +69,34 @@ int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset=-1;
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
 
-int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JyOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JzOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JyOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JzOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeOldIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::divEIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex;
 
-int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUy_=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUz_=3;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUx_=4;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUy_=5;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUy_=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUz_=3;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUx_=4;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUy_=5;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
 cStencil::cStencilData *PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil;
@@ -135,33 +135,33 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
 //location of the solver's data in the corner node associated data vector
 int PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
 
-double dtTotal = 0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
-double epsilon0=8.85418782e-12;
-double mu0=1.25663706e-6;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double dtTotal = 0.0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double epsilon0=8.85418782e-12;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mu0=1.25663706e-6;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_  
-double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
 #endif
 
 double TotalParticleEnergy=0.0;
 double TotalWaveEnergy=0.0;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
-double E_conv = 1;
-double B_conv = 1;
-double mass_conv =1.0/_AMU_;
-double charge_conv=1.0/ElectronCharge;
-double length_conv=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv =1.0/_AMU_;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=1.0/ElectronCharge;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
-double B_conv = 1e4;
-double mass_conv = 1e3;
-double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
-double length_conv=1e2; 
+_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
+_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1e4;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv = 1e3;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1e2;
 #endif
 
 
@@ -1669,13 +1669,35 @@ public:
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+_TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_MagneticField=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_ElectricField=-1;
+
+
 #if  _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) {
+
+
+
+_TARGET_HOST_ _TARGET_DEVICE_
+bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,
+    double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
   double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
   double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
   bool res=false;
 
 
+  int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,21,18,19},
+          {3,5,2,0,21,23,20,18},{9,11,17,15,0,2,8,6},{10,9,15,16,1,0,6,7},
+          {13,12,9,10,4,3,0,1},{12,14,11,9,3,5,2,0}};
+
+
+#ifndef __CUDA_ARCH__
+  int MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  int ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+#else
+  int MagneticField_RelativeOffset=DataIn.MagneticField_RelativeOffset;
+  int ElectricField_RelativeOffset=DataIn.ElectricField_RelativeOffset;
+#endif
 
 /*
 int  num_cores=sysconf(_SC_NPROCESSORS_ONLN);
@@ -1689,10 +1711,6 @@ pthread_t current_thread=pthread_self();
 
 pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 */
-
-
-
-  auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
   if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
@@ -1710,8 +1728,6 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
     }
   }
 
-
-  auto ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
   if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
     for (int k=kCellIn-1;k<=kCellIn+1;k++) {
@@ -2014,6 +2030,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
             double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
             double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
+#ifndef __CUDA_ARCH__
             #ifndef __PGI
             if (jCorner+1<=iCorner) {
                char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
@@ -2022,6 +2039,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
                _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
             }
             #endif
+#endif
 
             tmpPtr[0]+=alpha[0]*tempWeightProduct;
             tmpPtr[1]+=alpha[1]*tempWeightProduct;
@@ -2109,12 +2127,14 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
     }// while (ptrNext!=-1)
   }//if (ptr!=-1)
 
+#ifndef __CUDA_ARCH__
   CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
+#endif
 
   return res;
 };
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-
+_TARGET_HOST_ _TARGET_DEVICE_
 bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) {
   double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
   double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
@@ -2832,7 +2852,6 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   //the table of cells' particles
   //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
@@ -2841,6 +2860,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
   long int LocalCellNumber;
+
+
+  if (_CUDA_MODE_ == _ON_ ) {
+    UpdateJMassMatrixGPU();
+    return;
+  }
 
   CumulativeTiming::UpdateJMassMatrixTime.Start();
   CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
@@ -2862,7 +2887,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
 
-  //copy manager 
+  //copy manager
 
 
   /*
@@ -2901,7 +2926,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::atomic<cCellData*> *CellDataTable;
     std::atomic<bool> *AvailableCellDataTable;
     std::atomic_flag *cell_table_lock;
-    std::atomic_flag copy_lock; 
+    std::atomic_flag copy_lock;
 
     void Copy(cCellData *CellData,int this_thread_id) {
       double  *target,*source;
@@ -2988,7 +3013,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
       copy_lock.clear(std::memory_order_release);
-      copy_lock.test_and_set(std::memory_order_acquire); 
+      copy_lock.test_and_set(std::memory_order_acquire);
 
       ParticleEnergyTable=ParticleEnergyTable_in;
       cflTable=cflTable_in;
@@ -3107,21 +3132,21 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   //determine whether the mesh/domain decomposition have been changed
   int localMeshChangeFlag,globalMeshChangeFlag;
-  
+
   localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter) ? 0 : 1;
 
 
-  if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) { 
+  if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) {
     MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
 
-    if ((globalMeshChangeFlag!=0)&&(localMeshChangeFlag==0)) { 
-      exit(__LINE__,__FILE__,"Error: globalMeshChangeFlag and localMeshChangeFlag are not consistent: PIC::Mesh::mesh->nMeshModificationCounter are not properly syncronized"); 
+    if ((globalMeshChangeFlag!=0)&&(localMeshChangeFlag==0)) {
+      exit(__LINE__,__FILE__,"Error: globalMeshChangeFlag and localMeshChangeFlag are not consistent: PIC::Mesh::mesh->nMeshModificationCounter are not properly syncronized");
     }
   }
   else globalMeshChangeFlag=localMeshChangeFlag;
 
-  
+
   if (_AMR_MESH_TYPE_!=_AMR_MESH_TYPE__UNIFORM_) {
     exit(__LINE__,__FILE__,"_PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ == _PIC_MODE_ON_ can be used only with _AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_");
   }
@@ -3136,7 +3161,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   const int thread_id_table_size=_PIC_NUMBER_STD_THREADS_;
   static int SetStartIndex[2*_PIC_NUMBER_STD_THREADS_];
-  static int SetLength[2*_PIC_NUMBER_STD_THREADS_]; 
+  static int SetLength[2*_PIC_NUMBER_STD_THREADS_];
 
 
   if (globalMeshChangeFlag!=0) {
@@ -3247,7 +3272,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       increment=SetLength[set_index]/(10*thread_id_table_size);
       if (increment==0) increment=SetLength[set_index]/(5*thread_id_table_size);
-      if (increment==0) increment=SetLength[set_index]/thread_id_table_size; 
+      if (increment==0) increment=SetLength[set_index]/thread_id_table_size;
       if (increment==0) increment=1;
 
       iset_max=0;
@@ -3257,9 +3282,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 do {
   iset=iset_max.fetch_add(increment);
   pData=ProcessData+SetStartIndex[set_index]+iset;
-  
+
   iset_max_thread=iset+increment;
-  if (iset_max_thread>SetLength[set_index]) iset_max_thread=SetLength[set_index]; 
+  if (iset_max_thread>SetLength[set_index]) iset_max_thread=SetLength[set_index];
 
       for (;iset<iset_max_thread;iset++,pData++) {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=pData->node;
@@ -3341,10 +3366,10 @@ barrier.Sync();
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
     ParticleEnergyTable[i]=0.0;
 
-    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) { 
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
       cflTable[i][iSp]=0.0;
     }
-  }		 		 
+  }
 
 
 #if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
@@ -3360,11 +3385,11 @@ barrier.Sync();
   auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
 
 
-  // Loop through all blocks. 
+  // Loop through all blocks.
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
 #pragma omp parallel default(none) shared (copy_manager_ptr,CellDataTable_Bank0,CellDataTable_Bank1,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-		ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
+    ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
   {
 
     int this_thread_id=omp_get_thread_num();
@@ -3372,7 +3397,7 @@ barrier.Sync();
 
 #pragma omp for schedule(guided,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_)
 
-#else 
+#else
     int this_thread_id=0;
     auto CellData_TH=CellDataTable_Bank0+this_thread_id;
 
@@ -3509,10 +3534,360 @@ barrier.Sync();
   for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
 
   //find the max cfl among all threads
+  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
+    cfl_process[iSp]=cflTable[0][iSp];
+    for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp];
+  }
+
+  switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
+  case _PIC_MODE_ON_:
+    PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData;
+    PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData;
+    break;
+  case _PIC_MODE_OFF_:
+    PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix;
+    PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix;
+  }
+
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
+
+  switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
+  case _PIC_MODE_ON_:
+    PIC::Parallel::BPManager.isCorner = true;
+    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+    PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
+    PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
+    PIC::Parallel::ProcessBlockBoundaryNodes();
+
+    break;
+  case _PIC_MODE_OFF_:
+    PIC::Parallel::ProcessBlockBoundaryNodes();
+  }
+
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
+
+  MPI_Reduce(&ParticleEnergy, &TotalParticleEnergy, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_GLOBAL_COMMUNICATOR);
+  // get max cfl over all mpi process
+  double cfl_all[PIC::nTotalSpecies];
+
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+  MPI_Reduce(cfl_process+iSp, cfl_all+iSp, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_GLOBAL_COMMUNICATOR);
+
+  // TotalParticleEnergy *= 1e-7; //in SI
+  if (PIC::ThisThread==0) {
+    printf("Total Particle Energy:%e\n",TotalParticleEnergy);
+    printf("Total Energy:%.20e,%f\n",TotalParticleEnergy+TotalWaveEnergy,TotalParticleEnergy+TotalWaveEnergy);
+    std::cout.precision(20);
+    std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;
+    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++)
+      std::cout<<"max cfl number for spec "<< iSp <<" :"  << cfl_all[iSp] << std::endl;
+  }
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ ) {
+    PIC::CPLR::FLUID::fix_plasma_node_boundary();
+  }
+
+
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.UpdateTimer();
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrixGPU(){
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  //PIC::ParticleBuffer::byte *ParticleData;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber;
+
+  CumulativeTiming::UpdateJMassMatrixTime.Start();
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
+
+  double ParticleEnergy=0.0;
+  double cfl_process[PIC::nTotalSpecies];
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) cfl_process[iSp]=0.0;
+
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+
+  if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+    PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  }
+
+  double qom[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)/(PIC::MolecularData::GetMass(iSp)*mass_conv);
+
+
+
+
+
+
+  //////////////////////////////////////
+
+
+
+
+  cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
+  cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
+
+#if _CUDA_MODE_ == _OFF_
+  const int thread_id_table_size= PIC::nTotalThreadsOpenMP;
+#else
+  const int thread_id_table_size=_CUDA_BLOCKS_*_CUDA_THREADS_;
+#endif
+
+  bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
+ // double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
+
+
+  double *ParticleEnergyTable=NULL;
+  amps_malloc_managed(ParticleEnergyTable,thread_id_table_size);
+
+  //the next is needed to eliminate false sharing in the multi-thread mode
+  double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+  for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
+
+/*  double *cflTable[thread_id_table_size]; //[PIC::nTotalSpecies];
+  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=0;i<thread_id_table_size;i++) cflTable[i]=cflTable_base+PIC::nTotalSpecies*i;
+
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) { 
+      cflTable[i][iSp]=0.0;
+    }
+  }	*/
+
+
+  double **cflTable=NULL; //[thread_id_table_size]; //[PIC::nTotalSpecies];
+
+
+  amps_malloc_managed<double*>(cflTable,thread_id_table_size);
+
+  cflTable[0]=NULL;
+  amps_malloc_managed<double>(cflTable[0],thread_id_table_size*PIC::nTotalSpecies);
+
+//  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=1;i<thread_id_table_size;i++) cflTable[i]=cflTable[0]+PIC::nTotalSpecies*i;
+
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+      cflTable[i][iSp]=0.0;
+    }
+  }
+
+
+
+  auto mesh_ptr=PIC::Mesh::mesh;
+  auto ThisThread=PIC::ThisThread;
+  auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+
+
+  // Loop through all blocks. 
+
+    int this_thread_id=0;
+    auto CellData_TH=CellDataTable_Bank0+this_thread_id;
+
+    cProcessCellData ProcessCellData;
+
+    ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+    auto PrcessCellSubset = [=] _TARGET_HOST_ _TARGET_DEVICE_ (int di,int dj,int dk,double **cflTable,double *ParticleEnergyTable,cProcessCellData ProcessCellData) {
+
+      int nTotalCells=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/8;
+
+#ifndef __CUDA_ARCH__
+      int this_thread_id=0;
+      int increment=1;
+#else
+      int this_thread_id=blockIdx.x*blockDim.x+threadIdx.x;
+      int increment=gridDim.x*blockDim.x;
+#endif
+
+      cCellData CellData_TH;
+
+
+      double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+      for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
+
+
+
+
+
+
+    for (int CellCounter=this_thread_id;CellCounter<nTotalCells;CellCounter+=increment) {
+      int nLocalNode,ii=CellCounter;
+      int i,j,k,t;
+      bool proceed_with_calculations=true;
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+
+      t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/8;
+      nLocalNode=ii/t;
+      ii=ii%t;
+
+      t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/4;
+      k=ii/t;
+      ii=ii%t;
+
+      t=_BLOCK_CELLS_X_/2;
+      j=ii/t;
+      i=ii%t;
+
+      i=2*i+di;
+      j=2*j+dj;
+      k=2*k+dk;
+
+
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+
+      if (node->block==NULL) continue;
+
+#ifndef __CUDA_ARCH__
+      double StartTime=MPI_Wtime();
+#endif
+
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
+
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,mesh_ptr)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+
+        if (BoundaryBlock==true) proceed_with_calculations=false;
+      }
+
+      if (node->Thread!=ThisThread) proceed_with_calculations=false;
+
+      bool CellProcessingFlagTable=false;
+
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+      if (proceed_with_calculations==true) {
+
+
+
+        CellData_TH.clean();
+
+        CellProcessingFlagTable=ProcessCell(i,j,k,node,&CellData_TH,0,1,MassTable,ChargeTable,
+          PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,ProcessCellData);
+      }
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+      if (CellProcessingFlagTable==true) { // (CellData!=NULL) {
+        double *target,*source;
+        int idim,ii;
+
+
+
+            //loop through all non-updated corners to find that one which is not locked
+            for (int icor=0;icor<8;icor++) {
+
+
+
+
+                ParticleEnergyTable[this_thread_id]+=CellData_TH.ParticleEnergy;
+
+                for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+                  if (CellData_TH.cflCell[iSp]>cflTable[this_thread_id][iSp]) cflTable[this_thread_id][iSp]=CellData_TH.cflCell[iSp];
+                }
+
+                target=CellData_TH.CornerData[icor].CornerJ_ptr;
+                source=CellData_TH.CornerData[icor].CornerJ;
+
+                for (idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+                target=CellData_TH.CornerData[icor].CornerMassMatrix_ptr;
+                source=CellData_TH.CornerData[icor].CornerMassMatrix;
+
+                for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+                if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+                  target=CellData_TH.CornerData[icor].SpecData_ptr;
+                  source=CellData_TH.CornerData[icor].SpecData;
+
+                  for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+                }
+
+
+
+
+            }
+
+
+
+      }
+
+      //increment the time counter
+#ifndef __CUDA_ARCH__
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+        node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+      }
+#endif
+    }
+
+    };
+
+
+    for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
+#if _CUDA_MODE_ == _OFF_
+      PrcessCellSubset(di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+
+#else
+      ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+      ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+      kernel_6<<<40,200>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+
+
+
+//      kernel_6<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+      cudaDeviceSynchronize();
+#endif
+
+    }
+
+
+
+
+
+  //reduce the particle energy table
+  for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
+
+  //find the max cfl among all threads
   for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) { 
     cfl_process[iSp]=cflTable[0][iSp];
     for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp]; 
   }
+
+
+  //aeallocate temp buffers
+  amps_free_managed(cflTable[0]);
+  amps_free_managed(cflTable);
+  amps_free_managed(ParticleEnergyTable);
+
+
 
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:

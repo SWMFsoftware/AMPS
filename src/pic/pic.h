@@ -2043,9 +2043,21 @@ namespace PIC {
 
     // Operations related to the individual particle weight correction    
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetIndividualStatWeightCorrection(long int ptr) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      #else 
+      union {double res;char buf[sizeof(double)];}; 
+      char *source,*target;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+      target=buf;
+
+      memcpy(target,source,sizeof(double));
+      return res;
+      #endif 
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       return 1;
     #else
@@ -2053,9 +2065,21 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetIndividualStatWeightCorrection(byte *ParticleDataStart) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       return *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      #else
+      union {double res;char buf[sizeof(double)];};
+      char *source,*target;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+      target=buf;
+
+      memcpy(target,source,sizeof(double));
+      return res;
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       return 1;
     #else
@@ -2063,6 +2087,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,long int ptr) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -2075,7 +2100,14 @@ namespace PIC {
     #endif
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+      #else 
+      char *source=(char*)&WeightCorrectionFactor;
+      char *target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+
+      memcpy(target,source,sizeof(double));
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       exit(__LINE__,__FILE__,"Error: SetIndividualStatWeightCorrection cannot be used with _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_");
     #else
@@ -2083,6 +2115,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,byte *ParticleDataStart) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -2095,7 +2128,14 @@ namespace PIC {
     #endif
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+      #else 
+      char *source=(char*)&WeightCorrectionFactor;
+      char *target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+   
+      memcpy(target,source,sizeof(double)); 
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       exit(__LINE__,__FILE__,"Error: SetIndividualStatWeightCorrection cannot be used with _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_");
     #else
@@ -6888,6 +6928,7 @@ public:
     double SpecData[10*_TOTAL_SPECIES_NUMBER_];
     PIC::Mesh::cDataCornerNode *CornerNode;
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     void clean() {
       int i;
 
@@ -6896,6 +6937,7 @@ public:
       for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     void add(cCornerData* p) {
       int i;
       double *ptr;
@@ -6911,6 +6953,7 @@ public:
   double ParticleEnergy;
   double cflCell[PIC::nTotalSpecies];
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clean() {
     ParticleEnergy=0.0;
 
@@ -6947,12 +6990,25 @@ public:
     }
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cCellData() {
     clean();
   }
 };
 
-bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer);
+class cProcessCellData {
+public:
+  int MagneticField_RelativeOffset;
+  int ElectricField_RelativeOffset;
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cProcessCellData() {
+    MagneticField_RelativeOffset=-1,ElectricField_RelativeOffset=-1;
+  } 
+};
+
+_TARGET_HOST_ _TARGET_DEVICE_
+bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn=cProcessCellData());
           
             typedef void (*fUserDefinedFieldBC)();
             typedef long int (*fUserDefinedParticleBC)();
@@ -6963,21 +7019,21 @@ bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDa
             extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
             extern int CurrentEOffset; 
             extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetE_HalfTimeStep;
-            extern int CurrentBOffset;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int CurrentBOffset;
             extern _TARGET_DEVICE_ _CUDA_MANAGED_ int PrevBOffset;
-            extern int OffsetB_corner;            
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> *Solver;
             extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> *PoissonSolver;
             //extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
 
             //extern cLinearSystemCornerNode Solver;
             extern bool DoDivECorrection;
-            extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
-            extern int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
-            extern int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
-            extern int MassMatrixOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int MassMatrixOffsetIndex;
             extern int * SpeciesDataIndex;
-            extern int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
           
             extern int netChargeOldIndex,netChargeNewIndex, divEIndex, phiIndex;
             extern double cDt;
@@ -7040,7 +7096,10 @@ bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDa
             extern fUserDefinedInitNewBlocks initNewBlocks;
 
             void testValueAtGivenPoint();
+
             void UpdateJMassMatrix();
+            void UpdateJMassMatrixGPU();
+
             void InterpolateB_C2N();
             void InterpolateB_N2C();
 	    void InterpolateB_N2C_Block(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
