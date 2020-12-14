@@ -53,6 +53,7 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
 
     fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
     fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+    fwrite(&RandomNumberGenerator::rndLastSeed,sizeof(RandomNumberGenerator::rndLastSeed),1,fRestart);
   }
   else {
     pipe.openSend(0);
@@ -188,6 +189,7 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
 
   fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
   fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+  fread(&RandomNumberGenerator::rndLastSeed,sizeof(RandomNumberGenerator::rndLastSeed),1,fRestart);
 
   SamplingData::ReadBlock(PIC::Mesh::mesh.rootTree,fRestart);
   fclose(fRestart);
