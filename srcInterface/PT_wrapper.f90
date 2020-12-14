@@ -156,7 +156,7 @@ contains
     !-------------------------------------------------------------------------
     !!! PT should save restart files !!!
 
-  !  call amps_save_restart()
+    call amps_save_restart()
     
   end subroutine PT_save_restart
 
