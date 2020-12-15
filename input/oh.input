@@ -63,6 +63,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   BlockCells=6,6,6
   GhostCells=2,2,2
 
+  define _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE_ _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE__CONTINUE_
   define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
 
   NastranSurfaceUserData=on !!!on, off
