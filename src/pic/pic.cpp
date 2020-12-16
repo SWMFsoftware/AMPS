@@ -5,6 +5,9 @@
 //====================================================
 //the general functions for the pic solver
 
+#include <dirent.h>
+#include <errno.h>
+
 #include "pic.h"
 #include "global.h"
 #include "PhotolyticReactions.h"
@@ -1955,6 +1958,22 @@ void PIC::Init_BeforeParser() {
   if (RequestedParticleBufferLength!=-1) PIC::ParticleBuffer::Init(RequestedParticleBufferLength);
 */
 
+  //test existance of a directory 
+  auto test_directory = [&] (const char *dir_name,const char *base) {
+    bool res=false;
+    DIR* dir;
+    char fullname[1000];
+
+    sprintf(fullname,"%s/%s",base,dir_name);
+    dir=opendir(fullname);
+
+    if (dir!=NULL) {
+      res=true;
+      closedir(dir);
+    }
+
+    return res;
+  };
 
   //set up the DiagnospticMessageStream
   if (strcmp(PIC::DiagnospticMessageStreamName,"stdout")!=0) {
@@ -2001,8 +2020,10 @@ void PIC::Init_BeforeParser() {
       sprintf(cmd,"mkdir -p %s",PIC::DiagnospticMessageStreamName);
       system(cmd);
 
-      sprintf(cmd,"rm -rf %s/*",PIC::DiagnospticMessageStreamName);
-      system(cmd);
+      if ((test_directory("restartOUT",PIC::DiagnospticMessageStreamName)==false)&&(test_directory("restartIN",PIC::DiagnospticMessageStreamName)==false)) {
+        sprintf(cmd,"rm -rf %s/*",PIC::DiagnospticMessageStreamName);
+        system(cmd);
+      }
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -2057,9 +2078,12 @@ void PIC::Init_BeforeParser() {
       //remove the content of the output directory
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
       system(cmd);
-
-      sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
-      system(cmd);
+      
+      //check existance of the restart files directories. In case they are not present, clean the directory
+      if ((test_directory("restartOUT","PT")==false)&&(test_directory("restartIN","PT")==false)) {
+        sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
+        system(cmd);
+      }
     }
   }
 
