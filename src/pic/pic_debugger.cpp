@@ -620,6 +620,34 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
 }
 
 
+unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nline,const char* fname) {
+  CRC32 Checksum;
+  PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
+  int i,j,k,ptr;
+
+  static int CallCounter=0;
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+    if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+       ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+       while (ptr!=-1) {
+         PIC::ParticleBuffer::GetParticleSignature(ptr,&Checksum); 
+         ptr=PIC::ParticleBuffer::GetNext(ptr);
+       }
+    }
+  }
+
+  char msg[500];
+
+  sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+  Checksum.PrintChecksum(msg);
+
+  CallCounter++;
+
+  return Checksum.checksum();
+}
+
 //=====================================================================================
 //get signature describe the particle population
 unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,const char* fname,FILE *fout) {
