@@ -635,6 +635,13 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nlin
          PIC::ParticleBuffer::GetParticleSignature(ptr,&Checksum); 
          ptr=PIC::ParticleBuffer::GetNext(ptr);
        }
+
+       ptr=node->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]; 
+
+       while (ptr!=-1) {
+         PIC::ParticleBuffer::GetParticleSignature(ptr,&Checksum);
+         ptr=PIC::ParticleBuffer::GetNext(ptr);
+       }
     }
   }
 
