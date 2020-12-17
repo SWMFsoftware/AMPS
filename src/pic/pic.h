@@ -4849,6 +4849,7 @@ namespace PIC {
     unsigned long int GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname,FILE *fout=NULL);
     unsigned long int GetParticlePopulationLocationSignature(long int nline,const char* fname,FILE *fout=NULL);
     unsigned long int GetParticlePopulationVelocitySignature(long int nline,const char* fname,FILE *fout=NULL);
+    unsigned long int GetParticlePopulationSignatureAll(long int nline,const char* fname);
 
     //get signature of a data buffer
     template <typename  T>
