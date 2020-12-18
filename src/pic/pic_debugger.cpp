@@ -636,7 +636,14 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nlin
          ptr=PIC::ParticleBuffer::GetNext(ptr);
        }
 
+   
+       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+       PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=node->block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+     
+       ptr=ThreadTempParticleMovingData->first;
+       #else
        ptr=node->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]; 
+       #endif
 
        while (ptr!=-1) {
          PIC::ParticleBuffer::GetParticleSignature(ptr,&Checksum);
