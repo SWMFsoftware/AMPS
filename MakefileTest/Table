@@ -122,7 +122,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=Titan
+Name=Titan@@(0+) 
 Time=3
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+amps-gpu)
