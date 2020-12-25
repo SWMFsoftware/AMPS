@@ -47,6 +47,9 @@ int AMPS2SWMF::iSession=-1;
 double AMPS2SWMF::swmfTimeSimulation=-1.0;
 bool AMPS2SWMF::swmfTimeAccurate=true;
 
+//amps_init_flag
+bool AMPS2SWMF::amps_init_flag=false;
+
 
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
@@ -244,13 +247,10 @@ extern "C" {
     list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
 #endif
 
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
-    static bool initFlag=false;
-    if (!initFlag){
+    if (AMPS2SWMF::amps_init_flag==false) {
       amps_init();
-      initFlag = true; 
+      AMPS2SWMF::amps_init_flag=true; 
     }
-#endif
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     for (f=PIC::CPLR::SWMF::SendCenterPointData.begin();f!=PIC::CPLR::SWMF::SendCenterPointData.end();f++) {
@@ -267,8 +267,6 @@ extern "C" {
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit) {
     using namespace AMPS2SWMF;
 
-    static bool InitFlag=false;
-
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
     
     auto coupler_swmf = [&] () {
@@ -281,9 +279,9 @@ extern "C" {
       }
       else { 
         //init AMPS
-        if (InitFlag==false) {
+        if (AMPS2SWMF::amps_init_flag==false) {
           amps_init();
-          InitFlag=true;
+          AMPS2SWMF::amps_init_flag=true;
         }
       
         //determine whether to proceed with the current iteraction

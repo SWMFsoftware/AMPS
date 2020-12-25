@@ -208,6 +208,13 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
   return ModelParticlesInjectionRate;
 }
 
+void init_from_restart(){
+
+  printf("init from restart called!\n");
+  PIC::Restart::SamplingData::Read("PT/restartIN/restart_field.dat");
+  PIC::Restart::ReadParticleData("PT/restartIN/restart_particle.dat");
+}
+
 
 void amps_init_mesh(){
 
@@ -377,6 +384,12 @@ void amps_init() {
 
      //pre-populate the domain
      PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,SetDefaultOriginID);
+   }
+
+   //init from restart file if needed
+   if (PIC::Restart::LoadRestartSWMF==true) {
+     init_from_restart();
+     PIC::Restart::LoadRestartSWMF=false;
    }
 
 }

@@ -28,6 +28,9 @@ namespace AMPS2SWMF {
   extern double swmfTimeSimulation;
   extern bool swmfTimeAccurate;
 
+  //amps_init_flag
+  extern bool amps_init_flag;
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 
