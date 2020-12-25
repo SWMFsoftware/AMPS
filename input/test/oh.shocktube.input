@@ -59,6 +59,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
 
+  RequestedParticleBufferLength=2000000
 
   BlockCells=6,6,6
   GhostCells=2,2,2

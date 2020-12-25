@@ -351,7 +351,7 @@ void amps_init() {
    if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
    
    //init the particle buffer
-   PIC::ParticleBuffer::Init(20000000);
+   //PIC::ParticleBuffer::Init(20000000);
 
    // change global time step if it's set in the input file
    if(OH::UserGlobalTimeStep > 0.0){
