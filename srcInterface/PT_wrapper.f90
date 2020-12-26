@@ -70,7 +70,10 @@ contains
 
     !-------------------------------------------------------------------------
     ComponentName=CompInfo%name
-    call amps_set_component_name(ComponentName)  
+
+    if (CompInfo%use) then
+      call amps_set_component_name(ComponentName)  
+    endif
 
     select case(TypeAction)
     case('VERSION')
