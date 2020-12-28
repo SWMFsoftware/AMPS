@@ -5942,6 +5942,7 @@ namespace PIC {
 
     void ReadParticleData(const char*);
     void ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
+    long int GetRestartFileParticleNumber(const char *fname);
 
     //calcualte the check sum of the save/read particle data
     unsigned long GetParticleDataCheckSum();

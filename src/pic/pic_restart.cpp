@@ -355,6 +355,50 @@ void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
 }
 
 
+long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
+  long int res=0;
+  FILE* fRestart;
+
+  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> SearchBlock;
+
+
+  SearchBlock = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) -> void {
+    //read the data
+    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      int nTotalParticleNumber=0;
+
+      fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
+      res+=nTotalParticleNumber;
+
+      if (nTotalParticleNumber!=0) {
+        //skip the data for this block
+        fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+      }
+    }
+    else {
+      for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SearchBlock(node->downNode[nDownNode]);
+    }
+  };
+
+  fRestart=fopen(fname,"r"); 
+
+  if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
+
+  //read the end-of-the-user-data-marker
+  char msg[UserAdditionalRestartDataCompletedMarkerLength];
+  fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+ 
+  if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
+    exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
+  }
+  
+  SearchBlock(PIC::Mesh::mesh.rootTree);
+  fclose(fRestart);
+
+  return res;
+}
+
 void PIC::Restart::ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
   //read the data
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
