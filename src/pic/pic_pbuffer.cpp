@@ -41,7 +41,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   //allocate the memory for the buffer
   MaxNPart=BufrerLength;
-  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
+  ParticleDataBuffer=new PIC::ParticleBuffer::byte [ParticleDataLength*MaxNPart];
 
   if (ParticleDataBuffer==NULL) {
     char msg[500];
