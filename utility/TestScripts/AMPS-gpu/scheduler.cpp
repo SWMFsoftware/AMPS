@@ -147,9 +147,9 @@ int main(int argc, char* argv[]) {
     index_gcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-//      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
 
-      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
+//      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
 
       index_gcc_max=index++;
     }

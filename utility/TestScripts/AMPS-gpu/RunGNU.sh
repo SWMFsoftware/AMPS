@@ -1,5 +1,4 @@
 #!/bin/csh
-module load mpi
 
 set WorkDir = $HOME
 source $WorkDir/module/gnu 
