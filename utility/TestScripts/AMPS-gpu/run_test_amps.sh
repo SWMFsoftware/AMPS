@@ -95,6 +95,7 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 #./Config.pl -f-link-option=-lmpi_cxx
 
 ./Config.pl -f-link-option=-lstdc++
+./Config.pl -cpplib-rm=-lmpi_cxx
 #./Config.pl -compiler-option=-g
 
 utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
@@ -155,7 +156,12 @@ utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
 #execute test with CUDA - at this point that is the only test that will be executed with CUDA. More tests will be added in the Table
 module load mpi
-make test_fast-wave -j >>& test_amps.log 
+make test_fast-wave_compile -j >>& test_amps.log 
+make test_fast-wave_rundir  >>& test_amps.log
+cd run_test_fast-wave
+mpirun -np 1 ./amps >>& test_amps.log
+cd ..
+make test_fast-wave_check >>& test_amps.log
 
 ######################## Install Intel ######################################################### 
 cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
@@ -179,6 +185,8 @@ rm -rf runlog scheduler
 cp AMPS/utility/TestScripts/AMPS-gpu/scheduler.cpp .
 g++ ./scheduler.cpp -g -o scheduler -lpthread
 #./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -intel -gcc -pgi -nvcc > runlog 
+
+
 ./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -gcc  -nvcc > runlog
 
 
