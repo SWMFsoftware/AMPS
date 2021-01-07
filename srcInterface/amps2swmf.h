@@ -34,6 +34,10 @@ namespace AMPS2SWMF {
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
 
+  //hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
+  typedef void (*fUserFinalizeSimulation)(); 
+  extern fUserFinalizeSimulation UserFinalizeSimulation;
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 

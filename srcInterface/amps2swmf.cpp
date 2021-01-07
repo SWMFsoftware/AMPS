@@ -53,6 +53,9 @@ bool AMPS2SWMF::amps_init_flag=false;
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
+//hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
+AMPS2SWMF::fUserFinalizeSimulation AMPS2SWMF::UserFinalizeSimulation=NULL;
+
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
@@ -388,6 +391,9 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
     PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
     #endif
+
+    //call a user-defined function to finalize the application
+    if (AMPS2SWMF::UserFinalizeSimulation!=NULL) AMPS2SWMF::UserFinalizeSimulation();
 
     //save particle trajectory file
     #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_

@@ -26,7 +26,8 @@ int OH::Output::ohSourceDensityOffset =-1;
 int OH::Output::ohSourceMomentumOffset=-1;
 int OH::Output::ohSourceEnergyOffset  =-1;
 
-
+//timers
+PIC::Debugger::cTimer OH::ReactionProcessorTimer(_PIC_TIMER_MODE_HRES_);
 
 
 void OH::Output::PrintVariableList(FILE* fout,int DataSetNumber) {
@@ -322,6 +323,8 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
   double xParent[3],vParent[3],ParentLifeTime,ParentTimeStep;
   bool ReactionOccurredFlag;
 
+  ReactionProcessorTimer.Start();
+
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   spec=PIC::ParticleBuffer::GetI(ParticleData);
   PIC::ParticleBuffer::GetX(xParent,ParticleData);
@@ -579,8 +582,15 @@ auto SimulateReaction = [&] () {
     if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
     FirstParticleCell=ptr;
   }
+
+  ReactionProcessorTimer.UpdateTimer();
 }
 
+
+void OH::FinalizeSimulation() {
+  //print timing 
+  ReactionProcessorTimer.PrintMeanMPI("AMPS/OH: time used by OH::Loss::ReactionProcessor()");
+}
 
 void OH::Init_BeforeParser(){
   OH::InitPhysicalSpecies();

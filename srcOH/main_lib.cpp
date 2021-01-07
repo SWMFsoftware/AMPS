@@ -25,6 +25,8 @@
 #include "constants.h"
 #include "OH.h"
 
+#include "amps2swmf.h"
+
 
 bool flag_prepopulate_domain=false;
 double density_prepopulate_domain=0.0;
@@ -239,7 +241,8 @@ void amps_init_mesh(){
   PIC::Init_BeforeParser();
   OH::Init_AfterParser();
   
-  
+  //init the hook to finalized the AMPS/OH application run
+  AMPS2SWMF::UserFinalizeSimulation=OH::FinalizeSimulation;  
   
   //init the solver
   PIC::Mesh::initCellSamplingDataBuffer();
