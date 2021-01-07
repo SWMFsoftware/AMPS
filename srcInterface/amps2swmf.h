@@ -31,6 +31,9 @@ namespace AMPS2SWMF {
   //amps_init_flag
   extern bool amps_init_flag;
 
+  //AMPS execution timer 
+  extern PIC::Debugger::cTimer ExecutionTimer; 
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 

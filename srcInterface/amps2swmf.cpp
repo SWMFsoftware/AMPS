@@ -50,6 +50,8 @@ bool AMPS2SWMF::swmfTimeAccurate=true;
 //amps_init_flag
 bool AMPS2SWMF::amps_init_flag=false;
 
+//amps execution timer 
+PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
@@ -341,7 +343,10 @@ do {
     counter++;
 
     if (call_amps_flag==true) {
+      ExecutionTimer.Start();
       amps_time_step();
+      ExecutionTimer.UpdateTimer();
+
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
 }
@@ -373,6 +378,9 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
   void amps_finalize_() {
     char fname[_MAX_STRING_LENGTH_PIC_];
+
+    //print the executed time 
+     AMPS2SWMF::ExecutionTimer.PrintMeanMPI("AMPS execution time avaraged over all MPI processes involved in the simulation");
 
     //output the test run particle data
     sprintf(fname,"%s/amps.dat",PIC::OutputDataFileDirectory);
