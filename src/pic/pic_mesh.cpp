@@ -1738,10 +1738,53 @@ void PIC::Mesh::SetCenterNodeAssociatedDataValue(double NewValue,int ResetElemen
 
 
 
+//====================================================
+//return the total number of allocated cells in the entire domain
+int PIC::Mesh::GetAllocatedCellTotalNumber() { 
+  std::function<int(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> GetAllocatedCellNumberInBlock;
+  int res=0;
+
+  GetAllocatedCellNumberInBlock = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> int {
+    int res=0;
+
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+      PIC::Mesh::cDataBlockAMR *block; 
+      PIC::Mesh::cDataCenterNode *cell;
+
+      if (((block=startNode->block)!=NULL) && (startNode->Thread==PIC::ThisThread)) {
+        for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+            for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+              cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)); 
+              if (cell->GetAssociatedDataBufferPointer()!=NULL) res++; 
+            }
+          }
+        }
+      }
+    }
+    else {
+      int iDownNode;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+      for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+        res+=GetAllocatedCellNumberInBlock(downNode);
+      }
+    }
 
 
+    if (startNode==PIC::Mesh::mesh.rootTree) {
+      //sum the number of cells across all subdomains 
+      int t;
 
+      MPI_Allreduce(&res,&t,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+      res=t;
+    }
 
+    return res;
+  };  
+
+  return GetAllocatedCellNumberInBlock(mesh.rootTree);
+}
 
 
 

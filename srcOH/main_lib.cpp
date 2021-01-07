@@ -267,7 +267,9 @@ void amps_init_mesh(){
     PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
   }
 
-  PIC::Mesh::mesh.memoryAllocationReport();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh.memoryAllocationReport();
+  }
   
   
   if (PIC::Mesh::mesh.ThisThread==0) {
@@ -284,8 +286,10 @@ void amps_init_mesh(){
   
   PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
   
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh.memoryAllocationReport();
+    PIC::Mesh::mesh.GetMeshTreeStatistics();
+  }
   
 #ifdef _CHECK_MESH_CONSISTENCY_
   PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
@@ -297,9 +301,14 @@ void amps_init_mesh(){
   //initialize the blocks
   PIC::Mesh::mesh.AllowBlockAllocation=true;
   PIC::Mesh::mesh.AllocateTreeBlocks();
+
+  int nTotalCells=PIC::Mesh::GetAllocatedCellTotalNumber();
+  if (PIC::ThisThread==0) printf("$PREFIX: The total number of cells: %i\n",nTotalCells); 
   
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh.memoryAllocationReport();
+    PIC::Mesh::mesh.GetMeshTreeStatistics();
+  }
   
 #ifdef _CHECK_MESH_CONSISTENCY_
   PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);

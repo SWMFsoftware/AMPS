@@ -2133,6 +2133,7 @@ namespace PIC {
     void Init(long int);
     long int GetMaxNPart();
     long int GetAllPartNum();
+    long int GetTotalParticleNumber();
     long int GetParticleDataLength();
 
     long int GetNewParticle(bool RandomThreadOpenMP=false);
@@ -2170,6 +2171,9 @@ namespace PIC {
   namespace Mesh {
     class cDataCenterNode;
     class cDataCornerNode;
+
+    //return the total number of allocated cells in the entire domain 
+    int GetAllocatedCellTotalNumber();
 
     //get the AMR tree signature
     unsigned int GetMeshTreeSignature(void *startNode,int nline,const char* fname);

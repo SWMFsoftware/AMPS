@@ -326,8 +326,12 @@ int PIC::TimeStep() {
     
     //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  ParticleExchangeTime=MPI_Wtime();
-  PIC::Parallel::ExchangeParticleData();
+   ParticleExchangeTime=MPI_Wtime();
+   PIC::Parallel::ExchangeParticleData();
+
+   long int total_particle_number=ParticleBuffer::GetTotalParticleNumber();
+   if (ThisThread==0) printf("$PREFIX: The total number of particles in the simulation: %ld\n",total_particle_number);   
+
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 #endif  
