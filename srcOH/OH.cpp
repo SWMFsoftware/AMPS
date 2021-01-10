@@ -782,14 +782,6 @@ void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec) {
   static const float c=0.5*1.674E-27*6.2415E15;
 
   //evaluate ppmax
-  v2_v=_mm_mul_ps(vh_v,vh_v);
-  v2_v=_mm_hadd_ps(v2_v,v2_v);
-  v2_v=_mm_hadd_ps(v2_v,v2_v);
-  _mm_store_ss(&urel2,v2_v);
-
-  urel2+=limit*limit;
-  urel=sqrt(urel2);
-
   v2=1.0/4;
   urel=1.0/2.0+sqrt(vh_v[0]*vh_v[0]+vh_v[1]*vh_v[1]+vh_v[2]*vh_v[2]);
   urel2=urel*urel;
@@ -805,25 +797,15 @@ void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec) {
       vp_v=_mm_fmsub_ps(rnd_v,width_v,shift_v);
 
       //parameter of the exponent
-      v2_v=_mm_mul_ps(vp_v,vp_v);
-
-      // xx = { xx3, xx2, xx1, xx0 }
-      // xx=_mm_hadd_ps(xx,xx);
-      // xx = {xx3+xx2, xx1+xx0, xx3+xx2, xx1+xx0}
-      // xx=_mm_hadd_ps(xx,xx);
-      // xx = {xx2+xx3+xx1+xx0, xx3+xx2+xx1+xx0, xx3+xx2+xx1+xx0, xx3+xx2+xx1+xx0}
-
-      v2_v=_mm_hadd_ps(v2_v,v2_v);
-      v2_v=_mm_hadd_ps(v2_v,v2_v);
-      _mm_store_ss(&v2,v2_v);
+      v2_v=_mm_dp_ps(vp_v,vp_v,0xff);
     }
-    while (v2>limit2);
+    while (v2_v[0]>limit2);
+
+    v2=v2_v[0];
 
     //relative speed
     v_v=_mm_sub_ps(vh_v,vp_v);
-    v2_v=_mm_mul_ps(v_v,v_v);
-    v2_v=_mm_hadd_ps(v2_v,v2_v);
-    v2_v=_mm_hadd_ps(v2_v,v2_v);
+    v2_v=_mm_dp_ps(v_v,v_v,0xff);
     _mm_store_ss(&urel2,v2_v);
 
     urel=sqrtf(urel2);
