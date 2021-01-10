@@ -453,7 +453,7 @@ auto SimulateReaction = [&] () {
     PIC::Mesh::cDataCenterNode *CenterNode;
     char *offset;
 
-    CenterNode=PIC::Mesh::Search::FindCell(xParent); ///node->block->GetCenterNode(nd);
+    CenterNode=PIC::Mesh::Search::FindCell(xParent,node); ///node->block->GetCenterNode(nd);
     offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
 
     double vh2 = 0.0, vp2 = 0.0;

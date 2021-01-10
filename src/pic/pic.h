@@ -3141,6 +3141,7 @@ namespace PIC {
       //find cell nad block
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *FindBlock(double *x);
       PIC::Mesh::cDataCenterNode *FindCell(double *x);
+      PIC::Mesh::cDataCenterNode *FindCell(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
     }
     //namespace Search --------------------------------------------------------
