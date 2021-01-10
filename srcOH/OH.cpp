@@ -29,7 +29,6 @@ int OH::Output::ohSourceEnergyOffset  =-1;
 //timers
 PIC::Debugger::cTimer OH::ReactionProcessorTimer(_PIC_TIMER_MODE_HRES_);
 
-
 void OH::Output::PrintVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"ohSourceDensity\",\"ohSourceMomentumX\",\"ohSourceMomentumY\",\"ohSourceMomentumZ\",\"ohSourceEnergy\"");
 
@@ -589,7 +588,7 @@ auto SimulateReaction = [&] () {
 
 void OH::FinalizeSimulation() {
   //print timing 
-  ReactionProcessorTimer.PrintMeanMPI("AMPS/OH: time used by OH::Loss::ReactionProcessor()");
+  ReactionProcessorTimer.PrintMeanMPI("$PREFIX: time used by OH::Loss::ReactionProcessor()");
 }
 
 void OH::Init_BeforeParser(){
@@ -762,6 +761,90 @@ double OH::VpDistribution(double *vp, double *vh, double *up, double vth)
 }
 
 // sampling the 3D distribution function from Malama 1991 using the Accept-Reject Method
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec) {
+  float vth = sqrt(2.0*Kbol*tp/PIC::MolecularData::GetMass(spec));
+
+  //f=|urel|*sigma*expt(-v^2)
+  //parameter of the exponent
+  const float limit=1.6;
+  const float limit2=limit*limit;
+
+  const static __m128 width_v=_mm_setr_ps(2.0*limit,2.0*limit,2.0*limit,0.0);
+  const static __m128 shift_v=_mm_setr_ps(limit,limit,limit,0.0);
+
+  __m128 vp_v,rnd_v,v_v,v2_v;
+  float c1,pp,ppmax,sigma,erel,v2,urel2,urel;
+
+  __m128 vh_v=_mm_setr_ps((vh[0]-up[0])/vth,(vh[1]-up[1])/vth,(vh[2]-up[2])/vth,0.0);
+
+  float vth2=vth*vth;
+  static const float c=0.5*1.674E-27*6.2415E15;
+
+  //evaluate ppmax
+  v2_v=_mm_mul_ps(vh_v,vh_v);
+  v2_v=_mm_hadd_ps(v2_v,v2_v);
+  v2_v=_mm_hadd_ps(v2_v,v2_v);
+  _mm_store_ss(&urel2,v2_v);
+
+  urel2+=limit*limit;
+  urel=sqrt(urel2);
+
+  v2=1.0/4;
+  urel=1.0/2.0+sqrt(vh_v[0]*vh_v[0]+vh_v[1]*vh_v[1]+vh_v[2]*vh_v[2]);
+  urel2=urel*urel;
+  erel=c*urel2*vth2;
+  c1=4.15f-0.531f*logf(erel);
+  sigma=c1*c1*powf(1.0f-expf(-67.3f/erel),4.5f); //*1E-20; // cross section in m^2
+
+  ppmax=urel*sigma*exp(-v2);
+
+  do {
+    do {
+      rnd_v=_mm_setr_ps(rnd(),rnd(),rnd(),0.0);
+      vp_v=_mm_fmsub_ps(rnd_v,width_v,shift_v);
+
+      //parameter of the exponent
+      v2_v=_mm_mul_ps(vp_v,vp_v);
+
+      // xx = { xx3, xx2, xx1, xx0 }
+      // xx=_mm_hadd_ps(xx,xx);
+      // xx = {xx3+xx2, xx1+xx0, xx3+xx2, xx1+xx0}
+      // xx=_mm_hadd_ps(xx,xx);
+      // xx = {xx2+xx3+xx1+xx0, xx3+xx2+xx1+xx0, xx3+xx2+xx1+xx0, xx3+xx2+xx1+xx0}
+
+      v2_v=_mm_hadd_ps(v2_v,v2_v);
+      v2_v=_mm_hadd_ps(v2_v,v2_v);
+      _mm_store_ss(&v2,v2_v);
+    }
+    while (v2>limit2);
+
+    //relative speed
+    v_v=_mm_sub_ps(vh_v,vp_v);
+    v2_v=_mm_mul_ps(v_v,v_v);
+    v2_v=_mm_hadd_ps(v2_v,v2_v);
+    v2_v=_mm_hadd_ps(v2_v,v2_v);
+    _mm_store_ss(&urel2,v2_v);
+
+    urel=sqrtf(urel2);
+
+    erel=c*urel2*vth2;
+    c1=4.15f-0.531f*logf(erel);
+    sigma=c1*c1*powf(1.0f-expf(-67.3f/erel),4.5f); //*1E-20; // cross section in m^2
+
+    pp=urel*sigma*expf(-v2);
+  }
+  while (rnd()>pp/ppmax);
+
+  alignas(64) float vhf[3];
+
+  _mm_store_ps(vhf,vh_v);
+
+  vp[0]=vhf[0]*vth+up[0];
+  vp[1]=vhf[1]*vth+up[1];
+  vp[2]=vhf[2]*vth+up[2];
+}
+#else
 void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec)
 {
   int accepted = 0;
@@ -781,7 +864,7 @@ void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec)
     }
   }
 }
-
+#endif
 //=====================================================================================================
 //sampling of the ENAs density individually for each origin region
 int OH::Sampling::OriginLocation::nSampledOriginLocations=-1;
