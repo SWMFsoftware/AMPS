@@ -289,11 +289,11 @@ void newMars::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double 
   //stored the interpolated data in the associated data buffer
     if (_C_SPEC_>=0) {
         *(_C_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
     if (_O_SPEC_>=0) {
         *(_O_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
 
   *((double*)(maxLocalCellOxigenProductionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=maxTheoreticalLocalInjectionRate;
