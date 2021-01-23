@@ -3582,7 +3582,7 @@ Check=
 
 
 >>>mkdir ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files
->>>cp ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/* ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files  
+>>>cp ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/*.dat ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files  
 
 >>>@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/ReduceFile.pl ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/pic.H2O.s=0.out=0.dat 1000
 >>>-@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/RemoveColumn.pl -c=5 ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/pic.H2O.s=0.out=0.dat.Reduced.Step=1000
