@@ -602,10 +602,10 @@ Compile=
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME}
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
->>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=ScChromo,e=MhdWavesPe,ng=2
->>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=ScChromo,e=MhdWavesPe,ng=2
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-borovikov,amps-test=on
->>>-cd SWMF-IH/SWMF;./Config.pl -g=SC:4,4,4,IH:4,4,4,SP:2000
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
