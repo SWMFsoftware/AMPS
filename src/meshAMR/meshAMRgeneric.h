@@ -710,6 +710,7 @@ public:
 //  bool ActiveFlag; //used to prevent repeatable de-allocation of the block from the stack
 
   bool IsUsedInCalculationFlag; //the flag is used to mark such tree nodes that are not used in calcualtions
+  bool IsGhostNodeFlag; //the flag is used to mark 'ghost' block used in implementing the periodic BC
 
   //descriptor of the cut-face list
   struct cCutFaceListDescriptor {
@@ -737,6 +738,7 @@ public:
 //    #endif
 
     IsUsedInCalculationFlag=true;
+    IsGhostNodeFlag=false;
 
     for (int i=0;i<1<<_MESH_DIMENSION_;i++) downNode[i]=NULL;
 

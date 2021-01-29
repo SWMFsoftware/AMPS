@@ -721,6 +721,7 @@ void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<c
 
   if ((NullNodeNum==8)&&(PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_)) {
     BlockVector.push_back(startNode);
+    startNode->IsGhostNodeFlag=true;
   }
 }
 

@@ -29,6 +29,10 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
 }
 
 long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+  return PrepopulateDomain(spec,NumberDensity,Velocity,Temperature,NULL,UserInitParticleFunction);
+}
+
+long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
@@ -85,6 +89,9 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
       nd=_getCenterNodeLocalNumber(iCell,jCell,kCell);
       cell=cellList[nd];
       xMiddle=cell->GetX();
+
+      //skip the cell if prepopulation of the cell is not needed
+      if (PrepopulateCellCondition!=NULL) if (PrepopulateCellCondition(iCell,jCell,kCell,node)==false) continue;
 
       //inject particles into the cell
       anpart=NumberDensity*cell->Measure/ParticleWeight;

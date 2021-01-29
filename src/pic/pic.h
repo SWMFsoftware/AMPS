@@ -6276,8 +6276,12 @@ namespace PIC {
 
   //prepopulate the domain
   namespace InitialCondition {
+    typedef bool (*fPrepopulateCellCondition)(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+
     //constant number density
+    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
     long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
+
     // put a single particle (for each thread)
     long int PutParticle(int spec, double *x, double *v);
   }
