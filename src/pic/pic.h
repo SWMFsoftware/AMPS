@@ -4667,6 +4667,28 @@ namespace PIC {
 
       cStencilGeneric() {flush();}
       cStencilGeneric(bool InitFlag) {if (InitFlag==true) flush();}
+
+      void MultiplyScalar(double a) {for (int i=0;i<Length;i++) Weight[i]*=a;}
+
+      void Add(cStencilGeneric *t) {
+        int i,j;
+        bool flag; 
+        T* el; 
+  
+        for (i=0;i<t->Length;i++) {
+          el=t->cell[i];
+
+          for (flag=false,j=0;j<Length;j++) if (cell[j]==el) {
+            flag=true;
+            Weight[j]+=t->Weight[i];
+            break;
+          }
+
+          if (flag==false) {
+            AddCell(t->Weight[i],el,t->LocalCellID[i]);
+          }
+        }
+      } 
     };
 
     //corner based interpolation routines
