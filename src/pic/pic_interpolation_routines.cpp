@@ -310,6 +310,39 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         }
 
         GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil);
+
+        /* the following is used to get continuous interpolsation
+        1. if the point of interpolation is in the "coarse" block -> use GetTriliniarInterpolationMutiBlockStencil()
+        2. if the point of interpolation is in the "fine" block ->
+           a) def "d" is the min length to the boundary of the block
+           b) if d<0.5 -> "coarse" stencil interpolation
+           c) if 0.5<d<1-> combination of "fine" and "coarse" stencils:
+             interpolation=(d-0.5)/0.5*fine stencil+[1-(d-0.5)/0.5)]*corse stencil
+           d) is 1<d -> "fine" stencil interpolation
+        */
+
+        double d,t;
+
+        d=iLoc;
+        if ((t=_BLOCK_CELLS_X_-iLoc)<d) d=t;
+
+        if (jLoc<d) d=jLoc;
+        if ((t=_BLOCK_CELLS_Y_-jLoc)<d) d=t;
+
+        if (kLoc<d) d=kLoc;
+        if ((t=_BLOCK_CELLS_Z_-kLoc)<d) d=t;
+
+        if ((0.5<d)&&(d<=1.0)) {
+          PIC::InterpolationRoutines::CellCentered::cStencil FineStencil;
+
+          GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil);
+
+          Stencil.MultiplyScalar(1.0-(d-0.5)/0.5);
+          FineStencil.MultiplyScalar((d-0.5)/0.5);
+
+          Stencil.Add(&FineStencil);
+        }
+
         return;
       }
 
