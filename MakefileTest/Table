@@ -600,7 +600,6 @@ Compile=
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
->>>-cd SWMF-IH/SWMF;./Config.pl -install -compiler=${FORTRAN_COMPILER_NAME},${C_COMPILER_NAME}
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -620,7 +619,7 @@ Rundir=
 Run=
 >>>@echo "test_SEP--focused_transport-IH-borovikov_run..." >> test_SEP--focused_transport-IH-borovikov.diff
 >>>@echo Test test_SEP--focused_transport-IH-borovikov has started: `date`
->>>-cd SWMF-IH/SWMF;${MAKE} test15_run
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog 
 >>>@echo "test_SEP--focused_transport-IH-borovikov_run... done" >> test_SEP--focused_transport-IH-borovikov.diff
 
 
