@@ -377,6 +377,9 @@ Run=
 >>>@echo "test_X-Wing_run..." >> test_X-Wing$(TESTX-Wing-REF).diff
 >>>@echo Test test_X-Wing has started: `date`
 >>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/X-Wing.mail  ${TESTX-WingDIR}/X-Wing.mail 
+>>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xe8cfde3e165d2d69.TriangulationExternalNormalVector.bin  ${TESTX-WingDIR}/amr.sig=0xe8cfde3e165d2d69.TriangulationExternalNormalVector.bin 
+>>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xebcfdf3f8bd4d9ea.CenterNodeMeasure.bin  ${TESTX-WingDIR}/amr.sig=0xebcfdf3f8bd4d9ea.CenterNodeMeasure.bin 
+>>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xebcfdf3f8bd4d9ea.mesh.bin  ${TESTX-WingDIR}/amr.sig=0xebcfdf3f8bd4d9ea.mesh.bin 
 
 >>>cd $(TESTX-WingDIR); ${MPIRUN} ./amps 
 >>>@echo "test_X-Wing_run... done" >> test_X-Wing$(TESTX-Wing-REF).diff
@@ -598,10 +601,10 @@ Compile=
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
->>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=ScChromo,e=MhdWavesPe,ng=2
->>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=ScChromo,e=MhdWavesPe,ng=2
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-borovikov,amps-test=on
->>>-cd SWMF-IH/SWMF;./Config.pl -g=SC:4,4,4,IH:4,4,4,SP:2000
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
@@ -3570,11 +3573,15 @@ Run=
 Check=
 >>>@echo "test_CG-BATSRUS-dust-coupling-test_check..." >> test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.diff
 
-<<<ifeq ($(wildcard output/test_CG-BATSRUS-dust-coupling/*.tmp),)
+>>>mkdir output/test_CG-BATSRUS-dust-coupling/temp_files
+>>>cp output/test_CG-BATSRUS-dust-coupling/*.ref_np* output/test_CG-BATSRUS-dust-coupling/temp_files
+
 >>>-@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/RemoveColumn.pl -c=5 output/test_CG-BATSRUS-dust-coupling/test_CG-BATSRUS-dust-coupling--pic.H2O.s=0.out=0.dat.Reduced.Step=1000${TESTCG-BATSRUS-dust-coupling-REF}.ref_np`ls ${TESTCG-BATSRUS-dust-couplingDIR}/PT/thread* |wc -l |tr -d ' '` 
 >>>-@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/RemoveColumn.pl -c=5 output/test_CG-BATSRUS-dust-coupling/test_CG-BATSRUS-dust-coupling--pic.DUST%0.s=2.out=0.dat.Reduced.Step=1000${TESTCG-BATSRUS-dust-coupling-REF}.ref_np`ls ${TESTCG-BATSRUS-dust-couplingDIR}/PT/thread* |wc -l |tr -d ' '` 
->>>-@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/RemoveColumn.pl -c=5 output/test_CG-BATSRUS-dust-coupling/test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.ref_np`ls ${TESTCG-BATSRUS-dust-couplingDIR}/PT/thread* |wc -l |tr -d ' '` 
-<<<endif
+
+
+>>>mkdir ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files
+>>>cp ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/*.dat ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files  
 
 >>>@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/ReduceFile.pl ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/pic.H2O.s=0.out=0.dat 1000
 >>>-@${TESTCG-BATSRUS-dust-couplingDIR}/../utility/RemoveColumn.pl -c=5 ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots/pic.H2O.s=0.out=0.dat.Reduced.Step=1000
@@ -3594,6 +3601,12 @@ Check=
 >>>output/test_CG-BATSRUS-dust-coupling/test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.ref_np`ls ${TESTCG-BATSRUS-dust-couplingDIR}/PT/thread* |wc -l |tr -d ' '` > test_CG-BATSRUS-dust-coupling--Particle${TESTCG-BATSRUS-dust-coupling-REF}.diff
 
 >>>@cat test_CG-BATSRUS-dust-coupling--H2O${TESTCG-BATSRUS-dust-coupling-REF}.diff test_CG-BATSRUS-dust-coupling--DUST${TESTCG-BATSRUS-dust-coupling-REF}.diff test_CG-BATSRUS-dust-coupling--Particle${TESTCG-BATSRUS-dust-coupling-REF}.diff > test_CG-BATSRUS-dust-coupling${TESTCG-BATSRUS-dust-coupling-REF}.diff
+
+>>>mv output/test_CG-BATSRUS-dust-coupling/temp_files/* output/test_CG-BATSRUS-dust-coupling
+>>>rm -rf output/test_CG-BATSRUS-dust-coupling/temp_files
+
+>>>mv ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files/* ${TESTCG-BATSRUS-dust-couplingDIR}/PT/plots 
+>>>rm -rf ${TESTCG-BATSRUS-dust-couplingDIR}/PT/temp_files
 
 >>>@ls -l test_CG-BATSRUS-dust-coupling--H2O${TESTCG-BATSRUS-dust-coupling-REF}.diff
 >>>@ls -l test_CG-BATSRUS-dust-coupling--DUST${TESTCG-BATSRUS-dust-coupling-REF}.diff
