@@ -2171,8 +2171,8 @@ public:
 
 
     //set the default value for the 'interpolation functions'
-    GetCenterNodesInterpolationCoefficients=NULL;
-    GetCornerNodesInterpolationCoefficients=NULL;
+    //GetCenterNodesInterpolationCoefficients=NULL;
+    //GetCornerNodesInterpolationCoefficients=NULL;
 
     localResolution=localResolutionFunction;
 
@@ -7472,8 +7472,6 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 #endif
 
 
-
-
                 //print the data stored in the 'center' nodes
                 #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
                 const int nMaxCenterInterpolationCoefficients=64;
@@ -7497,7 +7495,34 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 #endif
                   }
                   else {
-                    centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+	            if ((iNode==_BLOCK_CELLS_X_)|(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
+                      //the point is at the 'right' boundary of a block -> formally 'belongs' to the neib block 
+                      cTreeNodeAMR<cBlockAMR> *neibNode;
+
+                      neibNode=findTreeNode(xNode,startNode);
+
+                      if (neibNode->IsUsedInCalculationFlag==true) {
+                        centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,neibNode,nMaxCenterInterpolationCoefficients);
+                      }
+                      else {
+                        switch (_MESH_DIMENSION_) {
+                        case 1:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        case 2:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        case 3:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        default:
+                          exit(__LINE__,__FILE__,"error: out of range"); 
+                        }
+                      }
+                    }
+                    else { 
+                      centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                    }
                   }
 
                   if (centerNodeInterpolationStencilLength==-1) exit(__LINE__,__FILE__,"Error in interpolation of the 'center' node's data");
