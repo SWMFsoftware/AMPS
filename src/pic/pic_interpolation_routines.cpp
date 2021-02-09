@@ -816,6 +816,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
     else if (StencilNode->IsUsedInCalculationFlag==false) return_const_stencil=true;
 
     if (return_const_stencil==true) {
+      node=PIC::Mesh::mesh.findTreeNode(x,node);
       PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
       return;
     }
@@ -830,6 +831,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
         StencilTable[di][dj][dk].Stencil.AddCell(1.0,cell,nd);  
       }
       else {
+        node=PIC::Mesh::mesh.findTreeNode(x,node);
         PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
         return;
       }
@@ -848,6 +850,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
          StencilTable[di][dj][dk].Stencil.AddCell(1.0/8.0,cell,nd);
        }
        else {
+         node=PIC::Mesh::mesh.findTreeNode(x,node);
          PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
          return;
        }
