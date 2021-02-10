@@ -99,6 +99,8 @@ void fix_coords(double* x){
     //find refinement level at the location
   int iLevel = get_level(x);
 
+  return;
+
   if (iLevel == 1) return;
 
   double xShift[3] = {2*(x[0]-XMid[0])/dxCell, 2*(x[1]-XMid[1])/dxCell,2*(x[2]-XMid[2])/dxCell};
