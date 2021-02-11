@@ -109,7 +109,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
   int ThreadOpenMP=0;
   #endif
 
-
+  Stencil.flush();
 
   // macro switch is needed in the case some other interpolation is used
   // and interface function is not compiled
@@ -122,25 +122,15 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       if (node->block==NULL) {
         char msg[200];
 
-        #ifndef __CUDA_ARCH__
         sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
         exit(__LINE__,__FILE__,msg);
-        #else
-        printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
-        exit(__LINE__,__FILE__);
-        #endif
       }
     }
     else if (node->block==NULL) {
       char msg[200];
 
-      #ifndef __CUDA_ARCH__
       sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
       exit(__LINE__,__FILE__,msg);
-      #else 
-      printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
-      exit(__LINE__,__FILE__);
-      #endif
     }
 
     //check whether the point is located deep in the block -> use three linear interpolation
@@ -159,7 +149,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
     if (_AMR_MESH_TYPE_ == _AMR_MESH_TYPE__UNIFORM_) {
       GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
       return;
-    } 
+    }
 
     //if the point of interest is deep inside the block or all neighbors of the block has the same resolution level -> use simple trilinear interpolation
     if ((node->RefinmentLevel==node->minNeibRefinmentLevel)&&(node->RefinmentLevel==node->maxNeibRefinmentLevel)) {
@@ -214,8 +204,13 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       dxCell[1]=(xmax[1]-xmin[1])/_BLOCK_CELLS_Y_;
       dxCell[2]=(xmax[2]-xmin[2])/_BLOCK_CELLS_Z_;
 
-      #pragma ivdep
-      for (idim=0;idim<3;idim++) if (CoarserBlock==NULL) {
+      int nBlockCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+      double dmin=10.0*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
+
+      bool CornerTestFlagTable[8]={false,false,false,false,  false,false,false,false};
+      bool EdgeTestFlagTable[12]={false,false,false,false, false,false,false,false, false,false,false,false};
+
+      for (idim=0;idim<3;idim++) {
         switch (idim) {
         case 0:
           if (iLoc<=1.0) iFace=0;
@@ -238,7 +233,9 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         //check blocks connected through the face
         NeibNode=node->GetNeibFace(iFace,0,0,PIC::Mesh::mesh);
 
-        if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
+        double xLoc[3]={iLoc,jLoc,kLoc};
+
+        if (NeibNode!=NULL) if ((NeibNode->RefinmentLevel<node->RefinmentLevel)&&(NeibNode->IsUsedInCalculationFlag==true)) {
           //found a coarser block
           int cnt=0;
 
@@ -246,17 +243,46 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
           if (cnt==3) {
             //the block can be used for interpolation
-             CoarserBlock=NeibNode;
+            switch(iFace) {
+            case 0:
+              if ((xLoc[0]<1.0)&&(xLoc[0]<dmin)) dmin=xLoc[0],CoarserBlock=NeibNode;
+              break;
+
+            case 1:
+              if ((xLoc[0]>nBlockCells[0]-1)&&(nBlockCells[0]-xLoc[0]<dmin)) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+              break;
+
+            case 2:
+              if ((xLoc[1]<1.0)&&(xLoc[1]<dmin)) dmin=xLoc[1],CoarserBlock=NeibNode;
+              break;
+
+            case 3:
+              if ((xLoc[1]>nBlockCells[1]-1)&&(nBlockCells[1]-xLoc[1]<dmin)) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+              break;
+
+            case 4:
+              if ((xLoc[2]<1.0)&&(xLoc[2]<dmin)) dmin=xLoc[2],CoarserBlock=NeibNode;
+              break;
+
+            case 5:
+              if ((xLoc[2]>nBlockCells[2]-1)&&(nBlockCells[2]-xLoc[2]<dmin)) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+              break;
+
+            default:
+              exit(__LINE__,__FILE__,"error: something is wrong");
+            }
           }
         }
 
         //check blocks connected though the edges
         static const int faceEdges[6][4]={{4,11,7,8},{5,10,6,9},{0,9,3,8},{1,10,2,11},{0,5,1,4},{3,6,2,7}};
 
-        if (CoarserBlock==NULL) for (int iEdge=0;iEdge<4;iEdge++) {
+
+        for (int iEdge=0;iEdge<4;iEdge++) if (EdgeTestFlagTable[faceEdges[iFace][iEdge]]==false) {
+          EdgeTestFlagTable[faceEdges[iFace][iEdge]]=true;
           NeibNode=node->GetNeibEdge(faceEdges[iFace][iEdge],0,PIC::Mesh::mesh);
 
-          if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
+          if (NeibNode!=NULL) if ((NeibNode->RefinmentLevel<node->RefinmentLevel)&&(NeibNode->IsUsedInCalculationFlag==true)) {
             //found a coarser block
             int cnt=0;
 
@@ -264,8 +290,108 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
             if (cnt==3) {
               //the block can be used for interpolation
-              CoarserBlock=NeibNode;
-              break;
+              switch (faceEdges[iFace][iEdge]) {
+              case 0:
+                if ((xLoc[1]<1.0)&&(xLoc[2]<1.0)) {
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 1:
+                if ((xLoc[1]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 2:
+                if ((xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 3:
+                if ((xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]<1.0)) {
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+
+              case 4:
+                if ((xLoc[0]<1.0)&&(xLoc[2]<1.0)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 5:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[2]<1.0)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 6:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 7:
+                if ((xLoc[0]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 8:
+                if ((xLoc[0]<1.0)&&(xLoc[1]<1.0)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 9:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]<1.0)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 10:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]>nBlockCells[1]-1)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 11:
+                if ((xLoc[0]<1.0)&&(xLoc[1]>nBlockCells[1]-1)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                }
+
+
+                break;
+
+              default:
+                exit(__LINE__,__FILE__,"error: something is wrong");
+              }
             }
           }
         }
@@ -273,10 +399,11 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         //check blocks connected through the corners
         static const int FaceNodeMap[6][4]={ {0,2,4,6}, {1,3,5,7}, {0,1,4,5}, {2,3,6,7}, {0,1,2,3}, {4,5,6,7}};
 
-        if (CoarserBlock==NULL) for (int iCorner=0;iCorner<4;iCorner++) {
+        for (int iCorner=0;iCorner<4;iCorner++) if (CornerTestFlagTable[FaceNodeMap[iFace][iCorner]]==false) {
+          CornerTestFlagTable[FaceNodeMap[iFace][iCorner]]=true;
           NeibNode=node->GetNeibCorner(FaceNodeMap[iFace][iCorner],PIC::Mesh::mesh);
 
-          if (NeibNode!=NULL) if (NeibNode->RefinmentLevel<node->RefinmentLevel) {
+          if (NeibNode!=NULL) if ((NeibNode->RefinmentLevel<node->RefinmentLevel)&&(NeibNode->IsUsedInCalculationFlag==true)) {
             //found a coarser block
             int cnt=0;
 
@@ -284,8 +411,83 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
             if (cnt==3) {
               //the block can be used for interpolation
-              CoarserBlock=NeibNode;
-              break;
+              switch (FaceNodeMap[iFace][iCorner]) {
+              case 0:
+                if ((xLoc[0]<1.0)&&(xLoc[1]<1.0)&&(xLoc[2]<1.0)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 1:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]<1.0)&&(xLoc[2]<1.0)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 2:
+                if ((xLoc[0]<1.0)&&(xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]<1.0)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 3:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]<1.0)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (xLoc[2]<dmin) dmin=xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+
+              case 4:
+                if ((xLoc[0]<1.0)&&(xLoc[1]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 5:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]<1.0)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (xLoc[1]<dmin) dmin=xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 6:
+                if ((xLoc[0]<1.0)&&(xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (xLoc[0]<dmin) dmin=xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              case 7:
+                if ((xLoc[0]>nBlockCells[0]-1)&&(xLoc[1]>nBlockCells[1]-1)&&(xLoc[2]>nBlockCells[2]-1)) {
+                  if (nBlockCells[0]-xLoc[0]<dmin) dmin=nBlockCells[0]-xLoc[0],CoarserBlock=NeibNode;
+                  if (nBlockCells[1]-xLoc[1]<dmin) dmin=nBlockCells[1]-xLoc[1],CoarserBlock=NeibNode;
+                  if (nBlockCells[2]-xLoc[2]<dmin) dmin=nBlockCells[2]-xLoc[2],CoarserBlock=NeibNode;
+                }
+
+                break;
+
+              default:
+                exit(__LINE__,__FILE__,"error: something is wrong");
+              }
             }
           }
         }
@@ -311,34 +513,24 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
 
         GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,CoarserBlock,Stencil);
 
+
         /* the following is used to get continuous interpolsation
         1. if the point of interpolation is in the "coarse" block -> use GetTriliniarInterpolationMutiBlockStencil()
         2. if the point of interpolation is in the "fine" block ->
-           a) def "d" is the min length to the boundary of the block
-           b) if d<0.5 -> "coarse" stencil interpolation
-           c) if 0.5<d<1-> combination of "fine" and "coarse" stencils:
-             interpolation=(d-0.5)/0.5*fine stencil+[1-(d-0.5)/0.5)]*corse stencil
-           d) is 1<d -> "fine" stencil interpolation
+           a) def "dmin" is the min length to the boundary of the block
+           b) if dmin<0.5 -> "coarse" stencil interpolation
+           c) if 0.5<dmin<1-> combination of "fine" and "coarse" stencils:
+             interpolation=(dmin-0.5)/0.5*fine stencil+[1-(dmin-0.5)/0.5)]*corse stencil
+           d) is 1<dmin -> "fine" stencil interpolation
         */
 
-        double d,t;
-
-        d=iLoc;
-        if ((t=_BLOCK_CELLS_X_-iLoc)<d) d=t;
-
-        if (jLoc<d) d=jLoc;
-        if ((t=_BLOCK_CELLS_Y_-jLoc)<d) d=t;
-
-        if (kLoc<d) d=kLoc;
-        if ((t=_BLOCK_CELLS_Z_-kLoc)<d) d=t;
-
-        if ((0.5<d)&&(d<=1.0)) {
+        if ((0.5<dmin)&&(dmin<=1.0)) {
           PIC::InterpolationRoutines::CellCentered::cStencil FineStencil;
 
           GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,FineStencil);
 
-          Stencil.MultiplyScalar(1.0-(d-0.5)/0.5);
-          FineStencil.MultiplyScalar((d-0.5)/0.5);
+          Stencil.MultiplyScalar(1.0-(dmin-0.5)/0.5);
+          FineStencil.MultiplyScalar((dmin-0.5)/0.5);
 
           Stencil.Add(&FineStencil);
         }
@@ -363,27 +555,8 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
         xStencilMax[idim]=xStencilMin[idim]+dxCell[idim];
       }
 
-      GetTriliniarInterpolationMutiBlockStencil(XyzIn_D,xStencilMin,xStencilMax,node,Stencil);
+      GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node,Stencil);
       return;
-
-
-  /*    // check if all cells are available for tri-liniar interpolation using the data from the block
-      int i,j,k,i0,j0,k0,nd;
-      bool found=true;
-
-      i0=(iLoc<0.5) ? -1 : (int)(iLoc-0.50);
-      j0=(jLoc<0.5) ? -1 : (int)(jLoc-0.50);
-      k0=(kLoc<0.5) ? -1 : (int)(kLoc-0.50);
-
-      for (i=0;(i<2)&&(found==true);i++) for (j=0;(j<2)&&(found==true);j++) for (k=0;(k<2)&&(found==true);k++) {
-        nd=_getCenterNodeLocalNumber(i0+i,j0+j,k0+k);
-        if (node->block->GetCenterNode(nd)==NULL) found=false;
-      }
-
-      if (found==true) return GetTriliniarInterpolationStencil(iLoc,jLoc,kLoc,XyzIn_D,node);
-
-      //3. if not: use a constant interpolation spencil
-      return PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(XyzIn_D,node);*/
     }
 
     #elif _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__SWMF_
@@ -555,168 +728,138 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 _TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
-  int iStencil,jStencil,kStencil,i,j,k,nd,idim;
-  double xLoc[3],xStencil[3],dx[3];
+  long int nd;
+  PIC::Mesh::cDataCenterNode *cell;
 
-  const int nStencilElementsMax=64;
-  double StencilWeight[nStencilElementsMax],StencilElementWeight,summStencilElementWeight=0.0;
-  PIC::Mesh::cDataCenterNode *cell,*StencilCellTable[nStencilElementsMax];
-  int StencilCellIDTable[nStencilElementsMax];
-  int StencilElementCounter=0;
-
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=node;
-
-  //calculate the local coordinates of the point where the stancil is constructed
-  #pragma ivdep
-  for (idim=0;idim<3;idim++) {
-    xLoc[idim]=(x[idim]-xStencilMin[idim])/(xStencilMax[idim]-xStencilMin[idim]);
-
-    if (xLoc[idim]<0.0) {
-      if (xLoc[idim]<-1.0E-7) exit(__LINE__,__FILE__,"Error: the local coordinate is out or range");
-      else xLoc[idim]=0.0;
-    }
-    else if (xLoc[idim]>1.0) {
-      if (xLoc[idim]>1.0+1.0E-7) exit(__LINE__,__FILE__,"Error: the local coordinate is out or range");
-      else xLoc[idim]=1.0;
-    }
-
-  }
-
-  //cell sizes
-  dx[0]=(xStencilMax[0]-xStencilMin[0]);
-  dx[1]=(xStencilMax[1]-xStencilMin[1]);
-  dx[2]=(xStencilMax[2]-xStencilMin[2]);
-
-
-  //build interpolation stencil
-  for (iStencil=0;iStencil<2;iStencil++) {
-    xStencil[0]=xStencilMin[0]+iStencil*(xStencilMax[0]-xStencilMin[0]);
-
-    for (jStencil=0;jStencil<2;jStencil++) {
-      xStencil[1]=xStencilMin[1]+jStencil*(xStencilMax[1]-xStencilMin[1]);
-
-      for (kStencil=0;kStencil<2;kStencil++) {
-        xStencil[2]=xStencilMin[2]+kStencil*(xStencilMax[2]-xStencilMin[2]);
-
-        StencilNode=PIC::Mesh::mesh->findTreeNode(xStencil,StencilNode);
-
-        bool return_const_stencil=false;
-
-        if (StencilNode==NULL) return_const_stencil=true;
-        else if (StencilNode->IsUsedInCalculationFlag==false) return_const_stencil=true; 
-
-        if (return_const_stencil==true) {
-          //verify that the point is inside the domain, and return a "constant" ctencil
-          double xTest[3];
-
-          #pragma ivdep
-          for (int idim=0;idim<3;idim++) {
-            xTest[idim]=x[idim];
-
-            if (xTest[idim]<=PIC::Mesh::mesh->xGlobalMin[idim]) xTest[idim]+=0.1*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
-            if (xTest[idim]>=PIC::Mesh::mesh->xGlobalMax[idim]) xTest[idim]-=0.1*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim])/(1<<_MAX_REFINMENT_LEVEL_);
-          }
-
-          node=PIC::Mesh::mesh->findTreeNode(xTest,node);
-          PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(xTest,node,Stencil);
-          return;
-        }
-
-        switch (iStencil+2*jStencil+4*kStencil) {
-        case 0+0*2+0*4:
-          StencilElementWeight=(1.0-xLoc[0])*(1.0-xLoc[1])*(1.0-xLoc[2]);
-          break;
-        case 1+0*2+0*4:
-          StencilElementWeight=xLoc[0]*(1.0-xLoc[1])*(1.0-xLoc[2]);
-          break;
-        case 0+1*2+0*4:
-          StencilElementWeight=(1.0-xLoc[0])*xLoc[1]*(1.0-xLoc[2]);
-          break;
-        case 1+1*2+0*4:
-          StencilElementWeight=xLoc[0]*xLoc[1]*(1.0-xLoc[2]);
-          break;
-
-        case 0+0*2+1*4:
-          StencilElementWeight=(1.0-xLoc[0])*(1.0-xLoc[1])*xLoc[2];
-          break;
-        case 1+0*2+1*4:
-          StencilElementWeight=xLoc[0]*(1.0-xLoc[1])*xLoc[2];
-          break;
-        case 0+1*2+1*4:
-          StencilElementWeight=(1.0-xLoc[0])*xLoc[1]*xLoc[2];
-          break;
-        case 1+1*2+1*4:
-          StencilElementWeight=xLoc[0]*xLoc[1]*xLoc[2];
-          break;
-
-        default:
-          exit(__LINE__,__FILE__,"Error: the option is not defined");
-        }
-
-        //determine contribution of the node to the stencil
-        if (StencilNode->RefinmentLevel==node->RefinmentLevel) {
-          //both blocks have the save refinment levels
-
-          nd=PIC::Mesh::mesh->fingCellIndex(xStencil,i,j,k,StencilNode,false);
-          cell=StencilNode->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
-
-          if (cell!=NULL) {
-            //add the cell to the stencil
-            if (StencilElementCounter==nStencilElementsMax) exit(__LINE__,__FILE__,"Error: StencilElementCounter==nStencilElementsMax, try to increase nStencilElementsMax");
-            StencilCellTable[StencilElementCounter]=cell;
-            StencilCellIDTable[StencilElementCounter]=nd;
-            StencilWeight[StencilElementCounter]=StencilElementWeight;
-            StencilElementCounter++;
-            summStencilElementWeight+=StencilElementWeight;
-          }
-        }
-        else if (StencilNode->RefinmentLevel>node->RefinmentLevel) {
-          //get left coordinates of the cell block that will be used as a part of the stencil
-          int iCellNeib,jCellNeib,kCellNeib,ii,jj,kk;
-
-          iCellNeib=2*((int)((xStencil[0]-StencilNode->xmin[0])/dx[0]));
-          jCellNeib=2*((int)((xStencil[1]-StencilNode->xmin[1])/dx[1]));
-          kCellNeib=2*((int)((xStencil[2]-StencilNode->xmin[2])/dx[2]));
-
-          if ((iCellNeib<0)||(iCellNeib+1>=_BLOCK_CELLS_X_) || (jCellNeib<0)||(jCellNeib+1>=_BLOCK_CELLS_Y_) || (kCellNeib<0)||(kCellNeib+1>=_BLOCK_CELLS_Z_)) exit(__LINE__,__FILE__,"Error: cells's index is out of range");
-
-          for (ii=0;ii<2;ii++) for (jj=0;jj<2;jj++) for (kk=0;kk<2;kk++) {
-            nd=_getCenterNodeLocalNumber(ii+iCellNeib,jj+jCellNeib,kk+kCellNeib);
-            cell=StencilNode->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
-
-            if (cell!=NULL) {
-              //add the cell to the stencil
-              if (StencilElementCounter==nStencilElementsMax) exit(__LINE__,__FILE__,"Error: StencilElementCounter==nStencilElementsMax, try to increase nStencilElementsMax");
-              StencilCellTable[StencilElementCounter]=cell;
-              StencilCellIDTable[StencilElementCounter]=nd;
-              StencilWeight[StencilElementCounter]=StencilElementWeight/8.0;
-              summStencilElementWeight+=StencilElementWeight/8.0;
-              StencilElementCounter++;
-            }
-          }
-
-        }
-        else {
-          exit(__LINE__,__FILE__,"Error: something is wrong. The conditions StencilNode->RefinmentLevel>=node->RefinmentLevel must hold");
-        }
-
-      }
-
-    }
-  }
-
-  //construct the stencil
-  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  int ThreadOpenMP=omp_get_thread_num();
-  #else
-  int ThreadOpenMP=0;
-  #endif
-
-  //flush the stencil
   Stencil.flush();
 
-  for (int iCell=0;iCell<StencilElementCounter;iCell++) {
-    Stencil.AddCell(StencilWeight[iCell]/summStencilElementWeight,StencilCellTable[iCell],StencilCellIDTable[iCell]);
+  class cMultiBlockStencil {
+  public:
+    int ijk[3];
+    double x[3];
+    PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+  };
+
+  cMultiBlockStencil StencilTable[2][2][2];
+
+  int nCells[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  double dxCell[3];
+  int idim;
+
+
+  for (idim=0;idim<3;idim++) dxCell[idim]=(node->xmax[idim]-node->xmin[idim])/nCells[idim];
+
+  //determine coordinates of the stencil nodes
+  int di,dj,dk,ijkStencilMin[3];
+
+  for (idim=0;idim<3;idim++) {
+    ijkStencilMin[idim]=(x[idim]-node->xmin[idim]<0.5*dxCell[idim]) ? -1 : (int)((x[idim]-node->xmin[idim]-0.5*dxCell[idim])/dxCell[idim]);
+  }
+
+  for (di=0;di<2;di++) for (dj=0;dj<2;dj++) for (dk=0;dk<2;dk++) {
+    StencilTable[di][dj][dk].ijk[0]=ijkStencilMin[0]+di;
+    StencilTable[di][dj][dk].ijk[1]=ijkStencilMin[1]+dj;
+    StencilTable[di][dj][dk].ijk[2]=ijkStencilMin[2]+dk;
+
+    for (idim=0;idim<3;idim++) {
+      StencilTable[di][dj][dk].x[idim]=node->xmin[idim]+(StencilTable[di][dj][dk].ijk[idim]+0.5)*dxCell[idim];
+    }
+
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *StencilNode=PIC::Mesh::mesh->findTreeNode(StencilTable[di][dj][dk].x,node);
+    bool return_const_stencil=false;
+
+    if (StencilNode==NULL) return_const_stencil=true;
+    else if (StencilNode->IsUsedInCalculationFlag==false) return_const_stencil=true;
+
+    if (return_const_stencil==true) {
+      node=PIC::Mesh::mesh->findTreeNode(x,node);
+      PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
+      return;
+    }
+
+    //init the corner of the stencil
+    if (StencilNode->RefinmentLevel==node->RefinmentLevel) {
+      //both blocks have the save refinment levels
+      nd=_getCenterNodeLocalNumber(StencilTable[di][dj][dk].ijk[0],StencilTable[di][dj][dk].ijk[1],StencilTable[di][dj][dk].ijk[2]);
+      cell=node->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
+
+      if (cell!=NULL) {
+        StencilTable[di][dj][dk].Stencil.AddCell(1.0,cell,nd);
+      }
+      else {
+        node=PIC::Mesh::mesh->findTreeNode(x,node);
+        PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
+        return;
+      }
+    }
+    else {
+     //the block has a higher resolution level
+     int iNeib[3];
+
+     for (idim=0;idim<3;idim++) iNeib[idim]=2*((int)((StencilTable[di][dj][dk].x[idim]-StencilNode->xmin[idim])/dxCell[idim]));
+
+     for (int ii=0;ii<2;ii++) for (int jj=0;jj<2;jj++) for (int kk=0;kk<2;kk++) {
+       nd=_getCenterNodeLocalNumber(iNeib[0]+ii,iNeib[1]+jj,iNeib[2]+kk);
+       cell=StencilNode->block->GetCenterNode(nd);
+
+       if (cell!=NULL) {
+         StencilTable[di][dj][dk].Stencil.AddCell(1.0/8.0,cell,nd);
+       }
+       else {
+         node=PIC::Mesh::mesh->findTreeNode(x,node);
+         PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(x,node,Stencil);
+         return;
+       }
+     }
+    }
+  }
+
+  //calcualte local coordinates
+  double xLoc[3];
+
+  for (idim=0;idim<3;idim++) {
+    xLoc[idim]=(x[idim]-StencilTable[0][0][0].x[idim])/dxCell[idim];
+    if (xLoc[idim]<0.0) xLoc[idim]=0.0;
+    if (xLoc[idim]>1.0) xLoc[idim]=1.0;
+  }
+
+  //determine the interpolation coefficients
+  for (di=0;di<2;di++) for (dj=0;dj<2;dj++) for (dk=0;dk<2;dk++) {
+    double StencilElementWeight;
+
+    switch (di+2*dj+4*dk) {
+    case 0+0*2+0*4:
+      StencilElementWeight=(1.0-xLoc[0])*(1.0-xLoc[1])*(1.0-xLoc[2]);
+      break;
+    case 1+0*2+0*4:
+      StencilElementWeight=xLoc[0]*(1.0-xLoc[1])*(1.0-xLoc[2]);
+      break;
+    case 0+1*2+0*4:
+      StencilElementWeight=(1.0-xLoc[0])*xLoc[1]*(1.0-xLoc[2]);
+      break;
+    case 1+1*2+0*4:
+      StencilElementWeight=xLoc[0]*xLoc[1]*(1.0-xLoc[2]);
+      break;
+
+    case 0+0*2+1*4:
+      StencilElementWeight=(1.0-xLoc[0])*(1.0-xLoc[1])*xLoc[2];
+      break;
+    case 1+0*2+1*4:
+      StencilElementWeight=xLoc[0]*(1.0-xLoc[1])*xLoc[2];
+      break;
+    case 0+1*2+1*4:
+      StencilElementWeight=(1.0-xLoc[0])*xLoc[1]*xLoc[2];
+      break;
+    case 1+1*2+1*4:
+      StencilElementWeight=xLoc[0]*xLoc[1]*xLoc[2];
+      break;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not defined");
+    }
+
+    StencilTable[di][dj][dk].Stencil.MultiplyScalar(StencilElementWeight);
+    Stencil.Add(&StencilTable[di][dj][dk].Stencil);
   }
 }
 
