@@ -122,15 +122,25 @@ void PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(double *XyzIn
       if (node->block==NULL) {
         char msg[200];
 
+        #ifndef __CUDA_ARCH__
         sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
         exit(__LINE__,__FILE__,msg);
+        #else 
+        printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+        exit(__LINE__,__FILE__);
+        #endif
       }
     }
     else if (node->block==NULL) {
       char msg[200];
 
+      #ifndef __CUDA_ARCH__
       sprintf(msg,"Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::ThisThread,node->Thread);
       exit(__LINE__,__FILE__,msg);
+      #else 
+      printf("Error: the block is not allocated\nCurrent MPI Process=%i\nnode->Thread=%i\n",PIC::GPU::ThisThread,node->Thread);
+      exit(__LINE__,__FILE__,msg);
+      #endif
     }
 
     //check whether the point is located deep in the block -> use three linear interpolation
