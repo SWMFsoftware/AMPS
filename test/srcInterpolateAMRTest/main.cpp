@@ -99,8 +99,6 @@ void fix_coords(double* x){
     //find refinement level at the location
   int iLevel = get_level(x);
 
-  return;
-
   if (iLevel == 1) return;
 
   double xShift[3] = {2*(x[0]-XMid[0])/dxCell, 2*(x[1]-XMid[1])/dxCell,2*(x[2]-XMid[2])/dxCell};
@@ -167,7 +165,10 @@ int main(int argc,char **argv) {
         //check order of interpolation
         for (int icell=0; icell<CenterBasedStencil.Length; icell++) {
           xcell=CenterBasedStencil.cell[icell]->GetX();
+
+          #ifdef _TEST_INTERPOLATION_SWMF_
           fix_coords(xcell);
+          #endif
 
           for (i=0; i<3; i++) x1CenterBased[i]+=xcell[i]*CenterBasedStencil.Weight[icell];
         }
@@ -181,7 +182,10 @@ int main(int argc,char **argv) {
 
           for (int icell=0; icell<CenterBasedStencil.Length; icell++) {
             xcell = CenterBasedStencil.cell[icell]->GetX();
+
+            #ifdef _TEST_INTERPOLATION_SWMF_ 
             fix_coords(xcell);
+            #endif
 
             foutCenterBased << "Cell " << icell << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CenterBasedStencil.Weight[icell] << endl;
           }
@@ -190,7 +194,10 @@ int main(int argc,char **argv) {
         //check the corner-based interpolation procedure
         for (int iCorner=0; iCorner<CornerBasedStencil.Length; iCorner++) {
           xcell=CornerBasedStencil.cell[iCorner]->GetX();
+
+          #ifdef _TEST_INTERPOLATION_SWMF_
           fix_coords(xcell);
+          #endif
 
           for (i=0; i<3; i++) x1CornerBased[i]+=xcell[i]*CornerBasedStencil.Weight[iCorner];
         }
@@ -204,7 +211,10 @@ int main(int argc,char **argv) {
 
           for (int iCorner=0; iCorner<CornerBasedStencil.Length; iCorner++) {
             xcell = CornerBasedStencil.cell[iCorner]->GetX();
+
+            #ifdef _TEST_INTERPOLATION_SWMF_ 
             fix_coords(xcell);
+            #endif 
 
             foutCornerBased << "Cell " << iCorner << ": " << xcell[0] << " " << xcell[1] << " " << xcell[2] << " Weight=" << CornerBasedStencil.Weight[iCorner] << endl;
           }

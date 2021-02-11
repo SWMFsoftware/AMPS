@@ -3345,6 +3345,20 @@ Time=2
 
 ExeptionCode=SKIP{pgcc}
 
+Compile=
+>>>@echo "test_InterpolateAMR-test_compile..." > test_InterpolateAMR-test$(TESTInterpolateAMR-test-REF).diff
+>>>./Config.pl -application=test/InterpolateAMR-test -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/InterpolateAMR-test  -amps-test=on $(TESTInterpolateAMR-testKEYS)
+
+>>>cp Makefile.local Makefile.local.bak
+>>>./Config.pl -compiler-option=-D_TEST_INTERPOLATION_SWMF_
+
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_InterpolateAMR-test_compile... done" >> test_InterpolateAMR-test$(TESTInterpolateAMR-test-REF).diff
+
+>>>mv Makefile.local.bak Makefile.local
+
+
 Run=
 >>>@echo "test_InterpolateAMR-test_run..." >> test_InterpolateAMR-test.diff
 >>>@echo Test test_InterpolateAMR-test has started: `date`
