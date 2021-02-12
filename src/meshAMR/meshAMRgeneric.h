@@ -7501,7 +7501,22 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
                       neibNode=findTreeNode(xNode,startNode);
 
-                      if (neibNode->IsUsedInCalculationFlag==true) {
+                      if (neibNode==NULL) {
+                        switch (_MESH_DIMENSION_) {
+                        case 1:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        case 2:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        case 3:
+                          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
+                          break;
+                        default:
+                          exit(__LINE__,__FILE__,"error: out of range");
+                        }
+                      }
+                      else if (neibNode->IsUsedInCalculationFlag==true) {
                         centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,neibNode,nMaxCenterInterpolationCoefficients);
                       }
                       else {
