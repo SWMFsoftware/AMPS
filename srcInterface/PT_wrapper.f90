@@ -106,7 +106,7 @@ contains
 
     case('GRID')
        ! Grid info depends on BATSRUS
-
+       Grid_C(PT_)%TypeCoord='HGI' 
     case default
        call CON_stop(NameSub//': PT_ERROR: empty version cannot be used!')
     end select
@@ -124,7 +124,6 @@ contains
     character(len=*), parameter :: NameSub='PT_init_session'
     integer::code
 
-    Grid_C(PT_)%TypeCoord='HGI' 
 
     if (DoTimeAccurate) then 
       code=1
