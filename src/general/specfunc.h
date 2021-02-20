@@ -540,6 +540,7 @@ namespace Relativistic {
     double beta2,gamma2;
 
     //relativistic kinetic energy: KE=(gamma-1) \times m_0 \times c^2
+    //EK=m c^2/(1-(v/c)^2)-m c^=m c^2(gamma -1)
     beta2=pow(Speed/SpeedOfLight,2);
     gamma2=1.0/(1.0-beta2);
     return mass*SpeedOfLight*SpeedOfLight*beta2*gamma2/(1.0+sqrt(gamma2)); //(gamma-1)=(gamma^2-1)/(gamma+1)
@@ -592,11 +593,21 @@ namespace Relativistic {
     for (int idim=0;idim<3;idim++) v[idim]=c*p[idim]; 
   }
 
-  inline double Momentum2Energy(double Momentum,double mass) {
-    double t=mass*SpeedOfLight;
 
-    return t*SpeedOfLight*sqrt(1.0+pow(Momentum/t,2));
+  //EK=m c^2 * (sqrt(1+(p/(m*c))^2) - 1)==m* c^2*((p/(m*c))^2)/(sqrt(1+(p/(m*c))^2) + 1)==p^2/m/(1+sqrt(1+(p/(m*c))^2) 
+  inline double Momentum2Energy(double Momentum,double mass) {
+    double t=Momentum/(mass*SpeedOfLight);
+
+    return Momentum*Momentum/(mass*(1.0+sqrt(1.0+t*t)));
   }
+
+  //EK=m c^2 * (sqrt(1+(p/(m*c))^2-1) => p=sqrt(2*m*EK+(EK/c)^2)  
+  inline double Energy2Momentim(double Energy,double mass) {
+    double t=Energy/SpeedOfLight;
+
+    return sqrt(2.0*mass*Energy+t*t);
+  } 
+ 
 
   //get gyro frequency
   inline double GetGyroFrequency(double *v,double ParticleRestMass, double ElectricCharge, double* B) {
