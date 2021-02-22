@@ -34,6 +34,10 @@ int AMPS2SWMF::PARAMIN::read_paramin(stringstream *param) {//(int argc, char **a
          exit(__LINE__,__FILE__,"Error: the option is unlnown");
        }
     }
+    else if (Command == "#HELIOSPHERE") {
+      read_var(param,"RMIN",&AMPS2SWMF::Heliosphere::rMin); 
+      AMPS2SWMF::Heliosphere::rMin*=_RADIUS_(_SUN_); 
+    }
     else if (Command == "#TEST"){
       read_var(param,"DoTest",   &TestVar);
 

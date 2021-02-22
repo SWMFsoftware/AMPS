@@ -27,14 +27,14 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
-
+#include "amps2swmf.h"
 
 
 
 //the parameters of the domain and the sphere
 
 const double DebugRunMultiplier=4.0;
-const double rSphere=_RADIUS_(_TARGET_);
+double rSphere=_RADIUS_(_TARGET_);
 
 
 const double xMaxDomain=250;
@@ -101,6 +101,8 @@ void amps_init_mesh() {
     cInternalBoundaryConditionsDescriptor SphereDescriptor;
     cInternalSphericalData *Sphere;
 
+    //correct radiust of the  sphere to be consistent with the location of the inner boundary of the SWMF/SC
+    if (AMPS2SWMF::Heliosphere::rMin>0.0) rSphere=AMPS2SWMF::Heliosphere::rMin;
 
     //reserve memory for sampling of the surface balance of sticking species
     long int ReserveSamplingSpace[PIC::nTotalSpecies];
@@ -115,6 +117,8 @@ void amps_init_mesh() {
     Sphere=(cInternalSphericalData*) SphereDescriptor.BoundaryElement;
     Sphere->SetSphereGeometricalParameters(sx0,rSphere);
 
+    //set the innber bounday sphere 
+    SEP::InnerBoundary=Sphere;
 
     char fname[_MAX_STRING_LENGTH_PIC_];
 

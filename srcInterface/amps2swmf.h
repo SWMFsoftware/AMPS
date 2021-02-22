@@ -38,6 +38,11 @@ namespace AMPS2SWMF {
   typedef void (*fUserFinalizeSimulation)(); 
   extern fUserFinalizeSimulation UserFinalizeSimulation;
 
+  //the namespace containds variables used in heliosphere simulations 
+  namespace Heliosphere {
+    extern double rMin;
+  }
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 

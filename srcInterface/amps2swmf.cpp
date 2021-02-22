@@ -42,6 +42,9 @@ double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0};
 char AMPS2SWMF::ComponentName[10]="";
 int AMPS2SWMF::ComponentID=_AMPS_SWMF_UNDEFINED_; 
 
+//the namespace containds variables used in heliosphere simulations
+double AMPS2SWMF::Heliosphere::rMin=-1.0;  
+
 //parameters of the current SWMF session
 int AMPS2SWMF::iSession=-1;
 double AMPS2SWMF::swmfTimeSimulation=-1.0;
@@ -87,7 +90,19 @@ extern "C" {
   } 
 
   //determine whether a point belongs to a fomain of a particlelar SWMF component 
-  bool IsDomainSC(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;}
+  bool IsDomainSC(double *x) {
+    double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
+    bool res=true;
+
+    if (AMPS2SWMF::Heliosphere::rMin>0.0) if (r2<AMPS2SWMF::Heliosphere::rMin*AMPS2SWMF::Heliosphere::rMin) res=false;  
+
+    double t=23.0*_SUN__RADIUS_;
+    if (r2>t*t) res=false;
+
+    return res;
+  }
+
+
   bool IsDomainIH(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]>=23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;} 
 
   //set the location of the Earth. The function is caled by the coupler 

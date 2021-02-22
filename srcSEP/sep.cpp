@@ -6,6 +6,8 @@ int SEP::Offset::CosPitchAngle=-1;
 int SEP::Offset::p_par=-1;
 int SEP::Offset::p_norm=-1;
 
+cInternalSphericalData* SEP::InnerBoundary=NULL;
+
 void SEP::RequestParticleData() {
   long int offset;
 
