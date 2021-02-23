@@ -7,8 +7,8 @@ module PT_wrapper
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC,Grid_C, iCompSourceCouple
   use CON_time
   use,intrinsic :: ieee_arithmetic
-
   implicit none
+  SAVE
 
   private ! except
 
@@ -39,6 +39,12 @@ module PT_wrapper
   public:: PT_put_from_sc 
   public:: PT_put_from_sc_dt
 
+  ! Coupling via field line grid  with MHD components
+  public:: PT_do_extract_lines
+  public:: PT_put_coupling_param
+  public:: PT_adjust_lines
+  
+
   !codes describeing status of coupling with particular components of the SWMF 
   integer:: IhCouplingCode
   integer:: OhCouplingCode
@@ -48,7 +54,15 @@ module PT_wrapper
   !coupling operation counter (need for debugging)
   integer::nRecvFromOH=0
   integer::nSentToOH=0
-
+  
+  ! Parameters for coupling to MHD via moving lagrangian grid
+  real             :: DataInputTime = -1.0
+  ! MHD data array MHData_VIB(LagrID_:nMHData, 1:nVertexMax, 1:nLine)
+  real,    pointer :: MHData_VIB(:, :, :)
+  ! Number of actally used grid vertexes per each line, nVertex_B(1:nLine)
+  integer, pointer :: nVertex_B(:)
+  ! Grid point numbers
+  integer :: nVertexMax=2000, nLon = 4, nLat = 4
 contains
 
   subroutine PT_set_param(CompInfo, TypeAction)
@@ -108,7 +122,7 @@ contains
        ! Grid info depends on BATSRUS
        Grid_C(PT_)%TypeCoord='HGI' 
     case default
-       call CON_stop(NameSub//': PT_ERROR: empty version cannot be used!')
+       call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
     end select
 
   end subroutine PT_set_param
@@ -116,7 +130,7 @@ contains
   !============================================================================
 
   subroutine PT_init_session(iSession, TimeSimulation)
-
+    use CON_bline,  ONLY: BL_init, UseBLine_C, BL_get_origin_points
     !INPUT PARAMETERS:
     integer,  intent(in) :: iSession         ! session number (starting from 1)
     real,     intent(in) :: TimeSimulation   ! seconds from start time
@@ -126,11 +140,15 @@ contains
 
 
     if (DoTimeAccurate) then 
-      code=1
+       code=1
     else 
-      code=0
-    end if 
-    
+       code=0
+    end if
+    if(UseBLine_C(PT_))then
+       nullify(MHData_VIB); nullify(nVertex_B)
+       call BL_init(nVertexMax, nLon, nLat,  &
+            MHData_VIB, nVertex_B)
+    end if
     call amps_init_session(iSession,TimeSimulation,code)
   end subroutine PT_init_session
 
@@ -482,7 +500,68 @@ contains
     end do
 
   end subroutine PT_get_for_oh
+  !============================================================================
+  subroutine PT_do_extract_lines(DoExtract)
+    ! Interface routine to be called from super-structure on all PEs
+    use CON_coupler, ONLY: i_proc0, i_comm, is_proc0
+    use ModMpi
+    logical, intent(out):: DoExtract
 
+    integer :: iError
+
+    ! when restarting, line data is available, i.e. ready to couple with mh;
+    ! get value at SP root and broadcast to all SWMF processors
+    character(len=*), parameter:: NameSub = 'SP_do_extract_lines'
+    !--------------------------------------------------------------------------
+    ! The logical to control if trace the field lines originally (DoExtract=.true.)
+    ! or not should be shaped on the root PE of the PT model and broadcast over all
+    ! PEs of the SWMF
+    if(is_proc0(PT_)) DoExtract = .true.
+    call MPI_Bcast(DoExtract, 1, MPI_LOGICAL, i_proc0(PT_), i_comm(), iError)
+  end subroutine PT_do_extract_lines
+  !============================================================================
+  subroutine PT_put_coupling_param(Source_, TimeIn)
+    use CON_bline,  ONLY: Lower_
+    integer,        intent(in) :: Source_
+    real,           intent(in) :: TimeIn
+    !--------------------------------------------------------------------------
+    if(DataInputTime >= TimeIn)RETURN
+    ! New coupling time, get it and save old state
+    DataInputTime = TimeIn
+    if(Source_==Lower_)then
+       ! Do what is needed with the MHD data about to be gone
+       ! call do_something_with_MHData_VIB_array
+       MHData_VIB(1:, :, :) = 0.0
+    else
+       call CON_stop("Time in IH-PT coupling differs from that in SC-PT")
+    end if
+  end subroutine PT_put_coupling_param
+  !============================================================================
+  ! Called from coupler after the updated grid point lo<cation are
+  ! received from the other component (SC, IH). Determines whether some
+  ! grid points should be added/deleted
+  subroutine PT_adjust_lines(DoInit, Source_)
+    use CON_bline,          ONLY: &
+         iOffset_B, BL_adjust_lines,  Lower_, Upper_, nLine
+    logical, intent(in) :: DoInit
+    integer, intent(in) :: Source_
+
+    integer :: iLine  ! Loop variable
+    
+    character(len=*), parameter:: NameSub = 'PT_adjust_lines'
+    !--------------------------------------------------------------------------
+    call BL_adjust_lines(DoInit, Source_)
+    if(Source_ == Lower_)then
+       do iLine = 1, nLine
+          !Offset the array, allocated at the moving lagrangian grid, if needed
+          !call offset(iBlock, iOffset=iOffset_B(iBlock))
+       end do
+    end if
+    ! Called after the grid points are received from the
+    ! component, nullify offset. 
+    if(Source_ == Upper_)iOffset_B(1:nLine) = 0
+  end subroutine PT_adjust_lines
+  !============================================================================
 end module PT_wrapper
 
 subroutine ConvertX_HGI_HGR(xHGR,xHGI)
@@ -538,6 +617,7 @@ subroutine GetEarthLocation(xEarthHgi)
    ! Calculate the planet position in HGI                                                                                                   
    ! In GSE shifted to the center of the Sun the planet is at (-d,0,0)                                                                      
    xEarthHgi = matmul(HgiGse_DD, (/-cAU*SunEMBDistance, 0.0, 0.0/))
+   
 end subroutine GetEarthLocation
 
 
