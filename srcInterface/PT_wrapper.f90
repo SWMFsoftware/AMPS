@@ -69,7 +69,7 @@ contains
 
     use CON_comp_info
     use ModReadParam
-
+    use CON_bline,   ONLY: BL_set_grid, UseBLine_C
     integer :: iComm,iProc,nProc, nThread
 
     ! Arguments
@@ -120,7 +120,11 @@ contains
 
     case('GRID')
        ! Grid info depends on BATSRUS
-       Grid_C(PT_)%TypeCoord='HGI' 
+      if(UseBLine_C(PT_))then
+          call BL_set_grid('HGI', 1.0)
+       else
+          Grid_C(PT_)%TypeCoord='HGI'
+       end if 
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
     end select
