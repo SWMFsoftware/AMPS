@@ -194,7 +194,7 @@ void PIC::RunTimeSystemState::GetDomainDecompositionCheckSum(long int nline,cons
 }
 
 void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,const char *msg) {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::ParticleBuffer::byte *ParticleData;
   int i,j,k,idim;
   long int ptr;
@@ -202,6 +202,10 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
   int s;
   double *v;
   double StatWeight,TotalStatWeight[PIC::nTotalSpecies],MeanSpeed[PIC::nTotalSpecies],MeanVelocity[3*PIC::nTotalSpecies];
+
+  if (PIC::Mesh::mesh.rootTree==NULL) return;
+
+  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
 
   for (s=0;s<PIC::nTotalSpecies;s++) {
     MeanSpeed[s]=0.0;
