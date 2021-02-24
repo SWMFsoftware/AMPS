@@ -208,7 +208,7 @@ contains
   !============================================================================
 
   subroutine PT_run(TimeSimulation, TimeSimulationLimit)
-
+    use CON_bline, ONLY:  nLine, NameVar_V, nMHData, UseBLine_C
     !INPUT/OUTPUT ARGUMENTS:
     real, intent(inout):: TimeSimulation   ! current time of component
 
@@ -227,7 +227,16 @@ contains
     end if
     !
     ! if UseBLine_C(PT_), available: DataInputTime, MHData_VIB, nVertex_B
-    ! if(UseBLine_C(PT_)) amps_get_bline(DataInputTime, MHData_VIB, nVertex_B)
+    ! stub  for amps_get_bline is put to the end of the file
+    if(UseBLine_C(PT_)) call amps_get_bline(&
+         DataInputTime, & ! real, intent in
+         nVertexMax   , & ! integer, intent in
+         nLine        , & ! integer, intent in
+         nVertex_B    , & ! integer, dimension(1:nLine), intent in
+         nMHData      , & ! integer, intent it
+         NameVar_V    , & ! character(len=10), dimension(0:nMHData) intent in
+         MHData_VIB)! real,intent in,dimension(0:nMHData,1:nVertexMax,1:nLine)
+    ! actually filled in part is for second index ranging 1:nVertex_B(1:nLine)
     ! call AMPS
     call AMPS_timestep(TimeSimulation, TimeSimulationLimit)
   end subroutine PT_run
@@ -649,4 +658,24 @@ subroutine GetEarthLocation(xEarthHgi)
   xEarthHgi = matmul(HgiGse_DD, [-cAU*SunEMBDistance, 0.0, 0.0])
 
 end subroutine GetEarthLocation
-
+!=========Stub, to be removed, when the C routine is available=================
+subroutine amps_get_bline(&
+         DataInputTime, & ! real, intent in
+         nVertexMax   , & ! integer, intent in
+         nLine        , & ! integer, intent in
+         nVertex_B    , & ! integer, dimension(1:nLine), intent in
+         nMHData      , & ! integer, intent it
+         NameVar_V    , & ! character(len=10), dimension(0:nMHData) intent in
+         MHData_VIB)! real,intent in,dimension(0:nMHData,1:nVertexMax,1:nLine)
+  use CON_coupler, ONLY:  PT_, is_proc0
+  implicit none
+  real,              intent(in) :: DataInputTime
+  integer,           intent(in) :: nVertexMax
+  integer,           intent(in) :: nLine
+  integer,           intent(in) :: nVertex_B(1:nLine)
+  integer,           intent(in) :: nMHData
+  character(len=10), intent(in) :: NameVar_V(0:nMHData)
+  real,              intent(in) :: MHData_VIB(0:nMHData, 1:nVertexMax, 1:nLine)
+  !----------------------------------------------------------------------------
+  RETURN
+end subroutine amps_get_bline
