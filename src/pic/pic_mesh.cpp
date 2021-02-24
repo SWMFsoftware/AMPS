@@ -1454,9 +1454,9 @@ int PIC::Mesh::GetCenterNodesInterpolationCoefficients(double *x,double *Coeffic
   int iCell,cnt=0;
   double SumWeight=0.0;
 
-  if (_PIC_COUPLER__INTERPOLATION_MODE_ != _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
-    exit(__LINE__,__FILE__,"Error: the function should be used only when the linear interpolation routine is set");
-  }
+//  if (_PIC_COUPLER__INTERPOLATION_MODE_ != _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
+//    exit(__LINE__,__FILE__,"Error: the function should be used only when the linear interpolation routine is set");
+//  }
 
   //construct the interpolation stencil
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
