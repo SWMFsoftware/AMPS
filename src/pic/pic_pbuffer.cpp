@@ -55,6 +55,8 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
 
+  char *p=(char*)ParticleDataBuffer;
+  for (long int i=0;i<ParticleDataLength*MaxNPart;i++) p[i]=0;
 
   if (ParticleDataBuffer==NULL) {
     char msg[500];
