@@ -377,9 +377,6 @@ Run=
 >>>@echo "test_X-Wing_run..." >> test_X-Wing$(TESTX-Wing-REF).diff
 >>>@echo Test test_X-Wing has started: `date`
 >>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/X-Wing.mail  ${TESTX-WingDIR}/X-Wing.mail 
->>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xe8cfde3e165d2d69.TriangulationExternalNormalVector.bin  ${TESTX-WingDIR}/amr.sig=0xe8cfde3e165d2d69.TriangulationExternalNormalVector.bin 
->>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xebcfdf3f8bd4d9ea.CenterNodeMeasure.bin  ${TESTX-WingDIR}/amr.sig=0xebcfdf3f8bd4d9ea.CenterNodeMeasure.bin 
->>>@ln ${PTDIR}/../../../AMPS_DATA_TEST/X-WING/amr.sig=0xebcfdf3f8bd4d9ea.mesh.bin  ${TESTX-WingDIR}/amr.sig=0xebcfdf3f8bd4d9ea.mesh.bin 
 
 >>>cd $(TESTX-WingDIR); ${MPIRUN} ./amps 
 >>>@echo "test_X-Wing_run... done" >> test_X-Wing$(TESTX-Wing-REF).diff
