@@ -74,6 +74,7 @@ module PT_wrapper
   real             :: LonMax =  10.0*cDegToRad
   real             :: LatMin =  25.0*cDegToRad
   real             :: LatMax =  90.0*cDegToRad
+  logical :: DoCheck = .true., DoInit = .true.
 contains
   !============================================================================
 
@@ -82,6 +83,8 @@ contains
     use CON_comp_info
     use ModReadParam
     use CON_bline,   ONLY: BL_set_grid, UseBLine_C
+    use ModConst,    ONLY: rSun
+    use CON_physics, ONLY: get_time
     integer :: iComm,iProc,nProc, nThread
 
     ! Arguments
@@ -115,7 +118,10 @@ contains
 
     case('CHECK')
        ! AMPS could check now the input parameters for consistency
-
+       if(UseBLine_C(PT_).and.DoCheck)then
+          DoCheck = .false.   !To do this only once
+          call get_time(tSimulationOut = DataInputTime)
+       end if
     case('READ')
        ! get section of PARAM.in that contains the PT module
        allocate(StringLineF_I(i_line_read()+1:n_line_read()))
@@ -143,7 +149,7 @@ contains
           ! Otherwise, it should be set to some value, to be read and
           ! provided by PT/AMPS
           !
-          call BL_set_grid(TypeCoordSystem='HGI', UnitX=1.0)
+          call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
        else
           Grid_C(PT_)%TypeCoord='HGI'
        end if
@@ -169,7 +175,8 @@ contains
     else
        code=0
     end if
-    if(UseBLine_C(PT_))then
+    if(UseBLine_C(PT_).and.DoInit)then
+       DoInit = .false.   ! Do this only once
        !
        ! Initialize and connect to the data
        nullify(MHData_VIB); nullify(nVertex_B)
@@ -208,7 +215,7 @@ contains
   !============================================================================
 
   subroutine PT_run(TimeSimulation, TimeSimulationLimit)
-    use CON_bline, ONLY:  nLine, NameVar_V, nMHData, UseBLine_C
+    use CON_bline, ONLY:  nLine, NameVar_V, nMHData, UseBLine_C, BL_update_r
     !INPUT/OUTPUT ARGUMENTS:
     real, intent(inout):: TimeSimulation   ! current time of component
 
@@ -228,7 +235,9 @@ contains
     !
     ! if UseBLine_C(PT_), available: DataInputTime, MHData_VIB, nVertex_B
     ! stub  for amps_get_bline is put to the end of the file
-    if(UseBLine_C(PT_)) call amps_get_bline(&
+    if(UseBLine_C(PT_))then
+       call BL_update_r
+       call amps_get_bline(&
          DataInputTime, & ! real, intent in
          nVertexMax   , & ! integer, intent in
          nLine        , & ! integer, intent in
@@ -236,6 +245,9 @@ contains
          nMHData      , & ! integer, intent it
          NameVar_V    , & ! character(len=10), dimension(0:nMHData) intent in
          MHData_VIB)! real,intent in,dimension(0:nMHData,1:nVertexMax,1:nLine)
+       TimeSimulation = TimeSimulationLimit  !For test purpose only
+       RETURN                                !For test purpose only
+    end if
     ! actually filled in part is for second index ranging 1:nVertex_B(1:nLine)
     ! call AMPS
     call AMPS_timestep(TimeSimulation, TimeSimulationLimit)
