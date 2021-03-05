@@ -897,7 +897,7 @@ Compile=
 
 >>>cd BATL;make READAMRLIB
 
->>>./Config.pl -application=test/earth-cutoff-rigidity  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
+>>>./Config.pl -application=test/earth-cutoff-rigidity -spice-path=nospice  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_
