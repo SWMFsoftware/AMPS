@@ -2134,7 +2134,9 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
     while (FluxSourceProcess[SourceProcessID]/TotalFlux<rnd());
 
     //the particle buffer used to set-up the new particle data
-    char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+    PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+    for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
     PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
     //set the default value for the correction factor
@@ -2267,8 +2269,8 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
 
    newParticle=PIC::ParticleBuffer::GetNewParticle();
    newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-   memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
+   PIC::ParticleBuffer::CloneParticle(newParticleData,tempParticleData);
    nInjectedParticles++;
 
    //for the secondary source processes accout for the decrease of the surface density

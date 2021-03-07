@@ -115,6 +115,22 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 }
 
 //==========================================================
+//output checksum of the particle buffer
+void PIC::ParticleBuffer::PrintBufferChecksum(int nline,const char* fname) {
+  CRC32 CheckSum;
+  static int CallCounter=0;
+
+  CheckSum.add(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+
+  char msg[500];
+
+  sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+  CheckSum.PrintChecksum(msg);
+  CallCounter++;
+}
+
+
+//==========================================================
 //Request additional data for a particle
 void PIC::ParticleBuffer::RequestDataStorage(long int &offset,int TotalDataLength) {
   if (ParticleDataBuffer!=NULL) exit(__LINE__,__FILE__,"Error: the particle data buffer is already initialized. Request the particle data storage before the initialization of the particle data buffer");

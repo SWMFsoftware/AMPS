@@ -1628,6 +1628,9 @@ namespace PIC {
     // macro definition for particle data offsets
     #include "picParticleDataMacro.h"
 
+    //output checksum of the particle buffer
+    void PrintBufferChecksum(int nline,const char* fname);
+
     //the total length of a data allocated for a particle
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int ParticleDataLength;
 
