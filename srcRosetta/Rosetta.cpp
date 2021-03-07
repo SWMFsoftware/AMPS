@@ -533,7 +533,11 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__0_Bjorn_]=Rosetta::GetTot
      startNode=NULL;
 
      //generate a particle                                                                                             
-     char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+     PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
      PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
      flag=Rosetta::GenerateParticlePropertiesBjornNASTRAN(spec,x_SO_OBJECT,x_IAU_OBJECT,v_SO_OBJECT,v_IAU_OBJECT,sphereX0,sphereRadius,startNode,Sphere,tempParticleData);
@@ -573,8 +577,9 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__0_Bjorn_]=Rosetta::GetTot
      
      newParticle=PIC::ParticleBuffer::GetNewParticle();
      newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-     memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+//     memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
      
+     PIC::ParticleBuffer::CloneParticle(newParticleData,tempParticleData);
      nInjectedParticles++;
      
      //inject the particle into the system                                                                             
@@ -597,7 +602,11 @@ ot defined");
   while (FluxSourceProcess[SourceProcessID]/TotalFlux<rnd());
   
   //generate a particle                                                                                             
-  char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+     PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
+
   PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
   
   //to satisfy the compiler and fit the while structure                                                             
@@ -630,8 +639,9 @@ ot defined");
 
   newParticle=PIC::ParticleBuffer::GetNewParticle();
   newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-  memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+//  memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
+  PIC::ParticleBuffer::CloneParticle(newParticleData,tempParticleData);
   nInjectedParticles++;
 
   //inject the particle into the system                                                                             
