@@ -1615,6 +1615,9 @@ namespace PIC {
     extern byte *ParticleDataBuffer;
     extern long int MaxNPart,NAllPart,FirstPBufferParticle;
 
+    //output checksum of the particle buffer
+    void PrintBufferChecksum(int nline,const char* fname); 
+
     //Request additional data for a particle
     void RequestDataStorage(long int &offset,int TotalDataLength);
 
