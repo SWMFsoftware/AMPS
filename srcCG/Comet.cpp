@@ -448,6 +448,8 @@ long int Comet::InjectionBoundaryModel_Limited(int spec) {
   int SourceProcessID,iInjectionFaceNASTRAN;
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
+  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;  
+
   double totalProductionRate=Comet::GetTotalProductionRateBjornNASTRAN(spec)+Comet::GetTotalProductionRateUniformNASTRAN(spec)+Comet::GetTotalProductionRateJetNASTRAN(spec);
 
   const int nMaxInjectedParticles=10*PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber;
@@ -641,6 +643,8 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
      char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
+     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0; 
+
      //generate a particle                                                                                             
      PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
@@ -711,7 +715,10 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
     //generate a new particle
     newParticle=PIC::ParticleBuffer::GetNewParticle();
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-    memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+    //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+    
+
+    PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
 
     /*
     //apply condition of tracking the particle
@@ -887,6 +894,10 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
   //generate a particle                                                                                             
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
+
   PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
   //to satisfy the compiler and fit the while structure                                                             
@@ -947,8 +958,10 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
     newParticle=PIC::ParticleBuffer::GetNewParticle();
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-    memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+    //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
+
+    PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
     threadInjectedParticles[thisThreadOpenMP]++;
 
     //sample the injection rate
@@ -2334,6 +2347,9 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
 
   //the particle buffer used to set-up the new particle data
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
   PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
   //copy the state of the initial parent particle into the new-daugher particle (just in case....)
@@ -2421,7 +2437,9 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
          //get and injection into the system the new model particle
          newParticle=PIC::ParticleBuffer::GetNewParticle();
          newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-         memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+         //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+
+         PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
 
          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,ProductTimeStep-TimeCounter,node,true);
        }
