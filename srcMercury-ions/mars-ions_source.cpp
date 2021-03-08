@@ -223,6 +223,9 @@ long int MarsIon::SourceProcesses::InjectParticles() {
     //generate new particle
     //the particle buffer used to set-up the new particle data
     PIC::ParticleBuffer::byte *newParticleData,tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+
+    for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
     PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
     //set the default value for the correction factor
@@ -252,7 +255,9 @@ long int MarsIon::SourceProcesses::InjectParticles() {
 
     newParticle=PIC::ParticleBuffer::GetNewParticle();
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
-    memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+
+    //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+    PIC::ParticleBuffer::CloneParticle(newParticleData,tempParticleData);
 
     _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(newParticle,block->GetLocalTimeStep(_O_PLUS_SPEC_)*rnd(),node,true);
     nInjectedParticles++;
