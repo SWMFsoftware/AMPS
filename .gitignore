@@ -33,3 +33,4 @@ srcTemp
 test_*
 run*
 Makefile.test
+doc/AMPS.log
