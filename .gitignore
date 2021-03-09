@@ -34,3 +34,9 @@ test_*
 run*
 Makefile.test
 doc/AMPS.log
+doc/AMPS.aux
+doc/AMPS.idx
+doc/AMPS.out
+doc/AMPS.pdf
+doc/AMPS.toc
+doc/AMPS.dvi
