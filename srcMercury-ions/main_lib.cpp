@@ -157,11 +157,13 @@ void amps_init_mesh() {
   rnd_seed();
 
   //init the physical model
-  MarsIon::Init_BeforeParser();
+//  MarsIon::Init_BeforeParser();
 
   //init the particle solver
   Exosphere::Init_BeforeParser();
   PIC::Init_BeforeParser();
+
+  MarsIon::Init_BeforeParser();
 
   //register the sphere
   static const bool SphereInsideDomain=true;
