@@ -73,8 +73,8 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double p,pmin,pmax,speed,pvect[3]; 
   double mass=PIC::MolecularData::GetMass(spec);
 
-  pmin=Relativistic::Energy2Momentim(emin,mass);
-  pmax=Relativistic::Energy2Momentim(emax,mass);
+  pmin=Relativistic::Energy2Momentum(emin,mass);
+  pmax=Relativistic::Energy2Momentum(emax,mass);
 
   double cMin=pow(pmin,-q);
 

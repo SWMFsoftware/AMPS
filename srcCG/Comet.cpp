@@ -131,7 +131,7 @@ void Comet::Init_BeforeParser() {
 
 #if _3DGRAVITY__MODE_ == _3DGRAVITY__MODE__ON_
   //request sampling buffer and particle fields
-  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
 
   //print out of the otuput file
   PIC::Mesh::AddVaraibleListFunction(PrintVariableList);

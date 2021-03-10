@@ -283,7 +283,7 @@ inline void ReadMTGCM() {
 
     //request sampling buffer for the Mars model
     PIC::IndividualModelSampling::RequestSamplingData.push_back(RequestSamplingData);
-    PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestStaticCellData);
+    PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestStaticCellData);
 
     //init the buffer for sampling the escape rate
     SampledEscapeRate=new double[PIC::nTotalSpecies];

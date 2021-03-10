@@ -131,7 +131,7 @@ int MarsIon::Output::RequestDataBuffer(int offset){
 
 void MarsIon::Output::Init() {
   //request sampling buffer and particle fields
-  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
 
   //print out of the otuput file
   PIC::Mesh::PrintVariableListCenterNode.push_back(PrintVariableList);
@@ -422,6 +422,8 @@ int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 
     }
   }
+
+  return res;
 }
 
 
