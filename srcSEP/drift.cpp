@@ -34,7 +34,7 @@ void SEP::InitDriftVelData() {
     for (idim=0;idim<3;idim++) B[idim]=0.0;
     
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset); 
+      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset); 
 
       B[idim]+=Stencil.Weight[iStencil]*ptr[idim];
     }
@@ -209,8 +209,8 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   for (idim=0;idim<3;idim++) B[idim]=0.0,Vsw[idim]=0.0;
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
-    double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+    double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+    double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
 
     for (idim=0;idim<3;idim++) {
       B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
@@ -247,11 +247,11 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
    
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+    double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
 
     for (idim=0;idim<3;idim++) t[idim]+=Stencil.Weight[iStencil]*ptr[idim];
 
-    Vz_zplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[2]; 
+    Vz_zplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[2]; 
   }
    
   B_zplus=sqrt(t[0]*t[0]+t[1]*t[1]+t[2]*t[2]); 
@@ -273,11 +273,11 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+    double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
 
     for (idim=0;idim<3;idim++) t[idim]+=Stencil.Weight[iStencil]*ptr[idim];
 
-    Vz_zminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[2];
+    Vz_zminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[2];
   }
 
   B_zminus=sqrt(t[0]*t[0]+t[1]*t[1]+t[2]*t[2]);
@@ -300,7 +300,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
 
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    Vy_yplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[1];
+    Vy_yplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[1];
   }
 
   //y-
@@ -320,7 +320,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    Vy_yminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[1];
+    Vy_yminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[1];
   }
 
   //x+
@@ -340,7 +340,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    Vx_xplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[0];
+    Vx_xplus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[0];
   }
 
   //x-
@@ -360,7 +360,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   }
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-    Vx_xminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))[0];
+    Vx_xminus+=Stencil.Weight[iStencil]*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset))[0];
   }
 
   dVsw_xdx=(dx>0.0) ? (Vx_xplus-Vx_xminus)/dx : 0.0; 
@@ -522,6 +522,9 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
   }; 
 
+  double *sphereX0,InnerBoundaryRadius;
+  SEP::InnerBoundary->GetSphereGeometricalParameters(sphereX0,InnerBoundaryRadius);
+
   auto GetCoefficients = [&] (cGetCoefficientManager* mng,double time_offset) {
     PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
     int idim;
@@ -530,8 +533,8 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(mng->x0,mng->Node,Stencil);
 
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
-      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
 
       for (idim=0;idim<3;idim++) {
         B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
@@ -555,7 +558,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
 
-    if (NodeAvailabilityFlag==true) {
+    if ((NodeAvailabilityFlag==true)&&(xtest[0]*xtest[0]+xtest[1]*xtest[1]+xtest[2]*xtest[2]<InnerBoundaryRadius*InnerBoundaryRadius))  {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
       ds+=mng->l;
     }
@@ -564,7 +567,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     }
 
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
 
       for (idim=0;idim<3;idim++) tB[idim]+=Stencil.Weight[iStencil]*ptr[idim];
     }
@@ -579,7 +582,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
 
-    if (NodeAvailabilityFlag==true) {
+    if ((NodeAvailabilityFlag==true)&&(xtest[0]*xtest[0]+xtest[1]*xtest[1]+xtest[2]*xtest[2]<InnerBoundaryRadius*InnerBoundaryRadius)) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
       ds+=mng->l;
     }
@@ -588,7 +591,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     }
 
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+      double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
       
       for (idim=0;idim<3;idim++) tB[idim]+=Stencil.Weight[iStencil]*ptr[idim];
     }
@@ -605,7 +608,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
 
-    if (NodeAvailabilityFlag==true) {
+    if ((NodeAvailabilityFlag==true)&&(xtest[0]*xtest[0]+xtest[1]*xtest[1]+xtest[2]*xtest[2]<InnerBoundaryRadius*InnerBoundaryRadius)) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     }
     else {
@@ -613,15 +616,15 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     }
 
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
-      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
 
       for (idim=0;idim<3;idim++) {
         tB[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
         Vsw_tplus[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
       }
 
-      rho_tplus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset)));
+      rho_tplus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::PlasmaNumberDensityOffset)));
     }
 
     B_tplus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
@@ -635,7 +638,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
 
-    if (NodeAvailabilityFlag==true) {
+    if ((NodeAvailabilityFlag==true)&&(xtest[0]*xtest[0]+xtest[1]*xtest[1]+xtest[2]*xtest[2]<InnerBoundaryRadius*InnerBoundaryRadius)) {
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,tNode,Stencil);
     }
     else {
@@ -643,21 +646,21 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     }
 
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
-      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+      double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+      double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
 
       for (idim=0;idim<3;idim++) {
         tB[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
         Vsw_tminus[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
       }
 
-      rho_tminus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset)));
+      rho_tminus+=Stencil.Weight[iStencil]*(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::PlasmaNumberDensityOffset)));
     }
 
     B_tminus=sqrt(tB[0]*tB[0]+tB[1]*tB[1]+tB[2]*tB[2]);
 
 
-    if ((B_tplus>0.0)&&(B_tminus>0.0)) {
+    if ((B_tplus>0.0)&&(B_tminus>0.0)&&(B_splus>0.0)&&(B_sminus>0.0)) {
       mng->Dln_B_Dt=log(B_tplus/B_tminus)/(2.0*mng->t);
       mng->dln_B_ds=(ds>0.0) ? log(B_splus/B_sminus)/ds : 0.0;
 
@@ -721,7 +724,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
   startNode=PIC::Mesh::mesh->findTreeNode(x_middle,startNode);
 
-  if ((startNode==NULL)||(x_middle[0]*x_middle[0]+x_middle[1]*x_middle[1]+x_middle[2]*x_middle[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
+  if ((startNode==NULL)||(x_middle[0]*x_middle[0]+x_middle[1]*x_middle[1]+x_middle[2]*x_middle[2]<InnerBoundaryRadius*InnerBoundaryRadius)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
 
   if (trajectory_teminated==true) {
@@ -748,7 +751,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
   startNode=PIC::Mesh::mesh->findTreeNode(x_final,startNode);
 
-  if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
+  if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<InnerBoundaryRadius*InnerBoundaryRadius)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
 
   if (trajectory_teminated==true) {

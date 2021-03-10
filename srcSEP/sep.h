@@ -38,6 +38,9 @@
 namespace SEP {
   using namespace Exosphere;
 
+  //sphere describing the inner boundary of the domain 
+  extern cInternalSphericalData* InnerBoundary;
+
   //parameters controlling the model execution
   const int DomainType_ParkerSpiral=0;
   const int DomainType_MultipleParkerSpirals=1; 

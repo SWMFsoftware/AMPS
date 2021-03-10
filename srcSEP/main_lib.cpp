@@ -28,13 +28,16 @@
 #include "constants.h"
 #include "sep.h"
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "amps2swmf.h"
+#endif
 
 
 
 //the parameters of the domain and the sphere
 
 const double DebugRunMultiplier=4.0;
-const double rSphere=_RADIUS_(_TARGET_);
+double rSphere=_RADIUS_(_TARGET_);
 
 
 const double xMaxDomain=250;
@@ -102,6 +105,11 @@ PIC::Init_BeforeParser();
     cInternalBoundaryConditionsDescriptor SphereDescriptor;
     cInternalSphericalData *Sphere;
 
+    //correct radiust of the  sphere to be consistent with the location of the inner boundary of the SWMF/SC
+    //use taht in case of coupling to the SWMF
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    if (AMPS2SWMF::Heliosphere::rMin>0.0) rSphere=AMPS2SWMF::Heliosphere::rMin;
+    #endif
 
     //reserve memory for sampling of the surface balance of sticking species
     long int ReserveSamplingSpace[PIC::nTotalSpecies];
@@ -116,6 +124,8 @@ PIC::Init_BeforeParser();
     Sphere=(cInternalSphericalData*) SphereDescriptor.BoundaryElement;
     Sphere->SetSphereGeometricalParameters(sx0,rSphere);
 
+    //set the innber bounday sphere 
+    SEP::InnerBoundary=Sphere;
 
     char fname[_MAX_STRING_LENGTH_PIC_];
 

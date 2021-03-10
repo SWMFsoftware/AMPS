@@ -71,14 +71,18 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   double q=3.0*s/(3-1.0);
 
   double p,pmin,pmax,speed,pvect[3]; 
+  double mass=PIC::MolecularData::GetMass(spec);
+
+  pmin=Relativistic::Energy2Momentim(emin,mass);
+  pmax=Relativistic::Energy2Momentim(emax,mass);
 
   double cMin=pow(pmin,-q);
 
   speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));  
-  pmin=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec)); 
+  pmin=Relativistic::Speed2Momentum(speed,mass); 
 
   speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
-  pmax=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+  pmax=Relativistic::Speed2Momentum(speed,mass);
 
   double A0=pow(pmin,-q+1.0);
   double A=pow(pmax,-q+1.0)-A0; 
@@ -154,8 +158,8 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,startNode,Stencil);
 
        for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
-         double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
-         double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+         double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+         double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
 
          for (idim=0;idim<3;idim++) {
            B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
