@@ -200,7 +200,7 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
 
 void PIC::CPLR::SWMF::init() {
   //request sampling buffer and particle fields
-  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
 
   //print out of the otuput file
   PIC::Mesh::AddVaraibleListFunction(PrintVariableList);

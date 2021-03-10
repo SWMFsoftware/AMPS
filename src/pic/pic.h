@@ -3773,7 +3773,8 @@ namespace PIC {
 
     //reserve memoty in a cell associated data buffer for non-sampling data
     typedef int (*fRequestStaticCellData)(int);
-    extern _TARGET_DEVICE_ amps_vector<fRequestStaticCellData> *RequestStaticCellData,*RequestStaticCellCornerData;
+    extern _TARGET_DEVICE_ amps_vector<fRequestStaticCellData> *RequestStaticCellCornerData;
+    extern vector<fRequestStaticCellData> RequestStaticCellData;
 
     //the list of user defined sampling procedures
     typedef void (*fSamplingProcedure)();

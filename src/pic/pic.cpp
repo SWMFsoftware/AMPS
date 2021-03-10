@@ -1881,8 +1881,8 @@ void PIC::Init_BeforeParser() {
   //initiate MPI
   InitMPI();
 
-  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
-  PIC::IndividualModelSampling::RequestStaticCellData->clear();
+//  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+//  PIC::IndividualModelSampling::RequestStaticCellData->clear();
 
   PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
   PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();

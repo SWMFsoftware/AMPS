@@ -465,9 +465,9 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 #endif
 
   //allocate the model requested static (not sampling) cell data
-  if (PIC::IndividualModelSampling::RequestStaticCellData->size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellData->size();i++) {
-      PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=(*PIC::IndividualModelSampling::RequestStaticCellData)[i](PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
+  if (PIC::IndividualModelSampling::RequestStaticCellData.size()!=0) {
+    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellData.size();i++) {
+      PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellData[i](PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
     }
   }
 

@@ -23,6 +23,26 @@ namespace AMPS2SWMF {
   extern char ComponentName[10];
   extern int ComponentID;
 
+  //parameters of the current SWMF session
+  extern int iSession;
+  extern double swmfTimeSimulation;
+  extern bool swmfTimeAccurate;
+
+  //amps_init_flag
+  extern bool amps_init_flag;
+
+  //AMPS execution timer 
+  extern PIC::Debugger::cTimer ExecutionTimer; 
+
+  //hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
+  typedef void (*fUserFinalizeSimulation)(); 
+  extern fUserFinalizeSimulation UserFinalizeSimulation;
+
+  //the namespace containds variables used in heliosphere simulations 
+  namespace Heliosphere {
+    extern double rMin;
+  }
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 

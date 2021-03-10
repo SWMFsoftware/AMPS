@@ -26,12 +26,17 @@ int AMPS2SWMF::PARAMIN::read_paramin(stringstream *param) {//(int argc, char **a
          sprintf(PIC::Restart::SamplingData::RestartFileName,"%s","PC/restartOUT/restart_field.dat");
          break;
        case _AMPS_SWMF_PT_:
-         sprintf(PIC::Restart::recoverParticleDataRestartFileName,"%s","PT/restartOUT/restart_particle.dat");
-         sprintf(PIC::Restart::SamplingData::RestartFileName,"%s","PT/restartOUT/restart_field.dat");
+         sprintf(PIC::Restart::saveParticleDataRestartFileName,"%s","PT/restartOUT/restart_particle.dat");
+         sprintf(PIC::Restart::recoverParticleDataRestartFileName,"%s","PT/restartIN/restart_particle.dat");
+         sprintf(PIC::Restart::SamplingData::RestartFileName,"%s","PT/restartIN/restart_field.dat");
          break;
        default:
          exit(__LINE__,__FILE__,"Error: the option is unlnown");
        }
+    }
+    else if (Command == "#HELIOSPHERE") {
+      read_var(param,"RMIN",&AMPS2SWMF::Heliosphere::rMin); 
+      AMPS2SWMF::Heliosphere::rMin*=_RADIUS_(_SUN_); 
     }
     else if (Command == "#TEST"){
       read_var(param,"DoTest",   &TestVar);

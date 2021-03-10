@@ -22,7 +22,10 @@ int PIC::Rnd::CenterNode::RequestDataBuffer(int OffsetIn) {
 _TARGET_DEVICE_ _TARGET_HOST_
 void PIC::Rnd::CenterNode::Init() {
   //reserve memory to store the seed in the center node state vector
-  PIC::IndividualModelSampling::RequestStaticCellData->push_back(RequestDataBuffer);
+
+  #ifndef __CUDA_ARCH__
+  PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
+  #endif
 }
 
 void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {

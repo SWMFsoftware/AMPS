@@ -21,7 +21,9 @@ vector<PIC::IndividualModelSampling::fSamplingProcedure> PIC::IndividualModelSam
 vector<PIC::IndividualModelSampling::fPrintVariableList> PIC::IndividualModelSampling::PrintVariableList;
 vector<PIC::IndividualModelSampling::fInterpolateCenterNodeData> PIC::IndividualModelSampling::InterpolateCenterNodeData;
 vector<PIC::IndividualModelSampling::fPrintSampledData> PIC::IndividualModelSampling::PrintSampledData;
-amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> _TARGET_DEVICE_ *PIC::IndividualModelSampling::RequestStaticCellData,*PIC::IndividualModelSampling::RequestStaticCellCornerData;
+
+vector<PIC::IndividualModelSampling::fRequestStaticCellData> PIC::IndividualModelSampling::RequestStaticCellData;
+amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> _TARGET_DEVICE_ *PIC::IndividualModelSampling::RequestStaticCellCornerData;
 vector<PIC::Datum::cDatumSampled*>PIC::IndividualModelSampling::DataSampledList;
 
 //generic particle transformation

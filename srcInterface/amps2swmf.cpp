@@ -42,6 +42,23 @@ double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0};
 char AMPS2SWMF::ComponentName[10]="";
 int AMPS2SWMF::ComponentID=_AMPS_SWMF_UNDEFINED_; 
 
+//the namespace containds variables used in heliosphere simulations
+double AMPS2SWMF::Heliosphere::rMin=-1.0;  
+
+//parameters of the current SWMF session
+int AMPS2SWMF::iSession=-1;
+double AMPS2SWMF::swmfTimeSimulation=-1.0;
+bool AMPS2SWMF::swmfTimeAccurate=true;
+
+//amps_init_flag
+bool AMPS2SWMF::amps_init_flag=false;
+
+//amps execution timer 
+PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
+
+//hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
+AMPS2SWMF::fUserFinalizeSimulation AMPS2SWMF::UserFinalizeSimulation=NULL;
+
 extern "C" { 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
   void amps_from_gm_init(int *ParamInt, double *ParamReal, char *NameVar);
@@ -57,6 +74,8 @@ extern "C" {
   void amps_save_restart_();
   void amps_finalize_();
 
+  void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode);
+
   //set the component name 
   void amps_set_component_name_(char* l) {
 //    sprintf(AMPS2SWMF::ComponentName,"%s",l);
@@ -71,7 +90,19 @@ extern "C" {
   } 
 
   //determine whether a point belongs to a fomain of a particlelar SWMF component 
-  bool IsDomainSC(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;}
+  bool IsDomainSC(double *x) {
+    double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
+    bool res=true;
+
+    if (AMPS2SWMF::Heliosphere::rMin>0.0) if (r2<AMPS2SWMF::Heliosphere::rMin*AMPS2SWMF::Heliosphere::rMin) res=false;  
+
+    double t=23.0*_SUN__RADIUS_;
+    if (r2>t*t) res=false;
+
+    return res;
+  }
+
+
   bool IsDomainIH(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]>=23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;} 
 
   //set the location of the Earth. The function is caled by the coupler 
@@ -89,7 +120,7 @@ extern "C" {
 
   //return the number of the AMPS' mesh rebalancing operations
   void amps_mesh_id_(int* id) {
-    //*id=PIC::Mesh::mesh->nParallelListRedistributions;
+    //*id=PIC::Mesh::mesh.nParallelListRedistributions;
     PIC::Mesh::mesh->SyncMeshID();
     *id=PIC::Mesh::mesh->GetMeshID();
     //*id=aa;
@@ -108,6 +139,13 @@ extern "C" {
     #endif
 
     PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(iComm,iProc,nProc);
+  }
+
+  void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode) {
+    AMPS2SWMF::iSession=*iSession;
+    AMPS2SWMF::swmfTimeSimulation=*TimeSimulation;
+
+    AMPS2SWMF::swmfTimeAccurate=(*swmfTimeAccurateMode==1) ? true : false;
   }
   
   void amps_save_restart_(){
@@ -229,13 +267,10 @@ extern "C" {
     list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
 #endif
 
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
-    static bool initFlag=false;
-    if (!initFlag){
+    if (AMPS2SWMF::amps_init_flag==false) {
       amps_init();
-      initFlag = true; 
+      AMPS2SWMF::amps_init_flag=true; 
     }
-#endif
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     for (f=PIC::CPLR::SWMF::SendCenterPointData.begin();f!=PIC::CPLR::SWMF::SendCenterPointData.end();f++) {
@@ -250,8 +285,7 @@ extern "C" {
   }
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit) {
-    static bool InitFlag=false;
-    static double swmfTimeSimulation=-1.0;
+    using namespace AMPS2SWMF;
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
     
@@ -265,9 +299,9 @@ extern "C" {
       }
       else { 
         //init AMPS
-        if (InitFlag==false) {
+        if (AMPS2SWMF::amps_init_flag==false) {
           amps_init();
-          InitFlag=true;
+          AMPS2SWMF::amps_init_flag=true;
         }
       
         //determine whether to proceed with the current iteraction
@@ -311,6 +345,8 @@ extern "C" {
 
     bool call_amps_flag=true;
 
+do {
+
     switch (_PIC_COUPLER_MODE_) {
     case _PIC_COUPLER_MODE__SWMF_:
       call_amps_flag=coupler_swmf();
@@ -325,9 +361,16 @@ extern "C" {
     counter++;
 
     if (call_amps_flag==true) {
+      ExecutionTimer.Start();
       amps_time_step();
+      ExecutionTimer.UpdateTimer();
+
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
+}
+while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
+
+
   }
 
   void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {
@@ -354,12 +397,18 @@ extern "C" {
   void amps_finalize_() {
     char fname[_MAX_STRING_LENGTH_PIC_];
 
+    //print the executed time 
+     AMPS2SWMF::ExecutionTimer.PrintMeanMPI("AMPS execution time avaraged over all MPI processes involved in the simulation");
+
     //output the test run particle data
     sprintf(fname,"%s/amps.dat",PIC::OutputDataFileDirectory);
     
     #if _PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_ 
     PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
     #endif
+
+    //call a user-defined function to finalize the application
+    if (AMPS2SWMF::UserFinalizeSimulation!=NULL) AMPS2SWMF::UserFinalizeSimulation();
 
     //save particle trajectory file
     #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
