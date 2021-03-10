@@ -614,7 +614,7 @@ namespace Relativistic {
   }
 
   //EK=m c^2 * (sqrt(1+(p/(m*c))^2-1) => p=sqrt(2*m*EK+(EK/c)^2)  
-  inline double Energy2Momentim(double Energy,double mass) {
+  inline double Energy2Momentum(double Energy,double mass) {
     double t=Energy/SpeedOfLight;
 
     return sqrt(2.0*mass*Energy+t*t);
