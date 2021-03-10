@@ -422,6 +422,8 @@ int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 
     }
   }
+
+  return res;
 }
 
 
