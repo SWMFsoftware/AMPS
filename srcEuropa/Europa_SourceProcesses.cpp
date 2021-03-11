@@ -8,7 +8,7 @@
 //$Id$
 
 #include "pic.h"
-
+#include "Europa.h"
 
 //injection parameters of the thermal ions
 //double Europa::ThermalIon::O::BulkVelocity[3]={90.3E3,0.0,0.0};
@@ -55,3 +55,45 @@ cSingleVariableDiscreteDistribution<int> Europa::SourceProcesses::SolarWindSputt
   return (t>0.0) ? t : 0.0;
 }*/
 
+cSingleVariableDiscreteDistribution<int> *Europa::UniformMaxwellian::SurfaceInjectionDistribution=NULL;
+void Europa::UniformMaxwellian::Init_surfaceDistribution(){
+  double ElementSourceRate,t;
+  int el,nTotalSurfaceElements,spec;
+  using namespace Europa::UniformMaxwellian;
+  if (Exosphere::Planet==NULL) return;
+  
+  if (SurfaceInjectionDistribution==NULL) {
+    SurfaceInjectionDistribution=new cSingleVariableDiscreteDistribution<int> [PIC::nTotalSpecies];
+    printf("Init_surfaceDistribution called\n");
+    nTotalSurfaceElements=Planet->GetTotalSurfaceElementsNumber();
+  
+    double rate[nTotalSurfaceElements];
+    for (spec=0;spec<PIC::nTotalSpecies;spec++){
+      if (spec!=_O2_SPEC_ && spec!=_H2O_SPEC_ && spec!=_H2_SPEC_ &&
+	  spec!=_OH_SPEC_ && spec!=_O_SPEC_ && spec!=_H_SPEC_) continue;
+      for (el=0;el<nTotalSurfaceElements;el++) {
+	ElementSourceRate=GetSurfaceElementProductionRate(spec,el,Exosphere::Planet);
+	rate[el]=ElementSourceRate/Planet->GetSurfaceElementArea(el);     
+      }
+
+    SurfaceInjectionDistribution[spec].InitArray(rate,nTotalSurfaceElements,10*nTotalSurfaceElements);
+    }
+  }
+  
+}
+
+
+double Europa::UniformMaxwellian::GetSurfaceElementProductionRate(int spec,int SurfaceElement,void *SphereDataPointer) {
+  
+  double r = ((cInternalSphericalData*)SphereDataPointer)->Radius;
+ 
+  return GetTotalProductionRate(spec)*((cInternalSphericalData*)SphereDataPointer)->SurfaceElementArea[SurfaceElement]/(4.0*Pi*r*r);
+  
+
+}
+
+
+
+
+
+//  i=SurfaceInjectionProbability[spec].DistributeVariable();
