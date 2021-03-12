@@ -836,8 +836,8 @@ namespace Europa {
 
 
        //determine if the particle belongs to this processor
-       startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_GALL_EPHIOD_EUROPA,startNode);
-       if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+       startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_GALL_EPHIOD_EUROPA,startNode);
+       if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
        //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_EUROPA'
        double c=0.0,rVel=0.0,lVel[3];
@@ -1048,7 +1048,7 @@ namespace Europa {
 
       double ModelParticlesInjectionRate;
 
-      if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+      if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
         for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
           startNode->GetExternalNormal(ExternalNormal,nface);
 
@@ -1065,11 +1065,11 @@ namespace Europa {
 
           if (ModelParticlesInjectionRate>0.0) {
             ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
-            PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+            PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
             while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
               //generate the new particle position on the face
-              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh.EPS;
+              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh->EPS;
 
               //generate particles' velocity
               PIC::Distribution::InjectMaxwellianDistribution(v,Thermal_OPlus_BulkVelocity,Thermal_OPlus_Temperature,ExternalNormal,_O_PLUS_THERMAL_SPEC_,-1);
@@ -1101,10 +1101,10 @@ namespace Europa {
             ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
 
-            PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+            PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
             while (true) {    /////((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
               //generate the new particle position on the face
-              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh.EPS;
+              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh->EPS;
 
 
               MagnetosphericInjection(Speed, RelWeight);
@@ -1447,10 +1447,10 @@ if (v[0]*x[0]+v[1]*x[1]+v[2]*x[2]<0) {
     PIC::Mesh::cDataCenterNode *CenterNode;
     double E[3],B[3];
 
-    if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL,startNode);
+    if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
-      if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -1640,7 +1640,7 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newParticleNode;
 
       for (int idim=0;idim<3;idim++) x[idim]=xInit[idim]+rnd()*(xFinal[idim]-xInit[idim]);
-      newParticleNode=PIC::Mesh::mesh.findTreeNode(x,node);
+      newParticleNode=PIC::Mesh::mesh->findTreeNode(x,node);
 
 
       PIC::ParticleBuffer::CloneParticle(newParticle,ptr);
@@ -1739,8 +1739,8 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
 
     
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
       
       PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,UniformSurfaceTemperature,ExternalNormal,spec);
       
