@@ -262,6 +262,7 @@ allclean: clean
 	rm -rf main srcTemp *.input* amps Makefile.local Makefile.test \
 		.amps.conf .general.conf
 	rm -f output
+	rm -f AMPS.pdf
 
 rundir:
 	mkdir -p ${RUNDIR}/${COMPONENT}
@@ -273,9 +274,13 @@ EXE=amps
 
 LIB_AMPS = ${WSD}/libAMPS.a
 
+PDF:
+	cd doc; make PDF
+
 clean:
 	rm -rf ${LIB_AMPS} ${WSD}
 	@(if [ -d srcInterface ]; then cd srcInterface; $(MAKE) clean; fi);
+	cd doc; $(MAKE) clean
 
 tar:
 	cd ../pic-tower/sources/general; rm -f *.o *.a
