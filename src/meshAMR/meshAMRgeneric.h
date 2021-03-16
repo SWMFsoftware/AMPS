@@ -7662,7 +7662,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 #endif
                   }
                   else {
-                    if ((iNode==_BLOCK_CELLS_X_)|(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
+                    if ((iNode==_BLOCK_CELLS_X_)||(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
                       //the point is at the 'right' boundary of a block -> formally 'belongs' to the neib block
                       cTreeNodeAMR<cBlockAMR> *neibNode;
 
