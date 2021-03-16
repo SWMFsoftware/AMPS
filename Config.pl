@@ -3,23 +3,11 @@
 #  portions used with permission 
 #  For more information, see http://csem.engin.umich.edu/tools/swmf
 
-use strict;
-use warnings;
-use Cwd;
-use Scalar::Util qw/looks_like_number/;
-use Cwd qw(cwd);
-
-use lib cwd;
-use ampsConfigLib;
-
-
 # Allow in-place editing                                                        
 $^I = "";
 
 # Add local directory to search                                                 
 push @INC, ".";
-push @INC, "./share/Scripts";
-
 
 use strict;
 
@@ -38,7 +26,7 @@ our $TestName;
 our @Compilers;
 
 
-my $config     = "./share/Scripts/Config.pl";
+my $config     = "share/Scripts/Config.pl";
 #check util and share
 my $GITCLONE = "git clone"; my $GITDIR = "git\@gitlab.umich.edu:swmf_software";
 
@@ -125,6 +113,9 @@ foreach (@Arguments) {
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
      print "-avx=[256,512,off]\t\t\tsettings for using AVX instructions\n";
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
+     print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
+     print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
+     print "-fexit=[exit,mpi_abort]\t\tselect function that will be used to terminate code in case of an error. In some systems mpi_abort() does not terminate the code, but in other systems exit() does not terminate the code\n"; 
      exit;
    }
    
@@ -163,6 +154,11 @@ foreach (@Arguments) {
     `echo KAMELEON=nokameleon >> Makefile.local`;
     
     `cp -f input/$application.* input/species.input .`;
+
+     #set defailt compilation module flags in Makefile.local
+     `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
+     `rm Makefile.local`; 
+     `mv Makefile.local.new Makefile.local`;
 
      #remove path from the name of the input file is such exists
      my @list;
@@ -228,6 +224,24 @@ foreach (@Arguments) {
     }
   }   
       
+  if (/^-fexit=(.*)$/i) {
+    my $t;
+    $t=lc($1);
+    add_line_amps_conf("OPENMP=$1");
+
+    if ($t eq "exit") {
+      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__EXIT_\n");
+      next;
+    }
+    elsif ($t eq "mpi_abort") {
+      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__MPI_ABORT_\n");
+      next;
+    }
+    else {
+      die "Option is unrecognized: -openmpfgf=($1)";
+    }
+  }     
+
   
   if (/^-batl-path=(.*)$/i)       {
       add_line_amps_conf("BATL=$1");
@@ -290,6 +304,26 @@ foreach (@Arguments) {
     next;
   } 
 
+  if (/^-cuda$/i) {
+    add_line_general_conf("#undef _TARGET_GLOBAL_ \n#define _TARGET_GLOBAL_ __global__");
+    add_line_general_conf("#undef _TARGET_HOST_ \n#define _TARGET_HOST_ __host__");
+    add_line_general_conf("#undef _TARGET_DEVICE_ \n#define _TARGET_DEVICE_ __device__");
+    add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
+    add_line_general_conf("#undef _CUDA_MANAGED_\n#define _CUDA_MANAGED_ __managed__"); 
+
+    #add stuff in Makefile.conf
+    open (MAKEFILE,">>Makefile.conf") || die "Cannot open Makefile.local\n";
+    print MAKEFILE ".SUFFIXES: .cu\n.cu.o:\n\tnvcc \${FLAGCC} \$< -o \$@";
+    close (MAKEFILE);
+
+    next;
+  }
+
+  if (/^-no-signals/i) {
+    add_line_general_conf("#undef _INTERSEPT_OS_SIGNALS_ \n#define _INTERSEPT_OS_SIGNALS_ _OFF_"); 
+    next;
+  }
+
   if (/^-avx=(.*)$/) {
     my $t;
 
@@ -322,7 +356,7 @@ foreach (@Arguments) {
 
   if (/^-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -345,7 +379,7 @@ foreach (@Arguments) {
   
   if (/^-f-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -368,7 +402,7 @@ foreach (@Arguments) {
   
   if (/^-cpp-link-option=(.*)$/) {
     my $options=$1; 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     
     my $fh;
     open($fh,'<',"Makefile"); 
@@ -392,7 +426,7 @@ foreach (@Arguments) {
   if (/^-compiler-option=(.*)$/) {
     my $options=$1; 
 
-    $options =~ s/,/ /g;
+    $options =~ s/:/ /g;
     `echo EXTRACOMPILEROPTIONS+=$options >> Makefile.local`;
     next;
   }
@@ -433,7 +467,7 @@ foreach (@Arguments) {
     my $Opt;
     my @OptList;
 
-    $options=~s/,/ /g;
+    $options=~s/:/ /g;
     @OptList=split(' ',$options);
 
     my $line;
