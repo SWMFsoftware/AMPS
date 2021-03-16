@@ -19,9 +19,13 @@ int PIC::Rnd::CenterNode::RequestDataBuffer(int OffsetIn) {
   return sizeof(cRndSeedContainer);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::Rnd::CenterNode::Init() {
   //reserve memory to store the seed in the center node state vector
+
+  #ifndef __CUDA_ARCH__
   PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestDataBuffer);
+  #endif
 }
 
 void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -75,7 +79,7 @@ void PIC::Rnd::CenterNode::Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataB
 
 void PIC::Rnd::CenterNode::Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (node==NULL) {
-    node=PIC::Mesh::mesh.rootTree;
+    node=PIC::Mesh::mesh->rootTree;
   }
 
   //set the seed flag

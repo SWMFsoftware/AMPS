@@ -229,7 +229,7 @@ namespace SEP3D {
     PB::SetMagneticMoment(KinEnergyPerp/AbsB, ptrData);
     
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    node=PIC::Mesh::mesh.findTreeNode(x);
+    node=PIC::Mesh::mesh->findTreeNode(x);
     
     long int res=PB::InitiateParticle(x,v,NULL,NULL,
 				      ptrData,

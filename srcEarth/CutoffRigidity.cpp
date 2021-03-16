@@ -222,8 +222,8 @@ bool Earth::CutoffRigidity::ParticleInjector::GenerateParticleProperties(int spe
   }
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
   //generate velocity of the injected particle
   //IMPORTANT! The velocity vector is directed inside the sphere; and the trajectory is traced backward

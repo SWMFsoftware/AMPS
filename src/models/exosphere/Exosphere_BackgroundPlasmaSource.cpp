@@ -33,7 +33,7 @@ void Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::getMinMax
   for (nTotalBoundaryInjectionFaces=0,nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
     node=*nodeptr;
 
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
       for (int nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
         nTotalBoundaryInjectionFaces++;
       }
@@ -61,9 +61,9 @@ void Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::getMinMax
     for (nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
       node=*nodeptr;
 
-      if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+      if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
         for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
-          if (node->Thread==PIC::Mesh::mesh.ThisThread) {
+          if (node->Thread==PIC::Mesh::mesh->ThisThread) {
             LocalTimeStep=node->block->GetLocalTimeStep(spec);
             LocalParticleWeight=node->block->GetLocalParticleWeight(spec);
 
@@ -115,7 +115,7 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
     for (nTotalBoundaryInjectionFaces=0,nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
       node=*nodeptr;
 
-      if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+      if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
         for (int nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
           nTotalBoundaryInjectionFaces++;
         }
@@ -169,12 +169,12 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
   for (nBoundaryFace=0,nodeptr=PIC::BC::boundingBoxInjectionBlocksList.begin(),end=PIC::BC::boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
     node=*nodeptr;
 
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(node,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
       for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
         BoundaryFaceTotalInjectionRate[spec][nBoundaryFace]=0.0;
         maxBoundaryFaceLocalInjectionRate[spec][nBoundaryFace]=0.0;
 
-        if (node->Thread==PIC::Mesh::mesh.ThisThread) {
+        if (node->Thread==PIC::Mesh::mesh->ThisThread) {
           node->GetExternalNormal(ExternalNormal,nface);
           BlockSurfaceArea=node->GetBlockFaceSurfaceArea(nface);
 
@@ -183,10 +183,10 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
           int ii,jj;
           double InjectionRate,FluxIntegrationIncrement=1.0/nFaceInjectionIntervals;
 
-          PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,node);
+          PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,node);
 
           for (ii=0;ii<nFaceInjectionIntervals;ii++) for (jj=0;jj<nFaceInjectionIntervals;jj++) {
-            for (idim=0;idim<3;idim++) x[idim]=x0[idim]+FluxIntegrationIncrement*((ii+0.5)*e0[idim]+(jj+0.5)*e1[idim])-PIC::Mesh::mesh.EPS*ExternalNormal[idim];
+            for (idim=0;idim<3;idim++) x[idim]=x0[idim]+FluxIntegrationIncrement*((ii+0.5)*e0[idim]+(jj+0.5)*e1[idim])-PIC::Mesh::mesh->EPS*ExternalNormal[idim];
 
             //determine the bachground plasma conditions at the block's face
             PIC::CPLR::InitInterpolationStencil(x,node);
@@ -326,7 +326,7 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
          #endif
 
           //generate the new particle position on the face
-          PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,node);
+          PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,node);
           node->GetExternalNormal(ExternalNormal,nface);
 
           //determine the location of the injection
@@ -341,7 +341,7 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
           jj=nSurfaceElement/nFaceInjectionIntervals;
           ii=nSurfaceElement%nFaceInjectionIntervals;
 
-          for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+FluxIntegrationIncrement*((ii+c0)*e0[idim]+(jj+c1)*e1[idim])-PIC::Mesh::mesh.EPS*ExternalNormal[idim];
+          for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+FluxIntegrationIncrement*((ii+c0)*e0[idim]+(jj+c1)*e1[idim])-PIC::Mesh::mesh->EPS*ExternalNormal[idim];
 
           //generate a particle
           newParticle=PIC::ParticleBuffer::GetNewParticle();

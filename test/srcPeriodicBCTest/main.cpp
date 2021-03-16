@@ -183,12 +183,12 @@ void countNumbers(){
   for (int iPoint=0;iPoint<dataPoints;iPoint++){
     printf("x:%f,%f,%f\n",x[0],x[1],x[2]);
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-    newNode=PIC::Mesh::mesh.findTreeNode(x);
+    newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
     printf("i,j,k:%d,%d,%d\n",i,j,k);
-    int nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+    int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");
 
     offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -206,12 +206,12 @@ void countNumbers(){
   for (int iPoint=0;iPoint<dataPoints;iPoint++){
     printf("x:%f,%f,%f\n",x[0],x[1],x[2]);
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-    newNode=PIC::Mesh::mesh.findTreeNode(x);
+    newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
 
-    int nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+    int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");
 
     offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -257,7 +257,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
     double waveWidth=2.0;
     */
     bool externalBlockFlag=false;
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) {
       externalBlockFlag=true; 
       nExternalBlock++;
     }
@@ -270,7 +270,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k);
 	    
         //locate the cell
-        nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
         offset=CenterNode->GetAssociatedDataBufferPointer();
@@ -290,7 +290,7 @@ void InitCenterData(int ipass,int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*k;
 
         //locate the cell
-        nd=PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k);
         if ((CornerNode=startNode->block->GetCornerNode(nd))==NULL) continue;
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
         offset=CornerNode->GetAssociatedDataBufferPointer();
@@ -332,7 +332,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
   
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     // only propagate waves in the user defined region
-    if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) return;
+    if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_) return;
     
     double *xNodeMin=startNode->xmin;
     double *xNodeMax=startNode->xmax;
@@ -348,7 +348,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k);
 	    
         //locate the cell
-        nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
 
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
@@ -356,7 +356,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         //find the location of the corresponding point at previous time step
         for (int iDim=0; iDim<3; iDim++) xInterpolate[iDim]=xLOCAL[iDim]-v[iDim]*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 	
-	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *tempNode=PIC::Mesh::mesh.findTreeNode(xInterpolate,startNode);
+	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *tempNode=PIC::Mesh::mesh->findTreeNode(xInterpolate,startNode);
 
 	   
         //PIC::CPLR::InitInterpolationStencil(xInterpolate,startNode);
@@ -390,7 +390,7 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
         xLOCAL[2]=xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*k;
 
         //locate the cell
-        nd=PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k);
+        nd=PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k);
         if ((CornerNode=startNode->block->GetCornerNode(nd))==NULL) continue;
 
         //  offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
@@ -434,26 +434,26 @@ void PropagateCenterData(double * v, int nVars, cTreeNodeAMR<PIC::Mesh::cDataBlo
 
 void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, double waveWidth, double *vProp){
     //init center wave data
-  InitCenterData(0,nVars,PIC::Mesh::mesh.rootTree, waveCenter, waveNumber, waveWidth);
-  InitCenterData(1,nVars,PIC::Mesh::mesh.rootTree, waveCenter, waveNumber, waveWidth);
+  InitCenterData(0,nVars,PIC::Mesh::mesh->rootTree, waveCenter, waveNumber, waveWidth);
+  InitCenterData(1,nVars,PIC::Mesh::mesh->rootTree, waveCenter, waveNumber, waveWidth);
  
   
 
-  PIC::Mesh::mesh.ParallelBlockDataExchange();
+  PIC::Mesh::mesh->ParallelBlockDataExchange();
    
   char wave_init_fname[STRING_LENGTH];
   sprintf(wave_init_fname,"test%d-wave-init.dat",iTest);   
 
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_init_fname,0);
 
   PIC::BC::ExternalBoundary::UpdateData();
  
   sprintf(wave_init_fname,"test%d-wave-init-updated.dat",iTest);
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_init_fname,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_init_fname,0);
   
   
   for (int iter=0; iter<51; iter++) {
-    PropagateCenterData(vProp,nVars,PIC::Mesh::mesh.rootTree);
+    PropagateCenterData(vProp,nVars,PIC::Mesh::mesh->rootTree);
 
     int temp=CurrentCenterNodeOffset;
     CurrentCenterNodeOffset=NextCenterNodeOffset;
@@ -468,7 +468,7 @@ void test_wave(int iTest, int nVars, double * waveCenter, double * waveNumber, d
     if (iter%5==0){
       char wave_fname[STRING_LENGTH];
       sprintf(wave_fname,"test%d-wave%d.dat",iTest,iter);
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(wave_fname,0);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(wave_fname,0);
     }
     
     PIC::TimeStep();
@@ -495,17 +495,17 @@ int main(int argc,char **argv) {
 #endif
 
 
-  CurrentCenterNodeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=nVars*sizeof(double);
-  NextCenterNodeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=nVars*sizeof(double);
+  CurrentCenterNodeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
+  NextCenterNodeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
 
-  CurrentCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
-  NextCornerNodeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=nVars*sizeof(double);
+  CurrentCornerNodeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
+  NextCornerNodeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=nVars*sizeof(double);
   
-  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+  PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
   //seed the random number generator
   rnd_seed(100);
 
@@ -513,9 +513,9 @@ int main(int argc,char **argv) {
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
   sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
 
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
   PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
@@ -529,28 +529,28 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -563,11 +563,11 @@ int main(int argc,char **argv) {
 
   //PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
@@ -577,7 +577,7 @@ int main(int argc,char **argv) {
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   if (PIC::ThisThread==0) printf("test1\n");
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
 
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
 
@@ -615,10 +615,10 @@ int main(int argc,char **argv) {
 
   
   for (int iPar=0;iPar<parSize; iPar++ ){
-    newNode=PIC::Mesh::mesh.findTreeNode(xparticle[iPar]);
+    newNode=PIC::Mesh::mesh->findTreeNode(xparticle[iPar]);
     
     if (newNode->Thread==PIC::ThisThread) {
-      PIC::Mesh::mesh.fingCellIndex(xparticle[iPar],i,j,k,newNode);
+      PIC::Mesh::mesh->fingCellIndex(xparticle[iPar],i,j,k,newNode);
       
       newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
       

@@ -125,7 +125,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Circle::Registe
   CircleDescriptor.BoundaryElement=(void*)newCircle;
   CircleDescriptor.BondaryType=_INTERNAL_BOUNDARY_TYPE_CIRCLE_;
 
-  PIC::Mesh::mesh.RegisterInternalBoundary(CircleDescriptor);
+  PIC::Mesh::mesh->RegisterInternalBoundary(CircleDescriptor);
 
   return CircleDescriptor;
 }

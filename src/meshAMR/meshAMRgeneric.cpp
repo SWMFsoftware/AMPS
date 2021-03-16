@@ -7,7 +7,7 @@
 #include "meshAMRdef.h"
 #include "meshAMRinternalSurface.h"
 
-double _MESH_AMR_XMAX_[3]={0.0,0.0,0.0},_MESH_AMR_XMIN_[3]={0.0,0.0,0.0};
+double _CUDA_MANAGED_ _MESH_AMR_XMAX_[3]={0.0,0.0,0.0},_MESH_AMR_XMIN_[3]={0.0,0.0,0.0};
 
  //the static data of spherical internal boundaries
 long int cInternalSphericalData::nAzimuthalSurfaceElements=30,cInternalSphericalData::nZenithSurfaceElements=20;

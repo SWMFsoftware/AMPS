@@ -35,7 +35,7 @@ void PIC::RunTimeSystemState::GetIndividualParticleFieldCheckSum_CallCounter(lon
 
 void PIC::RunTimeSystemState::GetParticleFieldCheckSum(const char *msg) {
   CRC32 CheckSum;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::ParticleBuffer::byte *ParticleData;
   int i,j,k,ParticleCounter=0;
   long int ptr;
@@ -76,8 +76,8 @@ void PIC::RunTimeSystemState::GetParticleFieldCheckSum(const char *msg) {
   }
 
   //calcualte the check sum of particles in the 'ghost'cells
-  for (int To=0;To<PIC::Mesh::mesh.nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh.ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
-    for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[To];node!=NULL;node=node->nextNodeThisThread) {
+  for (int To=0;To<PIC::Mesh::mesh->nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+    for (node=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To];node!=NULL;node=node->nextNodeThisThread) {
       for (k=0;k<_BLOCK_CELLS_Z_;k++) {
         for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
           for (i=0;i<_BLOCK_CELLS_X_;i++)  {
@@ -165,7 +165,7 @@ void PIC::RunTimeSystemState::GetParticleFieldCheckSum_CallCounter(const char *m
 //compare the domain decomposition: calcualte the chech sum of all block's TempID belong to the currect processor
 void PIC::RunTimeSystemState::GetDomainDecompositionCheckSum(const char *msg) {
   CRC32 CheckSum;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
   while (node!=NULL) {
     CheckSum.add(node->Temp_ID);
@@ -203,9 +203,9 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
   double *v;
   double StatWeight,TotalStatWeight[PIC::nTotalSpecies],MeanSpeed[PIC::nTotalSpecies],MeanVelocity[3*PIC::nTotalSpecies];
 
-  if (PIC::Mesh::mesh.rootTree==NULL) return;
+  if (PIC::Mesh::mesh->rootTree==NULL) return;
 
-  node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
 
   for (s=0;s<PIC::nTotalSpecies;s++) {
     MeanSpeed[s]=0.0;
@@ -216,7 +216,7 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
 
   //sample the mean values
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-    for (node=((thread==PIC::ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[thread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread]);node!=NULL;node=node->nextNodeThisThread) {
+    for (node=((thread==PIC::ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[thread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread]);node!=NULL;node=node->nextNodeThisThread) {
       if (!node->block) continue;
       for (k=0;k<_BLOCK_CELLS_Z_;k++) {
         for (j=0;j<_BLOCK_CELLS_Y_;j++)  {

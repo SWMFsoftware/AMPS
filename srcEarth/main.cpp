@@ -83,7 +83,7 @@ void SampleIndividualLocations(int nMaxIterations) {
           cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode;
 
           for (idim=0;idim<3;idim++) x[idim]=Earth::CutoffRigidity::IndividualLocations::xTestLocationTable[iLocation][idim];
-          startNode=PIC::Mesh::mesh.findTreeNode(x);
+          startNode=PIC::Mesh::mesh->findTreeNode(x);
 
           if (startNode->Thread==PIC::ThisThread) {
             //generate a new particle velocity
@@ -94,7 +94,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
             mass=PIC::MolecularData::GetMass(spec);
 
-            if (PIC::Mesh::mesh.fingCellIndex(x,iCell,jCell,kCell,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+            if (PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
             for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
               energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
@@ -167,9 +167,9 @@ void SampleIndividualLocations(int nMaxIterations) {
         }
 
         //estimation of the domain length
-        double IntegratioinLengthMax=sqrt(pow(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0],2)+
-            pow(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1],2)+
-            pow(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2],2));
+        double IntegratioinLengthMax=sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
+            pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
+            pow(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2],2));
 
         //increase the limit of the total integrated oath length
         IntegratioinLengthMax/=4.0;
@@ -177,7 +177,7 @@ void SampleIndividualLocations(int nMaxIterations) {
         IntegratioinLengthMax=2.0*Pi*rMax;
 
         //loop through all blocks
-        for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+        for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
           int ptr,next;
           PIC::Mesh::cDataBlockAMR *block=node->block;
           double dt,l,v;
@@ -226,7 +226,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
 
         LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-        if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
       }
 
 
@@ -285,20 +285,20 @@ void SampleIndividualLocations(int nMaxIterations) {
 
             switch (iface) {
             case 0:case 1:
-              ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-              lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              ly=(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lz=(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
               dSurface=ly*lz;
               break;
             case 2:case 3:
-              lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-              lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lx=(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lz=(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
               dSurface=lx*lz;
               break;
             case 4:case 5:
-              lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-              ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              lx=(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+              ly=(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
               dSurface=ly*lz;
             }
@@ -493,11 +493,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
         for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
           Sphere.GetSurfaceElementRandomPoint(x,iZenithElement,iAzimutalElement);
-          startNode=PIC::Mesh::mesh.findTreeNode(x);
+          startNode=PIC::Mesh::mesh->findTreeNode(x);
 
           if (startNode->Thread!=PIC::ThisThread) continue;
 
-          if ((nd=PIC::Mesh::mesh.fingCellIndex(x,iCell,jCell,kCell,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+          if ((nd=PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
           PIC::Mesh::cDataCenterNode *cell;
@@ -580,7 +580,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
     }
 
 
@@ -632,20 +632,20 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
         switch (iface) {
         case 0:case 1:
-          ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-          lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          ly=(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lz=(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
           dSurface=ly*lz;
           break;
         case 2:case 3:
-          lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-          lz=(PIC::Mesh::mesh.xGlobalMax[2]-PIC::Mesh::mesh.xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lx=(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lz=(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
           dSurface=lx*lz;
           break;
         case 4:case 5:
-          lx=(PIC::Mesh::mesh.xGlobalMax[0]-PIC::Mesh::mesh.xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
-          ly=(PIC::Mesh::mesh.xGlobalMax[1]-PIC::Mesh::mesh.xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          lx=(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
+          ly=(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1])/Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleMaskNumberPerSpatialDirection;
 
           dSurface=ly*lz;
         }
@@ -943,7 +943,7 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
 
 
         LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-        if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
       }
     }
 
@@ -962,7 +962,7 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
   for (long int niter=0;niter<nTotalIterations;niter++) {
     amps_time_step();
     
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
       printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
@@ -977,7 +977,7 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
   }
 }

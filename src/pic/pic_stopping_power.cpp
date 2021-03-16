@@ -169,7 +169,7 @@ void PIC::MolecularCollisions::StoppingPowerModel::ModelProcessor() {
 
   memcpy(centerNodeIndexTable,centerNodeIndexTable_Glabal,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataCenterNode *cell;
 
   //the buffer of particles that occuping the local cell
@@ -182,7 +182,7 @@ void PIC::MolecularCollisions::StoppingPowerModel::ModelProcessor() {
     //reset the balancing counters
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      if (node->block!=NULL) *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset))=0.0;
+      if (node->block!=NULL) *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset))=0.0;
     }
 #endif //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
 

@@ -56,8 +56,8 @@ bool EnceladusMultiPlume::SourceModel::TigerStripes::GenerateParticleProperties(
       xLocal*(EnceladusMultiPlume::TigerStripeTable[iTigerStripe].Geomentry->cPoint3D[iSegment+1][idim]-EnceladusMultiPlume::TigerStripeTable[iTigerStripe].Geomentry->cPoint3D[iSegment][idim]);
 
   //if the node location does not belongs to the current processor -> exit
-  startNode=PIC::Mesh::mesh.findTreeNode(x_IAU_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_IAU_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
   //determine the new particle parameters
   //determine velocity of the new particle

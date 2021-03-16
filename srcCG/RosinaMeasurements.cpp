@@ -113,10 +113,10 @@ void RosinaSample::Init(double etMin,double etMax) {
 
     if (i==0) etStart=et;
 
-    node=PIC::Mesh::mesh.findTreeNode(RosettaState,NULL);
+    node=PIC::Mesh::mesh->findTreeNode(RosettaState,NULL);
 
     if (node!=NULL) {
-      nd=PIC::Mesh::mesh.fingCellIndex(RosettaState,iCell,jCell,kCell,node);
+      nd=PIC::Mesh::mesh->fingCellIndex(RosettaState,iCell,jCell,kCell,node);
     }
     else nd=-1,iCell=-1,jCell=-1,kCell-1;
 
@@ -334,7 +334,7 @@ void RosinaSample::SamplingProcessor() {
   }
 
   //remove all particles that would not be able to reach the spacecraft
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   int iPoint,ptrNext,iLocalNode;
   bool DirectAccessPathFound;
 

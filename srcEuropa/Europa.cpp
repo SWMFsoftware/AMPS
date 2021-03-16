@@ -222,7 +222,7 @@ void Europa::SodiumCoulumnDensityIntegrant(double *res,int resLength,double* x,c
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   //get the local density number
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   NumberDensity=node->block->GetCenterNode(nd)->GetNumberDensity(_O2_SPEC_);
   res[0]=NumberDensity;
 
@@ -1219,7 +1219,7 @@ bool Europa::InjectEuropaMagnetosphericEPDIons::BoundingBoxParticleInjectionIndi
 
   //static double vSW[3]={4.0E5,000.0,000.0},nSW=5.0E6,tempSW=8.0E4;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       //startNode->GetExternalNormal(ExternalNormal,nface);
       //ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(nSW,tempSW,vSW,ExternalNormal,_O_PLUS_SPEC_);
@@ -1238,7 +1238,7 @@ double Europa::InjectEuropaMagnetosphericEPDIons::BoundingBoxInjectionRate(int s
   bool ExternalFaces[6];
   int nface;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -1305,7 +1305,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   double NumberDensity;
 
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   //integrate density
@@ -1753,7 +1753,7 @@ int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIn
          newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
          memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
-         node=PIC::Mesh::mesh.findTreeNode(x,node);
+         node=PIC::Mesh::mesh->findTreeNode(x,node);
          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,rnd()*ProductTimeStep,node);
        }
      }

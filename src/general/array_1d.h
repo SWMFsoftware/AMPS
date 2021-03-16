@@ -10,7 +10,6 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <vector>
 #include "specfunc.h"
 
 using namespace std;
@@ -25,6 +24,7 @@ protected:
 public:
 
   //===================================================
+  _TARGET_HOST_ _TARGET_DEVICE_
     void init(long int n) {
     if (size!=0) {
       printf("Error: initialization of allocated array_1d object\n");
@@ -37,28 +37,35 @@ public:
 
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
   array_1d() {
     data=NULL,size=0;
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
   array_1d(int n) {
     data=NULL,size=0;
     init(n);
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
  ~array_1d() {
    if (data!=NULL) delete [] data;
 
    data=NULL,size=0;
  }
 
+_TARGET_HOST_ _TARGET_DEVICE_
  bool IsAllocated() {return (data!=NULL);}
 
 //===================================================
+_TARGET_HOST_ _TARGET_DEVICE_
   int GetSize() const {
     return size;
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
+T* get_data_ptr() {return data;}
 //===================================================
   T sum() const {
     T f = (T)0;
@@ -90,12 +97,14 @@ public:
 
 //===================================================
 
+_TARGET_HOST_ _TARGET_DEVICE_
   T operator () (int i) const {
     if ((i<0)||(i>=size)) exit(__LINE__,__FILE__,"Error: out of range");
 
     return data[i];
   }
 
+_TARGET_HOST_ _TARGET_DEVICE_
   T & operator () (int i) {
     if ((i<0)||(i>=size)) exit(__LINE__,__FILE__,"Error: out of range");
 

@@ -38,44 +38,41 @@ namespace PIC {
 }
 
 //init the block's global data
-int PIC::Mesh::cDataBlockAMR::LocalTimeStepOffset=0;
-int PIC::Mesh::cDataBlockAMR::LocalParticleWeightOffset=0;
-int PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength=0;
-bool PIC::Mesh::cDataBlockAMR::InternalDataInitFlag=false;
-int PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LocalTimeStepOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LocalParticleWeightOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength=0;
+_TARGET_DEVICE_ bool PIC::Mesh::cDataBlockAMR_static_data::InternalDataInitFlag=false;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset=0;
 
 //init the cells' global data
-int PIC::Mesh::cDataCenterNode::totalAssociatedDataLength=0;
-int PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=0;
 
 //init the cell corner's global data
-int PIC::Mesh::cDataCornerNode::totalAssociatedDataLength=0;
+int _TARGET_DEVICE_ PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength=0;
 
 //in case OpenMP is used: tempParticleMovingListTableThreadOffset is the offset in the associatedDataPointer vector to the position when the temporary particle list begins
-int PIC::Mesh::cDataBlockAMR::tempTempParticleMovingListMultiThreadTableOffset=-1;
-int PIC::Mesh::cDataBlockAMR::tempTempParticleMovingListMultiThreadTableLength=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableOffset=-1;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::tempTempParticleMovingListMultiThreadTableLength=0;
 
-int PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset=0;
+_TARGET_DEVICE_ int PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
 
 //the offsets to the sampled data stored in 'center nodes'
 int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops
-unsigned int PIC::DomainBlockDecomposition::nLocalBlocks=0;
-int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
-cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **PIC::DomainBlockDecomposition::BlockTable=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ unsigned int  PIC::DomainBlockDecomposition::nLocalBlocks=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::DomainBlockDecomposition::LastMeshModificationID=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> _TARGET_DEVICE_ **PIC::DomainBlockDecomposition::BlockTable=NULL;
 
 //the mesh parameters
 double PIC::Mesh::xmin[3]={0.0,0.0,0.0},PIC::Mesh::xmax[3]={0.0,0.0,0.0};
 PIC::Mesh::fLocalMeshResolution PIC::Mesh::LocalMeshResolution=NULL;
-#if DIM == 3
-cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> PIC::Mesh::mesh;
-#elif DIM == 2
-cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  PIC::Mesh::mesh;
-#else
-cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  PIC::Mesh::mesh;
-#endif
+
+_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::mesh=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::MeshTable=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::MeshTableLength=0;
 
 
 //the user defined functions for output of the 'ceneter node' data into a data file
@@ -246,7 +243,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 
       for (int idim=0;idim<3;idim++) {
         xTest[idim]=x[idim];
-        if (xTest[idim]==PIC::Mesh::mesh.xGlobalMax[idim]) xTest[idim]-=1.0E-10*(PIC::Mesh::mesh.xGlobalMax[idim]-PIC::Mesh::mesh.xGlobalMin[idim]);
+        if (xTest[idim]==PIC::Mesh::mesh->xGlobalMax[idim]) xTest[idim]-=1.0E-10*(PIC::Mesh::mesh->xGlobalMax[idim]-PIC::Mesh::mesh->xGlobalMin[idim]);
       }
 
       PIC::CPLR::InitInterpolationStencil(xTest,NULL);
@@ -375,14 +372,29 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
   }
 }
 
-void PIC::Mesh::initCellSamplingDataBuffer() {
+/*
+_TARGET_GLOBAL_ 
+void PIC::Mesh::AllocateMesh() {
+  if (GPU::mesh==NULL) {
+    //allocate mesh
+    #if DIM == 3
+    GPU::mesh=new cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #elif DIM == 2
+    GPU::mesh=new cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #else
+    GPU::mesh=new cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+    #endif
+  }
+}
+*/
 
+void PIC::Mesh::initCellSamplingDataBuffer() {
 //  if (cDataBlockAMR::totalAssociatedDataLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the blocks associated data offsets");
 
   //local time step
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   if (PIC::ThisThread==0) cout << "$PREFIX:Time step mode: specie dependent local time step" << endl;
-  cDataBlockAMR::LocalTimeStepOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
+  cDataBlockAMR_static_data::LocalTimeStepOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   //do nothing for _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
@@ -440,29 +452,29 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 
   PIC::Mesh::sampleSetDataLength=offset;
 
-  PIC::Mesh::completedCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
+  PIC::Mesh::completedCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
 
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
 
 
   //the volume partilce injection: save the volume particle injection rate
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-  PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double)*PIC::nTotalSpecies;
+  PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double)*PIC::nTotalSpecies;
 #endif
 
   //allocate the model requested static (not sampling) cell data
   if (PIC::IndividualModelSampling::RequestStaticCellData.size()!=0) {
     for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellData.size();i++) {
-      PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellData[i](PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+      PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellData[i](PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
     }
   }
 
   //allocate the model requested static (not sampling) cell's corner data
-  if (PIC::IndividualModelSampling::RequestStaticCellCornerData.size()!=0) {
-    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellCornerData.size();i++) {
-      PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=PIC::IndividualModelSampling::RequestStaticCellCornerData[i](PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+  if (PIC::IndividualModelSampling::RequestStaticCellCornerData->size()!=0) {
+    for (unsigned int i=0;i<PIC::IndividualModelSampling::RequestStaticCellCornerData->size();i++) {
+      PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=(*PIC::IndividualModelSampling::RequestStaticCellCornerData)[i](PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
     }
   }
 }
@@ -503,37 +515,40 @@ void PIC::Mesh::Init(double* xMin,double* xMax,fLocalMeshResolution ResolutionFu
   for (int idim=0;idim<DIM;idim++) xmin[idim]=xMin[idim],xmax[idim]=xMax[idim];
 
   LocalMeshResolution=ResolutionFunction;
-  mesh.init(xMin,xMax,LocalMeshResolution);
+  mesh->init(xMin,xMax,LocalMeshResolution);
 }
 
 void PIC::Mesh::buildMesh() {
-  mesh.buildMesh();
+  mesh->buildMesh();
 }
 
 
 //pack block data for the data syncronization
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer) {
   int ibegin=0;
-  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
    return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=0;
-  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
    return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
        BlockCenterNodeMask,BlockCornerNodeMask, 
        SendDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
@@ -545,12 +560,23 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* SendDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
+
+  using namespace PIC::Mesh::cDataBlockAMR_static_data;
+
+//  #ifdef __CUDA_ARCH__ 
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+//  #else
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+//  #endif
+
+
   int SendBufferIndex=0;
 
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
@@ -660,7 +686,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
         bool flag=false;
 
-        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+        if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
         if (flag==true) {
           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -733,7 +759,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
     if (SendDataBuffer!=NULL) {
       for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
-        memcpy(SendDataBuffer+SendBufferIndex,block->associatedDataPointer+block->UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],iBlockUserDataStateVectorIntervalLength[iDataInterval]);
+        memcpy(SendDataBuffer+SendBufferIndex,block->associatedDataPointer+UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],iBlockUserDataStateVectorIntervalLength[iDataInterval]);
         SendBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
       }
     }
@@ -750,28 +776,31 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 }
 
 //unpack data for the data syncronization
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
   int ibegin=0;
-  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
    return UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=0;
-  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR::UserAssociatedDataOffset;
+  int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
    return UnpackBlockData_Internal(NodeTable,NodeTableLength,
        BlockCenterNodeMask,BlockCornerNodeMask,
        RecvDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
        &ibegin,&BlockUserDataLength,1);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
@@ -782,16 +811,26 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
       iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
+
+  using namespace PIC::Mesh::cDataBlockAMR_static_data;
   int RecvDataBufferIndex=0;
 
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
+
+//  #ifdef __CUDA_ARCH__ 
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+//  #else
+//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+//  #endif
+
 
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {
      int iCell,jCell,kCell,iDataInterval;
@@ -893,7 +932,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
        if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
          iface=iFaceTable[i];
 
-         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
            //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
            switch (iface) {
@@ -966,7 +1005,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
 
      if (RecvDataBuffer!=NULL) {
        for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
-         memcpy(block->associatedDataPointer+block->UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,iBlockUserDataStateVectorIntervalLength[iDataInterval]);
+         memcpy(block->associatedDataPointer+UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,iBlockUserDataStateVectorIntervalLength[iDataInterval]);
          RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
        }
      }
@@ -983,6 +1022,8 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
 
 
 int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void* Node,char *SendDataBuffer) {
+  using namespace PIC::Mesh::cDataBlockAMR_static_data;
+
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
@@ -1005,23 +1046,23 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     CenterNode=GetCenterNode(LocalCellNumber);
 
 /*
-    pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
+    pipe->send(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
     pipe->send(CenterNode->Measure);
 */
 
     if (pipe!=NULL) {
-      pipe->send(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
+      pipe->send(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
       pipe->send(CenterNode->Measure);
     }
     else if (SendDataBuffer!=NULL) { 
-      memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength);
-      SendBufferIndex+=CenterNode->totalAssociatedDataLength;
+      memcpy(SendDataBuffer+SendBufferIndex,CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
+      SendBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength;
 
       memcpy(SendDataBuffer+SendBufferIndex,&CenterNode->Measure,sizeof(double));
       SendBufferIndex+=sizeof(double);
     }
     else {
-      SendBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
+      SendBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double);
     }  
 
   }
@@ -1035,18 +1076,18 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     CornerNode=GetCornerNode(nd);
 
 /*
-    pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+    pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
 */
 
     if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
     }
     else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
     else {
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     } 
   }
 
@@ -1060,7 +1101,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     bool flag=false; 
 
     if ((pipe==NULL)&&(SendDataBuffer==NULL)) flag=true;
-    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
+    if (ThisNode!=NULL) if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) flag=true;
 
     if (flag==true) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
@@ -1073,18 +1114,18 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
 */
 
     if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
     }
     else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
     else {
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
 
         }
@@ -1097,18 +1138,18 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
 */
 
     if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
     }
     else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
     else {
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
 
         }
@@ -1121,18 +1162,18 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+          pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
 */
 
     if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
+      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
     }
     else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength);
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
     else {
-      SendBufferIndex+=CornerNode->totalAssociatedDataLength;
+      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
 
 
@@ -1189,7 +1230,7 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
     Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
     if  (Particle!=-1) {
-      LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(iCell,jCell,kCell);
+      LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
       pipe->send(_CENTRAL_NODE_NUMBER_SIGNAL_);
       pipe->send(LocalCellNumber);
 
@@ -1213,6 +1254,8 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
 }
 
 int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int From,void* Node,char *RecvDataBuffer) {
+  using namespace PIC::Mesh::cDataBlockAMR_static_data;
+
   int iCell,jCell,kCell;
   long int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
@@ -1235,23 +1278,23 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
     CenterNode=GetCenterNode(LocalCellNumber);
 
 /*
-    pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
+    pipe->recv(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength,From);
     pipe->recv(CenterNode->Measure,From);
 */
 
     if (pipe!=NULL) {
-      pipe->recv(CenterNode->associatedDataPointer,CenterNode->totalAssociatedDataLength,From);
+      pipe->recv(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength,From);
       pipe->recv(CenterNode->Measure,From);
     }
     else if (RecvDataBuffer!=NULL) {
-      memcpy(CenterNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CenterNode->totalAssociatedDataLength);
-      RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength;
+      memcpy(CenterNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,cDataCenterNode_static_data::totalAssociatedDataLength);
+      RecvDataBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength;
 
       memcpy(&CenterNode->Measure,RecvDataBuffer+RecvDataBufferIndex,sizeof(double));
       RecvDataBufferIndex+=sizeof(double);
     }
     else {
-      RecvDataBufferIndex+=CenterNode->totalAssociatedDataLength+sizeof(double);
+      RecvDataBufferIndex+=cDataCenterNode_static_data::totalAssociatedDataLength+sizeof(double);
     }
   }
 
@@ -1261,18 +1304,18 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
     CornerNode=GetCornerNode(nd);
 
 /*
-    pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+    pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
 */
 
     if (pipe!=NULL) {
-      pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+      pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
     }
     else if (RecvDataBuffer!=NULL) {
-      memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-      RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+      memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,cDataCornerNode_static_data::totalAssociatedDataLength);
+      RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
     else {
-      RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+      RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
     }
   }
 
@@ -1283,7 +1326,7 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   for (int i=0;i<3;i++) {
     iface=iFaceTable[i];
 
-    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,&PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+    if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,PIC::Mesh::mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
       //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
       switch (iface) {
@@ -1294,18 +1337,18 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
 */
 
           if (pipe!=NULL) {
-            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+            pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
           }
           else if (RecvDataBuffer!=NULL) {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,cDataCornerNode_static_data::totalAssociatedDataLength);
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
           else {
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
 
         }
@@ -1318,18 +1361,18 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
 */
 
           if (pipe!=NULL) {
-            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+            pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
           }
           else if (RecvDataBuffer!=NULL) {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,cDataCornerNode_static_data::totalAssociatedDataLength);
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
           else {
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
 
         }
@@ -1342,18 +1385,18 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           CornerNode=GetCornerNode(nd);
 
 /*
-          pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+          pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
 */
 
           if (pipe!=NULL) {
-            pipe->recv(CornerNode->associatedDataPointer,CornerNode->totalAssociatedDataLength,From);
+            pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
           }
           else if (RecvDataBuffer!=NULL) {
-            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,CornerNode->totalAssociatedDataLength);
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            memcpy(CornerNode->associatedDataPointer,RecvDataBuffer+RecvDataBufferIndex,cDataCornerNode_static_data::totalAssociatedDataLength);
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
           else {
-            RecvDataBufferIndex+=CornerNode->totalAssociatedDataLength;
+            RecvDataBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
           }
 
 
@@ -1404,7 +1447,7 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
     switch (Signal) {
     case _CENTRAL_NODE_NUMBER_SIGNAL_ :
       pipe->recv(LocalCellNumber,From);
-      PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,i,j,k);
+      PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(LocalCellNumber,i,j,k);
       break;
     case _NEW_PARTICLE_SIGNAL_ :
       pipe->recv(buffer,PIC::ParticleBuffer::ParticleDataLength,From);
@@ -1424,24 +1467,27 @@ void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,
 void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-  if (LastMeshModificationID==PIC::Mesh::mesh.nMeshModificationCounter) return; //no modification of the mesh is made
+  if (LastMeshModificationID==PIC::Mesh::mesh->nMeshModificationCounter) return; //no modification of the mesh is made
 
   //calculate the new number of the blocks
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     nLocalBlocks++;
   }
 
   //deallocate and allocat the block pointe buffer
-  if (BlockTable!=NULL) delete [] BlockTable;
-  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
+//  if (BlockTable!=NULL) delete [] BlockTable;
+//  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
+
+  if (BlockTable!=NULL) amps_free_managed(BlockTable);
+  amps_malloc_managed<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>(BlockTable,nLocalBlocks);
 
   //populate the block pointer buffer
-  for (nLocalBlocks=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
+  for (nLocalBlocks=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->IsUsedInCalculationFlag==true) {
     BlockTable[nLocalBlocks++]=node;
   }
 
   //update the domain decomposition table ID
-  LastMeshModificationID=PIC::Mesh::mesh.nMeshModificationCounter;
+  LastMeshModificationID=PIC::Mesh::mesh->nMeshModificationCounter;
 
   //rebuld the matrix of the linear equatuion solver that has a 'global' matrix distributed over multiple MPI processes
   for (auto f : PIC::LinearSolverTable) f->RebuildMatrix();
@@ -1618,15 +1664,15 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *)startNodeIn;
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)||(startNode==NULL)) {
+  if ((startNode==PIC::Mesh::mesh->rootTree)||(startNode==NULL)) {
     Signature.clear();
     CutFaceNumberSignature.clear();
     NeibCutFaceListDescriptorList.clear();
     BottomNodeCounter=0;
 
     if (startNode==NULL) {
-      if (PIC::Mesh::mesh.rootTree==NULL) return 0;
-      else startNode=PIC::Mesh::mesh.rootTree;
+      if (PIC::Mesh::mesh->rootTree==NULL) return 0;
+      else startNode=PIC::Mesh::mesh->rootTree;
     }
   }
 
@@ -1650,6 +1696,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
     }
 
     //add the list of the cut-faces accessable throught the block neibours
+    #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
     if (startNode->neibCutFaceListDescriptorList!=NULL) {
       int cnt=0;
 
@@ -1658,10 +1705,11 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
       NeibCutFaceListDescriptorList.add(BottomNodeCounter);
       NeibCutFaceListDescriptorList.add(cnt);
     }
+    #endif
   }
 
   //output calculated signatures
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     char msg[300];
 
     sprintf(msg,"Mesh AMR Tree Signature (line=%i, file=%s)",nline,fname);
@@ -1682,14 +1730,14 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
 void PIC::Mesh::SetCornerNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
 
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
-      PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+      PIC::Mesh::cDataCornerNode *CornerNode=block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
 
       if (CornerNode!=NULL) memcpy(CornerNode->GetAssociatedDataBufferPointer()+DataBufferOffset,DataBuffer,DataBufferLength);
     }
@@ -1712,14 +1760,14 @@ void PIC::Mesh::SetCornerNodeAssociatedDataValue(double NewValue,int ResetElemen
 void PIC::Mesh::SetCenterNodeAssociatedDataValue(void *DataBuffer,int DataBufferLength,int DataBufferOffset) {
   int i,j,k;
 
-  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
+  //for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
   for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
 
     PIC::Mesh::cDataBlockAMR *block=node->block;
 
     if (block!=NULL) for (i=-1;i<_BLOCK_CELLS_X_+1;i++) for (j=-1;j<_BLOCK_CELLS_Y_+1;j++) for (k=-1;k<_BLOCK_CELLS_Z_+1;k++) {
-      PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+      PIC::Mesh::cDataCenterNode *CenterNode=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 
       if (CenterNode!=NULL) memcpy(CenterNode->GetAssociatedDataBufferPointer()+DataBufferOffset,DataBuffer,DataBufferLength);
     }

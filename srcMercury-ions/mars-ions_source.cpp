@@ -69,7 +69,7 @@ double MarsIon::SourceProcesses::GetBlockInjectionRate(int spec,cTreeNodeAMR<PIC
   block=node->block;
 
   if (block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-    LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+    LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     cell=block->GetCenterNode(LocalCellNumber);
 
     if (cell!=NULL) res+=GetCellInjectionRate(spec,cell);
@@ -80,7 +80,7 @@ double MarsIon::SourceProcesses::GetBlockInjectionRate(int spec,cTreeNodeAMR<PIC
 
 //inject model particles
 long int MarsIon::SourceProcesses::InjectParticles() {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCenterNode *cell;
   int i,j,k,LocalCellNumber,idim;
@@ -129,9 +129,9 @@ long int MarsIon::SourceProcesses::InjectParticles() {
   static cBlockInjectionTable *BlockInjectionTable=NULL;
 
 
-  if (LastMeshModificationCounter!=PIC::Mesh::mesh.nMeshModificationCounter) {
+  if (LastMeshModificationCounter!=PIC::Mesh::mesh->nMeshModificationCounter) {
     nThreadBlockNumber=0,maxBlockInjectionRate=-1.0,TotalThreadSourceRate=0.0;
-    LastMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+    LastMeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
 
     //deallocate the table
     if (BlockInjectionTable!=NULL) {
@@ -140,12 +140,12 @@ long int MarsIon::SourceProcesses::InjectParticles() {
     }
 
     //count the thread block number and allocate the block table
-    for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) nThreadBlockNumber++;
+    for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) nThreadBlockNumber++;
 
     BlockInjectionTable=new cBlockInjectionTable[nThreadBlockNumber];
 
     //collect the injection rate information
-    for (nBlock=0,node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread,nBlock++) {
+    for (nBlock=0,node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread,nBlock++) {
       BlockInjectionTable[nBlock].node=node;
       BlockInjectionTable[nBlock].block=node->block;
 
@@ -153,7 +153,7 @@ long int MarsIon::SourceProcesses::InjectParticles() {
         for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
           double t=0.0;
 
-          LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+          LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
           cell=BlockInjectionTable[nBlock].block->GetCenterNode(LocalCellNumber);
 
           if (cell!=NULL) {
@@ -198,7 +198,7 @@ long int MarsIon::SourceProcesses::InjectParticles() {
       j=(int)(_BLOCK_CELLS_Y_*rnd());
       k=(int)(_BLOCK_CELLS_Z_*rnd());
 
-      LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+      LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
       cell=block->GetCenterNode(LocalCellNumber);
 
       if (cell==NULL) continue;

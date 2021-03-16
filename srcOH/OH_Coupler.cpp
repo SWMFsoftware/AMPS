@@ -32,14 +32,14 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
 
     //find the block
     memcpy(x,Xyz_DI+pt*(*nDimIn),(unsigned int)(*nDimIn)*sizeof(double));
-    if ((node=PIC::Mesh::mesh.findTreeNode(x,node))==NULL) exit(__LINE__,__FILE__,"Error: can not find the block");
+    if ((node=PIC::Mesh::mesh->findTreeNode(x,node))==NULL) exit(__LINE__,__FILE__,"Error: can not find the block");
     if (node->Thread!=PIC::ThisThread) exit(__LINE__,__FILE__,"Error: the point data is located on another processor");
 
 
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,node,CenterBasedStencil);
 
     //find the cell
-    if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
+    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
 
     cell=node->block->GetCenterNode(LocalCellNumber);
     AssociatedDataPointer=cell->GetAssociatedDataBufferPointer();

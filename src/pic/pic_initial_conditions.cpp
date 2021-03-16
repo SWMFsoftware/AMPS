@@ -20,7 +20,7 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
   // this function is meant for DEBUG purposes
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-  node=PIC::Mesh::mesh.findTreeNode(x);
+  node=PIC::Mesh::mesh->findTreeNode(x);
 
   //initiate the new particle
   PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
@@ -29,13 +29,17 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
 }
 
 long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+  return PrepopulateDomain(spec,NumberDensity,Velocity,Temperature,NULL,UserInitParticleFunction);
+}
+
+long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
   long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
 
   //local copy of the block's cells
-  int cellListLength=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
+  int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
   PIC::Mesh::cDataCenterNode *cellList[cellListLength];
 
   //particle ejection parameters
@@ -56,12 +60,12 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
   double x[3],v[3],anpart;
   int npart,idim;
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
 
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -85,6 +89,9 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
       nd=_getCenterNodeLocalNumber(iCell,jCell,kCell);
       cell=cellList[nd];
       xMiddle=cell->GetX();
+
+      //skip the cell if prepopulation of the cell is not needed
+      if (PrepopulateCellCondition!=NULL) if (PrepopulateCellCondition(iCell,jCell,kCell,node)==false) continue;
 
       //inject particles into the cell
       anpart=NumberDensity*cell->Measure/ParticleWeight;

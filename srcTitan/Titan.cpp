@@ -72,7 +72,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   int i,j,k,nd,cnt=0,spec;
   double NumberDensity;
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {

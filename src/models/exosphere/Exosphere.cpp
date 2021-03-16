@@ -885,8 +885,8 @@ void Exosphere::ColumnIntegral::Map(char *fname,double dXmax,double dZmax,int nX
   xEarth_new[2]=State[2]*1.0E3;
 
 
-  if (dXmax<0.0) dXmax=2.0*max(fabs(PIC::Mesh::mesh.xGlobalMax[0]),fabs(PIC::Mesh::mesh.xGlobalMin[0]));
-  if (dZmax<0.0) dZmax=3.0*max(fabs(PIC::Mesh::mesh.xGlobalMax[2]),fabs(PIC::Mesh::mesh.xGlobalMin[2]));
+  if (dXmax<0.0) dXmax=2.0*max(fabs(PIC::Mesh::mesh->xGlobalMax[0]),fabs(PIC::Mesh::mesh->xGlobalMin[0]));
+  if (dZmax<0.0) dZmax=3.0*max(fabs(PIC::Mesh::mesh->xGlobalMax[2]),fabs(PIC::Mesh::mesh->xGlobalMin[2]));
 
   const double maxPhiX=1.1*atan(dXmax/(1.0*_AU_));
   const double maxPhiZ=1.1*atan(dZmax/(1.0*_AU_));
@@ -949,7 +949,7 @@ void Exosphere::ColumnDensityIntegration_CircularMap(char *fname,double rmax,dou
   xEarth_new[2]=State[2]*1.0E3;
 
 
-  if (rmax<0.0) rmax=2.0*max(fabs(PIC::Mesh::mesh.xGlobalMax[0]),fabs(PIC::Mesh::mesh.xGlobalMin[0]));
+  if (rmax<0.0) rmax=2.0*max(fabs(PIC::Mesh::mesh->xGlobalMax[0]),fabs(PIC::Mesh::mesh->xGlobalMin[0]));
   if (dRmin<0.0) dRmin=0.1*_RADIUS_(_TARGET_);
   if (dRmax<0.0) dRmax=10.0*_RADIUS_(_TARGET_);
 
@@ -1082,7 +1082,7 @@ void Exosphere::ColumnIntegral::CircularMap(char *fname,double rmax,double dRmin
 
   lEarth=sqrt(pow(xEarthSO[0],2)+pow(xEarthSO[1],2)+pow(xEarthSO[2],2));
 
-  if (rmax<0.0) rmax=2.0*max(fabs(PIC::Mesh::mesh.xGlobalMax[0]),fabs(PIC::Mesh::mesh.xGlobalMin[0]));
+  if (rmax<0.0) rmax=2.0*max(fabs(PIC::Mesh::mesh->xGlobalMax[0]),fabs(PIC::Mesh::mesh->xGlobalMin[0]));
   if (dRmin<0.0) dRmin=0.1*_RADIUS_(_TARGET_);
   if (dRmax<0.0) dRmax=10.0*_RADIUS_(_TARGET_);
 
@@ -1686,7 +1686,7 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
   sprintf(fname,"%s/pic.ColumnDensityMap.spherical.%s.out=%i.dat",PIC::OutputDataFileDirectory,utcstr,DataOutputFileNumber);
   double domainCharacteristicSize=0.0;
-  for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh.xGlobalMax[idim]),fabs(PIC::Mesh::mesh.xGlobalMin[idim])),domainCharacteristicSize);
+  for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh->xGlobalMax[idim]),fabs(PIC::Mesh::mesh->xGlobalMin[idim])),domainCharacteristicSize);
 
   Exosphere::ColumnIntegral::CircularMap(fname,domainCharacteristicSize,0.05*_RADIUS_(_TARGET_),min(5*_RADIUS_(_TARGET_),0.1*domainCharacteristicSize),80,Exosphere::OrbitalMotion::et);
 

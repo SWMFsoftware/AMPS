@@ -69,6 +69,7 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init_mesh() {
   PIC::InitMPI();
 
+PIC::Init_BeforeParser();
   SEP::RequestParticleData();
 
   //request storage for calculating the drift velocity
@@ -91,7 +92,7 @@ void amps_init_mesh() {
 
   //init the Mercury model
  ////::Init_BeforeParser();
-  PIC::Init_BeforeParser();
+//  PIC::Init_BeforeParser();
 
 //  ProtostellarNebula::OrbitalMotion::nOrbitalPositionOutputMultiplier=10;
 ///  ProtostellarNebula::Init_AfterParser();
@@ -241,41 +242,41 @@ void amps_init_mesh() {
     SEP::Mesh::InitFieldLineAMPS(&field_line_new);
   }
 
-  PIC::Mesh::mesh.UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
+  PIC::Mesh::mesh->UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,SEP::Mesh::localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,SEP::Mesh::localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
 
 /*
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_COMM_WORLD);
   }
   else {
     MPI_Barrier(MPI_COMM_WORLD);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 */
 
-  PIC::Mesh::mesh.buildMesh();
+  PIC::Mesh::mesh->buildMesh();
   MPI_Barrier(MPI_COMM_WORLD);
 
-  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
+  cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 
 
@@ -354,28 +355,28 @@ void amps_init_mesh() {
     }
   }; 
 
-  GetMaxBlockRefinmentLevel(PIC::Mesh::mesh.rootTree);
-  MarkNotUsed(PIC::Mesh::mesh.rootTree,&not_used_list);
+  GetMaxBlockRefinmentLevel(PIC::Mesh::mesh->rootTree);
+  MarkNotUsed(PIC::Mesh::mesh->rootTree,&not_used_list);
 
-  PIC::Mesh::mesh.SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh-reduced.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh-reduced.dat");
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
 
 }
@@ -424,10 +425,10 @@ void amps_init() {
             SEP::ParkerSpiral::GetB(B,x);
 
             if (cell->Measure==0.0) {
-              PIC::Mesh::mesh.InitCellMeasureBlock(startNode); 
+              PIC::Mesh::mesh->InitCellMeasureBlock(startNode); 
 
               if (cell->Measure==0.0) {
-                PIC::Mesh::mesh.CenterNodes.deleteElement(cell);
+                PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
                 startNode->block->SetCenterNode(NULL,LocalCellNumber);
                 continue;
               }
@@ -451,13 +452,13 @@ void amps_init() {
   };
 
   if (_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_) {
-    InitMagneticField(PIC::Mesh::mesh.rootTree);
-    PIC::Mesh::mesh.outputMeshDataTECPLOT("magnetic-field.dat",0);
+    InitMagneticField(PIC::Mesh::mesh->rootTree);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("magnetic-field.dat",0);
   }
 
 
   MPI_Barrier(MPI_COMM_WORLD);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer
   PIC::ParticleBuffer::Init(10000000);
@@ -711,7 +712,7 @@ t=1.0;
        
        
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
      
 }

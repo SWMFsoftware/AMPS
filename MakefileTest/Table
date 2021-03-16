@@ -598,8 +598,8 @@ Compile=
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
->>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=Awsom,e=Awsom,ng=2,g=4,4,4
->>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-borovikov,amps-test=on
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
@@ -897,7 +897,7 @@ Compile=
 
 >>>cd BATL;make READAMRLIB
 
->>>./Config.pl -application=test/earth-cutoff-rigidity -spice-path=nospice  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
+>>>./Config.pl -application=test/earth-cutoff-rigidity -spice-path=nospice -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_
@@ -3351,10 +3351,9 @@ Compile=
 
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
->>>@echo "test_InterpolateAMR-test_compile... done" >> test_InterpolateAMR-test$(TESTInterpolateAMR-test-REF).diff
+>>>@echo "test_InterpolateAMR-test_compile... done" >> test_InterpolateAMR-test$(TESTInterpolateAMR-test-REF).diff 
 
 >>>mv Makefile.local.bak Makefile.local
-
 
 Run=
 >>>@echo "test_InterpolateAMR-test_run..." >> test_InterpolateAMR-test.diff

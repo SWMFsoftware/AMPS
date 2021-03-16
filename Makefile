@@ -12,8 +12,8 @@ OPENMP=off
 EXTRACOMPILEROPTIONS= 
 
 #extra linker options specific for fortran and c++ linker
-EXTRALINKEROPTIONS_F=
-EXTRALINKEROPTIONS_CPP=
+EXTRALINKEROPTIONS_F= 
+EXTRALINKEROPTIONS_CPP= 
 
 #Compiling with the CCMC's Kameleon
 KAMELEON=nokameleon
@@ -28,6 +28,18 @@ LINK_SWMF_SHARED_LIB=off
 #use AVX instructions in the calculations 
 AVXMODE=off
 
+#individual compiled modules 
+COMPILE_ELECTRON_IMPACT=on
+COMPILE_SPUTTERING=on
+COMPILE_DUST=on
+COMPILE_CHARGE_EXCHANGE=on
+COMPILE_PHOTOLYTIC_REACTIONS=on
+COMPILE_EXOSPHERE=on
+COMPILE_SURFACE=on
+
+#the list of directories where object files are located
+LINK_DIRECTORY_LIST=  
+
 include Makefile.conf
 include Makefile.def
 
@@ -35,12 +47,41 @@ include Makefile.def
 #include the local $(MAKE)file (defined the AMPS' compiling variables)  
 include Makefile.local
 
+#determine the list of the directories to be compiled
+ifeq ($(COMPILE_EXOSPHERE),on)
+        LINK_DIRECTORY_LIST+=models/exosphere/*.o
+endif
+
+ifeq ($(COMPILE_SURFACE),on)
+        LINK_DIRECTORY_LIST+=models/surface/*.o
+endif
+
+ifeq ($(COMPILE_ELECTRON_IMPACT),on)
+        LINK_DIRECTORY_LIST+=models/electron_impact/*.o
+endif
+
+ifeq ($(COMPILE_SPUTTERING),on)
+        LINK_DIRECTORY_LIST+=models/sputtering/*.o
+endif
+
+ifeq ($(COMPILE_DUST),on)
+        LINK_DIRECTORY_LIST+=models/dust/*.o
+endif
+
+ifeq ($(COMPILE_CHARGE_EXCHANGE),on)
+        LINK_DIRECTORY_LIST+=models/charge_exchange/*.o
+endif
+
+ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
+        LINK_DIRECTORY_LIST+=models/photolytic_reactions/*.o
+endif
+
 #the default value of the c++ compiler flags
-SEARCH_C=-DMPI_ON -LANG:std -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
+SEARCH_C=-DMPI_ON  -I${CWD}/${WSD}/pic -I${CWD}/${WSD}/main -I${CWD}/srcInterface -I${CWD}/${WSD}/meshAMR -I${CWD}/${WSD}/interface -I${CWD}/${WSD}/general -I${CWD}/${WSD}/models/electron_impact -I${CWD}/${WSD}/models/sputtering -I${CWD}/${WSD}/models/dust -I${CWD}/${WSD}/models/charge_exchange -I${CWD}/${WSD}/models/photolytic_reactions -I${CWD}/${WSD}/species -I${CWD}/${WSD}/models/exosphere -I${CWD}/${WSD}/models/surface -I${SPICE}/include -I${BOOST}/include -I${KAMELEON}/src -I${CWD}/utility/PostProcess -I${SHAREDIR}  -I${CWD}
 
 SEARCH_C+=${EXTRACOMPILEROPTIONS}
 
-SEARCH_C_GENERAL=-LANG:std ${EXTRACOMPILEROPTIONS} 
+SEARCH_C_GENERAL= ${EXTRACOMPILEROPTIONS} 
 
 #define the "compile kameleon' flag only when KAMELEON is used (to exclude including of the KAMELEON headers on machimes where KAMELEON is not installed) 
 ifneq ($(KAMELEON),nokameleon)   
@@ -250,6 +291,13 @@ ${WSD}:
 	./ampsConfig.pl -input ${InputFileAMPS} -no-compile 
 	./utility/CheckMacro.pl ${WSD} -in-place
 
+ifeq ($(COMPILE.mpicxx),nvcc)
+	cd srcTemp/pic;../../utility/change-ext cpp cu  
+	cd srcTemp/meshAMR;../../utility/change-ext cpp cu 
+	cd srcTemp/main;../../utility/change-ext cpp cu
+	cd srcTemp/general;../../utility/change-ext cpp cu
+endif
+
 LIB: 
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
 	$(MAKE) ${WSD}
@@ -264,24 +312,46 @@ endif
 	cd ${WSD}/meshAMR;                     $(MAKE) SEARCH_C="${SEARCH_C}" 
 	cd ${WSD}/pic;                         $(MAKE) SEARCH_C="${SEARCH_C}" SEARCH="${SEARCH_F}" 
 	cd ${WSD}/species;                     $(MAKE) SEARCH_C="${SEARCH_C}"
+
+ifeq ($(COMPILE_EXOSPHERE),on)
 	cd ${WSD}/models/exosphere;            $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
+ifeq ($(COMPILE_SURFACE),on)
 	cd ${WSD}/models/surface;              $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
+ifeq ($(COMPILE_ELECTRON_IMPACT),on)
 	cd ${WSD}/models/electron_impact;      $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
+ifeq ($(COMPILE_SPUTTERING),on)
 	cd ${WSD}/models/sputtering;           $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
+ifeq ($(COMPILE_DUST),on)
 	cd ${WSD}/models/dust;                 $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
+ifeq ($(COMPILE_CHARGE_EXCHANGE),on)
 	cd ${WSD}/models/charge_exchange;      $(MAKE) SEARCH_C="${SEARCH_C}"
-	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}" 
+endif
+
+ifeq ($(COMPILE_PHOTOLYTIC_REACTIONS),on)
+	cd ${WSD}/models/photolytic_reactions; $(MAKE) SEARCH_C="${SEARCH_C}"
+endif
+
 	cd ${WSD}/main; $(MAKE) SEARCH_C="${SEARCH_C}"
 	cp -f ${WSD}/main/mainlib.a ${WSD}/libAMPS.a
 
 ifeq ($(SPICE),nospice)
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o models/exosphere/*.o models/surface/*.o models/electron_impact/*.o models/sputtering/*.o models/dust/*.o models/charge_exchange/*.o models/photolytic_reactions/*.o
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) 
 else
 	rm -rf ${WSD}/tmpSPICE
 	mkdir ${WSD}/tmpSPICE
 	cp ${SPICE}/lib/cspice.a ${WSD}/tmpSPICE
 	cd ${WSD}/tmpSPICE; ar -x cspice.a
-	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o models/exosphere/*.o models/surface/*.o models/electron_impact/*.o models/sputtering/*.o models/dust/*.o models/charge_exchange/*.o models/photolytic_reactions/*.o tmpSPICE/*.o
+	cd ${WSD}; ${AR} libAMPS.a general/*.o meshAMR/*.o pic/*.o species/*.o $(LINK_DIRECTORY_LIST) tmpSPICE/*.o
 endif
 
 ifeq ($(INTERFACE),on)
@@ -300,8 +370,13 @@ amps_after_build: LIB_after_build
 	$(MAKE) amps_link
 
 amps_link:
+ifeq ($(COMPILE.mpicxx),nvcc)
+	nvcc -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
+	mpif90 -o amps -g  amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ share/lib/libSHARE.a ${EXTRALINKEROPTIONS_F} 
+else
 	${AMPSLINKER} -o amps srcTemp/main/main.a srcTemp/libAMPS.a \
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}
+endif
 
 .PHONY: test
 test:

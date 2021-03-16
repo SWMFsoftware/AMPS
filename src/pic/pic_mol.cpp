@@ -18,8 +18,8 @@ bool PIC::MolecularData::ExternalSpeciesModelingFlag=_EXTERNAL_SPECIES_OFF_;
 bool PIC::MolecularData::UnimolecularReactionFlag=_UNIMOLECULAR_REACTIONS_OFF_;
 bool PIC::MolecularData::InternalDegreesOfFreedomModelingFlag=_INTERNAL_DEGRESS_OF_FREEDOM_OFF_;
 
-double PIC::MolecularData::MolMass[_TOTAL_SPECIES_NUMBER_]={0.0};
-double PIC::MolecularData::ElectricChargeTable[_TOTAL_SPECIES_NUMBER_]={0.0};
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::MolecularData::MolMass[_TOTAL_SPECIES_NUMBER_]={0.0};
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::MolecularData::ElectricChargeTable[_TOTAL_SPECIES_NUMBER_]={0.0};
 
 //the functions:
 //==========================================================

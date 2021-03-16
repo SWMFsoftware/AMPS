@@ -41,11 +41,11 @@ PIC::BC::ExternalBoundary::Periodic::fUserDefinedProcessNodeAssociatedData PIC::
 
 //default function forprocessing of the corner node associated data
 void PIC::BC::ExternalBoundary::Periodic::CopyCornerNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::CopyCenterNodeAssociatedData_default(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+  memcpy(TargetBlockAssociatedData,SourceBlockAssociatedData,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
 }
 
 
@@ -260,7 +260,7 @@ void PIC::Parallel::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC:
     if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
 
     //update the associated data in the subdomain 'boundary layer' of blocks
-    PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+    PIC::Mesh::mesh->ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
@@ -274,8 +274,8 @@ void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(int (*fPackBlockD
   int iBlockPair,RealBlockThread,GhostBlockThread;  
 
 
-  int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+
-      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+  int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+
+      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
 
   char *TargetDataBuffer=new char [BlockDataLength];
   char *SourceDataBuffer=new char [BlockDataLength];
@@ -359,11 +359,11 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable
       CopyCornerNodeAssociatedData(TargetDataBuffer,SourceDataBuffer);
     }
     else{
-      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
     }
 
-    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
-    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
   }
 
   //copy content of the "center" nodes
@@ -393,11 +393,11 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable
       CopyCenterNodeAssociatedData(TargetDataBuffer,SourceDataBuffer);
     }
     else {
-      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+      memcpy(TargetDataBuffer,SourceDataBuffer,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
     }
 
-    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (TargetBufferIsInput==true) TargetDataBuffer+=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    if (SourceBufferIsInput==true) SourceDataBuffer+=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
   }
 }
 
@@ -420,14 +420,14 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataMPI(cBlockPairTable& 
     //recv 'center' nodes
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
       CenterNodeGhostBlock=GhostBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-      pipe.recv((char*)(CenterNodeGhostBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength,RealBlockThread);
+      pipe.recv((char*)(CenterNodeGhostBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,RealBlockThread);
     }
 
     //recv 'corner' nodes
     //the limits are correct
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
       CornerNodeGhostBlock=GhostBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-      pipe.recv((char*)(CornerNodeGhostBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength,RealBlockThread);
+      pipe.recv((char*)(CornerNodeGhostBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,RealBlockThread);
     }
   }
   else if (RealBlockThread==PIC::ThisThread) {
@@ -436,14 +436,14 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataMPI(cBlockPairTable& 
     //send 'center' nodes
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
       CenterNodeRealBlock=RealBlock->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-      pipe.send((char*)(CenterNodeRealBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCenterNode::totalAssociatedDataLength);
+      pipe.send((char*)(CenterNodeRealBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
     }
 
     //send 'corner' nodes
     //the limits are correct
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
       CornerNodeRealBlock=RealBlock->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
-      pipe.send((char*)(CornerNodeRealBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCornerNode::totalAssociatedDataLength);
+      pipe.send((char*)(CornerNodeRealBlock->GetAssociatedDataBufferPointer()),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
     }
   }
 
@@ -468,7 +468,7 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::BC::ExternalBoundary::Periodic::fin
     }
   }
 
-  return PIC::Mesh::mesh.findTreeNode(xTrueCenter);
+  return PIC::Mesh::mesh->findTreeNode(xTrueCenter);
 }
 
 //Initialize the periodic boundary manager
@@ -502,7 +502,7 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
   if (PIC::ThisThread==0) printf("\n");
   
   //initiate the mesh  
-  PIC::Mesh::mesh.init(xminDomain,xmaxDomain,ModifiedLocalResolution);
+  PIC::Mesh::mesh->init(xminDomain,xmaxDomain,ModifiedLocalResolution);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable){
@@ -709,7 +709,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
 void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> &BlockVector, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * startNode=NULL){
   int NullNodeNum=0;
 
-  if (startNode==NULL) startNode=PIC::Mesh::mesh.rootTree;
+  if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
 
   for (int i=0;i<8;i++){
     if (startNode->downNode[i]!=NULL) {
@@ -719,8 +719,9 @@ void PIC::BC::ExternalBoundary::Periodic::PopulateGhostBlockVector(std::vector<c
     }
   }
 
-  if ((NullNodeNum==8)&&(PIC::Mesh::mesh.ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_)) {
+  if ((NullNodeNum==8)&&(PIC::Mesh::mesh->ExternalBoundaryBlock(startNode)==_EXTERNAL_BOUNDARY_BLOCK_)) {
     BlockVector.push_back(startNode);
+    startNode->IsGhostNodeFlag=true;
   }
 }
 

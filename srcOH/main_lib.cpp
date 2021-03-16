@@ -96,7 +96,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
    double ExternalNormal[3],ModelParticlesInjectionRate;
    int nface;
 
-   if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+   if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
      for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
        startNode->GetExternalNormal(ExternalNormal,nface);
        ModelParticlesInjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(OH::InjectionNDensity,OH::InjectionTemperature,OH::InjectionVelocity,ExternalNormal,_H_SPEC_);
@@ -122,7 +122,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
    double v[3];
    double ModelParticlesInjectionRate;
 
-   if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+   if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
      ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
      LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -144,7 +144,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
        if (ModelParticlesInjectionRate>0.0) {
 	 ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-	 PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+	 PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
 	 while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
 	   //generate the new particle position on the face
@@ -199,7 +199,7 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
   
   double ModelParticlesInjectionRate=0.0;
   
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
 	startNode->GetExternalNormal(ExternalNormal,nface);
 	BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -262,63 +262,54 @@ void amps_init_mesh(){
   if (DIM>2) minBlockCellsnumber=min(minBlockCellsnumber,_BLOCK_CELLS_Z_);
   
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  //PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  //PIC::Mesh::mesh->init(OH::DomainXMin,OH::DomainXMax,localResolution);
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
     PIC::BC::ExternalBoundary::Periodic::Init(OH::DomainXMin,OH::DomainXMax,localResolution);
   }else{
-    PIC::Mesh::mesh.init(OH::DomainXMin,OH::DomainXMax,localResolution);
+    PIC::Mesh::mesh->init(OH::DomainXMin,OH::DomainXMax,localResolution);
   }
 
-  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
-    PIC::Mesh::mesh.memoryAllocationReport();
-  }
+  PIC::Mesh::mesh->memoryAllocationReport();
   
   
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
   
-  // cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh.ThisThread << endl;
+  // cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
   
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
   
-  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
-    PIC::Mesh::mesh.memoryAllocationReport();
-    PIC::Mesh::mesh.GetMeshTreeStatistics();
-  }
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
   
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
   
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
   
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-
-  int nTotalCells=PIC::Mesh::GetAllocatedCellTotalNumber();
-  if (PIC::ThisThread==0) printf("$PREFIX: The total number of cells: %i\n",nTotalCells); 
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
   
-  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
-    PIC::Mesh::mesh.memoryAllocationReport();
-    PIC::Mesh::mesh.GetMeshTreeStatistics();
-  }
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
   
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
   
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   // allocate array with global times step and reset them
   if (! PIC::ParticleWeightTimeStep::GlobalTimeStep) {
@@ -370,14 +361,14 @@ void amps_init() {
    }   
 
    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-   if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
    
    //init the particle buffer
-   //PIC::ParticleBuffer::Init(20000000);
+   PIC::ParticleBuffer::Init(20000000);
 
    // change global time step if it's set in the input file
    if(OH::UserGlobalTimeStep > 0.0){
-     if (PIC::Mesh::mesh.ThisThread==0) 
+     if (PIC::Mesh::mesh->ThisThread==0) 
        cout << "AMPS:: Global time steps of all species are changed to " << 
 	 OH::UserGlobalTimeStep << 
 	 " by user (see oh.input)\n";
@@ -395,7 +386,7 @@ void amps_init() {
    //prepopulate the domain if needed
    if (flag_prepopulate_domain==true) {
      //set the particle weight  
-     PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh.GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
+     PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh->GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
 
      //pre-populate the domain
      PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,SetDefaultOriginID);
@@ -426,7 +417,7 @@ void amps_time_step(){
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if ((PIC::Mesh::mesh.ThisThread==0)&&(_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_!=_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_)) 
+       if ((PIC::Mesh::mesh->ThisThread==0)&&(_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_!=_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_)) 
 	 cout << "AMPS: Output file " << PIC::DataOutputFileNumber<< " is done" << endl;
      }
      

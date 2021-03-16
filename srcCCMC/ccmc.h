@@ -55,7 +55,7 @@ namespace CCMC {
       int i,j,k;
       double E[3],B[3];
 
-      if (PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false)==-1) {
+      if (PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false)==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
 

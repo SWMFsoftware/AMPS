@@ -76,7 +76,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
 
 
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
 
     for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
@@ -91,7 +91,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
         for (spec=0;spec<PIC::nTotalSpecies;spec++) if (InjectionFlag[spec]==true) res[spec]+=InjectionRate[spec];
       }
 
-      for (spec=0;spec<PIC::nTotalSpecies;spec++) *(spec+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()))=res[spec];
+      for (spec=0;spec<PIC::nTotalSpecies;spec++) *(spec+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()))=res[spec];
     }
   }
 }
@@ -101,7 +101,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
 double PIC::VolumeParticleInjection::GetCellInjectionRate(int spec,PIC::Mesh::cDataCenterNode *cell) {
   if (nRegistratedInjectionProcesses==0) return 0.0;
 
-  return *(spec+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()));
+  return *(spec+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+cell->GetAssociatedDataBufferPointer()));
 }
 
 double PIC::VolumeParticleInjection::GetBlockInjectionRate(int spec,PIC::Mesh::cDataBlockAMR *block) {
@@ -140,7 +140,7 @@ double PIC::VolumeParticleInjection::GetTotalInjectionRate(int spec) {
 
   if (nRegistratedInjectionProcesses==0) return 0.0;
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     res+=GetBlockInjectionRate(spec,node->block);
   }
 
@@ -164,7 +164,7 @@ double PIC::VolumeParticleInjection::GetTotalTimeStepInjection(int spec) {
 
   if (nRegistratedInjectionProcesses==0) return 0.0;
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     t=GetBlockInjectionRate(spec,node->block);
 
     res+=t*node->block->GetLocalTimeStep(spec);
@@ -196,7 +196,7 @@ long int PIC::VolumeParticleInjection::InjectParticle() {
   long int nd,nInjectedParticles=0;
 
   //local copy of the block's cells
-  int cellListLength=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
+  int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
   PIC::Mesh::cDataCenterNode *cellList[cellListLength];
 
   //the local copy of the volume injection processes
@@ -225,7 +225,7 @@ long int PIC::VolumeParticleInjection::InjectParticle() {
   double EndTime,StartTime=MPI_Wtime();
 #endif
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     memcpy(cellList,node->block->GetCenterNodeList(),cellListLength*sizeof(PIC::Mesh::cDataCenterNode*));
 
     for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {

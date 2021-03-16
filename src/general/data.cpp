@@ -16,8 +16,8 @@
 int DIM=3;
 double tau,tmax,GeneralTime=0.0;
 unsigned char NS=1;
-int ThisThread=0;
-int TotalThreadsNumber=1;
+_CUDA_MANAGED_ int ThisThread=0;
+_CUDA_MANAGED_ int TotalThreadsNumber=1;
 
 bool dsmc_flag=true;
 bool chem_flag=false;

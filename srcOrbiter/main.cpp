@@ -180,10 +180,10 @@ namespace DragCoefficientTest {
 
 
         LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-        if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
       }
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         time_t TimeValue=time(NULL);
         tm *ct=localtime(&TimeValue);
 
@@ -553,15 +553,15 @@ int main(int argc,char **argv) {
     xmax[idim]+=OrbiterSize*Orbiter::DomainSize::xMaxOffset[idim];
   }
 
-  PIC::Mesh::mesh.CutCellSurfaceLocalResolution=SurfaceResolution;
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
+  PIC::Mesh::mesh->CutCellSurfaceLocalResolution=SurfaceResolution;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 
-  //PIC::Mesh::mesh.buildMesh();
+  //PIC::Mesh::mesh->buildMesh();
 
   //generate mesh or read from file
   char mesh[400];
@@ -576,7 +576,7 @@ int main(int argc,char **argv) {
     if (PIC::ThisThread==0) printf("$PREFIX: mesh %s is found: loading.... ",mesh);
 
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(mesh);
+    PIC::Mesh::mesh->readMeshFile(mesh);
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     if (PIC::ThisThread==0) printf("done. \n");
@@ -588,14 +588,14 @@ int main(int argc,char **argv) {
       fflush(stdout);
     }
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-      PIC::Mesh::mesh.buildMesh();
-      PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      PIC::Mesh::mesh->buildMesh();
+      PIC::Mesh::mesh->saveMeshFile("mesh.msh");
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-      PIC::Mesh::mesh.readMeshFile("mesh.msh");
+      PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -607,19 +607,19 @@ int main(int argc,char **argv) {
   }
 
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 
 
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 
   //init the external normals of the cut faces
@@ -654,18 +654,18 @@ int main(int argc,char **argv) {
 
   //output the volume mesh
   sprintf(fname,"%s/VolumeMesh.dat",PIC::OutputDataFileDirectory);
-  PIC::Mesh::mesh.outputMeshTECPLOT(fname);
+  PIC::Mesh::mesh->outputMeshTECPLOT(fname);
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       printf("$PREFIX: Renaming the mesh file to amr.sig=0x%lx.mesh.bin.....  ",MeshSignature);
@@ -735,10 +735,10 @@ int main(int argc,char **argv) {
 
 
       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-      if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+      if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
     }
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 

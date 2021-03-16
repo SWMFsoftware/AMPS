@@ -120,7 +120,7 @@ void MarsIon::Sampling::SphericalShells::Output::PrintDataStateVector(FILE* fout
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
   Sphere->GetSurfaceCoordinate(x,nZenithPoint,nAzimuthalPoint);
-  node=PIC::Mesh::mesh.findTreeNode(x,NULL);
+  node=PIC::Mesh::mesh->findTreeNode(x,NULL);
 
   if (node!=NULL) {
     if (PIC::ThisThread==node->Thread) {

@@ -56,7 +56,7 @@ int main(int argc,char **argv) {
     amps_time_step();
 
      //print the iteration number
-     if (PIC::Mesh::mesh.ThisThread==0) {
+     if (PIC::Mesh::mesh->ThisThread==0) {
        time_t TimeValue=time(NULL);
        tm *ct=localtime(&TimeValue);
 
@@ -69,7 +69,7 @@ int main(int argc,char **argv) {
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
 
   }

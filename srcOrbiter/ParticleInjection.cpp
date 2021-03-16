@@ -150,7 +150,7 @@ long int Orbiter::InjectionModel::FaceEjection::InjectParticles() {
       iFace=InjectionDataTable[iSource].FaceTable->FaceTable[i];
       CutCell::BoundaryTriangleFaces[iFace].GetRandomPosition(x);
 
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
       if (startNode->Thread!=PIC::ThisThread) continue;
 
       //generate velocity of the new particle and inject it into the system
@@ -209,7 +209,7 @@ long int Orbiter::InjectionModel::PointSource::InjectParticles() {
     x=InjectionDataTable[iSourceLocation].Location;
     spec=InjectionDataTable[iSourceLocation].Species;
 
-    startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
     if (startNode->Thread!=PIC::ThisThread) continue;
 
     double ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
@@ -283,7 +283,7 @@ long int Orbiter::InjectionModel::Ring::InjectParticles() {
 
       for (idim=0;idim<3;idim++) x[idim]=x0[idim]+RsinPhi*e0[idim]+RcosPhi*e1[idim];
 
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
       if (startNode->Thread!=PIC::ThisThread) continue;
 
       //distribute the particle velocity

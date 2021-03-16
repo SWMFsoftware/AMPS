@@ -211,8 +211,8 @@ namespace ProtostellarNebula {
 
 
       //determine if the particle belongs to this processor
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-      if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
       //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
 //      PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,ImpactVaporization_SourceTemeprature[spec],ExternalNormal,spec);
@@ -287,10 +287,10 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     PIC::Mesh::cDataCenterNode *CenterNode;
     double E[3],B[3];
 
-    if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL,startNode);
+    if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
-      if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }

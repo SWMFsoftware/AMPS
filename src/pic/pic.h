@@ -94,10 +94,21 @@ $MARKER:SPECIES-MACRO-DEFINIETION-USED-IN-SIMULATION$
 //include the appropriate mesh header
 #if DIM == 3
 #include "meshAMR3d.h"
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>; 
+
 #elif DIM == 2
 #include "meshAMR2d.h"
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
+
 #else 
 #include "meshAMR1d.h"
+
+template <class cDataCornerNode,class cDataCenterNode,class cDataBlockAMR>
+using cAmpsMesh=cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
 #endif
 
 #include "meshAMRinternalSurface.h"
@@ -112,10 +123,19 @@ namespace PIC {
   static const int nTotalSpecies=1;
 
   //The currect and total number of processors used in the simulation
-  extern int ThisThread,nTotalThreads;
+  namespace CPU {
+    extern int ThisThread,nTotalThreads;
+  }
 
-  //the total number of the OpenMP threads (when OpneMP is used in the model run)
-  extern int nTotalThreadsOpenMP;
+  namespace GPU {
+    extern _TARGET_DEVICE_ int ThisThread,nTotalThreads;
+  } 
+
+  using namespace CPU;
+
+
+//  //the total number of the OpenMP threads (when OpneMP is used in the model run)
+  extern _TARGET_DEVICE_ _CUDA_MANAGED_ int nTotalThreadsOpenMP;
 
   //The path to the input data of the user-defined physical models
   extern char UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_];
@@ -1556,8 +1576,8 @@ namespace PIC {
     void Init();
 
     //mass of particles
-    extern double MolMass[_TOTAL_SPECIES_NUMBER_];
-    extern double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double MolMass[_TOTAL_SPECIES_NUMBER_];
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
 
     inline double GetMass(int spec) {return MolMass[spec];}
     inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
@@ -1608,16 +1628,31 @@ namespace PIC {
     // macro definition for particle data offsets
     #include "picParticleDataMacro.h"
 
+    //output checksum of the particle buffer
+    void PrintBufferChecksum(int nline,const char* fname);
+
     //the total length of a data allocated for a particle
-    extern long int ParticleDataLength;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int ParticleDataLength;
 
     //The particle buffer's internal data
-    extern byte *ParticleDataBuffer;
-    extern long int MaxNPart,NAllPart,FirstPBufferParticle;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ byte *ParticleDataBuffer;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int MaxNPart,NAllPart,FirstPBufferParticle;
 
-    //output checksum of the particle buffer
-    void PrintBufferChecksum(int nline,const char* fname); 
+    //namespace combibes all GPU-relates data
+    struct cParticleTable {
+      int icell;
+      long int ptr;
+    };
 
+    //create a 'global' particle table 
+    void CreateParticleTable();
+    //the particle number in a cell
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int *ParticleNumberTable;
+    //offset in the ParticlePopulationTable to the location of the first particle populating a give cell
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int *ParticleOffsetTable; 
+    //the particle table
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cParticleTable *ParticlePopulationTable;
+      
     //Request additional data for a particle
     void RequestDataStorage(long int &offset,int TotalDataLength);
 
@@ -1666,8 +1701,8 @@ namespace PIC {
     #define _PIC_INIT_PARTICLE_MODE__MOVE_      1
 
     typedef void (*fUserInitParticle)(byte*);
-
     int InitiateParticle(double *x,double *v,double* WeightCorrectionFactor,int *spec,byte* ParticleData,int InitMode,void *node,fUserInitParticle=NULL);
+
 
 
     // Operations related to species ID
@@ -1675,10 +1710,12 @@ namespace PIC {
     // the first 7 bits will be used for specie ID, 
     // the last 8th bit will be used to control whether the particle 
     // has been allocated
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(byte* ParticleDataStart) {
       return ((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(long int ptr) {
       return ((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
     }
@@ -1710,72 +1747,166 @@ namespace PIC {
 
     // Operations related to the next particle in the stack
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline long int GetNext(long int ptr) {
+
+      #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetNext(byte* ParticleDataStart) {
+
+      #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetNext(long int next,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      #else
+
+      char *source,*target;
+
+      source=(char*)&next;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,source,sizeof(long int));
+      #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetNext(long int next,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      #else 
+      char *source,*target;
+
+      source=(char*)&next;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
+      memcpy(target,source,sizeof(long int));
+      #endif 
     }
     //-------------------------------------------------------------------------
 
     // Operations related to the previous particle in the stack
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetPrev(long int ptr) {
+
+      #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetPrev(byte* ParticleDataStart) {
+
+      #ifdef __CUDA_ARCH__
+      long int res;
+      char *source,*target;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      target=(char*)&res;
+      memcpy(target,source,sizeof(long int));
+
+      return res;
+      #endif
+
       return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetPrev(long int prev,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      #else
+      char *source,*target;
+
+      source=(char*)&prev;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,source,sizeof(long int));
+      #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetPrev(long int prev,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
       #endif
 
+
+      #ifndef __CUDA_ARCH__
       *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      #else
+      char *source,*target;
+
+      source=(char*)&prev;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
+      memcpy(target,source,sizeof(long int));
+      #endif
     }
     //-------------------------------------------------------------------------
 
     // Operations related to the particle velocity
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double *GetV(long int ptr) {
       return (double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double *GetV(byte *ParticleDataStart) {
       return (double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetV(double* v,long int ptr) {
       memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -1785,6 +1916,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void GetV(double* v,byte *ParticleDataStart) {
       memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
 
@@ -1795,6 +1927,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,long int ptr) {
 /*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
         exit(__LINE__,__FILE__,"the velocity is too large");
@@ -1813,6 +1946,7 @@ namespace PIC {
       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,v,3*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,byte *ParticleDataStart) {
 /*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
         exit(__LINE__,__FILE__,"the velocity is too large");
@@ -1842,14 +1976,17 @@ namespace PIC {
       return (double*) (ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_);
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,long int ptr) {
       memcpy(x,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,byte *ParticleDataStart) {
       memcpy(x,ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetX(double* x,long int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -1859,6 +1996,7 @@ namespace PIC {
       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,x,DIM*sizeof(double));
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetX(double* x,byte *ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -1908,9 +2046,21 @@ namespace PIC {
 
     // Operations related to the individual particle weight correction    
     //-------------------------------------------------------------------------
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetIndividualStatWeightCorrection(long int ptr) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      #else 
+      union {double res;char buf[sizeof(double)];}; 
+      char *source,*target;
+
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+      target=buf;
+
+      memcpy(target,source,sizeof(double));
+      return res;
+      #endif 
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       return 1;
     #else
@@ -1918,9 +2068,21 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetIndividualStatWeightCorrection(byte *ParticleDataStart) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       return *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      #else
+      union {double res;char buf[sizeof(double)];};
+      char *source,*target;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+      target=buf;
+
+      memcpy(target,source,sizeof(double));
+      return res;
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       return 1;
     #else
@@ -1928,6 +2090,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,long int ptr) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -1940,7 +2103,14 @@ namespace PIC {
     #endif
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+      #else 
+      char *source=(char*)&WeightCorrectionFactor;
+      char *target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+
+      memcpy(target,source,sizeof(double));
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       exit(__LINE__,__FILE__,"Error: SetIndividualStatWeightCorrection cannot be used with _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_");
     #else
@@ -1948,6 +2118,7 @@ namespace PIC {
     #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,byte *ParticleDataStart) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
@@ -1960,7 +2131,14 @@ namespace PIC {
     #endif
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+      #ifndef __CUDA_ARCH__
       *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+      #else 
+      char *source=(char*)&WeightCorrectionFactor;
+      char *target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
+   
+      memcpy(target,source,sizeof(double)); 
+      #endif
     #elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
       exit(__LINE__,__FILE__,"Error: SetIndividualStatWeightCorrection cannot be used with _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_");
     #else
@@ -2175,8 +2353,9 @@ namespace PIC {
     class cDataCenterNode;
     class cDataCornerNode;
 
-    //return the total number of allocated cells in the entire domain 
-    int GetAllocatedCellTotalNumber();
+    //allocate mesh 
+    _TARGET_GLOBAL_
+    void AllocateMesh();
 
     //get the AMR tree signature
     unsigned int GetMeshTreeSignature(void *startNode,int nline,const char* fname);
@@ -2267,19 +2446,29 @@ namespace PIC {
     void AddVaraibleListFunction(fPrintVariableListCenterNode f);
     
     //the class defining the 'central node' that contains the sampling data
+    namespace cDataCenterNode_static_data {
+      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector;
+      extern _TARGET_DEVICE_ int totalAssociatedDataLength;
+      extern _TARGET_DEVICE_ int LocalParticleVolumeInjectionRateOffset; 
+    }
+
+
     class cDataCenterNode : public cBasicCenterNode {
     public:
       //parameters that defines the parameters of the associated data used for sampling and code running
-      static int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset;
+//      static int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset;
       
       //      long int FirstCellParticle,tempParticleMovingList;
       
       char *associatedDataPointer;
       unsigned char FlagTable;
-      static unsigned char FlagTableStatusVector;
+//      static unsigned char FlagTableStatusVector;
 
       //reserve and release flag
       static bool CheckoutFlag(int ibit) {
+        using namespace cDataCenterNode_static_data;
+
+
         unsigned char mask=1<<ibit;
         bool res=false;
 
@@ -2292,6 +2481,8 @@ namespace PIC {
       }
 
       static void ReleaseFlag(int ibit) {
+        using namespace cDataCenterNode_static_data;
+
         unsigned char mask=1<<ibit;
 
         mask=~mask;
@@ -2299,6 +2490,7 @@ namespace PIC {
       }
 
       //set and test the flags
+      _TARGET_HOST_ _TARGET_DEVICE_
       bool TestFlag(int ibit) {
         unsigned char mask=1<<ibit;
 
@@ -2306,6 +2498,7 @@ namespace PIC {
         return (mask!=0) ? true : false;
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetFlag(bool flag,int ibit) {
         unsigned char mask=1<<ibit;
 
@@ -2319,7 +2512,10 @@ namespace PIC {
       }
 
       //set and read 'active flag': zero's bit of the 'FlagTable'
+      _TARGET_HOST_ _TARGET_DEVICE_
       bool TestActiveFlag() {return TestFlag(0);}
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetActiveFlag(bool flag) {SetFlag(flag,0);}
 
       //'processed' flag (second bit of 'FlagTable')
@@ -2329,14 +2525,21 @@ namespace PIC {
       //atomic flag used for syncronization of the threads
       std::atomic_flag lock_associated_data;
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline int AssociatedDataLength() {
+        using namespace cDataCenterNode_static_data;
+
         return totalAssociatedDataLength;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetAssociatedDataBufferPointer(char* ptr) {
+        using namespace cDataCenterNode_static_data;
+
         associatedDataPointer=ptr;
       }
       
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
@@ -2344,7 +2547,10 @@ namespace PIC {
       int LinearSolverUnknownVectorIndex;
 
       //clean the sampling buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       void cleanDataBuffer() {
+        using namespace cDataCenterNode_static_data;
+
         cBasicCenterNode::cleanDataBuffer();
 	
         int i,length=totalAssociatedDataLength/sizeof(double);
@@ -2355,11 +2561,14 @@ namespace PIC {
       }
       
       //init the buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCenterNode() : cBasicCenterNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
 
+        #ifndef __CUDA_ARCH__
         lock_associated_data.clear(std::memory_order_release);
+        #endif
       }
         
       // access sampled macroscopic parameters;
@@ -2609,17 +2818,25 @@ namespace PIC {
 
   
     //the class that contains the run information for the cell's corners
+    namespace cDataCornerNode_static_data {
+      extern _TARGET_DEVICE_ int totalAssociatedDataLength;
+      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector;
+    }
+
     class cDataCornerNode : public cBasicCornerNode {
     public:
       //parameters that defines the parameters of the associated data used for sampling and code running
-       static int totalAssociatedDataLength;
+    //   static int totalAssociatedDataLength;
 
        char *associatedDataPointer;
        unsigned char FlagTable;
-       static unsigned char FlagTableStatusVector;
+       //static unsigned char FlagTableStatusVector;
 
        //reserve and release flag
+       _TARGET_HOST_ _TARGET_DEVICE_
        static bool CheckoutFlag(int ibit) {
+         using namespace cDataCornerNode_static_data;
+ 
          unsigned char mask=1<<ibit;
          bool res=false;
 
@@ -2631,13 +2848,16 @@ namespace PIC {
          return res;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        static int CheckoutFlag() {
          for (int ibit=0;ibit<8;ibit++) if (CheckoutFlag(ibit)==true) return ibit;
 
          return -1;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        static void ReleaseFlag(int ibit) {
+         using namespace cDataCornerNode_static_data;
          unsigned char mask=1<<ibit;
 
          mask=~mask;
@@ -2645,6 +2865,7 @@ namespace PIC {
        }
 
        //set and test the flags
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestFlag(int ibit) {
          unsigned char mask=1<<ibit;
 
@@ -2652,6 +2873,7 @@ namespace PIC {
          return (mask!=0) ? true : false;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetFlag(bool flag,int ibit) {
          unsigned char mask=1<<ibit;
 
@@ -2665,16 +2887,25 @@ namespace PIC {
        }
 
        //set and read 'active flag': zero's bit of the 'FlagTable'
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestActiveFlag() {return TestFlag(0);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetActiveFlag(bool flag) {SetFlag(flag,0);}
 
        //subdomain modifiable flag: the corner node can be modified with in the subdomain (it does not at the 'right' boundary of any block that are located at the boundary of the subdomain
        //First bit of the 'FlagTable'
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestSubDomainModifiableFlag() {return TestFlag(1);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetSubDomainModifiableFlag(bool flag) {SetFlag(flag,1);}
 
        //'processed' flag (third bit of 'FlagTable')
+       _TARGET_HOST_ _TARGET_DEVICE_
        bool TestProcessedFlag() {return TestFlag(2);}
+
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetProcessedFlag(bool flag) {SetFlag(flag,2);}
 
 
@@ -2686,14 +2917,19 @@ namespace PIC {
        int LinearSolverUnknownVectorIndex;
 //       #endif
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        inline int AssociatedDataLength() {
+         using namespace cDataCornerNode_static_data;
+
          return totalAssociatedDataLength;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        void SetAssociatedDataBufferPointer(char* ptr) {
          associatedDataPointer=ptr;
        }
 
+       _TARGET_HOST_ _TARGET_DEVICE_
        inline char* GetAssociatedDataBufferPointer() {
          return associatedDataPointer;
        }
@@ -2703,7 +2939,10 @@ namespace PIC {
        void PrintVariableList(FILE* fout,int DataSetNumber);
 
        //clean the sampling buffers
+       _TARGET_HOST_ _TARGET_DEVICE_
        void cleanDataBuffer() {
+         using namespace cDataCornerNode_static_data;
+
          cBasicCornerNode::cleanDataBuffer();
 
          int i,length=totalAssociatedDataLength/sizeof(double);
@@ -2713,38 +2952,60 @@ namespace PIC {
          if (totalAssociatedDataLength%sizeof(double)) exit(__LINE__,__FILE__,"Error: the cell internal buffers contains data different from double");
        }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataCornerNode() : cBasicCornerNode() {
         associatedDataPointer=NULL;
         SetActiveFlag(false);
         SetSubDomainModifiableFlag(false);
+
+        #ifndef __CUDA_ARCH__
         lock_associated_data.clear(std::memory_order_release);
+        #endif
       }
     };
   
     //the data stored in a block
     //1. Local Time Step [NS]: depending on the model mode there will be a 'global' time step for the simulation, 'global' time step for the cell or individual time step for each simulated species
     //2. Local particle weight [NS]: depending on the model mode there will be a 'global' weight for the simulation, 'global' weight for the cell or individual weigh for each simulated species
-    class cDataBlockAMR : public cBasicBlockAMR<cDataCornerNode,cDataCenterNode> {
-    public:
-      static int LocalTimeStepOffset,LocalParticleWeightOffset;
-      char *associatedDataPointer;
-      static int totalAssociatedDataLength;
+
+    class cDataBlockAMR;
+
+    namespace cDataBlockAMR_static_data {
+      extern int _TARGET_DEVICE_ LocalTimeStepOffset,LocalParticleWeightOffset;
+      extern int _TARGET_DEVICE_ totalAssociatedDataLength; 
 
       typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
-      static fPackBlockData PackBlockData,UnpackBlockData;
+      extern _TARGET_DEVICE_ fPackBlockData PackBlockData,UnpackBlockData;
 
-    private:
-      static int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+      extern _TARGET_DEVICE_  int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+    
+      extern _TARGET_DEVICE_ int LoadBalancingMeasureOffset;
+      extern _TARGET_DEVICE_ int UserAssociatedDataOffset;
 
+      extern _TARGET_DEVICE_ bool InternalDataInitFlag;
+    }
+
+    class cDataBlockAMR : public cBasicBlockAMR<cDataCornerNode,cDataCenterNode> {
     public:
-      static int LoadBalancingMeasureOffset;
-      static int UserAssociatedDataOffset;
+//      static int LocalTimeStepOffset,LocalParticleWeightOffset;
+      char *associatedDataPointer;
+   //   static int totalAssociatedDataLength;
+
+//      typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
+//      static fPackBlockData PackBlockData,UnpackBlockData;
+
+//    private:
+//      static int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+
+//    public:
+//      static int LoadBalancingMeasureOffset;
+//      static int UserAssociatedDataOffset;
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
       bool ActiveFlag; //used for debugging to prevent repeatable de-allocation of the block
 
       //the flag defined whether all internal data is allocated
-      static bool InternalDataInitFlag;
+//      static bool InternalDataInitFlag;
 
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
@@ -2755,6 +3016,8 @@ namespace PIC {
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
       cTempParticleMovingListMultiThreadTable *GetTempParticleMovingListMultiThreadTable(int thread,int i,int j,int k) {
+        using namespace cDataBlockAMR_static_data;
+
         cTempParticleMovingListMultiThreadTable* res;
 
         switch (_PIC_TEMP_PARTICLE_LIST_MODE_) {
@@ -2778,21 +3041,28 @@ namespace PIC {
       long int tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       #endif
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       int AssociatedDataLength() {
+        using namespace cDataBlockAMR_static_data;
         return totalAssociatedDataLength;
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetAssociatedDataBufferPointer(char* ptr) {
         associatedDataPointer=ptr;
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       char* GetAssociatedDataBufferPointer() {
         return associatedDataPointer;
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       static void InitInternalData() {
+        using namespace cDataBlockAMR_static_data;
+
         if (InternalDataInitFlag==false) {
           totalAssociatedDataLength=0;
 
@@ -2831,7 +3101,10 @@ namespace PIC {
         }
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       static int RequestInternalBlockData(int length) {
+        using namespace cDataBlockAMR_static_data;
+ 
         if (InternalDataInitFlag==false) InitInternalData();
 
         int res=totalAssociatedDataLength;
@@ -2841,7 +3114,10 @@ namespace PIC {
       }
 
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       cDataBlockAMR () : cBasicBlockAMR<cDataCornerNode,cDataCenterNode> () {
+        using namespace cDataBlockAMR_static_data;
+
         if (InternalDataInitFlag==false) InitInternalData();
         ActiveFlag=false;
       }
@@ -2856,7 +3132,10 @@ namespace PIC {
       void recvMoveBlockAnotherProcessor(CMPI_channel *pipe,int From,void *Node);
 
       //clean the sampling buffers
+      _TARGET_HOST_ _TARGET_DEVICE_
       void cleanDataBuffer() {
+        using namespace cDataBlockAMR_static_data;
+
         int i,length=(totalAssociatedDataLength-UserAssociatedDataOffset)/sizeof(double);
         double *ptr;
 
@@ -2890,13 +3169,22 @@ namespace PIC {
 
 
       //set and get the local time step
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetLocalTimeStep(double dt, int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       double GetLocalTimeStep(int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void SetLocalParticleWeight(double weight, int spec);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       double GetLocalParticleWeight(int spec);
 
       //print into a output file the blocks' parameters: the local time step, the local weight
       void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int BlockThread) {
+        using namespace cDataBlockAMR_static_data;
+
 
         struct cOutputData {
           double dtLocal,wLocal;
@@ -2932,15 +3220,20 @@ namespace PIC {
     void SetCellSamplingDataRequest();
 
     //return time step and the particle's weights
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetLocalTimeStep(int spec,cDataBlockAMR* block) {
-      return *(spec+(double*)(cDataBlockAMR::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
+      return *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetLocalTimeStep(double dt,int spec,cDataBlockAMR* block) {
-      *(spec+(double*)(cDataBlockAMR::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
+      *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     double GetLocalParticleWeight(int,cDataBlockAMR*);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     void SetLocalParticleWeight(double,int,cDataBlockAMR*);
 
     void flushCompletedSamplingBuffer(cDataCenterNode*);
@@ -2948,13 +3241,12 @@ namespace PIC {
     void switchSamplingBuffers();
 
     //the computational mesh
-    #if DIM == 3
-    extern cMeshAMR3d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
-    #elif DIM == 2
-    extern cMeshAMR2d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
-    #else
-    extern cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR > mesh;
-    #endif
+    //MeshTable, MeshTableLength -> vector containing meshes of all simulated regions
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *MeshTable;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int MeshTableLength;
+
+    //mesh -> is the pointed to the mesh discritizing a single computational region
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
 
     //init the computational mesh
     void Init(double*,double*,fLocalMeshResolution);
@@ -2962,18 +3254,26 @@ namespace PIC {
     void loadMesh(char*);
 
     //pack and un-pack blocks data
+    _TARGET_DEVICE_ _TARGET_HOST_
     int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+ 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,char* SendDataBuffer);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
         char* SendDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
         int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,
         unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
         char* SendDataBuffer,
@@ -2981,12 +3281,14 @@ namespace PIC {
         int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
         char* RecvDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
         int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
         unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
         char* RecvDataBuffer,
@@ -2995,15 +3297,22 @@ namespace PIC {
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
     namespace BlockElementSendMask {
-      extern int CommunicationDepthLarge,CommunicationDepthSmall;
+      extern _CUDA_MANAGED_ int CommunicationDepthLarge,CommunicationDepthSmall;
 
+      _TARGET_DEVICE_ _TARGET_HOST_
       void InitLayerBlockBasic(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
+  
+      _TARGET_DEVICE_ _TARGET_HOST_
       void InitLayerBlock(cTreeNodeAMR<cDataBlockAMR>* Node,int To,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
+
+      _TARGET_DEVICE_ _TARGET_HOST_
       void Set(bool flag,unsigned char* CenterNodeMask,unsigned char* CornerNodeMask);
 
       namespace CornerNode {
+        _TARGET_DEVICE_ _TARGET_HOST_
         int GetSize();
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3018,6 +3327,7 @@ namespace PIC {
         }
 
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void inline Set(bool flag,int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3039,8 +3349,10 @@ namespace PIC {
       }
 
       namespace CenterNode {
+        _TARGET_DEVICE_ _TARGET_HOST_
         int GetSize();
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         bool inline Test(int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3054,6 +3366,7 @@ namespace PIC {
           return ((Mask[ibyte]&m)==0) ? false : true;
         }
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void inline Set(bool flag,int i,int j,int k,unsigned char* Mask) {
           int nd,ibit,ibyte;
           unsigned char m;
@@ -3082,8 +3395,13 @@ namespace PIC {
       const int _NEW_PARTICLE_SIGNAL_=       2;
       const int _END_COMMUNICATION_SIGNAL_=  3;
 
+      _TARGET_DEVICE_ _TARGET_HOST_
       void GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength);
+
+      _TARGET_DEVICE_ _TARGET_HOST_
       int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+
+      _TARGET_DEVICE_ _TARGET_HOST_
       int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
     }
 
@@ -3112,7 +3430,7 @@ namespace PIC {
 
       //propagate the information of the cut faces to the neibbouring nodes
       extern int nCutFaceInformationCopyAttempts;
-      void CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+      void CopyCutFaceInformation(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
       //determine the signature of the cut-face distribution in the mesh
       unsigned int GetCutFaceDistributionSignature(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,int nline,const char* fname);
@@ -3457,7 +3775,8 @@ namespace PIC {
 
     //reserve memoty in a cell associated data buffer for non-sampling data
     typedef int (*fRequestStaticCellData)(int);
-    extern vector<fRequestStaticCellData> RequestStaticCellData,RequestStaticCellCornerData;
+    extern _TARGET_DEVICE_ amps_vector<fRequestStaticCellData> *RequestStaticCellCornerData;
+    extern vector<fRequestStaticCellData> RequestStaticCellData;
 
     //the list of user defined sampling procedures
     typedef void (*fSamplingProcedure)();
@@ -3654,9 +3973,34 @@ namespace PIC {
 
   //the namespace contained the domain decomposition information used for loop parallelization in OpenMP
   namespace DomainBlockDecomposition {
-    extern unsigned int nLocalBlocks;
-    extern int LastMeshModificationID;
-    extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned int nLocalBlocks;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int LastMeshModificationID;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable;
+
+    //convert icell to cells' i,j,k and the block's indext in the BlockTable
+    _TARGET_HOST_ _TARGET_DEVICE_
+    inline void GetIcell2Ijk(int &i,int &j,int &k,int &iblock,int icell) {
+      int ii=icell;
+
+      iblock=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=iblock*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+      k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+      ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+
+      j=ii/_BLOCK_CELLS_X_;
+      ii-=j*_BLOCK_CELLS_X_;
+
+      i=ii;
+    }
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    inline void GetIjk2Icell(int &icell,int i, int j, int k, int iblock) {
+      icell=iblock*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      icell+=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+      icell+=j*_BLOCK_CELLS_X_;
+      icell+=i;
+    }
 
     void UpdateBlockTable();
   }
@@ -3791,19 +4135,32 @@ namespace PIC {
     //if BackwardTimeIntegrationMode==_PIC_MODE_ON_ the particle trajectory will be integrated backward in time
     extern int BackwardTimeIntegrationMode;
 
-    extern double ** E_Corner;
-    extern double ** B_Center;
-    extern double ** B_Corner;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** E_Corner;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** B_Center;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ** B_Corner;
 
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_E_corner;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_center;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** lastNode_B_corner;
 
     void SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
-    void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+
+    _TARGET_HOST_ _TARGET_DEVICE_ 
+    void SetBlock_E(double *E,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int ElectricField_RelativeOffset);
 
     void SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
-    void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset);
+
+    struct cExternalBoundaryFace {
+      double norm[3];
+      int nX0[3];
+      double e0[3],e1[3],x0[3];
+      double lE0,lE1;
+    };
+
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cExternalBoundaryFace ExternalBoundaryFaceTable[6];
 
     //the return codes of the moving procedures
     #define _PARTICLE_REJECTED_ON_THE_FACE_ -1
@@ -3900,21 +4257,23 @@ namespace PIC {
 
     struct cLapentaInputData {
       double *E_Corner;
-      double *B_Center;
-      double *B_Corner;
+      double *B_C;
+    //  double *B_Corner;
       double *MolMass;
       double *ElectricChargeTable;
       double *TimeStepTable;
 
       int ParticleDataLength;
       PIC::ParticleBuffer::byte *ParticleDataBuffer;
-      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=&PIC::Mesh::mesh;
+      cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > *mesh=PIC::Mesh::mesh;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
     };
 
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data); 
   }
 
@@ -3935,31 +4294,34 @@ namespace PIC {
 
 
     //when the global particle weight/time step are used, the following are the buffers where these parameters are stored
-    extern double *GlobalParticleWeight,*GlobalTimeStep;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ double GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_],GlobalTimeStep[_TOTAL_SPECIES_NUMBER_];
 
-    double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
 
-    void initParticleWeight(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    void SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+//    extern double *GlobalParticleWeight,*GlobalTimeStep;
+
+    double GetMaximumBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    double GetTotalBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+
+    void initParticleWeight(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    void SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     double GetGlobalTimeStep(int spec);
 
     void initParticleWeight_ConstantWeight();
-    void initParticleWeight_ConstantWeight(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void initParticleWeight_ConstantWeight(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     void initParticleWeight_ConstantDensity(int spec,double NumberDensity,double TotalModelParticleNumber);
 
 
-    void initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     void copyLocalParticleWeightDistribution(int specTarget,int specSource,double ProportionaltyCoefficient=1.0);
     void copyLocalTimeStepDistribution(int specTarger,int specSource,double ProportionaltyCoefficient=1.0);
 
     //adjust particle weight so Weight/dT=const in all blocks (need to be called after the time step and particle weight are initialized
-    void AdjustParticleWeight_ConstantWeightOverTimeStep(int spec,double WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void AdjustParticleWeight_ConstantWeightOverTimeStep(int spec,double WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     void AdjustParticleWeight_ConstantWeightOverTimeStep_KeepMinParticleWeight(int spec);
 
-    double GetMinLocalParticleWeightValue(int spec,double &WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    double GetMinLocalParticleWeightValue(int spec,double &WeightOverTimeStepRatio,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
   }
 
   //in case of time-dependent model runs with glocal time stop for all specis -> count the physical time of the simulation
@@ -4092,7 +4454,7 @@ namespace PIC {
          std::list<XYZTree::zNode*> zList;
             
          void addZNode(double z, XYZTree::leafNode * leaf){
-           double eps = 0.3*PIC::Mesh::mesh.EPS;
+           double eps = 0.3*PIC::Mesh::mesh->EPS;
            if (zList.empty()) {
              XYZTree::zNode * node = new XYZTree::zNode(z,leaf);
              zList.push_back(node);
@@ -4148,7 +4510,7 @@ namespace PIC {
          double x;
          std::list<XYZTree::yNode*> yList;
          void addYNode(double y, double z, XYZTree::leafNode * leaf){
-           double eps=PIC::Mesh::mesh.EPS;
+           double eps=PIC::Mesh::mesh->EPS;
            if (yList.empty()) {
              XYZTree::yNode * node = new XYZTree::yNode(y,z,leaf);
              yList.push_back(node);
@@ -4209,7 +4571,7 @@ namespace PIC {
        void addXNode(double x, double y, double z, XYZTree::leafNode * leaf){
             
          if (leaf->DataBuffer==NULL) return;
-         double eps=PIC::Mesh::mesh.EPS;
+         double eps=PIC::Mesh::mesh->EPS;
          if (xList.empty()) {
            XYZTree::xNode * node = new XYZTree::xNode(x,y,z,leaf);
            xList.push_back(node);
@@ -4493,7 +4855,7 @@ namespace PIC {
     unsigned long int GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname,FILE *fout=NULL);
     unsigned long int GetParticlePopulationLocationSignature(long int nline,const char* fname,FILE *fout=NULL);
     unsigned long int GetParticlePopulationVelocitySignature(long int nline,const char* fname,FILE *fout=NULL);
-    unsigned long int GetParticlePopulationSignatureAll(long int nline,const char* fname); 
+    unsigned long int GetParticlePopulationSignatureAll(long int nline,const char* fname);
 
     //get signature of a data buffer
     template <typename  T>
@@ -4634,6 +4996,7 @@ namespace PIC {
       T* cell[nMaxStencilLength];
       int LocalCellID[nMaxStencilLength];
 
+      _TARGET_DEVICE_ _TARGET_HOST_ 
       void flush() {
         Length=0;
 //        for (int i=0;i<nMaxStencilLength;i++) Weight[i]=0.0,cell[i]=NULL;
@@ -4650,6 +5013,8 @@ namespace PIC {
         }
       }
 
+
+      _TARGET_DEVICE_ _TARGET_HOST_  
       void AddCell(double w,T* c,int id) {
         if (Length==nMaxStencilLength) exit(__LINE__,__FILE__,"Error: the stencil length exeeds 'nMaxStencilLength'. Need to increase 'nMaxStencilLength'");
 
@@ -4659,6 +5024,7 @@ namespace PIC {
         Length++;
       }
 
+      _TARGET_DEVICE_ _TARGET_HOST_ 
       void Normalize() {
         double norm=0.0;
         int i;
@@ -4668,16 +5034,19 @@ namespace PIC {
         if (norm>0.0) for (i=0;i<Length;i++) Weight[i]/=norm;
       }
 
+      _TARGET_DEVICE_ _TARGET_HOST_ 
       cStencilGeneric() {flush();}
+
+      _TARGET_DEVICE_ _TARGET_HOST_  
       cStencilGeneric(bool InitFlag) {if (InitFlag==true) flush();}
 
       void MultiplyScalar(double a) {for (int i=0;i<Length;i++) Weight[i]*=a;}
 
       void Add(cStencilGeneric *t) {
         int i,j;
-        bool flag; 
-        T* el; 
-  
+        bool flag;
+        T* el;
+
         for (i=0;i<t->Length;i++) {
           el=t->cell[i];
 
@@ -4691,20 +5060,22 @@ namespace PIC {
             AddCell(t->Weight[i],el,t->LocalCellID[i]);
           }
         }
-      } 
+      }
     };
 
     //corner based interpolation routines
     namespace CornerBased {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCornerNode> cStencil;
-      extern cStencil* StencilTable;
+      extern _TARGET_DEVICE_ cStencil* StencilTable;
 
       //The table contains weight for each node and the order of local is enforced.
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
 
       //interpolation functions
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil,double *InterpolationCoefficientTable);
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,cStencil& cStencil) {
         double InterpolationCoefficientTable[8];
 
@@ -4726,12 +5097,14 @@ namespace PIC {
     //cell center interpolation routines
     namespace CellCentered {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCenterNode> cStencil;
-      extern cStencil* StencilTable;
+      extern _TARGET_DEVICE_ cStencil* StencilTable;
 
       //types of the cell ceneterd interpolating rourines implemented in AMPS
       namespace Constant {
+        _TARGET_HOST_ _TARGET_DEVICE_
         void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4762,8 +5135,10 @@ namespace PIC {
         const double PrecisionCellCenter = 1.0e-3;
 
         //interpolation functions
+        _TARGET_HOST_ _TARGET_DEVICE_
         void InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4775,8 +5150,10 @@ namespace PIC {
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP;
         } 
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationStencil(double iLoc,double jLoc,double kLoc,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4788,8 +5165,10 @@ namespace PIC {
           return PIC::InterpolationRoutines::CellCentered::StencilTable+ThreadOpenMP; 
         }
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         void GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
 
+        _TARGET_HOST_ _TARGET_DEVICE_
         inline PIC::InterpolationRoutines::CellCentered::cStencil *GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
           #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
           int ThreadOpenMP=omp_get_thread_num();
@@ -4804,6 +5183,7 @@ namespace PIC {
 
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     void Init();
   }
 
@@ -5137,8 +5517,8 @@ namespace PIC {
 
       //save/read the background data binary file
       bool BinaryFileExists(const char *fNameBase);
-      void SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-      void LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+      void SaveBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+      void LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
 
       //print the background variables into AMPS' output file
@@ -5147,7 +5527,7 @@ namespace PIC {
       void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
 
       //test the data file reader by comparing the reading results with the reference data
-      void SaveTestReferenceData(const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+      void SaveTestReferenceData(const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
       //initialize the data file reader
       void Init();
@@ -5273,7 +5653,7 @@ namespace PIC {
         long int getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
         //create the trajectory file
-        void createCellCenterCoordinateList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void createCellCenterCoordinateList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //evaluate the ion flux at the surface of the spehrical interval body
         void EvaluateSurfaceIonFlux(double ShiftFactor=1.0);
@@ -5309,8 +5689,8 @@ namespace PIC {
         void retriveDSMCdata(const char *Case,const char *DataFile,const char *MeshFile);
 
 
-        void readSWMFdata(const double MeanIonMass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree); //MeanIonMass -> the mean ion mass of the plasma flow in [amu]
-        void readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void readSWMFdata(const double MeanIonMass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree); //MeanIonMass -> the mean ion mass of the plasma flow in [amu]
+        void readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //user defined pre-processor of the data that is readed by ICES
         typedef void (*fDSMCdataPreProcessor)(double *x,cDataNodeDSMC& data);
@@ -5337,11 +5717,11 @@ namespace PIC {
         //init the reader
         void Init();
 
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
         void GetDomainLimits(double *xmin,double *xmax,const char *fname);
 
         namespace LFM {
-          void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+          void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
           void GetDomainLimits(double *xmin,double *xmax,const char *fname);
         }
 
@@ -5350,7 +5730,7 @@ namespace PIC {
       namespace ARMS {
         void Init();
         double GetFileTime(const char *fname);
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
       }
 
 
@@ -5367,8 +5747,8 @@ namespace PIC {
         void Init(const char *fname);
 
         void GetDomainLimits(double *xmin,double *xmax);
-        void LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+        void LoadDataFile(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 	
 	
         //the offsets of the physical variables in the .idl file
@@ -5421,13 +5801,13 @@ namespace PIC {
         void SetDomainLimitsSPHERICAL(double rmin,double rmax);
         void ExtractData(const char *fname);
 
-        void ResetCellProcessingFlag(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        void ResetCellProcessingFlag(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //function CreatePointList: 1. calculates the number of the points the will be interpolated and 2. is fScript!=NULL save tham into fScript
         int CountInterpolatedPointNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
-        int CreateScript(const char *ScriptBaseName,const char* DataFileTECPLOT,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-        void LoadDataFile(const char *fname,int nTotalOutputFiles,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+        int CreateScript(const char *ScriptBaseName,const char* DataFileTECPLOT,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+        void LoadDataFile(const char *fname,int nTotalOutputFiles,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
         //the function call all nessesary methods of the TECPLOT namespace to export the data
         void ImportData(const char* fname);
@@ -5435,8 +5815,8 @@ namespace PIC {
     }
 
     //save and load the center node associated data from the AMPS' data buffers
-    void SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
-    void LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh.rootTree);
+    void SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
+    void LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
     inline void GetBackgroundElectricField(double *E, double Time = NAN) {
       double t[3];
@@ -5899,6 +6279,8 @@ namespace PIC {
       int RequestDataBuffer(int);
       void Seed(int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void Seed(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
+
+      _TARGET_DEVICE_ _TARGET_HOST_
       void Init();
 
       cRndSeedContainer *GetSeedPtr(char* CenterNodeAssociatedDataBufferPointer);
@@ -5922,8 +6304,12 @@ namespace PIC {
 
   //prepopulate the domain
   namespace InitialCondition {
+    typedef bool (*fPrepopulateCellCondition)(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+
     //constant number density
+    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
     long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
+
     // put a single particle (for each thread)
     long int PutParticle(int spec, double *x, double *v);
   }
@@ -6151,7 +6537,7 @@ namespace PIC {
     extern long int *nInjectedParticles;
     extern double *ParticleProductionRate,*ParticleMassProductionRate;
 
-    void InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+    void InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
     //model the particle injection for the current time step
     void InjectionBoundaryConditions();
@@ -6179,7 +6565,7 @@ namespace PIC {
         extern bool InjectionBlocksListInitFlag;
 
         //init the list of the injection blocks
-        void InitBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh.rootTree);
+        void InitBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
 
         //particle injection functions
         int InjectBlock(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,int nInjectionFace=-1);
@@ -6561,6 +6947,102 @@ namespace FieldSolver {
     namespace Electromagnetic {
         //Energy conserving field solver (same as used in the IPIC3D)
         namespace ECSIM {
+
+
+class cCellData {
+public:
+
+  class cCornerData {
+  public:
+    double *CornerJ_ptr;
+    double CornerJ[3];
+    double *CornerMassMatrix_ptr;
+    double CornerMassMatrix[243];
+    double *SpecData_ptr;
+    double SpecData[10*_TOTAL_SPECIES_NUMBER_];
+    PIC::Mesh::cDataCornerNode *CornerNode;
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void clean() {
+      int i;
+
+      for (i=0;i<3;i++) CornerJ[i]=0.0;
+      for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
+      for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
+    }
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void add(cCornerData* p) {
+      int i;
+      double *ptr;
+
+      for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
+      for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
+      for (i=0,ptr=p->SpecData;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]+=ptr[i];
+    }
+  };
+
+
+  cCornerData CornerData[8];
+  double ParticleEnergy;
+  double cflCell[PIC::nTotalSpecies];
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void clean() {
+    ParticleEnergy=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) cflCell[iSp]=0.0;
+
+    for (int i=0;i<8;i++) CornerData[i].clean();
+  }
+
+  void Add(cCellData *p) {
+    ParticleEnergy+=p->ParticleEnergy;
+
+    class cSumData {
+    public:
+      cCornerData *target,*source;
+
+      void sum() {
+        target->add(source);
+      }
+    };
+
+    cSumData DataTable[8];
+    std::thread tTable[8];
+    int icor;
+
+    for (icor=0;icor<8;icor++) {
+      DataTable[icor].source=p->CornerData+icor;
+      DataTable[icor].target=this->CornerData+icor;
+
+      tTable[icor]=std::thread(&cSumData::sum,DataTable+icor);
+    }
+
+    for (icor=0;icor<8;icor++) {
+      tTable[icor].join();
+    }
+  }
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cCellData() {
+    clean();
+  }
+};
+
+class cProcessCellData {
+public:
+  int MagneticField_RelativeOffset;
+  int ElectricField_RelativeOffset;
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cProcessCellData() {
+    MagneticField_RelativeOffset=-1,ElectricField_RelativeOffset=-1;
+  } 
+};
+
+_TARGET_HOST_ _TARGET_DEVICE_
+bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn=cProcessCellData());
           
             typedef void (*fUserDefinedFieldBC)();
             typedef long int (*fUserDefinedParticleBC)();
@@ -6569,21 +7051,23 @@ namespace FieldSolver {
             extern fUserDefinedParticleBC setParticle_BC;
             extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;
             extern fUserDefinedFieldBC setB_center_BC,setB_corner_BC;
-            extern int CurrentEOffset, OffsetE_HalfTimeStep;
-            extern int CurrentBOffset, PrevBOffset;
-            extern int OffsetB_corner;            
-            extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> Solver;
-            extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> PoissonSolver;
-            extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
+            extern int CurrentEOffset; 
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetE_HalfTimeStep;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int CurrentBOffset;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int PrevBOffset;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetB_corner;            
+            extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> *Solver;
+            extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> *PoissonSolver;
+            //extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
 
             //extern cLinearSystemCornerNode Solver;
             extern bool DoDivECorrection;
-            extern int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
-            extern int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
-            extern int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
-            extern int MassMatrixOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int ExOffsetIndex, EyOffsetIndex, EzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int JxOffsetIndex, JyOffsetIndex, JzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int BxOffsetIndex, ByOffsetIndex, BzOffsetIndex;
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int MassMatrixOffsetIndex;
             extern int * SpeciesDataIndex;
-            extern int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
+            extern _TARGET_DEVICE_ _CUDA_MANAGED_ int Rho_, RhoUx_, RhoUy_, RhoUz_,RhoUxUx_, RhoUyUy_, RhoUzUz_,RhoUxUy_, RhoUyUz_, RhoUxUz_; 
           
             extern int netChargeOldIndex,netChargeNewIndex, divEIndex, phiIndex;
             extern double cDt;
@@ -6611,9 +7095,9 @@ namespace FieldSolver {
             extern int CornerNodeAssociatedDataOffsetBegin,CornerNodeAssociatedDataOffsetLast;  //CornerNodeAssociatedDataOffsetLast still belongs to the solver
 
             //stencils used for building the matrix
-            extern cStencil::cStencilData LaplacianStencil[3];
-            extern cStencil::cStencilData GradDivStencil[3][3];
-            extern cStencil::cStencilData GradDivStencil375[3][3];
+            extern cStencil::cStencilData *LaplacianStencil;
+            extern cStencil::cStencilData **GradDivStencil;
+            extern cStencil::cStencilData **GradDivStencil375;
 
             // matrix operation for the matrix solver
             void matvec(double* VecIn, double * VecOut, int n);
@@ -6646,7 +7130,10 @@ namespace FieldSolver {
             extern fUserDefinedInitNewBlocks initNewBlocks;
 
             void testValueAtGivenPoint();
+
             void UpdateJMassMatrix();
+            void UpdateJMassMatrixGPU();
+
             void InterpolateB_C2N();
             void InterpolateB_N2C();
 	    void InterpolateB_N2C_Block(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);

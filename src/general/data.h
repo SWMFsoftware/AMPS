@@ -4,6 +4,7 @@
 #define DATA
 
 #include "global.dfn"
+#include "global.h"
 
 #define DSMCTARGET 0
 #define PICTARGET  1
@@ -13,8 +14,8 @@
 extern int DIM;
 extern double tau,tmax,GeneralTime;
 extern unsigned char NS;
-extern int ThisThread;
-extern int TotalThreadsNumber;
+//extern _CUDA_MANAGED_ int ThisThread;
+//extern _CUDA_MANAGED_ int TotalThreadsNumber;
 
 extern bool dsmc_flag;
 extern bool chem_flag;

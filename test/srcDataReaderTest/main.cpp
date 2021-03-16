@@ -117,13 +117,13 @@ int main(int argc,char **argv) {
   if (PIC::ThisThread==0) cout << "Init the mesh" << endl;
 
   //Init the mesh
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
 
   //init the datafile reader
   switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
   case _PIC_COUPLER_DATAFILE_READER_MODE__ICES_ :
     ICES::GetDomainLimit(xmin,xmax);
-    PIC::Mesh::mesh.init(xmin,xmax,ICES::localResolution);
+    PIC::Mesh::mesh->init(xmin,xmax,ICES::localResolution);
     break;
 
   case _PIC_COUPLER_DATAFILE_READER_MODE__BATSRUS_:
@@ -136,7 +136,7 @@ int main(int argc,char **argv) {
     BATL::xmin=xmin,BATL::xmax=xmax;
  
     //init the mesh object
-    PIC::Mesh::mesh.init(xmin,xmax,BATL::localResolution);
+    PIC::Mesh::mesh->init(xmin,xmax,BATL::localResolution);
     break;
 
   case _PIC_COUPLER_DATAFILE_READER_MODE__TECPLOT_:
@@ -166,7 +166,7 @@ int main(int argc,char **argv) {
 
     //init the mesh object
     for (int idim=0;idim<3;idim++) xmin[idim]=-5.0*_EUROPA__RADIUS_,xmax[idim]=5.0*_EUROPA__RADIUS_;
-    PIC::Mesh::mesh.init(xmin,xmax,TECPLOT::localResolution);
+    PIC::Mesh::mesh->init(xmin,xmax,TECPLOT::localResolution);
 
     break;
 
@@ -176,7 +176,7 @@ int main(int argc,char **argv) {
     KAMELEON::xmin=xmin,KAMELEON::xmax=xmax;
 
     //init the mesh
-    PIC::Mesh::mesh.init(xmin,xmax,KAMELEON::localResolution);
+    PIC::Mesh::mesh->init(xmin,xmax,KAMELEON::localResolution);
     break;
 
   default:
@@ -184,31 +184,31 @@ int main(int argc,char **argv) {
   }
 
   //generate AMPS' mesh
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->memoryAllocationReport();
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   PIC::Init_AfterParser();
 
@@ -262,7 +262,7 @@ int main(int argc,char **argv) {
   block.SetLocalTimeStep(0.0,0);
 
   sprintf(TestFileName,"%s/loaded-data.dat",PIC::OutputDataFileDirectory);
-  PIC::Mesh::mesh.outputMeshDataTECPLOT(TestFileName,0);
+  PIC::Mesh::mesh->outputMeshDataTECPLOT(TestFileName,0);
 
   //finish the run
   MPI_Finalize();

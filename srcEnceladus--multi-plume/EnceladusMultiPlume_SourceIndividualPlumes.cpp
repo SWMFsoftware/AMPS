@@ -34,8 +34,8 @@ bool EnceladusMultiPlume::SourceModel::IndividualPlumes::GenerateParticlePropert
 
 
   //if the node location does not belongs to the current processor -> exit
-  startNode=PIC::Mesh::mesh.findTreeNode(EnceladusMultiPlume::IndividualPlumeTable[nplume].xLoacation,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(EnceladusMultiPlume::IndividualPlumeTable[nplume].xLoacation,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
   //determine the new particle parameters
   //determine velocity of the new particle

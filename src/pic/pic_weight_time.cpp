@@ -17,7 +17,11 @@ PIC::ParticleWeightTimeStep::fUserDefinedExtraSourceRate PIC::ParticleWeightTime
 PIC::ParticleWeightTimeStep::fExosphereModelExtraSourceRate PIC::ParticleWeightTimeStep::ExosphereModelExtraSourceRate=NULL;
 
 //the global particle weight/time step
-double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
+//double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
+
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_]={-1.0};
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalTimeStep[_TOTAL_SPECIES_NUMBER_]={-1.0}; 
+
 
 //simulation time counter
 double PIC::SimulationTime::TimeCounter=0.0;
@@ -64,7 +68,7 @@ double PIC::ParticleWeightTimeStep::GetMaximumBlockInjectionRate(int spec,cTreeN
     }
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //collect the results from all processors
     double buffer[PIC::nTotalThreads];
 
@@ -99,7 +103,7 @@ double PIC::ParticleWeightTimeStep::GetTotalBlockInjectionRate(int spec,cTreeNod
     }
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //collect the results from all processors
     double buffer[PIC::nTotalThreads];
 
@@ -122,9 +126,9 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(int spec,cTr
   static double GlobalParticleWeight=0.0;
   double ParticleInjection=0.0;
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //injection rate from the boundariees of the box
-    if (LocalBlockInjectionRate!=NULL) ParticleInjection=GetTotalBlockInjectionRate(spec,PIC::Mesh::mesh.rootTree);
+    if (LocalBlockInjectionRate!=NULL) ParticleInjection=GetTotalBlockInjectionRate(spec,PIC::Mesh::mesh->rootTree);
 
 
     //injection rate from the internal surfaces
@@ -135,7 +139,8 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(int spec,cTr
     cInternalRotationBodyData *RotationBody;
     cInternalNastranSurfaceData *NastranSurface;
 
-    for (descriptor=PIC::Mesh::mesh.InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh.InternalBoundaryList.end();descriptor++) {
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+    for (descriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();descriptor++) {
       switch (descriptor->BondaryType) {
       case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
         if (DIM!=3) exit(__LINE__,__FILE__,"Error: cInternalSphericalData can be used ONLY for 3D simulations");
@@ -167,6 +172,7 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(int spec,cTr
         exit(__LINE__,__FILE__,"Error: the boundary type is not recognized");
       }
     }
+    #endif
 
 
     //calcualte the total volume production rate
@@ -247,7 +253,8 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
 
 
 
-//      for (descriptor=PIC::Mesh::mesh.InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh.InternalBoundaryList.end();descriptor++) {
+//      for (descriptor=PIC::Mesh::mesh->InternalBoundaryList.begin();descriptor!=PIC::Mesh::mesh->InternalBoundaryList.end();descriptor++) {
+      #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
       for (descriptor=startNode->InternalBoundaryDescriptorList;descriptor!=NULL;descriptor=descriptor->nextInternalBCelement) {
 
         switch (descriptor->BondaryType) {
@@ -281,6 +288,8 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
           exit(__LINE__,__FILE__,"Error: the boundary type is not recognized");
         }
       }
+      #endif 
+
     }
 
   }
@@ -291,12 +300,14 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
     for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) initTimeStep(downNode);
 
     //determine the global value for the 'maxIntersectedNodeTimeStep'
-    if (startNode==PIC::Mesh::mesh.rootTree) {
+    if (startNode==PIC::Mesh::mesh->rootTree) {
       double buffer[PIC::nTotalThreads];
-      list<cInternalBoundaryConditionsDescriptor>::iterator ptr;
       int thread;
 
-      for (ptr=PIC::Mesh::mesh.InternalBoundaryList.begin();ptr!=PIC::Mesh::mesh.InternalBoundaryList.end();ptr++) {
+      #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
+      list<cInternalBoundaryConditionsDescriptor>::iterator ptr;
+
+      for (ptr=PIC::Mesh::mesh->InternalBoundaryList.begin();ptr!=PIC::Mesh::mesh->InternalBoundaryList.end();ptr++) {
         for (s=0;s<PIC::nTotalSpecies;s++) {
           switch (ptr->BondaryType) {
           case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
@@ -374,13 +385,14 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
 
         }
       }
+      #endif
 
       //in the case of global time step, determine the minimum time step
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
       for (s=0;s<PIC::nTotalSpecies;s++) {
         double t;
 
-        t=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread]->block->GetLocalTimeStep(s);
+        t=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread]->block->GetLocalTimeStep(s);
 
         MPI_Gather(&t,1,MPI_DOUBLE,buffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
@@ -391,13 +403,13 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
         }
 
         MPI_Bcast(&t,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-        PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread]->block->SetLocalTimeStep(t,s);
+        PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread]->block->SetLocalTimeStep(t,s);
       }
 
 #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
       double t;
 
-      t=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread]->block->GetLocalTimeStep(0);
+      t=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread]->block->GetLocalTimeStep(0);
       MPI_Gather(&t,1,MPI_DOUBLE,buffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (PIC::ThisThread==0) {
@@ -407,7 +419,7 @@ void PIC::ParticleWeightTimeStep::initTimeStep(cTreeNodeAMR<PIC::Mesh::cDataBloc
       }
 
       MPI_Bcast(&t,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
-      PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread]->block->SetLocalTimeStep(t,0);
+      PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread]->block->SetLocalTimeStep(t,0);
 #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
       //do nothing
 #else
@@ -449,7 +461,7 @@ void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,i
     }
   } CopyTimeStepDistribution;
 
-  CopyTimeStepDistribution.CopyTimeStep(specTarget,specSource,ProportionaltyCoefficient,PIC::Mesh::mesh.rootTree);
+  CopyTimeStepDistribution.CopyTimeStep(specTarget,specSource,ProportionaltyCoefficient,PIC::Mesh::mesh->rootTree);
 #else
   exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
@@ -459,10 +471,10 @@ void PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(int specTarget,i
 //====================================================
 //set global particle constant weight
 void PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(int spec,double GlobalParticleWeight,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>GlobalParticleWeight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=GlobalParticleWeight;
@@ -475,12 +487,12 @@ void PIC::ParticleWeightTimeStep::initParticleWeight_ConstantDensity(int spec,do
   double TotalDomainMeasure;
   double GlobalParticleWeight;
 
-  TotalDomainMeasure=PIC::Mesh::mesh.GetTotalDomainMeasure(PIC::Mesh::mesh.rootTree);
+  TotalDomainMeasure=PIC::Mesh::mesh->GetTotalDomainMeasure(PIC::Mesh::mesh->rootTree);
   GlobalParticleWeight=NumberDensity*TotalDomainMeasure/TotalModelParticleNumber;
 
   if (PIC::ThisThread==0) printf("$PREFIX: Global Particle Weight (%s) = %e (file=%s,line=%i)\n",PIC::MolecularData::GetChemSymbol(spec),GlobalParticleWeight,__FILE__,__LINE__);
 
-  SetGlobalParticleWeight(spec,GlobalParticleWeight,PIC::Mesh::mesh.rootTree);
+  SetGlobalParticleWeight(spec,GlobalParticleWeight,PIC::Mesh::mesh->rootTree);
 }
 
 //====================================================
@@ -547,7 +559,7 @@ double PIC::ParticleWeightTimeStep::GetMinLocalParticleWeightValue(int spec,doub
     }
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //exchange results between all processors
     double ParticleWeightTable[PIC::nTotalThreads],WeightOverTimeStepRatioTable[PIC::nTotalThreads];
     int thread;

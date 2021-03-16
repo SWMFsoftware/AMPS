@@ -5,7 +5,6 @@
 //====================================================
 //the general functions for the pic solver
 
-
 #include <dirent.h>
 #include <errno.h>
 
@@ -59,7 +58,7 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    
    //init the random number generator is needed
-   if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh.rootTree);
+   if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh->rootTree);
 
    //update the local block list
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
@@ -122,9 +121,9 @@ int PIC::TimeStep() {
            for (list<int>::iterator s=RecoveryEntry->second.begin();s!=RecoveryEntry->second.end();s++) {
              char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
 
-             PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
-             sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
-             PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,*s);
+           PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
+           sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
+           PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,*s);
 
              //preplot the recovered file if needed
              if (Restart::SamplingData::PreplotRecoveredData==true) {
@@ -208,7 +207,15 @@ int PIC::TimeStep() {
 #endif
 #endif
 
-  PIC::Sampling::Sampling();
+  auto DoSampling = [=] () {
+    PIC::Sampling::Sampling();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  DoSampling();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -225,27 +232,36 @@ int PIC::TimeStep() {
 
   //inject particle through the domain's boundaries
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  PIC::BC::InjectionBoundaryConditions();
 
-  //inject particles into the volume of the domain
+  auto DoBC = [=] () {
+    PIC::BC::InjectionBoundaryConditions();
+
+    //inject particles into the volume of the domain
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-  if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
+    if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
 #endif
 
-  //call a user-defined injection function
-  if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
-  }
+    //call a user-defined injection function
+    if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
+      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+      PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
+    }
 
-  //the extra injection process by the exosphere model (src/models/exosphere)
-  if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
-  }
+    //the extra injection process by the exosphere model (src/models/exosphere)
+    if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
+      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+      PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
+    }
+  }; 
 
   InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
   RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
+
+  //#if _CUDA_MODE_ == _OFF_
+  DoBC();
+  //#else 
+  //exit(__LINE__,__FILE__);
+  //#endif
 
 
   //simulate particle collisions
@@ -253,15 +269,23 @@ int PIC::TimeStep() {
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleCollisionTime=MPI_Wtime();
 
-  #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
-  PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-  #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__MF_
-  PIC::MolecularCollisions::ParticleCollisionModel::mf();
-  #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_
-  PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-  #else
-  exit(__LINE__,__FILE__,"Error: the option is not implemented");
-  #endif
+  auto DoCollisions = [=] () {
+    #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
+    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__MF_
+    PIC::MolecularCollisions::ParticleCollisionModel::mf();
+    #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_
+    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    #else
+    exit(__LINE__,__FILE__,"Error: the option is not implemented");
+    #endif
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  DoCollisions();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif 
 
   ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
   RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
@@ -272,25 +296,52 @@ int PIC::TimeStep() {
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   BackgroundAtmosphereCollisionTime=MPI_Wtime();
 
-  #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
-  MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
-  #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
-  MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
-  #else
-  exit(__LINE__,__FILE__,"Error: the option is unknown");
-  #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
+  auto DoBackgroundAtmosphere = [=] () {
+    #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
+    MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
+    #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
+    MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
+    #else
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+    #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  DoBackgroundAtmosphere();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 
   BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
   RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
 #elif _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__STOPPING_POWER_
-  MolecularCollisions::StoppingPowerModel::ModelProcessor();
+
+  auto DoBackgroundAtmosphere = [=] () {
+    MolecularCollisions::StoppingPowerModel::ModelProcessor();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  DoBackgroundAtmosphere();
+  //#else
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
 #endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
 
   //particle photochemistry model
   #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PhotoChemistryTime=MPI_Wtime();
-  ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
+
+  auto DoPhotolyticReactions = [=] () {
+    ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_
+  DoPhotolyticReactions();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif 
+
   PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
   RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   #endif  //_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
@@ -299,7 +350,17 @@ int PIC::TimeStep() {
 #if _PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   UserDefinedParticleProcessingTime=MPI_Wtime();
-  PIC::UserParticleProcessing::Processing();
+
+  auto DoUserParticleProcessing = [=] () {
+    PIC::UserParticleProcessing::Processing();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_
+  DoUserParticleProcessing();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
   UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
   RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
 #endif
@@ -309,11 +370,21 @@ int PIC::TimeStep() {
   
 #if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
     ParticleMovingTime=MPI_Wtime();
-    PIC::Mover::MoveParticles();
 
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-      PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-    }
+    auto FIELD_SOLVER_Task1 = [=] () {
+      PIC::Mover::MoveParticles();
+ 
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+      }
+    }; 
+
+    //#if _CUDA_MODE_ == _OFF_
+    FIELD_SOLVER_Task1();
+   // #else
+   // exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
+
 
     ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
     RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
@@ -326,19 +397,38 @@ int PIC::TimeStep() {
     
     //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-   ParticleExchangeTime=MPI_Wtime();
-   PIC::Parallel::ExchangeParticleData();
+  ParticleExchangeTime=MPI_Wtime();
 
-   long int total_particle_number=ParticleBuffer::GetTotalParticleNumber();
-   if (ThisThread==0) printf("$PREFIX: The total number of particles in the simulation: %ld\n",total_particle_number);   
+
+  auto FIELD_SOLVER_Task2 = [=] { 
+    PIC::Parallel::ExchangeParticleData();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_
+  FIELD_SOLVER_Task2();
+  //#else
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
+
 
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 #endif  
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-  PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-  PIC::Parallel::UpdateGhostBlockData();
+
+  auto FIELD_SOLVER_Task3 = [=] {
+    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+    PIC::Parallel::UpdateGhostBlockData();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  FIELD_SOLVER_Task3();
+ // #else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
   #endif
  
   //update elecrtic and magnetic fields
@@ -348,18 +438,37 @@ int PIC::TimeStep() {
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   FieldSolverTime=MPI_Wtime();
 
-  switch (_PIC_FIELD_SOLVER_MODE_) {
-  case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
-    FieldSolver::Electromagnetic::ECSIM::TimeStep();
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
-  }
+  auto FIELD_SOLVER_Task4 = [=] () {
+    switch (_PIC_FIELD_SOLVER_MODE_) {
+    case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
+      FieldSolver::Electromagnetic::ECSIM::TimeStep();
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
+    }
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  FIELD_SOLVER_Task4();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
 
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   ParticleMovingTime=MPI_Wtime();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.Start();
-  PIC::Mover::MoveParticles();
+
+  auto FIELD_SOLVER_Task5 = [=] () {
+    PIC::Mover::MoveParticles();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  FIELD_SOLVER_Task5();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
@@ -372,27 +481,65 @@ int PIC::TimeStep() {
   //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
+
+
+  //#if _CUDA_MODE_ == _OFF_ 
   PIC::Parallel::ExchangeParticleData();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
+
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
   RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
 
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-    PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
+  auto FIELD_SOLVER_Task6 = [=] () {
+    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
+      PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
   
-  if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
-    PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
+    if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
+      PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  FIELD_SOLVER_Task6();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
   
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ ) { 
-    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+    auto FIELD_SOLVER_Task7 = [=] () {
+      PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
+    };
+
+    //#if _CUDA_MODE_ == _OFF_ 
+    FIELD_SOLVER_Task7();
+    //#else
+    //exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
   }
 
 
-  PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  auto FIELD_SOLVER_Task8 = [=] () {
+    PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
+  };
+ 
+  //#if _CUDA_MODE_ == _OFF_
+  FIELD_SOLVER_Task8();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
   
 
   PIC::CPLR::FLUID::iCycle++;
   {// Output
+
+    //#if _CUDA_MODE_ == _ON_
+    //exit(__LINE__,__FILE__,"Error: not implemented");
+    //#endif
+
     double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
     if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
     PIC::CPLR::FLUID::write_output(timeNow);
@@ -404,6 +551,11 @@ int PIC::TimeStep() {
   #endif
   //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
   #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+
+  //#if _CUDA_MODE_ == _ON_
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
   PIC::Parallel::ProcessBlockBoundaryNodes(); 
 
   #endif
@@ -448,7 +600,17 @@ int PIC::TimeStep() {
   //update the glabal time counter if needed
 #if _PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  PIC::SimulationTime::Update();
+
+  auto DoUpdateSimulationTime=[=] () {
+    PIC::SimulationTime::Update();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_
+  DoUpdateSimulationTime();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
   //update data
   if (PIC::CPLR::DATAFILE::MULTIFILE::ReachedLastFile==true) {
@@ -459,7 +621,16 @@ int PIC::TimeStep() {
   }
 #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
   // update field lines
-  PIC::FieldLine::Update();
+  auto DoUpdateFieldLine = [=] () {
+    PIC::FieldLine::Update();
+  };
+
+  //#if _CUDA_MODE_ == _OFF_ 
+  DoUpdateFieldLine();
+  //#else 
+  //exit(__LINE__,__FILE__,"Error: not implemented");
+  //#endif
+
 #endif//_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
   
 #endif//_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
@@ -528,7 +699,7 @@ int PIC::TimeStep() {
     PIC::BC::nTotalInjectedParticles=0;
 
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
@@ -536,7 +707,7 @@ int PIC::TimeStep() {
 
 
 
-      ExchangeBuffer=new cExchangeStatisticData[PIC::Mesh::mesh.nTotalThreads];
+      ExchangeBuffer=new cExchangeStatisticData[PIC::Mesh::mesh->nTotalThreads];
       MPI_Gather((char*)&localRunStatisticData,sizeof(cExchangeStatisticData),MPI_CHAR,(char*)ExchangeBuffer,sizeof(cExchangeStatisticData),MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR);
 
 
@@ -576,10 +747,10 @@ int PIC::TimeStep() {
       //detemine the earliest time that a thread has passed the point of collecting the runtime statistical information
       double minCheckPointTime=-1.0;
 
-      for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if ((minCheckPointTime<0.0)||(minCheckPointTime>ExchangeBuffer[thread].Latency)) minCheckPointTime=ExchangeBuffer[thread].Latency;
+      for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if ((minCheckPointTime<0.0)||(minCheckPointTime>ExchangeBuffer[thread].Latency)) minCheckPointTime=ExchangeBuffer[thread].Latency;
 
 
-      for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+      for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
         ExchangeBuffer[thread].Latency-=minCheckPointTime;
 
         fprintf(PIC::DiagnospticMessageStream,"$PREFIX: %12d %12d %10e %10e %10e %10e %10e %10e %10e %10e %12d %12d %10e %10e %10e %10e %10e %10e\n",
@@ -612,7 +783,7 @@ int PIC::TimeStep() {
         if (MaxLatency<ExchangeBuffer[thread].Latency) MaxLatency=ExchangeBuffer[thread].Latency;
       }
 
-      MeanLatency/=PIC::Mesh::mesh.nTotalThreads;
+      MeanLatency/=PIC::Mesh::mesh->nTotalThreads;
       PIC::Parallel::CumulativeLatency+=MeanLatency*nInteractionsAfterRunStatisticExchange;
       if (nExchangeStatisticsIterationNumberSteps!=0) nTotalInjectedParticels/=nExchangeStatisticsIterationNumberSteps;
 
@@ -635,7 +806,7 @@ int PIC::TimeStep() {
         MPI_Gather(PIC::BC::ParticleProductionRate+spec,1,MPI_DOUBLE,ParticleProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleMassProductionRate+spec,1,MPI_DOUBLE,ParticleMassProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
-        for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+        for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
           nInjectedParticleExchangeBuffer[0]+=nInjectedParticleExchangeBuffer[thread];
           ParticleProductionRateExchangeBuffer[0]+=ParticleProductionRateExchangeBuffer[thread];
           ParticleMassProductionRateExchangeBuffer[0]+=ParticleMassProductionRateExchangeBuffer[thread];
@@ -715,12 +886,12 @@ int PIC::TimeStep() {
       CMPI_channel pipe(10000);
       vector<PIC::fExchangeExecutionStatistics>::iterator fptr;
 
-      if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+      if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
       else pipe.openSend(0);
 
       for (fptr=PIC::ExchangeExecutionStatisticsFunctions.begin();fptr!=PIC::ExchangeExecutionStatisticsFunctions.end();fptr++) (*fptr)(&pipe,nInteractionsAfterRunStatisticExchange);
 
-      if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+      if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
       else pipe.closeSend();
     }
 
@@ -728,7 +899,7 @@ int PIC::TimeStep() {
     int EmergencyLoadRebalancingFlag=false;
     switch (_PIC_EMERGENCY_LOAD_REBALANCING_MODE_) {
     case _PIC_MODE_ON_: 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         if (PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime) {
           EmergencyLoadRebalancingFlag=true;
         }
@@ -749,7 +920,7 @@ int PIC::TimeStep() {
       MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (EmergencyLoadRebalancingFlag==true || testRebalancing) {
-        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
+        if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
 
         //correct the node's load balancing measure
         if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) { 
@@ -780,14 +951,14 @@ int PIC::TimeStep() {
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         PIC::Parallel::RebalancingTime=MPI_Wtime();
 
-        PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+        PIC::Mesh::mesh->CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
         PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
         PIC::DomainBlockDecomposition::UpdateBlockTable();
 
         MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
         PIC::Parallel::RebalancingTime=MPI_Wtime()-PIC::Parallel::RebalancingTime;
 
-        if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
+        if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  done\n");
       }
     
       break;
@@ -848,7 +1019,7 @@ void PIC::Sampling::Sampling() {
 
   if ((_PIC_SAMPLING_MODE_ == _PIC_MODE_ON_)&&(RuntimeSamplingSwitch==true)) { //<-- begining of the particle sample section
 
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
     PIC::Mesh::cDataCenterNode *cell;
     PIC::Mesh::cDataBlockAMR *block;
@@ -1015,7 +1186,7 @@ void PIC::Sampling::Sampling() {
                 //the particle must be within the computational domain and outside of the internal boundarues
                 list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryListIterator;
 
-                for (InternalBoundaryListIterator=PIC::Mesh::mesh.InternalBoundaryList.begin();InternalBoundaryListIterator!=PIC::Mesh::mesh.InternalBoundaryList.end();InternalBoundaryListIterator++) {
+                for (InternalBoundaryListIterator=PIC::Mesh::mesh->InternalBoundaryList.begin();InternalBoundaryListIterator!=PIC::Mesh::mesh->InternalBoundaryList.end();InternalBoundaryListIterator++) {
                   cInternalBoundaryConditionsDescriptor InternalBoundaryDescriptor;
                   double x[3];
                   double *x0Sphere,radiusSphere;
@@ -1028,7 +1199,7 @@ void PIC::Sampling::Sampling() {
                     #if DIM == 3
                     ((cInternalSphericalData*)(InternalBoundaryDescriptor.BoundaryElement))->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
 
-                    if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh.EPS,2)) {
+                    if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh->EPS,2)) {
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Sphere: x0=" << x0Sphere[0] << ", " << x0Sphere[1] << ", " << x0Sphere[2] << ", R=" << radiusSphere << endl;
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Position: x=" << x[0] << ", " << x[1] << ", " << x[2] << endl;
                       cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Distance from the center of the sphere: " << sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)) << endl;
@@ -1270,7 +1441,7 @@ void PIC::Sampling::Sampling() {
   //Output the data flow file if needed
   if ((CollectingSampleCounter==RequiredSampleLength)||(PIC::Alarm::WallTimeExeedsLimit==true)) {
     //exchnge the sampling data
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
 
     //check different sampling modes
     #if _PIC_SAMPLING_MODE_ == _PIC_MODE_ON_
@@ -1279,7 +1450,7 @@ void PIC::Sampling::Sampling() {
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
 
-      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
         PIC::Mesh::cDataBlockAMR *block=node->block;
 
         if (!block) continue;
@@ -1366,7 +1537,7 @@ void PIC::Sampling::Sampling() {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
         sprintf(fname,"%s/pic.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
           fflush(stdout);
         }
@@ -1379,12 +1550,12 @@ void PIC::Sampling::Sampling() {
 //presence of the line changes the reference solution significantly, so it is commented for now
 //              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
 
-              PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+              PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
             }
           }
         }
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"done.\n");
           fflush(stdout);
         }
@@ -1458,14 +1629,14 @@ void PIC::Sampling::Sampling() {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
         sprintf(fname,"%s/pic.Sphere=%ld.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,iSphericalSurface,ChemSymbol,s,DataOutputFileNumber);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
           fflush(stdout);
         }
 
         PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface)->PrintSurfaceData(fname,s);
 
-        if (PIC::Mesh::mesh.ThisThread==0) {
+        if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"done.\n");
           fflush(stdout);
         }
@@ -1499,7 +1670,7 @@ void PIC::Sampling::Sampling() {
 
     nTotalSimulatedParticles=PIC::ParticleBuffer::NAllPart;
 
-    if (PIC::Mesh::mesh.ThisThread!=0) {
+    if (PIC::Mesh::mesh->ThisThread!=0) {
       pipe.openSend(0);
 
       pipe.send(nTotalSimulatedParticles);
@@ -1509,7 +1680,7 @@ void PIC::Sampling::Sampling() {
     else {
       pipe.openRecvAll();
 
-      for (int thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+      for (int thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
         nTotalSimulatedParticles+=pipe.recv<long int>(thread);
       }
 
@@ -1561,7 +1732,7 @@ void PIC::Sampling::Sampling() {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
       PIC::Parallel::RebalancingTime=MPI_Wtime();
 
-      PIC::Mesh::mesh.CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
+      PIC::Mesh::mesh->CreateNewParallelDistributionLists(_PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_);
       PIC::Parallel::IterationNumberAfterRebalancing=0,PIC::Parallel::CumulativeLatency=0.0;
       PIC::DomainBlockDecomposition::UpdateBlockTable();
 
@@ -1583,14 +1754,14 @@ void PIC::Sampling::Sampling() {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
       sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-CompleteSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
         fflush(stdout);
       }
 
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"done.\n");
         fflush(stdout);
       }
@@ -1602,14 +1773,14 @@ void PIC::Sampling::Sampling() {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
       sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-TempSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
         fflush(stdout);
       }
 
-      PIC::Mesh::mesh.outputMeshDataTECPLOT(fname,s);
+      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
 
-      if (PIC::Mesh::mesh.ThisThread==0) {
+      if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"done.\n");
         fflush(stdout);
       }
@@ -1633,7 +1804,7 @@ void PIC::Sampling::Sampling() {
 //====================================================
 //the run time signal and exeptions handler
 void PIC::SignalHandler(int sig) {
-  cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh.ThisThread << endl;
+  cout << "$PREFIX:Signal is intersepted: thread=" << PIC::Mesh::mesh->ThisThread << endl;
 
   switch (sig) {
   case SIGFPE :
@@ -1653,6 +1824,14 @@ void PIC::SignalHandler(int sig) {
 }
 
 //====================================================
+
+_TARGET_GLOBAL_ 
+void SetThreadData(int inThisThread,int innTotalThreads) {
+  PIC::GPU::ThisThread=inThisThread;
+  PIC::GPU::nTotalThreads=innTotalThreads;
+}
+
+
 void PIC::InitMPI() {
 
   //check is MPI is initialized
@@ -1673,6 +1852,11 @@ void PIC::InitMPI() {
 
   ::ThisThread=ThisThread;
   ::TotalThreadsNumber=nTotalThreads;
+
+  #if _CUDA_MODE_ == _ON_
+  SetThreadData<<<1,1>>>(ThisThread,nTotalThreads);
+  cudaDeviceSynchronize();
+  #endif
 
   //determine the total number of the OpenMP threads
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -1699,25 +1883,73 @@ void PIC::Init_BeforeParser() {
   //initiate MPI
   InitMPI();
 
-  //intialize the interpolation module
-  InterpolationRoutines::Init();
+//  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+//  PIC::IndividualModelSampling::RequestStaticCellData->clear();
 
-  //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
-  PIC::Mesh::mesh.fDefaultPackBlockData=PIC::Mesh::PackBlockData;
-  PIC::Mesh::mesh.fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData; 
+  PIC::IndividualModelSampling::RequestStaticCellCornerData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
+  PIC::IndividualModelSampling::RequestStaticCellCornerData->clear();
 
-  PIC::Mesh::mesh.fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
-  PIC::Mesh::mesh.fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize; 
-  PIC::Mesh::mesh.fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
+ // auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () {
+//    #ifdef __CUDA_ARCH__ 
+//    amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
+//    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::GPU::mesh;
+//    #else
+//    PIC::Mesh::CPU::mesh=new  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>[1];
+//    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::CPU::mesh;
+//    #endif
 
-  //set function that are used for moving blocks during the domain re-decomposition
-  PIC::Mesh::mesh.fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
-  PIC::Mesh::mesh.fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
-  PIC::Mesh::mesh.fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+
+    PIC::Mesh::MeshTableLength=1;
+
+    amps_new_managed<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::MeshTable,PIC::Mesh::MeshTableLength);
+    PIC::Mesh::mesh=PIC::Mesh::MeshTable;
+
+    cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::mesh;
 
 
-  //Init the random number generator
-  if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+    //intialize the interpolation module
+    PIC::InterpolationRoutines::Init();
+
+    //set the default function for packing and unpacking of the block's data in the ParallelBlockDataExchange()
+    mesh->fDefaultPackBlockData=PIC::Mesh::PackBlockData;
+    mesh->fDefaultUnpackBlockData=PIC::Mesh::UnpackBlockData;
+
+    mesh->fInitBlockSendMask=PIC::Mesh::BlockElementSendMask::InitLayerBlock;
+    mesh->fCornerNodeMaskSize=PIC::Mesh::BlockElementSendMask::CornerNode::GetSize;
+    mesh->fCenterNodeMaskSize=PIC::Mesh::BlockElementSendMask::CenterNode::GetSize;
+
+    //set function that are used for moving blocks during the domain re-decomposition
+    mesh->fGetMoveBlockDataSize=PIC::Mesh::MoveBlock::GetBlockDataSize;
+    mesh->fPackMoveBlockData=PIC::Mesh::MoveBlock::PackBlockData;
+    mesh->fUnpackMoveBlockData=PIC::Mesh::MoveBlock::UnpackBlockData;
+
+    if (PIC::Mesh::MeshTableLength!=1) exit(__LINE__,__FILE__,"Error: initialization is not implemented for MeshTableLength!=1");
+
+    //Init the random number generator
+    if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+
+  //Time step/particle weight tables
+    for (int s=0;s<PIC::nTotalSpecies;s++) {
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+    }
+//  };
+
+  #if _CUDA_MODE_ == _ON_
+  auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () { 
+    //intialize the interpolation module
+    PIC::InterpolationRoutines::Init();
+
+    //Init the random number generator
+    if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
+  };
+
+  kernel<<<1,1>>>(AllocateMesh); 
+
+  cudaDeviceSynchronize();
+  #endif
+
+//  AllocateMesh();
 
 /*
   //init the particle buffer
@@ -1743,7 +1975,7 @@ void PIC::Init_BeforeParser() {
     }
 
     return res;
-  }; 
+  };
 
   //set up the DiagnospticMessageStream
   if (strcmp(PIC::DiagnospticMessageStreamName,"stdout")!=0) {
@@ -1790,7 +2022,6 @@ void PIC::Init_BeforeParser() {
       sprintf(cmd,"mkdir -p %s",PIC::DiagnospticMessageStreamName);
       system(cmd);
 
-
       if ((test_directory("restartOUT",PIC::DiagnospticMessageStreamName)==false)&&(test_directory("restartIN",PIC::DiagnospticMessageStreamName)==false)) {
         sprintf(cmd,"rm -rf %s/*",PIC::DiagnospticMessageStreamName);
         system(cmd);
@@ -1801,7 +2032,7 @@ void PIC::Init_BeforeParser() {
 
     sprintf(PIC::DiagnospticMessageStreamName,"%s/thread=%i.log",PIC::DiagnospticMessageStreamName,PIC::ThisThread);
     PIC::DiagnospticMessageStream=fopen(PIC::DiagnospticMessageStreamName,"w");
-    PIC::Mesh::mesh.DiagnospticMessageStream=PIC::DiagnospticMessageStream;
+    PIC::Mesh::mesh->DiagnospticMessageStream=PIC::DiagnospticMessageStream;
   }
 
   //create the output directory if needed
@@ -1849,12 +2080,12 @@ void PIC::Init_BeforeParser() {
       //remove the content of the output directory
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
       system(cmd);
-
+      
       //check existance of the restart files directories. In case they are not present, clean the directory
       if ((test_directory("restartOUT","PT")==false)&&(test_directory("restartIN","PT")==false)) {
         sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
         system(cmd);
-      } 
+      }
     }
   }
 
@@ -1944,9 +2175,11 @@ void PIC::Init_BeforeParser() {
   //init sections of the particle solver
 
   //set up the signal handler
-  signal(SIGFPE,SignalHandler);
-  signal(SIGSEGV,SignalHandler);
-  signal(SIGBUS,SignalHandler);
+  if (_INTERSEPT_OS_SIGNALS_==_ON_) {
+    signal(SIGFPE,SignalHandler);
+    signal(SIGSEGV,SignalHandler);
+    signal(SIGBUS,SignalHandler);
+  }
 
 
   //init coupler 
@@ -1991,7 +2224,7 @@ void PIC::Init_BeforeParser() {
 
   //Init manager of the periodic boundary conditions that is called by the mesh generator after each domain decomposition procedure
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-    PIC::Mesh::mesh.UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
+    PIC::Mesh::mesh->UserProcessParallelNodeDistributionList=PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads;
   }
 
   //Init the field solver
@@ -2008,12 +2241,12 @@ void PIC::Init_AfterParser() {
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
     //set the interpolation retine for constructing of the stencil when output the model data file
     if (_PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE_ == _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE__LINEAR_) {
-      PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+      PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
     }
   }
 
   //flush the sampling buffers
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
     if (!block) continue;
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -2110,10 +2343,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 
-  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
@@ -2141,13 +2374,13 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
 //set up the particle time step
 void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  *(spec+(double *)(associatedDataPointer+LocalTimeStepOffset))=dt;
+  *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
 
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]=dt;
@@ -2155,10 +2388,10 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
-    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
-  }
+//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
+//  }
 
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=dt;
@@ -2173,7 +2406,7 @@ double PIC::Mesh::cDataBlockAMR::GetLocalTimeStep(int spec) {
 
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   double *res;
-  res=spec+(double *)(associatedDataPointer+LocalTimeStepOffset);
+  res=spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset);
   return *res;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   return  PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];

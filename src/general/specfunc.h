@@ -54,16 +54,25 @@ void PrintErrorLog(long int,const char*,const char*);
 extern unsigned int ExitErrorCode;
 const int ExitErrorCodeSeparator=10000;
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void inline SetExitErrorCode(int Line,int FunctionCode) {
+  #ifndef __CUDA_ARCH__
   ExitErrorCode=FunctionCode+ExitErrorCodeSeparator*Line;
+  #endif
 }
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void inline UnpackExitErrorCode(int& Line,int& FunctionCode) {
+  #ifndef __CUDA_ARCH__
   Line=ExitErrorCode/ExitErrorCodeSeparator;
   FunctionCode=ExitErrorCode%ExitErrorCodeSeparator;
+  #else 
+  Line=0,FunctionCode=0;
+  #endif
 }
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void exit(long int,const char*,const char* =NULL);
 void PrintLineMark(long int,char*,char* =NULL);
 
@@ -168,6 +177,7 @@ private:
   int CallCounter;
 
   //generate the table of CRC remainders for all possible bytes 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void generare_crc_table() { 
     int i, j;
     unsigned long crc_accum;
@@ -181,6 +191,7 @@ private:
 
 public: 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   CRC32 () {
     CallCounter=0;
     crc_accum=0;
@@ -201,14 +212,17 @@ public:
   } 
 
   template <class T>
+  _TARGET_HOST_ _TARGET_DEVICE_
   void add(T t) {
     add(&t,1);
   } 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     crc_accum=0;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   unsigned long checksum() { 
     return crc_accum;
   }
@@ -593,12 +607,18 @@ namespace Relativistic {
     for (int idim=0;idim<3;idim++) v[idim]=c*p[idim]; 
   }
 
-
-  //EK=m c^2 * (sqrt(1+(p/(m*c))^2) - 1)==m* c^2*((p/(m*c))^2)/(sqrt(1+(p/(m*c))^2) + 1)==p^2/m/(1+sqrt(1+(p/(m*c))^2) 
+   //EK=m c^2 * (sqrt(1+(p/(m*c))^2) - 1)==m* c^2*((p/(m*c))^2)/(sqrt(1+(p/(m*c))^2) + 1)==p^2/m/(1+sqrt(1+(p/(m*c))^2) 
   inline double Momentum2Energy(double Momentum,double mass) {
     double t=Momentum/(mass*SpeedOfLight);
 
     return Momentum*Momentum/(mass*(1.0+sqrt(1.0+t*t)));
+  }
+
+  //EK=m c^2 * (sqrt(1+(p/(m*c))^2-1) => p=sqrt(2*m*EK+(EK/c)^2)  
+  inline double Energy2Momentum(double Energy,double mass) {
+    double t=Energy/SpeedOfLight;
+
+    return sqrt(2.0*mass*Energy+t*t);
   }
 
   //EK=m c^2 * (sqrt(1+(p/(m*c))^2-1) => p=sqrt(2*m*EK+(EK/c)^2)  
@@ -745,6 +765,165 @@ namespace Thread {
   void JoinThreads();
 }
 
+
+//allocation/deallocation objects
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_new(T* &buff,int length) {
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  buff=(T*)malloc(length*sizeof(T));
+
+  for (int i=0;i<length;i++) new(buff+i)T();
+ }
+
+template<class T>
+void amps_new_managed(T* &buff,int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  #if _CUDA_MODE_ == _ON_
+  cudaMallocManaged(&t,length*sizeof(T)); 
+  #else 
+  buff=new T[length];
+  return;
+  #endif
+
+
+  buff=t;
+
+  for (int i=0;i<length;i++) new(buff+i)T();
+}
+
+template<class T>
+void amps_malloc_managed(T* &buff,int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+ 
+  #if _CUDA_MODE_ == _ON_
+  cudaMallocManaged(&t,length*sizeof(T));
+  #else
+//  t=(T*)malloc(length*sizeof(T));
+
+  buff=new T[length];
+  return;
+  #endif
+
+  buff=t;
+}
+
+template<typename T>
+void amps_free_managed(T* &buff) {
+  if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
+
+  #if _CUDA_MODE_ == _ON_
+  cudaFree(buff);
+  #else 
+  delete [] buff;
+  #endif
+
+  buff=NULL;
+}
+
+
+
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_malloc(T* &buff,int length) {
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+//  #ifndef __CUDA_ARCH__
+  buff=(T*)malloc(length*sizeof(T));
+//  #else 
+//  T* t;
+
+//  cudaMalloc(&t,length*sizeof(T));
+//  buff=(T*)t;
+//  #endif
+}
+
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_free(T* &buff) {
+
+//  #ifndef __CUDA_ARCH__
+  free(buff);
+//  #else
+//  cudaFree(buff);
+//  #endif
+
+  buff=NULL;
+}
+
+template<typename T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amsp_delete(T* &buff) {
+  if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
+
+  free(buff);
+  buff=NULL;
+}
+
+
+#if _CUDA_MODE_ == _ON_ 
+/*
+class to launch lambdas on GPU
+Exampel of usage:
+auto set_AllowBlockAllocation_gpu = [=] __device__ (){
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+
+  printf("Setting AllowBlockAllocation=false  done....\n");
+};
+ 
+kernel<<<1,1>>>(set_AllowBlockAllocation_gpu);
+*/                                 
+
+template<class F>
+__global__
+void kernel(F f){
+  f();
+}
+
+template<class F,class T1>
+__global__
+void kernel_1(F f,T1 t1){
+  f(t1);
+}
+
+template<class F,class T1,class T2>
+__global__
+void kernel_2(F f,T1 t1,T2 t2){
+  f(t1,t2);
+}
+
+template <class F,class T1, class T2,class T3>
+__global__
+void kernel_3(F f, T1 t1,T2 t2,T3 t3) {
+  f(t1,t2,t3);
+} 
+
+template <class F,class T1, class T2,class T3,class T4>
+__global__ 
+void kernel_4(F f, T1 t1,T2 t2,T3 t3,T4 t4) {
+  f(t1,t2,t3,t4);
+} 
+
+template <class F,class T1, class T2,class T3,class T4,class T5>
+__global__
+void kernel_5(F f, T1 t1,T2 t2,T3 t3,T4 t4,T5 t5) {
+  f(t1,t2,t3,t4,t5);
+}
+
+template <class F,class T1, class T2,class T3,class T4,class T5,class T6>
+__global__
+void kernel_6(F f, T1 t1,T2 t2,T3 t3,T4 t4,T5 t5,T6 t6) {
+  f(t1,t2,t3,t4,t5,t6);
+}
+
+
+#endif
 
 #endif
    

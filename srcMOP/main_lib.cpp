@@ -54,12 +54,12 @@ void InitBackgroundFields() {
           exit(__LINE__,__FILE__,"ERROR: magnetic field gradient can't be computed with 0th order interpolation method");
           #endif
 
-          for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+          for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
             PIC::CPLR::DATAFILE::GenerateMagneticFieldGradient(node);
           }
 
           //Exchange derived data betwenn the boundary nodes
-          PIC::Mesh::mesh.ParallelBlockDataExchange();
+          PIC::Mesh::mesh->ParallelBlockDataExchange();
         }
 
         PIC::CPLR::DATAFILE::SaveBinaryFile("MOP-BATSRUS");
@@ -117,7 +117,7 @@ void InitBackgroundFields() {
                 k=kMin+S1%(kMax-kMin+1);
 
                 //locate the cell
-                nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+                nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
                 if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
                 offset=CenterNode->GetAssociatedDataBufferPointer();
 
@@ -158,7 +158,7 @@ void InitBackgroundFields() {
         }
       } SetBackgroundMagneticField;
 
-      SetBackgroundMagneticField.Set(PIC::Mesh::mesh.rootTree);
+      SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
       PIC::CPLR::DATAFILE::SaveBinaryFile("MOP-KMAG");
     }
 
@@ -175,6 +175,6 @@ void InitBackgroundFields() {
 
 
  if (_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) {
-   PIC::Mesh::mesh.outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
+   PIC::Mesh::mesh->outputMeshDataTECPLOT("loaded.SavedCellData.dat",0);
  }
 }

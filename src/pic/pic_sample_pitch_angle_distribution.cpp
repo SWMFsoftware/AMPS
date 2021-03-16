@@ -29,7 +29,7 @@ void PIC::PitchAngleDistributionSample::Init() {//double ProbeLocations[][DIM],i
   int nProbe,i,j,k;
 
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_OFF_
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
   return;
 #endif
 
@@ -58,10 +58,10 @@ void PIC::PitchAngleDistributionSample::Init() {//double ProbeLocations[][DIM],i
 
   //init the sampling informations
   for (nProbe=0;nProbe<nSampleLocations;nProbe++) {
-    SampleNodes[nProbe]=PIC::Mesh::mesh.findTreeNode(SamplingLocations[nProbe]);
+    SampleNodes[nProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[nProbe]);
     if (SampleNodes[nProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh.fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
+    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
     if (SampleLocalCellNumber[nProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 
@@ -99,7 +99,7 @@ void PIC::PitchAngleDistributionSample::SampleDistributionFnction() {
     PIC::ParticleBuffer::byte *ParticleData;
     int i,j,k;
 
-    PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
+    PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
     ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
     PIC::CPLR::InitInterpolationStencil(SamplingLocations[nProbe],node);
@@ -142,12 +142,12 @@ void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,in
   double norm=0.0,dInterval=0.0;
   char str[_MAX_STRING_LENGTH_PIC_];
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
 
 
   for (nProbe=0;nProbe<nSampleLocations;nProbe++) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       sprintf(str,"%s.nSamplePoint=%ld.dat",fname,nProbe);
       fout=fopen(str,"w");
 
@@ -159,7 +159,7 @@ void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,in
       fprintf(fout,"\"\nVARIABLES=\"Cos(PitchAngle)\",\"f\"\n");
 
       //collect the sampled information from other processors
-      for (thread=1;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (nVariable=0;nVariable<SampleDataLength;nVariable++) {
+      for (thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) for (nVariable=0;nVariable<SampleDataLength;nVariable++) {
         offset=GetSampleDataOffset(spec,nVariable);
 
         for (i=0;i<nSampledFunctionPoints-1;i++) SamplingBuffer[nProbe][i+offset]+=pipe.recv<double>(thread);
@@ -208,7 +208,7 @@ void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,in
 
   }
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

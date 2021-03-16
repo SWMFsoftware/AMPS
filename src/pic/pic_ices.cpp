@@ -48,32 +48,32 @@ void PIC::CPLR::DATAFILE::ICES::Init() {
   if (NeutralBullVelocityOffset!=-1) exit(__LINE__,__FILE__,"Error: the model is already initialied");
 
   if (NeutralBullVelocityOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralBullVelocityOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=3*sizeof(double);
+    NeutralBullVelocityOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=3*sizeof(double);
     TotalAssociatedDataLength+=3*sizeof(double);
   }
 
   if (NeutralNumberDensityOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralNumberDensityOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+    NeutralNumberDensityOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
     TotalAssociatedDataLength+=sizeof(double);
   }
 
   if (NeutralTemperatureOffset==-1) {
-    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    if (AssociatedDataOffset==-1) AssociatedDataOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-    NeutralTemperatureOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+    NeutralTemperatureOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
     TotalAssociatedDataLength+=sizeof(double);
   }
 
   //!!The data center associated data can contain only 'double' type data -> memory reserved for DataStatusOffsetDSMC as for double
-  DataStatusOffsetDSMC=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=sizeof(double);
+  DataStatusOffsetDSMC=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
   TotalAssociatedDataLength+=sizeof(double);
 #endif
 
@@ -88,34 +88,34 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset==-1) exit(__LINE__,__FILE__,"Error: the model is not initialied");
 
   //create the directory for the trajectory file
-  sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
   system(command);
 
-  sprintf(command,"mkdir temp.ICES.thread=%i",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"mkdir temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
   system(command);
 
   getcwd(initDirectory,_MAX_STRING_LENGTH_PIC_);
-  sprintf(command,"%s/temp.ICES.thread=%i",initDirectory,PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"%s/temp.ICES.thread=%i",initDirectory,PIC::Mesh::mesh->ThisThread);
   chdir(command);
 
   //copy the trajectory file in the currect directory
-  sprintf(command,"cp ../icesCellCenterCoordinates.thread=%i .",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"cp ../icesCellCenterCoordinates.thread=%i .",PIC::Mesh::mesh->ThisThread);
   system(command);
 
-  sprintf(command,"mv icesCellCenterCoordinates.thread=%i mhd_traj.dat",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"mv icesCellCenterCoordinates.thread=%i mhd_traj.dat",PIC::Mesh::mesh->ThisThread);
   system(command);
 
   //start the ices
   getcwd(cCurrentPath, sizeof(cCurrentPath));
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Getting the MHD data from ICES.... \nThe current working directory is: %s\n", cCurrentPath);
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Getting the MHD data from ICES.... \nThe current working directory is: %s\n", cCurrentPath);
 
   system("rm -f MHDRestart");
 
   sprintf(command,"ln -s %s/Data/%s/MHD/ MHDRestart",locationICES,DataFile);
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"%s\n",command);
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"%s\n",command);
   system(command);
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     sprintf(command,"%s/MHD/comet_mhd.exe",locationICES);
     fprintf(PIC::DiagnospticMessageStream,"%s\n",command);
   }
@@ -126,17 +126,17 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   system("rm MHDRestart");
 
   //copy the output file into the working directory
-  sprintf(command,"mv mhd_values.dat ../icesCellCenterCoordinates.thread=%i.MHD.dat",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"mv mhd_values.dat ../icesCellCenterCoordinates.thread=%i.MHD.dat",PIC::Mesh::mesh->ThisThread);
   system(command);
 
   chdir(initDirectory);
 
-  sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh.ThisThread);
+  sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
   system(command);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     fprintf(PIC::DiagnospticMessageStream,"Combine individual trajectory files into a single file\n");
 
     FILE *fout;
@@ -146,7 +146,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
 
     fout=fopen("icesCellCenterCoordinates.MHD.dat","w");
 
-    for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+    for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
       sprintf(fname,"icesCellCenterCoordinates.thread=%i.MHD.dat",thread);
       fin.openfile(fname);
 
@@ -174,7 +174,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES (SWMF) done\n");
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES (SWMF) done\n");
 }
 
 
@@ -189,14 +189,14 @@ void PIC::CPLR::DATAFILE::ICES::retriveDSMCdata(const char *Case,const char *Dat
   if (NeutralBullVelocityOffset==-1) exit(__LINE__,__FILE__,"Error: the model is already initialied");
 
   //start ICES
-  sprintf(command,"%s/DSMC/ices-dsmc -extractdatapoints -grid %s/Data/%s/DSMC/%s -testpointslist icesCellCenterCoordinates.thread=%i -datafile %s/Data/%s/DSMC/%s -dim 2 -symmetry cylindrical",locationICES,   locationICES,Case,MeshFile, PIC::Mesh::mesh.ThisThread,   locationICES,Case,DataFile);
+  sprintf(command,"%s/DSMC/ices-dsmc -extractdatapoints -grid %s/Data/%s/DSMC/%s -testpointslist icesCellCenterCoordinates.thread=%i -datafile %s/Data/%s/DSMC/%s -dim 2 -symmetry cylindrical",locationICES,   locationICES,Case,MeshFile, PIC::Mesh::mesh->ThisThread,   locationICES,Case,DataFile);
 
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES: retrive DSMC data \n Execute command: %s\n",command);
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES: retrive DSMC data \n Execute command: %s\n",command);
   system(command);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
+  if (PIC::Mesh::mesh->ThisThread==0) {
     fprintf(PIC::DiagnospticMessageStream,"Combine individual trajectory files into a single file\n");
 
     FILE *fout;
@@ -206,7 +206,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveDSMCdata(const char *Case,const char *Dat
 
     fout=fopen("icesCellCenterCoordinates.DSMC.dat","w");
 
-    for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+    for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
       sprintf(fname,"icesCellCenterCoordinates.thread=%i.out",thread);
       fin.openfile(fname);
 
@@ -234,7 +234,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveDSMCdata(const char *Case,const char *Dat
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES (DSMC) done\n");
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES (DSMC) done\n");
 
 }
 
@@ -270,7 +270,7 @@ void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeA
   const int kMin=0,kMax=0;
 #endif
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     ices.openfile("icesCellCenterCoordinates.MHD.dat");
 
     ices.GetInputStr(str,_MAX_STRING_LENGTH_PIC_);
@@ -368,7 +368,7 @@ void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeA
     for (nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) readSWMFdata(MeanIonMass,startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) ices.closefile();
+  if (startNode==PIC::Mesh::mesh->rootTree) ices.closefile();
 }
 
 //====================================================
@@ -403,7 +403,7 @@ void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockA
   const int kMin=0,kMax=0;
 #endif
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     ices.openfile("icesCellCenterCoordinates.DSMC.dat");
 
     ices.GetInputStr(str,_MAX_STRING_LENGTH_PIC_);
@@ -476,7 +476,7 @@ void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockA
     for (nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) readDSMCdata(startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) ices.closefile();
+  if (startNode==PIC::Mesh::mesh->rootTree) ices.closefile();
 }
 
 //====================================================
@@ -519,25 +519,25 @@ void PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList(cTreeNodeAMR<PIC:
   const int kMin=0,kMax=0;
 #endif
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //generate the total file name and open the file
-    sprintf(fname,"icesCellCenterCoordinates.thread=%i",PIC::Mesh::mesh.ThisThread);
+    sprintf(fname,"icesCellCenterCoordinates.thread=%i",PIC::Mesh::mesh->ThisThread);
     fout=fopen(fname,"w");
-    PIC::Mesh::mesh.resetNodeProcessedFlag();
+    PIC::Mesh::mesh->resetNodeProcessedFlag();
 
     fprintf(fout,"#START\n");
 
     //determine the limits of the cells that are printed
     long int nCellPerProcessor;
 
-    nTotalCellNumber=getTotalCellNumber(PIC::Mesh::mesh.rootTree);
-    nCellPerProcessor=nTotalCellNumber/PIC::Mesh::mesh.nTotalThreads;
+    nTotalCellNumber=getTotalCellNumber(PIC::Mesh::mesh->rootTree);
+    nCellPerProcessor=nTotalCellNumber/PIC::Mesh::mesh->nTotalThreads;
 
-    startCellNumber=PIC::Mesh::mesh.ThisThread*nCellPerProcessor;
+    startCellNumber=PIC::Mesh::mesh->ThisThread*nCellPerProcessor;
     stopCellNumber=startCellNumber+nCellPerProcessor-1;
     CellCounter=0;
 
-    if (PIC::Mesh::mesh.ThisThread==PIC::Mesh::mesh.nTotalThreads-1) stopCellNumber=nTotalCellNumber-1;
+    if (PIC::Mesh::mesh->ThisThread==PIC::Mesh::mesh->nTotalThreads-1) stopCellNumber=nTotalCellNumber-1;
   }
 
   //output the cell's coordinates
@@ -570,7 +570,7 @@ void PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList(cTreeNodeAMR<PIC:
     for (nDownNode=0;nDownNode<(1<<DIM);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) createCellCenterCoordinateList(startNode->downNode[nDownNode]);
   }
 
-  if (startNode==PIC::Mesh::mesh.rootTree) fclose(fout);
+  if (startNode==PIC::Mesh::mesh->rootTree) fclose(fout);
 }
 
 

@@ -248,12 +248,12 @@ void Comet::Init_AfterParser(const char *DataFilePath) {
   const int nGravityVariables=3;
   int GravityVariableOffsets[nGravityVariables]={GravityFieldOffset,GravityFieldOffset+sizeof(double),GravityFieldOffset+2*sizeof(double)};
 
-  if (PIC::Mesh::mesh.AssociatedDataFileExists("gravity",DataFilePath)==true) {
-    PIC::Mesh::mesh.LoadCenterNodeAssociatedData("gravity",DataFilePath,GravityVariableOffsets,nGravityVariables);
+  if (PIC::Mesh::mesh->AssociatedDataFileExists("gravity",DataFilePath)==true) {
+    PIC::Mesh::mesh->LoadCenterNodeAssociatedData("gravity",DataFilePath,GravityVariableOffsets,nGravityVariables);
   }
   else {
     InitGravityData();
-    PIC::Mesh::mesh.SaveCenterNodeAssociatedData("gravity",GravityVariableOffsets,nGravityVariables);
+    PIC::Mesh::mesh->SaveCenterNodeAssociatedData("gravity",GravityVariableOffsets,nGravityVariables);
   }
 #endif
 
@@ -309,13 +309,13 @@ void Comet::InitGravityData(){
   const double rmax=2.0*4.0E3;
 
   //get coordinated of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
 
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-          cell=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+          cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 
           if (cell!=NULL) {
             position=cell->GetX();
@@ -353,7 +353,7 @@ void Comet::InitGravityData(){
     }
 
     ct+=1;
-    printf("PIC::Mesh::mesh.ThisThread=%i ct=%li \n",PIC::Mesh::mesh.ThisThread,ct);
+    printf("PIC::Mesh::mesh->ThisThread=%i ct=%li \n",PIC::Mesh::mesh->ThisThread,ct);
   }
 
 }
@@ -448,7 +448,7 @@ long int Comet::InjectionBoundaryModel_Limited(int spec) {
   int SourceProcessID,iInjectionFaceNASTRAN;
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
-  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;  
 
   double totalProductionRate=Comet::GetTotalProductionRateBjornNASTRAN(spec)+Comet::GetTotalProductionRateUniformNASTRAN(spec)+Comet::GetTotalProductionRateJetNASTRAN(spec);
 
@@ -643,7 +643,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
      char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
-     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0; 
 
      //generate a particle                                                                                             
      PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
@@ -716,6 +716,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
     newParticle=PIC::ParticleBuffer::GetNewParticle();
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
     //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
+    
 
     PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
 
@@ -775,7 +776,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
     TotalParticleAcceleration(accl,spec,newParticle,x_SO_OBJECT,v_SO_OBJECT,startNode);
 
 /*
-    nd=PIC::Mesh::mesh.fingCellIndex(x_SO_OBJECT,i,j,k,startNode);
+    nd=PIC::Mesh::mesh->fingCellIndex(x_SO_OBJECT,i,j,k,startNode);
     Comet::GetGravityAcceleration(Gravity,nd,startNode);
 
     for (int idim=0;idim<3;idim++) {
@@ -896,6 +897,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
 
   for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
 
+
   PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
   //to satisfy the compiler and fit the while structure                                                             
@@ -958,8 +960,8 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
     newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
     //memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
-    PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
 
+    PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
     threadInjectedParticles[thisThreadOpenMP]++;
 
     //sample the injection rate
@@ -1230,7 +1232,7 @@ double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
 
     for (i=0;i<totalSurfaceElementsNumber;i++) {
       for (idim=0;idim<3;idim++) norm[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
-      CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh.EPS); 
+      CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh->EPS); 
       for (c=0.0,X=0.0,idim=0;idim<3;idim++){
 	c+=norm[idim]*(positionSun[idim]-x[idim]);
 	X+=pow(positionSun[idim]-x[idim],2.0);
@@ -1326,7 +1328,7 @@ void Comet::BjornNASTRAN::Init() {
       double total=0.0;
       for (i=0;i<totalSurfaceElementsNumber;i++) {
         for (idim=0;idim<3;idim++) norm[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
-        CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh.EPS);
+        CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh->EPS);
         for (c=0.0,X=0.0,idim=0;idim<3;idim++){
           c+=norm[idim]*(positionSun[idim]-x[idim]);
           X+=pow(positionSun[idim]-x[idim],2.0);
@@ -1457,8 +1459,8 @@ void Comet::BjornNASTRAN::Init() {
               CutCell::BoundaryTriangleFaces[i].GetCenterPosition(x);
 
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode;
-              startNode=PIC::Mesh::mesh.findTreeNode(x);
-              nd=PIC::Mesh::mesh.fingCellIndex(x,ii,jj,kk,startNode);
+              startNode=PIC::Mesh::mesh->findTreeNode(x);
+              nd=PIC::Mesh::mesh->fingCellIndex(x,ii,jj,kk,startNode);
 
               if (startNode->block!=NULL) {
                 Comet::GetGravityAcceleration(accl,nd,startNode);
@@ -1540,7 +1542,7 @@ bool Comet::BjornNASTRAN::GenerateParticle(int spec, double *x_SO_OBJECT,double 
       total=0.0;
       for (i=0;i<totalSurfaceElementsNumber;i++) {
         for (idim=0;idim<3;idim++) norm[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
-        CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh.EPS);
+        CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh->EPS);
         for (c=0.0,X=0.0,idim=0;idim<3;idim++){
           c+=norm[idim]*(positionSun[idim]-x[idim]);
           X+=pow(positionSun[idim]-x[idim],2.0);
@@ -1642,7 +1644,7 @@ bool Comet::BjornNASTRAN::GenerateParticle(int spec, double *x_SO_OBJECT,double 
     
   //'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
   double x_LOCAL_IAU_OBJECT[3],x_LOCAL_SO_OBJECT[3],v_LOCAL_IAU_OBJECT[3],v_LOCAL_SO_OBJECT[3];
-  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh.EPS);
+  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh->EPS);
 
   iInjectionFaceNASTRAN=i; //output the triangulation surface element number
 
@@ -1672,8 +1674,8 @@ bool Comet::BjornNASTRAN::GenerateParticle(int spec, double *x_SO_OBJECT,double 
     
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -1786,7 +1788,7 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
     total=0.0;      
     for (i=0;i<totalSurfaceElementsNumber;i++) {
       for (idim=0;idim<3;idim++) norm[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
-      CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh.EPS); 
+      CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x,PIC::Mesh::mesh->EPS); 
       
       productionDistributionUniformNASTRAN[i]=CutCell::BoundaryTriangleFaces[i].SurfaceArea;
       total+=productionDistributionUniformNASTRAN[i];
@@ -1861,7 +1863,7 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
     
   //'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
   double x_LOCAL_IAU_OBJECT[3],x_LOCAL_SO_OBJECT[3],v_LOCAL_IAU_OBJECT[3],v_LOCAL_SO_OBJECT[3];
-  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh.EPS);
+  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh->EPS);
 
   iInjectionFaceNASTRAN=i; //output the triangulation surface element number
 
@@ -1891,8 +1893,8 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
     
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
@@ -2004,7 +2006,7 @@ void Comet::StepOverTime() {
 
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
     memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
@@ -2012,7 +2014,7 @@ void Comet::StepOverTime() {
       for (j=0;j<_BLOCK_CELLS_Y_;j++)
         for (k=0;k<_BLOCK_CELLS_Z_;k++) {
 	  FirstCellParticle=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-          cell=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+          cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 
 	  if (FirstCellParticle!=-1 && cell!=NULL){
 	    radiativeCoolingRate=radiativeCoolingRate_Crovisier(cell);
@@ -2183,7 +2185,7 @@ double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec
   }
 
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
 //  PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity,x,nd,node);
 //  BackgroundPlasmaNumberDensity=PIC::CPLR::GetBackgroundPlasmaNumberDensity(x,nd,node);
 
@@ -2347,6 +2349,7 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
   char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
   for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
+
   PIC::ParticleBuffer::SetParticleAllocated((PIC::ParticleBuffer::byte*)tempParticleData);
 
   //copy the state of the initial parent particle into the new-daugher particle (just in case....)

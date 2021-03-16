@@ -80,8 +80,8 @@
 
 
                 //determine if the particle belongs to this processor
-                startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-                if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+                startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+                if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
                 //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
                 double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};

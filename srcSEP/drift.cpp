@@ -233,7 +233,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   ///z+
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]+l*b[idim];
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node); 
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node); 
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -259,7 +259,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   //z-
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]-l*b[idim],t[idim]=0.0;
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node);
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -285,7 +285,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   //y+
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]+l*ey[idim]; 
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node);
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -306,7 +306,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   //y-
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]-l*ey[idim];
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node);
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -326,7 +326,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   //x+
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]+l*ex[idim];
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node);
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -346,7 +346,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   //x-
   for (idim=0;idim<3;idim++) xtest[idim]=x[idim]-l*ex[idim];
 
-  tNode=PIC::Mesh::mesh.findTreeNode(xtest,Node);
+  tNode=PIC::Mesh::mesh->findTreeNode(xtest,Node);
 
   if (tNode==NULL) NodeAvailabilityFlag=false;
   else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -419,7 +419,7 @@ auto GetCoefficients = [&] (double *x,double& dVsw_xdx,double& dVsw_ydy,double& 
   for (idim=0;idim<3;idim++) x_middle[idim]=x_init[idim]+0.5*dtTotal*v*b[idim];
 
   //second half
-  startNode=PIC::Mesh::mesh.findTreeNode(x_middle,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x_middle,startNode);
 
   bool trajectory_teminated=false;
 
@@ -466,7 +466,7 @@ if (trajectory_teminated==true) {
 
   for (idim=0;idim<3;idim++) x_final[idim]=x_init[idim]+dtTotal*v*b[idim];
 
-  startNode=PIC::Mesh::mesh.findTreeNode(x_final,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x_final,startNode);
 
   if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<_SUN__RADIUS_*_SUN__RADIUS_)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
@@ -487,7 +487,7 @@ if (trajectory_teminated==true) {
   PIC::Mesh::cDataBlockAMR *block;
   int i,j,k;
 
-  if (PIC::Mesh::mesh.fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -553,7 +553,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]+mng->l*mng->b[idim],tB[idim]=0.0;
 
-    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+    tNode=PIC::Mesh::mesh->findTreeNode(xtest,mng->Node);
 
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -577,7 +577,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     //s-
     for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]-mng->l*mng->b[idim],tB[idim]=0.0;
 
-    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+    tNode=PIC::Mesh::mesh->findTreeNode(xtest,mng->Node);
 
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -603,7 +603,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
     for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]+mng->t*Vsw[idim],tB[idim]=0.0;
 
-    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+    tNode=PIC::Mesh::mesh->findTreeNode(xtest,mng->Node);
 
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -633,7 +633,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
     ///Dt-
     for (idim=0;idim<3;idim++) xtest[idim]=mng->x0[idim]-mng->t*Vsw[idim],tB[idim]=0.0;
 
-    tNode=PIC::Mesh::mesh.findTreeNode(xtest,mng->Node);
+    tNode=PIC::Mesh::mesh->findTreeNode(xtest,mng->Node);
 
     if (tNode==NULL) NodeAvailabilityFlag=false;
     else NodeAvailabilityFlag=(tNode->IsUsedInCalculationFlag==true) ? true : false;
@@ -722,7 +722,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
   
   for (idim=0;idim<3;idim++) x_middle[idim]=x_init[idim]+0.5*dtTotal*v_par_init*mng.b[idim]; 
 
-  startNode=PIC::Mesh::mesh.findTreeNode(x_middle,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x_middle,startNode);
 
   if ((startNode==NULL)||(x_middle[0]*x_middle[0]+x_middle[1]*x_middle[1]+x_middle[2]*x_middle[2]<InnerBoundaryRadius*InnerBoundaryRadius)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
@@ -749,7 +749,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
   for (idim=0;idim<3;idim++) x_final[idim]=x_init[idim]+dtTotal*v_par_middle*mng.b[idim];
 
-  startNode=PIC::Mesh::mesh.findTreeNode(x_final,startNode);
+  startNode=PIC::Mesh::mesh->findTreeNode(x_final,startNode);
 
   if ((startNode==NULL)||(x_final[0]*x_final[0]+x_final[1]*x_final[1]+x_final[2]*x_final[2]<InnerBoundaryRadius*InnerBoundaryRadius)) trajectory_teminated=true;
   else if (startNode->IsUsedInCalculationFlag==false) trajectory_teminated=true;
@@ -768,7 +768,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
   PIC::Mesh::cDataBlockAMR *block;
   int i,j,k;
 
-  if (PIC::Mesh::mesh.fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");

@@ -70,7 +70,7 @@ void CleanParticles(){
   
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
-  for (node=PIC::Mesh::mesh.BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
+  for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
    
      long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
@@ -112,7 +112,7 @@ long int PrepopulateDomain() {
   double Velocity[3];
   /*
   //local copy of the block's cells
-  int cellListLength=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
+  int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
   PIC::Mesh::cDataCenterNode *cellList[cellListLength];
   */
   //particle ejection parameters
@@ -132,7 +132,7 @@ long int PrepopulateDomain() {
   int ionSpec=0, electronSpec=1;
   double ionMass = PIC::MolecularData::GetMass(ionSpec)/_AMU_;
   double electronMass = PIC::MolecularData::GetMass(electronSpec)/_AMU_;
-  //  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  //  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
   //  {
         for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       
@@ -140,7 +140,7 @@ long int PrepopulateDomain() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
 	  //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
 	  BoundaryBlock=true;
 	  break;
@@ -181,7 +181,7 @@ long int PrepopulateDomain() {
     #endif
 
     for (kCell=0;kCell<nBlock[2];kCell++) for (jCell=0;jCell<nBlock[1];jCell++) for (iCell=0;iCell<nBlock[0];iCell++) {
-	  //      nd=PIC::Mesh::mesh.getCenterNodeLocalNumber(iCell,jCell,kCell);
+	  //      nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
 
       // cell=cellList[nd];
       //  xMiddle=cell->GetX();
@@ -329,7 +329,7 @@ void SetIC() {
 	    
             int ind[3]={i,j,k};
             
-	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh.getCornerNodeLocalNumber(i,j,k));
+	    PIC::Mesh::cDataCornerNode *CornerNode= node->block->GetCornerNode(PIC::Mesh::mesh->getCornerNodeLocalNumber(i,j,k));
 	    if (CornerNode!=NULL){
 	      offset=CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 	     
@@ -354,9 +354,9 @@ void SetIC() {
 	  }//for (k=0;k<_BLOCK_CELLS_Z_+1;k++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (i=0;i<_BLOCK_CELLS_X_+1;i++) 
       for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
             int ind[3]={i,j,k};
-	    PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+	    PIC::Mesh::cDataCenterNode *CenterNode= node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 	    if (CenterNode!=NULL){
-	      offset=node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+	      offset=node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
 
               for (int idim=0; idim<3; idim++) x[idim]=xminBlock[idim]+(ind[idim]+0.5)*dx[idim];
 
@@ -378,7 +378,7 @@ void SetIC() {
    
     switch (_PIC_BC__PERIODIC_MODE_) {
     case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh.ParallelBlockDataExchange();
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
@@ -451,13 +451,13 @@ int main(int argc,char **argv) {
   char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
   sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
 
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
   PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
   }else{
-    PIC::Mesh::mesh.init(xmin,xmax,BulletLocalResolution);
+    PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
   }
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
   bool NewMeshGeneratedFlag=false;
@@ -471,28 +471,28 @@ int main(int argc,char **argv) {
 
   if (fmesh!=NULL) {
     fclose(fmesh);
-    PIC::Mesh::mesh.readMeshFile(fullname);
+    PIC::Mesh::mesh->readMeshFile(fullname);
   }
   else {
     NewMeshGeneratedFlag=true;
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
-       PIC::Mesh::mesh.buildMesh();
-       PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+    if (PIC::Mesh::mesh->ThisThread==0) {
+       PIC::Mesh::mesh->buildMesh();
+       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     }
     else {
        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh.readMeshFile("mesh.msh");
+       PIC::Mesh::mesh->readMeshFile("mesh.msh");
     }
   }
 
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh.getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
 
       sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
@@ -505,11 +505,11 @@ int main(int argc,char **argv) {
 
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
@@ -519,7 +519,7 @@ int main(int argc,char **argv) {
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   if (PIC::ThisThread==0) printf("test1\n");
-  PIC::Mesh::mesh.outputMeshTECPLOT("mesh_test.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
   
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
@@ -545,7 +545,7 @@ int main(int argc,char **argv) {
 
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh.ParallelBlockDataExchange();
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
       break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -561,14 +561,14 @@ int main(int argc,char **argv) {
      
     switch (_PIC_BC__PERIODIC_MODE_) {
     case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh.ParallelBlockDataExchange();
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
       PIC::BC::ExternalBoundary::UpdateData();
       break;
     }
-    PIC::Mesh::mesh.outputMeshDataTECPLOT("ic.dat",0);
+    PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
   
 
       int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
@@ -591,7 +591,7 @@ int main(int argc,char **argv) {
    
     switch (_PIC_BC__PERIODIC_MODE_) {
     case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh.ParallelBlockDataExchange();
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
       break;
       
     case _PIC_BC__PERIODIC_MODE_ON_:
@@ -603,19 +603,19 @@ int main(int argc,char **argv) {
 
     for (int niter=0;niter<totalIter;niter++) {
     
-      //PIC::Mesh::mesh.outputMeshDataTECPLOT("1.dat",0);
+      //PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);
     
       //TransportEquation::TimeStep();
   
       PIC::TimeStep();
       //PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep();
 
-      //PIC::Mesh::mesh.outputMeshDataTECPLOT("2.dat",0);
+      //PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
 
 
       switch (_PIC_BC__PERIODIC_MODE_) {
       case _PIC_BC__PERIODIC_MODE_OFF_:
-	PIC::Mesh::mesh.ParallelBlockDataExchange();
+	PIC::Mesh::mesh->ParallelBlockDataExchange();
 	break;
 
       case _PIC_BC__PERIODIC_MODE_ON_:

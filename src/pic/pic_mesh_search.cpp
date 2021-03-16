@@ -64,12 +64,12 @@ void PIC::Mesh::Search::Init() {
   for (i=0;i<nElements;i++) for (j=0;j<nElements;j++) for (k=0;k<nElements;k++) HashTable[i][j][k]=NULL;
 
   //reset the geometry information
-  memcpy(xMinDomain,PIC::Mesh::mesh.rootTree->xmin,3*sizeof(double));
-  for (i=0;i<3;i++) dx[i]=(PIC::Mesh::mesh.rootTree->xmax[i]-PIC::Mesh::mesh.rootTree->xmin[i])/nElements;
+  memcpy(xMinDomain,PIC::Mesh::mesh->rootTree->xmin,3*sizeof(double));
+  for (i=0;i<3;i++) dx[i]=(PIC::Mesh::mesh->rootTree->xmax[i]-PIC::Mesh::mesh->rootTree->xmin[i])/nElements;
 
 
   //init the table with the pointers to the blocks
-  ScanTree(0,0,0,nElements,PIC::Mesh::mesh.rootTree);
+  ScanTree(0,0,0,nElements,PIC::Mesh::mesh->rootTree);
 }
 
 //======================================================================================================
@@ -100,7 +100,7 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::Mesh::Search::FindBlock(double *x) 
   }
 
   //determine the actual block using procedures from the mesh obsect
-  return PIC::Mesh::mesh.findTreeNode(x,StartBlock);
+  return PIC::Mesh::mesh->findTreeNode(x,StartBlock);
 }
 
 //======================================================================================================
@@ -110,7 +110,7 @@ PIC::Mesh::cDataCenterNode *PIC::Mesh::Search::FindCell(double *x) {
   int i,j,k,nd;
 
   node=FindBlock(x);
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
 
   if (node->block==NULL) return NULL;
   return node->block->GetCenterNode(nd);

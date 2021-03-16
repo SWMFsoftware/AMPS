@@ -184,7 +184,7 @@ void MarsIon::Init_AfterParser() {
 
 //init the background data from that loaded from TECPLOT
 void MarsIon::InitBackgroundData() {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCenterNode *cell;
   int i,j,k,LocalCellNumber,idim,thread;
@@ -192,13 +192,13 @@ void MarsIon::InitBackgroundData() {
   double *xCell;
 
   for (thread=0;thread<PIC::nTotalThreads;thread++) {
-    node=(thread==PIC::ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
+    node=(thread==PIC::ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
     while (node!=NULL) {
       block=node->block;
 
       for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         cell=block->GetCenterNode(LocalCellNumber);
 
         if (cell!=NULL) {
@@ -627,7 +627,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   double NumberDensity;
 
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {

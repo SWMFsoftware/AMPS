@@ -517,7 +517,7 @@ long int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kC
        /*
 //test the particle injection at a particular altitude
 double xTest[3]={0.0,0.0,200.0E3+_RADIUS_(_TARGET_)};
-static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh.findTreeNode(xTest);
+static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh->findTreeNode(xTest);
 
 if (testNode!=node) return 0;
 ModelParticleInjectionRate=0.1/LocalTimeStep;
@@ -615,8 +615,8 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
          double v[3]={0.0,0.0,0.0};
 
         //determine if the particle belongs to this processor
-    //   startNode=PIC::Mesh::mesh.findTreeNode(x,NULL);
-    //   if (startNode->Thread==PIC::Mesh::mesh.ThisThread) {
+    //   startNode=PIC::Mesh::mesh->findTreeNode(x,NULL);
+    //   if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     //      //get and injection into the system the new model particle
     //      newParticle=PIC::ParticleBuffer::GetNewParticle();
     //      newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
@@ -797,7 +797,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
 //     /*
 //      //test the particle injection at a particular altitude
 //      double xTest[3]={0.0,0.0,200.0E3+_RADIUS_(_TARGET_)};
-//      static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh.findTreeNode(xTest);
+//      static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh->findTreeNode(xTest);
      
 //      if (testNode!=node) return 0;
 //      ModelParticleInjectionRate=0.1/LocalTimeStep;
@@ -1207,7 +1207,7 @@ double newMars::IonizationHotO(PIC::ParticleBuffer::byte *modelParticleData) {
     double x[3]={0.0,0.0,0.0},v[3]={0.0,0.0,0.0};
     double localTimeStep;
     int spec;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     
     PIC::ParticleBuffer::GetV(v,modelParticleData);
     PIC::ParticleBuffer::GetX(x,modelParticleData);
@@ -1257,7 +1257,7 @@ double newMars::TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllo
     double v[3]={0.0,0.0,0.0};
     double localTimeStep;
     //int spec;
-//    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+//    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     PIC::ParticleBuffer::byte *modelParticleData;
 
     //get the particle data

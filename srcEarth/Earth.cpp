@@ -522,7 +522,7 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
     Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomainBoundary();
     amps_time_step();
 
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
       printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
@@ -537,7 +537,7 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
 
 
        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh.ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
   }
 

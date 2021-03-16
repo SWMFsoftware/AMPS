@@ -114,7 +114,7 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
 
   if (InitFlag==false) exit(__LINE__,__FILE__,"Error: the reader needs to be initialized first! Call PIC::CPLR::DATAFILE::BATSRUS::OUTPUT::InitAMR before PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile");
 
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     //open data file
     char NameVar[_MAX_STRING_LENGTH_PIC_];
     int length=_MAX_STRING_LENGTH_PIC_;
@@ -396,7 +396,7 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
   }
  
   
-  if (startNode==PIC::Mesh::mesh.rootTree) {
+  if (startNode==PIC::Mesh::mesh->rootTree) {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
     delete [] State;

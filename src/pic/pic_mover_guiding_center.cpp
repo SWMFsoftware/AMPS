@@ -436,7 +436,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
 
   //interaction with the faces of the block and internal surfaces
   //check whether the particle trajectory is intersected the spherical body
-#if _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_
+#if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_ 
   double rFinal2;
 
   //if the particle is inside the sphere -> apply the boundary condition procedure
@@ -445,14 +445,14 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
     int code;
 
     static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
-        ((cInternalSphericalData*)(PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
-    static void* BoundaryElement=PIC::Mesh::mesh.InternalBoundaryList.front().BoundaryElement;
+        ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+    static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
 
     //move the particle location at the surface of the sphere
     for (int idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
 
     //determine the block of the particle location
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
     //apply the boundary condition
     code=ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,BoundaryElement);
@@ -463,10 +463,10 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
     }
   }
   else {
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
   }
 #else
-  newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+  newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 #endif //_TARGET_ == _TARGET_NONE_
     
   //advance the particle's position and velocity
@@ -514,7 +514,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");

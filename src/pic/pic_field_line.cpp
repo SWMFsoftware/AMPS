@@ -347,7 +347,7 @@ namespace PIC {
       PB::SetMagneticMoment(mu, ptrData);
 
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-      node=PIC::Mesh::mesh.findTreeNode(x);
+      node=PIC::Mesh::mesh->findTreeNode(x);
       
       long int res=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
 
@@ -1225,7 +1225,7 @@ namespace FieldLine{
 #endif
 
 
-    if (PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+    if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
     
     
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_

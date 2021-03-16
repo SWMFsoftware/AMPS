@@ -27,8 +27,18 @@
 #include <vector>
 #include<functional>
 
+#include "array_1d.h"
+#include "array_3d.h"
 
 #include "meshAMRdef.h"
+
+#if _CUDA_MODE_ == _ON_
+#undef _INTERNAL_BOUNDARY_MODE_
+#define _INTERNAL_BOUNDARY_MODE_  _INTERNAL_BOUNDARY_MODE_OFF_
+
+#undef _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_
+#define _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_  _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_
+#endif
 
 
 //include the user defined data for the internal boundaries
@@ -65,8 +75,15 @@
   #define _getCenterNodeLocalNumber(i,j,k) (i+_GHOST_CELLS_X_+_TOTAL_BLOCK_CELLS_X_*(j+_GHOST_CELLS_Y_+(k+_GHOST_CELLS_Z_)*_TOTAL_BLOCK_CELLS_Y_))
 #endif
 
+
+  //class use to grerate mesh tree descriptor
+  class cSplitTable {
+  public:
+    unsigned char SplitTable[8];
+  };
+
 //the limits of the comlutational domain
-extern double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
+extern _CUDA_MANAGED_ double _MESH_AMR_XMAX_[3],_MESH_AMR_XMIN_[3];
 
 
 class cBasicNode : public cStackElementBase, public cAMRexit {
@@ -101,6 +118,7 @@ public:
 
 
   //get and set the nodes' positions
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double *GetX() {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
@@ -109,6 +127,7 @@ public:
     return x;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetX(double *l) {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
@@ -117,6 +136,7 @@ public:
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) l[idim]=x[idim];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetX(double *l) {
 
 
@@ -137,6 +157,7 @@ public:
 
 
   //clean the data buffers
+  _TARGET_HOST_ _TARGET_DEVICE_
   void cleanDataBuffer() {
     nodeDescriptor.nodeno=0;
     nodeDescriptor.nodeProcessedFlag=_AMR_FALSE_;
@@ -150,6 +171,7 @@ public:
   }
 
   //increment and decrement the node conenction's counter
+  _TARGET_HOST_ _TARGET_DEVICE_
   void incrementConnectionCounter() {
     if (nodeDescriptor.nNodeConnections==_MAX_CORNER_NODE_CONNECTION_) exit(__LINE__,__FILE__,"the node's connections exeeds _MAX_CORNER_NODE_CONNECTION_");
 
@@ -159,6 +181,7 @@ public:
 //    #endif
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   int getNodeConnectionNumber() {
 
 //    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
@@ -168,6 +191,7 @@ public:
 //    #endif
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   int decrementConnectionCounter() {
 
 //    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
@@ -190,6 +214,7 @@ class cBasicCenterNode : public cBasicNode {
 public: 
   double Measure;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void cleanDataBuffer() {
     Measure=-1.0;
 
@@ -222,10 +247,12 @@ public:
   int ResolutionLevel;
   unsigned char id[1+(int)((3*_MAX_REFINMENT_LEVEL_)/8)];
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   unsigned int Length() {
     return 1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_ 
   cAMRnodeID() {
     ResolutionLevel=0;
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
@@ -235,6 +262,7 @@ public:
     return sizeof(int)+Length();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void Pack(unsigned char* buffer) {
     int i,length,offset=0;
     unsigned char *p;
@@ -249,6 +277,7 @@ public:
     for (i=0;i<length;i++) buffer[i+offset]=id[i];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void Unpack(unsigned char* buffer) {
     int i,length,offset=0;
     unsigned char *p;
@@ -263,6 +292,7 @@ public:
     for (i=0;i<length;i++) id[i]=buffer[i+offset];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   bool operator == (cAMRnodeID ID) {
     if (ResolutionLevel!=ID.ResolutionLevel) return false;
 
@@ -288,6 +318,7 @@ public:
     return true;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void Checksum(CRC32 *sum) {
     int nbytes,i,nbits;
     unsigned char t;
@@ -312,6 +343,7 @@ public:
     sum->add(t);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   bool operator != (cAMRnodeID ID) {
     return ((*this)==ID) ? false : true;
   }
@@ -350,12 +382,14 @@ public:
   //static fneibNodeCorner neibNodeCorner;
 
   template <typename T>
-  void GetCornerNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void GetCornerNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
     for (int i=0;i<(1<<_MESH_DIMENSION_);i++) NeibTable[i]=neibNodeCorner(i,mesh_ptr);
   } 
 
   template <typename T>
-  void GetFaceNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void GetFaceNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
     int nTotalFaces;
 
     switch (_MESH_DIMENSION_) {
@@ -374,7 +408,8 @@ public:
   }
 
   template <typename T>
-  void GetEdgeNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,const T& mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void GetEdgeNeibTable(cTreeNodeAMR<cBlockAMR>** NeibTable,T* mesh_ptr) {
 
     switch (_MESH_DIMENSION_) {
     case 3:
@@ -416,6 +451,7 @@ public:
       }
 
       //set and test the flags
+      _TARGET_HOST_ _TARGET_DEVICE_
       bool TestFlag(int ibit) {
         unsigned char mask=1<<ibit;
 
@@ -440,7 +476,8 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,const T& mesh_ptr) {
+   _TARGET_HOST_ _TARGET_DEVICE_
+   cTreeNodeAMR<cBlockAMR>* neibNodeCorner (int i,T* mesh_ptr) {
      int ix[3];
 
      switch (_MESH_DIMENSION_) {
@@ -499,7 +536,8 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,const T& mesh_ptr) {
+   _TARGET_HOST_ _TARGET_DEVICE_
+   cTreeNodeAMR<cBlockAMR>* neibNodeFace (int i,T* mesh_ptr) {
      int ix[3];
 
      //numberic patter:
@@ -596,7 +634,8 @@ public:
 
 
    template <typename T>
-   cTreeNodeAMR<cBlockAMR>* neibNodeEdge (int i,const T& mesh_ptr) {
+   _TARGET_HOST_ _TARGET_DEVICE_
+   cTreeNodeAMR<cBlockAMR>* neibNodeEdge (int i,T* mesh_ptr) {
      int ix[3];
 
      int isegment,iedge;
@@ -671,6 +710,7 @@ public:
 //  bool ActiveFlag; //used to prevent repeatable de-allocation of the block from the stack
 
   bool IsUsedInCalculationFlag; //the flag is used to mark such tree nodes that are not used in calcualtions
+  bool IsGhostNodeFlag; //the flag is used to mark 'ghost' block used in implementing the periodic BC
 
   //descriptor of the cut-face list
   struct cCutFaceListDescriptor {
@@ -679,21 +719,26 @@ public:
     CutCell::cTriangleFaceDescriptor* FirstTriangleCutFace;
   };
 
-#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_ 
+//#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_ 
   cCutFaceListDescriptor* neibCutFaceListDescriptorList;
   cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
-#else //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
-  static cCutFaceListDescriptor* neibCutFaceListDescriptorList;
-  static cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
-#endif 
+//#else //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
+//  static cCutFaceListDescriptor* neibCutFaceListDescriptorList;
+//  static cCutFaceListDescriptor*  neibCutFaceListDescriptorList_temp;
+//#endif 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR() {
 //    ActiveFlag=false;
     block=NULL,upNode=NULL;
     Temp_ID=-1;
+
+//    #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
     neibCutFaceListDescriptorList=NULL,neibCutFaceListDescriptorList_temp=NULL;
+//    #endif
 
     IsUsedInCalculationFlag=true;
+    IsGhostNodeFlag=false;
 
     for (int i=0;i<1<<_MESH_DIMENSION_;i++) downNode[i]=NULL;
 
@@ -771,6 +816,7 @@ public:
   }
 
   //get the external (directed outward of the computational domain) normal
+  _TARGET_HOST_ _TARGET_DEVICE_
   void GetExternalNormal(double *norm,int nface) {
     switch(nface) {
     case 0: case 1:
@@ -792,6 +838,7 @@ public:
     }
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   double GetCharacteristicCellSize() {
     double CellSize;
 
@@ -802,12 +849,14 @@ public:
     return sqrt(CellSize);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void ConvertGlobal2LocalCoordinates(double *LocalCoordinates,double *GlobalCoordinates) {
     int idim;
 
     for (idim=0;idim<_MESH_DIMENSION_;idim++) LocalCoordinates[idim]=(GlobalCoordinates[idim]-xmin[idim])/(xmax[idim]-xmin[idim]);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   double GetBlockFaceSurfaceArea(int nface) {
     double res;
 
@@ -848,6 +897,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   double GetCellFaceSurfaceArea(int nface) {
     #if _MESH_DIMENSION_ == 1
     const static double CellSurfaceAreaMultiplyer[1]={1.0,1.0};
@@ -869,10 +919,12 @@ public:
   } treeNodeDescriptor; 
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void cleanDataBuffer() {
     int i;
 
     block=NULL,upNode=NULL;
+    IsUsedInCalculationFlag=true;
 
     for (i=0;i<(1<<_MESH_DIMENSION_);i++) downNode[i]=NULL;
   
@@ -926,7 +978,8 @@ public:
 
   //determine the minimum and maximum resolution levels of the neighbor blocks
   template <typename T>
-  void SetNeibRefinmentLevelLimits(const T mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  void SetNeibRefinmentLevelLimits(T* mesh_ptr) {
     cTreeNodeAMR* node;
     int i;
 
@@ -981,7 +1034,8 @@ public:
 
 
   template<typename T>
-  cTreeNodeAMR *GetNeibCorner(int nCornerNode,const T mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cTreeNodeAMR *GetNeibCorner(int nCornerNode,T* mesh_ptr) {
     cTreeNodeAMR *res;
 
 #if _MESH_DIMENSION_ == 1
@@ -995,6 +1049,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void SetNeibCorner(cTreeNodeAMR* neibNode,int nCornerNode) {
 
 
@@ -1028,7 +1083,8 @@ public:
   }
 
   template <typename T>
-  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,const T mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  inline cTreeNodeAMR *GetNeibFace(int nface,int iFace,int jFace,T* mesh_ptr) {
     cTreeNodeAMR* res;
 
 #if _MESH_DIMENSION_ == 1
@@ -1042,6 +1098,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetNeibFace(cTreeNodeAMR* neibNode,int nface,int iFace,int jFace) {
 
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
@@ -1061,7 +1118,8 @@ public:
   }
 
   template<typename T>
-  inline cTreeNodeAMR *GetNeibEdge(int nedge,int iEdge,T mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  inline cTreeNodeAMR *GetNeibEdge(int nedge,int iEdge,T* mesh_ptr) {
     cTreeNodeAMR *res;
 
 #if _MESH_DIMENSION_ == 1
@@ -1075,6 +1133,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetNeibEdge(cTreeNodeAMR* neibNode,int nedge,int iEdge) {
 
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
@@ -1095,7 +1154,8 @@ public:
 
 
   template <typename T>
-  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,const T mesh_ptr) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  inline cTreeNodeAMR *GetNeibNode(int i,int j,int k,T* mesh_ptr) {
     cTreeNodeAMR *res=NULL;
 
 #if _MESH_DIMENSION_ == 1
@@ -1177,9 +1237,13 @@ public:
   void SettGlobalPositinoRealNode(int RealNodePosition) {treeNodeDescriptor.GlobalPositionRealTreeNode=RealNodePosition;} 
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR *GetDownNode(int i,int j,int k) {return downNode[i+2*(j+k*2)];} 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   void SetDownNode(cTreeNodeAMR* node,int i,int j,int k) {downNode[i+2*(j+k*2)]=node;}  
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   bool lastBranchFlag() {
     //if _BOTTOM_BRANCH_TREE_ -> the node is on the bottom of the tree
     for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (downNode[nDownNode]!=NULL) return !_BOTTOM_BRANCH_TREE_;
@@ -1189,7 +1253,8 @@ public:
 
   //check if a node is a neighbor of the 'this node'
   template <typename T>
-  bool CheckNeibNode(cTreeNodeAMR* neibNode,const T mesh_ptr) {
+  _TARGET_DEVICE_ _TARGET_HOST_
+  bool CheckNeibNode(cTreeNodeAMR* neibNode,T* mesh_ptr) {
     //check the connections through the corner nodes
     for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (GetNeibCorner(nd,mesh_ptr)==neibNode) {
       return true;
@@ -1213,7 +1278,7 @@ public:
 
     //check connections through the edges
 #if _MESH_DIMENSION_ == 3
-    for (int nedge=0;nedge<12;nedge++) for (i=0;i<2;i++) if (GetNeibEdge(nedge,i)==neibNode) {
+    for (int nedge=0;nedge<12;nedge++) for (i=0;i<2;i++) if (GetNeibEdge(nedge,i,this)==neibNode) {
       return true;
     }
 #endif
@@ -1234,8 +1299,13 @@ template <class cCornerNode,class cCenterNode>
 class cBasicBlockAMR : public cStackElementBase,public cAMRexit {
 public:
   //the place holder for the structure that contained the associated data
+  _TARGET_HOST_ _TARGET_DEVICE_
   int AssociatedDataLength() {return 0;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   void SetAssociatedDataBufferPointer(char* ptr) {}
+
+  _TARGET_DEVICE_ _TARGET_HOST_
   char* GetAssociatedDataBufferPointer() {return NULL;}
 
   //place holder for print function that outputs the general tree node/blocks values into a file
@@ -1272,6 +1342,7 @@ protected:
 public:
 
   //set and get the pointers to the center nodes of the block
+  _TARGET_DEVICE_ _TARGET_HOST_
   cCenterNode **GetCenterNodeBuffer() {
     #if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
     return centerNodes;
@@ -1280,7 +1351,8 @@ public:
     #endif
   }
 
-  inline cCenterNode *GetCenterNode(long int nd) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cCenterNode *GetCenterNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCenterNodes=_TOTAL_BLOCK_CELLS_X_;
@@ -1303,11 +1375,13 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cCenterNode *GetCenterNode(int i,int j,int k) {
     return GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetCenterNode(cCenterNode* nodeptr,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1325,8 +1399,10 @@ public:
     #endif
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline cCenterNode **GetCenterNodeList() {return centerNodes;}
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline int GetCenterNodeListLength() {
     #if _MESH_DIMENSION_ == 1
     return _TOTAL_BLOCK_CELLS_X_;
@@ -1338,10 +1414,13 @@ public:
   }
 
   //set and get the pointers to the corner nodes of the block
+  _TARGET_DEVICE_ _TARGET_HOST_
   cCornerNode **GetCornerNodeBuffer() {
 	 return cornerNodes;
   }
 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cCornerNode *GetCornerNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1357,10 +1436,12 @@ public:
     return cornerNodes[nd];
   }
 
-  inline cCornerNode *GetCornerNode(int i,int j,int k) {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cCornerNode *GetCornerNode(int i,int j,int k) {
     return GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline void SetCornerNode(cCornerNode* nodeptr,long int nd) {
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCornerNodes=1+_TOTAL_BLOCK_CELLS_X_;
@@ -1375,8 +1456,10 @@ public:
     cornerNodes[nd]=nodeptr;
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline cCornerNode **GetCornerNodeList() {return cornerNodes;}
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline static int GetCornerNodeListLength() {
     #if _MESH_DIMENSION_ == 1
     return 1+_TOTAL_BLOCK_CELLS_X_;
@@ -1387,14 +1470,17 @@ public:
     #endif
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline static int getCornerNodeLocalNumber(int i,int j,int k) {
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
-  inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
+  _TARGET_DEVICE_ _TARGET_HOST_ 
+  static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_ 
   inline void getCenterNodeCoordinate(int& i,int& j,int& k,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
@@ -1424,6 +1510,7 @@ public:
     unsigned ghostBlock : 1;
   } blockDescriptor; 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   double CellMeasure(int i,int j, int k) {
     double vol;
 
@@ -1440,6 +1527,7 @@ public:
     return vol; 
   } 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   double CellCharacteristicSize() {
     double res;
 
@@ -1453,6 +1541,7 @@ public:
   }
 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   void cleanDataBuffer() {
     blockDescriptor.RefinmentLevel=0;
     blockDescriptor.ghostBlock=0;
@@ -1486,15 +1575,22 @@ public:
     #endif
   } 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   cBasicBlockAMR() {
     cleanDataBuffer();
   }
 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   bool GetGhostFlag() {return (blockDescriptor.ghostBlock==0) ? _REAL_BLOCK_ : _GHOST_BLOCK_;}
+
+  _TARGET_DEVICE_ _TARGET_HOST_
   void SetGhostFlag(bool flag) {blockDescriptor.ghostBlock=(flag==_REAL_BLOCK_) ? 0 : 1;} //if false -> the block is real, if true -> the block is a ghost block 
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   int GetRefinmentLevel() {return blockDescriptor.RefinmentLevel;}
+
+  _TARGET_DEVICE_ _TARGET_HOST_
   void SetRefinmentLevel(int level) {blockDescriptor.RefinmentLevel=level;}
 
 };
@@ -1572,7 +1668,9 @@ public:
 
 
   //the internal surface triangulation (NASTRAN MESH)
+  #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ ==  _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
   cNASTRANmesh NsatranSurfaceMesh;
+  #endif
 
   //mesh modyfied flag -> is set to true each time the mesh is modified, the flag is set to false when the number of elements and the connectivity list are prepared
   bool meshModifiedFlag;
@@ -1653,6 +1751,7 @@ public:
   class cTreeCheckSum {
     CRC32 checksum;
 
+   _TARGET_HOST_ _TARGET_DEVICE_
     void addblock(cTreeNodeAMR<cBlockAMR>* bl) {
       checksum.add(bl->Temp_ID);
 
@@ -1684,6 +1783,9 @@ public:
 
       return checksum.checksum();
     }
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    cTreeCheckSum() {}
 
   } TreeCheckSum;
 
@@ -1971,14 +2073,18 @@ public:
     setMeshName(mname);
   }
 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline long int getCornerNodeLocalNumber(int i,int j,int k) {
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline static void convertCenterNodeLocalNumber2LocalCoordinates(int LocalNumber,int &i,int &j, int &k) {
     k=LocalNumber/(_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_);
     LocalNumber-=k*_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_;
@@ -1991,6 +2097,7 @@ public:
     k-=_GHOST_CELLS_Z_;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int findCornerNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) { 
     double dx;
     
@@ -2030,7 +2137,7 @@ public:
     return getCornerNodeLocalNumber(i,j,k);
   }  
 
-
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int findCenterNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) {
     double dx,dx2;
   
@@ -2074,6 +2181,7 @@ public:
   }
 
   //find the index of the cell where the point 'x' is located
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int fingCellIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode,bool ExitFlag=true) {
     double dx;
 
@@ -2129,6 +2237,7 @@ public:
  
 
   //the constructor
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init(double *xMin,double *xMax,double (*localResolutionFunction)(double*)) {
     int i,idim;
 
@@ -2198,7 +2307,9 @@ public:
 
 
     //add the boundary faces to the root node
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     DistributeBoundaryCutBlocks(rootTree,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces);
+    #endif
 
     accepltTreeNodeFunction=NULL;
     MeshName[0]='\0',MeshSignature=0;
@@ -2289,13 +2400,20 @@ public:
 
     switch (_AMR_PARALLEL_MODE_) {
     case _AMR_PARALLEL_MODE_ON_:
+      #ifndef __CUDA_ARCH__
       MPI_Initialized(&MPIinitFlag);
 
       if (MPIinitFlag==true) {
         MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&ThisThread);
         MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&nTotalThreads);
       }
-      else exit(__LINE__,__FILE__,"Error: MPI is not initialized");
+      else {
+        exit(__LINE__,__FILE__,"Error: MPI is not initialized");
+      }
+      #else 
+      ThisThread=::deviceThisThread;
+      nTotalThreads=::deviceTotalThreadsNumber; 
+      #endif
 
       ParallelNodesDistributionList=new cTreeNodeAMR<cBlockAMR>*[nTotalThreads];
 
@@ -2330,7 +2448,8 @@ public:
   }  
 
 
-  cMeshAMRgeneric() {
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cMeshAMRgeneric () {
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) _MESH_AMR_XMAX_[idim]=0.0,_MESH_AMR_XMIN_[idim]=0.0;
 
      //set the default value for the 'interpolation functions'
@@ -2345,8 +2464,10 @@ public:
      //user-defined criterion for node splitting
      UserNodeSplitCriterion=NULL;
 
+     #ifndef __CUDA_ARCH__
      //set the defaul value of the diagnostic stream
      DiagnospticMessageStream=stdout;
+     #endif
 
      //init UserProcessParallelNodeDistributionList
      UserProcessParallelNodeDistributionList=NULL;
@@ -2415,6 +2536,7 @@ public:
   }
 
   //register the 'internal boundary' (the surface determining cut cells)
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   void RegisterInternalBoundary(cInternalBoundaryConditionsDescriptor Descriptor) {
     #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (rootTree!=NULL) exit(__LINE__,__FILE__,"Error: all internal surface must be registered before initialization of the mesh");
@@ -2437,7 +2559,12 @@ public:
     exit(__LINE__,__FILE__,"Error: internal boundary is allowed only when _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_");
     #endif
   }
-
+#else 
+_TARGET_HOST_ _TARGET_DEVICE_
+void RegisterInternalBoundary(cInternalBoundaryConditionsDescriptor Descriptor) {
+  exit(__LINE__,__FILE__,"Error: shoulf not be used wirh _INTERNAL_BOUNDARY_MODE_ != _INTERNAL_BOUNDARY_MODE_ON_");
+}
+#endif
 
 
 /*
@@ -2570,6 +2697,7 @@ Start:
 
 
 */
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(int *ix,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
     int iState=0,jState=0,kState=0,i,j,k;
@@ -2630,6 +2758,7 @@ Start:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(double *x,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     if (startNode==NULL) startNode=rootTree;
 
@@ -2734,6 +2863,7 @@ Start:
   }*/
 
   //find the node of the tree where the point 'x' is located BUT the nodes' resolution should be less of equal to UpperResolutionLevel (the found free could be not the last in the tree (can be located somewhere in the middle of the tree)
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR<cBlockAMR>*  findTreeNodeLimitedResolutionLevel(double *x,int UpperResolutionLevel,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
     cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
     double blockBasedCoordinates[3]={0.0,0.0,0.0};
@@ -2831,10 +2961,12 @@ Start:
   }
   */
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR<cBlockAMR> *getNeibNode(int i,int j,int k,cTreeNodeAMR<cBlockAMR>* startNode) {
     return startNode->GetNeibNode(i,j,k,this);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR<cBlockAMR> *getNeibNode_DirectTreeSearch(int i,int j,int k,cTreeNodeAMR<cBlockAMR>* startNode) {
     double x[3]={0.0,0.0,0.0};
     cTreeNodeAMR<cBlockAMR> *res;
@@ -3312,7 +3444,7 @@ void checkMeshConsistency(cTreeNodeAMR<cBlockAMR> *startNode) {
       if (neibNode!=NULL) {
         found=false;
 
-        for (nedgeNeib=0;nedgeNeib<12;nedgeNeib++) if (found==false) for (iEdgeNeib=0;iEdgeNeib<2;iEdgeNeib++) if (neibNode->GetNeibEdge(nedgeNeib,iEdgeNeib)==startNode) {
+        for (nedgeNeib=0;nedgeNeib<12;nedgeNeib++) if (found==false) for (iEdgeNeib=0;iEdgeNeib<2;iEdgeNeib++) if (neibNode->GetNeibEdge(nedgeNeib,iEdgeNeib,this)==startNode) {
           found=true;
           break;
         }
@@ -3785,6 +3917,7 @@ void collectNeibCornerNodes_2D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 
 */
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void collectNeibCornerNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCornerNode *newCornerNodeMap[1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_)][1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_)][1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_)]) {
   int ii,jj,kk,iDownNode,jDownNode,kDownNode,ioffset,joffset,koffset;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode,*neibNode;
@@ -3857,6 +3990,7 @@ void collectNeibCornerNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 }
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void collectNeibCenterNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCenterNode *newCenterNodeMap[_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_][_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_][_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_]) {
   int ii,jj,kk,ioffset,joffset,koffset,iNeibNode,jNeibNode,kNeibNode;
   cTreeNodeAMR<cBlockAMR> *upNode,*neibNode;
@@ -3891,10 +4025,12 @@ class cFraction {
 public:
   long int Nominator,Denominator;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction () {
     Nominator=0.0,Denominator=1.0;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void Simplify() {
     int n,t;
 
@@ -3917,7 +4053,7 @@ public:
   }
 
 
-
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator + (cFraction op2) {
     cFraction temp;
 
@@ -3928,6 +4064,7 @@ public:
     return temp;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator + (int op2) {
     cFraction temp;
 
@@ -3938,6 +4075,7 @@ public:
     return temp;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator - (cFraction op2) {
     cFraction temp;
 
@@ -3948,6 +4086,7 @@ public:
     return temp;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator = (cFraction op2) {
     Nominator=op2.Nominator;
     Denominator=op2.Denominator;
@@ -3956,6 +4095,7 @@ public:
     return *this;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator += (int op2) {
     Nominator+=op2*Denominator;
 
@@ -3963,6 +4103,7 @@ public:
     return *this;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator -= (int op2) {
     Nominator-=op2*Denominator;
 
@@ -3970,6 +4111,7 @@ public:
     return *this;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator = (int op2) {
     Nominator=op2;
     Denominator=1;
@@ -3978,6 +4120,7 @@ public:
     return *this;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator * (int op) {
     cFraction temp;
 
@@ -3988,6 +4131,7 @@ public:
     return temp;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator / (int op) {
     cFraction temp;
 
@@ -3998,6 +4142,7 @@ public:
     return temp;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cFraction operator /= (int op) {
     Denominator*=op;
 
@@ -4011,10 +4156,12 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   friend bool operator >= (const cFraction& op1, const int& op2) {
     return (op1.Nominator>=op2*op1.Denominator) ? true : false;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   friend bool operator <= (const cFraction& op1, const int& op2) {
     return (op1.Nominator<=op2*op1.Denominator) ? true : false;
   }
@@ -4029,6 +4176,7 @@ struct cNeibDescriptor {
   cTreeNodeAMR<cBlockAMR>* node;
 };
 
+_TARGET_HOST_ _TARGET_DEVICE_ 
 void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *NeibList,int& nNeibListCounter, int nNeibListMax, cFraction iOffset, cFraction jOffset, cFraction kOffset,cFraction BlockSize) {
   cTreeNodeAMR<cBlockAMR>* downNode;
 
@@ -4127,6 +4275,7 @@ void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *Neib
 }
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
   int ioffset,joffset,koffset;
@@ -4163,8 +4312,8 @@ if (startNode->Temp_ID==77) {
 
 
 
-  cNeibDescriptor *neibptr,NeibList[nNeibListMax];
-
+  cNeibDescriptor *neibptr; //,NeibList[nNeibListMax];
+  array_1d<cNeibDescriptor> NeibList(nNeibListMax);
 
   cTreeNodeAMR<cBlockAMR> *t,*searchNode=startNode;
   int SearchNodeSize=1; //,nConditionsMet; //nConditionsMet,iSearchOffset=0,jSearchOffset=0,kSearchOffset=0;
@@ -4231,7 +4380,10 @@ if (startNode->Temp_ID==77) {
   }
 
 
-  double xSearchNode[_MESH_DIMENSION_];
+//  double xSearchNode[_MESH_DIMENSION_];
+
+
+  array_1d<double> xSearchNode(_MESH_DIMENSION_);
   cFraction SearchStartBlockSize;
 
   SearchStartBlockSize=SearchNodeSize;
@@ -4246,25 +4398,25 @@ if (startNode->Temp_ID==77) {
 
   for (k=kSearchMin;k<=kSearchMax;k++) {
     if (_MESH_DIMENSION_==3) {
-      xSearchNode[2]=searchNode->xmin[2]+(searchNode->xmax[2]-searchNode->xmin[2])*(0.5+k);
+      xSearchNode(2)=searchNode->xmin[2]+(searchNode->xmax[2]-searchNode->xmin[2])*(0.5+k);
       kSearchOffset=kOffset+_BLOCK_CELLS_Z_*k*SearchNodeSize;
     }
 
     for (j=jSearchMin;j<=jSearchMax;j++) {
       if (_MESH_DIMENSION_>=2) {
-        xSearchNode[1]=searchNode->xmin[1]+(searchNode->xmax[1]-searchNode->xmin[1])*(0.5+j);
+        xSearchNode(1)=searchNode->xmin[1]+(searchNode->xmax[1]-searchNode->xmin[1])*(0.5+j);
         jSearchOffset=jOffset+_BLOCK_CELLS_Y_*j*SearchNodeSize;
       }
 
       for (i=iSearchMin;i<=iSearchMax;i++) {
-        xSearchNode[0]=searchNode->xmin[0]+(searchNode->xmax[0]-searchNode->xmin[0])*(0.5+i);
+        xSearchNode(0)=searchNode->xmin[0]+(searchNode->xmax[0]-searchNode->xmin[0])*(0.5+i);
         iSearchOffset=iOffset+_BLOCK_CELLS_X_*i*SearchNodeSize;
 
-        t=findTreeNodeLimitedResolutionLevel(xSearchNode,searchNode->RefinmentLevel,searchNode);
+        t=findTreeNodeLimitedResolutionLevel(xSearchNode.get_data_ptr(),searchNode->RefinmentLevel,searchNode);
         if (t==NULL) continue;
         if (t->RefinmentLevel>searchNode->RefinmentLevel) exit(__LINE__,__FILE__,"Error: something is wrong in the serach procedure");
 
-        AddNodeNeighborList(t,NeibList,nNeibListCounter,nNeibListMax,iSearchOffset,jSearchOffset,kSearchOffset,SearchStartBlockSize);
+        AddNodeNeighborList(t,NeibList.get_data_ptr(),nNeibListCounter,nNeibListMax,iSearchOffset,jSearchOffset,kSearchOffset,SearchStartBlockSize);
       }
     }
   }
@@ -4470,13 +4622,17 @@ if (startNode->Temp_ID==77) {
 #endif
 
   long int nd;
-  cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
+//  cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
 
-  for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
+  cCornerNode *ptrCornerNode=NULL;
+  array_3d<cCornerNode *>CornerNodeMap(1+iCornerMax-iCornerMin,1+jCornerMax-jCornerMin,1+kCornerMax-kCornerMin);
 
+//  for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
+
+CornerNodeMap=NULL;
 
   for (nlist=0;nlist<nNeibListCounter;nlist++) {
-    neibptr=NeibList+nlist;
+    neibptr=NeibList.get_data_ptr()+nlist;
 
     for (k=kCornerMin;k<=kCornerMax;k++) {
       kOffset=neibptr->kOffset+neibptr->BlockSize*k;
@@ -4494,9 +4650,9 @@ if (startNode->Temp_ID==77) {
             joffset=jOffset.Nominator/jOffset.Denominator;
             koffset=kOffset.Nominator/kOffset.Denominator;
 
-            if ((CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]!=NULL)&&(CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]!=ptrCornerNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
+            if ((CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)!=NULL)&&(CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)!=ptrCornerNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
 
-            CornerNodeMap[ioffset-iCornerMin][joffset-jCornerMin][koffset-kCornerMin]=ptrCornerNode;
+            CornerNodeMap(ioffset-iCornerMin,joffset-jCornerMin,koffset-kCornerMin)=ptrCornerNode;
 
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
 #if _CHECK_MESH_CONSISTANCY_ == _ON_AMR_MESH_
@@ -4522,7 +4678,7 @@ if (startNode->Temp_ID==77) {
 
   for (k=kCornerMin;k<=kCornerMax;k++) for (j=jCornerMin;j<=jCornerMax;j++) for (i=iCornerMin;i<=iCornerMax;i++) {
     nd=getCornerNodeLocalNumber(i,j,k);
-    ptrCornerNode=CornerNodeMap[i-iCornerMin][j-jCornerMin][k-kCornerMin];
+    ptrCornerNode=CornerNodeMap(i-iCornerMin,j-jCornerMin,k-kCornerMin);
 
     if (ptrCornerNode==NULL) {
       //generate the coordinates ofthe new node
@@ -4566,12 +4722,17 @@ if (startNode->Temp_ID==77) {
   static const int kCenterMin=0,kCenterMax=0;
 #endif
 
-  cCenterNode *CenterNodeMap[1+iCenterMax-iCenterMin][1+jCenterMax-jCenterMin][1+kCenterMax-kCenterMin],*ptrCenterNode;
+  //cCenterNode *CenterNodeMap[1+iCenterMax-iCenterMin][1+jCenterMax-jCenterMin][1+kCenterMax-kCenterMin],*ptrCenterNode;
 
-  for (k=0;k<1+kCenterMax-kCenterMin;k++) for (j=0;j<1+jCenterMax-jCenterMin;j++) for (i=0;i<1+iCenterMax-iCenterMin;i++) CenterNodeMap[i][j][k]=NULL;
+  //for (k=0;k<1+kCenterMax-kCenterMin;k++) for (j=0;j<1+jCenterMax-jCenterMin;j++) for (i=0;i<1+iCenterMax-iCenterMin;i++) CenterNodeMap[i][j][k]=NULL;
+
+  cCenterNode *ptrCenterNode;
+  array_3d<cCenterNode*> CenterNodeMap(1+iCenterMax-iCenterMin,1+jCenterMax-jCenterMin,1+kCenterMax-kCenterMin);   
+
+  CenterNodeMap=NULL;
 
   for (nlist=0;nlist<nNeibListCounter;nlist++) {
-    neibptr=NeibList+nlist;
+    neibptr=NeibList.get_data_ptr()+nlist;
     if (neibptr->node->RefinmentLevel!=startNode->RefinmentLevel) continue;
 
     for (k=kCenterMin;k<=kCenterMax;k++) {
@@ -4586,9 +4747,9 @@ if (startNode->Temp_ID==77) {
           if ((ioffset>=iCenterMin)&&(ioffset<=iCenterMax)) {
             ptrCenterNode=neibptr->node->block->GetCenterNode(getCenterNodeLocalNumber(i,j,k));
 
-            if ((CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]!=NULL)&&(CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]!=ptrCenterNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
+            if ((CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)!=NULL)&&(CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)!=ptrCenterNode)) exit(__LINE__,__FILE__,"Error: redifinition of the node");
 
-            CenterNodeMap[ioffset-iCenterMin][joffset-jCenterMin][koffset-kCenterMin]=ptrCenterNode;
+            CenterNodeMap(ioffset-iCenterMin,joffset-jCenterMin,koffset-kCenterMin)=ptrCenterNode;
           }
         }
       }
@@ -4598,7 +4759,7 @@ if (startNode->Temp_ID==77) {
   //populate the center nodes of the new block
   for (k=kCenterMin;k<=kCenterMax;k++) for (j=jCenterMin;j<=jCenterMax;j++) for (i=iCenterMin;i<=iCenterMax;i++) {
     nd=getCenterNodeLocalNumber(i,j,k);
-    ptrCenterNode=CenterNodeMap[i-iCenterMin][j-jCenterMin][k-kCenterMin];
+    ptrCenterNode=CenterNodeMap(i-iCenterMin,j-jCenterMin,k-kCenterMin);
     if (ptrCenterNode==NULL) {
       //generate the coordinates of the new node
       x[0]=xminBlock[0]+(i+0.5)*dxBlock[0];
@@ -4628,7 +4789,7 @@ if (startNode->Temp_ID==77) {
 #endif
 }
 
-
+_TARGET_HOST_ _TARGET_DEVICE_
 void DeallocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k;
   cCornerNode *ptrCornerNode;
@@ -4691,6 +4852,7 @@ void DeallocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 
 
 //===================================================================
+_TARGET_HOST_ _TARGET_DEVICE_
 bool deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,iMax,jMax,kMax,iMin,jMin,kMin,nDownNode;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode,*neibNode; 
@@ -4806,13 +4968,13 @@ if (startNode->Temp_ID==1169) {
           if (_MESH_DIMENSION_==3) *DiagnospticMessageStream << ", " << (xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*kk);
           *DiagnospticMessageStream << std::endl;*/
 
-          fprintf(DiagnospticMessageStream,"$PREFIX:neibNode->Temp_ID=%i, neibNode->RefinmentLevel=%i\n",neibNode->Temp_ID,neibNode->RefinmentLevel);
+          printf("$PREFIX:neibNode->Temp_ID=%i, neibNode->RefinmentLevel=%i\n",neibNode->Temp_ID,neibNode->RefinmentLevel);
 
           //coordinates of the missing node
-          fprintf(DiagnospticMessageStream,"$PREFIX:Coordinates of the missing node: x=%e",(xMissing[0]=upNode->xmin[0]+(upNode->xmax[0]-upNode->xmin[0])/double(_BLOCK_CELLS_X_)*ii));
-          if (_MESH_DIMENSION_>=2) fprintf(DiagnospticMessageStream,", %e",(xMissing[1]=upNode->xmin[1]+(upNode->xmax[1]-upNode->xmin[1])/double(_BLOCK_CELLS_Y_)*jj));
-          if (_MESH_DIMENSION_==3) fprintf(DiagnospticMessageStream,", %e",(xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*kk));
-          fprintf(DiagnospticMessageStream,"\n");
+          printf("$PREFIX:Coordinates of the missing node: x=%e",(xMissing[0]=upNode->xmin[0]+(upNode->xmax[0]-upNode->xmin[0])/double(_BLOCK_CELLS_X_)*ii));
+          if (_MESH_DIMENSION_>=2) printf(", %e",(xMissing[1]=upNode->xmin[1]+(upNode->xmax[1]-upNode->xmin[1])/double(_BLOCK_CELLS_Y_)*jj));
+          if (_MESH_DIMENSION_==3) printf(", %e",(xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*kk));
+          printf("\n");
 
           //find the node that contains xMissing and compare it with neibNode
           xMissingNode=findTreeNode(xMissing);
@@ -4834,7 +4996,7 @@ if (startNode->Temp_ID==1169) {
 
           ndMissingNode=findCornerNodeIndex(xMissing,iMissingNode,jMissingNode,kMissingNode,xMissingNode); 
 //          *DiagnospticMessageStream << "$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=" << iMissingNode << ", " << jMissingNode << ", " << kMissingNode << ", ndMissingNode=" << ndMissingNode << std::endl;
-          fprintf(DiagnospticMessageStream,"$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=%i, %i, %i, ndMissingNode=%i\n",iMissingNode,jMissingNode,kMissingNode,ndMissingNode);
+          printf("$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=%i, %i, %i, ndMissingNode=%i\n",iMissingNode,jMissingNode,kMissingNode,ndMissingNode);
 
 
 
@@ -4940,13 +5102,13 @@ if (newCenterNode->Temp_ID==88861) {
           if (_MESH_DIMENSION_==3) *DiagnospticMessageStream << ", " << (xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*(kk+0.5));
           *DiagnospticMessageStream << std::endl;*/
 
-          fprintf(DiagnospticMessageStream,"$PREFIX:neibNode->Temp_ID=%i, neibNode->RefinmentLevel=%i\n",neibNode->Temp_ID,neibNode->RefinmentLevel);
+          printf("$PREFIX:neibNode->Temp_ID=%i, neibNode->RefinmentLevel=%i\n",neibNode->Temp_ID,neibNode->RefinmentLevel);
 
           //coordinates of the missing node
-          fprintf(DiagnospticMessageStream,"$PREFIX:Coordinates of the missing node: x=%e",(xMissing[0]=upNode->xmin[0]+(upNode->xmax[0]-upNode->xmin[0])/double(_BLOCK_CELLS_X_)*(ii+0.5)));
-          if (_MESH_DIMENSION_>=2) fprintf(DiagnospticMessageStream,", %e",(xMissing[1]=upNode->xmin[1]+(upNode->xmax[1]-upNode->xmin[1])/double(_BLOCK_CELLS_Y_)*(jj+0.5)));
-          if (_MESH_DIMENSION_==3) fprintf(DiagnospticMessageStream,", %e",(xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*(kk+0.5)));
-          fprintf(DiagnospticMessageStream,"\n");
+          printf("$PREFIX:Coordinates of the missing node: x=%e",(xMissing[0]=upNode->xmin[0]+(upNode->xmax[0]-upNode->xmin[0])/double(_BLOCK_CELLS_X_)*(ii+0.5)));
+          if (_MESH_DIMENSION_>=2) printf(", %e",(xMissing[1]=upNode->xmin[1]+(upNode->xmax[1]-upNode->xmin[1])/double(_BLOCK_CELLS_Y_)*(jj+0.5)));
+          if (_MESH_DIMENSION_==3) printf(", %e",(xMissing[2]=upNode->xmin[2]+(upNode->xmax[2]-upNode->xmin[2])/double(_BLOCK_CELLS_Z_)*(kk+0.5)));
+          printf("\n");
 
           //find the node that contains xMissing and compare it with neibNode
           xMissingNode=findTreeNode(xMissing);
@@ -4968,7 +5130,7 @@ if (newCenterNode->Temp_ID==88861) {
 
           ndMissingNode=findCenterNodeIndex(xMissing,iMissingNode,jMissingNode,kMissingNode,xMissingNode);
 //          *DiagnospticMessageStream << "$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=" << iMissingNode << ", " << jMissingNode << ", " << kMissingNode << ", ndMissingNode=" << ndMissingNode << std::endl;
-          fprintf(DiagnospticMessageStream,"$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=%i, %i, %i, ndMissingNode=%i\n",iMissingNode,jMissingNode,kMissingNode,ndMissingNode);
+          printf("$PREFIX:The (i,j,k) index of the missing node in 'xMissingNode': (i,j,k)=%i, %i, %i, ndMissingNode=%i\n",iMissingNode,jMissingNode,kMissingNode,ndMissingNode);
 
 
           exit(__LINE__,__FILE__,"Blocks's corner node is not defined");
@@ -5332,6 +5494,7 @@ if (newCenterNode->Temp_ID==88861) {
 
 */
 
+_TARGET_HOST_ _TARGET_DEVICE_
 bool splitTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k;
 
@@ -6190,6 +6353,7 @@ if (startNode->Temp_ID==15) {
 
 
   //reset the node's 'nodeProcessedFlag' 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void resetNodeProcessedFlag(bool resetMaxRefinmentLevel=true) {
     long int nMemoryBank,nTotalMemoryBanks,nnode;
 
@@ -6882,6 +7046,7 @@ if (CallsCounter==83) {
 
 
   //create a list that connects all blocks located at the bottom of the graph's branches
+  _TARGET_HOST_ _TARGET_DEVICE_
   void CreateBottomBranchNodeList(cTreeNodeAMR<cBlockAMR>  *startNode) {
     if (startNode==rootTree) BranchBottomNodeList=NULL;
 
@@ -7495,8 +7660,8 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 #endif
                   }
                   else {
-	            if ((iNode==_BLOCK_CELLS_X_)|(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
-                      //the point is at the 'right' boundary of a block -> formally 'belongs' to the neib block 
+                    if ((iNode==_BLOCK_CELLS_X_)|(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
+                      //the point is at the 'right' boundary of a block -> formally 'belongs' to the neib block
                       cTreeNodeAMR<cBlockAMR> *neibNode;
 
                       neibNode=findTreeNode(xNode,startNode);
@@ -7531,11 +7696,11 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
                           centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
                           break;
                         default:
-                          exit(__LINE__,__FILE__,"error: out of range"); 
+                          exit(__LINE__,__FILE__,"error: out of range");
                         }
                       }
                     }
-                    else { 
+                    else {
                       centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,startNode,nMaxCenterInterpolationCoefficients);
                     }
                   }
@@ -9328,6 +9493,7 @@ nMPIops++;
   }
 
   //calcualte the coorfinate frame on a face of a block
+  _TARGET_HOST_ _TARGET_DEVICE_
   void GetBlockFaceCoordinateFrame_3D(double *x0,double *e0,double *e1,int nface,cTreeNodeAMR<cBlockAMR>* startNode) {
     int nd0,nd1,nd2,idim;
     double *xmin,*xmax;
@@ -9572,6 +9738,7 @@ nMPIops++;
 
 */
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void InitCellMeasure_ResetToZero(cTreeNodeAMR<cBlockAMR>* startNode) {
 #if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
     int i,j,k;
@@ -10070,7 +10237,6 @@ nMPIops++;
     return res;
   }
 
-
   void InitCellMeasureBlock(cTreeNodeAMR<cBlockAMR>* startNode) {
        double *xNodeMin,*xNodeMax,Measure,xCellMin[3],xCellMax[3],dx=0.0,dy=0.0,dz=0.0,xTotalMin[3]={0.0,0.0,0.0},xTotalMax[3]={0.0,0.0,0.0};
        long int i,j,k,nd;
@@ -10367,6 +10533,7 @@ nMPIops++;
   };
   */
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cTreeNodeAMR<cBlockAMR>* findAMRnodeWithID(cAMRnodeID node) {
     int Level,i,j,k,nDownNode;
     cTreeNodeAMR<cBlockAMR>* res=rootTree;
@@ -10406,6 +10573,7 @@ nMPIops++;
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void GetAMRnodeID(cAMRnodeID& node,cTreeNodeAMR<cBlockAMR>* startNode) {
     int Level,i,j,k,nDownNode,nDownNodes;
     cTreeNodeAMR<cBlockAMR>* upNode;
@@ -12605,6 +12773,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
     int BlockCornerNodeSendMaskLength,BlockCenterNodeSendMaskLength;
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     cParallelBlockDataExchangeData() {
       SendNodeTableLength=NULL,RecvNodeTableLength=NULL;
       SendNodeTable=NULL,RecvNodeTable=NULL;
@@ -13280,45 +13449,45 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     }
 
     //connection through edges
-    for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) if ((neibNode=node->GetNeibEdge(iedge,i))!=NULL) {
+    for (iedge=0;iedge<12;iedge++) for (i=0;i<2;i++) if ((neibNode=node->GetNeibEdge(iedge,i,this))!=NULL) {
       switch (iedge) {
       case 0:
-        if (neibNode->GetNeibEdge(2,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(2,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 1:
-        if (neibNode->GetNeibEdge(3,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(3,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 2:
-        if (neibNode->GetNeibEdge(0,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(0,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 3:
-        if (neibNode->GetNeibEdge(1,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(1,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 4:
-        if (neibNode->GetNeibEdge(6,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(6,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 5:
-        if (neibNode->GetNeibEdge(7,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(7,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 6:
-        if (neibNode->GetNeibEdge(4,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(4,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 7:
-        if (neibNode->GetNeibEdge(5,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(5,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
 
       case 8:
-        if (neibNode->GetNeibEdge(10,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(10,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 9:
-        if (neibNode->GetNeibEdge(11,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(11,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 10:
-        if (neibNode->GetNeibEdge(8,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(8,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       case 11:
-        if (neibNode->GetNeibEdge(9,i)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
+        if (neibNode->GetNeibEdge(9,i,this)!=node) exit(__LINE__,__FILE__,"Error: block connectivity is not correct");
         break;
       }
     }
@@ -13893,6 +14062,101 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       return res;
     }
 
+
+   //grerate mesh tree descriptor
+  void CreateTreeDescriptor(cSplitTable* &TreeDescriptor,int &TreeDescriptorLength) {
+    list<cSplitTable> TreeDescriptorList;
+    list<cSplitTable>::iterator it;
+    int cnt;
+    std::function<void(cTreeNodeAMR<cBlockAMR>*)> ProcessBlock;
+
+    ProcessBlock =  [&] (cTreeNodeAMR<cBlockAMR>* bl) -> void {
+      cSplitTable t;
+
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++)  if (bl->downNode[nd]!=NULL) {
+        t.SplitTable[nd]=1;
+      } else {
+        t.SplitTable[nd]=0;
+      }
+
+      TreeDescriptorList.push_back(t);
+
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (t.SplitTable[nd]==1) ProcessBlock(bl->downNode[nd]);
+    }; 
+
+    TreeDescriptorLength=0;
+    ProcessBlock(rootTree);
+
+    TreeDescriptorLength=TreeDescriptorList.size();
+    TreeDescriptor=new cSplitTable[TreeDescriptorLength];
+
+    for (cnt=0,it=TreeDescriptorList.begin();it!=TreeDescriptorList.end();it++,cnt++) TreeDescriptor[cnt]=*it;
+  }
+
+  void ReleaseTreeDescriptor(cSplitTable* &TreeDescriptor) {
+    delete [] TreeDescriptor;
+
+    TreeDescriptor=NULL;
+  }
+
+  _TARGET_HOST_ _TARGET_DEVICE_ 
+  void BuildTreeWithDescriptor(double *xmin, double *xmax,cSplitTable* TreeDescriptor, int TreeDescriptorLength) {
+
+    //init mesh 
+    init(xmin,xmax,NULL); 
+
+    //create the tree
+    class cProcessBlock {
+    public:
+    int TreeDescriptorIndex;
+    cSplitTable* TreeDescriptor;
+    cMeshAMRgeneric *mesh;
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    cProcessBlock(cSplitTable* t0,cMeshAMRgeneric *t1) {
+      TreeDescriptorIndex=0;
+      TreeDescriptor=t0;
+      mesh=t1;
+    }
+
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    void DoIt(cTreeNodeAMR<cBlockAMR>* bl) {
+      cSplitTable t;
+      bool split_flag=false;
+
+      t=TreeDescriptor[TreeDescriptorIndex++];
+
+      //determine whether the block need to ne split
+      for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (t.SplitTable[nd]==1) {
+        split_flag=true;
+        break;
+      }
+
+      if (split_flag==true) {
+        //the block need to be split; go to the next level
+        bool FoundDownBlock=false;
+
+        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++)  if (bl->downNode[nd]!=NULL) {
+          FoundDownBlock=true;
+          break;
+        }
+
+        if (FoundDownBlock==false) {
+          //the block is not split yet -> split it
+          mesh->splitTreeNode(bl);
+        }
+
+        //go the the next level of the tree
+        for (int nd=0;nd<(1<<_MESH_DIMENSION_);nd++) if (bl->downNode[nd]!=NULL) DoIt(bl->downNode[nd]);
+      }
+    } 
+    } ProcessBlock(TreeDescriptor,this);
+
+
+    ProcessBlock.DoIt(rootTree);  
+  }
+
 };
 
 
@@ -13903,15 +14167,15 @@ template <typename T>
 unsigned char cTreeNodeAMR<T>::FlagTableStatusVector=0;
 
 
-#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_ 
+//#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_OFF_ 
 //in case no NASTRAN surface are use -> make the pointes static so thy do not occupy any memory as members of class cTreeNodeAMR 
 
-template <typename T>
-typename cTreeNodeAMR<T>::cCutFaceListDescriptor* cTreeNodeAMR<T>::neibCutFaceListDescriptorList=NULL;
+//template <typename T>
+//typename cTreeNodeAMR<T>::cCutFaceListDescriptor* cTreeNodeAMR<T>::neibCutFaceListDescriptorList=NULL;
 
-template <typename T>
-typename cTreeNodeAMR<T>::cCutFaceListDescriptor*  cTreeNodeAMR<T>::neibCutFaceListDescriptorList_temp=NULL;
-#endif
+//template <typename T>
+//typename cTreeNodeAMR<T>::cCutFaceListDescriptor*  cTreeNodeAMR<T>::neibCutFaceListDescriptorList_temp=NULL;
+//#endif
 
 
 #if _AMR__CUT_CELL__MODE_ ==  _AMR__CUT_CELL__MODE__OFF_

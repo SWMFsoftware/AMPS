@@ -289,11 +289,11 @@ void newMars::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double 
   //stored the interpolated data in the associated data buffer
     if (_C_SPEC_>=0) {
         *(_C_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_C_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
     if (_O_SPEC_>=0) {
         *(_O_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()))=InterpoaltedLocalOxigenProductionRate;
-        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
+        *(_O_SPEC_+(double*)(PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=TheoreticalOxigenInjectionRate;
     }
 
   *((double*)(maxLocalCellOxigenProductionRateOffset+CenterNode->GetAssociatedDataBufferPointer()))=maxTheoreticalLocalInjectionRate;
@@ -507,7 +507,7 @@ long int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kC
        /*
 //test the particle injection at a particular altitude
 double xTest[3]={0.0,0.0,200.0E3+_RADIUS_(_TARGET_)};
-static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh.findTreeNode(xTest);
+static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh->findTreeNode(xTest);
 
 if (testNode!=node) return 0;
 ModelParticleInjectionRate=0.1/LocalTimeStep;
@@ -759,7 +759,7 @@ long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kC
     /*
      //test the particle injection at a particular altitude
      double xTest[3]={0.0,0.0,200.0E3+_RADIUS_(_TARGET_)};
-     static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh.findTreeNode(xTest);
+     static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *testNode=PIC::Mesh::mesh->findTreeNode(xTest);
      
      if (testNode!=node) return 0;
      ModelParticleInjectionRate=0.1/LocalTimeStep;
@@ -1170,7 +1170,7 @@ double newMars::IonizationHotO(PIC::ParticleBuffer::byte *modelParticleData) {
     double x[3]={0.0,0.0,0.0},v[3]={0.0,0.0,0.0};
     double localTimeStep;
     int spec;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     
     PIC::ParticleBuffer::GetV(v,modelParticleData);
     PIC::ParticleBuffer::GetX(x,modelParticleData);
@@ -1220,7 +1220,7 @@ double newMars::TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllo
     double v[3]={0.0,0.0,0.0};
     double localTimeStep;
     //int spec;
-//    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+//    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     PIC::ParticleBuffer::byte *modelParticleData;
 
     //get the particle data

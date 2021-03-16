@@ -5,8 +5,12 @@
 #include "pic.h"
 
 //int PIC::nTotalSpecies=0;
-int PIC::nTotalThreadsOpenMP=1;
-int PIC::ThisThread=0,PIC::nTotalThreads=1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::nTotalThreadsOpenMP=1;
+
+
+int PIC::CPU::ThisThread=0,PIC::CPU::nTotalThreads=1;
+_TARGET_DEVICE_ int PIC::GPU::ThisThread=0;
+_TARGET_DEVICE_ int PIC::GPU::nTotalThreads=1;
 
 //the list containing the functions used to exchange the run time execution statistics
 vector<PIC::fExchangeExecutionStatistics> PIC::ExchangeExecutionStatisticsFunctions;
@@ -17,7 +21,9 @@ vector<PIC::IndividualModelSampling::fSamplingProcedure> PIC::IndividualModelSam
 vector<PIC::IndividualModelSampling::fPrintVariableList> PIC::IndividualModelSampling::PrintVariableList;
 vector<PIC::IndividualModelSampling::fInterpolateCenterNodeData> PIC::IndividualModelSampling::InterpolateCenterNodeData;
 vector<PIC::IndividualModelSampling::fPrintSampledData> PIC::IndividualModelSampling::PrintSampledData;
-vector<PIC::IndividualModelSampling::fRequestStaticCellData> PIC::IndividualModelSampling::RequestStaticCellData,PIC::IndividualModelSampling::RequestStaticCellCornerData;
+
+vector<PIC::IndividualModelSampling::fRequestStaticCellData> PIC::IndividualModelSampling::RequestStaticCellData;
+amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> _TARGET_DEVICE_ *PIC::IndividualModelSampling::RequestStaticCellCornerData;
 vector<PIC::Datum::cDatumSampled*>PIC::IndividualModelSampling::DataSampledList;
 
 //generic particle transformation
@@ -44,8 +50,8 @@ int PIC::ModelTestRun::nTotalIteraction=-1;
 char PIC::UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_]="/Users/dborovik/AMPS_dev/new_sampling_generic/AMPS/data/input/SEP3D";
 
 //the default value of the status vector
-unsigned char PIC::Mesh::cDataCornerNode::FlagTableStatusVector=7; ///0b111;
-unsigned char PIC::Mesh::cDataCenterNode::FlagTableStatusVector=3; ///0b011;
+unsigned char PIC::Mesh::cDataCornerNode_static_data::FlagTableStatusVector=7; ///0b111;
+unsigned char PIC::Mesh::cDataCenterNode_static_data::FlagTableStatusVector=3; ///0b011;
 
 //timing of the code execution
 double PIC::RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::ParticleMovingTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::FieldSolverTime=0.0;

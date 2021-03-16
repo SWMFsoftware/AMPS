@@ -160,15 +160,23 @@ public:
   int nVirtualBlocks,nRealBlocks;
   
   //void reset the data of the obsect to the default state
+  _TARGET_HOST_ _TARGET_DEVICE_ 
   void DeleteDataBuffers();
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   void Reset(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   void Reset();
 
   //reset indexing of the nodes
+  _TARGET_HOST_ _TARGET_DEVICE_
   void ResetUnknownVectorIndex(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
   //build the matrix
   void(*GetStencil)(int,int,int,int,cMatrixRowNonZeroElementTable*,int&,double&,cRhsSupportTable*,int&,cRhsSupportTable*,int&,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*); 
+
+  _TARGET_HOST_ 
   void BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node));
 
   //re-build the matrix after the domain re-decomposition operation
@@ -196,6 +204,7 @@ public:
   void ExchangeIntermediateUnknownsData(double *x);
 
   //matrix/vector multiplication
+  _TARGET_HOST_
   void MultiplyVector(double *p,double *x,int length);
 
   //call the linear system solver, and unpack the solution afterward
@@ -220,6 +229,7 @@ public:
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ResetUnknownVectorIndex(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     PIC::Mesh::cDataBlockAMR *block=NULL;
@@ -227,7 +237,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 
     if ((block=node->block)!=NULL) {
       for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-        if ((CenterNode=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k)))!=NULL) {
+        if ((CenterNode=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k)))!=NULL) {
           CenterNode->LinearSolverUnknownVectorIndex=-1;
         }
       }
@@ -241,6 +251,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::BuildMatrix(void(*f)(int i,int j,int k,int iVar,cMatrixRowNonZeroElementTable* Set,int& NonZeroElementsFound,double& Rhs,cRhsSupportTable* RhsSupportTable_CornerNodes,int &RhsSupportLength_CornerNodes,cRhsSupportTable* RhsSupportTable_CenterNodes,int &RhsSupportLength_CenterNodes,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node)) {
 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
@@ -261,7 +272,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
   GetStencil=f;
 
   //allocate the counter of the data points to be recieve
-  int RecvDataPointCounter[PIC::nTotalThreads];
+  int *RecvDataPointCounter=new int [PIC::nTotalThreads];
   for (thread=0;thread<PIC::nTotalThreads;thread++) RecvDataPointCounter[thread]=0;
 
   list<cLinearSystemCenterNodeDataRequestListElement> *DataRequestList=new list<cLinearSystemCenterNodeDataRequestListElement> [PIC::nTotalThreads];  //changed
@@ -274,7 +285,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -327,31 +338,31 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
         for (int ii=0;ii<NonZeroElementsFound;ii++) {
           MatrixRowNonZeroElementTable[ii].Node=node;
 
-          if ((MatrixRowNonZeroElementTable[ii].i>=iMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)!=NULL)) {
+          if ((MatrixRowNonZeroElementTable[ii].i>=iMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(1,0,0,PIC::Mesh::mesh)!=NULL)) {
             MatrixRowNonZeroElementTable[ii].i-=_BLOCK_CELLS_X_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(1,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(1,0,0,PIC::Mesh::mesh);
           }
           else if (MatrixRowNonZeroElementTable[ii].i<0) {
             MatrixRowNonZeroElementTable[ii].i+=_BLOCK_CELLS_X_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(0,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(0,0,0,PIC::Mesh::mesh);
           }
 
-          if ((MatrixRowNonZeroElementTable[ii].j>=jMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)!=NULL)) {
+          if ((MatrixRowNonZeroElementTable[ii].j>=jMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(3,0,0,PIC::Mesh::mesh)!=NULL)) {
             MatrixRowNonZeroElementTable[ii].j-=_BLOCK_CELLS_Y_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(3,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(3,0,0,PIC::Mesh::mesh);
           }
           else if (MatrixRowNonZeroElementTable[ii].j<0) {
             MatrixRowNonZeroElementTable[ii].j+=_BLOCK_CELLS_Y_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(2,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(2,0,0,PIC::Mesh::mesh);
           }
 
-          if ((MatrixRowNonZeroElementTable[ii].k>=kMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)!=NULL)) {
+          if ((MatrixRowNonZeroElementTable[ii].k>=kMax) && (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(5,0,0,PIC::Mesh::mesh)!=NULL)) {
             MatrixRowNonZeroElementTable[ii].k-=_BLOCK_CELLS_Z_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(5,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(5,0,0,PIC::Mesh::mesh);
           }
           else if (MatrixRowNonZeroElementTable[ii].k<0) {
             MatrixRowNonZeroElementTable[ii].k+=_BLOCK_CELLS_Z_;
-            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(4,0,0,&PIC::Mesh::mesh);
+            MatrixRowNonZeroElementTable[ii].Node=MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(4,0,0,PIC::Mesh::mesh);
           }
 
           if (MatrixRowNonZeroElementTable[ii].Node==NULL) {
@@ -362,7 +373,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
           if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
             bool BoundaryBlock=false;
 
-            for (int iface=0;iface<6;iface++) if (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+            for (int iface=0;iface<6;iface++) if (MatrixRowNonZeroElementTable[ii].Node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
               //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
               BoundaryBlock=true;
               break;
@@ -384,7 +395,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
         NewRow->iVar=iVar;
         NewRow->node=node;
         NewRow->Rhs=rhs;
-        NewRow->CenterNode=node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+        NewRow->CenterNode=node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
         NewRow->nNonZeroElements=NonZeroElementsFound;
 
 
@@ -404,24 +415,24 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
           el=NewRow->Elements+iElement;
 
           if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
-            CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
+            CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
           }
           else  {
             if (MatrixRowNonZeroElementTable[iElement].BoundaryNodeFlag==false) {
-              CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
+              CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
             }
             else {
               if (MatrixRowNonZeroElementTable[iElement].Node->Thread!=PIC::ThisThread) {
-                CenterNode=MatrixRowNonZeroElementTable[iElement].OriginalNode->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
+                CenterNode=MatrixRowNonZeroElementTable[iElement].OriginalNode->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
               }
               else {
-                CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
+                CenterNode=MatrixRowNonZeroElementTable[iElement].Node->block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k));
               }
             }
           }
 
           el->CenterNode=CenterNode;
-          el->CenterNodeID=PIC::Mesh::mesh.getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k);
+          el->CenterNodeID=PIC::Mesh::mesh->getCenterNodeLocalNumber(MatrixRowNonZeroElementTable[iElement].i,MatrixRowNonZeroElementTable[iElement].j,MatrixRowNonZeroElementTable[iElement].k);
           el->UnknownVectorIndex=-1;
           el->MatrixElementValue=MatrixRowNonZeroElementTable[iElement].MatrixElementValue;
           el->node=MatrixRowNonZeroElementTable[iElement].Node;
@@ -485,7 +496,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
             cLinearSystemCenterNodeDataRequestListElement DataRequestListElement;
             cAMRnodeID NodeID;
 
-            PIC::Mesh::mesh.GetAMRnodeID(NodeID,el->node);
+            PIC::Mesh::mesh->GetAMRnodeID(NodeID,el->node);
             DataRequestListElement.CenterNodeID=el->CenterNodeID;
             DataRequestListElement.NodeID=NodeID;
 
@@ -578,7 +589,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
       SendExchangeBufferElementIndex[To]=new int[SendExchangeBufferLength[To]];
 
       for (int ii=0;ii<SendExchangeBufferLength[To];ii++) {
-        node=PIC::Mesh::mesh.findAMRnodeWithID(ExchangeList[ii].NodeID);
+        node=PIC::Mesh::mesh->findAMRnodeWithID(ExchangeList[ii].NodeID);
         CenterNode=node->block->GetCenterNode(ExchangeList[ii].CenterNodeID);
 
         SendExchangeBufferElementIndex[To][ii]=CenterNode->LinearSolverUnknownVectorIndex;
@@ -593,6 +604,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
   delete [] DataExchangeTableCounter;
 
   delete [] DataRequestList;
+  delete [] RecvDataPointCounter;
 
 }
 
@@ -637,13 +649,20 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::DeleteDataBuffers() {
+  #ifdef __CUDA_ARCH__ 
+  using namespace PIC::GPU;
+  #else
+  using namespace PIC::CPU;
+  #endif
+
   if (RecvExchangeBuffer!=NULL) {
     //clear the row stack
     MatrixRowStack.resetStack();
 
     //deallocate the allocated data buffers
-    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    for (int thread=0;thread<nTotalThreads;thread++) {
       if (RecvExchangeBuffer!=NULL) if (RecvExchangeBuffer[thread]!=NULL) {
         delete [] RecvExchangeBuffer[thread];
       }
@@ -682,16 +701,25 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Reset() {
-  Reset(PIC::Mesh::mesh.rootTree);
+
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::mesh;
+
+
+  Reset(mesh->rootTree);
 }
 
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_ _TARGET_DEVICE_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::Reset(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
 
-  if ((startNode==PIC::Mesh::mesh.rootTree)&&(RecvExchangeBuffer!=NULL)) DeleteDataBuffers();
+  cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>  *mesh=PIC::Mesh::mesh;
+
+
+  if ((startNode==mesh->rootTree)&&(RecvExchangeBuffer!=NULL)) DeleteDataBuffers();
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     PIC::Mesh::cDataBlockAMR *block=NULL;
@@ -699,7 +727,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 
     if ((block=startNode->block)!=NULL) {
       for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-        if ((CenterNode=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k)))!=NULL) {
+        if ((CenterNode=block->GetCenterNode(mesh->getCenterNodeLocalNumber(i,j,k)))!=NULL) {
           CenterNode->LinearSolverUnknownVectorIndex=-1;
         }
       }
@@ -746,6 +774,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
 template <class cCenterNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_
 void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
   cMatrixRow* row;
   cStencilElement StencilElement,*Elements;
@@ -905,7 +934,7 @@ void cLinearSystemCenterNode<cCenterNode, NodeUnknownVariableVectorLength,MaxSte
   if (fPackBlockData!=NULL) {
     switch (_PIC_BC__PERIODIC_MODE_) {
     case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh.ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+      PIC::Mesh::mesh->ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
       break;
 
     case _PIC_BC__PERIODIC_MODE_ON_:

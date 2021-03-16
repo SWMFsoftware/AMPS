@@ -46,6 +46,9 @@ public:
     faces.clear();
   }
 
+  _TARGET_HOST_
+  ~cNASTRANmesh() {}
+
   double rnd() {
     return ((double)(random())+1.0)/2147483649.0;
   }

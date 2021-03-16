@@ -40,7 +40,7 @@ void Exosphere::Sampling::ReferenceGroundBasedObservations::OutputSampledData(Sp
   int n;
 
   double domainCharacteristicSize=0.0;
-  for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh.xGlobalMax[idim]),fabs(PIC::Mesh::mesh.xGlobalMin[idim])),domainCharacteristicSize);
+  for (int idim=0;idim<DIM;idim++) domainCharacteristicSize=max(max(fabs(PIC::Mesh::mesh->xGlobalMax[idim]),fabs(PIC::Mesh::mesh->xGlobalMin[idim])),domainCharacteristicSize);
 
   taaStartInterval=Exosphere::OrbitalMotion::GetTAA(etStartInterval);
   taaFinishInterval=Exosphere::OrbitalMotion::GetTAA(etFinishInterval);

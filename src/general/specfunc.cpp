@@ -115,20 +115,32 @@ void PrintErrorLog(long int nline, const char* fname, const char* message) {
 
 //===================================================
 //use: exit(__LINE__,__FILE__, "mesage")
+_TARGET_HOST_ _TARGET_DEVICE_
 void exit(long int nline, const char* fname, const char* msg) {
   char str[1000];
   int t1,t2;
 
   UnpackExitErrorCode(t1,t2); 
 
-  if (msg==NULL) sprintf(str," exit: line=%ld, file=%s (error code=%i.%i)\n",nline,fname,t1,t2);
-  else sprintf(str," exit: line=%ld, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
+  if (msg==NULL) {
+    printf("$PREFIX: exit: line=%ld, file=%s (error code=%i.%i)\n",nline,fname,t1,t2);
+  }
+  else {
+    printf("$PREFIX: exit: line=%ld, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
+  }
 
-  printf("$PREFIX:%s",str);
-
+  #ifndef __CUDA_ARCH__  
   PrintErrorLog(str);
 
-  MPI_Abort(MPI_COMM_WORLD,t2);
+  switch (_GENERIC_EXIT_FUNCTION_MODE_) {
+  case  _GENERIC_EXIT_FUNCTION__MPI_ABORT_: 
+    MPI_Abort(MPI_COMM_WORLD,t2);
+    break;
+  default:
+    exit(0);
+  }
+  #endif
+
   exit(0);
 }
 

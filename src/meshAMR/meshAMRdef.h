@@ -171,7 +171,7 @@
 
 
 //a stack class for the mesh elements
-#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 100
+#define _STACK_DEFAULT_BUFFER_BUNK_SIZE_ 10
 #define _STACK_DEFAULT_BUFFER_LIST_SIZE_ 100
 
 //macro definition for the real and ghost blocks 
@@ -201,10 +201,12 @@ using namespace std;
 //the exist function with printing of the error message
 class cAMRexit {
 public:
+  _TARGET_HOST_ _TARGET_DEVICE_
   void exit(const long int nline, const char* fname,const char* msg=NULL) {
     char str[1000];
     int mpiInitFlag,ThisThread;
 
+#ifndef __CUDA_ARCH__
     if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,fname);
     else sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
 
@@ -226,17 +228,34 @@ public:
     printf("$PREFIX:file=%s, line=%ld\n",fname,nline);
     printf("$PREFIX:%s\n\n",msg);
 
-    fclose(errorlog);
+    fclose(errorlog); 
     ::exit(1);
+#else
+    if (msg==NULL) printf(" exit: line=%ld, file=%s\n",nline,fname);
+    else printf(" exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
+
+    asm("trap;");
+#endif
   }
 
-  virtual ~cAMRexit() { }
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cAMRexit() {}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  ~cAMRexit() {}
 };
 
 //the stack class to store the data structure of the mesh
 class cStackElementBase {
 public: 
   int stack_element_id; 
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  cStackElementBase() {}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
+  ~cStackElementBase() {}
+
 };
 
 
@@ -262,10 +281,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;   
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
     long int i,j;
 
@@ -273,10 +294,15 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList' 
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
+
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
-      T*** tmpStackList=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T*** tmpStackList=NULL; //=new T**[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_malloc_managed<T**>(tmpStackList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
       MemoryAllocation+=sizeof(T**)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
 
       i=0;
@@ -286,10 +312,14 @@ public:
       for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-        delete [] dataBufferList;
+//        delete [] dataBufferList;
+        amps_free_managed(dataBufferList);
+
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
 
-        delete [] elementStackList;
+//        delete [] elementStackList;
+        amps_free_managed(elementStackList);
+
         MemoryAllocation-=sizeof(T**)*dataBufferListSize;
       }
 
@@ -299,22 +329,38 @@ public:
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
-    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+#ifdef __CUDA_ARCH__
+//if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) || (cudaThreadLimitMallocHeapSize>sizeof(T)) ) {
+//  printf("set _STACK_DEFAULT_BUFFER_BUNK_SIZE_ below %i\n",cudaThreadLimitMallocHeapSize/sizeof(T));  
+//  exit(__LINE__,__FILE__);
+//}
+#endif
+
+
+//  dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+//amps_new<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_); 
+
+
+  int size=_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T);
+//  dataBufferList[dataBufferListPointer]=(T*)malloc(size);
+  amps_malloc_managed<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);  
+
 
     if (dataBufferList[dataBufferListPointer]==NULL) {
-      char msg[1000];
-
-      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
-      exit(__LINE__,__FILE__,msg);
+      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
+      exit(__LINE__,__FILE__);
     } 
 
-    elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+//  for (int i=0;i<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;i++) new(dataBufferList[dataBufferListPointer]+i)T();
+
+//    elementStackList[dataBufferListPointer]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
     if (elementStackList[dataBufferListPointer]==NULL) {
-      char msg[1000];
-
-      sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
-      exit(__LINE__,__FILE__,msg);
+      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
+      exit(__LINE__,__FILE__);
     }
 
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -356,6 +402,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void resetStack() {
     long int databank,offset;
 
@@ -365,6 +412,7 @@ public:
   }
  
   //get the entry pointer and counting number
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetEntryCountingNumber(T* ptr) {
     return (ptr!=NULL) ? ptr->stack_element_id : -1;
 
@@ -383,6 +431,7 @@ public:
 */
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetEntryPointer(long int countingNumber) {
     long int nMemoryBank,offset;
 
@@ -394,17 +443,24 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
-      delete [] dataBufferList[i];
-      delete [] elementStackList[i];
+     // delete [] dataBufferList[i];
+     // delete [] elementStackList[i];
+
+      amps_free_managed(dataBufferList[i]);
+      amps_free_managed(elementStackList[i]);
 
       MemoryAllocation-=(sizeof(T)+sizeof(T*))*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     if (dataBufferList!=NULL) {
-      delete [] dataBufferList;
-      delete [] elementStackList; 
+      //delete [] dataBufferList;
+      //delete [] elementStackList; 
+
+      amps_free_managed(dataBufferList);
+      amps_free_managed(elementStackList);
 
       MemoryAllocation-=(sizeof(T*)+sizeof(T**))*dataBufferListSize;
     }
@@ -442,19 +498,23 @@ public:
     //allocate the stack's buffers
     long int i,j,elementCountingNumber;
 
-    elementStackList=new T** [dataBufferListSize];
+   // elementStackList=new T** [dataBufferListSize];
+    amps_malloc_managed<T**>(elementStackList,dataBufferListSize);
     MemoryAllocation+=sizeof(T**)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) elementStackList[i]=NULL;
 
-    dataBufferList=new T*[dataBufferListSize];
+ //   dataBufferList=new T*[dataBufferListSize];
+    amps_malloc_managed<T*>(dataBufferList,dataBufferListSize);
     MemoryAllocation+=sizeof(T*)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) dataBufferList[i]=NULL;
 
     for (i=0;i<dataBufferListPointer;i++) {
-      dataBufferList[i]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      //dataBufferList[i]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      amps_new_managed<T>(dataBufferList[i],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
-      elementStackList[i]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+      //elementStackList[i]=new T*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+      amps_new_managed<T*>(elementStackList[i],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T*)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
@@ -466,12 +526,14 @@ public:
   }
    
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     initMemoryBlock();
   }
     
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -484,22 +546,31 @@ public:
 
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cAMRstack() {
     explicitConstructor();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int capasity() {return nMaxElements-elementStackPointer;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int totalSize() {return nMaxElements;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {return elementStackPointer;}
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetDataBufferListPointer() {
     return dataBufferListPointer;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetDataBufferList(int iMemoryBank) {
     return dataBufferList[iMemoryBank];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement(bool ForceElementNumberLimit=true) {
     T* res;
 
@@ -530,6 +601,7 @@ public:
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void deleteElement(T* delElement) {
     if (sizeof(T)==0) return;
 
@@ -539,7 +611,7 @@ public:
     delElement->cleanDataBuffer();
 
     if (elementStackPointer==0) {
-      cout << "$PREFIX:ERROR: stack pointer is 0 (line=" << __LINE__ << ", file=" << __FILE__ << ")" << endl;
+      printf("$PREFIX:ERROR: stack pointer is 0 (line=%i, file=%s)\n",__LINE__,__FILE__);
     } 
 
     long int elementStackBank,offset;
@@ -565,6 +637,7 @@ private:
 public:
   cAMRstack<T> BaseElementStack;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     T t;
 
@@ -603,16 +676,24 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
-    T t;
+//    T *t=new T[1];
+//    
+//
 
-    if (t.AssociatedDataLength()!=0) {
+    T *t=(T*)malloc(sizeof(T)); 
+  
+    if (t->AssociatedDataLength()!=0) {
       long int i=0,j=0;
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
       if (BaseElementStack.dataBufferListPointer==BaseElementStack.dataBufferListSize) {
-        char** tmpDataList=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
-        char*** tmpStackList=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        char** tmpDataList=NULL; //=new char*[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        amps_malloc_managed<char*>(tmpDataList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
+        char*** tmpStackList=NULL; //=new char**[BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+        amps_malloc_managed<char**>(tmpStackList,BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
         BaseElementStack.MemoryAllocation+=sizeof(char*)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
         BaseElementStack.MemoryAllocation+=sizeof(char**)*(BaseElementStack.dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
@@ -622,8 +703,11 @@ public:
         for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
         if (associatedDataBufferList!=NULL) {
-          delete [] associatedDataBufferList;
-          delete [] associatedDataStackList;
+//          delete [] associatedDataBufferList;
+          amps_free_managed(associatedDataBufferList);
+
+     //     delete [] associatedDataStackList;
+          amps_free_managed(associatedDataStackList);
 
           BaseElementStack.MemoryAllocation-=(sizeof(char*)+sizeof(char**))*BaseElementStack.dataBufferListSize;
         }
@@ -633,9 +717,11 @@ public:
       }
 
       //allocate a new memory chunk for the element's data and update the stack list
-      long int offset=t.AssociatedDataLength();
+      long int offset=t->AssociatedDataLength();
 
-      associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+     // associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
+
+      amps_malloc_managed<char>(associatedDataBufferList[BaseElementStack.dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset);
 
       if (associatedDataBufferList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
@@ -644,7 +730,8 @@ public:
       } 
 
 
-      associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      //associatedDataStackList[BaseElementStack.dataBufferListPointer]=new char*[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      amps_malloc_managed<char*>(associatedDataStackList[BaseElementStack.dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
       if (associatedDataStackList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
@@ -660,8 +747,13 @@ public:
 
     //init the buffer for the stack object itself
     BaseElementStack.initMemoryBlock() ;
+
+    //delete thetemp buffer 
+    //delete [] t;
+    free(t);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void CheckAssociatedDataConsistency() {
     int iElement,elementStackBank,offset;
 
@@ -676,6 +768,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement() {
     T* res;
 
@@ -708,6 +801,7 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     T t;
     long int offset=t.AssociatedDataLength();
@@ -731,20 +825,24 @@ public:
     BaseElementStack.clear();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     BaseElementStack.clear();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {
     return BaseElementStack.usedElements();
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T*** GetElementStackList() {
     return BaseElementStack.elementStackList;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     associatedDataStackList=NULL;
     associatedDataBufferList=NULL;
@@ -753,18 +851,22 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
    cAssociatedDataAMRstack() {
       explicitConstructor();
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    int GetDataBufferListPointer() {
      return BaseElementStack.dataBufferListPointer;
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    T* GetDataBufferList(int iMemoryBank) {
      return BaseElementStack.dataBufferList[iMemoryBank];
    }
 
+   _TARGET_HOST_ _TARGET_DEVICE_
    void deleteElement(T* delElement) {
      if (delElement->AssociatedDataLength()!=0) {
        long int elementStackBank,offset;
@@ -816,10 +918,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
     long int i,j;
 
@@ -827,7 +931,10 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //=new T*[dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+
+      amps_malloc_managed<T*>(tmpDataList,dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
       i=0;
@@ -837,7 +944,9 @@ public:
       for (j=0;j<_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-        delete [] dataBufferList;
+//        delete [] dataBufferList;
+        amps_free_managed(dataBufferList);
+
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
       }
 
@@ -846,7 +955,18 @@ public:
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
-    dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+#ifdef __CUDA_ARCH__
+if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) || (cudaThreadLimitMallocHeapSize>sizeof(T)) ) {
+  printf("set _STACK_DEFAULT_BUFFER_BUNK_SIZE_ below %i\n",cudaThreadLimitMallocHeapSize/sizeof(T));
+  exit(__LINE__,__FILE__);
+}
+#endif
+
+ //   dataBufferList[dataBufferListPointer]=new T[_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+    amps_new_managed<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
+
     MemoryAllocation+=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
     nMaxElements+=_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -854,6 +974,7 @@ public:
   }
 
   //get the entry pointer and counting number
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int GetEntryCountingNumber(T* ptr) {
     long int nMemoryBank,res=-1;
 
@@ -868,6 +989,7 @@ public:
     return -1;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* GetEntryPointer(long int countingNumber) {
     long int nMemoryBank,offset;
 
@@ -879,15 +1001,20 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
-      delete [] dataBufferList[i];
+  //    delete [] dataBufferList[i];
+
+      amps_free_managed(dataBufferList[i]);
 
       MemoryAllocation-=sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     if (dataBufferList!=NULL) {
-      delete [] dataBufferList;
+    //  delete [] dataBufferList;
+
+      amps_free_managed(dataBufferList);
 
       MemoryAllocation-=sizeof(T*)*dataBufferListSize;
     }
@@ -932,12 +1059,14 @@ public:
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void init() {
     clear();
     initMemoryBlock();
   }
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -950,15 +1079,22 @@ public:
 
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   cAMRheap() {
     explicitConstructor();
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int capasity() {return nMaxElements-elementHeapPointer;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int totalSize() {return nMaxElements;}
+
+  _TARGET_HOST_ _TARGET_DEVICE_
   long int usedElements() {return elementHeapPointer;}
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   T* newElement() {
     T* res;
 

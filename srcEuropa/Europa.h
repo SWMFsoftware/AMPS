@@ -836,8 +836,8 @@ namespace Europa {
 
 
        //determine if the particle belongs to this processor
-       startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_GALL_EPHIOD_EUROPA,startNode);
-       if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+       startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_GALL_EPHIOD_EUROPA,startNode);
+       if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
        //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_EUROPA'
        double c=0.0,rVel=0.0,lVel[3];
@@ -1048,7 +1048,7 @@ namespace Europa {
 
       double ModelParticlesInjectionRate;
 
-      if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+      if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
         for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
           startNode->GetExternalNormal(ExternalNormal,nface);
 
@@ -1065,11 +1065,11 @@ namespace Europa {
 
           if (ModelParticlesInjectionRate>0.0) {
             ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
-            PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+            PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
             while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
               //generate the new particle position on the face
-              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh.EPS;
+              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh->EPS;
 
               //generate particles' velocity
               PIC::Distribution::InjectMaxwellianDistribution(v,Thermal_OPlus_BulkVelocity,Thermal_OPlus_Temperature,ExternalNormal,_O_PLUS_THERMAL_SPEC_,-1);
@@ -1101,10 +1101,10 @@ namespace Europa {
             ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
 
-            PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+            PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
             while (true) {    /////((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
               //generate the new particle position on the face
-              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh.EPS;
+              for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim]-ExternalNormal[idim]*PIC::Mesh::mesh->EPS;
 
 
               MagnetosphericInjection(Speed, RelWeight);
@@ -1447,10 +1447,10 @@ if (v[0]*x[0]+v[1]*x[1]+v[2]*x[2]<0) {
     PIC::Mesh::cDataCenterNode *CenterNode;
     double E[3],B[3];
 
-    if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL,startNode);
+    if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
-      if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -1640,7 +1640,7 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newParticleNode;
 
       for (int idim=0;idim<3;idim++) x[idim]=xInit[idim]+rnd()*(xFinal[idim]-xInit[idim]);
-      newParticleNode=PIC::Mesh::mesh.findTreeNode(x,node);
+      newParticleNode=PIC::Mesh::mesh->findTreeNode(x,node);
 
 
       PIC::ParticleBuffer::CloneParticle(newParticle,ptr);
@@ -1656,6 +1656,136 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
   return ResCode;
 
 }
+
+
+  namespace UniformMaxwellian{
+
+    const double UniformSurfaceTemperature = 110.0;
+    extern cSingleVariableDiscreteDistribution<int> *SurfaceInjectionDistribution;
+    inline double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer) {
+      static bool initflag=false;
+      static double ProductionRateTable[PIC::nTotalSpecies];
+      
+      //printf("test GetTotalProductionRate\n");
+      if (initflag==false) {
+        initflag=true;
+
+        for (int s=0;s<PIC::nTotalSpecies;s++) ProductionRateTable[s]=0.0;
+
+        //init the table
+        ProductionRateTable[_O2_SPEC_]=1.0e27;
+	ProductionRateTable[_H2O_SPEC_]=1.0e27;
+	ProductionRateTable[_H2_SPEC_]=2.0e27;
+	ProductionRateTable[_OH_SPEC_]=5.81e25;
+	ProductionRateTable[_O_SPEC_]=5.81e25; 
+	ProductionRateTable[_H_SPEC_]=5.81e25;
+      }
+
+      /*
+      //catch undefined species (exepd iona injected from the boundary)
+      if ((spec!=_O_PLUS_SPEC_)&&(spec!=_N2_HOT_SPEC_)) {
+        if (ProductionRateTable[spec]<1.0) exit(__LINE__,__FILE__,"Error: the species injectino rate is not defined");
+      }
+      */
+
+      return ProductionRateTable[spec];  ///Total Flux
+    }    
+
+    inline double GetTotalProductionRate(int spec){
+      return GetTotalProductionRate(spec,0,NULL);
+    } 
+    
+    void Init_surfaceDistribution();
+
+    inline bool GenerateParticleProperties(int spec,PIC::ParticleBuffer::byte* tempParticleData,double *x_SO_OBJECT,
+                                           double *x_IAU_OBJECT,double *v_SO_OBJECT,double *v_IAU_OBJECT,double *sphereX0,
+                                           double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,
+                                           int BoundaryElementType,void *BoundaryElement) {
+
+      unsigned int idim;
+      int el;
+      double r,vbulk[3]={0.0,0.0,0.0},ExternalNormal[3];
+      //'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
+      double x_LOCAL_IAU_OBJECT[3],x_LOCAL_SO_OBJECT[3],v_LOCAL_IAU_OBJECT[3],v_LOCAL_SO_OBJECT[3];
+      int nZenithElement,nAzimuthalElement;
+      
+      if (spec!=_O2_SPEC_ && spec!=_H2O_SPEC_ && spec!=_H2_SPEC_ &&
+	  spec!=_OH_SPEC_ && spec!=_O_SPEC_ && spec!=_H_SPEC_) return false;
+      //printf("test GenerateParticleProperties\n");
+      //init surface distribution
+      Init_surfaceDistribution();
+      el=SurfaceInjectionDistribution->DistributeVariable();
+      Exosphere::Planet->GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,el);
+      Exosphere::Planet->GetSurfaceElementRandomDirection(ExternalNormal,nZenithElement,nAzimuthalElement);
+      
+    x_LOCAL_IAU_OBJECT[0]=sphereRadius*ExternalNormal[0];
+    x_LOCAL_IAU_OBJECT[1]=sphereRadius*ExternalNormal[1];
+    x_LOCAL_IAU_OBJECT[2]=sphereRadius*ExternalNormal[2];
+    
+    x_LOCAL_SO_OBJECT[0]=
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[0][0]*x_LOCAL_IAU_OBJECT[0])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[0][1]*x_LOCAL_IAU_OBJECT[1])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[0][2]*x_LOCAL_IAU_OBJECT[2]);
+    
+    x_LOCAL_SO_OBJECT[1]=
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[1][0]*x_LOCAL_IAU_OBJECT[0])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[1][1]*x_LOCAL_IAU_OBJECT[1])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[1][2]*x_LOCAL_IAU_OBJECT[2]);
+    
+    x_LOCAL_SO_OBJECT[2]=
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[2][0]*x_LOCAL_IAU_OBJECT[0])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[2][1]*x_LOCAL_IAU_OBJECT[1])+
+      (OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]*x_LOCAL_IAU_OBJECT[2]);
+
+    
+      //determine if the particle belongs to this processor
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+      if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
+      
+      PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,UniformSurfaceTemperature,ExternalNormal,spec);
+      
+      //cout << ParticleWeightCorrection << "\t"<<speed<<endl;
+
+      //transform the velocity vector to the coordinate frame 'MSGR_SO'
+      v_LOCAL_SO_OBJECT[0]=
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][0]*x_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][1]*x_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][2]*x_LOCAL_IAU_OBJECT[2])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][3]*v_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][4]*v_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[3][5]*v_LOCAL_IAU_OBJECT[2]);
+
+    v_LOCAL_SO_OBJECT[1]=
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][0]*x_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][1]*x_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][2]*x_LOCAL_IAU_OBJECT[2])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][3]*v_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][4]*v_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[4][5]*v_LOCAL_IAU_OBJECT[2]);
+
+    v_LOCAL_SO_OBJECT[2]=
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][0]*x_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][1]*x_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][2]*x_LOCAL_IAU_OBJECT[2])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][3]*v_LOCAL_IAU_OBJECT[0])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][4]*v_LOCAL_IAU_OBJECT[1])+
+        (OrbitalMotion::IAU_to_SO_TransformationMartix[5][5]*v_LOCAL_IAU_OBJECT[2]);
+
+      
+      memcpy(x_SO_OBJECT,x_LOCAL_SO_OBJECT,3*sizeof(double));
+      memcpy(x_IAU_OBJECT,x_LOCAL_IAU_OBJECT,3*sizeof(double));
+      memcpy(v_SO_OBJECT,v_LOCAL_SO_OBJECT,3*sizeof(double));
+      memcpy(v_IAU_OBJECT,v_LOCAL_IAU_OBJECT,3*sizeof(double));
+      
+      return true;
+      
+    }
+
+    double GetSurfaceElementProductionRate(int spec,int SurfaceElement,void *SphereDataPointer);
+ 
+  }
+
+
 
 
 }

@@ -17,7 +17,7 @@ bool Orbiter::UpstreamBC::BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC
    double ExternalNormal[3],ModelParticlesInjectionRate;
    int nface;
 
-   if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+   if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
      for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
        startNode->GetExternalNormal(ExternalNormal,nface);
 
@@ -44,7 +44,7 @@ long int Orbiter::UpstreamBC::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Me
    double v[3];
    double ModelParticlesInjectionRate;
 
-   if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+   if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
      ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
      LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -69,7 +69,7 @@ long int Orbiter::UpstreamBC::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Me
        if (ModelParticlesInjectionRate>0.0) {
          ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-         PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+         PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
          #pragma omp parallel default(none)  shared(ParticleWeight,PIC::BC::nInjectedParticles,PIC::BC::ParticleProductionRate,PIC::BC::ParticleMassProductionRate,nInjectedParticles,ModelParticlesInjectionRate,LocalTimeStep,x0,e0,e1,Orbiter::UpstreamBC::Velocity,Orbiter::UpstreamBC::Temperature,ExternalNormal,spec,startNode) \
@@ -150,7 +150,7 @@ double Orbiter::UpstreamBC::BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::
   //calculate the soruce rate
   double ModelParticlesInjectionRate=0.0;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);

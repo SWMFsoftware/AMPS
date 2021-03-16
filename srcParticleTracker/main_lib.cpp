@@ -77,7 +77,7 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
   static double v[3]={1.0e4,0.0,0.0};
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       ModelParticlesInjectionRate=-(v[0]*ExternalNormal[0]+v[1]*ExternalNormal[1]+v[2]*ExternalNormal[2]);
@@ -104,7 +104,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
 
   double ModelParticlesInjectionRate;
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
     LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -119,7 +119,7 @@ long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *s
       if (ModelParticlesInjectionRate>0.0) {
         ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
 
-        PIC::Mesh::mesh.GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
+        PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
 
         while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
           //generate the new particle position on the face
@@ -172,7 +172,7 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
   double ModelParticlesInjectionRate=0.0;
   static double v[3]={1.0e4,0.0,0.0};
 
-  if (PIC::Mesh::mesh.ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     for (nface=0;nface<2*DIM;nface++) if (ExternalFaces[nface]==true) {
       startNode->GetExternalNormal(ExternalNormal,nface);
       BlockSurfaceArea=startNode->GetBlockFaceSurfaceArea(nface);
@@ -204,10 +204,10 @@ void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,doub
     PIC::Mesh::cDataCenterNode *CenterNode;
     double E[3],B[3];
 
-    if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
-      startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL,startNode);
+    if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
-      if ((nd=PIC::Mesh::mesh.fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -255,45 +255,45 @@ void amps_init() {
 	}
 
 	//generate only the tree
-	PIC::Mesh::mesh.AllowBlockAllocation=false;
-	PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-	PIC::Mesh::mesh.memoryAllocationReport();
+	PIC::Mesh::mesh->AllowBlockAllocation=false;
+	PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+	PIC::Mesh::mesh->memoryAllocationReport();
 
-	if (PIC::Mesh::mesh.ThisThread==0) {
-		PIC::Mesh::mesh.buildMesh();
-		PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+	if (PIC::Mesh::mesh->ThisThread==0) {
+		PIC::Mesh::mesh->buildMesh();
+		PIC::Mesh::mesh->saveMeshFile("mesh.msh");
 		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 	}
 	else {
 		MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-		PIC::Mesh::mesh.readMeshFile("mesh.msh");
+		PIC::Mesh::mesh->readMeshFile("mesh.msh");
 	}
 
-	PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+	PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-	PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-	PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+	PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+	PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
 	//initialize the blocks
-	PIC::Mesh::mesh.AllowBlockAllocation=true;
-	PIC::Mesh::mesh.AllocateTreeBlocks();
+	PIC::Mesh::mesh->AllowBlockAllocation=true;
+	PIC::Mesh::mesh->AllocateTreeBlocks();
 
-	PIC::Mesh::mesh.memoryAllocationReport();
-	PIC::Mesh::mesh.GetMeshTreeStatistics();
+	PIC::Mesh::mesh->memoryAllocationReport();
+	PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-	PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+	PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
 	//init the volume of the cells'
-	PIC::Mesh::mesh.InitCellMeasure();
+	PIC::Mesh::mesh->InitCellMeasure();
 
 
 	//init the PIC solver
@@ -315,7 +315,7 @@ void amps_init() {
 	for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
 
 	MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-	if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+	if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
 	//init the particle buffer
 	PIC::ParticleBuffer::Init(10000000);

@@ -149,13 +149,13 @@ void Rosetta::InitGravityData(){
   double gravityAccl[3],*position;
 
   //get coordinated of the center points
-  for (node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
 
     for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
         for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-	  cell=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+	  cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 	  if (cell!=NULL) {  
 	    position=cell->GetX();
 	    nucleusGravity::gravity(gravityAccl,position);
@@ -168,13 +168,13 @@ void Rosetta::InitGravityData(){
     }
   }
 
-  for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) for (node=PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
+  for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) for (node=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];node!=NULL;node=node->nextNodeThisThread) {
       block=node->block;
 
       for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
 	for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)
 	  for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-	    cell=block->GetCenterNode(PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k));
+	    cell=block->GetCenterNode(PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k));
 	    if (cell!=NULL) {
 	      position=cell->GetX();
 	      nucleusGravity::gravity(gravityAccl,position);
@@ -365,7 +365,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   /*  int i,j,k,nd,cnt=0,spec;
   double NumberDensity;
 
-  nd=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {
@@ -533,11 +533,10 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__0_Bjorn_]=Rosetta::GetTot
      startNode=NULL;
 
      //generate a particle                                                                                             
-
      PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
      for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
-
+     
      PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
 
      flag=Rosetta::GenerateParticlePropertiesBjornNASTRAN(spec,x_SO_OBJECT,x_IAU_OBJECT,v_SO_OBJECT,v_IAU_OBJECT,sphereX0,sphereRadius,startNode,Sphere,tempParticleData);
@@ -602,10 +601,9 @@ ot defined");
   while (FluxSourceProcess[SourceProcessID]/TotalFlux<rnd());
   
   //generate a particle                                                                                             
-     PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+  PIC::ParticleBuffer::byte tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
-     for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
-
+  for (int ii=0;ii<PIC::ParticleBuffer::ParticleDataLength;ii++) tempParticleData[ii]=0;
 
   PIC::ParticleBuffer::SetI(spec,(PIC::ParticleBuffer::byte*)tempParticleData);
   
@@ -722,7 +720,7 @@ bool Rosetta::GenerateParticlePropertiesBjornNASTRAN(int spec, double *x_SO_OBJE
     
   //'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
   double x_LOCAL_IAU_OBJECT[3],x_LOCAL_SO_OBJECT[3],v_LOCAL_IAU_OBJECT[3],v_LOCAL_SO_OBJECT[3];
-  //  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh.EPS);
+  //  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,PIC::Mesh::mesh->EPS);
   CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,1e-4);
   //  CutCell::BoundaryTriangleFaces[i].GetRandomPosition(x_LOCAL_IAU_OBJECT,1.0e-1);
   for (idim=0;idim<3;idim++) ExternalNormal[idim]=CutCell::BoundaryTriangleFaces[i].ExternalNormal[idim];
@@ -753,8 +751,8 @@ bool Rosetta::GenerateParticlePropertiesBjornNASTRAN(int spec, double *x_SO_OBJE
     
 
   //determine if the particle belongs to this processor
-  startNode=PIC::Mesh::mesh.findTreeNode(x_LOCAL_SO_OBJECT,startNode);
-  if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
+  startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT,startNode);
+  if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
   
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};

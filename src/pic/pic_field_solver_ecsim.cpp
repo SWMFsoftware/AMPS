@@ -52,7 +52,7 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
-list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
+//list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedDynamicAllocateBlocks PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedInitNewBlocks PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks;
@@ -61,47 +61,47 @@ PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedFieldBC PIC::FieldSolver::
 PIC::FieldSolver::Electromagnetic::ECSIM::setE_curr_BC, PIC::FieldSolver::Electromagnetic::ECSIM::setB_center_BC,
 PIC::FieldSolver::Electromagnetic::ECSIM::setB_corner_BC;
 
-cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
-cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
+cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1> *PIC::FieldSolver::Electromagnetic::ECSIM::Solver;
+cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>  *PIC::FieldSolver::Electromagnetic::ECSIM::PoissonSolver;
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection = false;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentEOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetE_HalfTimeStep=-1;
 int PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::OffsetB_corner;
 
-int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JyOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::JzOffsetIndex;
-int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::ExOffsetIndex=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::EyOffsetIndex=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::EzOffsetIndex=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JxOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JyOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::JzOffsetIndex;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::BxOffsetIndex=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::ByOffsetIndex=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::BzOffsetIndex=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::MassMatrixOffsetIndex;
 
 int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeOldIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::divEIndex;
 int PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex;
 
-int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUy_=2;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUz_=3;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUx_=4;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUy_=5;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
-int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::Rho_=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUx_=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUy_=2;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUz_=3;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUx_=4;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUy_=5;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUzUz_=6;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUy_=7;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUyUz_=8;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::FieldSolver::Electromagnetic::ECSIM::RhoUxUz_=9;
 int *PIC::FieldSolver::Electromagnetic::ECSIM::SpeciesDataIndex=NULL;
 
-cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil[3];
-cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil[3][3];
-cStencil::cStencilData PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[3][3];
+cStencil::cStencilData *PIC::FieldSolver::Electromagnetic::ECSIM::LaplacianStencil;
+cStencil::cStencilData **PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil;
+cStencil::cStencilData **PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375;
 
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::SolveTime(_PIC_TIMER_MODE_HRES_);
 PIC::Debugger::cTimer PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::UpdateBTime(_PIC_TIMER_MODE_HRES_);
@@ -135,33 +135,33 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print() {
 //location of the solver's data in the corner node associated data vector
 int PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetBegin=-1,PIC::FieldSolver::Electromagnetic::ECSIM::CornerNodeAssociatedDataOffsetLast=-1;
 
-double dtTotal = 0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
-double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
-double epsilon0=8.85418782e-12;
-double mu0=1.25663706e-6;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double dtTotal = 0.0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::cDt=0.0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::theta =0.5;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double epsilon0=8.85418782e-12;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mu0=1.25663706e-6;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_  
-double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
+_TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed =1/sqrt(epsilon0*mu0)*1e2;//in cm/s
 #endif
 
 double TotalParticleEnergy=0.0;
 double TotalWaveEnergy=0.0;
 
 #if _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
-double E_conv = 1;
-double B_conv = 1;
-double mass_conv =1.0/_AMU_;
-double charge_conv=1.0/ElectronCharge;
-double length_conv=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv =1.0/_AMU_;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=1.0/ElectronCharge;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1;
 #elif _PIC_FIELD_SOLVER_INPUT_UNIT_== _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
-double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
-double B_conv = 1e4;
-double mass_conv = 1e3;
-double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
-double length_conv=1e2; 
+_TARGET_DEVICE_ _CUDA_MANAGED_ double E_conv = 1e6/PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed; //convert from SI to cgs
+_TARGET_DEVICE_ _CUDA_MANAGED_ double B_conv = 1e4;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double mass_conv = 1e3;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double charge_conv=0.1*PIC::FieldSolver::Electromagnetic::ECSIM::LightSpeed;
+_TARGET_DEVICE_ _CUDA_MANAGED_ double length_conv=1e2;
 #endif
 
 
@@ -375,12 +375,28 @@ void PIC::FieldSolver::Init() {
 //Electric field is in the corner nodes
 void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
 
+  //allocate data used by the field solver
+  Solver=new cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_, _PIC_STENCIL_NUMBER_+1,16,1,1>;
+  PoissonSolver=new cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0>;
+
+  LaplacianStencil=new cStencil::cStencilData[3];
+
+  GradDivStencil=new cStencil::cStencilData*[3];
+  GradDivStencil[0]=new cStencil::cStencilData[9];
+  GradDivStencil[1]=Electromagnetic::ECSIM::GradDivStencil[0]+3;
+  GradDivStencil[2]=Electromagnetic::ECSIM::GradDivStencil[0]+6;
+
+  GradDivStencil375=new cStencil::cStencilData*[3];
+  GradDivStencil375[0]=new cStencil::cStencilData[9];
+  GradDivStencil375[1]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+3;
+  GradDivStencil375[2]=PIC::FieldSolver::Electromagnetic::ECSIM::GradDivStencil375[0]+6;
+
   InitDiscritizationStencil();
 
-  CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+  CornerNodeAssociatedDataOffsetBegin=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
   //register the linear system solver with the core 
-  PIC::RegisterLinearSolver(&Solver); 
+  PIC::RegisterLinearSolver(Solver); 
 
   //set function for timing of the field solver
   PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable.push_back(CumulativeTiming::Print);
@@ -390,8 +406,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   }
   else {
     PIC::CPLR::DATAFILE::Offset::MagneticField.active=true;
-    PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;   
-    PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
+    PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;   
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
     CurrentBOffset =0;
     PrevBOffset = 3*sizeof(double);
   }
@@ -400,44 +416,44 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   netChargeNewIndex = 7;
   divEIndex = 8;
   phiIndex = 9;
-  PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=4*sizeof(double);
+  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=4*sizeof(double);
 
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
     exit(__LINE__,__FILE__,"Error: reinitialization of the electric field offset");
   }
   else {
     PIC::CPLR::DATAFILE::Offset::ElectricField.active=true;
-    PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset=PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
     CurrentEOffset=0;
-    PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::ElectricField.nVars*sizeof(double);
+    PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=2*PIC::CPLR::DATAFILE::Offset::ElectricField.nVars*sizeof(double);
     OffsetE_HalfTimeStep=3*sizeof(double);
   }
 
   //allocate memory for Jx,Jy,Jz
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=3*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=3*sizeof(double);
   //J starts from PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset
   JxOffsetIndex = 6;
   JyOffsetIndex = 7;
   JzOffsetIndex = 8;
   
   //allocate memory for 81 mass matrix elements
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=243*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=243*sizeof(double);
   MassMatrixOffsetIndex = 9;
 
 #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_  
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength+=10*sizeof(double)*PIC::nTotalSpecies;
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength+=10*sizeof(double)*PIC::nTotalSpecies;
   SpeciesDataIndex = new int[PIC::nTotalSpecies];
   for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) 
     SpeciesDataIndex[iSp]=9+243+iSp*10; // 10 vars for each species
 #endif
   
 #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-  OffsetB_corner = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength-
+  OffsetB_corner = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength-
     PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-  PIC::Mesh::cDataCornerNode::totalAssociatedDataLength += 6*sizeof(double);
+  PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength += 6*sizeof(double);
 #endif
 
-  PIC::Mesh::mesh.GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
+  PIC::Mesh::mesh->GetCenterNodesInterpolationCoefficients=PIC::Mesh::GetCenterNodesInterpolationCoefficients;
      
   PIC::Mesh::AddVaraibleListFunction(PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeVariableList);
   PIC::Mesh::PrintDataCenterNode.push_back(PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeData);
@@ -448,7 +464,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::Init() {
   
   //  PIC::FieldSolver::Electromagnetic::ECSIM::Init_IC(); 
 
-  CornerNodeAssociatedDataOffsetLast=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength-1; //CornerNodeAssociatedDataOffsetLast still belongs to the solver
+  CornerNodeAssociatedDataOffsetLast=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength-1; //CornerNodeAssociatedDataOffsetLast still belongs to the solver
 }
 
 //set the initial conditions
@@ -514,7 +530,7 @@ void  PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default() {
     PIC::Parallel::UpdateGhostBlockData();
     break;
   default:
-    PIC::Mesh::mesh.ParallelBlockDataExchange();
+    PIC::Mesh::mesh->ParallelBlockDataExchange();
   }
 }
 
@@ -720,7 +736,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
           MatrixRowNonZeroElementTable[iElement].i=iNode;
           MatrixRowNonZeroElementTable[iElement].j=jNode;
           MatrixRowNonZeroElementTable[iElement].k=kNode;
-            // already initialized in LinearSystemSolver.h
+            // already initialized in LinearSystemSolver->h
           MatrixRowNonZeroElementTable[iElement].MatrixElementValue=0.0;
           MatrixRowNonZeroElementTable[iElement].iVar=iVarIndex;
           MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]=0.0;
@@ -873,29 +889,29 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
     if ((i0>=iMax) && (nodeTemp!=NULL)) {
       i0-=_BLOCK_CELLS_X_;
-      nodeTemp=nodeTemp->GetNeibFace(1,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(1,0,0,PIC::Mesh::mesh);
     }
     else if (i0<0 && nodeTemp!=NULL) {
       i0+=_BLOCK_CELLS_X_;
-      nodeTemp=nodeTemp->GetNeibFace(0,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(0,0,0,PIC::Mesh::mesh);
     }
 
     if ((j0>=jMax) && (nodeTemp!=NULL)) {
       j0-=_BLOCK_CELLS_Y_;
-      nodeTemp=nodeTemp->GetNeibFace(3,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(3,0,0,PIC::Mesh::mesh);
     }
     else if (j0<0 && nodeTemp!=NULL) {
       j0+=_BLOCK_CELLS_Y_;
-      nodeTemp=nodeTemp->GetNeibFace(2,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(2,0,0,PIC::Mesh::mesh);
     }
 
     if ((k0>=kMax) && (nodeTemp!=NULL)) {
       k0-=_BLOCK_CELLS_Z_;
-      nodeTemp=nodeTemp->GetNeibFace(5,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(5,0,0,PIC::Mesh::mesh);
     }
     else if (k0<0 && nodeTemp!=NULL) {
       k0+=_BLOCK_CELLS_Z_;
-      nodeTemp=nodeTemp->GetNeibFace(4,0,0,&PIC::Mesh::mesh);
+      nodeTemp=nodeTemp->GetNeibFace(4,0,0,PIC::Mesh::mesh);
     }
 
     double xlocal[3];
@@ -1377,7 +1393,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -1463,7 +1479,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -1529,7 +1545,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
 	    //iPar=i;jPar=j;kPar=k;
 	    //ParticleNode = node;
 
-	    //  LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+	    //  LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
             //cell=block->GetCenterNode(LocalCellNumber);
 	    double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
 	    int spec;
@@ -1570,419 +1586,410 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
 
 
 // update J and MassMatrix
-void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
-  //the table of cells' particles
-  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  long int *FirstCellParticleTable;
-  //PIC::ParticleBuffer::byte *ParticleData;
-  PIC::Mesh::cDataCenterNode *cell;
-  PIC::Mesh::cDataBlockAMR *block;
-  long int LocalCellNumber;    
 
-  CumulativeTiming::UpdateJMassMatrixTime.Start();
-  CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
-  
-  double ParticleEnergy=0.0;
-  double cfl_process[PIC::nTotalSpecies];
-  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) cfl_process[iSp]=0.0;
 
-  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
-  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+class cCellData {
+public:
 
-  if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-    PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
-  }
-
-  double qom[PIC::nTotalSpecies];
-  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)/(PIC::MolecularData::GetMass(iSp)*mass_conv);
-
-  class cCellData {
+  class cCornerData {
   public:
-
-    class cCornerData {
-    public:
-      double *CornerJ_ptr;
-      double CornerJ[3];
-      double *CornerMassMatrix_ptr;
-      double CornerMassMatrix[243];
-      double *SpecData_ptr;
-      double SpecData[10*_TOTAL_SPECIES_NUMBER_];
-      PIC::Mesh::cDataCornerNode *CornerNode;
-
-      void clean() {
-        int i;
-
-        for (i=0;i<3;i++) CornerJ[i]=0.0;
-        for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
-        for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
-      }
-
-      void add(cCornerData* p) {
-        int i;
-        double *ptr;
-
-        for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
-        for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
-        for (i=0,ptr=p->SpecData;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]+=ptr[i];
-      }
-    };
-
-
-    cCornerData CornerData[8];
-    double ParticleEnergy;
-    double cflCell[PIC::nTotalSpecies];
+    double *CornerJ_ptr;
+    double CornerJ[3];
+    double *CornerMassMatrix_ptr;
+    double CornerMassMatrix[243];
+    double *SpecData_ptr;
+    double SpecData[10*_TOTAL_SPECIES_NUMBER_];
+    PIC::Mesh::cDataCornerNode *CornerNode;
 
     void clean() {
-      ParticleEnergy=0.0;
+      int i;
 
-      for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) cflCell[iSp]=0.0;
-
-      for (int i=0;i<8;i++) CornerData[i].clean();
+      for (i=0;i<3;i++) CornerJ[i]=0.0;
+      for (i=0;i<243;i++) CornerMassMatrix[i]=0.0;
+      for (i=0;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]=0.0;
     }
 
-    void Add(cCellData *p) {
-      ParticleEnergy+=p->ParticleEnergy;
+    void add(cCornerData* p) {
+      int i;
+      double *ptr;
 
-      class cSumData {
-      public:
-        cCornerData *target,*source;
-
-        void sum() {
-          target->add(source);
-        }
-      };
-
-      cSumData DataTable[8];
-      std::thread tTable[8];
-      int icor;
-
-      for (icor=0;icor<8;icor++) {
-        DataTable[icor].source=p->CornerData+icor;
-        DataTable[icor].target=this->CornerData+icor;
-
-        tTable[icor]=std::thread(&cSumData::sum,DataTable+icor);
-      }
-
-      for (icor=0;icor<8;icor++) {
-        tTable[icor].join();
-      }
-    }
-
-    cCellData() {
-      clean();
+      for (i=0,ptr=p->CornerJ;i<3;i++) CornerJ[i]+=ptr[i];
+      for (i=0,ptr=p->CornerMassMatrix;i<243;i++) CornerMassMatrix[i]+=ptr[i];
+      for (i=0,ptr=p->SpecData;i<10*_TOTAL_SPECIES_NUMBER_;i++) SpecData[i]+=ptr[i];
     }
   };
 
 
+  cCornerData CornerData[8];
+  double ParticleEnergy;
+  double cflCell[PIC::nTotalSpecies];
 
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  std::function<bool(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,cCellData*,int,int,double*,double*,int,PIC::ParticleBuffer::byte*)> ProcessCell; 
+  void clean() {
+    ParticleEnergy=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) cflCell[iSp]=0.0;
+
+    for (int i=0;i<8;i++) CornerData[i].clean();
+  }
+
+  void Add(cCellData *p) {
+    ParticleEnergy+=p->ParticleEnergy;
+
+    class cSumData {
+    public:
+      cCornerData *target,*source;
+
+      void sum() {
+        target->add(source);
+      }
+    };
+
+    cSumData DataTable[8];
+    std::thread tTable[8];
+    int icor;
+
+    for (icor=0;icor<8;icor++) {
+      DataTable[icor].source=p->CornerData+icor;
+      DataTable[icor].target=this->CornerData+icor;
+
+      tTable[icor]=std::thread(&cSumData::sum,DataTable+icor);
+    }
+
+    for (icor=0;icor<8;icor++) {
+      tTable[icor].join();
+    }
+  }
+
+  cCellData() {
+    clean();
+  }
+};
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+_TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_MagneticField=-1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int Offset_ElectricField=-1;
+
 
 #if  _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) -> bool {
-    double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
-    double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
-    bool res=false;
 
 
+
+_TARGET_HOST_ _TARGET_DEVICE_
+bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,
+    double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
+  double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+  double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  bool res=false;
+
+
+  int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,21,18,19},
+          {3,5,2,0,21,23,20,18},{9,11,17,15,0,2,8,6},{10,9,15,16,1,0,6,7},
+          {13,12,9,10,4,3,0,1},{12,14,11,9,3,5,2,0}};
+
+
+#ifndef __CUDA_ARCH__
+  int MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  int ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+#else
+  int MagneticField_RelativeOffset=DataIn.MagneticField_RelativeOffset;
+  int ElectricField_RelativeOffset=DataIn.ElectricField_RelativeOffset;
+#endif
 
 /*
-  int  num_cores=sysconf(_SC_NPROCESSORS_ONLN);
-  int code_id=rnd()*num_cores;
+int  num_cores=sysconf(_SC_NPROCESSORS_ONLN);
+int code_id=rnd()*num_cores;
 
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(code_id,&cpuset);
+cpu_set_t cpuset;
+CPU_ZERO(&cpuset);
+CPU_SET(code_id,&cpuset);
 
-  pthread_t current_thread=pthread_self();
+pthread_t current_thread=pthread_self();
 
-  pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
+pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 */
 
-
-
-    auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-
-    if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
-      for (int k=kCellIn-1;k<=kCellIn+1;k++) {
-        for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
-
-          #pragma ivdep
-          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
-            int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
-            if (!node->block->GetCenterNode(LocalCenterId)) continue;
-            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
-            double * ptr =  (double*)(offset+CurrentBOffset);
-            B_Center[LocalCenterId]=ptr;
-          }
-        }
-      }
-    }
-
-
-    auto ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-
-    if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
-      for (int k=kCellIn-1;k<=kCellIn+1;k++) {
-        for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
-
-          #pragma ivdep
-          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
-            int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
-            if (!node->block->GetCornerNode(LocalCornerId)) continue;
-            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
-            double * ptr =  (double*)(offset+CurrentBOffset);
-            B_corner[LocalCornerId]=ptr;
-          }
-        }
-      }
-    }
-
-    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
-
-    PIC::Mesh::cDataBlockAMR *block=node->block;
-
-    long int *FirstCellParticleTable=block->FirstCellParticleTable;
-    double CellVolume=1;
-    double dx[3];
-
-    auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-
-    #pragma ivdep
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
-
-    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
-
-    long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
-    double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
-
-
-    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
-
-    if (ptr!=-1) {
-      res=true;
-
-      // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
-      double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
-      int spec;
-      double Jg[8][3];
-
-      for (int ii=0; ii<8; ii++){
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
+    for (int k=kCellIn-1;k<=kCellIn+1;k++) {
+      for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
         #pragma ivdep
-        for (int jj=0; jj<3; jj++){
-          Jg[ii][jj]=0.0;
+        for (int i=iCellIn-1;i<=iCellIn+1;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
+          double * ptr =  (double*)(offset+CurrentBOffset);
+          B_Center[LocalCenterId]=ptr;
         }
       }
+    }
+  }
 
-      double MassMatrix_GGD[8][8][9];
-      for (int iCorner=0;iCorner<8;iCorner++){
-        for(int jCorner=0;jCorner<8;jCorner++){
 
-          #pragma ivdep
-          for (int idim=0;idim<9;idim++){
-            MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
-          }
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
+    for (int k=kCellIn-1;k<=kCellIn+1;k++) {
+      for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+
+        #pragma ivdep
+        for (int i=iCellIn-1;i<=iCellIn+1;i++) {
+          int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+          if (!node->block->GetCornerNode(LocalCornerId)) continue;
+          char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
+          double * ptr =  (double*)(offset+CurrentBOffset);
+          B_corner[LocalCornerId]=ptr;
         }
       }
+    }
+  }
+
+  int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+
+  PIC::Mesh::cDataBlockAMR *block=node->block;
+
+  long int *FirstCellParticleTable=block->FirstCellParticleTable;
+  double CellVolume=1;
+  double dx[3];
+
+  auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+
+  #pragma ivdep
+  for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+
+  for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+
+  long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
+  double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
 
 
-      double SpeciesData_GI[8][PIC::nTotalSpecies*10];
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
 
-      if( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-        for (int ii=0; ii<8; ii++){
-          for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
-            SpeciesData_GI[ii][kk]=0.0;
-          }
-        }
-      }
+  if (ptr!=-1) {
+    res=true;
 
-      long int ptrNext=ptr;
-      PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
-      ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
+    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
+    double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
+    int spec;
+    double Jg[8][3];
 
-      char *offset[8];
-
-      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    for (int ii=0; ii<8; ii++){
 
       #pragma ivdep
-      for (int ii=0; ii<8; ii++) {
-        CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
-        CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
+      for (int jj=0; jj<3; jj++){
+        Jg[ii][jj]=0.0;
+      }
+    }
 
-        #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
-        CellData->CornerData[ii].SpecData_ptr=((double*)offset[ii])+SpeciesDataIndex[0];
-        #endif
+    double MassMatrix_GGD[8][8][9];
+    for (int iCorner=0;iCorner<8;iCorner++){
+      for(int jCorner=0;jCorner<8;jCorner++){
+
+        #pragma ivdep
+        for (int idim=0;idim<9;idim++){
+          MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
+        }
+      }
+    }
+
+
+    double SpeciesData_GI[8][PIC::nTotalSpecies*10];
+
+    if( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+      for (int ii=0; ii<8; ii++){
+        for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
+          SpeciesData_GI[ii][kk]=0.0;
+        }
+      }
+    }
+
+    long int ptrNext=ptr;
+    PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
+    ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
+
+    char *offset[8];
+
+    offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+
+    #pragma ivdep
+    for (int ii=0; ii<8; ii++) {
+      CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
+      CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
+
+      #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+      CellData->CornerData[ii].SpecData_ptr=((double*)offset[ii])+SpeciesDataIndex[0];
+      #endif
+    }
+
+    int cnt=0, particleNumber[PIC::nTotalSpecies];
+
+    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
+
+    #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+    PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+    //interpolate the magnetic field from center nodes to particle location
+    //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+
+    #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+    PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+    //interpolate the magnetic field from center nodes to particle location
+    //MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+    #endif
+
+    PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
+
+    while (ptrNext!=-1) {
+      double LocalParticleWeight;
+      ptr=ptrNext;
+      ParticleData=ParticleDataNext;
+
+      spec=PIC::ParticleBuffer::GetI(ParticleData);
+      PIC::ParticleBuffer::GetV(vInit,ParticleData);
+      PIC::ParticleBuffer::GetX(xInit,ParticleData);
+      LocalParticleWeight=block->GetLocalParticleWeight(spec);
+      LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+      ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+
+      if (ptrNext!=-1) {
+        ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
+        //PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
       }
 
-      int cnt=0, particleNumber[PIC::nTotalSpecies];
+      if (cnt%size_pack==id_pack) {
+        double temp[3], B[3]={0.0,0.0,0.0};
 
-      for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
+        #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+        //PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
+        //interpolate the magnetic field from center nodes to particle location
+        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
 
-      #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-      PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
-      //interpolate the magnetic field from center nodes to particle location
-      //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+        #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+        //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
+        //interpolate the magnetic field from center nodes to particle location
+        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
+        #endif
 
-      #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-      PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
-      //interpolate the magnetic field from center nodes to particle location
-      //MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
-      #endif
+        int Length=MagneticFieldStencil.Length;
+        double *Weight_table=MagneticFieldStencil.Weight;
+        int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
 
-      PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
+        for (int iStencil=0;iStencil<Length;iStencil++) {
+          double *B_temp,Weight=Weight_table[iStencil];
+          int LocalCellID=LocalCellID_table[iStencil];
 
-      while (ptrNext!=-1) {
-        double LocalParticleWeight;
-        ptr=ptrNext;
-        ParticleData=ParticleDataNext;
+          switch(_PIC_FIELD_SOLVER_B_MODE_) {
+          case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
+            B_temp=B_Center[LocalCellID];
+            break;
+          case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
+             B_temp = B_corner[LocalCellID];
+             break;
+          defaut:
+             exit(__LINE__,__FILE__,"Error: the mode is unknown");
+          }
 
-        spec=PIC::ParticleBuffer::GetI(ParticleData);
-        PIC::ParticleBuffer::GetV(vInit,ParticleData);
-        PIC::ParticleBuffer::GetX(xInit,ParticleData);
-        LocalParticleWeight=block->GetLocalParticleWeight(spec);
-        LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-        ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
-
-        if (ptrNext!=-1) {
-          ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
-          //PIC::ParticleBuffer::PrefertchParticleData_Basic(ParticleDataNext);
+          #pragma ivdep
+          for (int idim=0;idim<3;idim++) B[idim]+=Weight*B_temp[idim];
         }
 
-        if (cnt%size_pack==id_pack) {
-          double temp[3], B[3]={0.0,0.0,0.0};
+        //convert from SI to cgs
+        #pragma ivdep
+        for (int idim=0; idim<3; idim++){
+          B[idim] *= B_conv;
+          vInit[idim] *= length_conv;
+        }
 
-          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-          //PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-          PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
+        double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
+        double WeightPG[8];
+        double c0,QdT_over_2m_squared;
+        double mass;
 
-          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
-          #endif
+        chargeQ = ChargeTable[spec]*charge_conv;
+        mass= MassTable[spec]*mass_conv;
+        //effect of particle weight
 
-          int Length=MagneticFieldStencil.Length;
-          double *Weight_table=MagneticFieldStencil.Weight;
-          int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
+        chargeQ *= LocalParticleWeight;
+        mass *= LocalParticleWeight;
 
-          for (int iStencil=0;iStencil<Length;iStencil++) {
-            double *B_temp,Weight=Weight_table[iStencil];
-            int LocalCellID=LocalCellID_table[iStencil];
+        QdT_over_m=chargeQ*dtTotal/mass;
+        QdT_over_2m=0.5*QdT_over_m;
+        QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
 
-            switch(_PIC_FIELD_SOLVER_B_MODE_) {
-            case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
-              B_temp=B_Center[LocalCellID];
-              break;
-            case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
-               B_temp = B_corner[LocalCellID];
-               break;
-            defaut:
-               exit(__LINE__,__FILE__,"Error: the mode is unknown");
-            }
 
-            #pragma ivdep
-            for (int idim=0;idim<3;idim++) B[idim]+=Weight*B_temp[idim];
-          }
+        //to calculate alpha, mdv/dt = q(E+v cross B/c)
+        #pragma ivdep
+        for (int idim=0; idim<3; idim++){
+          B[idim] /= LightSpeed; //divided by the speed of light
+        }
 
-          //convert from SI to cgs
+
+        double BB[3][3],P[3];
+
+        for (int ii=0;ii<3;ii++) {
+          P[ii]=-QdT_over_2m*B[ii];
+
           #pragma ivdep
-          for (int idim=0; idim<3; idim++){
-            B[idim] *= B_conv;
-            vInit[idim] *= length_conv;
+          for (int jj=0;jj<=ii;jj++) {
+            BB[ii][jj]=QdT_over_2m_squared*B[ii]*B[jj];
+            BB[jj][ii]=BB[ii][jj];
           }
-          
-          double QdT_over_m,QdT_over_2m,alpha[9],chargeQ;
-          double WeightPG[8];
-          double c0,QdT_over_2m_squared;
-          double mass;
+        }
 
-          chargeQ = ChargeTable[spec]*charge_conv;
-          mass= MassTable[spec]*mass_conv;
-          //effect of particle weight
+        c0=1.0/(1.0+QdT_over_2m_squared*(B[0]*B[0]+B[1]*B[1]+B[2]*B[2]));
 
-          chargeQ *= LocalParticleWeight;
-          mass *= LocalParticleWeight;
+        alpha[0]=c0*(1.0+BB[0][0]);
+        alpha[1]=c0*(-P[2]+BB[0][1]);
+        alpha[2]=c0*(P[1]+BB[0][2]);
 
-          QdT_over_m=chargeQ*dtTotal/mass;
-          QdT_over_2m=0.5*QdT_over_m;
-          QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
+        alpha[3]=c0*(P[2]+BB[1][0]);
+        alpha[4]=c0*(1.0+BB[1][1]);
+        alpha[5]=c0*(-P[0]+BB[1][2]);
 
+        alpha[6]=c0*(-P[1]+BB[2][0]);
+        alpha[7]=c0*(P[0]+BB[2][1]);
+        alpha[8]=c0*(1.0+BB[2][2]);
 
-          //to calculate alpha, mdv/dt = q(E+v cross B/c)
+        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
+
+        double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
+
+        vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
+        ParticleEnergyCell += 0.5*mass*vsqr_par;
+
+        //compute alpha*vInit
+        double vRot[3]={0.0,0.0,0.0};
+
+        for (int iDim =0; iDim<3; iDim++){
           #pragma ivdep
-          for (int idim=0; idim<3; idim++){
-            B[idim] /= LightSpeed; //divided by the speed of light
+          for (int jj=0; jj<3; jj++){
+            vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
           }
+        }
 
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double t=chargeQ*WeightPG[iCorner];
+          double *Jg_iCorner=Jg[iCorner];
 
-          double BB[3][3],P[3];
-
-          for (int ii=0;ii<3;ii++) {
-            P[ii]=-QdT_over_2m*B[ii];
-
-            #pragma ivdep
-            for (int jj=0;jj<=ii;jj++) {
-              BB[ii][jj]=QdT_over_2m_squared*B[ii]*B[jj];
-              BB[jj][ii]=BB[ii][jj];
-            }
+          #pragma ivdep
+          for (int iDim=0; iDim<3; iDim++){
+            //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
+            Jg_iCorner[iDim]+=t*vRot[iDim];
           }
+        }
 
-          c0=1.0/(1.0+QdT_over_2m_squared*(B[0]*B[0]+B[1]*B[1]+B[2]*B[2]));
-
-          alpha[0]=c0*(1.0+BB[0][0]);
-          alpha[1]=c0*(-P[2]+BB[0][1]);
-          alpha[2]=c0*(P[1]+BB[0][2]);
-
-          alpha[3]=c0*(P[2]+BB[1][0]);
-          alpha[4]=c0*(1.0+BB[1][1]);
-          alpha[5]=c0*(-P[0]+BB[1][2]);
-
-          alpha[6]=c0*(-P[1]+BB[2][0]);
-          alpha[7]=c0*(P[0]+BB[2][1]);
-          alpha[8]=c0*(1.0+BB[2][2]);
-
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
-   
-          double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
-
-          vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
-          ParticleEnergyCell += 0.5*mass*vsqr_par;
-
-          //compute alpha*vInit
-          double vRot[3]={0.0,0.0,0.0};
-
-          for (int iDim =0; iDim<3; iDim++){
-            #pragma ivdep
-            for (int jj=0; jj<3; jj++){
-              vRot[iDim]+=alpha[3*iDim+jj]*vInit[jj];
-            }
-          }
-
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double t=chargeQ*WeightPG[iCorner];
-            double *Jg_iCorner=Jg[iCorner];
-
-            #pragma ivdep
-            for (int iDim=0; iDim<3; iDim++){
-              //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
-              Jg_iCorner[iDim]+=t*vRot[iDim];
-            }
-          }
-
-          if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-            #pragma ivdep
-            for (int ii=0; ii<8; ii++){
-              int tempOffset = 10*spec;
+        if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+          #pragma ivdep
+          for (int ii=0; ii<8; ii++){
+            int tempOffset = 10*spec;
 //              SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
@@ -1995,355 +2002,365 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
 
 
-              double t=mass*WeightPG[ii];
-              double t0=t*vInit[0];
-              double t1=t*vInit[1];
-              double t2=t*vInit[2];
+            double t=mass*WeightPG[ii];
+            double t0=t*vInit[0];
+            double t1=t*vInit[1];
+            double t2=t*vInit[2];
 
-              SpeciesData_GI[ii][tempOffset+Rho_]+=t;
-              SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
-              SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
-              SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
-              SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
-              SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
+            SpeciesData_GI[ii][tempOffset+Rho_]+=t;
+            SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
+            SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
+            SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
+            SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
+            SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
 
-            }
           }
-
-          double matrixConst = chargeQ*QdT_over_2m/CellVolume;
-
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double tempWeightConst = matrixConst*WeightPG[iCorner];
-
-            for (int jCorner=0; jCorner<=iCorner; jCorner++){
-              double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
-              double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
-
-              #ifndef __PGI
-              if (jCorner+1<=iCorner) {
-                 char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
-
-                 _mm_prefetch(ptr,_MM_HINT_NTA);
-                 _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
-              }
-              #endif
-
-              tmpPtr[0]+=alpha[0]*tempWeightProduct;
-              tmpPtr[1]+=alpha[1]*tempWeightProduct;
-              tmpPtr[2]+=alpha[2]*tempWeightProduct;
-              tmpPtr[3]+=alpha[3]*tempWeightProduct;
-              tmpPtr[4]+=alpha[4]*tempWeightProduct;
-              tmpPtr[5]+=alpha[5]*tempWeightProduct;
-              tmpPtr[6]+=alpha[6]*tempWeightProduct;
-              tmpPtr[7]+=alpha[7]*tempWeightProduct;
-              tmpPtr[8]+=alpha[8]*tempWeightProduct;
-
-            }//jCorner
-          }//iCorner
-
-          particleNumber[spec]++;
         }
 
-        cnt++;
+        double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
-        if (ptrNext!=-1) {
-          // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
-        } 
-        else {
-          CellData->ParticleEnergy+=ParticleEnergyCell;
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double tempWeightConst = matrixConst*WeightPG[iCorner];
 
-          for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
-            CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+          for (int jCorner=0; jCorner<=iCorner; jCorner++){
+            double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
+            double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+
+#ifndef __CUDA_ARCH__
+            #ifndef __PGI
+            if (jCorner+1<=iCorner) {
+               char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
+
+               _mm_prefetch(ptr,_MM_HINT_NTA);
+               _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
+            }
+            #endif
+#endif
+
+            tmpPtr[0]+=alpha[0]*tempWeightProduct;
+            tmpPtr[1]+=alpha[1]*tempWeightProduct;
+            tmpPtr[2]+=alpha[2]*tempWeightProduct;
+            tmpPtr[3]+=alpha[3]*tempWeightProduct;
+            tmpPtr[4]+=alpha[4]*tempWeightProduct;
+            tmpPtr[5]+=alpha[5]*tempWeightProduct;
+            tmpPtr[6]+=alpha[6]*tempWeightProduct;
+            tmpPtr[7]+=alpha[7]*tempWeightProduct;
+            tmpPtr[8]+=alpha[8]*tempWeightProduct;
+
+          }//jCorner
+        }//iCorner
+
+        particleNumber[spec]++;
+      }
+
+      cnt++;
+
+      if (ptrNext!=-1) {
+        // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+      }
+      else {
+        CellData->ParticleEnergy+=ParticleEnergyCell;
+
+        for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
+          CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+        }
+
+        //collect current
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double *CornerJ=CellData->CornerData[iCorner].CornerJ;
+
+          #pragma ivdep
+          for (int ii=0; ii<3; ii++){
+            CornerJ[ii] += (Jg[iCorner][ii])/CellVolume;
           }
+        }
 
-          //collect current
+        if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+          //collect species data
           for (int iCorner=0; iCorner<8; iCorner++){
-            double *CornerJ=CellData->CornerData[iCorner].CornerJ;
+            double *SpecData=CellData->CornerData[iCorner].SpecData;
 
             #pragma ivdep
-            for (int ii=0; ii<3; ii++){
-              CornerJ[ii] += (Jg[iCorner][ii])/CellVolume;
+            for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
+              SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
             }
           }
-
-          if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-            //collect species data
-            for (int iCorner=0; iCorner<8; iCorner++){
-              double *SpecData=CellData->CornerData[iCorner].SpecData;
-
-              #pragma ivdep
-              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
-                SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
-              }
-            }
-          }
-
-          //collect massmatrix
-          for (int iCorner=0; iCorner<8; iCorner++){
-            for (int jCorner=0; jCorner<=iCorner; jCorner++){
-
-              if (iCorner==jCorner){
-                double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
-
-                for (int ii=0; ii<3; ii++){
-
-                  #pragma ivdep
-                  for (int jj=0; jj<3; jj++){
-                    CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
-                  }
-                }
-              } else {
-                double *CornerMassMatrix_iCorner=CellData->CornerData[iCorner].CornerMassMatrix;
-                double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
-
-                for (int ii=0; ii<3; ii++){
-
-                  #pragma ivdep
-                  for (int jj=0; jj<3; jj++){
-                    CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
-                    CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
-                  }
-                }
-              }
-
-            }//jCorner
-          }//iCorner
-
         }
 
-      }// while (ptrNext!=-1)
-    }//if (ptr!=-1)
+        //collect massmatrix
+        for (int iCorner=0; iCorner<8; iCorner++){
+          for (int jCorner=0; jCorner<=iCorner; jCorner++){
 
-    CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
+            if (iCorner==jCorner){
+              double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
 
-    return res;
-  };
+              for (int ii=0; ii<3; ii++){
+
+                #pragma ivdep
+                for (int jj=0; jj<3; jj++){
+                  CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
+                }
+              }
+            } else {
+              double *CornerMassMatrix_iCorner=CellData->CornerData[iCorner].CornerMassMatrix;
+              double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
+
+              for (int ii=0; ii<3; ii++){
+
+                #pragma ivdep
+                for (int jj=0; jj<3; jj++){
+                  CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                  CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                }
+              }
+            }
+
+          }//jCorner
+        }//iCorner
+
+      }
+
+    }// while (ptrNext!=-1)
+  }//if (ptr!=-1)
+
+#ifndef __CUDA_ARCH__
+  CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
+#endif
+
+  return res;
+};
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
+_TARGET_HOST_ _TARGET_DEVICE_
+bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn) {
+  double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
+  double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
+  bool res=false;
 
-  ProcessCell = [] (int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer) -> bool {
-    double *B_Center[_TOTAL_BLOCK_CELLS_X_*_TOTAL_BLOCK_CELLS_Y_*_TOTAL_BLOCK_CELLS_Z_];
-    double *B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)];
-    bool res=false;
+  #ifndef __CUDA_ARCH__
+  int MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+  int ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+  #else
+  int MagneticField_RelativeOffset=DataIn.MagneticField_RelativeOffset;
+  int ElectricField_RelativeOffset=DataIn.ElectricField_RelativeOffset;
+  #endif
 
-    auto MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-    auto ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
-    if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
-      for (int k=kCellIn-1;k<=kCellIn+1;k++) {
-        for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_) {
+    for (int k=kCellIn-1;k<=kCellIn+1;k++) {
+      for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
 
-          #pragma ivdep
-          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
-            int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
-            if (!node->block->GetCenterNode(LocalCenterId)) continue;
-            char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
-            double * ptr =  (double*)(offset+CurrentBOffset);
-            B_Center[LocalCenterId]=ptr;
-          }
+        #pragma ivdep
+        for (int i=iCellIn-1;i<=iCellIn+1;i++) {
+          int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
+          if (!node->block->GetCenterNode(LocalCenterId)) continue;
+          char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
+          double * ptr =  (double*)(offset+CurrentBOffset);
+          B_Center[LocalCenterId]=ptr;
+        }
+      }
+    }
+  }
+
+
+  if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
+    for (int k=kCellIn-1;k<=kCellIn+1;k++) {
+      for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+
+        #pragma ivdep
+        for (int i=iCellIn-1;i<=iCellIn+1;i++) {
+          int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
+          if (!node->block->GetCornerNode(LocalCornerId)) continue;
+          char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
+          double * ptr =  (double*)(offset+CurrentBOffset);
+          B_corner[LocalCornerId]=ptr;
+        }
+      }
+    }
+  }
+
+  int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+
+  PIC::Mesh::cDataBlockAMR *block=node->block;
+
+  long int *FirstCellParticleTable=block->FirstCellParticleTable;
+  double CellVolume=1;
+  double dx[3];
+
+  #pragma ivdep
+  for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+
+  for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
+
+  long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
+  double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
+
+  auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+
+
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
+
+  if (ptr!=-1) {
+    res=true;
+
+    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
+    union {__m256d vInit_v; double vInit[4];};
+    union {__m256d xInit_v; double xInit[4];};
+    union {__m256d B_v; double B[4];};
+
+    vInit_v=_mm256_setzero_pd();
+
+    int spec;
+    union {__m256d Jg_v[8]; double Jg[4*8];};
+
+    for (int ii=0; ii<8; ii++){
+      Jg_v[ii]=_mm256_setzero_pd();
+    }
+
+    double MassMatrix_GGD[8][8][9];
+    for (int iCorner=0;iCorner<8;iCorner++){
+      for(int jCorner=0;jCorner<8;jCorner++){
+
+        #pragma ivdep
+        for (int idim=0;idim<9;idim++){
+          MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
         }
       }
     }
 
 
-    if  (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_) {
-      for (int k=kCellIn-1;k<=kCellIn+1;k++) {
-        for (int j=jCellIn-1;j<=jCellIn+1;j++)  {
+    double SpeciesData_GI[8][PIC::nTotalSpecies*10];
 
-          #pragma ivdep
-          for (int i=iCellIn-1;i<=iCellIn+1;i++) {
-            int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
-            if (!node->block->GetCornerNode(LocalCornerId)) continue;
-            char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
-            double * ptr =  (double*)(offset+CurrentBOffset);
-            B_corner[LocalCornerId]=ptr;
-          }
+    if( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+      for (int ii=0; ii<8; ii++){
+        for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
+          SpeciesData_GI[ii][kk]=0.0;
         }
       }
     }
 
-    int nCell[3] = {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+    long int ptrNext=ptr;
+    PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
+    ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
 
-    PIC::Mesh::cDataBlockAMR *block=node->block;
+    char *offset[8];
 
-    long int *FirstCellParticleTable=block->FirstCellParticleTable;
-    double CellVolume=1;
-    double dx[3];
+    offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
+    offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
 
     #pragma ivdep
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;
+    for (int ii=0; ii<8; ii++) {
+      CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
+      CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
 
-    for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
-
-    long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
-    double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
-
-    auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-
-
-    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) vmean_cell[iSp]=0.0;
-
-    if (ptr!=-1) {
-      res=true;
-
-      // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
-      union {__m256d vInit_v; double vInit[4];};
-      union {__m256d xInit_v; double xInit[4];};
-      union {__m256d B_v; double B[4];};
-
-      vInit_v=_mm256_setzero_pd();
-
-      int spec;
-      union {__m256d Jg_v[8]; double Jg[4*8];};
-
-      for (int ii=0; ii<8; ii++){
-        Jg_v[ii]=_mm256_setzero_pd();
-      }
-
-      double MassMatrix_GGD[8][8][9];
-      for (int iCorner=0;iCorner<8;iCorner++){
-        for(int jCorner=0;jCorner<8;jCorner++){
-
-          #pragma ivdep
-          for (int idim=0;idim<9;idim++){
-            MassMatrix_GGD[iCorner][jCorner][idim] = 0.0;
-          }
-        }
-      }
-
-
-      double SpeciesData_GI[8][PIC::nTotalSpecies*10];
-
-      if( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-        for (int ii=0; ii<8; ii++){
-          for (int kk=0; kk<10*PIC::nTotalSpecies; kk++){
-            SpeciesData_GI[ii][kk]=0.0;
-          }
-        }
-      }
-
-      long int ptrNext=ptr;
-      PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
-      ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
-
-      char *offset[8];
-
-      offset[0]=(CellData->CornerData[0].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[1]=(CellData->CornerData[1].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[2]=(CellData->CornerData[2].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[3]=(CellData->CornerData[3].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[4]=(CellData->CornerData[4].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,    jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[5]=(CellData->CornerData[5].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,  jCellIn,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[6]=(CellData->CornerData[6].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn+1,jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-      offset[7]=(CellData->CornerData[7].CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(iCellIn,  jCellIn+1,kCellIn+1)))->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
-
-      #pragma ivdep
-      for (int ii=0; ii<8; ii++) {
-        CellData->CornerData[ii].CornerMassMatrix_ptr = ((double*)offset[ii])+MassMatrixOffsetIndex;
-        CellData->CornerData[ii].CornerJ_ptr=((double*)offset[ii])+JxOffsetIndex;
-
-        #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
-        CellData->CornerData[ii].SpecData_ptr=((double*)offset[ii])+SpeciesDataIndex[0];
-        #endif
-      }
-
-      int cnt=0, particleNumber[PIC::nTotalSpecies];
-
-      for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
-
-      #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-      PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
-      //interpolate the magnetic field from center nodes to particle location
-      //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
-
-      #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-      PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
-      //interpolate the magnetic field from center nodes to particle location
-      // MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+      #if _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_
+      CellData->CornerData[ii].SpecData_ptr=((double*)offset[ii])+SpeciesDataIndex[0];
       #endif
+    }
 
-      PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
+    int cnt=0, particleNumber[PIC::nTotalSpecies];
+
+    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) particleNumber[iSp]=0;
+
+    #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+    PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+    //interpolate the magnetic field from center nodes to particle location
+    //MagneticFieldStencil=PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node);
+
+    #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+    PIC::InterpolationRoutines::CornerBased::cStencil MagneticFieldStencil;
+    //interpolate the magnetic field from center nodes to particle location
+    // MagneticFieldStencil=PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node);
+    #endif
+
+    PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
 
 
-      while (ptrNext!=-1) {
-        double LocalParticleWeight;
-        ptr=ptrNext;
-        ParticleData=ParticleDataNext;
+    while (ptrNext!=-1) {
+      double LocalParticleWeight;
+      ptr=ptrNext;
+      ParticleData=ParticleDataNext;
 
-        spec=PIC::ParticleBuffer::GetI(ParticleData);
-        PIC::ParticleBuffer::GetV(vInit,ParticleData);
-        PIC::ParticleBuffer::GetX(xInit,ParticleData);
-        LocalParticleWeight=block->GetLocalParticleWeight(spec);
-        LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+      spec=PIC::ParticleBuffer::GetI(ParticleData);
+      PIC::ParticleBuffer::GetV(vInit,ParticleData);
+      PIC::ParticleBuffer::GetX(xInit,ParticleData);
+      LocalParticleWeight=block->GetLocalParticleWeight(spec);
+      LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
-        ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
+      ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
-        if (ptrNext!=-1) {
-          ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
+      if (ptrNext!=-1) {
+        ParticleDataNext=_GetParticleDataPointer(ptrNext,particle_data_length,particle_data_buffer);
+      }
+
+      if (cnt%size_pack==id_pack) {
+        double temp[3];
+
+        #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
+       // PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
+        //interpolate the magnetic field from center nodes to particle location
+        PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
+
+        #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
+        //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
+        //interpolate the magnetic field from center nodes to particle location
+        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
+        #endif
+
+        int Length=MagneticFieldStencil.Length;
+        double *Weight_table=MagneticFieldStencil.Weight;
+        int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
+
+        B_v=_mm256_setzero_pd();
+
+        for (int iStencil=0;iStencil<Length;iStencil++) {
+          int LocalCellID=LocalCellID_table[iStencil];
+
+          switch(_PIC_FIELD_SOLVER_B_MODE_) {
+            case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
+              B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_Center[LocalCellID]),B_v);
+              break;
+            case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
+              B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_corner[LocalCellID]),B_v);
+              break;
+            defaut:
+              exit(__LINE__,__FILE__,"Error: the mode is unknown");
+          }
         }
 
-        if (cnt%size_pack==id_pack) {
-          double temp[3];
+        //convert from SI to cgs
+        B[3]=0.0;
+        B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
+        vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
 
-          #if _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CENTER_BASED_
-         // PIC::InterpolationRoutines::CellCentered::cStencil* MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-          PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xInit,node,MagneticFieldStencil);
+        double QdT_over_m,QdT_over_2m,chargeQ;
+        double WeightPG[8];
+        double c0,QdT_over_2m_squared;
+        double mass;
 
-          #elif _PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_
-          //PIC::InterpolationRoutines::CornerBased::cStencil* MagneticFieldStencil;
-          //interpolate the magnetic field from center nodes to particle location
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,MagneticFieldStencil);
-          #endif
+        chargeQ = ChargeTable[spec]*charge_conv;
+        mass= MassTable[spec]*mass_conv;
+        //effect of particle weight
 
-          int Length=MagneticFieldStencil.Length;
-          double *Weight_table=MagneticFieldStencil.Weight;
-          int *LocalCellID_table=MagneticFieldStencil.LocalCellID;
+        chargeQ *= LocalParticleWeight;
+        mass *= LocalParticleWeight;
 
-          B_v=_mm256_setzero_pd();
-
-          for (int iStencil=0;iStencil<Length;iStencil++) {
-            int LocalCellID=LocalCellID_table[iStencil];
-
-            switch(_PIC_FIELD_SOLVER_B_MODE_) {
-              case _PIC_FIELD_SOLVER_B_CENTER_BASED_:
-                B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_Center[LocalCellID]),B_v);
-                break;
-              case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
-                B_v=_mm256_fmadd_pd(_mm256_set1_pd(Weight_table[iStencil]),_mm256_loadu_pd(B_corner[LocalCellID]),B_v);
-                break;
-              defaut:
-                exit(__LINE__,__FILE__,"Error: the mode is unknown");
-            }
-          }
-
-          //convert from SI to cgs
-          B[3]=0.0;
-          B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
-          vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
-
-          double QdT_over_m,QdT_over_2m,chargeQ;
-          double WeightPG[8];
-          double c0,QdT_over_2m_squared;
-          double mass;
-
-          chargeQ = ChargeTable[spec]*charge_conv;
-          mass= MassTable[spec]*mass_conv;
-          //effect of particle weight
-
-          chargeQ *= LocalParticleWeight;
-          mass *= LocalParticleWeight;
-
-          QdT_over_m=chargeQ*dtTotal/mass;
-          QdT_over_2m=0.5*QdT_over_m;
-          QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
+        QdT_over_m=chargeQ*dtTotal/mass;
+        QdT_over_2m=0.5*QdT_over_m;
+        QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
 
 
-          //to calculate alpha, mdv/dt = q(E+v cross B/c)
-          B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(1.0/LightSpeed));
+        //to calculate alpha, mdv/dt = q(E+v cross B/c)
+        B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(1.0/LightSpeed));
 
 
 //          double BB[3][3],P[3];
@@ -2375,55 +2392,55 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
 
-          union {__m256d P_v; double P[4];};
-          union {__m256d B2_v; double B2[4];};
+        union {__m256d P_v; double P[4];};
+        union {__m256d B2_v; double B2[4];};
 
-          P_v=_mm256_mul_pd(_mm256_set1_pd(-QdT_over_2m),B_v);
-          B2_v=_mm256_mul_pd(B_v,B_v);
+        P_v=_mm256_mul_pd(_mm256_set1_pd(-QdT_over_2m),B_v);
+        B2_v=_mm256_mul_pd(B_v,B_v);
 
-          c0=1.0/(1.0+QdT_over_2m_squared*(B2[0]+B2[1]+B2[2]));
+        c0=1.0/(1.0+QdT_over_2m_squared*(B2[0]+B2[1]+B2[2]));
 
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
 
 
-          //Eq. D.3
-          union {__m256d alpha_2v; double alpha_2[4];};
-          union {__m512d alpha_01v; double alpha_01[8];};
+        //Eq. D.3
+        union {__m256d alpha_2v; double alpha_2[4];};
+        union {__m512d alpha_01v; double alpha_01[8];};
 
 
-          alpha_2v=_mm256_mul_pd(_mm256_set1_pd(c0),_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
+        alpha_2v=_mm256_mul_pd(_mm256_set1_pd(c0),_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
 
-          alpha_01v=_mm512_mul_pd(
-              _mm512_set1_pd(c0),
+        alpha_01v=_mm512_mul_pd(
+            _mm512_set1_pd(c0),
 
-              _mm512_fmadd_pd(
-                  _mm512_insertf64x4(_mm512_castpd256_pd512(_mm256_set1_pd(QdT_over_2m_squared*B[0])), _mm256_set1_pd(QdT_over_2m_squared*B[1]), 1),
-                  _mm512_insertf64x4(_mm512_castpd256_pd512(B_v),B_v, 1),
-                  _mm512_set_pd(0.0,-P[0],1.0,P[2],0.0,P[1],-P[2],1.0))
-                  );
+            _mm512_fmadd_pd(
+                _mm512_insertf64x4(_mm512_castpd256_pd512(_mm256_set1_pd(QdT_over_2m_squared*B[0])), _mm256_set1_pd(QdT_over_2m_squared*B[1]), 1),
+                _mm512_insertf64x4(_mm512_castpd256_pd512(B_v),B_v, 1),
+                _mm512_set_pd(0.0,-P[0],1.0,P[2],0.0,P[1],-P[2],1.0))
+                );
 
 
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
+        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
-          #ifndef __PGI
-          _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
-          #endif
+        #ifndef __PGI
+        _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
+        #endif
 
-          //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
+        //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
-          union {__m256d vInit2_v; double vInit2[4];};
-          vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
+        union {__m256d vInit2_v; double vInit2[4];};
+        vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
 
-          double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
+        double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
 
-          vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
-          ParticleEnergyCell += 0.5*mass*vsqr_par;
+        vmean_cell[spec] += sqrt(vsqr_par)*GlobalTimeStep;
+        ParticleEnergyCell += 0.5*mass*vsqr_par;
 
-          //compute alpha*vInit
-          union {__m256d vRot_v; double vRot[4];};
+        //compute alpha*vInit
+        union {__m256d vRot_v; double vRot[4];};
 
-          vRot_v=_mm256_setzero_pd();
+        vRot_v=_mm256_setzero_pd();
 
 //          for (int iDim =0; iDim<3; iDim++){
 //            #pragma ivdep
@@ -2433,12 +2450,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //          }
 
 
-          __m512d t1=_mm512_mul_pd(alpha_01v,_mm512_insertf64x4(_mm512_castpd256_pd512(vInit_v), vInit_v, 1));
-          vRot[0]=t1[0]+t1[1]+t1[2];
-          vRot[1]=t1[4]+t1[5]+t1[6];
+        __m512d t1=_mm512_mul_pd(alpha_01v,_mm512_insertf64x4(_mm512_castpd256_pd512(vInit_v), vInit_v, 1));
+        vRot[0]=t1[0]+t1[1]+t1[2];
+        vRot[1]=t1[4]+t1[5]+t1[6];
 
-          __m256d t=_mm256_mul_pd(alpha_2v,vInit_v);
-          vRot[2]=t[0]+t[1]+t[2];
+        __m256d t=_mm256_mul_pd(alpha_2v,vInit_v);
+        vRot[2]=t[0]+t[1]+t[2];
 
 //          for (int iCorner=0; iCorner<8; iCorner++){
 //            double t=chargeQ*WeightPG[iCorner];
@@ -2452,10 +2469,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //          }
 
 
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double t=chargeQ*WeightPG[iCorner];
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double t=chargeQ*WeightPG[iCorner];
 
-            Jg_v[iCorner]=_mm256_fmadd_pd(_mm256_set1_pd(t),vRot_v,Jg_v[iCorner]);
+          Jg_v[iCorner]=_mm256_fmadd_pd(_mm256_set1_pd(t),vRot_v,Jg_v[iCorner]);
 
 //            double *Jg_iCorner=Jg[iCorner];
 //
@@ -2464,13 +2481,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //              //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
 //              Jg_iCorner[iDim]+=t*vRot[iDim];
 //            }
-          }
+        }
 
 
-          if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-            #pragma ivdep
-            for (int ii=0; ii<8; ii++){
-              int tempOffset = 10*spec;
+        if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+          #pragma ivdep
+          for (int ii=0; ii<8; ii++){
+            int tempOffset = 10*spec;
 //              SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
@@ -2483,129 +2500,129 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
 
 
-              double t=mass*WeightPG[ii];
-              double t0=t*vInit[0];
-              double t1=t*vInit[1];
-              double t2=t*vInit[2];
+            double t=mass*WeightPG[ii];
+            double t0=t*vInit[0];
+            double t1=t*vInit[1];
+            double t2=t*vInit[2];
 
-              SpeciesData_GI[ii][tempOffset+Rho_]+=t;
-              SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
-              SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
-              SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
-              SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
-              SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
+            SpeciesData_GI[ii][tempOffset+Rho_]+=t;
+            SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
+            SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
+            SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
+            SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
+            SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
 
-            }
           }
+        }
 
-          double matrixConst = chargeQ*QdT_over_2m/CellVolume;
+        double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
-	        //To convert the double loop (below) into a single loop,
-	        //the double loop was replaced with a single loop that calls the lambda (below)
-	        //with parameters that correspond to those in the removed inner loop.
-          auto process_ij_corner = [&] (__m512d& alpha01v,__m256d& alpha2v, double& tempWeightConst, int iCorner, int jCorner) {
-            double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
-            double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+        //To convert the double loop (below) into a single loop,
+        //the double loop was replaced with a single loop that calls the lambda (below)
+        //with parameters that correspond to those in the removed inner loop.
+        auto process_ij_corner = [&] (__m512d& alpha01v,__m256d& alpha2v, double& tempWeightConst, int iCorner, int jCorner) {
+          double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
+          double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
-            #ifndef __PGI
-            if (jCorner>1) {
-               char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
+          #ifndef __PGI
+          if (jCorner>1) {
+             char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
 
-               _mm_prefetch(ptr,_MM_HINT_NTA);
-               _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
-            }
-            #endif
+             _mm_prefetch(ptr,_MM_HINT_NTA);
+             _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
+          }
+          #endif
 
-	         __m512d tmpPtr_1=_mm512_loadu_pd(tmpPtr);
-	         __m256d tmpPtr_2=_mm256_loadu_pd(tmpPtr+6);
-
-
-           __mmask8 StoreMask_1=0b0011'1111;
-           __mmask8 StoreMask_2=0b000'0111;
+         __m512d tmpPtr_1=_mm512_loadu_pd(tmpPtr);
+         __m256d tmpPtr_2=_mm256_loadu_pd(tmpPtr+6);
 
 
-           _mm512_mask_storeu_pd(tmpPtr,StoreMask_1,
-             _mm512_fmadd_pd(alpha01v,_mm512_set1_pd(tempWeightProduct),
-             tmpPtr_1));
+         __mmask8 StoreMask_1=0b0011'1111;
+         __mmask8 StoreMask_2=0b000'0111;
 
 
-           _mm256_mask_storeu_pd(tmpPtr+6,StoreMask_2,
-             _mm256_fmadd_pd(alpha2v,_mm256_set1_pd(tempWeightProduct),tmpPtr_2)
-             );
-          };
+         _mm512_mask_storeu_pd(tmpPtr,StoreMask_1,
+           _mm512_fmadd_pd(alpha01v,_mm512_set1_pd(tempWeightProduct),
+           tmpPtr_1));
 
 
-          //shift elements of alpha_01v such that alpha_01v[3] is used
-          alpha_01v[3]=alpha_01v[4];
-          alpha_01v[4]=alpha_01v[5];
-          alpha_01v[5]=alpha_01v[6];
+         _mm256_mask_storeu_pd(tmpPtr+6,StoreMask_2,
+           _mm256_fmadd_pd(alpha2v,_mm256_set1_pd(tempWeightProduct),tmpPtr_2)
+           );
+        };
 
 
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double tempWeightConst = matrixConst*WeightPG[iCorner];
+        //shift elements of alpha_01v such that alpha_01v[3] is used
+        alpha_01v[3]=alpha_01v[4];
+        alpha_01v[4]=alpha_01v[5];
+        alpha_01v[5]=alpha_01v[6];
 
-            switch (iCorner) {
-            case 7:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,7);
-            case 6:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,6);
-            case 5:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,5);
-            case 4:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,4);
-            case 3:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,3);
-            case 2:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,2);
-            case 1:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,1);
-            case 0:
-              process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,0);
-            }
-          }//iCorner
+
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double tempWeightConst = matrixConst*WeightPG[iCorner];
+
+          switch (iCorner) {
+          case 7:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,7);
+          case 6:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,6);
+          case 5:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,5);
+          case 4:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,4);
+          case 3:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,3);
+          case 2:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,2);
+          case 1:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,1);
+          case 0:
+            process_ij_corner(alpha_01v,alpha_2v,tempWeightConst,iCorner,0);
+          }
+        }//iCorner
 
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_  (256/512)
 
-          //Eq. D.3
-          __m256d c0_v;
+        //Eq. D.3
+        __m256d c0_v;
 
-          union {__m256d alpha_0v; double alpha_0[4];};
-          union {__m256d alpha_1v; double alpha_1[4];};
-          union {__m256d alpha_2v; double alpha_2[4];};
+        union {__m256d alpha_0v; double alpha_0[4];};
+        union {__m256d alpha_1v; double alpha_1[4];};
+        union {__m256d alpha_2v; double alpha_2[4];};
 
-          c0_v=_mm256_set1_pd(c0);
-          alpha_0v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[0]),B_v,_mm256_set_pd(0.0,P[1],-P[2],1.0)));
-          alpha_1v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[1]),B_v,_mm256_set_pd(0.0,-P[0],1.0,P[2])));
-          alpha_2v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
+        c0_v=_mm256_set1_pd(c0);
+        alpha_0v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[0]),B_v,_mm256_set_pd(0.0,P[1],-P[2],1.0)));
+        alpha_1v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[1]),B_v,_mm256_set_pd(0.0,-P[0],1.0,P[2])));
+        alpha_2v=_mm256_mul_pd(c0_v,_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_2m_squared*B[2]),B_v,_mm256_set_pd(0.0,1.0,P[0],-P[1])));
 
-          PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
+        PIC::InterpolationRoutines::CornerBased::cStencil CornerBasedStencil;
 
-          PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
+        PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
-          #ifndef __PGI
-          _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
-          #endif
+        #ifndef __PGI
+        _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
+        #endif
 
-          //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
+        //double vsqr_par =vInit[0]*vInit[0]+vInit[1]*vInit[1]+vInit[2]*vInit[2];
 
-          union {__m256d vInit2_v; double vInit2[4];};
-          vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
+        union {__m256d vInit2_v; double vInit2[4];};
+        vInit2_v=_mm256_mul_pd(vInit_v,vInit_v);
 
-          double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
+        double vsqr_par =vInit2[0]+vInit2[1]+vInit2[2];
 
-          vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
-          ParticleEnergyCell += 0.5*mass*vsqr_par;
+        vmean_cell[spec] += sqrt(vsqr_par)*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+        ParticleEnergyCell += 0.5*mass*vsqr_par;
 
-          //compute alpha*vInit
-          union {__m256d vRot_v; double vRot[4];};
+        //compute alpha*vInit
+        union {__m256d vRot_v; double vRot[4];};
 
-          vRot_v=_mm256_setzero_pd();
+        vRot_v=_mm256_setzero_pd();
 
-          __m256d t;
+        __m256d t;
 
 //          for (int iDim =0; iDim<3; iDim++){
 //            #pragma ivdep
@@ -2615,14 +2632,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //          }
 
 
-          t=_mm256_mul_pd(alpha_0v,vInit_v);
-          vRot[0]=t[0]+t[1]+t[2];
+        t=_mm256_mul_pd(alpha_0v,vInit_v);
+        vRot[0]=t[0]+t[1]+t[2];
 
-          t=_mm256_mul_pd(alpha_1v,vInit_v);
-          vRot[1]=t[0]+t[1]+t[2];
+        t=_mm256_mul_pd(alpha_1v,vInit_v);
+        vRot[1]=t[0]+t[1]+t[2];
 
-          t=_mm256_mul_pd(alpha_2v,vInit_v);
-          vRot[2]=t[0]+t[1]+t[2];
+        t=_mm256_mul_pd(alpha_2v,vInit_v);
+        vRot[2]=t[0]+t[1]+t[2];
 
 
 
@@ -2638,10 +2655,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //          }
 
 
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double t=chargeQ*WeightPG[iCorner];
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double t=chargeQ*WeightPG[iCorner];
 
-            Jg_v[iCorner]=_mm256_fmadd_pd(_mm256_set1_pd(t),vRot_v,Jg_v[iCorner]);
+          Jg_v[iCorner]=_mm256_fmadd_pd(_mm256_set1_pd(t),vRot_v,Jg_v[iCorner]);
 
 //            double *Jg_iCorner=Jg[iCorner];
 //
@@ -2650,13 +2667,13 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //              //Jg[iCorner][iDim]+=chargeQ*vRot[iDim]*WeightPG[iCorner];
 //              Jg_iCorner[iDim]+=t*vRot[iDim];
 //            }
-          }
+        }
 
 
-          if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-            #pragma ivdep
-            for (int ii=0; ii<8; ii++){
-              int tempOffset = 10*spec;
+        if ( _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+          #pragma ivdep
+          for (int ii=0; ii<8; ii++){
+            int tempOffset = 10*spec;
 //              SpeciesData_GI[ii][tempOffset+Rho_]+=mass*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUx_]+=mass*vInit[0]*WeightPG[ii];
 //              SpeciesData_GI[ii][tempOffset+RhoUy_]+=mass*vInit[1]*WeightPG[ii];
@@ -2669,180 +2686,214 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 //              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=mass*vInit[0]*vInit[2]*WeightPG[ii];
 
 
-              double t=mass*WeightPG[ii];
-              double t0=t*vInit[0];
-              double t1=t*vInit[1];
-              double t2=t*vInit[2];
+            double t=mass*WeightPG[ii];
+            double t0=t*vInit[0];
+            double t1=t*vInit[1];
+            double t2=t*vInit[2];
 
-              SpeciesData_GI[ii][tempOffset+Rho_]+=t;
-              SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
-              SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
-              SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
-              SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
-              SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
-              SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
-              SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
+            SpeciesData_GI[ii][tempOffset+Rho_]+=t;
+            SpeciesData_GI[ii][tempOffset+RhoUx_]+=t0;
+            SpeciesData_GI[ii][tempOffset+RhoUy_]+=t1;
+            SpeciesData_GI[ii][tempOffset+RhoUz_]+=t2;
+            SpeciesData_GI[ii][tempOffset+RhoUxUx_]+=t0*vInit[0];
+            SpeciesData_GI[ii][tempOffset+RhoUyUy_]+=t1*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUzUz_]+=t2*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUy_]+=t0*vInit[1];
+            SpeciesData_GI[ii][tempOffset+RhoUyUz_]+=t1*vInit[2];
+            SpeciesData_GI[ii][tempOffset+RhoUxUz_]+=t0*vInit[2];
 
-            }
           }
+        }
 
-          double matrixConst = chargeQ*QdT_over_2m/CellVolume;
+        double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
-          const int PermutationTable_vl=0b00'10'01'00;
-          const int BlendingTable_vl=0b1000;
+        const int PermutationTable_vl=0b00'10'01'00;
+        const int BlendingTable_vl=0b1000;
 
-          __m256d alpha_vl=_mm256_blend_pd(
-              alpha_0v,
-              _mm256_permute4x64_pd(alpha_1v,PermutationTable_vl),
-              BlendingTable_vl);
-
-
-          const int PermutationTable_vu_1v=0b00'11'10'01;
-          const int PermutationTable_vu_2v=0b01'00'01'00;
-          const int BlendingTable_vu=0b1100;
-
-          __m256d alpha_vu=_mm256_blend_pd(
-              _mm256_permute4x64_pd(alpha_1v,PermutationTable_vu_1v),
-              _mm256_permute4x64_pd(alpha_2v,PermutationTable_vu_2v),
-              BlendingTable_vu);
+        __m256d alpha_vl=_mm256_blend_pd(
+            alpha_0v,
+            _mm256_permute4x64_pd(alpha_1v,PermutationTable_vl),
+            BlendingTable_vl);
 
 
-    //To convert the double loop (below) into a single loop,
-    //the double loop was replaced with a single loop that calls the lambda (below)
-    //with parameters that correspond to those in the removed inner loop.
-          auto process_ij_corner = [&] (double& alpha, double& tempWeightConst, int iCorner, int jCorner) {
-            double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
-            double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
+        const int PermutationTable_vu_1v=0b00'11'10'01;
+        const int PermutationTable_vu_2v=0b01'00'01'00;
+        const int BlendingTable_vu=0b1100;
 
-            #ifndef __PGI
-            if (jCorner>1) {
-               char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
-
-               _mm_prefetch(ptr,_MM_HINT_NTA);
-               _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
-            }
-            #endif
+        __m256d alpha_vu=_mm256_blend_pd(
+            _mm256_permute4x64_pd(alpha_1v,PermutationTable_vu_1v),
+            _mm256_permute4x64_pd(alpha_2v,PermutationTable_vu_2v),
+            BlendingTable_vu);
 
 
-            __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
-            __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
+  //To convert the double loop (below) into a single loop,
+  //the double loop was replaced with a single loop that calls the lambda (below)
+  //with parameters that correspond to those in the removed inner loop.
+        auto process_ij_corner = [&] (double& alpha, double& tempWeightConst, int iCorner, int jCorner) {
+          double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
+          double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
-            _mm256_storeu_pd(tmpPtr,_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl));
-            _mm256_storeu_pd(tmpPtr+4,_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu));
+          #ifndef __PGI
+          if (jCorner>1) {
+             char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
 
-            tmpPtr[8]+=alpha*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
-          };
+             _mm_prefetch(ptr,_MM_HINT_NTA);
+             _mm_prefetch(ptr+_PIC_MEMORY_PREFETCH__CACHE_LINE_,_MM_HINT_NTA);
+          }
+          #endif
 
 
-          for (int iCorner=0; iCorner<8; iCorner++){
-            double tempWeightConst = matrixConst*WeightPG[iCorner];
+          __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
+          __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
 
-            switch (iCorner) {
-            case 7:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,7);
-            case 6:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,6);
-            case 5:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,5);
-            case 4:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,4);
-            case 3:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,3);
-            case 2:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,2);
-            case 1:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,1);
-            case 0:
-              process_ij_corner(alpha_2[2],tempWeightConst,iCorner,0);
-            }
-          }//iCorner
+          _mm256_storeu_pd(tmpPtr,_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl));
+          _mm256_storeu_pd(tmpPtr+4,_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu));
+
+          tmpPtr[8]+=alpha*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
+        };
+
+
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double tempWeightConst = matrixConst*WeightPG[iCorner];
+
+          switch (iCorner) {
+          case 7:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,7);
+          case 6:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,6);
+          case 5:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,5);
+          case 4:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,4);
+          case 3:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,3);
+          case 2:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,2);
+          case 1:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,1);
+          case 0:
+            process_ij_corner(alpha_2[2],tempWeightConst,iCorner,0);
+          }
+        }//iCorner
 
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ (256/512)
 
-          particleNumber[spec]++;
+        particleNumber[spec]++;
+      }
+
+      cnt++;
+
+      if (ptrNext!=-1) {
+        // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
+      }
+      else {
+        CellData->ParticleEnergy+=ParticleEnergyCell;
+
+        for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
+          CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
         }
 
-        cnt++;
+        //collect current
+        for (int iCorner=0; iCorner<8; iCorner++){
+          double *CornerJ=CellData->CornerData[iCorner].CornerJ;
 
-        if (ptrNext!=-1) {
-          // do nothing;ParticleDataNext is determined earlier in the loop; ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
-        }
-        else {
-          CellData->ParticleEnergy+=ParticleEnergyCell;
-
-          for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
-            CellData->cflCell[iSp]=vmean_cell[iSp]/(particleNumber[iSp]*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+          #pragma ivdep
+          for (int ii=0; ii<3; ii++){
+            CornerJ[ii] += (Jg[iCorner*4+ii])/CellVolume;   //Jg[iCorner*4+ii] is corrected because Jg is defined compatible with __256d
           }
+        }
 
-          //collect current
+        if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+          //collect species data
           for (int iCorner=0; iCorner<8; iCorner++){
-            double *CornerJ=CellData->CornerData[iCorner].CornerJ;
+            double *SpecData=CellData->CornerData[iCorner].SpecData;
 
             #pragma ivdep
-            for (int ii=0; ii<3; ii++){
-              CornerJ[ii] += (Jg[iCorner*4+ii])/CellVolume;   //Jg[iCorner*4+ii] is corrected because Jg is defined compatible with __256d
+            for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
+              SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
             }
           }
-
-          if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
-            //collect species data
-            for (int iCorner=0; iCorner<8; iCorner++){
-              double *SpecData=CellData->CornerData[iCorner].SpecData;
-
-              #pragma ivdep
-              for (int ii=0; ii<10*PIC::nTotalSpecies; ii++){
-                SpecData[ii]+=SpeciesData_GI[iCorner][ii]/CellVolume;
-              }
-            }
-          }
-
-          //collect massmatrix
-          for (int iCorner=0; iCorner<8; iCorner++){
-            for (int jCorner=0; jCorner<=iCorner; jCorner++){
-
-              if (iCorner==jCorner){
-                double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
-
-                for (int ii=0; ii<3; ii++){
-
-                  #pragma ivdep
-                  for (int jj=0; jj<3; jj++){
-                    CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
-                  }
-                }
-              } else {
-                double *CornerMassMatrix_iCorner=CellData->CornerData[iCorner].CornerMassMatrix;
-                double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
-
-                for (int ii=0; ii<3; ii++){
-
-                  #pragma ivdep
-                  for (int jj=0; jj<3; jj++){
-                    CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
-                    CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
-                  }
-                }
-              }
-
-            }//jCorner
-          }//iCorner
-
         }
 
-      }// while (ptrNext!=-1)
-    }//if (ptr!=-1)
+        //collect massmatrix
+        for (int iCorner=0; iCorner<8; iCorner++){
+          for (int jCorner=0; jCorner<=iCorner; jCorner++){
 
-    CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
+            if (iCorner==jCorner){
+              double *CornerMassMatrix=CellData->CornerData[iCorner].CornerMassMatrix;
 
-    return res;
-  };
+              for (int ii=0; ii<3; ii++){
+
+                #pragma ivdep
+                for (int jj=0; jj<3; jj++){
+                  CornerMassMatrix[3*ii+jj]+=MassMatrix_GGD[iCorner][iCorner][3*ii+jj];
+                }
+              }
+            } else {
+              double *CornerMassMatrix_iCorner=CellData->CornerData[iCorner].CornerMassMatrix;
+              double *CornerMassMatrix_jCorner=CellData->CornerData[jCorner].CornerMassMatrix;
+
+              for (int ii=0; ii<3; ii++){
+
+                #pragma ivdep
+                for (int jj=0; jj<3; jj++){
+                  CornerMassMatrix_iCorner[9*IndexMatrix[iCorner][jCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                  CornerMassMatrix_jCorner[9*IndexMatrix[jCorner][iCorner]+3*ii+jj]+=MassMatrix_GGD[iCorner][jCorner][3*ii+jj];
+                }
+              }
+            }
+
+          }//jCorner
+        }//iCorner
+
+      }
+
+    }// while (ptrNext!=-1)
+  }//if (ptr!=-1)
+
+  CumulativeTiming::UpdateJMassMatrixTime.UpdateTimer();
+
+  return res;
+};
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  //PIC::ParticleBuffer::byte *ParticleData;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber;
 
 
-  //copy manager 
+  if (_CUDA_MODE_ == _ON_ ) {
+    UpdateJMassMatrixGPU();
+    return;
+  }
+
+  CumulativeTiming::UpdateJMassMatrixTime.Start();
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
+
+  double ParticleEnergy=0.0;
+  double cfl_process[PIC::nTotalSpecies];
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) cfl_process[iSp]=0.0;
+
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+
+  if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+    PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  }
+
+  double qom[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)/(PIC::MolecularData::GetMass(iSp)*mass_conv);
+
+
+
+
+  //copy manager
 
 
   /*
@@ -2881,7 +2932,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     std::atomic<cCellData*> *CellDataTable;
     std::atomic<bool> *AvailableCellDataTable;
     std::atomic_flag *cell_table_lock;
-    std::atomic_flag copy_lock; 
+    std::atomic_flag copy_lock;
 
     void Copy(cCellData *CellData,int this_thread_id) {
       double  *target,*source;
@@ -2968,7 +3019,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
 
       copy_lock.clear(std::memory_order_release);
-      copy_lock.test_and_set(std::memory_order_acquire); 
+      copy_lock.test_and_set(std::memory_order_acquire);
 
       ParticleEnergyTable=ParticleEnergyTable_in;
       cflTable=cflTable_in;
@@ -3087,21 +3138,21 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   //determine whether the mesh/domain decomposition have been changed
   int localMeshChangeFlag,globalMeshChangeFlag;
-  
-  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh.nMeshModificationCounter) ? 0 : 1;
+
+  localMeshChangeFlag=(nMeshModificationCounter==PIC::Mesh::mesh->nMeshModificationCounter) ? 0 : 1;
 
 
-  if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) { 
+  if ((_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) {
     MPI_Allreduce(&localMeshChangeFlag,&globalMeshChangeFlag,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
 
-    if ((globalMeshChangeFlag!=0)&&(localMeshChangeFlag==0)) { 
-      exit(__LINE__,__FILE__,"Error: globalMeshChangeFlag and localMeshChangeFlag are not consistent: PIC::Mesh::mesh.nMeshModificationCounter are not properly syncronized"); 
+    if ((globalMeshChangeFlag!=0)&&(localMeshChangeFlag==0)) {
+      exit(__LINE__,__FILE__,"Error: globalMeshChangeFlag and localMeshChangeFlag are not consistent: PIC::Mesh::mesh->nMeshModificationCounter are not properly syncronized");
     }
   }
   else globalMeshChangeFlag=localMeshChangeFlag;
 
-  
+
   if (_AMR_MESH_TYPE_!=_AMR_MESH_TYPE__UNIFORM_) {
     exit(__LINE__,__FILE__,"_PIC_UPDATE_JMASS_MATRIX__MPI_MULTITHREAD_ == _PIC_MODE_ON_ can be used only with _AMR_MESH_TYPE_==_AMR_MESH_TYPE__UNIFORM_");
   }
@@ -3116,7 +3167,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
   const int thread_id_table_size=_PIC_NUMBER_STD_THREADS_;
   static int SetStartIndex[2*_PIC_NUMBER_STD_THREADS_];
-  static int SetLength[2*_PIC_NUMBER_STD_THREADS_]; 
+  static int SetLength[2*_PIC_NUMBER_STD_THREADS_];
 
 
   if (globalMeshChangeFlag!=0) {
@@ -3124,7 +3175,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
     array_3d<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> NodePtrTable3D;
     int nGlobalBlockXYZ,ActualResolutionLevel;
 
-    nMeshModificationCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+    nMeshModificationCounter=PIC::Mesh::mesh->nMeshModificationCounter;
 
     if (ProcessData!=NULL) delete [] ProcessData;
     ProcessData=new cProcessData[DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
@@ -3227,7 +3278,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 
       increment=SetLength[set_index]/(10*thread_id_table_size);
       if (increment==0) increment=SetLength[set_index]/(5*thread_id_table_size);
-      if (increment==0) increment=SetLength[set_index]/thread_id_table_size; 
+      if (increment==0) increment=SetLength[set_index]/thread_id_table_size;
       if (increment==0) increment=1;
 
       iset_max=0;
@@ -3237,9 +3288,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
 do {
   iset=iset_max.fetch_add(increment);
   pData=ProcessData+SetStartIndex[set_index]+iset;
-  
+
   iset_max_thread=iset+increment;
-  if (iset_max_thread>SetLength[set_index]) iset_max_thread=SetLength[set_index]; 
+  if (iset_max_thread>SetLength[set_index]) iset_max_thread=SetLength[set_index];
 
       for (;iset<iset_max_thread;iset++,pData++) {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=pData->node;
@@ -3321,10 +3372,10 @@ barrier.Sync();
   for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
     ParticleEnergyTable[i]=0.0;
 
-    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) { 
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
       cflTable[i][iSp]=0.0;
     }
-  }		 		 
+  }
 
 
 #if _PIC_FIELD_SOLVER_CELL_DATA_COPY_MANAGER_MODE_ == _PIC_MODE_ON_
@@ -3335,16 +3386,16 @@ barrier.Sync();
 #endif
 
 
-  auto mesh_ptr=&PIC::Mesh::mesh;
+  auto mesh_ptr=PIC::Mesh::mesh;
   auto ThisThread=PIC::ThisThread;
   auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
 
 
-  // Loop through all blocks. 
+  // Loop through all blocks.
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
 #pragma omp parallel default(none) shared (copy_manager_ptr,CellDataTable_Bank0,CellDataTable_Bank1,CellProcessingFlagTable,DomainBlockDecomposition::nLocalBlocks, \
-		ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,ProcessCell,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
+    ParticleEnergyTable,cflTable) firstprivate (PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,mesh_ptr,ThisThread,BlockTable,ChargeTable,MassTable)
   {
 
     int this_thread_id=omp_get_thread_num();
@@ -3352,7 +3403,7 @@ barrier.Sync();
 
 #pragma omp for schedule(guided,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_)
 
-#else 
+#else
     int this_thread_id=0;
     auto CellData_TH=CellDataTable_Bank0+this_thread_id;
 
@@ -3489,9 +3540,9 @@ barrier.Sync();
   for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
 
   //find the max cfl among all threads
-  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) { 
+  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) {
     cfl_process[iSp]=cflTable[0][iSp];
-    for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp]; 
+    for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp];
   }
 
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
@@ -3509,7 +3560,357 @@ barrier.Sync();
   switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
   case _PIC_MODE_ON_:
     PIC::Parallel::BPManager.isCorner = true;
-    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength;
+    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+    PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
+    PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
+    PIC::Parallel::ProcessBlockBoundaryNodes();
+
+    break;
+  case _PIC_MODE_OFF_:
+    PIC::Parallel::ProcessBlockBoundaryNodes();
+  }
+
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(false);
+
+  MPI_Reduce(&ParticleEnergy, &TotalParticleEnergy, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_GLOBAL_COMMUNICATOR);
+  // get max cfl over all mpi process
+  double cfl_all[PIC::nTotalSpecies];
+
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++)
+  MPI_Reduce(cfl_process+iSp, cfl_all+iSp, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_GLOBAL_COMMUNICATOR);
+
+  // TotalParticleEnergy *= 1e-7; //in SI
+  if (PIC::ThisThread==0) {
+    printf("Total Particle Energy:%e\n",TotalParticleEnergy);
+    printf("Total Energy:%.20e,%f\n",TotalParticleEnergy+TotalWaveEnergy,TotalParticleEnergy+TotalWaveEnergy);
+    std::cout.precision(20);
+    std::cout<<"total energy: "<<TotalParticleEnergy+TotalWaveEnergy<<std::endl;
+    for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++)
+      std::cout<<"max cfl number for spec "<< iSp <<" :"  << cfl_all[iSp] << std::endl;
+  }
+
+  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ && _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ ) {
+    PIC::CPLR::FLUID::fix_plasma_node_boundary();
+  }
+
+
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.UpdateTimer();
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrixGPU(){
+  //the table of cells' particles
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
+  //PIC::ParticleBuffer::byte *ParticleData;
+  PIC::Mesh::cDataCenterNode *cell;
+  PIC::Mesh::cDataBlockAMR *block;
+  long int LocalCellNumber;
+
+  CumulativeTiming::UpdateJMassMatrixTime.Start();
+  CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
+
+  double ParticleEnergy=0.0;
+  double cfl_process[PIC::nTotalSpecies];
+  for (int iSp=0; iSp<PIC::nTotalSpecies; iSp++) cfl_process[iSp]=0.0;
+
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,3,JxOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,243,MassMatrixOffsetIndex*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+
+  if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+    PIC::Mesh::SetCornerNodeAssociatedDataValue(0.0,10*PIC::nTotalSpecies,SpeciesDataIndex[0]*sizeof(double)+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  }
+
+  double qom[PIC::nTotalSpecies];
+  for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) qom[iSp] = (PIC::MolecularData::GetElectricCharge(iSp)*charge_conv)/(PIC::MolecularData::GetMass(iSp)*mass_conv);
+
+
+
+
+
+
+  //////////////////////////////////////
+
+
+
+
+  cCellData CellDataTable_Bank0[PIC::nTotalThreadsOpenMP];
+  cCellData CellDataTable_Bank1[PIC::nTotalThreadsOpenMP];
+
+#if _CUDA_MODE_ == _OFF_
+  const int thread_id_table_size= PIC::nTotalThreadsOpenMP;
+#else
+  const int thread_id_table_size=_CUDA_BLOCKS_*_CUDA_THREADS_;
+#endif
+
+  bool CellProcessingFlagTable[PIC::nTotalThreadsOpenMP];
+ // double ParticleEnergyTable[PIC::nTotalThreadsOpenMP];
+
+
+  double *ParticleEnergyTable=NULL;
+  amps_malloc_managed(ParticleEnergyTable,thread_id_table_size);
+
+  //the next is needed to eliminate false sharing in the multi-thread mode
+  double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+  for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
+
+/*  double *cflTable[thread_id_table_size]; //[PIC::nTotalSpecies];
+  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=0;i<thread_id_table_size;i++) cflTable[i]=cflTable_base+PIC::nTotalSpecies*i;
+
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) { 
+      cflTable[i][iSp]=0.0;
+    }
+  }	*/
+
+
+  double **cflTable=NULL; //[thread_id_table_size]; //[PIC::nTotalSpecies];
+
+
+  amps_malloc_managed<double*>(cflTable,thread_id_table_size);
+
+  cflTable[0]=NULL;
+  amps_malloc_managed<double>(cflTable[0],thread_id_table_size*PIC::nTotalSpecies);
+
+//  double cflTable_base[thread_id_table_size*PIC::nTotalSpecies];
+
+  for (int i=1;i<thread_id_table_size;i++) cflTable[i]=cflTable[0]+PIC::nTotalSpecies*i;
+
+  for (int i=0;i<PIC::nTotalThreadsOpenMP;i++) {
+    ParticleEnergyTable[i]=0.0;
+
+    for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+      cflTable[i][iSp]=0.0;
+    }
+  }
+
+
+
+  auto mesh_ptr=PIC::Mesh::mesh;
+  auto ThisThread=PIC::ThisThread;
+  auto BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+
+
+  // Loop through all blocks. 
+
+    int this_thread_id=0;
+    auto CellData_TH=CellDataTable_Bank0+this_thread_id;
+
+    cProcessCellData ProcessCellData;
+
+    ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+    auto PrcessCellSubset = [=] _TARGET_HOST_ _TARGET_DEVICE_ (int di,int dj,int dk,double **cflTable,double *ParticleEnergyTable,cProcessCellData ProcessCellData) {
+
+      int nTotalCells=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/8;
+
+#ifndef __CUDA_ARCH__
+      int this_thread_id=0;
+      int increment=1;
+#else
+      int this_thread_id=blockIdx.x*blockDim.x+threadIdx.x;
+      int increment=gridDim.x*blockDim.x;
+#endif
+
+      cCellData CellData_TH;
+
+
+      double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
+      for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
+
+
+
+
+
+
+    for (int CellCounter=this_thread_id;CellCounter<nTotalCells;CellCounter+=increment) {
+      int nLocalNode,ii=CellCounter;
+      int i,j,k,t;
+      bool proceed_with_calculations=true;
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+
+      t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/8;
+      nLocalNode=ii/t;
+      ii=ii%t;
+
+      t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_/4;
+      k=ii/t;
+      ii=ii%t;
+
+      t=_BLOCK_CELLS_X_/2;
+      j=ii/t;
+      i=ii%t;
+
+      i=2*i+di;
+      j=2*j+dj;
+      k=2*k+dk;
+
+
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
+
+      if (node->block==NULL) continue;
+
+#ifndef __CUDA_ARCH__
+      double StartTime=MPI_Wtime();
+#endif
+
+      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
+        bool BoundaryBlock=false;
+
+        for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,mesh_ptr)==NULL) {
+          //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
+          BoundaryBlock=true;
+          break;
+        }
+
+        if (BoundaryBlock==true) proceed_with_calculations=false;
+      }
+
+      if (node->Thread!=ThisThread) proceed_with_calculations=false;
+
+      bool CellProcessingFlagTable=false;
+
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+      if (proceed_with_calculations==true) {
+
+
+
+        CellData_TH.clean();
+
+        CellProcessingFlagTable=ProcessCell(i,j,k,node,&CellData_TH,0,1,MassTable,ChargeTable,
+          PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,ProcessCellData);
+      }
+
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
+      if (CellProcessingFlagTable==true) { // (CellData!=NULL) {
+        double *target,*source;
+        int idim,ii;
+
+
+
+            //loop through all non-updated corners to find that one which is not locked
+            for (int icor=0;icor<8;icor++) {
+
+
+
+
+                ParticleEnergyTable[this_thread_id]+=CellData_TH.ParticleEnergy;
+
+                for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) {
+                  if (CellData_TH.cflCell[iSp]>cflTable[this_thread_id][iSp]) cflTable[this_thread_id][iSp]=CellData_TH.cflCell[iSp];
+                }
+
+                target=CellData_TH.CornerData[icor].CornerJ_ptr;
+                source=CellData_TH.CornerData[icor].CornerJ;
+
+                for (idim=0;idim<3;idim++) target[idim]+=source[idim];
+
+                target=CellData_TH.CornerData[icor].CornerMassMatrix_ptr;
+                source=CellData_TH.CornerData[icor].CornerMassMatrix;
+
+                for (int ii=0;ii<243;ii++) target[ii]+=source[ii];
+
+                if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
+                  target=CellData_TH.CornerData[icor].SpecData_ptr;
+                  source=CellData_TH.CornerData[icor].SpecData;
+
+                  for (int ii=0; ii<10*PIC::nTotalSpecies; ii++) target[ii]+=source[ii];
+                }
+
+
+
+
+            }
+
+
+
+      }
+
+      //increment the time counter
+#ifndef __CUDA_ARCH__
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+        node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+      }
+#endif
+    }
+
+    };
+
+
+    for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
+#if _CUDA_MODE_ == _OFF_
+      PrcessCellSubset(di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+
+#else
+      ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+      ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+
+      kernel_6<<<40,200>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+
+
+
+//      kernel_6<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+      cudaDeviceSynchronize();
+#endif
+
+    }
+
+
+
+
+
+  //reduce the particle energy table
+  for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
+
+  //find the max cfl among all threads
+  for (int iSp=0;iSp<PIC::nTotalSpecies; iSp++) { 
+    cfl_process[iSp]=cflTable[0][iSp];
+    for (int i=0;i<thread_id_table_size;i++) if (cfl_process[iSp]<cflTable[i][iSp]) cfl_process[iSp]=cflTable[i][iSp]; 
+  }
+
+
+  //aeallocate temp buffers
+  amps_free_managed(cflTable[0]);
+  amps_free_managed(cflTable);
+  amps_free_managed(ParticleEnergyTable);
+
+
+
+  switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
+  case _PIC_MODE_ON_:
+    PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrixSpeciesData;
+    PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrixSpeciesData;
+    break;
+  case _PIC_MODE_OFF_:
+    PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::ProcessJMassMatrix;
+    PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=PIC::FieldSolver::Electromagnetic::ECSIM::CopyJMassMatrix;
+  }
+
+  PIC::Parallel::CornerBlockBoundaryNodes::SetActiveFlag(true);
+
+  switch (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_) {
+  case _PIC_MODE_ON_:
+    PIC::Parallel::BPManager.isCorner = true;
+    PIC::Parallel::BPManager.pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
     PIC::Parallel::BPManager.copy_node_to_buffer = copy_plasma_to_buffer;
     PIC::Parallel::BPManager.add_buffer_to_node = add_plasma_to_node;
     PIC::Parallel::ProcessBlockBoundaryNodes(); 
@@ -3553,9 +3954,9 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
   ComputeNetCharge(true);
   ComputeDivE();
   SetBoundaryChargeDivE();
-  PoissonSolver.UpdateRhs(PoissonUpdateRhs);
+  PoissonSolver->UpdateRhs(PoissonUpdateRhs);
   linear_solver_matvec_c = PoissonMatvec;
-  PoissonSolver.Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
+  PoissonSolver->Solve(PoissonSetInitialGuess,PoissonProcessFinalSolution,1e-2,
                       PIC::CPLR::FLUID::EFieldIter,PackBlockData_phi,UnpackBlockData_phi);
   SetBoundaryPHI();
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::DivECorrectionFieldTime.UpdateTimer();
@@ -3576,7 +3977,7 @@ void exchangeParticleLocal(){
     for (j=0;j<_BLOCK_CELLS_Y_;j++) {
       for (i=0;i<_BLOCK_CELLS_X_;i++) {
         
-        //LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        //LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
         
           FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
       }
@@ -3586,8 +3987,8 @@ void exchangeParticleLocal(){
   for (int ii=0;ii<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;ii++)
     FirstCellParticleTable[ii]=-1;  
 
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *  node=(thread==PIC::Mesh::mesh.ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *  node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
     if (node==NULL) continue;
 
@@ -3637,7 +4038,7 @@ void exchangeParticleLocal(){
 
 //      node=node->nextNodeThisThread;
     }
-  }//for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++)
+  }//for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++)
   
 
 }
@@ -3664,7 +4065,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -3827,7 +4228,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                 printf("particle correction xFinal:    %e  %e  %e\n",xFinal[0],xFinal[1],xFinal[2]);
               */
 
-              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * newNode=PIC::Mesh::mesh.findTreeNode(xFinal,node);
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * newNode=PIC::Mesh::mesh->findTreeNode(xFinal,node);
 
               if (newNode==NULL) {
                 PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -3836,7 +4237,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                 PIC::ParticleBuffer::DeleteParticle(ptr);
               }
               else{
-                  if (PIC::Mesh::mesh.fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+                  if (PIC::Mesh::mesh->fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
                   
                   PIC::Mesh::cDataBlockAMR * block=newNode->block;
 
@@ -3917,7 +4318,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4049,7 +4450,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4094,7 +4495,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4149,7 +4550,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
   
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_phi,UnpackBlockData_phi);
+    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_phi,UnpackBlockData_phi);
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -4174,7 +4575,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
       
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4254,7 +4655,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4316,7 +4717,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateB(){
 
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
     break;
       
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -4354,7 +4755,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_C2N() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4418,7 +4819,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4483,7 +4884,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InterpolateB_N2C_Block(cTreeNodeA
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4553,7 +4954,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
       bool BoundaryBlock=false;
 
-      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,&PIC::Mesh::mesh)==NULL) {
+      for (int iface=0;iface<6;iface++) if (node->GetNeibFace(iface,0,0,PIC::Mesh::mesh)==NULL) {
         //the block is at the domain boundary, and thresefor it is a 'ghost' block that is used to impose the periodic boundary conditions
         BoundaryBlock=true;
         break;
@@ -4596,7 +4997,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateE() {
     
   switch (_PIC_BC__PERIODIC_MODE_) {
   case _PIC_BC__PERIODIC_MODE_OFF_:
-    PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_E,UnpackBlockData_E);
+    PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_E,UnpackBlockData_E);
     break;
     
   case _PIC_BC__PERIODIC_MODE_ON_:
@@ -4769,11 +5170,11 @@ double PIC::FieldSolver::Electromagnetic::ECSIM::UpdateRhs(int iVar,
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix() {
-  Solver.Reset();
-  Solver.BuildMatrix(GetStencil);
+  Solver->Reset();
+  Solver->BuildMatrix(GetStencil);
   if (DoDivECorrection){
-    PoissonSolver.Reset();
-    PoissonSolver.BuildMatrix(PoissonGetStencil);
+    PoissonSolver->Reset();
+    PoissonSolver->BuildMatrix(PoissonGetStencil);
   }
 }
 
@@ -4804,7 +5205,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
       //set the init value of mesh counter
       PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
-      nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+      nMeshCounter=PIC::Mesh::mesh->nMeshModificationCounter;
     }
   }
   else {
@@ -4812,7 +5213,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       UpdateJMassMatrix();
       cnt++;
       PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
-      nMeshCounter=PIC::Mesh::mesh.nMeshModificationCounter;
+      nMeshCounter=PIC::Mesh::mesh->nMeshModificationCounter;
     }    
   }
   
@@ -4825,10 +5226,10 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
   
 
   //  PIC::BC::ExternalBoundary::UpdateData();
-  if (nMeshCounter!=PIC::Mesh::mesh.nMeshModificationCounter){
+  if (nMeshCounter!=PIC::Mesh::mesh->nMeshModificationCounter){
     PIC::FieldSolver::Electromagnetic::ECSIM::BuildMatrix();
     UpdateJMassMatrix();   
-    nMeshCounter = PIC::Mesh::mesh.nMeshModificationCounter;
+    nMeshCounter = PIC::Mesh::mesh->nMeshModificationCounter;
   }
   
   /*
@@ -4838,15 +5239,15 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
     PIC::CPLR::FLUID::write_output(timeNow,true);
   }
   */
-  Solver.UpdateRhs(UpdateRhs); 
-  Solver.UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
+  Solver->UpdateRhs(UpdateRhs); 
+  Solver->UpdateMatrixNonZeroCoefficients(UpdateMatrixElement);
 
   CumulativeTiming::SolveTime.Start();
   linear_solver_matvec_c = matvec;
 
   if (PIC::ThisThread==0) printf("---------------Solving E field-----------\n");
 
-  Solver.Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
+  Solver->Solve(SetInitialGuess,ProcessFinalSolution,PIC::CPLR::FLUID::EFieldTol,PIC::CPLR::FLUID::EFieldIter,PackBlockData_E,UnpackBlockData_E); 
 
   CumulativeTiming::SolveTime.UpdateTimer();
   CumulativeTiming::UpdateBTime.Start();
@@ -4858,7 +5259,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
 
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ ) setB_center_BC();
 
-  PIC::Mesh::mesh.ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
+  PIC::Mesh::mesh->ParallelBlockDataExchange(PackBlockData_B,UnpackBlockData_B);
   
   if ((_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_) || (_PIC_FIELD_SOLVER_B_MODE_== _PIC_FIELD_SOLVER_B_CORNER_BASED_))  InterpolateB_C2N();
 
@@ -4974,14 +5375,14 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::matvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
-  Solver.MultiplyVector(VecOut,VecIn,n);
+  Solver->MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonMatvec(double* VecIn, double * VecOut, int n){
   CumulativeTiming::TotalMatvecTime.Start();
-  PoissonSolver.MultiplyVector(VecOut,VecIn,n);
+  PoissonSolver->MultiplyVector(VecOut,VecIn,n);
   CumulativeTiming::TotalMatvecTime.UpdateTimer();
 }
 
@@ -4990,49 +5391,49 @@ int isFaceBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   switch (sum) {
 
   case   1:
-    if (!node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(0,0,0,PIC::Mesh::mesh)){
       return 1;
-    }else if (node->GetNeibFace(0,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(0,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 1;
     }
     else return 0;
     
   case   1000:
-    if (!node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(1,0,0,PIC::Mesh::mesh)){
       return 1;
-    }else if (node->GetNeibFace(1,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(1,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 1;
     }
     else return 0;
     
   case   10:
-    if (!node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(2,0,0,PIC::Mesh::mesh)){
       return 2;
-    }else if (node->GetNeibFace(2,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(2,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 2;
     }
     else return 0;
 
   case 10000:
-    if (!node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(3,0,0,PIC::Mesh::mesh)){
       return 2;
-    }else if (node->GetNeibFace(3,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(3,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 2;
     }
     else return 0;
 
   case  100:
-    if (!node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(4,0,0,PIC::Mesh::mesh)){
       return 4;
-    }else if (node->GetNeibFace(4,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(4,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 4;
     }
     else return 0;
     
   case  100000:
-    if (!node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)){
+    if (!node->GetNeibFace(5,0,0,PIC::Mesh::mesh)){
       return 4;
-    }else if (node->GetNeibFace(5,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+    }else if (node->GetNeibFace(5,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
       return 4;
     }
     else return 0;
@@ -5061,8 +5462,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else {
-      if (!node->GetNeibEdge(0,0,&PIC::Mesh::mesh)) return 6;
-      else if (node->GetNeibEdge(0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(0,0,PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -5079,8 +5480,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else {
-      if (!node->GetNeibEdge(1,0,&PIC::Mesh::mesh)) return 6;
-      else if (node->GetNeibEdge(1,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(1,0,PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(1,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
     
@@ -5098,8 +5499,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     } else {
-      if (!node->GetNeibEdge(2,0,&PIC::Mesh::mesh)) return 6;
-      else if (node->GetNeibEdge(2,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(2,0,PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(2,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -5116,8 +5517,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b) { return a+b;
     }else{
-      if (!node->GetNeibEdge(3,0,&PIC::Mesh::mesh)) return 6;
-      else if (node->GetNeibEdge(3,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
+      if (!node->GetNeibEdge(3,0,PIC::Mesh::mesh)) return 6;
+      else if (node->GetNeibEdge(3,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 6;
       else return 0;
     }
 
@@ -5134,8 +5535,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
       
     if (a+b) { return a+b;
     }else{
-      if (!node->GetNeibEdge(4,0,&PIC::Mesh::mesh)) return 5;
-      else if (node->GetNeibEdge(4,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(4,0,PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(4,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -5153,8 +5554,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
    
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(5,0,&PIC::Mesh::mesh)) return 5;
-      else if (node->GetNeibEdge(5,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(5,0,PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(5,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
   
@@ -5172,8 +5573,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(6,0,&PIC::Mesh::mesh)) return 5;
-      else if (node->GetNeibEdge(6,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(6,0,PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(6,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -5191,8 +5592,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(7,0,&PIC::Mesh::mesh)) return 5;
-      else if (node->GetNeibEdge(7,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
+      if (!node->GetNeibEdge(7,0,PIC::Mesh::mesh)) return 5;
+      else if (node->GetNeibEdge(7,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 5;
       else return 0;
     }
     
@@ -5210,8 +5611,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(8,0,&PIC::Mesh::mesh)) return 3;
-      else if (node->GetNeibEdge(8,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(8,0,PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(8,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
    
@@ -5229,8 +5630,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(9,0,&PIC::Mesh::mesh)) return 3;
-      else if (node->GetNeibEdge(9,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(9,0,PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(9,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     
@@ -5248,8 +5649,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
     if (a+b){ return a+b;
     }else{
-      if (!node->GetNeibEdge(10,0,&PIC::Mesh::mesh)) return 3;
-      else if (node->GetNeibEdge(10,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(10,0,PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(10,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
         
@@ -5267,8 +5668,8 @@ int isEdgeBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     
     if (a+b){ return a+b;
     }else{    
-      if (!node->GetNeibEdge(11,0,&PIC::Mesh::mesh)) return 3;
-      else if (node->GetNeibEdge(11,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
+      if (!node->GetNeibEdge(11,0,PIC::Mesh::mesh)) return 3;
+      else if (node->GetNeibEdge(11,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false) return 3;
       else return 0;
     }
     
@@ -5328,9 +5729,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(0,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(0,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5345,9 +5746,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(1,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(1,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(1,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(1,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5362,9 +5763,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(2,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(2,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(2,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(2,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5379,9 +5780,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(3,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(3,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(3,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(3,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5396,9 +5797,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(4,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(4,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(4,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(4,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5413,9 +5814,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(5,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(5,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(5,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(5,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5430,9 +5831,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(6,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(6,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(6,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(6,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5447,9 +5848,9 @@ int isCornerBoundary(int sum, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
     if (res>0){
       return res;
     }else{
-      if (!node->GetNeibCorner(7,&PIC::Mesh::mesh)) {
+      if (!node->GetNeibCorner(7,PIC::Mesh::mesh)) {
         return 7;
-      }else if (node->GetNeibCorner(7,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibCorner(7,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
         return 7;
       }
       else return 0;
@@ -5476,11 +5877,11 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
   if (fabs(x[0]-16.5)<0.1 && fabs(x[1]-8.5)<0.1 && fabs(x[2]-4.5)<0.1) isTest=true;
   */
   for (int idim=0; idim<3 && node; idim++){
-    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0,&PIC::Mesh::mesh);
+    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh->EPS)) node=node->GetNeibFace(idim*2,0,0,PIC::Mesh::mesh);
   }
 
   for (int idim=0; idim<3 && node; idim++){
-    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0,&PIC::Mesh::mesh);
+    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh->EPS)) node=node->GetNeibFace(idim*2+1,0,0,PIC::Mesh::mesh);
   }
 
   if (node==NULL){
@@ -5492,12 +5893,12 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCell(double * x, double
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
-    if (fabs(x[idim]-0.5*dx[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    if (fabs(x[idim]-0.5*dx[idim]-node->xmin[idim])<PIC::Mesh::mesh->EPS) sum+=addition;
     addition *=10;
   }
   
   for (int idim=0;idim<3;idim++) {
-    if (fabs(x[idim]+0.5*dx[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    if (fabs(x[idim]+0.5*dx[idim]-node->xmax[idim])<PIC::Mesh::mesh->EPS) sum+=addition;
     addition *=10;
   }
 
@@ -5524,11 +5925,11 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   if (fabs(x[0]-16.5)<0.1 && fabs(x[1]-8.5)<0.1 && fabs(x[2]-4.5)<0.1) isTest=true;
   */
   for (int idim=0; idim<3 && node; idim++){
-    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2,0,0,&PIC::Mesh::mesh);
+    if (x[idim]<(node->xmin[idim]-PIC::Mesh::mesh->EPS)) node=node->GetNeibFace(idim*2,0,0,PIC::Mesh::mesh);
   }
 
   for (int idim=0; idim<3 && node; idim++){
-    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh.EPS)) node=node->GetNeibFace(idim*2+1,0,0,&PIC::Mesh::mesh);
+    if (x[idim]>(node->xmax[idim]+PIC::Mesh::mesh->EPS)) node=node->GetNeibFace(idim*2+1,0,0,PIC::Mesh::mesh);
   }
 
   if (node==NULL){
@@ -5539,12 +5940,12 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
   int addition =1, sum=0;//sum used to indicate the location of the corner
   //0 not at the boundary, 111000 at the right most corner...
   for (int idim=0;idim<3;idim++) {
-    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    if (fabs(x[idim]-node->xmin[idim])<PIC::Mesh::mesh->EPS) sum+=addition;
     addition *=10;
   }
   
   for (int idim=0;idim<3;idim++) {
-    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS) sum+=addition;
+    if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh->EPS) sum+=addition;
     addition *=10;
   }
 
@@ -5558,11 +5959,11 @@ int  PIC::FieldSolver::Electromagnetic::ECSIM::isBoundaryCorner(double * x, cTre
 
 bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
 
-  for (int idim=0;idim<3;idim++)  if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh.EPS){
+  for (int idim=0;idim<3;idim++)  if (fabs(x[idim]-node->xmax[idim])<PIC::Mesh::mesh->EPS){
 
-      if (node->GetNeibFace(idim*2+1,0,0,&PIC::Mesh::mesh)==NULL){
+      if (node->GetNeibFace(idim*2+1,0,0,PIC::Mesh::mesh)==NULL){
         return true;
-      }else if (node->GetNeibFace(idim*2+1,0,0,&PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
+      }else if (node->GetNeibFace(idim*2+1,0,0,PIC::Mesh::mesh)->IsUsedInCalculationFlag==false){
 	return true;
       }
     }
@@ -5573,7 +5974,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::isRightBoundaryCorner(double * x,
 //-------------------------------------
 void PIC::FieldSolver::Electromagnetic::ECSIM::copy_plasma_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr) {
   char *nodePtr = node->block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
-  const int pointBufferSize = PIC::Mesh::cDataCornerNode::totalAssociatedDataLength; 
+  const int pointBufferSize = PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength; 
 
   memcpy(bufferPtr, nodePtr, pointBufferSize);
 }

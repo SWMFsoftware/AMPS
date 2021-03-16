@@ -72,7 +72,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
   vMiddle[0] = vTmpX*cosPhi + vTmpY*sinPhi;
   vMiddle[1] =-vTmpX*sinPhi + vTmpY*cosPhi;
   
-  middleNode=PIC::Mesh::mesh.findTreeNode(xMiddle,startNode);
+  middleNode=PIC::Mesh::mesh->findTreeNode(xMiddle,startNode);
   
   if(middleNode == NULL){
     // the particle has left the computational domain
@@ -113,7 +113,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
     vFinal[0] = vTmpX*cosPhi + vTmpY*sinPhi;
     vFinal[1] =-vTmpX*sinPhi + vTmpY*cosPhi;
 
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 
     
     //advance the particle's position and velocity
@@ -159,7 +159,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
 
 
 
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
 
@@ -251,11 +251,11 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
   double norm=0.0,dInterval=0.0;
   char str[_MAX_STRING_LENGTH_PIC_];
   
-  if (MS::mesh.ThisThread==0) pipe.openRecvAll();
+  if (MS::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
   
   
-  if (MS::mesh.ThisThread==0) {
+  if (MS::mesh->ThisThread==0) {
     sprintf(str,"%s.dat",fname);
     fout=fopen(str,"w");
     
@@ -263,7 +263,7 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
     fprintf(fout,"VARIABLES=\"Energy\",\"f\"\n");
     
     //collect the sampled information from other processors
-    for (thread=1;thread<MS::mesh.nTotalThreads;thread++) 
+    for (thread=1;thread<MS::mesh->nTotalThreads;thread++) 
       for (int iBin=0; iBin<nBin; iBin++) 
 	Distribution[iBin]+=pipe.recv<double>(thread);
     
@@ -295,7 +295,7 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
   }
   
   
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
   
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

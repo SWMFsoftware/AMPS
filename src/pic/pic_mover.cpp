@@ -24,6 +24,13 @@ cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_E_corner=NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_B_center=NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> ** PIC::Mover::lastNode_B_corner=NULL;
 
+//the description of the boundaries of the block faces
+_TARGET_DEVICE_ _CUDA_MANAGED_ PIC::Mover::cExternalBoundaryFace PIC::Mover::ExternalBoundaryFaceTable[6]={
+    {{-1.0,0.0,0.0}, {0,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{1.0,0.0,0.0}, {1,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0},
+    {{0.0,-1.0,0.0}, {0,0,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{0.0,1.0,0.0}, {0,1,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0},
+    {{0.0,0.0,-1.0}, {0,0,0}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}, {{0.0,0.0,1.0}, {0,0,1}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}
+};
+
 //====================================================
 //init the particle mover
 void PIC::Mover::Init_BeforeParser(){
@@ -56,6 +63,23 @@ void PIC::Mover::Init() {
    if (ProcessOutsideDomainParticles==NULL) exit(__LINE__,__FILE__,"Error: ProcessOutsideDomainParticles is not initiated. Function that process particles that leave the computational domain is not set");
 #endif
 
+   //the description of the boundaries of the block faces
+   if (PIC::Mesh::mesh==NULL) exit(__LINE__,__FILE__,"Error: PIC::Mesh::mesh needs to be generated for the following initializations");
+   if (PIC::Mesh::MeshTableLength!=1) exit(__LINE__,__FILE__,"Error: initialization is not implemented for MeshTableLength!=1");
+
+   for (int nface=0;nface<6;nface++) {
+     double cE0=0.0,cE1=0.0;
+
+     for (int idim=0;idim<3;idim++) {
+       ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
+
+       cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+       cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+     }
+
+     ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
+     ExternalBoundaryFaceTable[nface].lE1=sqrt(cE1);
+   }
 }
 
 //====================================================
@@ -66,7 +90,8 @@ void PIC::Mover::TotalParticleAcceleration_default(double *accl,int spec,long in
 //====================================================
 //Set B for B_Center/B_Corner
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+_TARGET_HOST_ _TARGET_DEVICE_ 
+void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset) {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;  
 
   if (!node->block) return;
@@ -79,7 +104,7 @@ void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
       for (int i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
         int LocalCenterId = _getCenterNodeLocalNumber(i,j,k);
         if (!node->block->GetCenterNode(LocalCenterId)) continue; 
-        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+        char *offset=node->block->GetCenterNode(LocalCenterId)->GetAssociatedDataBufferPointer()+MagneticField_RelativeOffset;
         double * ptr =  (double*)(offset+PrevBOffset);
         memcpy(&B_C[LocalCenterId*3],ptr,3*sizeof(double));
       }
@@ -93,7 +118,7 @@ void PIC::Mover::SetBlock_B(double *B_C,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
       for (int i=0;i<=_BLOCK_CELLS_X_;i++) {
         int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
         if (!node->block->GetCornerNode(LocalCornerId)) continue; 
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+OffsetB_corner;
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset+OffsetB_corner;
         double * ptr =  (double*)(offset+PrevBOffset);
         memcpy(&B_C[LocalCornerId*3],ptr,3*sizeof(double));
       }
@@ -117,17 +142,18 @@ void PIC::Mover::SetBlock_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 
   switch (_PIC_FIELD_SOLVER_B_MODE_) {
   case _PIC_FIELD_SOLVER_B_CENTER_BASED_ :
-    SetBlock_B(PIC::Mover::B_Center[threadId],node);
+    SetBlock_B(PIC::Mover::B_Center[threadId],node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
     break;
   case _PIC_FIELD_SOLVER_B_CORNER_BASED_:
-    SetBlock_B(PIC::Mover::B_Corner[threadId],node);
+    SetBlock_B(PIC::Mover::B_Corner[threadId],node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
     break;
   }
 }
 
 //====================================================
 //Set E for E_Corner
-void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node){
+_TARGET_HOST_ _TARGET_DEVICE_
+void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,int ElectricField_RelativeOffset){
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   if (!node->block) return;
 
@@ -137,7 +163,7 @@ void PIC::Mover::SetBlock_E(double *E_Corner,cTreeNodeAMR<PIC::Mesh::cDataBlockA
       for (int i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
         int LocalCornerId = _getCornerNodeLocalNumber(i,j,k);
         if (!node->block->GetCornerNode(LocalCornerId)) continue;
-        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
+        char *offset=node->block->GetCornerNode(LocalCornerId)->GetAssociatedDataBufferPointer()+ElectricField_RelativeOffset;
         double * ptr =  (double*)(offset+OffsetE_HalfTimeStep);
         memcpy(&E_Corner[LocalCornerId*3],ptr,3*sizeof(double));
       }
@@ -159,7 +185,7 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 //  if (node == PIC::Mover::lastNode_E_corner[threadId]) return;
 //   PIC::Mover::lastNode_E_corner[threadId]=node;
 
-  SetBlock_E(PIC::Mover::E_Corner[threadId],node);
+  SetBlock_E(PIC::Mover::E_Corner[threadId],node,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   #else
   exit(__LINE__,__FILE__,"Error: with the given configuraion the function sgould not be called at all");
   #endif
@@ -169,93 +195,92 @@ void PIC::Mover::SetBlock_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
 
 //====================================================
 //launch multi-threaded Lapenta particle mover
-
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
 void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
   int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
-  
+
   static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
   double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
-  
+
   memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
   memcpy(ElectricChargeTable,PIC::MolecularData::ElectricChargeTable,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
   memcpy(TimeStepTable,PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
-  
+
   if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: that function is valid only for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_");
-  
+
   int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
   long int ParticleList,ptr;
   int s;
   double LocalTimeStep;
-  
+
   chrono::high_resolution_clock::time_point start_time;
   PIC::Mesh::cDataBlockAMR *block;
-  
+
   double E_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
   double B_C[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
   double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
-  
+
   PIC::Mover::cLapentaInputData data;
-  
+
   data.E_Corner=E_corner;
-  data.B_Center=B_C;
-  data.B_Corner=B_C;
+  data.B_C=B_C;
+//  data.B_Corner=B_C;
   data.MolMass=MolMass;
   data.ElectricChargeTable=ElectricChargeTable;
   data.TimeStepTable=TimeStepTable;
   data.ParticleDataLength=ParticleDataLength;
   data.ParticleDataBuffer=ParticleDataBuffer;
-  data.mesh=&PIC::Mesh::mesh;
-  
-  
+  data.mesh=PIC::Mesh::mesh;
+
+
   //shift particle locations
   static Thread::Sync::cBarrier barrier(thread_id_table_size);
   static atomic<int> iblock_max;
   int iblock,iblock_max_thread;
   int increment;
-  
+
   iblock_max=0;
   barrier.Sync();
-  
+
   increment=nlocal_blocks/(10*thread_id_table_size);
   if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
   if (increment==0) increment=nlocal_blocks/thread_id_table_size;
   if (increment==0) increment=1;
-  
-  
+
+
   do {
-    
+
     iblock=iblock_max.fetch_add(increment);
     iblock_max_thread=iblock+increment;
     if (iblock_max_thread>nlocal_blocks) iblock_max_thread=nlocal_blocks;
-    
-    
+
+
     for (;iblock<iblock_max_thread;iblock++)  {
       start_time=chrono::high_resolution_clock::now();
       node=BlockTable[iblock];
       data.node=node;
-      
+
       if ((block=node->block)==NULL) continue;
-      
+
 #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-      PIC::Mover::SetBlock_E(E_corner,node);
-      PIC::Mover::SetBlock_B(B_C,node);
+      PIC::Mover::SetBlock_E(E_corner,node,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+      PIC::Mover::SetBlock_B(B_C,node,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
 #endif
-      
+
       for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
         ParticleList=block->FirstCellParticleTable[i];
-        
+
         while (ParticleList!=-1) {
           ptr=ParticleList;
           ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
           ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
-          
+
           PIC::Mover::Lapenta2017(ParticleData,ptr,&data);
         }
       }
-      
+
       //update time counter
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
       node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
@@ -263,32 +288,222 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
     }
   }
   while (iblock_max_thread<nlocal_blocks);
-  
+
   barrier_middle.Sync();
-  
+
   //update the particle lists
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh.DomainBoundaryLayerNodesList;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh->DomainBoundaryLayerNodesList;
   int ThisThread=PIC::ThisThread;
-  
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) if (thread!=ThisThread) {
+
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if (thread!=ThisThread) {
     node=DomainBoundaryLayerNodesList[thread];
     int node_cnt=0;
-    
+
     for (;node!=NULL;node=node->nextNodeThisThread,node_cnt++) if (node_cnt%thread_id_table_size==this_thread_id) {
       if ((block=node->block)==NULL) continue;
-      
+
       for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
         block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
         block->tempParticleMovingListTable[i]=-1;
       }
     }
   }
-  
+
   for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
     node=BlockTable[iblock];
-    
+
     if ((block=node->block)==NULL) continue;
-    
+
+    for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+      block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+      block->tempParticleMovingListTable[i]=-1;
+    }
+  }
+}
+#endif
+
+
+//====================================================
+//launch multi-threaded Lapenta particle mover
+#if _CUDA_MODE_ == _ON_
+
+_TARGET_DEVICE_ _CUDA_MANAGED_   double E_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+_TARGET_DEVICE_ _CUDA_MANAGED_   double B_C[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+_TARGET_DEVICE_ _CUDA_MANAGED_   double B_corner[(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3];
+
+void LapentaMultiThreadedMoverGPU() {
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
+  int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
+
+
+  int this_thread_id=0,thread_id_table_size=1;
+
+  PIC::ParticleBuffer::CreateParticleTable();
+
+
+
+  static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
+  double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
+
+  memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(ElectricChargeTable,PIC::MolecularData::ElectricChargeTable,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+  memcpy(TimeStepTable,PIC::ParticleWeightTimeStep::GlobalTimeStep,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
+
+  if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: that function is valid only for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_");
+
+  int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  long int ParticleList,ptr;
+  int s;
+  double LocalTimeStep;
+
+  chrono::high_resolution_clock::time_point start_time;
+  PIC::Mesh::cDataBlockAMR *block;
+
+  PIC::Mover::cLapentaInputData data;
+
+
+
+  data.E_Corner=E_corner;
+  data.B_C=B_C;
+  data.MolMass=PIC::MolecularData::MolMass;
+  data.ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
+  data.TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
+  data.ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+  data.ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+  data.mesh=PIC::Mesh::mesh;
+
+
+
+  //shift particle locations
+  static Thread::Sync::cBarrier barrier(thread_id_table_size);
+  static atomic<int> iblock_max;
+  int iblock,iblock_max_thread;
+  int increment;
+
+  iblock_max=0;
+  barrier.Sync();
+
+  increment=nlocal_blocks/(10*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
+  if (increment==0) increment=nlocal_blocks/thread_id_table_size;
+  if (increment==0) increment=1;
+
+
+
+  auto ProcessParticleList = [=] _TARGET_HOST_ _TARGET_DEVICE_ (PIC::Mover::cLapentaInputData* data_table,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int i,j,k,icell,iblock,iblock_last=-1;
+    long int ParticleList,ptr;
+    PIC::ParticleBuffer::byte *ParticleData;
+
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    PIC::Mover::cLapentaInputData* data=data_table+id;
+
+    for (int ipart=id;ipart<PIC::ParticleBuffer::NAllPart;ipart+=increment) {
+      ptr=PIC::ParticleBuffer::ParticlePopulationTable[ipart].ptr;
+      icell=PIC::ParticleBuffer::ParticlePopulationTable[ipart].icell;
+
+      PIC::DomainBlockDecomposition::GetIcell2Ijk(i,j,k,iblock,icell);
+
+      node=BlockTable[iblock];
+      data->node=node;
+
+      #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+      if (iblock!=iblock_last) {
+        PIC::Mover::SetBlock_E(data->E_Corner,node,ElectricField_RelativeOffset);
+        PIC::Mover::SetBlock_B(data->B_C,node,MagneticField_RelativeOffset,ElectricField_RelativeOffset);
+
+        iblock_last=iblock;
+      }
+      #endif
+
+      #ifdef __CUDA_ARCH__
+      __syncwarp;
+      #endif
+
+      ParticleData=_GetParticleDataPointer(ptr,ParticleDataLength,ParticleDataBuffer);
+      ParticleList=PIC::ParticleBuffer::GetNext(ParticleData);
+
+      PIC::Mover::Lapenta2017(ParticleData,ptr,data);
+
+      #ifdef __CUDA_ARCH__
+      __syncwarp;
+      #endif
+    }
+  };
+
+
+  int nblocks=10;
+  int nthreads=320;
+
+  int data_table_length=nblocks*nthreads;
+  PIC::Mover::cLapentaInputData *data_table=NULL;
+
+  amps_malloc_managed<PIC::Mover::cLapentaInputData> (data_table,data_table_length);
+
+  for (int i=0;i<data_table_length;i++) {
+    PIC::Mover::cLapentaInputData *data=data_table+i;
+
+    data->E_Corner=NULL,data->B_C=NULL;
+
+    amps_malloc_managed<double>(data->E_Corner,(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3);
+    amps_malloc_managed<double>(data->B_C,(_TOTAL_BLOCK_CELLS_X_+1)*(_TOTAL_BLOCK_CELLS_Y_+1)*(_TOTAL_BLOCK_CELLS_Z_+1)*3);
+
+    data->MolMass=PIC::MolecularData::MolMass;
+    data->ElectricChargeTable=PIC::MolecularData::ElectricChargeTable;
+    data->TimeStepTable=PIC::ParticleWeightTimeStep::GlobalTimeStep;
+    data->ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength;
+    data->ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
+    data->mesh=PIC::Mesh::mesh;
+  }
+
+
+  #if _CUDA_MODE_ == _OFF_
+  ProcessParticleList(data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+  #else
+  kernel_3<<<nblocks,nthreads>>>(ProcessParticleList,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset); 
+  cudaDeviceSynchronize();
+  #endif
+
+  for (int i=0;i<data_table_length;i++) {
+    PIC::Mover::cLapentaInputData *data=data_table+i;
+
+    amps_free_managed(data->E_Corner);
+    amps_free_managed(data->B_C);
+  }
+
+  amps_free_managed(data_table);
+
+  //update the particle lists
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **DomainBoundaryLayerNodesList=PIC::Mesh::mesh->DomainBoundaryLayerNodesList;
+  int ThisThread=PIC::ThisThread;
+
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) if (thread!=ThisThread) {
+    node=DomainBoundaryLayerNodesList[thread];
+    int node_cnt=0;
+
+    for (;node!=NULL;node=node->nextNodeThisThread,node_cnt++) if (node_cnt%thread_id_table_size==this_thread_id) {
+      if ((block=node->block)==NULL) continue;
+
+      for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
+        block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
+        block->tempParticleMovingListTable[i]=-1;
+      }
+    }
+  }
+
+  for (int iblock=0;iblock<nlocal_blocks;iblock++) if (iblock%thread_id_table_size==this_thread_id) {
+    node=BlockTable[iblock];
+
+    if ((block=node->block)==NULL) continue;
+
     for (int i=0;i<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;i++) {
       block->FirstCellParticleTable[i]=block->tempParticleMovingListTable[i];
       block->tempParticleMovingListTable[i]=-1;
@@ -334,6 +549,12 @@ void PIC::Mover::MoveParticles() {
 #endif
 #endif
 
+
+#if _CUDA_MODE_ == _ON_
+  LapentaMultiThreadedMoverGPU();
+  return;
+#endif
+
   //the table of increments for accessing the cells in the block
   static bool initTableFlag=false;
   static int centerNodeIndexTable_Glabal[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
@@ -345,19 +566,19 @@ void PIC::Mover::MoveParticles() {
     switch (DIM) {
     case 3:
       for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
       }
 
       break;
     case 2:
       for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
       }
 
       break;
     case  1:
       for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        centerNodeIndexTable_Glabal[nTotalCenterNodes++]=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
       }
     }
   }
@@ -366,7 +587,7 @@ void PIC::Mover::MoveParticles() {
 
   memcpy(centerNodeIndexTable,centerNodeIndexTable_Glabal,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
   long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
@@ -470,11 +691,11 @@ void PIC::Mover::MoveParticles() {
     //reset the balancing counters
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      if (node->block!=NULL) {*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+node->block->LoadBalancingMeasureOffset))=0.0;
+      if (node->block!=NULL) {*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset))=0.0;
       }
     }
 
-    int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR::LoadBalancingMeasureOffset;
+    int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
     PIC::Mesh::cDataBlockAMR *block;
@@ -548,7 +769,7 @@ void PIC::Mover::MoveParticles() {
     //sum-up the balancing measure
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+node->block->LoadBalancingMeasureOffset));
+      node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset));
     }
   };
 
@@ -731,15 +952,15 @@ void PIC::Mover::MoveParticles() {
     for (j=0;j<_BLOCK_CELLS_Y_;j++) {
       for (i=0;i<_BLOCK_CELLS_X_;i++) {
 
-        //LocalCellNumber=PIC::Mesh::mesh.getCenterNodeLocalNumber(i,j,k);
+        //LocalCellNumber=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
 
         FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
       }
     }
   }
   
-  for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
-    node=(thread==PIC::Mesh::mesh.ThisThread) ? PIC::Mesh::mesh.ParallelNodesDistributionList[PIC::Mesh::mesh.ThisThread] : PIC::Mesh::mesh.DomainBoundaryLayerNodesList[thread];
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
     if (node==NULL) continue;
 
@@ -757,7 +978,7 @@ void PIC::Mover::MoveParticles() {
         break;
       }
     }  //      node=node->nextNodeThisThread;
-  }//for (int thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++)
+  }//for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++)
 
 }
 
@@ -797,7 +1018,7 @@ static long int nCallCounter=0;
 nCallCounter++;
 
 /*
-if ((nCallCounter==1057317)&&(PIC::Mesh::mesh.ThisThread==5)) {
+if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
   cout << __FILE__ << "@" << __LINE__ << endl;
 }
 */
@@ -848,14 +1069,14 @@ if ((nCallCounter==1057317)&&(PIC::Mesh::mesh.ThisThread==5)) {
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
 
   {
     double r[3]={0.0,0.0,0.0};
 
     r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   }
 
 #else
@@ -880,7 +1101,7 @@ if (sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])<1737.0E3) {
 */
 
   /*
-  if ((nCallCounter==1057317)&&(PIC::Mesh::mesh.ThisThread==5)) {
+  if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
     cout << __FILE__ << "@" << __LINE__ << endl;
   }
   */
@@ -901,7 +1122,7 @@ int iTemp,jTemp,kTemp;
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
 
 
-    if (PIC::Mesh::mesh.fingCellIndex(x,iTemp,jTemp,kTemp,startNode,false)==-1) {
+    if (PIC::Mesh::mesh->fingCellIndex(x,iTemp,jTemp,kTemp,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
@@ -910,7 +1131,7 @@ int iTemp,jTemp,kTemp;
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      if (PIC::Mesh::mesh.fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
+      if (PIC::Mesh::mesh->fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -1015,6 +1236,7 @@ int iTemp,jTemp,kTemp;
 
 
     //Calculate the time of flight to the nearest internal surface
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (FirstBoundaryFlag==false) for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
       if (InternalBoundaryDescriptor==lastInternalBoundaryDescriptor) continue;
 
@@ -1040,7 +1262,7 @@ int iTemp,jTemp,kTemp;
           /*
           double r=sqrt(dx*dx+dy*dy+dz*dz);
 
-          if (radiusSphere-r>PIC::Mesh::mesh.EPS) {
+          if (radiusSphere-r>PIC::Mesh::mesh->EPS) {
             cout << "r=" << r << ",  Rsphere=" << radiusSphere << endl;
             exit(__LINE__,__FILE__,"Error: the particle inside the sphere");
           }
@@ -1055,12 +1277,12 @@ int iTemp,jTemp,kTemp;
           int code;
 
           l=sqrt(dx*dx+dy*dy+dz*dz);
-          l=(radiusSphere+PIC::Mesh::mesh.EPS)/l;
+          l=(radiusSphere+PIC::Mesh::mesh->EPS)/l;
 
           x[0]=x0Sphere[0]+l*dx;
           x[1]=x0Sphere[1]+l*dy;
           x[2]=x0Sphere[2]+l*dz;
-          startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+          startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 
           FirstBoundaryFlag=true;
 #if DIM == 3
@@ -1079,7 +1301,7 @@ int iTemp,jTemp,kTemp;
         d=b*b-4.0*a*c;
 
         if (d<0.0) {
-          if (4.0*a*pow(PIC::Mesh::mesh.EPS,2)>-d) d=0.0; //equvalent to |EPS/particle speed| > sqrt(|d|)/(2a) -> the particle is within the distance of EPS from the surface's boundary
+          if (4.0*a*pow(PIC::Mesh::mesh->EPS,2)>-d) d=0.0; //equvalent to |EPS/particle speed| > sqrt(|d|)/(2a) -> the particle is within the distance of EPS from the surface's boundary
           else continue;
         }
 
@@ -1087,12 +1309,12 @@ int iTemp,jTemp,kTemp;
 
         sqrt_d=sqrt(d);
         dtTemp=-(b+sqrt_d)/(2.0*a);
-//        if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh.EPS*PIC::Mesh::mesh.EPS)) dtTemp=-1.0;
+//        if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh->EPS*PIC::Mesh::mesh->EPS)) dtTemp=-1.0;
 
         dt1=-2.0*c/(b+sqrt_d);
         if ((dtTemp<0.0)||((dt1>0.0)&&(dt1<dtTemp))) {
           dtTemp=dt1;
-//          if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh.EPS*PIC::Mesh::mesh.EPS)) dtTemp=-1.0;
+//          if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh->EPS*PIC::Mesh::mesh->EPS)) dtTemp=-1.0;
         }
 
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) {
@@ -1117,7 +1339,7 @@ int iTemp,jTemp,kTemp;
         exit(__LINE__,__FILE__,"Error: undetermined internal boundary type");
       }
     }
-
+    #endif
 
 /*
 #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
@@ -1228,12 +1450,12 @@ int iTemp,jTemp,kTemp;
       if (code==_PARTICLE_DELETED_ON_THE_FACE_) return _PARTICLE_LEFT_THE_DOMAIN_;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      startNode=PIC::Mesh::mesh.findTreeNode(r,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -1248,18 +1470,18 @@ int iTemp,jTemp,kTemp;
       xProbe[neibNodeDirection]+=(startNode->xmax[neibNodeDirection]-startNode->xmin[neibNodeDirection])*iNeibNode[neibNodeDirection]/100.0;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xProbe,startNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xProbe,startNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double rProbe[3]={0.0,0.0,0.0};
 
       rProbe[0]=sqrt(xProbe[0]*xProbe[0]+xProbe[1]*xProbe[1]+xProbe[2]*xProbe[2]);
-      newNode=PIC::Mesh::mesh.findTreeNode(rProbe,startNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(rProbe,startNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
 
 
-//      newNode=PIC::Mesh::mesh.getNeibNode(iNeibNode[0],iNeibNode[1],iNeibNode[2],startNode);
+//      newNode=PIC::Mesh::mesh->getNeibNode(iNeibNode[0],iNeibNode[1],iNeibNode[2],startNode);
 
 
 
@@ -1277,15 +1499,15 @@ int iTemp,jTemp,kTemp;
       #if _PIC_DEBUGGER_MODE_ ==  _PIC_DEBUGGER_MODE_ON_
       //check if the new particle coordiname is within the new block
 
-//      for (idim=0;idim<DIM;idim++) if ((x[idim]<xminBlock[idim]-PIC::Mesh::mesh.EPS)||(x[idim]>xmaxBlock[idim]+PIC::Mesh::mesh.EPS)) {
+//      for (idim=0;idim<DIM;idim++) if ((x[idim]<xminBlock[idim]-PIC::Mesh::mesh->EPS)||(x[idim]>xmaxBlock[idim]+PIC::Mesh::mesh->EPS)) {
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      if ((x[0]<xminBlock[0]-PIC::Mesh::mesh.EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh.EPS)
+      if ((x[0]<xminBlock[0]-PIC::Mesh::mesh->EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
 #if DIM > 1
-          || (x[1]<xminBlock[1]-PIC::Mesh::mesh.EPS)||(x[1]>xmaxBlock[1]+PIC::Mesh::mesh.EPS)
+          || (x[1]<xminBlock[1]-PIC::Mesh::mesh->EPS)||(x[1]>xmaxBlock[1]+PIC::Mesh::mesh->EPS)
 #endif
 #if DIM > 2
-          || (x[2]<xminBlock[2]-PIC::Mesh::mesh.EPS)||(x[2]>xmaxBlock[2]+PIC::Mesh::mesh.EPS)
+          || (x[2]<xminBlock[2]-PIC::Mesh::mesh->EPS)||(x[2]>xmaxBlock[2]+PIC::Mesh::mesh->EPS)
 #endif
       ) {
         exit(__LINE__,__FILE__,"Error: the new particles' coordinates are outside of the block");
@@ -1296,19 +1518,19 @@ int iTemp,jTemp,kTemp;
       //move the particle's position exactly to the block's face
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
       for (idim=0;idim<DIM;idim++) {
-        if (x[idim]<=xminBlock[idim]) x[idim]=xminBlock[idim]+PIC::Mesh::mesh.EPS;
-        if (x[idim]>=xmaxBlock[idim]) x[idim]=xmaxBlock[idim]-PIC::Mesh::mesh.EPS;
+        if (x[idim]<=xminBlock[idim]) x[idim]=xminBlock[idim]+PIC::Mesh::mesh->EPS;
+        if (x[idim]>=xmaxBlock[idim]) x[idim]=xmaxBlock[idim]-PIC::Mesh::mesh->EPS;
       }
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
 
       if (r2<=xminBlock[0]*xminBlock[0]) {
-        double c=(xminBlock[0]+PIC::Mesh::mesh.EPS)/sqrt(r2);
+        double c=(xminBlock[0]+PIC::Mesh::mesh->EPS)/sqrt(r2);
         x[0]*=c,x[1]*=c,x[2]*=c;
       }
 
       if (r2>=xmaxBlock[0]*xmaxBlock[0]){
-        double c=(xmaxBlock[0]-PIC::Mesh::mesh.EPS)/sqrt(r2);
+        double c=(xmaxBlock[0]-PIC::Mesh::mesh->EPS)/sqrt(r2);
         x[0]*=c,x[1]*=c,x[2]*=c;
       }
 #else
@@ -1323,12 +1545,12 @@ int iTemp,jTemp,kTemp;
     }
     else {
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      startNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      startNode=PIC::Mesh::mesh.findTreeNode(r,startNode);
+      startNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -1385,7 +1607,7 @@ int iTemp,jTemp,kTemp;
 
 /*
   =====
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 //  cell=startNode->block->GetCenterNode(LocalCellNumber);
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -1409,7 +1631,7 @@ int iTemp,jTemp,kTemp;
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -1461,7 +1683,7 @@ int iTemp,jTemp,kTemp;
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
 
 
@@ -1550,10 +1772,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
   //=====================  DEBUG =========================
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:Error: cell has zero volume (" <<__FILE__<< "@" << __LINE__ << ")" << endl;
 
     double r,rprobe[3]={0.0,0.0,0.0};
@@ -1575,7 +1797,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
       cout << "$PREFIX:Node ("<< i+di << "," << j+dj << "," << k+dk << "): r=" << rprobe[0] << "," << rprobe[1] << "," << rprobe[2] << ", |r|=" << sqrt(r) << endl;
     }
 
-    PIC::Mesh::mesh.InitCellMeasure(startNode);
+    PIC::Mesh::mesh->InitCellMeasure(startNode);
 
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
@@ -1719,12 +1941,12 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
     //determine the new particle location
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    newNode=PIC::Mesh::mesh.findTreeNode(x,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
     double r[3]={0.0,0.0,0.0};
 
     r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    newNode=PIC::Mesh::mesh.findTreeNode(r,startNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
 #else
     exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -1783,7 +2005,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
 
  /* //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   //cell=newNode->block->GetCenterNode(LocalCellNumber);
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -1803,7 +2025,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
   
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -1858,7 +2080,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   cell=newNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
@@ -1902,10 +2124,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
   PIC::ParticleBuffer::GetX(xInit,ParticleData);
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:Error: cell has zero volume (" <<__FILE__<< "@" << __LINE__ << ")" << endl;
 
     double r,rprobe[3]={0.0,0.0,0.0};
@@ -1927,7 +2149,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
       cout << "$PREFIX:Node ("<< i+di << "," << j+dj << "," << k+dk << "): r=" << rprobe[0] << "," << rprobe[1] << "," << rprobe[2] << ", |r|=" << sqrt(r) << endl;
     }
 
-    PIC::Mesh::mesh.InitCellMeasure(startNode);
+    PIC::Mesh::mesh->InitCellMeasure(startNode);
 
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
@@ -1984,7 +2206,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
 
     //in the case when a symmetry has to be considered, transfer the particle position and velcoty accordinly
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    middleNode=PIC::Mesh::mesh.findTreeNode(xMiddle,startNode);
+    middleNode=PIC::Mesh::mesh->findTreeNode(xMiddle,startNode);
     _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,xMiddle,vMiddle,newNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
     exit(__LINE__,__FILE__,"not implemented");
@@ -2019,7 +2241,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
 
     //in the case when a symmetry has to be considered, transfer the particle position and velcoty accordinly
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
     exit(__LINE__,__FILE__,"not implemented");
 #else
@@ -2058,7 +2280,7 @@ exit(__LINE__,__FILE__,"not implemented");
   }
 
 /*  //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -2076,7 +2298,7 @@ exit(__LINE__,__FILE__,"not implemented");
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xInit,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -2127,7 +2349,7 @@ exit(__LINE__,__FILE__,"not implemented");
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   cell=newNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
@@ -2183,10 +2405,10 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       double cE0=0.0,cE1=0.0;
 
       for (int idim=0;idim<3;idim++) {
-        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim];
+        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
 
-        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
-        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh.rootTree->xmin[idim] : PIC::Mesh::mesh.rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
       }
 
       ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
@@ -2231,14 +2453,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   }
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
 
   {
     double r[3]={0.0,0.0,0.0};
 
     r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   }
 
 #else
@@ -2260,7 +2482,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     xmax[1]=startNode->xmin[1]+(j+1)*(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
     xmax[2]=startNode->xmin[2]+(k+1)*(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_;
 
-    cell->Measure=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh.EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
+    cell->Measure=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh->EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
 
   }
 
@@ -2277,11 +2499,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     xmax[1]=startNode->xmin[1]+(j+1)*(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
     xmax[2]=startNode->xmin[2]+(k+1)*(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_;
 
-    vol=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh.EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
+    vol=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh->EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
     cout << "$PREFIX: recalculated volume: vol=" << vol << "(" << __FILE__ << "@" << __LINE__ << ")" << endl;
     cout << " xInit=" << xInit[0] << ", " << xInit[1] << ", " << xInit[2] << endl;
 
-    if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+    if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
       cout << "$PREFIX: xInit is outside of the domain (" << __FILE__ << "@" << __LINE__ << ")" << endl;
     }
     else {
@@ -2294,7 +2516,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
     cout << " xMiddle=" << xmiddle[0] << ", " << xmiddle[1] << ", " << xmiddle[2] << endl;
 
-    if (CutCell::CheckPointInsideDomain(xmiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+    if (CutCell::CheckPointInsideDomain(xmiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
       cout << "$PREFIX: middle point of the cell is outside of the domain (" << __FILE__ << "@" << __LINE__ << ")" << endl;
     }
     else {
@@ -2310,7 +2532,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
       cout << "node (" << ii << "," << jj << "," << kk << ") x=" << t[0] << ", " << t[1] << ", " << t[2] << ": ";
 
-      if (CutCell::CheckPointInsideDomain(t,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+      if (CutCell::CheckPointInsideDomain(t,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
         cout << "Outside of the domain (" << __FILE__ << "@" << __LINE__ << ")" << endl;
       }
       else {
@@ -2338,7 +2560,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
 
 
-/*  if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*  if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
     cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
    // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -2388,7 +2610,7 @@ if (nLoopCycle>100) {
    int iTemp,jTemp,kTemp;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    if (PIC::Mesh::mesh.fingCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
+    if (PIC::Mesh::mesh->fingCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
@@ -2397,7 +2619,7 @@ if (nLoopCycle>100) {
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      if (PIC::Mesh::mesh.fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
+      if (PIC::Mesh::mesh->fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -2445,7 +2667,7 @@ if (nLoopCycle>100) {
     //corrector
     //in the case when a symmetry has to be considered, transfer the particle position and velcoty accordinly
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    middleNode=PIC::Mesh::mesh.findTreeNode(xMiddle,startNode);
+    middleNode=PIC::Mesh::mesh->findTreeNode(xMiddle,startNode);
 
     if (middleNode==NULL) {
       //the particle left the computational domain
@@ -2478,7 +2700,7 @@ if (nLoopCycle>100) {
                 cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
               }
 
-              if ((cE0<-PIC::Mesh::mesh.EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh.EPS) || (cE1<-PIC::Mesh::mesh.EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh.EPS)) continue;
+              if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
 
               nIntersectionFace=nface,dtIntersection=dt;
             }
@@ -2488,26 +2710,26 @@ if (nLoopCycle>100) {
         if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
         for (idim=0;idim<3;idim++) {
-          xInit[idim]+=dtIntersection*vInit[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
+          xInit[idim]+=dtIntersection*vInit[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh->EPS;
           vInit[idim]+=dtIntersection*acclInit[idim];
         } 
 
-        startNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+        startNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
         if (startNode==NULL) {
           //the partcle is outside of the domain -> correct particle location and determine the newNode;
           double xmin[3],xmax[3];
           int ii;
 
-          memcpy(xmin,PIC::Mesh::mesh.xGlobalMin,3*sizeof(double));
-          memcpy(xmax,PIC::Mesh::mesh.xGlobalMax,3*sizeof(double));
+          memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+          memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
           for (ii=0;ii<3;ii++) {
-            if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh.EPS;                         
-            if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
+            if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;                         
+            if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
           }
 
-          startNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+          startNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
           if (startNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
         }
 
@@ -2638,6 +2860,7 @@ if (nLoopCycle>100) {
 
 
     //Calculate the time of flight to the nearest internal surface
+    #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     if (FirstBoundaryFlag==false) for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
       if (InternalBoundaryDescriptor==lastInternalBoundaryDescriptor) continue;
 
@@ -2668,12 +2891,12 @@ if (nLoopCycle>100) {
           int code;
 
           l=sqrt(dx*dx+dy*dy+dz*dz);
-          l=(radiusSphere+PIC::Mesh::mesh.EPS)/l;
+          l=(radiusSphere+PIC::Mesh::mesh->EPS)/l;
 
           xInit[0]=x0Sphere[0]+l*dx;
           xInit[1]=x0Sphere[1]+l*dy;
           xInit[2]=x0Sphere[2]+l*dz;
-          startNode=PIC::Mesh::mesh.findTreeNode(xInit,startNode);
+          startNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
           FirstBoundaryFlag=true;
 #if DIM == 3
@@ -2695,7 +2918,7 @@ if (nLoopCycle>100) {
         d=b*b-4.0*a*c;
 
         if (d<0.0) {
-          if (4.0*a*pow(PIC::Mesh::mesh.EPS,2)>-d) d=0.0; //equvalent to |EPS/particle speed| > sqrt(|d|)/(2a) -> the particle is within the distance of EPS from the surface's boundary
+          if (4.0*a*pow(PIC::Mesh::mesh->EPS,2)>-d) d=0.0; //equvalent to |EPS/particle speed| > sqrt(|d|)/(2a) -> the particle is within the distance of EPS from the surface's boundary
           else continue;
         }
 
@@ -2738,6 +2961,7 @@ if (nLoopCycle>100) {
         exit(__LINE__,__FILE__,"Error: undetermined internal boundary type");
       }
     }
+    #endif
 
     //check intersection of the particle trajectory with the cut-faces
 //    cTriangleFace *IntersectionFace=NULL;
@@ -2774,7 +2998,7 @@ if (nLoopCycle>100) {
 
         for (;D!=NULL;D=D->next) for (t=D->FirstTriangleCutFace;t!=NULL;t=t->next) if ((TriangleFace=t->TriangleFace)!=lastIntersectedTriangleFace) {
           if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace)==true) {
-            if (TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh.EPS)==true) {
+            if (TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
               if ((TimeOfFlight<dtMin)&&(TimeOfFlight>0.0)) {
 
                 //the intersection location has to be on the positive side of the previously intersected face
@@ -2819,7 +3043,7 @@ if (nLoopCycle>100) {
 
       for (int iTestNode=0;iTestNode<2;iTestNode++)  
       for (t=((iTestNode==0) ?  startNode->FirstTriangleCutFace : startNode->neibFirstTriangleCutFace);t!=NULL;t=t->next) if (t->TriangleFace!=lastIntersectedTriangleFace) {
-        if (t->TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh.EPS)==true) {
+        if (t->TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
           if ((TimeOfFlight<dtMin)&&(TimeOfFlight>0.0)) {
 
             //the intersection location has to be on the positive side of the previously intersected face
@@ -2892,7 +3116,7 @@ if (nLoopCycle>100) {
       //apply boundary condition procedure
       int code;
 
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
       do {
         code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xFinal,vFinal,IntersectionFace,newNode) : _PARTICLE_DELETED_ON_THE_FACE_;
@@ -2908,9 +3132,9 @@ if (nLoopCycle>100) {
       lastIntersectedTriangleFace=IntersectionFace;
     }
     else if (false) { //(ParticleIntersectionCode==_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
-/*      xFinal[0]=xInit[0]+dtMin*vInit[0]+PIC::Mesh::mesh.EPS*IntersectionFace->ExternalNormal[0];
-      xFinal[1]=xInit[1]+dtMin*vInit[1]+PIC::Mesh::mesh.EPS*IntersectionFace->ExternalNormal[1];
-      xFinal[2]=xInit[2]+dtMin*vInit[2]+PIC::Mesh::mesh.EPS*IntersectionFace->ExternalNormal[2];*/
+/*      xFinal[0]=xInit[0]+dtMin*vInit[0]+PIC::Mesh::mesh->EPS*IntersectionFace->ExternalNormal[0];
+      xFinal[1]=xInit[1]+dtMin*vInit[1]+PIC::Mesh::mesh->EPS*IntersectionFace->ExternalNormal[1];
+      xFinal[2]=xInit[2]+dtMin*vInit[2]+PIC::Mesh::mesh->EPS*IntersectionFace->ExternalNormal[2];*/
 
 //      if (dtTotal==0.0) dtTotal=1.0E-7*dtMin; //make sure that the particle doe not stay on the boundary face at the end of the motion
 
@@ -2924,7 +3148,7 @@ if (nLoopCycle>100) {
 
       double r0=(xInit[0]-x0Face[0])*FaceNorm[0] + (xInit[1]-x0Face[1])*FaceNorm[1] + (xInit[2]-x0Face[2])*FaceNorm[2];
 
-      if (r0>PIC::Mesh::mesh.EPS) {
+      if (r0>PIC::Mesh::mesh->EPS) {
         do {
           ExitFlag=true;
 
@@ -2932,7 +3156,7 @@ if (nLoopCycle>100) {
           xFinal[1]=xInit[1]+dtMin*vInit[1];
           xFinal[2]=xInit[2]+dtMin*vInit[2];
 
-          if ( ((xFinal[0]-x0Face[0])*FaceNorm[0] + (xFinal[1]-x0Face[1])*FaceNorm[1] + (xFinal[2]-x0Face[2])*FaceNorm[2]) < PIC::Mesh::mesh.EPS) {
+          if ( ((xFinal[0]-x0Face[0])*FaceNorm[0] + (xFinal[1]-x0Face[1])*FaceNorm[1] + (xFinal[2]-x0Face[2])*FaceNorm[2]) < PIC::Mesh::mesh->EPS) {
             dtMin*=(1.0-1.0E-3);
             ExitFlag=false;
           }
@@ -2940,7 +3164,7 @@ if (nLoopCycle>100) {
         while (ExitFlag==false);
 
 
-/*        if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*        if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
           cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
          // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3005,8 +3229,8 @@ if (nLoopCycle>100) {
 
         //-------------------------------------------
 /*
-        if (r0>-PIC::Mesh::mesh.EPS) {
-          for (int idim=0;idim<DIM;idim++) xInit[idim]+=(0.0*PIC::Mesh::mesh.EPS-r0)*FaceNorm[idim];
+        if (r0>-PIC::Mesh::mesh->EPS) {
+          for (int idim=0;idim<DIM;idim++) xInit[idim]+=(0.0*PIC::Mesh::mesh->EPS-r0)*FaceNorm[idim];
 
           memcpy(xFinal,xInit,3*sizeof(double));
           dtMin=0.0;
@@ -3015,7 +3239,7 @@ if (nLoopCycle>100) {
           double dtRecalculated,xIntersection[3],xIntersectionLocal[2];
           bool IntersectionCode;
 
-          IntersectionCode=IntersectionFace->RayIntersection(xInit,vInit,dtRecalculated,PIC::Mesh::mesh.EPS);
+          IntersectionCode=IntersectionFace->RayIntersection(xInit,vInit,dtRecalculated,PIC::Mesh::mesh->EPS);
 
           if (IntersectionCode==true) {
             for (int idim=0;idim<3;idim++) xIntersection[idim]=xInit[idim]+dtRecalculated*vInit[idim];
@@ -3025,14 +3249,14 @@ if (nLoopCycle>100) {
             printf("$PREFIX: ptr=%ld, r0=%e, dtMin=%e, dtRecalculated=%e (%i,%s)\n",ptr,r0,dtMin,dtRecalculated,__LINE__,__FILE__);
             printf("$PREFIX: The \"global\" coordinates of the intersection: xIntersection[]=(%e,%e,%e)  (%i,%s)\n",xIntersection[0],xIntersection[1],xIntersection[2],__LINE__,__FILE__);
             printf("$PREFIX: The \"local\" coordinates of the intersection: xIntersectionLocal[]=(%e,%e)  (%i,%s)\n",xIntersectionLocal[0],xIntersectionLocal[1],__LINE__,__FILE__);
-            printf("$PREFIX: e0Length*xLocal[0]=%e, e1Length*xLocal[1]=%e, EPS=%e (%i,%s)\n",IntersectionFace->e0Length*xIntersectionLocal[0],IntersectionFace->e1Length*xIntersectionLocal[1],PIC::Mesh::mesh.EPS,__LINE__,__FILE__);
+            printf("$PREFIX: e0Length*xLocal[0]=%e, e1Length*xLocal[1]=%e, EPS=%e (%i,%s)\n",IntersectionFace->e0Length*xIntersectionLocal[0],IntersectionFace->e1Length*xIntersectionLocal[1],PIC::Mesh::mesh->EPS,__LINE__,__FILE__);
             printf("$PREFIX: e0Length=%e, e1Length=%e (%i,%s)\n",IntersectionFace->e0Length,IntersectionFace->e1Length,__LINE__,__FILE__);
           }
           else {
             printf("$PREFIX: the intersection is not found (%i,%s)\n",__LINE__,__FILE__);
           }
 
-          if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+          if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
             cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
            // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3064,7 +3288,7 @@ if (nLoopCycle>100) {
       lastIntersectedTriangleFace=IntersectionFace;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -3098,7 +3322,7 @@ if (nLoopCycle>100) {
         vFinal[2]=vInit[2]+dtMin*acclInit[2];
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -3119,7 +3343,7 @@ if (nLoopCycle>100) {
       vFinal[2]=vInit[2]+dtMin*acclInit[2];
 
 
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
         cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
        // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3130,12 +3354,12 @@ if (nLoopCycle>100) {
       lastInternalBoundaryDescriptor=InternalBoundaryDescriptor_dtMin;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
-      newNode=PIC::Mesh::mesh.findTreeNode(r,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(r,middleNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -3156,12 +3380,12 @@ if (nLoopCycle>100) {
 
 /*
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
-      newNode=PIC::Mesh::mesh.findTreeNode(r,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(r,middleNode);
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
@@ -3190,7 +3414,7 @@ if (nLoopCycle>100) {
         vFinal[2]=vInit[2]+dtMin*acclMiddle[2];
       }
 
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
         cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
        // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3200,7 +3424,7 @@ if (nLoopCycle>100) {
 
       //check if the particle is outside ofthe block - force the particle outside of the block if its needed
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      double EPS=PIC::Mesh::mesh.EPS;
+      double EPS=PIC::Mesh::mesh->EPS;
 
       for (idim=0;idim<DIM;idim++) {
         if (xFinal[idim]<xminBlock[idim]+EPS) xFinal[idim]=xminBlock[idim]-EPS;
@@ -3208,7 +3432,7 @@ if (nLoopCycle>100) {
 
       }
 
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 
       if (newNode!=NULL) if (newNode->block==NULL) {
         cout << "$PREFIX: Most probably the time step is too large. Error at " << __FILE__ << "@" << __LINE__  << endl;
@@ -3276,7 +3500,7 @@ exit(__LINE__,__FILE__,"Error: not implemented");
         vFinal[2]=vInit[2]+dtMin*acclMiddle[2];
       }
 
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
         cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
        // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3285,7 +3509,7 @@ exit(__LINE__,__FILE__,"Error: not implemented");
       FirstBoundaryFlag=false;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh.findTreeNode(xFinal,middleNode);
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
 exit(__LINE__,__FILE__,"not implemented");
 #else
@@ -3332,7 +3556,7 @@ exit(__LINE__,__FILE__,"not implemented");
                  cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
                }
 
-               if ((cE0<-PIC::Mesh::mesh.EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh.EPS) || (cE1<-PIC::Mesh::mesh.EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh.EPS)) continue;
+               if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
 
                nIntersectionFace=nface,dtIntersection=dt;
              }
@@ -3342,26 +3566,26 @@ exit(__LINE__,__FILE__,"not implemented");
          if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
          for (idim=0;idim<3;idim++) {
-           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh.EPS;
+           xInit[idim]+=dtIntersection*vMiddle[idim]-ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*PIC::Mesh::mesh->EPS;
            vInit[idim]+=dtIntersection*acclMiddle[idim];
          } 
 
-         newNode=PIC::Mesh::mesh.findTreeNode(xInit,middleNode);
+         newNode=PIC::Mesh::mesh->findTreeNode(xInit,middleNode);
 
          if (newNode==NULL) {
            //the partcle is outside of the domain -> correct particle location and determine the newNode;
            double xmin[3],xmax[3];
            int ii;
 
-           memcpy(xmin,PIC::Mesh::mesh.xGlobalMin,3*sizeof(double));
-           memcpy(xmax,PIC::Mesh::mesh.xGlobalMax,3*sizeof(double));
+           memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+           memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
            for (ii=0;ii<3;ii++) {
-             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh.EPS; 
-             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh.EPS;
+             if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS; 
+             if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
            }
 
-           newNode=PIC::Mesh::mesh.findTreeNode(xInit,middleNode);           
+           newNode=PIC::Mesh::mesh->findTreeNode(xInit,middleNode);           
 
            if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
          }
@@ -3524,7 +3748,7 @@ ProcessPhotoChemistry:
 
             //move the particle outside on the surface
             memcpy(xFinal,xIntersection,3*sizeof(double));
-            newNode=PIC::Mesh::mesh.findTreeNode(xFinal,newNode);
+            newNode=PIC::Mesh::mesh->findTreeNode(xFinal,newNode);
 
             //check the direction of the particle velocity;
             //the normal of the trangle is directed inside the domain
@@ -3607,7 +3831,7 @@ ProcessPhotoChemistry:
 
               lastIntersectedTriangleFace=t->TriangleFace;
               TriangleFace->GetRandomPosition(xFinal,0.0);
-              newNode=PIC::Mesh::mesh.findTreeNode(xFinal,newNode);
+              newNode=PIC::Mesh::mesh->findTreeNode(xFinal,newNode);
 
               goto ExitCorrections;
 
@@ -3626,7 +3850,7 @@ ProcessPhotoChemistry:
     memcpy(vInit,vFinal,3*sizeof(double));
     memcpy(xInit,xFinal,3*sizeof(double));
 
-/*    if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+/*    if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
 
       cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
      // exit(__LINE__,__FILE__,"The point is outside of the domain");
@@ -3651,6 +3875,7 @@ ProcessPhotoChemistry:
 
 
   //check if the particle is outside of the internal surfaces. In a case if the particle is inside an internal surface -> correct its position and exdcute the boundary condition procedure
+  #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
   for (InternalBoundaryDescriptor=startNode->InternalBoundaryDescriptorList;InternalBoundaryDescriptor!=NULL;InternalBoundaryDescriptor=InternalBoundaryDescriptor->nextInternalBCelement) {
 
     switch (InternalBoundaryDescriptor->BondaryType) {
@@ -3678,12 +3903,12 @@ ProcessPhotoChemistry:
         int code;
 
         l=sqrt(dx*dx+dy*dy+dz*dz);
-        l=(radiusSphere+PIC::Mesh::mesh.EPS)/l;
+        l=(radiusSphere+PIC::Mesh::mesh->EPS)/l;
 
         xFinal[0]=x0Sphere[0]+l*dx;
         xFinal[1]=x0Sphere[1]+l*dy;
         xFinal[2]=x0Sphere[2]+l*dz;
-        startNode=PIC::Mesh::mesh.findTreeNode(xFinal,startNode);
+        startNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
         FirstBoundaryFlag=true;
 #if DIM == 3
@@ -3714,7 +3939,7 @@ ProcessPhotoChemistry:
       break;
     case _INTERNAL_BOUNDARY_TYPE_NASTRAN_SURFACE_:
 #if  _PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_ == _PIC_MODE_ON_
-        if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+        if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
             exit(__LINE__,__FILE__,"The point is outside of the domain");
         }
 #endif
@@ -3723,6 +3948,7 @@ ProcessPhotoChemistry:
       exit(__LINE__,__FILE__,"Error: the option is not recognized");
     }
   }
+  #endif
 
 
 
@@ -3758,7 +3984,7 @@ ProcessPhotoChemistry:
 #endif
 
 
-  if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
 
   //check if the block is allocated
@@ -3848,7 +4074,7 @@ ProcessPhotoChemistry:
 
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
-  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh.ThisThread)) {
+  if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
 
 
@@ -3876,7 +4102,7 @@ ProcessPhotoChemistry:
 
      double  vol=-1.0,xmin[3],xmax[3];
 
-     if ((LocalCellNumber=PIC::Mesh::mesh.fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+     if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
      xmin[0]=startNode->xmin[0]+i*(startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_;
      xmin[1]=startNode->xmin[1]+j*(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
@@ -3886,9 +4112,9 @@ ProcessPhotoChemistry:
      xmax[1]=startNode->xmin[1]+(j+1)*(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
      xmax[2]=startNode->xmin[2]+(k+1)*(startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_;
 
-     vol=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh.EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
+     vol=CutCell::GetRemainedBlockVolume(xmin,xmax,PIC::Mesh::mesh->EPS,1.0E-2,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,startNode->FirstTriangleCutFace);
 
-     if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh.EPS)==false) {
+     if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
        cout << "xmin=" << xmin[0] << "  " << xmin[1] << "  " << xmin[2] << ",  xmax=" << xmax[0] << "  " << xmax[1] << "  " << xmax[2] << ", vol=" << vol << endl;
        exit(__LINE__,__FILE__,"The point is outside of the domain");
      }

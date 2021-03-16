@@ -34,7 +34,7 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
   if (SamplingInitializedFlag==true) exit(__LINE__,__FILE__,"Error: EnergyDistributionSampleRelativistic is already initialized");
 
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_OFF_
-  if (PIC::Mesh::mesh.ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
+  if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"WARNING: Sampling of the distribution function is prohibited in the settings of the model");
   return;
 #endif
 
@@ -93,10 +93,10 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
 
   //init the sampling informations
   for (iProbe=0;iProbe<nSamleLocations;iProbe++) {
-    SampleNodes[iProbe]=PIC::Mesh::mesh.findTreeNode(SamplingLocations[iProbe]);
+    SampleNodes[iProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[iProbe]);
     if (SampleNodes[iProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[iProbe]=PIC::Mesh::mesh.fingCellIndex(SamplingLocations[iProbe],i,j,k,SampleNodes[iProbe],false);
+    SampleLocalCellNumber[iProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[iProbe],i,j,k,SampleNodes[iProbe],false);
     if (SampleLocalCellNumber[iProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 
@@ -125,7 +125,7 @@ void PIC::EnergyDistributionSampleRelativistic::SampleDistributionFnction() {
     int i,j,k;
     PIC::Mesh::cDataCenterNode *cell;
 
-    PIC::Mesh::mesh.convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[iProbe],i,j,k);
+    PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[iProbe],i,j,k);
     cell=node->block->GetCenterNode(SampleLocalCellNumber[iProbe]);
     CellMeasure=cell->Measure;
     if (CellMeasure<=0.0) CellMeasure=1.0;
@@ -178,7 +178,7 @@ void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *
   double norm=0.0,e;
   char str[_MAX_STRING_LENGTH_PIC_];
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.openRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.openRecvAll();
   else pipe.openSend(0);
 
   //temporary sampling buffer
@@ -201,7 +201,7 @@ void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *
 
   //output the distribution function
   for (iProbe=0;iProbe<nSamleLocations;iProbe++) {
-    if (PIC::Mesh::mesh.ThisThread==0) {
+    if (PIC::Mesh::mesh->ThisThread==0) {
       sprintf(str,"%s.nSamplePoint=%ld.dat",fname,iProbe);
       fout=fopen(str,"w");
 
@@ -221,7 +221,7 @@ void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *
       for (iCombinedSpecies=0;iCombinedSpecies<CombineDistributionSpecies.size();iCombinedSpecies++) {
         s=CombineDistributionSpecies[iCombinedSpecies];
 
-        for (thread=0;thread<PIC::Mesh::mesh.nTotalThreads;thread++) {
+        for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
           for (i=0;i<nSampledFunctionPoints;i++) {
             if (thread==0) {
               tempSamplingBuffer[i]+=SamplingBuffer[iProbe][s][i];
@@ -295,7 +295,7 @@ void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *
     }
   }
 
-  if (PIC::Mesh::mesh.ThisThread==0) pipe.closeRecvAll();
+  if (PIC::Mesh::mesh->ThisThread==0) pipe.closeRecvAll();
   else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

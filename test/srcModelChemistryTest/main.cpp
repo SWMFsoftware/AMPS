@@ -131,43 +131,43 @@ void amps_init() {
 
 
   //generate only the tree
-  PIC::Mesh::mesh.AllowBlockAllocation=false;
-  PIC::Mesh::mesh.init(xmin,xmax,localResolution);
-  PIC::Mesh::mesh.memoryAllocationReport();
+  PIC::Mesh::mesh->AllowBlockAllocation=false;
+  PIC::Mesh::mesh->init(xmin,xmax,localResolution);
+  PIC::Mesh::mesh->memoryAllocationReport();
 
-  if (PIC::Mesh::mesh.ThisThread==0) {
-    PIC::Mesh::mesh.buildMesh();
-    PIC::Mesh::mesh.saveMeshFile("mesh.msh");
+  if (PIC::Mesh::mesh->ThisThread==0) {
+    PIC::Mesh::mesh->buildMesh();
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh.readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
-  PIC::Mesh::mesh.SetParallelLoadMeasure(InitLoadMeasure);
-  PIC::Mesh::mesh.CreateNewParallelDistributionLists();
+  PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+  PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
   //initialize the blocks
-  PIC::Mesh::mesh.AllowBlockAllocation=true;
-  PIC::Mesh::mesh.AllocateTreeBlocks();
+  PIC::Mesh::mesh->AllowBlockAllocation=true;
+  PIC::Mesh::mesh->AllocateTreeBlocks();
 
-  PIC::Mesh::mesh.memoryAllocationReport();
-  PIC::Mesh::mesh.GetMeshTreeStatistics();
+  PIC::Mesh::mesh->memoryAllocationReport();
+  PIC::Mesh::mesh->GetMeshTreeStatistics();
 
 #ifdef _CHECK_MESH_CONSISTENCY_
-  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 #endif
 
   //init the volume of the cells'
-  PIC::Mesh::mesh.InitCellMeasure();
+  PIC::Mesh::mesh->InitCellMeasure();
 
   //init the PIC solver
   PIC::Init_AfterParser();
@@ -188,12 +188,12 @@ void amps_init() {
 
 //    density=H2O::Density;
 
-    weight=density*pow(2.0*DomainLength,3)/(GetTotalCellNumber(PIC::Mesh::mesh.rootTree)*nParticlePerCell);
-    PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,weight,PIC::Mesh::mesh.rootTree);
+    weight=density*pow(2.0*DomainLength,3)/(GetTotalCellNumber(PIC::Mesh::mesh->rootTree)*nParticlePerCell);
+    PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,weight,PIC::Mesh::mesh->rootTree);
   }
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-  if (PIC::Mesh::mesh.ThisThread==0) cout << "The mesh is generated" << endl;
+  if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer
   PIC::ParticleBuffer::Init(10000000);
@@ -453,7 +453,7 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,i
          newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
          memcpy((void*)newParticleData,(void*)tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
 
-         node=PIC::Mesh::mesh.findTreeNode(x,node);
+         node=PIC::Mesh::mesh->findTreeNode(x,node);
          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,ProductTimeStep-TimeCounter,node);
        }
      }
@@ -762,15 +762,15 @@ void Test1(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
     PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
-    CountParticles(InitialParticleCounter,PIC::Mesh::mesh.rootTree);
+    CountParticles(InitialParticleCounter,PIC::Mesh::mesh->rootTree);
 
     //apply the chemical model
-//    PhotochemicalModelWrapper(PIC::Mesh::mesh.rootTree);
+//    PhotochemicalModelWrapper(PIC::Mesh::mesh->rootTree);
     PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
 
     //count and remove all particles
-    CountParticles(ProductParticleCounter,PIC::Mesh::mesh.rootTree);
-    DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+    CountParticles(ProductParticleCounter,PIC::Mesh::mesh->rootTree);
+    DeleteAllParticles(PIC::Mesh::mesh->rootTree);
   }
 
   //cpllecte the data from all processors and determine the lifetile
@@ -843,16 +843,16 @@ void Test2(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
     PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
-    CountParticles(InitialParticleCounter,PIC::Mesh::mesh.rootTree);
+    CountParticles(InitialParticleCounter,PIC::Mesh::mesh->rootTree);
 
     //apply the chemical model
-//    PhotochemicalModelWrapper(PIC::Mesh::mesh.rootTree);
+//    PhotochemicalModelWrapper(PIC::Mesh::mesh->rootTree);
 //    PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
     PIC::TimeStep();
 
     //count and remove all particles
-    CountParticles(ProductParticleCounter,PIC::Mesh::mesh.rootTree);
-    DeleteAllParticles(PIC::Mesh::mesh.rootTree);
+    CountParticles(ProductParticleCounter,PIC::Mesh::mesh->rootTree);
+    DeleteAllParticles(PIC::Mesh::mesh->rootTree);
   }
 
   //cpllecte the data from all processors and determine the lifetile
