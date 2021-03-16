@@ -2353,6 +2353,9 @@ namespace PIC {
     class cDataCenterNode;
     class cDataCornerNode;
 
+    //return the total number of allocated cells in the entire domain
+    int GetAllocatedCellTotalNumber();
+
     //allocate mesh 
     _TARGET_GLOBAL_
     void AllocateMesh();
