@@ -2,6 +2,8 @@
 
 set WorkDir = $HOME
 source $WorkDir/module/gnu 
+#module load mpi
+
 
 echo -n "Compiling GNU....."
 
