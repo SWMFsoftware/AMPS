@@ -95,6 +95,7 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 #./Config.pl -f-link-option=-lmpi_cxx
 
 ./Config.pl -f-link-option=-lstdc++
+./Config.pl -cpplib-rm=-lmpi_cxx
 #./Config.pl -compiler-option=-g
 
 utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
@@ -184,6 +185,8 @@ rm -rf runlog scheduler
 cp AMPS/utility/TestScripts/AMPS-gpu/scheduler.cpp .
 g++ ./scheduler.cpp -g -o scheduler -lpthread
 #./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -intel -gcc -pgi -nvcc > runlog 
+
+
 ./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -gcc  -nvcc > runlog
 
 
