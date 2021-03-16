@@ -54,15 +54,17 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 #endUserDefinitions
 
 #General
-  ReferenceInjectionParticleNumber=200000
+  ReferenceInjectionParticleNumber=20000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
 
+  RequestedParticleBufferLength=2000000
 
-  BlockCells=5,5,5
+  BlockCells=6,6,6
   GhostCells=2,2,2
 
+  define _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE_ _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE__CONTINUE_
   define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
 
   NastranSurfaceUserData=on !!!on, off
@@ -81,7 +83,18 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
 
+  RndPrecisionLimit=on,limit=1E-5
+
 #endGeneral
+
+#interface
+
+  cell_centered_linear_interpolation_mode=amps
+  cell_centered_linear_interpolation_src=default
+
+#endinterface
+
+
 
 #block ../input/oh.input.pl !process the settings of the Outer Heliosphere model
 

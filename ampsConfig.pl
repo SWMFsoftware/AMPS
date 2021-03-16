@@ -1090,6 +1090,26 @@ sub ReadGeneralBlock {
       }
     }
 
+    #limit the precision of the random number generator
+    elsif ($InputLine eq "RNDPRECISIONLIMIT") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "ON") {
+         ampsConfigLib::RedefineMacro("_RND_LIMIT_PRESITION_MODE_","_RND_LIMIT_PRECISION_ON_","general/rnd.h");
+      }
+
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "LIMIT") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::RedefineMacro("_RND_LIMIT_PRECISION_",$InputLine,"general/rnd.h");
+       }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
     #read the block that defines a type of the boundary processing routine used for processing of a particle when it crosses the boundary of the computational domain
     elsif ($InputLine eq "DOMAINBOUNDARYPARTICLEINTERSECTION") {
       my $Mode=-1;

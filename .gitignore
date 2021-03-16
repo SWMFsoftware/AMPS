@@ -33,3 +33,10 @@ srcTemp
 test_*
 run*
 Makefile.test
+AMPS.pdf
+doc/AMPS.log
+doc/AMPS.aux
+doc/AMPS.idx
+doc/AMPS.out
+doc/AMPS.toc
+doc/AMPS.dvi
