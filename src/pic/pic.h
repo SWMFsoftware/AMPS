@@ -2314,6 +2314,7 @@ namespace PIC {
     void Init(long int);
     long int GetMaxNPart();
     long int GetAllPartNum();
+    long int GetTotalParticleNumber();
     long int GetParticleDataLength();
 
     long int GetNewParticle(bool RandomThreadOpenMP=false);
@@ -3461,7 +3462,7 @@ namespace PIC {
       //find cell nad block
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *FindBlock(double *x);
       PIC::Mesh::cDataCenterNode *FindCell(double *x);
-
+      PIC::Mesh::cDataCenterNode *FindCell(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
     }
     //namespace Search --------------------------------------------------------
 
@@ -6356,6 +6357,7 @@ namespace PIC {
 
     void ReadParticleData(const char*);
     void ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
+    long int GetRestartFileParticleNumber(const char *fname);
 
     //calcualte the check sum of the save/read particle data
     unsigned long GetParticleDataCheckSum();

@@ -174,6 +174,15 @@ long int PIC::ParticleBuffer::GetAllPartNum() {
 #endif //_COMPILATION_MODE_
 }
 
+long int PIC::ParticleBuffer::GetTotalParticleNumber() {
+  long int res,t;
+
+  t=GetAllPartNum();
+  MPI_Allreduce(&t,&res,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  return res;
+}
+
 long int PIC::ParticleBuffer::GetParticleDataLength() {return ParticleDataLength;}
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
