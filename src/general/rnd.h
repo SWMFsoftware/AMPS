@@ -21,6 +21,15 @@
 #include <omp.h>
 #endif //_PIC_COMPILATION_MODE_ == _PIC_COMPILATION_MODE__HYBRID_
 
+
+
+#define _RND_LIMIT_PRECISION_ON_  0
+#define _RND_LIMIT_PRECISION_OFF_ 1
+#define _RND_LIMIT_PRESITION_MODE_ _RND_LIMIT_PRECISION_OFF_
+
+#define _RND_LIMIT_PRECISION_  0.00001
+
+
 namespace RandomNumberGenerator {
   extern unsigned long int rndLastSeed;
   extern unsigned long int *rndLastSeedArray;
@@ -38,10 +47,18 @@ inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
   unsigned long int Seed=SeedIn->Seed;
 
+start:
+
   Seed*=48828125;
   Seed&=2147483647; // pow(2,31) - 1
   if (Seed==0) Seed=1;
   res=double(Seed/2147483648.0); //(pow(2,31) - 1) + 1
+
+  #if _RND_LIMIT_PRESITION_MODE_ == _RND_LIMIT_PRECISION_ON_
+  res-=fmod(res,_RND_LIMIT_PRECISION_);
+  if (res<=0.0) goto start;
+  #endif
+
 
   SeedIn->Seed=Seed;
 
