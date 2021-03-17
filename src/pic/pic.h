@@ -7060,7 +7060,8 @@ bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDa
             extern _TARGET_DEVICE_ _CUDA_MANAGED_ int OffsetB_corner;            
             extern cLinearSystemCornerNode<PIC::Mesh::cDataCornerNode,3,_PIC_STENCIL_NUMBER_,_PIC_STENCIL_NUMBER_+1,16,1,1> *Solver;
             extern cLinearSystemCenterNode<PIC::Mesh::cDataCenterNode,1,7,0,1,1,0> *PoissonSolver;
-            //extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
+
+            extern list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> newNodeList;         
 
             //extern cLinearSystemCornerNode Solver;
             extern bool DoDivECorrection;

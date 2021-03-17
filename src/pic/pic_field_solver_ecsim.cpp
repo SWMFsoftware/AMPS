@@ -52,7 +52,9 @@ The Maple script used for calculating the lookup tables for the previous impleme
 
 double PIC::FieldSolver::Electromagnetic::ECSIM::corrCoeff=0.0;
 PIC::FieldSolver::Electromagnetic::ECSIM::fSetIC PIC::FieldSolver::Electromagnetic::ECSIM::SetIC=PIC::FieldSolver::Electromagnetic::ECSIM::SetIC_default;
-//list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
+
+list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> PIC::FieldSolver::Electromagnetic::ECSIM::newNodeList;
+
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedSetBlockParticle  PIC::FieldSolver::Electromagnetic::ECSIM::setBlockParticle;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedDynamicAllocateBlocks PIC::FieldSolver::Electromagnetic::ECSIM::dynamicAllocateBlocks;
 PIC::FieldSolver::Electromagnetic::ECSIM::fUserDefinedInitNewBlocks PIC::FieldSolver::Electromagnetic::ECSIM::initNewBlocks;
