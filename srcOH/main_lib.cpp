@@ -18,10 +18,14 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include <fenv.h>
+
 //the particle class
 #include "pic.h"
 #include "constants.h"
 #include "OH.h"
+
+#include "amps2swmf.h"
 
 
 bool flag_prepopulate_domain=false;
@@ -58,6 +62,8 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     if (PIC::nTotalSpecies == 1) {
 
       CharacteristicSpeed=sqrt(pow(OH::InjectionVelocity[0],2)+pow(OH::InjectionVelocity[1],2)+pow(OH::InjectionVelocity[2],2));
+
+      if (CharacteristicSpeed==0.0) CharacteristicSpeed=25.0E3;
     }
     else CharacteristicSpeed=25.0E3;
     break;
@@ -204,8 +210,22 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
   return ModelParticlesInjectionRate;
 }
 
+void init_from_restart(){
+
+  printf("init from restart called!\n");
+
+  cout << "Restart file contains " << PIC::Restart::GetRestartFileParticleNumber("PT/restartIN/restart_particle.dat") << " paticles" << endl << std::flush;
+
+  PIC::Restart::SamplingData::Read("PT/restartIN/restart_field.dat");
+  PIC::Restart::ReadParticleData("PT/restartIN/restart_particle.dat");
+}
+
 
 void amps_init_mesh(){
+
+#if defined(__linux__)
+    feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
+#endif
 
 
   PIC::InitMPI();
@@ -221,7 +241,8 @@ void amps_init_mesh(){
   PIC::Init_BeforeParser();
   OH::Init_AfterParser();
   
-  
+  //init the hook to finalized the AMPS/OH application run
+  AMPS2SWMF::UserFinalizeSimulation=OH::FinalizeSimulation;  
   
   //init the solver
   PIC::Mesh::initCellSamplingDataBuffer();
@@ -249,25 +270,29 @@ void amps_init_mesh(){
     PIC::Mesh::mesh->init(OH::DomainXMin,OH::DomainXMax,localResolution);
   }
 
-  PIC::Mesh::mesh->memoryAllocationReport();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh->memoryAllocationReport();
+  }
   
   
   if (PIC::Mesh::mesh->ThisThread==0) {
     PIC::Mesh::mesh->buildMesh();
-    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
+    PIC::Mesh::mesh->saveMeshFile("mesh->msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh->readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh->msh");
   }
   
   // cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
   
-  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh->dat");
   
-  PIC::Mesh::mesh->memoryAllocationReport();
-  PIC::Mesh::mesh->GetMeshTreeStatistics();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh->memoryAllocationReport();
+    PIC::Mesh::mesh->GetMeshTreeStatistics();
+  }
   
 #ifdef _CHECK_MESH_CONSISTENCY_
   PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
@@ -279,9 +304,14 @@ void amps_init_mesh(){
   //initialize the blocks
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
+
+  int nTotalCells=PIC::Mesh::GetAllocatedCellTotalNumber();
+  if (PIC::ThisThread==0) printf("$PREFIX: The total number of cells: %i\n",nTotalCells); 
   
-  PIC::Mesh::mesh->memoryAllocationReport();
-  PIC::Mesh::mesh->GetMeshTreeStatistics();
+  if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
+    PIC::Mesh::mesh->memoryAllocationReport();
+    PIC::Mesh::mesh->GetMeshTreeStatistics();
+  }
   
 #ifdef _CHECK_MESH_CONSISTENCY_
   PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
@@ -291,13 +321,18 @@ void amps_init_mesh(){
   PIC::Mesh::mesh->InitCellMeasure();
 
   // allocate array with global times step and reset them
-  if (! PIC::ParticleWeightTimeStep::GlobalTimeStep) {
-    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
-    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
-  }
+//  if (! PIC::ParticleWeightTimeStep::GlobalTimeStep) {
+//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
+//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
+//  }
 
 
 }
+
+
+void SetDefaultOriginID(PIC::ParticleBuffer::byte *ParticleData) {
+  OH::SetOriginTag(0,ParticleData);
+}  
 
 void amps_init() {
  
@@ -338,7 +373,7 @@ void amps_init() {
    if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
    
    //init the particle buffer
-   PIC::ParticleBuffer::Init(20000000);
+   //PIC::ParticleBuffer::Init(20000000);
 
    // change global time step if it's set in the input file
    if(OH::UserGlobalTimeStep > 0.0){
@@ -363,7 +398,13 @@ void amps_init() {
      PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh->GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
 
      //pre-populate the domain
-     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain);
+     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,SetDefaultOriginID);
+   }
+
+   //init from restart file if needed
+   if (PIC::Restart::LoadRestartSWMF==true) {
+     init_from_restart();
+     PIC::Restart::LoadRestartSWMF=false;
    }
 
 }

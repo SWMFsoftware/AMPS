@@ -22,6 +22,12 @@
 namespace OH {
   using namespace Exosphere;
 
+  //timer
+  extern PIC::Debugger::cTimer ReactionProcessorTimer;
+
+  //print the result of timing
+  void FinalizeSimulation();
+
   // user defined global time step
   extern double UserGlobalTimeStep;
 

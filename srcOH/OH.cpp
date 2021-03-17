@@ -26,8 +26,8 @@ int OH::Output::ohSourceDensityOffset =-1;
 int OH::Output::ohSourceMomentumOffset=-1;
 int OH::Output::ohSourceEnergyOffset  =-1;
 
-
-
+//timers
+PIC::Debugger::cTimer OH::ReactionProcessorTimer(_PIC_TIMER_MODE_HRES_);
 
 void OH::Output::PrintVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"ohSourceDensity\",\"ohSourceMomentumX\",\"ohSourceMomentumY\",\"ohSourceMomentumZ\",\"ohSourceEnergy\"");
@@ -322,6 +322,8 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
   double xParent[3],vParent[3],ParentLifeTime,ParentTimeStep;
   bool ReactionOccurredFlag;
 
+  ReactionProcessorTimer.Start();
+
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   spec=PIC::ParticleBuffer::GetI(ParticleData);
   PIC::ParticleBuffer::GetX(xParent,ParticleData);
@@ -442,17 +444,21 @@ auto SimulateReaction = [&] () {
     PlasmaPressure      = PIC::CPLR::GetBackgroundPlasmaPressure(ifluid_interact);
     PlasmaTemperature   = PlasmaPressure / (2*Kbol * PlasmaNumberDensity);
 
+    if ((isfinite(PlasmaNumberDensity)==false)||(isfinite(PlasmaPressure)==false)||(isfinite(PlasmaTemperature)==false)) exit(__LINE__,__FILE__);
+
     OH::sampleVp(vp,vParent,PlasmaBulkVelocity,PlasmaTemperature,spec);
 
     // charge exchange process transfers momentum and energy to plasma
     PIC::Mesh::cDataCenterNode *CenterNode;
     char *offset;
 
-    CenterNode=PIC::Mesh::Search::FindCell(xParent); ///node->block->GetCenterNode(nd);
+    CenterNode=PIC::Mesh::Search::FindCell(xParent,node); ///node->block->GetCenterNode(nd);
     offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
 
     double vh2 = 0.0, vp2 = 0.0;
-    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
+
+//    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
+    double c = (PlasmaNumberDensity>0.0) ? ParentParticleWeight/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)/CenterNode->Measure : 0.0;
 
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceDensityOffset))-=c*_MASS_(_H_);
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c*_MASS_(_H_);
@@ -464,6 +470,8 @@ auto SimulateReaction = [&] () {
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
+
+    if ((isfinite(c)==false)||(isfinite(vh2)==false)||(isfinite(vp2)==false)) exit(__LINE__,__FILE__);
 
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
@@ -573,8 +581,15 @@ auto SimulateReaction = [&] () {
     if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
     FirstParticleCell=ptr;
   }
+
+  ReactionProcessorTimer.UpdateTimer();
 }
 
+
+void OH::FinalizeSimulation() {
+  //print timing 
+  ReactionProcessorTimer.PrintMeanMPI("$PREFIX: time used by OH::Loss::ReactionProcessor()");
+}
 
 void OH::Init_BeforeParser(){
   OH::InitPhysicalSpecies();
@@ -594,21 +609,25 @@ int OH::user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nInt
   //setting User defined function to process particles leaving domain at certain faces
   //useful for 1D runs if just want flows in one direction
 
+  int res;
+
   // removing particles if hit faces perpandiulat to x axis
-  if (nIntersectionFace == 0 || nIntersectionFace == 1) return _PARTICLE_DELETED_ON_THE_FACE_; 
+  if (nIntersectionFace == 0 || nIntersectionFace == 1) res=_PARTICLE_DELETED_ON_THE_FACE_; 
 
   // keep and reflect particles if hit face perpandiculat to y or z axes
   // y axis reflection
   if (nIntersectionFace == 2 || nIntersectionFace == 3) {
     vInit[1]=-vInit[1];
-    return _PARTICLE_REJECTED_ON_THE_FACE_; // particles are not deleted but remain in domain
+    res=_PARTICLE_REJECTED_ON_THE_FACE_; // particles are not deleted but remain in domain
   }
 
   // z axis reflection
   if (nIntersectionFace == 4 || nIntersectionFace == 5) {
     vInit[2]=-vInit[2];
-    return _PARTICLE_REJECTED_ON_THE_FACE_;
+    res=_PARTICLE_REJECTED_ON_THE_FACE_;
   }
+
+  return res;
 }
 
 //-----------------------------------------------------------------------------
@@ -734,12 +753,80 @@ double OH::VpDistribution(double *vp, double *vh, double *up, double vth)
 {
   double erel = 0.5*1.674E-27*((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*6.2415E15; // in keV
 
+  if (erel==0.0) return 0.0;
+
   double sigma = (4.15-0.531*log(erel))*(4.15-0.531*log(erel))*pow(1-exp(-67.3/erel),4.5)*1E-20; // cross section in m^2
 
   return sqrt((vh[0]-vp[0])*(vh[0]-vp[0])+(vh[1]-vp[1])*(vh[1]-vp[1])+(vh[2]-vp[2])*(vh[2]-vp[2]))*sigma*exp(-((vp[0]-up[0])*(vp[0]-up[0])+(vp[1]-up[1])*(vp[1]-up[1])+(vp[2]-up[2])*(vp[2]-up[2]))/(vth*vth)); // velocity in m/s
 }
 
 // sampling the 3D distribution function from Malama 1991 using the Accept-Reject Method
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec) {
+  float vth = sqrt(2.0*Kbol*tp/PIC::MolecularData::GetMass(spec));
+
+  //f=|urel|*sigma*expt(-v^2)
+  //parameter of the exponent
+  const float limit=1.6;
+  const float limit2=limit*limit;
+
+  const static __m128 width_v=_mm_setr_ps(2.0*limit,2.0*limit,2.0*limit,0.0);
+  const static __m128 shift_v=_mm_setr_ps(limit,limit,limit,0.0);
+
+  __m128 vp_v,rnd_v,v_v,v2_v;
+  float c1,pp,ppmax,sigma,erel,v2,urel2,urel;
+
+  __m128 vh_v=_mm_setr_ps((vh[0]-up[0])/vth,(vh[1]-up[1])/vth,(vh[2]-up[2])/vth,0.0);
+
+  float vth2=vth*vth;
+  static const float c=0.5*1.674E-27*6.2415E15;
+
+  //evaluate ppmax
+  v2=1.0/4;
+  urel=1.0/2.0+sqrt(vh_v[0]*vh_v[0]+vh_v[1]*vh_v[1]+vh_v[2]*vh_v[2]);
+  urel2=urel*urel;
+  erel=c*urel2*vth2;
+  c1=4.15f-0.531f*logf(erel);
+  sigma=c1*c1*powf(1.0f-expf(-67.3f/erel),4.5f); //*1E-20; // cross section in m^2
+
+  ppmax=urel*sigma*exp(-v2);
+
+  do {
+    do {
+      rnd_v=_mm_setr_ps(rnd(),rnd(),rnd(),0.0);
+      vp_v=_mm_fmsub_ps(rnd_v,width_v,shift_v);
+
+      //parameter of the exponent
+      v2_v=_mm_dp_ps(vp_v,vp_v,0xff);
+    }
+    while (v2_v[0]>limit2);
+
+    v2=v2_v[0];
+
+    //relative speed
+    v_v=_mm_sub_ps(vh_v,vp_v);
+    v2_v=_mm_dp_ps(v_v,v_v,0xff);
+    _mm_store_ss(&urel2,v2_v);
+
+    urel=sqrtf(urel2);
+
+    erel=c*urel2*vth2;
+    c1=4.15f-0.531f*logf(erel);
+    sigma=c1*c1*powf(1.0f-expf(-67.3f/erel),4.5f); //*1E-20; // cross section in m^2
+
+    pp=urel*sigma*expf(-v2);
+  }
+  while (rnd()>pp/ppmax);
+
+  alignas(64) float vhf[3];
+
+  _mm_store_ps(vhf,vh_v);
+
+  vp[0]=vhf[0]*vth+up[0];
+  vp[1]=vhf[1]*vth+up[1];
+  vp[2]=vhf[2]*vth+up[2];
+}
+#else
 void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec)
 {
   int accepted = 0;
@@ -759,7 +846,7 @@ void OH::sampleVp(double *vp, double *vh, double *up, double tp, int spec)
     }
   }
 }
-
+#endif
 //=====================================================================================================
 //sampling of the ENAs density individually for each origin region
 int OH::Sampling::OriginLocation::nSampledOriginLocations=-1;
