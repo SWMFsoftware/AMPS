@@ -2072,11 +2072,11 @@ void amps_init(){
   //set up the time step
   PIC::ParticleWeightTimeStep::LocalTimeStep=localTimeStep;
   //PIC::ParticleWeightTimeStep::initTimeStep();
-  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
+ // if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
  //   PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
     for (int s=0;s<PIC::nTotalSpecies;s++) 
       PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=PIC::CPLR::FLUID::dt; 	
-  }
+ // }
 
 
 
