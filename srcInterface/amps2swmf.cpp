@@ -548,16 +548,12 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     //import a single field line 
     auto ExportSingleFieldLine = [&] (int iExportFieldLine) {
       for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
-        int StateVectorOffset=1+(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
-     
-        int x_offset=StateVectorOffset;
-        int b_offset=StateVectorOffset+8;
-        int u_offset=StateVectorOffset+5;
-        int rho_offset=StateVectorOffset+3;
-        int t_offset=StateVectorOffset+4;
-        int w_offset=StateVectorOffset+11;
+        double x[3]={0.0,0.0,0.0};    
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
-        FieldLinesAll[iExportFieldLine].Add(MHData_VIB+x_offset);
+        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];   
+
+        FieldLinesAll[iExportFieldLine].Add(x);
       }
 
        nFieldLine++;
@@ -566,14 +562,24 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     //update a single field line
     auto UpdateSingleFieldLine = [&] (int iExportFieldLine) { 
       for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
-        double x[3]={0.0,0.0,0.0};
-        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+        int StateVectorOffset=1+(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
-        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];
+        int x_offset=StateVectorOffset;
+        int b_offset=StateVectorOffset+8;
+        int u_offset=StateVectorOffset+5;
+        int rho_offset=StateVectorOffset+3;
+        int t_offset=StateVectorOffset+4;
+        int w_offset=StateVectorOffset+11;
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
         cFieldLineVertex* Vertex=FieldLinesAll[iExportFieldLine].GetVertex(i);
 
-        Vertex->SetX(x);
+        Vertex->SetX(MHData_VIB+x_offset);
+        Vertex->SetMagneticField(MHData_VIB+b_offset); 
+        Vertex->SetPlasmaVelocity(MHData_VIB+u_offset); 
+        Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]/_AMU_); 
+        Vertex->SetPlasmaTemperature(MHData_VIB[t_offset]); 
+        Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]/_AMU_*Kbol*MHData_VIB[t_offset]); 
       }
     };
 
@@ -595,10 +601,10 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
       field_line_import_complete=true;
     }
-    else {
-      for (int i=0;i<*nLine;i++) {
-        UpdateSingleFieldLine(i);
-      }
+
+
+    for (int i=0;i<*nLine;i++) {
+      UpdateSingleFieldLine(i);
     }
 
     char fname[200];
