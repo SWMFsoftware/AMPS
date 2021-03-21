@@ -203,6 +203,7 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
   double *v;
   double StatWeight,TotalStatWeight[PIC::nTotalSpecies],MeanSpeed[PIC::nTotalSpecies],MeanVelocity[3*PIC::nTotalSpecies];
 
+  if (PIC::Mesh::mesh==NULL) return;
   if (PIC::Mesh::mesh->rootTree==NULL) return;
 
   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
