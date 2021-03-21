@@ -504,6 +504,107 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
   }
   #endif
 
+
+  void amps_get_bline_c_(int* nVertexMax, int* nLine, int* nVertex_B,int *nMHData,char* NameVar_V, double* MHData_VIB) {
+    using namespace PIC::FieldLine;
+
+    static bool init_flag=false;
+
+
+    //init the field-line module in AMPS is needed
+    auto InitFieldLineModule = [&] () {
+      VertexAllocationManager.MagneticField=true;
+      VertexAllocationManager.ElectricField=true;
+      VertexAllocationManager.PlasmaVelocity=true;
+      VertexAllocationManager.PlasmaDensity=true;
+      VertexAllocationManager.PlasmaTemperature=true;
+      VertexAllocationManager.PlasmaPressure=true;
+      VertexAllocationManager.MagneticFluxFunction=true;
+      VertexAllocationManager.PlasmaWaves=true;
+
+      PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+
+      Init();
+    };
+
+    if (init_flag==false) {
+      InitFieldLineModule();
+      init_flag=true;
+      return;
+    }
+
+
+    auto OutputFieldLine = [&] (int iLine) {
+      char fname[500];
+      FILE *fout;
+
+      sprintf(fname,"exported-field-line.line=%i.dat",iLine);
+      fout=fopen(fname,"w");
+
+      FieldLinesAll[iLine].Output(fout,true);
+      fclose(fout);
+    };
+
+    //import a single field line 
+    auto ExportSingleFieldLine = [&] (int iExportFieldLine) {
+      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
+        double x[3]={0.0,0.0,0.0};    
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+
+        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];   
+
+        FieldLinesAll[iExportFieldLine].Add(x);
+      }
+
+       nFieldLine++;
+    };
+
+    //update a single field line
+    auto UpdateSingleFieldLine = [&] (int iExportFieldLine) { 
+      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
+        double x[3]={0.0,0.0,0.0};
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+
+        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];
+
+        cFieldLineVertex* Vertex=FieldLinesAll[iExportFieldLine].GetVertex(i);
+
+        Vertex->SetX(x);
+      }
+    };
+
+    //check whether field lines are initialized
+    if (FieldLinesAll==NULL) InitFieldLineModule();
+
+    if (*nLine>=nFieldLineMax) {
+      exit(__LINE__,__FILE__,"Error: the number of imported fields lines exeeds that of the field line buffer");
+    }
+
+    //export/update field lines
+    static bool field_line_import_complete=false;
+    static int cnt=0;
+
+    if (field_line_import_complete==false) {
+      for (int i=0;i<*nLine;i++) {
+        ExportSingleFieldLine(i);  
+      }
+
+      field_line_import_complete=true;
+    }
+    else {
+      for (int i=0;i<*nLine;i++) {
+        UpdateSingleFieldLine(i);
+      }
+    }
+
+    char fname[200];
+
+    sprintf(fname,"exported-field-lines.cnt=%i.dat",cnt);    
+    cnt++;  
+
+    Output(fname,true);
+  } 
+
 }
 
 /*

@@ -688,5 +688,10 @@ subroutine amps_get_bline(&
   character(len=10), intent(in) :: NameVar_V(0:nMHData)
   real,              intent(in) :: MHData_VIB(0:nMHData, 1:nVertexMax, 1:nLine)
   !----------------------------------------------------------------------------
+
+
+  call amps_get_bline_c(nVertexMax,nLine,nVertex_B,& 
+    nMHData,NameVar_V,MHData_VIB) 
+
   RETURN
 end subroutine amps_get_bline
