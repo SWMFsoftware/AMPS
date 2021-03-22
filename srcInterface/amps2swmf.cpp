@@ -522,6 +522,16 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       VertexAllocationManager.MagneticFluxFunction=true;
       VertexAllocationManager.PlasmaWaves=true;
 
+
+      VertexAllocationManager.PreviousVertexData.MagneticField=true;
+      VertexAllocationManager.PreviousVertexData.ElectricField=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaVelocity=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaDensity=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaTemperature=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaPressure=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaWaves=true;
+
+
       PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
 
       Init();
@@ -564,6 +574,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
         int StateVectorOffset=1+(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
+        //import 'new' data
         int x_offset=StateVectorOffset;
         int b_offset=StateVectorOffset+8;
         int u_offset=StateVectorOffset+5;
@@ -602,6 +613,14 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       field_line_import_complete=true;
     }
 
+    //switch offsets to the 'previous' vertex's data
+    if (VertexAllocationManager.PreviousVertexData.MagneticField==true) DatumAtVertexMagneticField.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexMagneticField);
+    if (VertexAllocationManager.PreviousVertexData.ElectricField==true) DatumAtVertexElectricField.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexElectricField);
+    if (VertexAllocationManager.PreviousVertexData.PlasmaVelocity==true) DatumAtVertexPlasmaVelocity.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity);
+    if (VertexAllocationManager.PreviousVertexData.PlasmaDensity==true) DatumAtVertexPlasmaDensity.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexPlasmaDensity);
+    if (VertexAllocationManager.PreviousVertexData.PlasmaTemperature==true) DatumAtVertexPlasmaTemperature.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature);
+    if (VertexAllocationManager.PreviousVertexData.PlasmaPressure==true) DatumAtVertexPlasmaPressure.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexPlasmaPressure);
+    if (VertexAllocationManager.PreviousVertexData.PlasmaWaves==true) DatumAtVertexPlasmaWaves.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexPlasmaWaves);
 
     for (int i=0;i<*nLine;i++) {
       UpdateSingleFieldLine(i);

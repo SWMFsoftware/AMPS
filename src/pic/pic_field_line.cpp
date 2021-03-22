@@ -16,11 +16,20 @@ namespace PIC {
     cDatumStored DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
     cDatumStored DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",true);
     cDatumStored DatumAtVertexPlasmaVelocity(3,"\"Plasma Vx [m/s]\",\"Plasma Vy [m/s]\",\"Plasma Vz [m/s]\"",true);
-    cDatumStored DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", false);
-    cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", false);
-    cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", false);
+    cDatumStored DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", true);
+    cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", true);
+    cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", true);
     cDatumStored DatumAtVertexMagneticFluxFunction(1,"\"MagneticFluxFunction [nT*m]\"", true);
     cDatumStored DatumAtVertexPlasmaWaves(1,"\"Plasma waves\"",false);
+
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity(3,"\"Plasma Vx [m/s]\",\"Plasma Vy [m/s]\",\"Plasma Vz [m/s]\"",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(1,"\"Plasma waves\"",false);
+
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
@@ -468,6 +477,13 @@ namespace PIC {
       if (VertexAllocationManager.MagneticFluxFunction==true) DatumAtVertexMagneticFluxFunction.activate(Offset, &DataStoredAtVertex);
       if (VertexAllocationManager.PlasmaWaves==true)          DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
 
+      if (VertexAllocationManager.PreviousVertexData.MagneticField==true)        DatumAtVertexPrevious::DatumAtVertexMagneticField.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.ElectricField==true)        DatumAtVertexPrevious::DatumAtVertexElectricField.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.PlasmaVelocity==true)       DatumAtVertexPrevious::DatumAtVertexPlasmaVelocity.      activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.PlasmaDensity==true)        DatumAtVertexPrevious::DatumAtVertexPlasmaDensity.       activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.PlasmaTemperature==true)    DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature.   activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.PlasmaPressure==true)       DatumAtVertexPrevious::DatumAtVertexPlasmaPressure.      activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.PreviousVertexData.PlasmaWaves==true)          DatumAtVertexPrevious::DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
 
       // activate data that is sampled
       long int SamplingOffset = Offset;

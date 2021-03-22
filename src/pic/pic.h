@@ -224,6 +224,13 @@ namespace PIC {
 
         return *this;
       }
+
+      void SwitchOffset(cDatum* v) {
+        int t=v->offset;
+       
+        v->offset=offset;
+        offset=t;
+      } 
       
       // print variables' name to file
       //......................................................................
@@ -373,12 +380,36 @@ namespace PIC {
     extern cDatumWeighted DatumAtVertexParticleEnergy;
     extern cDatumWeighted DatumAtGridParticleEnergy;
 
+    namespace DatumAtVertexPrevious {
+      extern cDatumStored   DatumAtVertexElectricField;
+      extern cDatumStored   DatumAtVertexMagneticField;
+      extern cDatumStored   DatumAtVertexPlasmaVelocity;
+      extern cDatumStored   DatumAtVertexPlasmaDensity;
+      extern cDatumStored   DatumAtVertexPlasmaTemperature;
+      extern cDatumStored   DatumAtVertexPlasmaPressure;
+      extern cDatumStored   DatumAtVertexPlasmaWaves;
+    }
+
 
     class cVertexAllocationManager {
     public:
       bool ElectricField,MagneticField,PlasmaVelocity,PlasmaDensity;
       bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
       bool PlasmaWaves;
+
+      class cPreviousVertexData {
+      public:
+        bool ElectricField,MagneticField,PlasmaVelocity,PlasmaDensity;
+        bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
+        bool PlasmaWaves; 
+
+        cPreviousVertexData() {
+          ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
+          PlasmaTemperature=false,PlasmaPressure=false,MagneticFluxFunction=false;
+          PlasmaWaves=false;
+        }
+      } PreviousVertexData; 
+
 
       cVertexAllocationManager() {
         ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
