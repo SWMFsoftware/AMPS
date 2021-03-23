@@ -3708,6 +3708,59 @@ Check=
 
 <#
 
+#>
+Name=AMPS-SC-IH-FIELDLINE-Coupling
+Time=5
+
+Compile=
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_compile..." > test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_compile... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+
+
+Rundir=
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir..." >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
+
+
+Run=
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_run..." >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>@echo Test test_AMPS-SC-IH-FIELDLINE-Coupling has started: `date`
+
+>>>-cd SWMF;$(MAKE) test15_pt 
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_run... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+
+
+Check=
+>>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_check..." >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+
+>>>-@${TESTAMPS-SC-IH-FIELDLINE-CouplingDIR}/../utility/ReduceFile.pl SWMF/run_test/exported-field-lines.cnt=8.dat 10
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/exported-field-lines.cnt=8.dat.Reduced.Step=10 output/test_AMPS-SC-IH-FIELDLINE-Coupling/exported-field-lines.cnt=8.dat.Reduced.Step=10  > test_AMPS-SC-IH-FIELDLINE-Coupling.diff)
+
+>>>@ls -l test_AMPS-SC-IH-FIELDLINE-Coupling.diff 
+
+>>>@echo Test test_AMPS-SC-IH-FIELDLINE-Coupling has finished: `date`
+<#
+
 
 #>
 Name=test/AMPS-BATSRUS-Europa 
