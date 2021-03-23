@@ -3738,6 +3738,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir..." >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
+>>>mkdir -p $(TESTAMPS-SC-IH-FIELDLINE-CouplingDIR)
 >>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
 
 
