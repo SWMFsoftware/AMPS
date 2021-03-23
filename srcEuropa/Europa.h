@@ -1718,9 +1718,9 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
       Exosphere::Planet->GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,el);
       Exosphere::Planet->GetSurfaceElementRandomDirection(ExternalNormal,nZenithElement,nAzimuthalElement);
       
-    x_LOCAL_IAU_OBJECT[0]=sphereRadius*ExternalNormal[0];
-    x_LOCAL_IAU_OBJECT[1]=sphereRadius*ExternalNormal[1];
-    x_LOCAL_IAU_OBJECT[2]=sphereRadius*ExternalNormal[2];
+    x_LOCAL_IAU_OBJECT[0]=-sphereRadius*ExternalNormal[0];
+    x_LOCAL_IAU_OBJECT[1]=-sphereRadius*ExternalNormal[1];
+    x_LOCAL_IAU_OBJECT[2]=-sphereRadius*ExternalNormal[2];
     
     x_LOCAL_SO_OBJECT[0]=
       (OrbitalMotion::IAU_to_SO_TransformationMartix[0][0]*x_LOCAL_IAU_OBJECT[0])+
