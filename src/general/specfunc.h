@@ -789,7 +789,7 @@ void amps_new_managed(T* &buff,int length) {
 }
 
 template<class T>
-void amps_malloc_managed(T* &buff,int length) {
+void amps_malloc_managed(T* &buff,long int length) {
   T* t;
 
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
