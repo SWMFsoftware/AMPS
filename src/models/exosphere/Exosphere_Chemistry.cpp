@@ -154,6 +154,8 @@ void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int
      int npart=(int)anpart;
      if (anpart-npart>rnd()) npart+=1;
 
+     TotalSourceRate[specProduct]+=anpart*ParentParticleWeight/ProductTimeStep;
+
      for (int n=0;n<npart;n++) {
        //generate model particle with spec=specProduct
        bool flag=false;
@@ -214,6 +216,7 @@ void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int
   }
   else {
     //the particle is removed from the system
+    TotalLossRate[spec]+=ParentParticleWeight/ParentTimeStep;
     PIC::ParticleBuffer::DeleteParticle(ptr);
   }
 }
