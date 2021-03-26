@@ -46,21 +46,21 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
   /*
     LOOKUP TABLE METHOD BELOW
    */
-
+  
   /*
   //Declare relevant variables
-  double Source_V[5],v2_th_Plas,NeuRho,PlasRho ;
+  double Source_V[5],v2_th_Plas,NeuRho,PlasRho;
   double neu_v2_th = 0;
   double rate;
-  
+
   //Densities and thermal velocity
-  PlasRho = PlasmaNumberDensity/_MASS_(_H_); 
+  PlasRho = PlasmaNumberDensity/_MASS_(_H_);
   v2_th_Plas = 2.0*Kbol*PlasmaTemperature / _MASS_(_H_);
   NeuRho = 1;
- 
+
   //Using "Linear_solver_wrapper" calls as a template
   get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,vPlasma,&NeuRho,&neu_v2_th,vParticle,Source_V); //need to use the pointers, velocities are already pointers
-  
+
   //I need to take the rate term (first term) of Source_V for the rate
   rate = Source_V[0];
 
