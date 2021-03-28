@@ -96,6 +96,8 @@ ParticleWeightCorrectionMode=on
 !   define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_
 
 
+  define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+
   RecoverMacroscopicSampledData=off  \\ !!on, off
     execution=stop \\ ! continue \\ !stop \\ !stop,continue
     file=pic.SamplingDataRestart.out=2.dat
