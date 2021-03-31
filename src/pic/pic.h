@@ -3224,15 +3224,20 @@ namespace PIC {
           double dtLocal,wLocal;
         } OutputData;
 
+    
+        bool gather_output_data=false;
+
+        if (pipe==NULL) gather_output_data=true;
+        else if (pipe->ThisThread==BlockThread) gather_output_data=true;
 
 
-        if (pipe->ThisThread==BlockThread) {
+        if (gather_output_data==true) { // (pipe->ThisThread==BlockThread) {
           OutputData.dtLocal=GetLocalTimeStep(DataSetNumber);
           OutputData.wLocal=GetLocalParticleWeight(DataSetNumber);
         }
 
-        if (pipe->ThisThread==0) {
-           if (BlockThread!=0) pipe->recv((char*)&OutputData,sizeof(OutputData),BlockThread);
+        if ((PIC::ThisThread==0)||(pipe==NULL))  {
+           if ((BlockThread!=0)&&(pipe!=NULL))  pipe->recv((char*)&OutputData,sizeof(OutputData),BlockThread);
 
            fprintf(fout,"%e  %e  ",OutputData.dtLocal,OutputData.wLocal);
          }

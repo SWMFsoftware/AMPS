@@ -7460,6 +7460,273 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
     return counter;
   }
    */
+
+//==============================================================
+  void OutputDistributedDataTECPLOT(const char* fname,bool PrintMeshData,int DataSetNumber) {
+    //the number of cells and nodes
+    int nnodes=0,ncells=0;
+    FILE *fConnectivity,*fData;
+
+    const static int CellCornerPrintOrder[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0}, {0,0,1},{1,0,1},{1,1,1},{0,1,1}}; 
+
+    int nSubDomainTotalCellCorners=0,nSubDomainTotalCells=0; 
+ 
+
+    auto PrintCellCornerData = [&] (int iNode,int jNode,int kNode,cTreeNodeAMR<cBlockAMR> *Node) {
+      double xNode[3];
+
+      const int nMaxCenterInterpolationCoefficients=64;
+      cCenterNode *tempCenterNode,*CenterNodeInterpolationStencil[nMaxCenterInterpolationCoefficients];
+      double CenterNodeInterpolationCoefficients[nMaxCenterInterpolationCoefficients];
+      int centerNodeInterpolationStencilLength;
+
+      
+      Node->GetCornerNodePosition(xNode,iNode,jNode,kNode);
+
+      tempCenterNode=CenterNodes.newElement();
+      tempCenterNode->SetX(xNode);
+
+      if (GetCenterNodesInterpolationCoefficients==NULL) {
+        switch(_MESH_DIMENSION_) {
+        case 1: 
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+          break;
+        case 2: 
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+          break;
+        case 3:
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+        }
+      }
+      else {
+        if ((iNode==_BLOCK_CELLS_X_)||(jNode==_BLOCK_CELLS_Y_)||(kNode==_BLOCK_CELLS_Z_)) {
+          //the point is at the 'right' boundary of a block -> formally 'belongs' to the neib block
+          cTreeNodeAMR<cBlockAMR> *neibNode;
+
+          neibNode=findTreeNode(xNode,Node);
+
+          if (neibNode==NULL) {
+            switch (_MESH_DIMENSION_) {
+            case 1:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            case 2:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            case 3:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            default:
+              exit(__LINE__,__FILE__,"error: out of range");
+            }
+          }
+          else if (neibNode->IsUsedInCalculationFlag==true) {
+            centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,neibNode,nMaxCenterInterpolationCoefficients);
+          }
+          else {
+            switch (_MESH_DIMENSION_) {
+            case 1:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            case 2:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            case 3:
+              centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+              break;
+            default:
+              exit(__LINE__,__FILE__,"error: out of range");
+            }
+          }
+        }
+        else {
+          centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,Node,nMaxCenterInterpolationCoefficients);
+        }
+      }
+
+
+      tempCenterNode->Interpolate(CenterNodeInterpolationStencil,CenterNodeInterpolationCoefficients,centerNodeInterpolationStencilLength);
+      tempCenterNode->PrintData(fData,DataSetNumber,NULL,Node->Thread);
+
+      CenterNodes.deleteElement(tempCenterNode);
+    };
+
+    auto PrintCellCornerLocation = [&] (int iNode,int jNode,int kNode,cTreeNodeAMR<cBlockAMR> *Node) {
+      double x[3];
+
+      Node->GetCornerNodePosition(x,iNode,jNode,kNode);
+
+      for (int idim=0;idim<_MESH_DIMENSION_;idim++) {
+        fprintf(fData,"%e  ",x[idim]);
+      }
+    }; 
+
+    auto PrintHeader = [&] () {
+      FILE *fHeader; 
+      char fname_full[200];
+      
+      if (ThisThread==0) {
+        sprintf(fname_full,"%s.header.tmp",fname); 
+        fHeader=fopen(fname_full,"w");
+
+        fprintf(fHeader,"VARIABLES=\"X\", \"Y\", \"Z\"");
+ 
+        if (PrintMeshData==true) {
+          fprintf(fHeader,", \"Maximum Refinment Level\", \"Temp_ID\"");
+
+          #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
+          fprintf(fHeader,", \"Thread\"");
+          #endif
+
+          if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+          CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fHeader,DataSetNumber);
+
+          #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
+          if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+          CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fHeader,DataSetNumber);
+          #endif
+
+         rootTree->block->PrintVariableList(fHeader);
+        }
+
+        fclose(fHeader);
+      } 
+    };
+
+   auto PrintMeshSize = [&] () {
+     FILE* fMeshSize;
+     char fname_full[200];
+
+     sprintf(fname_full,"%s.mesh-size.tread=%ld.tmp",fname,ThisThread);
+     fMeshSize=fopen(fname_full,"w"); 
+
+     fprintf(fMeshSize,"Corners=%ld\nCells=%ld\n",nSubDomainTotalCellCorners,nSubDomainTotalCells);  
+     fclose(fMeshSize);
+   };  
+
+   auto ProcessFullCell = [&] (int i,int j,int k,cTreeNodeAMR<cBlockAMR> *Node) {
+     int nd,icorner;
+     cCornerNode *CornerNode;
+
+     for (icorner=0;icorner<8;icorner++) {
+       nd=getCornerNodeLocalNumber(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2]); 
+       CornerNode=Node->block->GetCornerNode(nd);
+
+       if  (CornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) { 
+          CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+          CornerNode->nodeDescriptor.nodeno=nSubDomainTotalCellCorners++;
+
+         //print data
+         PrintCellCornerLocation(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node);
+
+         if (PrintMeshData==true) {
+
+           int MaxRefinmentLevel=CornerNode->nodeDescriptor.maxRefinmentLevel;
+           int NodeTempID=CornerNode->Temp_ID;
+
+           fprintf(fData,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
+
+           PrintCellCornerData(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node); 
+           Node->block->PrintData(fData,DataSetNumber,NULL,Node->Thread);
+         }
+
+         fprintf(fData,"\n"); 
+       }
+
+       //print connectivity data
+       fprintf(fConnectivity,"%ld  ",CornerNode->nodeDescriptor.nodeno); 
+     }
+
+      fprintf(fConnectivity,"\n");
+   };
+
+   //reset the node index
+   std::function<void(cTreeNodeAMR<cBlockAMR>*)> ResetNodeIndex;
+
+   ResetNodeIndex = [&] (cTreeNodeAMR<cBlockAMR> *Node) {
+     if (Node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+       int nd,i,j,k;
+       cCornerNode *CornerNode; 
+  
+       if (Node->block!=NULL) for (k=0;k<=((_MESH_DIMENSION_==3) ? _BLOCK_CELLS_Z_ : 0);k++) for (j=0;j<=((_MESH_DIMENSION_>=2) ? _BLOCK_CELLS_Y_ : 0);j++) for (i=0;i<=_BLOCK_CELLS_X_;i++) {
+         nd=getCornerNodeLocalNumber(i,j,k);
+         CornerNode=Node->block->GetCornerNode(nd);
+
+         if (CornerNode!=NULL) {
+           CornerNode->nodeDescriptor.nodeno=0;
+           CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_FALSE_;
+         }
+       }
+     }
+     else {
+       int iDownNode;
+       cTreeNodeAMR<cBlockAMR>  *downNode;
+
+       for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=Node->downNode[iDownNode])!=NULL) {  
+         ResetNodeIndex(downNode);
+       }
+     }
+   };
+
+   ResetNodeIndex(rootTree);
+
+   //output the mesh 
+   std::function<void(cTreeNodeAMR<cBlockAMR>*)> OutputDataFile;
+   
+   OutputDataFile = [&] (cTreeNodeAMR<cBlockAMR>* Node) {
+     if (Node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+       int nd,i,j,k,ii,jj,kk;
+       cCornerNode *CornerNode;
+
+       if ((Node->IsUsedInCalculationFlag==true)&&(Node->block!=NULL)&&(Node->Thread==ThisThread)) {
+         for (k=0;k<((_MESH_DIMENSION_==3) ? _BLOCK_CELLS_Z_ : 1);k++) for (j=0;j<((_MESH_DIMENSION_>=2) ? _BLOCK_CELLS_Y_ : 1);j++) for (i=0;i<_BLOCK_CELLS_X_;i++) { 
+           bool flag=true;
+
+           for (ii=0;ii<2;ii++) for (jj=0;jj<2;jj++) for (kk=0;kk<2;kk++) {
+             nd=getCornerNodeLocalNumber(i+ii,j+jj,k+kk);
+             CornerNode=Node->block->GetCornerNode(nd); 
+
+             if (CornerNode==NULL) {
+               flag=false;
+             }
+           }
+
+           if (flag==true) {
+             ProcessFullCell(i,j,k,Node); 
+             nSubDomainTotalCells++;
+           } 
+         }
+       }
+     } 
+     else {
+       int iDownNode;
+       cTreeNodeAMR<cBlockAMR>  *downNode;
+
+       for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=Node->downNode[iDownNode])!=NULL) {
+         OutputDataFile(downNode);
+       }
+     }
+   };
+
+
+   char fname_full[200];
+
+   sprintf(fname_full,"%s.data.tread=%ld.tmp",fname,ThisThread); 
+   fData=fopen(fname_full,"w");
+
+   sprintf(fname_full,"%s.connectivity.tread=%ld.tmp",fname,ThisThread);
+   fConnectivity=fopen(fname_full,"w");
+   
+   OutputDataFile(rootTree);
+   PrintHeader();
+   PrintMeshSize();
+
+   fclose(fData);
+   fclose(fConnectivity);
+
+  } 
+
+
 //==============================================================
   //if printCoordinateVector == true  -> print the coordinate vector, else -> printf the connectovity list  
   void outputMeshTECPLOT_BlockCornerNode_BlockConnectivityList(cTreeNodeAMR<cBlockAMR> *startNode,FILE* fout,bool printCoordinateVector,bool PrintMeshData,int DataSetNumber,int ConnectivityListMode) {

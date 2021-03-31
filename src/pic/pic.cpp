@@ -1548,7 +1548,17 @@ void PIC::Sampling::Sampling() {
 //presence of the line changes the reference solution significantly, so it is commented for now
 //              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
 
-              PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
+                switch (_PIC_OUTPUT_MODE_) {
+                case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:
+                  PIC::Mesh::mesh->OutputDistributedDataTECPLOT(fname,true,s);
+                  break;
+
+                case _PIC_OUTPUT_MODE_SINGLE_FILE_: 
+                  PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
+                  break;
+                default:
+                  exit(__LINE__,__FILE__,"Error: the option is unknown");
+                }
             }
           }
         }

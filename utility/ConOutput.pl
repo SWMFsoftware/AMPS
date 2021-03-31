@@ -51,16 +51,16 @@ my @all_files=readdir(DIR);
 for (my $i=0;$i<$nthreads;$i++) {
   my $fname_full;
 
-  $fname_full=$fname."\.mesh-size\.out=".$out."\.tread=".$i."\.tmp"; 
+  $fname_full=$fname."\.mesh-size\.tread=".$i."\.tmp"; 
   push @mesh_size_files,$fname_full;
 
-  $fname_full=$fname."\.data\.out=".$out."\.tread=".$i."\.tmp";
+  $fname_full=$fname."\.data\.tread=".$i."\.tmp";
   push @mesh_data_files,$fname_full;
 
 print "$fname_full\n";
 
 
- $fname_full=$fname."\.connectivity\.out=".$out."\.tread=".$i."\.tmp";
+ $fname_full=$fname."\.connectivity\.tread=".$i."\.tmp";
 
 print "$fname_full\n";
 

@@ -697,14 +697,19 @@ void PIC::CPLR::DATAFILE::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *p
   double data[nTotalBackgroundVariables];
   int i;
 
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
   //get the interpolated data
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     memcpy(data,MULTIFILE::CurrDataFileOffset+CenterNodeAssociatedDataOffsetBegin+CenterNode->GetAssociatedDataBufferPointer(),nTotalBackgroundVariables*sizeof(double));
   }
 
   //send the data to the root processor if needed and print them into a file
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(data,nTotalBackgroundVariables,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(data,nTotalBackgroundVariables,CenterNodeThread);
 
     for (i=0;i<nTotalBackgroundVariables;i++) fprintf(fout,"%e ",data[i]);
   }

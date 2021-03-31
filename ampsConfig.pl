@@ -1054,6 +1054,23 @@ sub ReadGeneralBlock {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
       ampsConfigLib::ChangeValueOfVariable("static const int FirstPrintedOutputFile",$InputLine,"pic/pic.h");
     }
+
+    #create a single output file vs a set of separated output files that need to be concatenated using AMPS/utility/ConOutput.pl script
+    elsif ($InputLine eq "OUTPUTMODE") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "SINGLEFILE") {
+        ampsConfigLib::RedefineMacro("_PIC_OUTPUT_MODE_","_PIC_OUTPUT_MODE_SINGLE_FILE_","pic/picGlobal.dfn");
+      }
+      elsif ($InputLine eq "DISTRIBUTEDFILES") {
+        ampsConfigLib::RedefineMacro("_PIC_OUTPUT_MODE_","_PIC_OUTPUT_MODE_DISTRIBUTED_FILES_","pic/picGlobal.dfn");
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
     
     #set the 'ForceRepatableExecutionPath' in the General section in addition to that in the Main section
     #Needed for setting up tests that are used a working input file with no ForceRepatableExecutionPath in the Main section

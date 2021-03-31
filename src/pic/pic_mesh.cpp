@@ -188,8 +188,13 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
     // mark exit from the first (initializing) call
     IsFirstCall=false;
   }
+
+  bool gather_print_data=false;
+
+  if (pipe==NULL) gather_print_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
   
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     // compose a message
     int iOutput=0;
     // timed data values
@@ -213,9 +218,9 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
     }
   }
   
-  if (pipe->ThisThread==0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
     //print values to the output file
-    if (CenterNodeThread!=0) pipe->recv((char*)OutputData,nOutput*sizeof(double),CenterNodeThread);
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv((char*)OutputData,nOutput*sizeof(double),CenterNodeThread);
 
     for(int iOutput=0; iOutput<nOutput; iOutput++) fprintf(fout, "%e ", OutputData[iOutput]);
   }
@@ -230,7 +235,12 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   if (_PIC_OUTPUT__DRIFT_VELOCITY__MODE_==_PIC_MODE_ON_) {
     double vDrift[3];
 
-    if (pipe->ThisThread==CenterNodeThread) {
+  bool gather_print_data=false;
+
+  if (pipe==NULL) gather_print_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
+
+    if (gather_print_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       //calculate the drift velocity
       double BulkVelocity[3],ParticleMass,ParticleCharge;
 
@@ -250,8 +260,9 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
       PIC::CPLR::GetDriftVelocity(vDrift,BulkVelocity,ParticleMass,ParticleCharge);
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv((char*)vDrift,3*sizeof(double),CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv((char*)vDrift,3*sizeof(double),CenterNodeThread);
+
       fprintf(fout," %e %e %e ",vDrift[0],vDrift[1],vDrift[2]);
     }
     else pipe->send((char*)vDrift,3*sizeof(double));

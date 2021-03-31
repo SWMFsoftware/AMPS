@@ -1808,12 +1808,17 @@ void Exosphere::Sampling::OutputDataFile::PrintData(FILE* fout,int DataSetNumber
 
   //output the sampled number densities
   if (SamplingDensityOffset[0]!=-1) for (int iSource=0;iSource<1+_EXOSPHERE__SOURCE_MAX_ID_VALUE_;iSource++) {
-    if (pipe->ThisThread==CenterNodeThread) {
+    bool gather_output_data=false;
+
+    if (pipe==NULL) gather_output_data=true;
+    else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       t= *(DataSetNumber+(double*)(SamplingBuffer+SamplingDensityOffset[iSource]));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }

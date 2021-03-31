@@ -731,10 +731,15 @@ if (nCallCounter==61723) {
 
 
   //total density
-  if (pipe->ThisThread==CenterNodeThread) for (int s=_DUST_SPEC_;s<_DUST_SPEC_+GrainVelocityGroup::nGroups;s++) TotalDustNumberDensity+=CenterNode->GetNumberDensity(s);
+  bool gather_output_data=false;
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(TotalDustNumberDensity,CenterNodeThread);
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+  
+  if (gather_output_data==true) for (int s=_DUST_SPEC_;s<_DUST_SPEC_+GrainVelocityGroup::nGroups;s++) TotalDustNumberDensity+=CenterNode->GetNumberDensity(s);
+
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(TotalDustNumberDensity,CenterNodeThread);
 
     fprintf(fout,"%e ",TotalDustNumberDensity);
   }
@@ -743,7 +748,7 @@ if (nCallCounter==61723) {
   //the total mean dust velocity vector and speed
   double MeanBulkVelocity[3]={0.0,0.0,0.0},Speed=0.0;
 
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
     double vGroup[3],w,wtot=0.0;
 
     for (int s=_DUST_SPEC_;s<_DUST_SPEC_+GrainVelocityGroup::nGroups;s++) {
@@ -761,8 +766,8 @@ if (nCallCounter==61723) {
     }
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) {
       pipe->recv(Speed,CenterNodeThread);
       pipe->recv(MeanBulkVelocity,DIM,CenterNodeThread);
     }
@@ -781,12 +786,12 @@ if (nCallCounter==61723) {
   //total dust elelctric charge and current densities
 #if _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ == _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__ON_
   //total electric charge
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     t= *((double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::TotalDustElectricChargeDensitySamplingOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
     fprintf(fout,"%e ",t);
   }
@@ -795,12 +800,12 @@ if (nCallCounter==61723) {
   //electric current density
   for (int idim=0;idim<3;idim++) {
     //grain's bulk velocity
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       t=*(idim+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::TotalDustElectricCurrentDensitySamplingOffset));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -813,12 +818,12 @@ if (nCallCounter==61723) {
   //macroscopic parameters for particular intervals
   for (int nInterval=0;nInterval<Sampling::nDustSizeSamplingIntervals;nInterval++) {
     //number density
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       numberDensity= *(nInterval+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::DustSizeSamplingInterval_NumberDensity_Offset));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(numberDensity,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(numberDensity,CenterNodeThread);
 
       fprintf(fout,"%e ",numberDensity);
     }
@@ -826,12 +831,12 @@ if (nCallCounter==61723) {
 
     for (int idim=0;idim<DIM;idim++) {
       //grain's bulk velocity
-      if (pipe->ThisThread==CenterNodeThread) {
+      if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
         t=*(idim+3*nInterval+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::DustSizeSamplingInterval_Velocity_Offset));
       }
 
-      if (pipe->ThisThread==0) {
-        if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+      if ((PIC::ThisThread==0)||(pipe==NULL)) {
+        if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
         fprintf(fout,"%e ",t);
       }
@@ -839,12 +844,12 @@ if (nCallCounter==61723) {
     }
 
     //grain's speed
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       t= *(nInterval+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::DustSizeSamplingInterval_Speed_Offset));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -852,12 +857,12 @@ if (nCallCounter==61723) {
 
 #if _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE_ == _PIC_MODEL__DUST__ELECTRIC_CHARGE_MODE__ON_
     //electric charge density
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       t= *(nInterval+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::DustSizeSamplingInterval_ElectricCherge_Offset));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -866,12 +871,12 @@ if (nCallCounter==61723) {
     //electric current density
     for (int idim=0;idim<DIM;idim++) {
       //grain's bulk velocity
-      if (pipe->ThisThread==CenterNodeThread) {
+      if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
         t=*(idim+3*nInterval+(double*)(SamplingBuffer+ElectricallyChargedDust::Sampling::DustSizeSamplingInterval_ElectricCurrent_Offset));
       }
 
-      if (pipe->ThisThread==0) {
-        if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+      if ((PIC::ThisThread==0)||(pipe==NULL)) {
+        if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
         fprintf(fout,"%e ",t);
       }
