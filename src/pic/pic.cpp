@@ -1556,6 +1556,9 @@ void PIC::Sampling::Sampling() {
                 case _PIC_OUTPUT_MODE_SINGLE_FILE_: 
                   PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
                   break;
+                case _PIC_OUTPUT_MODE_OFF_:
+                  //do nothing 
+                  break;
                 default:
                   exit(__LINE__,__FILE__,"Error: the option is unknown");
                 }

@@ -400,6 +400,7 @@ at the end of each time step
 //create a single output file vs a set of separated output files that need to be concatenated using AMPS/utility/ConOutput.pl script
 #define _PIC_OUTPUT_MODE_SINGLE_FILE_ 0
 #define _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_ 1
+#define _PIC_OUTPUT_MODE_OFF_ 2
 #define _PIC_OUTPUT_MODE_ _PIC_OUTPUT_MODE_SINGLE_FILE_
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  

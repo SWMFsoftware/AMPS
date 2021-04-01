@@ -1065,6 +1065,9 @@ sub ReadGeneralBlock {
       elsif ($InputLine eq "DISTRIBUTEDFILES") {
         ampsConfigLib::RedefineMacro("_PIC_OUTPUT_MODE_","_PIC_OUTPUT_MODE_DISTRIBUTED_FILES_","pic/picGlobal.dfn");
       }
+      elsif ($InputLine eq "OFF") {
+        ampsConfigLib::RedefineMacro("_PIC_OUTPUT_MODE_","_PIC_OUTPUT_MODE_OFF_","pic/picGlobal.dfn");
+      }
       else {
         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
         die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";

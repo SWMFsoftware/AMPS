@@ -69,7 +69,7 @@ ParticleWeightCorrectionMode=on
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
 
-  !OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+  !OutputMode=off !DistributedFiles !!SingleFile !SingleFile,DistributedFiles
 
 ! ReferenceInjectionParticleNumber=200
 ! MaxMeshRefinmentLevel=8! 2 !4
