@@ -1,11 +1,9 @@
 #!/usr/bin/perl
 
-
 push @INC, ".";
-
 use strict;
 
-#parse the command line: -fname=the file name pattern -n=number of threads -out = the number of the index 'out'
+#parse the command line: -fname=[the file name pattern] 
 my ($fname,$nthreads,$out);
 
 
@@ -14,16 +12,10 @@ foreach (@ARGV) {
     $fname=$1;
   }
  
-  if (/^-n=(.*)$/i) {
-    $nthreads=$1;
-  }
-  
-  if (/^-out=(.*)$/i) {
-    $out=$1;
-  }
-
   if (/^-h/i) {
-    print "ConOutput.pl -fname=[the file name pattern] -n=[number of threads] -out =[the number of the index \'out\']\n";
+    print "ConOutput.pl -fname=[the file name pattern] \n";
+    print "Example: to process the set of files line 'pic.H2O.s=0.out=1.dat.data.tread=0.tmp' the following command would be used\n";
+    print "ConOutput.pl -fname=pic.H2O.s=0.out=1.dat\n"; 
     exit;
   }
 }
@@ -38,45 +30,28 @@ my @cells_number;
 my $line;
 
 opendir(DIR, "."); 
-my @all_files=readdir(DIR);
+my @all_files=sort(readdir(DIR));
+my $file;
 
+foreach $file (@all_files) {
+  if ($file =~ m/$fname\.mesh-size.*\.tmp/) {
+    print "file=$file\n";
 
+    push @mesh_size_files, $file
+  }
 
+  if ($file =~ m/$fname\.data.*\.tmp/) {
+    print "file=$file\n";
 
-#@mesh_size_files = grep(/$fname\.mesh-size\.out=$out\.tread=.*\.tmp$/,@all_files);
-#@mesh_data_files = grep(/$fname\.data\.out=$out\.tread=.*\.tmp$/,@all_files);
-#@mesh_connectivity_files= grep(/$fname\.connectivity\.out=$out\.tread=.*\.tmp$/,@all_files);
+    push @mesh_data_files, $file
+  }
 
+  if ($file =~ m/$fname\.connectivity.*\.tmp/) {
+    print "file=$file\n";
 
-for (my $i=0;$i<$nthreads;$i++) {
-  my $fname_full;
-
-  $fname_full=$fname."\.mesh-size\.tread=".$i."\.tmp"; 
-  push @mesh_size_files,$fname_full;
-
-  $fname_full=$fname."\.data\.tread=".$i."\.tmp";
-  push @mesh_data_files,$fname_full;
-
-print "$fname_full\n";
-
-
- $fname_full=$fname."\.connectivity\.tread=".$i."\.tmp";
-
-print "$fname_full\n";
-
-
-  push @mesh_connectivity_files,$fname_full;
+    push @mesh_connectivity_files, $file
+  }
 }
-
-
-print @mesh_size_files; 
-
-print @mesh_data_files;
-print @mesh_connectivity_files;
-
-print "!!!!!!!!\n";
-#mesh.mesh-size.out=0.tread=0.tmp
-
 
 my $nTotalCells=0;
 my $nTotalCorners=0;
@@ -94,16 +69,8 @@ for (my $i=0;$i<scalar @mesh_size_files;$i++) {
   push @cells_number,$line;
   $nTotalCells+=$line;
 
-print "line=$line\n";
-print "nTotalCorners= $nTotalCorners\n";
-
   close fIn;
 }
-
-print @corners_number;
-print @cells_number;
-print "$nTotalCorners\n";
-print "$nTotalCells\n";
 
 #create the resulting output file and copy the header
 open (fOut,">","$fname\.all\.dat");
@@ -149,13 +116,7 @@ for (my $i=0;$i<scalar @mesh_connectivity_files;$i++) {
     print fOut  "$s0 $s1 $s2 $s3 $s4 $s5 $s6 $s7\n";
   } 
 
-# $offset+=$cells_number[$i];
-
-$offset+=$corners_number[$i]; 
-
-print "offset=$offset\n";
+  $offset+=$corners_number[$i]; 
 }
-
-
 
 close fOut;
