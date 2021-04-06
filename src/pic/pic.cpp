@@ -2224,6 +2224,10 @@ void PIC::Init_BeforeParser() {
   ::PhotolyticReactions::Init();
 #endif
 
+  if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
+    PIC::FieldLine::Init();
+  }
+
   //Interpolation routines
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
     if (_PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE_ == _PIC_CELL_CENTERED_LINEAR_INTERPOLATION_ROUTINE__AMPS_) {

@@ -343,6 +343,26 @@ namespace PIC {
   //field line
   namespace FieldLine{
 
+    //flag setting use/not-use of the field lines in a simulation
+    extern bool IsUsedInSimulation; 
+    extern int ParticleDataOffset;
+
+    class cParticleFieldLineData {
+    public:
+      //local coordinate, and velocity along the field line 
+      double x,v;
+
+      //next,prev particles in the list attached to a given segment of the field line
+      long int next,prev;
+
+      long int GetNext() {return next;}
+      void SetNext(long int t) {next=t;}
+
+      long int GetPrev() {return prev;}
+      void SetPrev(long int t) {prev=t;};
+     }; 
+
+
     //constants for house-keeping--------------------------------------
     //self-explanatory: everything                Vertex  Segment  Line
     const int OK_        = 0;                   // yes     yes      yes
@@ -485,6 +505,11 @@ namespace PIC {
         int i,length=totalAssociatedDataLength/sizeof(double);
         double *p;
         for (i=0,p=(double*)AssociatedDataPointer;i<length;i++,p++) *p=0.0;
+
+        for (int idim=0;idim<DIM;idim++) x[idim]=0;
+
+        prev=NULL,next=NULL;
+        ActiveFlag=false;
       }
 
       //.......................................................................
@@ -729,20 +754,27 @@ namespace PIC {
       long int Temp_ID;
       bool ActiveFlag;
 
-      cFieldLineSegment(){
+      //index of the first particle attached to the segment
+      long int FirstParticleIndex,tempFirstParticleIndex; 
+
+      //.......................................................................
+      // interface with stack functionality
+      inline void cleanDataBuffer() {
         Temp_ID = 0;
         IsSet=0, length=0.0;
         prev  = (next = NULL);
         begin = (end  = NULL);
         ActiveFlag=false;
+        FirstParticleIndex=-1,tempFirstParticleIndex=-1;
       }
 
-      //.......................................................................
-      // interface with stack functionality
-      inline void cleanDataBuffer(){}
+
       inline int AssociatedDataLength(){return 0;}
       inline char* GetAssociatedDataBufferPointer(){return NULL;}
       inline void SetAssociatedDataBufferPointer(char* ptr){}
+
+    
+      cFieldLineSegment() {cleanDataBuffer();}
 
       //.......................................................................
       //check status of segment
@@ -765,6 +797,24 @@ namespace PIC {
       }
 
       //.......................................................................
+      //update length of the segment 
+      void UpdateLength() {
+        double xBegin[DIM], xEnd[DIM];
+        length = 0.0;
+
+        if (begin!=NULL && end!=NULL) {
+          begin->GetX(xBegin); end->GetX(xEnd);
+
+          for (int idim=0; idim<DIM; idim++) {
+            Dir[idim] = xEnd[idim]-xBegin[idim];
+            length   += pow(Dir[idim], 2);
+          }
+
+          length = sqrt(length);
+          Dir[0]/= length; Dir[1]/= length; Dir[2]/= length;
+        }
+      }
+      
       //set the segment
       inline void SetVertices(cFieldLineVertex* beginIn,cFieldLineVertex* endIn) {
         #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -1005,6 +1055,10 @@ namespace PIC {
       inline cFieldLineSegment* GetFirstSegment() {return FirstSegment;}
       inline cFieldLineSegment* GetLastSegment() { return LastSegment;}
 
+      //remove segments from the beginning or the end of the field line
+      void CutBack(int nDeletedSegments);
+      void CutFront(int nDeletedSegments);
+
       //access an arbitrary segment
       inline cFieldLineSegment* GetSegment(int iSegment) {
         cFieldLineSegment* Segment=NULL;
@@ -1041,6 +1095,18 @@ namespace PIC {
       inline void GetSegmentDirection(double* Dir, double S) {
         GetSegment(S)->GetDir(Dir);
       }
+
+      inline int GetTotalSegmentNumber() {return nSegment;}
+
+      void UpdateLength() {
+        TotalLength=0.0;
+
+        for (cFieldLineSegment* Segment=FirstSegment;Segment!=NULL;Segment=Segment->GetNext()) {
+          Segment->UpdateLength();
+          TotalLength+=Segment->GetLength();
+        }
+      }
+ 
       //-----------------------------------------------------------------------
 
       // Vertex access
@@ -1085,6 +1151,11 @@ namespace PIC {
 
       // add vertex with given coordinates
       cFieldLineVertex* Add(double* xIn);
+      cFieldLineVertex* AddFront(double* xIn);
+      cFieldLineVertex* AddBack(double* xIn);
+
+      //delete the entire filed line
+      void Delete();
 
       // assign statistical weights to segments and normalize them
       void ResetSegmentWeights();
@@ -1114,6 +1185,13 @@ namespace PIC {
 
     //current number of field lines
     extern long int nFieldLine;
+
+    //delete all field lines 
+    inline void DeleteAll() {
+      for (int i=0;i<nFieldLine;i++) FieldLinesAll[i].Delete();
+ 
+      nFieldLine=0;
+    } 
 
     //time of last update
     extern double TimeLastUpdate;
@@ -5240,7 +5318,7 @@ namespace PIC {
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
       extern int nCommunicatedIonFluids;
-      extern bool OhCouplingFlag,IhCouplingFlag;
+      extern bool OhCouplingFlag,IhCouplingFlag,BlCouplingFlag;
       //the flug if 'false; by default and is teruned to 'true' after the first coupling procedure (used to pospond initialization of AMPS till the backround field information is exported to AMPS)
       extern bool FirstCouplingOccured;
 

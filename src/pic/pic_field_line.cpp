@@ -10,6 +10,9 @@ int PIC::FieldLine::cFieldLineVertex::sampleDataLength=-1;
 int PIC::FieldLine::cFieldLineVertex::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 
+//offset of the field line related data in a particle state vector
+int PIC::FieldLine::ParticleDataOffset=-1; 
+
 namespace PIC {
   namespace FieldLine {
 
@@ -90,7 +93,71 @@ namespace PIC {
       return false;
     }
     
+    //delete the filed line
+    void  cFieldLine::Delete() {
+      //delete vetexes
+      cFieldLineVertex *v,*v_next; 
+      
+      for (v=FirstVertex;v!=NULL;v=v_next) {
+        v_next=v->GetNext();
+        VerticesAll.deleteElement(v);
+      } 
+
+      FirstVertex=NULL,LastVertex=NULL;
+
+      //delete segments 
+      cFieldLineSegment *s,*s_next;
+
+      for (s=FirstSegment;s!=NULL;s=s_next) {
+        s_next=s->GetNext();
+        SegmentsAll.deleteElement(s);
+      }  
+
+      nSegment=0; 
+      FirstSegment=NULL,LastSegment=NULL;
+      TotalLength=0.0,IsSet=0;
+    }
+
     //=========================================================================
+    cFieldLineVertex* cFieldLine::AddFront(double *xIn) {
+      if (nSegment==0) {
+        return Add(xIn); 
+      }
+      else {
+        cFieldLineVertex* newVertex;
+        cFieldLineSegment* newSegment;
+
+        //allocate the new vertex
+        newVertex = VerticesAll.newElement();
+        newVertex->SetX(xIn);
+
+        //link the list of vertexes
+        newVertex->SetNext(FirstVertex);
+        newVertex->SetPrev(NULL);
+        if (FirstVertex!=NULL) FirstVertex->SetPrev(newVertex);
+
+        FirstVertex=newVertex;
+
+        //allocate a new segement  
+        newSegment=SegmentsAll.newElement();
+        newSegment->SetVertices(newVertex,FirstVertex);
+
+        newSegment->SetPrev(NULL);
+        newSegment->SetNext(FirstSegment);
+
+        if (FirstSegment!=NULL) FirstSegment->SetPrev(newSegment);
+
+        FirstSegment=newSegment; 
+        nSegment++; 
+      }
+
+      return FirstVertex;
+    } 
+
+    cFieldLineVertex* cFieldLine::AddBack(double *xIn) {
+       return Add(xIn);
+    }
+
     cFieldLineVertex* cFieldLine::Add(double *xIn) {
 
       if (PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal==false) {
@@ -153,6 +220,75 @@ namespace PIC {
 
      return LastVertex;
    }
+
+   void cFieldLine::CutFront(int nDeletedSegments) {
+
+     auto RemoveSingleSegment = [&] (cFieldLineSegment* s) {
+       if ((s==FirstSegment)&&(s==LastSegment)) {
+         //the line consists only of one segment -> remove all segments of the line
+         VerticesAll.deleteElement(FirstVertex);
+         VerticesAll.deleteElement(LastVertex);
+         SegmentsAll.deleteElement(s);
+
+         FirstVertex=NULL,LastVertex=NULL;
+         FirstSegment=NULL,LastSegment=NULL;
+
+         nSegment=0,TotalLength=0.0,IsSet=0;
+       }
+       else {
+         //remove segment at the beginning of the line
+         TotalLength-=s->GetLength();
+         nSegment--;
+
+         auto next_vertex=FirstVertex->GetNext();
+         VerticesAll.deleteElement(FirstVertex);
+         FirstVertex=next_vertex;
+
+         FirstSegment=FirstSegment->GetNext();
+         SegmentsAll.deleteElement(s);
+
+         FirstSegment->SetPrev(NULL);
+       }
+     };
+
+     for (int i=0;i<nDeletedSegments;i++) if (nSegment!=0) RemoveSingleSegment(FirstSegment);
+   }
+
+
+   void cFieldLine::CutBack(int nDeletedSegments) {
+     auto RemoveSingleSegment = [&] (cFieldLineSegment* s) {
+       if ((s==FirstSegment)&&(s==LastSegment)) {
+         //the line consists only of one segment -> remove all segments of the line
+         VerticesAll.deleteElement(FirstVertex);
+         VerticesAll.deleteElement(LastVertex);
+         SegmentsAll.deleteElement(s);
+
+         FirstVertex=NULL,LastVertex=NULL;
+         FirstSegment=NULL,LastSegment=NULL;
+
+         nSegment=0,TotalLength=0.0,IsSet=0;
+       }
+       else {
+         //remove segment at the end of the line
+         TotalLength-=s->GetLength();
+         nSegment--;
+
+         auto prev_vertex=LastVertex->GetPrev();
+         VerticesAll.deleteElement(LastVertex);
+         LastVertex=prev_vertex;
+
+         LastSegment=LastSegment->GetPrev();
+         SegmentsAll.deleteElement(s);
+
+         LastSegment->SetNext(NULL);
+       }
+     };
+
+     for (int i=0;i<nDeletedSegments;i++) if (nSegment!=0) RemoveSingleSegment(LastSegment);
+   }
+
+
+
 
     //=========================================================================
     void cFieldLine::ResetSegmentWeights() {
@@ -458,6 +594,11 @@ namespace PIC {
     
     //=========================================================================
     void Init() {
+
+      static bool init_flag=false;
+
+      if (init_flag==true) return;
+      init_flag=true;
       
     //  if(PIC::nTotalThreads > 1) exit(__LINE__, __FILE__,"Not implemented for multiple processors");
       
@@ -498,6 +639,15 @@ namespace PIC {
       cFieldLineVertex::SetDataOffsets(SamplingOffset, Offset);
       
       PIC::IndividualModelSampling::DataSampledList.push_back(&DatumAtGridParticleEnergy);
+
+      //request data in the particle state vector to keep the field line-related data
+      long int offset;
+      int DataLength;
+
+      DataLength=sizeof(cParticleFieldLineData);
+      PIC::ParticleBuffer::RequestDataStorage(offset,DataLength);
+
+      ParticleDataOffset=offset;
     }
     
     //=========================================================================

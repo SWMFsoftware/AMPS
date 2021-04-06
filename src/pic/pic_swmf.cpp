@@ -36,6 +36,7 @@ int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
 
 bool PIC::CPLR::SWMF::OhCouplingFlag=false;
 bool PIC::CPLR::SWMF::IhCouplingFlag=false;
+bool PIC::CPLR::SWMF::BlCouplingFlag=false;
 
 int PIC::CPLR::SWMF::TotalDataLength=0;
 double PIC::CPLR::SWMF::MeanPlasmaAtomicMass=1.0*_AMU_;
