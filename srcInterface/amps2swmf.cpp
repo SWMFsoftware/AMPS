@@ -628,7 +628,8 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     char fname[200];
 
-    sprintf(fname,"exported-field-lines.cnt=%i.dat",cnt);    
+    if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat",cnt); 
+    sprintf(fname,"exported-field-lines.thread=%ld.cnt=%i.dat",PIC::ThisThread,cnt);    
     cnt++;  
 
     Output(fname,true);
