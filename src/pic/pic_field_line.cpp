@@ -134,9 +134,7 @@ namespace PIC {
         //link the list of vertexes
         newVertex->SetNext(FirstVertex);
         newVertex->SetPrev(NULL);
-        if (FirstVertex!=NULL) FirstVertex->SetPrev(newVertex);
-
-        FirstVertex=newVertex;
+        FirstVertex->SetPrev(newVertex);
 
         //allocate a new segement  
         newSegment=SegmentsAll.newElement();
@@ -145,8 +143,9 @@ namespace PIC {
         newSegment->SetPrev(NULL);
         newSegment->SetNext(FirstSegment);
 
-        if (FirstSegment!=NULL) FirstSegment->SetPrev(newSegment);
+        FirstSegment->SetPrev(newSegment);
 
+        FirstVertex=newVertex;
         FirstSegment=newSegment; 
         nSegment++; 
       }
