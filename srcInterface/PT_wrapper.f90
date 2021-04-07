@@ -40,9 +40,10 @@ module PT_wrapper
   public:: PT_put_from_sc_dt
 
   ! codes describing status of coupling with the SWMF components (OH, Ih, Sc)
-  integer:: IhCouplingCode
-  integer:: OhCouplingCode
-  integer:: ScCouplingCode
+  integer:: IhCouplingCode=0 
+  integer:: OhCouplingCode=0 
+  integer:: ScCouplingCode=0 
+  integer:: BlCouplingCode=0
 
   ! coupling operation counter (need for debugging)
   integer::nRecvFromOH=0
@@ -177,6 +178,7 @@ contains
     end if
     if(UseBLine_C(PT_).and.DoInit)then
        DoInit = .false.   ! Do this only once
+       BlCouplingCode=1
        !
        ! Initialize and connect to the data
        nullify(MHData_VIB); nullify(nVertex_B)
@@ -225,6 +227,9 @@ contains
     real:: xEarth(3)
     character(len=*), parameter:: NameSub = 'PT_run'
     !--------------------------------------------------------------------------
+
+    !Init AMPS if needed
+    call amps_check_init()
 
     ! update the location of the Earth in the coupled on the AMPS side when
     ! coupling with IH as active
@@ -294,7 +299,7 @@ contains
 
        ! Pass number of fluids to this incorrectly named subroutine
        call amps_from_oh_init(nCommunicatedFluids, OhCouplingCode, &
-            IhCouplingCode)
+            IhCouplingCode,BlCouplingCode)
     end if
 
     nDimOut    = 3

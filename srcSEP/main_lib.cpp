@@ -69,7 +69,33 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init_mesh() {
   PIC::InitMPI();
 
-PIC::Init_BeforeParser();
+  //in case the magnetic field line is used -> reserve the nessesaty memory 
+  if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
+      using namespace PIC::FieldLine;
+   
+      VertexAllocationManager.MagneticField=true;
+      VertexAllocationManager.ElectricField=true;
+      VertexAllocationManager.PlasmaVelocity=true;
+      VertexAllocationManager.PlasmaDensity=true;
+      VertexAllocationManager.PlasmaTemperature=true;
+      VertexAllocationManager.PlasmaPressure=true;
+      VertexAllocationManager.MagneticFluxFunction=true;
+      VertexAllocationManager.PlasmaWaves=true;
+
+
+      VertexAllocationManager.PreviousVertexData.MagneticField=true;
+      VertexAllocationManager.PreviousVertexData.ElectricField=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaVelocity=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaDensity=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaTemperature=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaPressure=true;
+      VertexAllocationManager.PreviousVertexData.PlasmaWaves=true;
+
+
+      PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+   }
+
+  PIC::Init_BeforeParser();
   SEP::RequestParticleData();
 
   //request storage for calculating the drift velocity
@@ -80,15 +106,16 @@ PIC::Init_BeforeParser();
 
 
   rnd_seed();
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
-  //reserve data for magnetic filed
-  PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
-  //PIC::CPLR::DATAFILE::Offset::MagneticField.active=true;
-  //PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
-  //PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
-
+  if (PIC::CPLR::SWMF::BlCouplingFlag==false) {
+    //reserve data for magnetic filed
+    PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
+    //PIC::CPLR::DATAFILE::Offset::MagneticField.active=true;
+    //PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset=PIC::Mesh::cDataCenterNode::totalAssociatedDataLength;
+    //PIC::Mesh::cDataCenterNode::totalAssociatedDataLength+=PIC::CPLR::DATAFILE::Offset::MagneticField.nVars*sizeof(double);
+  }
 
   //init the Mercury model
  ////::Init_BeforeParser();
@@ -170,7 +197,7 @@ PIC::Init_BeforeParser();
   double xStart[3]={1.1,0.0,0.0};
 
 
-  switch (SEP::DomainType) {
+  if (PIC::CPLR::SWMF::BlCouplingFlag==false) switch (SEP::DomainType) {
   case SEP::DomainType_ParkerSpiral:
     PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
 
@@ -262,11 +289,11 @@ PIC::Init_BeforeParser();
 */
 
   PIC::Mesh::mesh->buildMesh();
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+  //PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
 
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
@@ -362,7 +389,7 @@ PIC::Init_BeforeParser();
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
-  PIC::Mesh::mesh->outputMeshTECPLOT("mesh-reduced.dat");
+  //PIC::Mesh::mesh->outputMeshTECPLOT("mesh-reduced.dat");
 
   //initialize the blocks
   PIC::Mesh::mesh->AllowBlockAllocation=true;
@@ -453,11 +480,11 @@ void amps_init() {
 
   if (_PIC_COUPLER_MODE_ != _PIC_COUPLER_MODE__SWMF_) {
     InitMagneticField(PIC::Mesh::mesh->rootTree);
-    PIC::Mesh::mesh->outputMeshDataTECPLOT("magnetic-field.dat",0);
+    //PIC::Mesh::mesh->outputMeshDataTECPLOT("magnetic-field.dat",0);
   }
 
 
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer

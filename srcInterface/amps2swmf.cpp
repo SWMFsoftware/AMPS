@@ -53,6 +53,9 @@ bool AMPS2SWMF::swmfTimeAccurate=true;
 //amps_init_flag
 bool AMPS2SWMF::amps_init_flag=false;
 
+//the counter of the field line update events since beginning of a new session
+int AMPS2SWMF::FieldLineUpdateCounter=0;
+
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
@@ -109,7 +112,7 @@ extern "C" {
   void set_earth_locaton_hgi_(double *x) {for (int idim=0;idim<3;idim++) AMPS2SWMF::xEarthHgi[idim]=x[idim];}
 
   //init coupling with SWMF
-  void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode); 
+  void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode,int *BlCouplingCode); 
   
   //get fluid number from other SWMF component
   void amps_get_fluid_number_(int * nVarIn);
@@ -260,6 +263,14 @@ extern "C" {
       }
   }
 
+  void amps_check_init_() {
+    if (AMPS2SWMF::amps_init_flag==false) {
+      amps_init_mesh();
+      amps_init();
+      AMPS2SWMF::amps_init_flag=true;
+    }
+  } 
+
   void amps_send_batsrus2amps_center_point_data_(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, double *Xyz_DI, double *Data_VI) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     list<PIC::CPLR::SWMF::fSendCenterPointData>::iterator f;
@@ -267,10 +278,8 @@ extern "C" {
     list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
 #endif
 
-    if (AMPS2SWMF::amps_init_flag==false) {
-      amps_init();
-      AMPS2SWMF::amps_init_flag=true; 
-    }
+    //init AMPS if needed
+    amps_check_init_();
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     for (f=PIC::CPLR::SWMF::SendCenterPointData.begin();f!=PIC::CPLR::SWMF::SendCenterPointData.end();f++) {
@@ -298,11 +307,8 @@ extern "C" {
         res=false;
       }
       else { 
-        //init AMPS
-        if (AMPS2SWMF::amps_init_flag==false) {
-          amps_init();
-          AMPS2SWMF::amps_init_flag=true;
-        }
+        //init AMPS if needed
+        amps_check_init_();
       
         //determine whether to proceed with the current iteraction
         if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
@@ -373,7 +379,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
   }
 
-  void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {
+  void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode,int *BlCouplingCode) {
     static bool init_flag=false;
 
     if (init_flag==true) return;
@@ -383,15 +389,23 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     //the the coupling flags 
     if (*OhCouplingCode==1) PIC::CPLR::SWMF::OhCouplingFlag=true;
     if (*IhCouplingCode==1) PIC::CPLR::SWMF::IhCouplingFlag=true; 
+    if (*BlCouplingCode==1) PIC::CPLR::SWMF::BlCouplingFlag=true;
 
     //set the total number of the ion fluids
     PIC::CPLR::SWMF::nCommunicatedIonFluids=*nIonFluids; 
 
-    if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
+    if (PIC::CPLR::SWMF::BlCouplingFlag==false) {
+      if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
 
-    //initialize the coupler and AMPS
-    PIC::CPLR::SWMF::init();
-    amps_init_mesh();
+      //initialize the coupler and AMPS
+      PIC::CPLR::SWMF::init();
+    }
+
+    //amps_init_mesh();
+
+    //init AMPS if needed
+    amps_check_init_();
+    
   }
 
   void amps_finalize_() {
@@ -482,11 +496,13 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 						 ss);
     
     // The domain size and resolution is in the FluidInterface now. 
-    amps_init_mesh();
+    //amps_init_mesh();
     
     PIC::CPLR::FLUID::read_param();
 
     PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
+
+    amps_check_init_();
     
     //amps_init();
     delete ss;
@@ -537,7 +553,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       Init();
     };
 
-    if (init_flag==false) {
+    if ((init_flag==false)&&(FieldLinesAll==NULL)) {
       InitFieldLineModule();
       init_flag=true;
       return;
