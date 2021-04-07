@@ -583,6 +583,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
       //determine the min value of Lagr index ro check whether a new point was inserted in the filed line
       int MinLagrIndex=(int)round(MHData_VIB[offset]);
+      int PreviousMinLagrIndex=FirstVertexLagrIndex[iImportFieldLine];
 
       for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
         offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
@@ -652,6 +653,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       cFieldLineSegment* s;
  
 
+/*
       if (AMPS2SWMF::FieldLineUpdateCounter>0) {
         //determine location of shock wave
         double max_ratio=0.0;
@@ -662,19 +664,20 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
           int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
           double rho_new,rho_prev;
 
-          if (MHData_VIB[StateVectorOffset]>=1) {
+          if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
             Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
             Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
 
             if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
-              max_ratio=rho_new/rho_prev;
+              max_ratio=rho_new/rho_prev*(rho_new+rho_prev);
               iSegmentShock=i;
             }
           }
         }
       }
+*/
 
-      /* plasma density gradient criterion 
+      // plasma density gradient criterion 
       for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
         double grad,rho0,rho1;
 
@@ -688,9 +691,9 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
           iSegmentShock=iSegment;
         }
       }
-      */ 
       
-      cout << "AMPS: Field line=" << iImportFieldLine << ", localtion of the shock: iSegment=" << iSegmentShock << endl;
+      
+      cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };
 
     //check whether field lines are initialized
