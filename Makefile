@@ -298,7 +298,13 @@ ifeq ($(COMPILE.mpicxx),nvcc)
 	cd srcTemp/general;../../utility/change-ext cpp cu
 endif
 
-LIB: 
+PTLIB = ${LIBDIR}/libPT.a
+
+LIB:
+	@echo "checking $(PTLIB)";
+	@if [ `${SCRIPTDIR}/uptodate.pl ${PTLIB}` ]; then $(MAKE) PTLIB; fi
+
+PTLIB:
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
 	$(MAKE) ${WSD}
 	$(MAKE) LIB_after_build
