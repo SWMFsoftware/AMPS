@@ -147,18 +147,19 @@ foreach (@Arguments) {
     my $application = lc($1);
   
     #default values
-    add_line_amps_conf("TESTMODE=off");
-    add_line_amps_conf("BATL=nobatl");
+    if (! -e ".amps.conf") {
+      add_line_amps_conf("TESTMODE=off");
+      add_line_amps_conf("BATL=nobatl");
 
-    add_line_amps_conf("KAMELEON=nokameleon");
-    `echo KAMELEON=nokameleon >> Makefile.local`;
+      add_line_amps_conf("KAMELEON=nokameleon");
     
-    `cp -f input/$application.* input/species.input .`;
+      `cp -f input/$application.* input/species.input .`;
 
-     #set defailt compilation module flags in Makefile.local
-     `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
-     `rm Makefile.local`; 
-     `mv Makefile.local.new Makefile.local`;
+      #set defailt compilation module flags in Makefile.local
+      `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
+      `rm Makefile.local`; 
+      `mv Makefile.local.new Makefile.local`;
+    }
 
      #remove path from the name of the input file is such exists
      my @list;
@@ -167,19 +168,24 @@ foreach (@Arguments) {
      @list=split(' ',$application);
      $application=$list[$#list];
 
+     if (!check_amps_conf("APPLICATION=$application")) {
+       add_line_amps_conf("InputFileAMPS=$application.input");   
+       add_line_amps_conf("APPLICATION=$application");
 
-    add_line_amps_conf("InputFileAMPS=$application.input");   
-    add_line_amps_conf("APPLICATION=$application");
+       `echo "InputFileAMPS=$application.input" >> Makefile.local`;
+     }
 
-    `echo "InputFileAMPS=$application.input" >> Makefile.local`;
     next
   };
     
   if (/^-mpi=(.*)$/i)        {$MpiLocation=$1;                next}; 
   if (/^-np=(.*)$/i)         {$TestRunProcessorNumber=$1;     next};
   if (/^-spice-path=(.*)$/i)      {
-      add_line_amps_conf("SPICE=$1");
-      `echo SPICE=$1 >> Makefile.local`;
+      if (!check_amps_conf("SPICE=$1")) {
+        add_line_amps_conf("SPICE=$1");
+        `echo SPICE=$1 >> Makefile.local`;
+      }
+
       next}; 
   if (/^-spice-kernels=(.*)$/i)    {
       add_line_amps_conf("SPICEKERNELS=$1");
@@ -192,8 +198,11 @@ foreach (@Arguments) {
       add_line_amps_conf("BOOST=$1");
       next};
   if (/^-kameleon-path=(.*)$/i)       {
-      add_line_amps_conf("KAMELEON=$1");
-      `echo KAMELEON=$1 >> Makefile.local`;
+      if (!check_amps_conf("KAMELEON=$1")) {
+        add_line_amps_conf("KAMELEON=$1");
+        `echo KAMELEON=$1 >> Makefile.local`;
+      }
+
       next};
       
   if (/^-mp=(.*)$/i) {
@@ -266,8 +275,12 @@ foreach (@Arguments) {
     my $t;
 
     $t=lc($1);
-    add_line_amps_conf("TESTMODE=$t");
-    `echo TESTMODE=$t >> Makefile.local`;
+
+    if (!check_amps_conf("TESTMODE=$t")) {
+      add_line_amps_conf("TESTMODE=$t");
+      `echo TESTMODE=$t >> Makefile.local`;
+    }
+
     next;
   }; 
 
@@ -504,12 +517,41 @@ sub add_line_general_conf {
   close SETTINGS;
 }
 
+#=============================== Verify that the parametes is already in .amps.conf
+sub check_amps_conf {
+  my ($Param, $Value) = split(/=/,$_[0]);
+  my $found=undef;
+  my $line;
+
+  open (SETTINGS,"<",".amps.conf") || return undef;
+
+  while ($line=<SETTINGS>) {
+    if ($line =~ m/\b$Param\b/i) {
+      if ($line =~ m/\b$Param=$Value\b/i) {
+        $found="true";
+      }
+      else {
+        $found=undef;
+      }
+    }
+  }
+
+  close SETTINGS;
+  return $found;
+} 
+ 
+
 #=============================== Add a line to .amps.conf
 # USAGE:
 # add_line_amps_conf($Newline)
 #  $Newline has a form 'PARAMETER=value'
 # if PARAMETER has been defined before, it is OVERWRITTEN with the new value
 sub add_line_amps_conf{
+    #check whether the parameter is already set 
+    if (check_amps_conf($_[0])) {
+      return;
+    } 
+
     # create Makefile.local if it doesn't exist
     `touch .amps.conf` unless (-e ".amps.conf");
     
