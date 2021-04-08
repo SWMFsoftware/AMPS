@@ -152,13 +152,6 @@ foreach (@Arguments) {
       add_line_amps_conf("BATL=nobatl");
 
       add_line_amps_conf("KAMELEON=nokameleon");
-    
-      `cp -f input/$application.* input/species.input .`;
-
-      #set defailt compilation module flags in Makefile.local
-      `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
-      `rm Makefile.local`; 
-      `mv Makefile.local.new Makefile.local`;
     }
 
      #remove path from the name of the input file is such exists
@@ -171,6 +164,13 @@ foreach (@Arguments) {
      if (!check_amps_conf("APPLICATION=$application")) {
        add_line_amps_conf("InputFileAMPS=$application.input");   
        add_line_amps_conf("APPLICATION=$application");
+
+       `cp -f input/$application.* input/species.input .`;
+
+       #set defailt compilation module flags in Makefile.local
+       `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
+       `rm Makefile.local`;
+       `mv Makefile.local.new Makefile.local`;
 
        `echo "InputFileAMPS=$application.input" >> Makefile.local`;
      }
