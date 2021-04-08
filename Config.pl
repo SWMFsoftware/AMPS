@@ -154,6 +154,8 @@ foreach (@Arguments) {
       add_line_amps_conf("KAMELEON=nokameleon");
     }
 
+    my $application_full_name=$application;
+
      #remove path from the name of the input file is such exists
      my @list;
 
@@ -165,7 +167,7 @@ foreach (@Arguments) {
        add_line_amps_conf("InputFileAMPS=$application.input");   
        add_line_amps_conf("APPLICATION=$application");
 
-       `cp -f input/$application.* input/species.input .`;
+       `cp -f input/$application_full_name.* input/species.input .`;
 
        #set defailt compilation module flags in Makefile.local
        `sed '/COMPILE_/d' Makefile.local > Makefile.local.new`;
