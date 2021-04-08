@@ -53,9 +53,6 @@ bool AMPS2SWMF::swmfTimeAccurate=true;
 //amps_init_flag
 bool AMPS2SWMF::amps_init_flag=false;
 
-//the counter of the field line update events since beginning of a new session
-int AMPS2SWMF::FieldLineUpdateCounter=0;
-
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
@@ -112,7 +109,7 @@ extern "C" {
   void set_earth_locaton_hgi_(double *x) {for (int idim=0;idim<3;idim++) AMPS2SWMF::xEarthHgi[idim]=x[idim];}
 
   //init coupling with SWMF
-  void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode,int *BlCouplingCode); 
+  void amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode); 
   
   //get fluid number from other SWMF component
   void amps_get_fluid_number_(int * nVarIn);
@@ -263,14 +260,6 @@ extern "C" {
       }
   }
 
-  void amps_check_init_() {
-    if (AMPS2SWMF::amps_init_flag==false) {
-      amps_init_mesh();
-      amps_init();
-      AMPS2SWMF::amps_init_flag=true;
-    }
-  } 
-
   void amps_send_batsrus2amps_center_point_data_(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, double *Xyz_DI, double *Data_VI) {
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     list<PIC::CPLR::SWMF::fSendCenterPointData>::iterator f;
@@ -278,8 +267,10 @@ extern "C" {
     list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
 #endif
 
-    //init AMPS if needed
-    amps_check_init_();
+    if (AMPS2SWMF::amps_init_flag==false) {
+      amps_init();
+      AMPS2SWMF::amps_init_flag=true; 
+    }
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     for (f=PIC::CPLR::SWMF::SendCenterPointData.begin();f!=PIC::CPLR::SWMF::SendCenterPointData.end();f++) {
@@ -307,8 +298,11 @@ extern "C" {
         res=false;
       }
       else { 
-        //init AMPS if needed
-        amps_check_init_();
+        //init AMPS
+        if (AMPS2SWMF::amps_init_flag==false) {
+          amps_init();
+          AMPS2SWMF::amps_init_flag=true;
+        }
       
         //determine whether to proceed with the current iteraction
         if (swmfTimeSimulation+PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>*TimeSimulationLimit) {
@@ -379,7 +373,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
   }
 
-  void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode,int *BlCouplingCode) {
+  void  amps_from_oh_init_(int *nIonFluids,int *OhCouplingCode,int *IhCouplingCode) {
     static bool init_flag=false;
 
     if (init_flag==true) return;
@@ -389,23 +383,15 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     //the the coupling flags 
     if (*OhCouplingCode==1) PIC::CPLR::SWMF::OhCouplingFlag=true;
     if (*IhCouplingCode==1) PIC::CPLR::SWMF::IhCouplingFlag=true; 
-    if (*BlCouplingCode==1) PIC::CPLR::SWMF::BlCouplingFlag=true;
 
     //set the total number of the ion fluids
     PIC::CPLR::SWMF::nCommunicatedIonFluids=*nIonFluids; 
 
-    if (PIC::CPLR::SWMF::BlCouplingFlag==false) {
-      if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
+    if (PIC::CPLR::SWMF::nCommunicatedIonFluids<=0) exit(__LINE__,__FILE__,"Error: the number of communicated ion fluids has to be positive");
 
-      //initialize the coupler and AMPS
-      PIC::CPLR::SWMF::init();
-    }
-
-    //amps_init_mesh();
-
-    //init AMPS if needed
-    amps_check_init_();
-    
+    //initialize the coupler and AMPS
+    PIC::CPLR::SWMF::init();
+    amps_init_mesh();
   }
 
   void amps_finalize_() {
@@ -496,13 +482,11 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 						 ss);
     
     // The domain size and resolution is in the FluidInterface now. 
-    //amps_init_mesh();
+    amps_init_mesh();
     
     PIC::CPLR::FLUID::read_param();
 
     PIC::CPLR::FLUID::FluidInterface.PrintFluidPicInterface();
-
-    amps_check_init_();
     
     //amps_init();
     delete ss;
@@ -525,7 +509,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     using namespace PIC::FieldLine;
 
     static bool init_flag=false;
-    static int *FirstVertexLagrIndex=NULL;
+
 
     //init the field-line module in AMPS is needed
     auto InitFieldLineModule = [&] () {
@@ -553,71 +537,42 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       Init();
     };
 
-    if ((init_flag==false)&&(FieldLinesAll==NULL)) {
+    if (init_flag==false) {
       InitFieldLineModule();
       init_flag=true;
       return;
     }
 
+
+    auto OutputFieldLine = [&] (int iLine) {
+      char fname[500];
+      FILE *fout;
+
+      sprintf(fname,"exported-field-line.line=%i.dat",iLine);
+      fout=fopen(fname,"w");
+
+      FieldLinesAll[iLine].Output(fout,true);
+      fclose(fout);
+    };
+
     //import a single field line 
-    auto ImportSingleFieldLine = [&] (int iImportFieldLine) {
-      int offset=(0+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
-
-      FirstVertexLagrIndex[iImportFieldLine]=(int)round(MHData_VIB[offset]);
-
-      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
+    auto ExportSingleFieldLine = [&] (int iExportFieldLine) {
+      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
         double x[3]={0.0,0.0,0.0};    
-        int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
         for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];   
 
-        FieldLinesAll[iImportFieldLine].Add(x);
+        FieldLinesAll[iExportFieldLine].Add(x);
       }
 
        nFieldLine++;
     };
 
     //update a single field line
-    auto UpdateSingleFieldLine = [&] (int iImportFieldLine) { 
-      int offset=(0+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
-
-      //determine the min value of Lagr index ro check whether a new point was inserted in the filed line
-      int MinLagrIndex=(int)round(MHData_VIB[offset]);
-      int PreviousMinLagrIndex=FirstVertexLagrIndex[iImportFieldLine];
-
-      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
-        offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
-
-        if (MinLagrIndex>(int)round(MHData_VIB[offset])) MinLagrIndex=(int)round(MHData_VIB[offset]);
-      }
-
-     
-      //update the number of point in the field line 
-     if (FirstVertexLagrIndex[iImportFieldLine]!=MinLagrIndex) {
-       //new points need to be added at the beginning of the filed line         
-       int nNewPoints=FirstVertexLagrIndex[iImportFieldLine]-MinLagrIndex;
-
-        for (int i=0;i<nNewPoints;i++) {
-          double x[3]={0.0,0.0,0.0};
-
-          FieldLinesAll[iImportFieldLine].AddFront(x);
-        }
-
-        FirstVertexLagrIndex[iImportFieldLine]=MinLagrIndex;
-      }
- 
-      //remove the field line segments at the end of the field line
-      if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1>nVertex_B[iImportFieldLine]) {
-        //remove segments at the end of the field line
-        FieldLinesAll[iImportFieldLine].CutBack(FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1-nVertex_B[iImportFieldLine]);
-      }
-      else if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1<nVertex_B[iImportFieldLine]) {
-        exit(__LINE__,__FILE__,"Error: something wrong");
-      }
- 
-      //update the MHD values
-      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
-        int StateVectorOffset=1+(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+    auto UpdateSingleFieldLine = [&] (int iExportFieldLine) { 
+      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
+        int StateVectorOffset=1+(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
         //import 'new' data
         int x_offset=StateVectorOffset;
@@ -626,74 +581,17 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
         int rho_offset=StateVectorOffset+3;
         int t_offset=StateVectorOffset+4;
         int w_offset=StateVectorOffset+11;
-        int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
 
-        cFieldLineVertex* Vertex=FieldLinesAll[iImportFieldLine].GetVertex(i);
+        cFieldLineVertex* Vertex=FieldLinesAll[iExportFieldLine].GetVertex(i);
 
         Vertex->SetX(MHData_VIB+x_offset);
         Vertex->SetMagneticField(MHData_VIB+b_offset); 
         Vertex->SetPlasmaVelocity(MHData_VIB+u_offset); 
-        Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]); 
+        Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]/_AMU_); 
         Vertex->SetPlasmaTemperature(MHData_VIB[t_offset]); 
-        Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]*Kbol*MHData_VIB[t_offset]); 
+        Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]/_AMU_*Kbol*MHData_VIB[t_offset]); 
       }
-
-      //update the size of the field line if needed
-      if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()>nVertex_B[iImportFieldLine]-1) {
-        FieldLinesAll[iImportFieldLine].CutBack(FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()-nVertex_B[iImportFieldLine]+1);
-      }
-
-      //update the length of the field line
-      FieldLinesAll[iImportFieldLine].UpdateLength();
-
-      //determine the location of the shock wave
-      //criterion: change of the plasma density with time 
-      int iSegment,iSegmentShock=-1;
-      double DensityGradientMax=0.0;
-      cFieldLineSegment* s;
- 
-
-/*
-      if (AMPS2SWMF::FieldLineUpdateCounter>0) {
-        //determine location of shock wave
-        double max_ratio=0.0;
-        int i;
-        cFieldLineVertex *Vertex;
-  
-        for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) {
-          int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
-          double rho_new,rho_prev;
-
-          if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
-            Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
-            Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
-
-            if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
-              max_ratio=rho_new/rho_prev*(rho_new+rho_prev);
-              iSegmentShock=i;
-            }
-          }
-        }
-      }
-*/
-
-      // plasma density gradient criterion 
-      for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
-        double grad,rho0,rho1;
-
-        s->GetBegin()->GetPlasmaDensity(rho0);
-        s->GetEnd()->GetPlasmaDensity(rho1);
-
-        grad=fabs(rho0-rho1)/s->GetLength();
-
-        if (grad>DensityGradientMax) {
-          DensityGradientMax=grad;
-          iSegmentShock=iSegment;
-        }
-      }
-      
-      
-      cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };
 
     //check whether field lines are initialized
@@ -703,32 +601,17 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       exit(__LINE__,__FILE__,"Error: the number of imported fields lines exeeds that of the field line buffer");
     }
 
-    //import/update field lines
+    //export/update field lines
     static bool field_line_import_complete=false;
     static int cnt=0;
-    static int last_swmf_session=-1;
-
-
-//    if ((field_line_import_complete==false)||(last_swmf_session!=AMPS2SWMF::iSession)) {
-//      last_swmf_session=AMPS2SWMF::iSession;
-//      field_line_import_complete=false;
-//    }
 
     if (field_line_import_complete==false) {
-      if (FirstVertexLagrIndex==NULL) FirstVertexLagrIndex=new int [nFieldLineMax];
-
-      for (int i=0;i<nFieldLineMax;i++) FirstVertexLagrIndex[i]=1;
-
-      DeleteAll(); 
-
       for (int i=0;i<*nLine;i++) {
-        ImportSingleFieldLine(i);  
+        ExportSingleFieldLine(i);  
       }
 
-      AMPS2SWMF::FieldLineUpdateCounter=0;
       field_line_import_complete=true;
     }
-    else AMPS2SWMF::FieldLineUpdateCounter++;
 
     //switch offsets to the 'previous' vertex's data
     if (VertexAllocationManager.PreviousVertexData.MagneticField==true) DatumAtVertexMagneticField.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexMagneticField);
@@ -745,8 +628,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     char fname[200];
 
-    if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat",cnt); 
-    sprintf(fname,"exported-field-lines.thread=%ld.cnt=%i.dat",PIC::ThisThread,cnt);    
+    sprintf(fname,"exported-field-lines.cnt=%i.dat",cnt);    
     cnt++;  
 
     Output(fname,true);

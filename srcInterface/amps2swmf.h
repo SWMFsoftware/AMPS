@@ -31,9 +31,6 @@ namespace AMPS2SWMF {
   //amps_init_flag
   extern bool amps_init_flag;
 
-  //the counter of the field line update events since beginning of a new session
-  extern int FieldLineUpdateCounter;
-
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
 
