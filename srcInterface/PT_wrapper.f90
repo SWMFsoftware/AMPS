@@ -45,8 +45,8 @@ module PT_wrapper
   integer:: ScCouplingCode
 
   ! coupling operation counter (need for debugging)
-  integer::nRecvFromOH=0
-  integer::nSentToOH=0
+  integer:: nRecvFromOH=0
+  integer:: nSentToOH=0
 
   !----------------------------Coupling with field lines ----------------------
   ! Coupling via field line grid  with MHD components
@@ -55,7 +55,7 @@ module PT_wrapper
   public:: PT_adjust_lines
 
   ! Parameters for coupling to MHD via moving lagrangian grid
-  real             :: DataInputTime = 0.0
+  real             :: DataInputTime = 0.0, PTTime = 0.0
   ! MHD data array MHData_VIB(LagrID_:nMHData, 1:nVertexMax, 1:nLine)
   real,    pointer :: MHData_VIB(:, :, :)
   ! Number of actally used grid vertexes per each line, nVertex_B(1:nLine)
@@ -74,7 +74,7 @@ module PT_wrapper
   real             :: LonMax =  10.0*cDegToRad
   real             :: LatMin =  25.0*cDegToRad
   real             :: LatMax =  90.0*cDegToRad
-  logical :: DoCheck = .true., DoInit = .true.
+  logical          :: DoCheck = .true., DoInit = .true.
 contains
   !============================================================================
 
@@ -120,7 +120,8 @@ contains
        ! AMPS could check now the input parameters for consistency
        if(UseBLine_C(PT_).and.DoCheck)then
           DoCheck = .false.   !To do this only once
-          call get_time(tSimulationOut = DataInputTime)
+          call get_time(tSimulationOut = PTTime)
+          DataInputTime = PTTime
        end if
     case('READ')
        ! get section of PARAM.in that contains the PT module
@@ -189,19 +190,23 @@ contains
   !============================================================================
 
   subroutine PT_finalize(TimeSimulation)
-
+    use CON_bline, ONLY: save_mhd
     !INPUT PARAMETERS:
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
     character(len=*), parameter:: NameSub = 'PT_finalize'
     !--------------------------------------------------------------------------
+    if(DataInputTime > PTTime)then
+       PTTime = DataInputTime
+       call save_mhd(PTTime)
+    end if
     call AMPS_finalize
 
   end subroutine PT_finalize
   !============================================================================
 
   subroutine PT_save_restart(TimeSimulation)
-
+    use CON_bline, ONLY: save_mhd
     !INPUT PARAMETERS:
     real,     intent(in) :: TimeSimulation   ! seconds from start time
 
@@ -209,6 +214,10 @@ contains
 
     character(len=*), parameter:: NameSub = 'PT_save_restart'
     !--------------------------------------------------------------------------
+    if(DataInputTime > PTTime)then
+       PTTime = DataInputTime
+       call save_mhd(PTTime)
+    end if
     call amps_save_restart()
 
   end subroutine PT_save_restart
@@ -216,6 +225,7 @@ contains
 
   subroutine PT_run(TimeSimulation, TimeSimulationLimit)
     use CON_bline, ONLY:  nLine, NameVar_V, nMHData, UseBLine_C, BL_update_r
+    use CON_bline, ONLY: save_mhd
     !INPUT/OUTPUT ARGUMENTS:
     real, intent(inout):: TimeSimulation   ! current time of component
 
@@ -237,6 +247,10 @@ contains
     ! stub  for amps_get_bline is put to the end of the file
     if(UseBLine_C(PT_))then
        call BL_update_r
+       if(DataInputTime > PTTime)then
+          PTTime = DataInputTime
+          call save_mhd(PTTime)
+       end if
        call amps_get_bline(&
          DataInputTime, & ! real, intent in
          nVertexMax   , & ! integer, intent in
