@@ -90,13 +90,13 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
       
       if (node->Thread==PIC::ThisThread) {
         
-        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
               LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
               cell=node->block->GetCenterNode(LocalCellNumber);              
               if (cell!=NULL) nAllocatedCells++;
             }
         
-        for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
               LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
               corner=node->block->GetCornerNode(LocalCornerNumber);              
               if (corner!=NULL) nAllocatedCorners++;
@@ -119,7 +119,7 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
       //save the sampling data
       if (node->Thread==PIC::ThisThread) {
         
-        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
           LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
           cell=node->block->GetCenterNode(LocalCellNumber);
 
@@ -137,7 +137,7 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
             }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
         
         
-        for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
               LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
               corner=node->block->GetCornerNode(LocalCornerNumber);
               
@@ -292,16 +292,18 @@ void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
       if (node->Thread==PIC::ThisThread) {
-        memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+        if (node->block!=NULL) {
+          memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
-        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-          ParticleNumberTable[i][j][k]=0;
-          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+          for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+            ParticleNumberTable[i][j][k]=0;
+            ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-          while (ptr!=-1) {
-            ParticleNumberTable[i][j][k]++;
-            nTotalParticleNumber++;
-            ptr=PIC::ParticleBuffer::GetNext(ptr);
+            while (ptr!=-1) {
+              ParticleNumberTable[i][j][k]++;
+              nTotalParticleNumber++;
+              ptr=PIC::ParticleBuffer::GetNext(ptr);
+            }
           }
         }
 
@@ -547,21 +549,23 @@ void PIC::Restart::GetParticleDataBlockCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlo
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
 
-      memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      if (node->block!=NULL) {
+        memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
-      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-        ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-        while (ptr!=-1) {
-          memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
+          while (ptr!=-1) {
+            memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
 
-          CheckSum->add(tempParticleData,sizeof(unsigned char));
-          CheckSum->add(tempParticleData+sizeof(unsigned char)+2*sizeof(long int),
-              PIC::ParticleBuffer::ParticleDataLength-sizeof(unsigned char)-2*sizeof(long int));
+            CheckSum->add(tempParticleData,sizeof(unsigned char));
+            CheckSum->add(tempParticleData+sizeof(unsigned char)+2*sizeof(long int),PIC::ParticleBuffer::ParticleDataLength-sizeof(unsigned char)-2*sizeof(long int)); 
 
-          ptr=PIC::ParticleBuffer::GetNext(ptr);
+            ptr=PIC::ParticleBuffer::GetNext(ptr);
+          }
         }
       }
+
     }
   }
   else {
