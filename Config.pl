@@ -221,13 +221,18 @@ foreach (@Arguments) {
     add_line_amps_conf("OPENMP=$1");
        
     if ($t eq "on") {
-      add_line_general_conf("#undef _COMPILATION_MODE_ \n#define _COMPILATION_MODE_ _COMPILATION_MODE__HYBRID_\n");
-      `echo OPENMP=on >> Makefile.local`;
+      if (! check_macro_general_conf("_COMPILATION_MODE_","_COMPILATION_MODE__HYBRID_")) {
+        add_line_general_conf("#undef _COMPILATION_MODE_ \n#define _COMPILATION_MODE_ _COMPILATION_MODE__HYBRID_\n");
+        `echo OPENMP=on >> Makefile.local`;
+      }
+
       next;
     }
     elsif ($t eq "off") {
-      add_line_general_conf("#undef _COMPILATION_MODE_ \n#define _COMPILATION_MODE_ _COMPILATION_MODE__MPI_\n");
-      `echo OPENMP=off >> Makefile.local`;
+      if (! check_macro_general_conf("_COMPILATION_MODE_","_COMPILATION_MODE__MPI_")) {
+        add_line_general_conf("#undef _COMPILATION_MODE_ \n#define _COMPILATION_MODE_ _COMPILATION_MODE__MPI_\n");
+        `echo OPENMP=off >> Makefile.local`;
+      }
       next;
     }
     else {
@@ -238,14 +243,20 @@ foreach (@Arguments) {
   if (/^-fexit=(.*)$/i) {
     my $t;
     $t=lc($1);
-    add_line_amps_conf("OPENMP=$1");
+ #  add_line_amps_conf("OPENMP=$1");
 
     if ($t eq "exit") {
-      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__EXIT_\n");
+      if (! check_macro_general_conf("_GENERIC_EXIT_FUNCTION_MODE_","_GENERIC_EXIT_FUNCTION__EXIT_")) {
+        add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__EXIT_\n");
+      }
+
       next;
     }
     elsif ($t eq "mpi_abort") {
-      add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__MPI_ABORT_\n");
+      if (! check_macro_general_conf("_GENERIC_EXIT_FUNCTION_MODE_","_GENERIC_EXIT_FUNCTION__MPI_ABORT_")) {
+        add_line_general_conf("#undef _GENERIC_EXIT_FUNCTION_MODE_ \n#define _GENERIC_EXIT_FUNCTION_MODE_ _GENERIC_EXIT_FUNCTION__MPI_ABORT_\n");
+      }
+
       next;
     }
     else {
@@ -345,22 +356,28 @@ foreach (@Arguments) {
     $t=lc($1);
         
     if ($t eq "256") {
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
+      if (! check_macro_general_conf("_AVX_INSTRUCTIONS_USAGE_MODE_", "_AVX_INSTRUCTIONS_USAGE_MODE__256_")) {  
+        add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
+        add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__256_");
 
-      `echo AVXMODE=on >> Makefile.local`;
-      `echo AVXTYPE=256 >> Makefile.local`;
+        `echo AVXMODE=on >> Makefile.local`;
+        `echo AVXTYPE=256 >> Makefile.local`;
+      }
     }
     elsif ($t eq "512") {
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__512_");
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__512_"); 
+      if (! check_macro_general_conf("_AVX_INSTRUCTIONS_USAGE_MODE_","_AVX_INSTRUCTIONS_USAGE_MODE__512_")) {
+        add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__512_");
+        add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE__ON_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE__ON_ _AVX_INSTRUCTIONS_USAGE_MODE__512_"); 
 
-      `echo AVXMODE=on >> Makefile.local`;
-      `echo AVXTYPE=512 >> Makefile.local`;
+        `echo AVXMODE=on >> Makefile.local`;
+        `echo AVXTYPE=512 >> Makefile.local`;
+      }
     }
     elsif ($t eq "off") {
-      add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__OFF_");
-      `echo AVXMODE=off >> Makefile.local`;
+      if (! check_macro_general_conf("_AVX_INSTRUCTIONS_USAGE_MODE_","_AVX_INSTRUCTIONS_USAGE_MODE__OFF_")) {
+        add_line_general_conf("#undef _AVX_INSTRUCTIONS_USAGE_MODE_ \n#define _AVX_INSTRUCTIONS_USAGE_MODE_ _AVX_INSTRUCTIONS_USAGE_MODE__OFF_");
+        `echo AVXMODE=off >> Makefile.local`;
+      }
     }
     else {
       die "Option is not recognized: -avx=($1)";
@@ -519,6 +536,30 @@ sub add_line_general_conf {
   close SETTINGS;
 }
 
+sub check_macro_general_conf {
+  my $found=undef;
+  my $Macro=$_[0];
+  my $Value=$_[1];
+  my $line;
+
+  open (SETTINGS,"<",".general.conf") || return undef; 
+
+  while ($line=<SETTINGS>) {
+    if ($line =~ m/\b$Macro\b/i) {  
+      if ($line =~ m/\b$Value\b/i) {
+        $found="true";
+      }
+      else {
+        $found=undef;
+      }
+    }
+  }
+
+  close SETTINGS;
+  return $found;
+}
+
+
 #=============================== Verify that the parametes is already in .amps.conf
 sub check_amps_conf {
   my ($Param, $Value) = split(/=/,$_[0]);
@@ -528,8 +569,10 @@ sub check_amps_conf {
   open (SETTINGS,"<",".amps.conf") || return undef;
 
   while ($line=<SETTINGS>) {
-    if ($line =~ m/\b$Param\b/i) {
-      if ($line =~ m/\b$Param=$Value\b/i) {
+    chomp($line);
+
+    if ($line =~ m/\b$Param\b/) {
+      if ($line =~ m/"$Param=$Value"$/) {
         $found="true";
       }
       else {
