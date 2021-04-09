@@ -298,15 +298,15 @@ ifeq ($(COMPILE.mpicxx),nvcc)
 	cd srcTemp/general;../../utility/change-ext cpp cu
 endif
 
-PTLIB = ${LIBDIR}/libPT.a
+AMPSLIB = ${LIBDIR}/lib${COMPONENT}.a
 
 LIB:
-	@echo "checking $(PTLIB)";
-	@if [ `${SCRIPTDIR}/uptodate.pl ${PTLIB} . -not -name Makefile.def -not -name Makefile.conf` ]; \
-		then $(MAKE) PTLIB; \
+	@echo "checking $(AMPSLIB)";
+	@if [ `${SCRIPTDIR}/uptodate.pl ${AMPSLIB} . -not -name Makefile.def -not -name Makefile.conf` ]; \
+		then $(MAKE) AMPSLIB; \
 	fi
 
-PTLIB:
+AMPSLIB:
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
 	$(MAKE) ${WSD}
 	$(MAKE) LIB_after_build
