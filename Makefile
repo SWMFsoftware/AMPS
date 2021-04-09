@@ -302,7 +302,9 @@ PTLIB = ${LIBDIR}/libPT.a
 
 LIB:
 	@echo "checking $(PTLIB)";
-	@if [ `${SCRIPTDIR}/uptodate.pl ${PTLIB}` ]; then $(MAKE) PTLIB; fi
+	@if [ `${SCRIPTDIR}/uptodate.pl ${PTLIB} . -not -name Makefile.def -not -name Makefile.conf` ]; \
+		then $(MAKE) PTLIB; \
+	fi
 
 PTLIB:
 	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
