@@ -1,0 +1,12 @@
+
+#include input/test/sep_focused_transport--borovikov.input
+
+#main 
+CouplerMode=swmf !!T96 !ices !!off, ices, swmf
+#endmain
+
+#General
+  InitialSampleLength=4
+
+  define _PIC_FIELD_LINE_MODE_  _PIC_MODE_ON_
+#endGeneral
