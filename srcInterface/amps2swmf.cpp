@@ -54,6 +54,9 @@ bool AMPS2SWMF::swmfTimeAccurate=true;
 bool AMPS2SWMF::amps_init_flag=false;
 bool AMPS2SWMF::amps_init_mesh_flag=false;
 
+//the counter of the field line update events since beginning of a new session
+int AMPS2SWMF::FieldLineUpdateCounter=0;
+
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
@@ -517,7 +520,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     using namespace PIC::FieldLine;
 
     static bool init_flag=false;
-
+    static int *FirstVertexLagrIndex=NULL;
 
     //init the field-line module in AMPS is needed
     auto InitFieldLineModule = [&] () {
@@ -545,26 +548,18 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
       Init();
     };
 
-    if (init_flag==false) {
+    if ((init_flag==false)&&(FieldLinesAll==NULL)) {
       InitFieldLineModule();
       init_flag=true;
       return;
     }
 
-
-    auto OutputFieldLine = [&] (int iLine) {
-      char fname[500];
-      FILE *fout;
-
-      sprintf(fname,"exported-field-line.line=%i.dat",iLine);
-      fout=fopen(fname,"w");
-
-      FieldLinesAll[iLine].Output(fout,true);
-      fclose(fout);
-    };
-
     //import a single field line 
     auto ImportSingleFieldLine = [&] (int iImportFieldLine) {
+      int offset=(0+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+
+      FirstVertexLagrIndex[iImportFieldLine]=(int)round(MHData_VIB[offset]);
+
       for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
         double x[3]={0.0,0.0,0.0};    
         int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
@@ -579,6 +574,43 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     //update a single field line
     auto UpdateSingleFieldLine = [&] (int iImportFieldLine) { 
+      int offset=(0+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+
+      //determine the min value of Lagr index ro check whether a new point was inserted in the filed line
+      int MinLagrIndex=(int)round(MHData_VIB[offset]);
+      int PreviousMinLagrIndex=FirstVertexLagrIndex[iImportFieldLine];
+
+      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
+        offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+
+        if (MinLagrIndex>(int)round(MHData_VIB[offset])) MinLagrIndex=(int)round(MHData_VIB[offset]);
+      }
+
+
+      //update the number of point in the field line
+     if (FirstVertexLagrIndex[iImportFieldLine]!=MinLagrIndex) {
+       //new points need to be added at the beginning of the filed line        
+       int nNewPoints=FirstVertexLagrIndex[iImportFieldLine]-MinLagrIndex;
+
+        for (int i=0;i<nNewPoints;i++) {
+          double x[3]={0.0,0.0,0.0};
+
+          FieldLinesAll[iImportFieldLine].AddFront(x);
+        }
+
+        FirstVertexLagrIndex[iImportFieldLine]=MinLagrIndex;
+      }
+
+      //remove the field line segments at the end of the field line
+      if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1>nVertex_B[iImportFieldLine]) {
+        //remove segments at the end of the field line
+        FieldLinesAll[iImportFieldLine].CutBack(FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1-nVertex_B[iImportFieldLine]);
+      }
+      else if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()+1<nVertex_B[iImportFieldLine]) {
+        exit(__LINE__,__FILE__,"Error: something wrong");
+      }
+
+      //update the MHD values
       for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
         int StateVectorOffset=1+(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
@@ -600,6 +632,62 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
         Vertex->SetPlasmaTemperature(MHData_VIB[t_offset]); 
         Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]/_AMU_*Kbol*MHData_VIB[t_offset]); 
       }
+
+      //update the size of the field line if needed
+      if (FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()>nVertex_B[iImportFieldLine]-1) {
+        FieldLinesAll[iImportFieldLine].CutBack(FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()-nVertex_B[iImportFieldLine]+1);
+      }
+
+      //update the length of the field line
+      FieldLinesAll[iImportFieldLine].UpdateLength();
+
+      //determine the location of the shock wave
+      //criterion: change of the plasma density with time
+      int iSegment,iSegmentShock=-1;
+      double DensityGradientMax=0.0;
+      cFieldLineSegment* s;
+
+/*
+      if (AMPS2SWMF::FieldLineUpdateCounter>0) {
+        //determine location of shock wave
+        double max_ratio=0.0;
+        int i;
+        cFieldLineVertex *Vertex;
+
+        for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) {
+          int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+          double rho_new,rho_prev;
+
+          if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
+            Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
+            Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
+
+            if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
+              max_ratio=rho_new/rho_prev*(rho_new+rho_prev);
+              iSegmentShock=i;
+            }
+          }
+        }
+      }
+*/
+
+      // plasma density gradient criterion
+      for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
+        double grad,rho0,rho1;
+
+        s->GetBegin()->GetPlasmaDensity(rho0);
+        s->GetEnd()->GetPlasmaDensity(rho1);
+
+        grad=fabs(rho0-rho1)/s->GetLength();
+
+        if (grad>DensityGradientMax) {
+          DensityGradientMax=grad;
+          iSegmentShock=iSegment;
+        }
+      }
+
+
+      cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };
 
     //check whether field lines are initialized
@@ -614,12 +702,20 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     static int cnt=0;
 
     if (field_line_import_complete==false) {
+      if (FirstVertexLagrIndex==NULL) FirstVertexLagrIndex=new int [nFieldLineMax];
+
+      for (int i=0;i<nFieldLineMax;i++) FirstVertexLagrIndex[i]=1;
+
+      DeleteAll();
+
       for (int i=0;i<*nLine;i++) {
         ImportSingleFieldLine(i);  
       }
 
       field_line_import_complete=true;
+      AMPS2SWMF::FieldLineUpdateCounter=0;
     }
+    else AMPS2SWMF::FieldLineUpdateCounter++;
 
     //switch offsets to the 'previous' vertex's data
     if (VertexAllocationManager.PreviousVertexData.MagneticField==true) DatumAtVertexMagneticField.SwitchOffset(&DatumAtVertexPrevious::DatumAtVertexMagneticField);
@@ -636,6 +732,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     char fname[200];
 
+    if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat",cnt);
     sprintf(fname,"exported-field-lines.thread=%ld.cnt=%i.dat",PIC::ThisThread,cnt);    
     cnt++;  
 
