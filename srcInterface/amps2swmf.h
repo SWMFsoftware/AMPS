@@ -31,6 +31,9 @@ namespace AMPS2SWMF {
   //amps_init_flag
   extern bool amps_init_flag;
 
+  //init amps mesh flag
+  extern bool amps_init_mesh_flag;
+
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
 

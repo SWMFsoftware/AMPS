@@ -52,6 +52,7 @@ bool AMPS2SWMF::swmfTimeAccurate=true;
 
 //amps_init_flag
 bool AMPS2SWMF::amps_init_flag=false;
+bool AMPS2SWMF::amps_init_mesh_flag=false;
 
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
@@ -391,7 +392,11 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     //initialize the coupler and AMPS
     PIC::CPLR::SWMF::init();
-    amps_init_mesh();
+   
+    if (AMPS2SWMF::amps_init_mesh_flag==false) {
+      amps_init_mesh();
+      AMPS2SWMF::amps_init_mesh_flag=true;
+    }
   }
 
   void amps_finalize_() {
@@ -482,7 +487,10 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 						 ss);
     
     // The domain size and resolution is in the FluidInterface now. 
-    amps_init_mesh();
+    if (AMPS2SWMF::amps_init_mesh_flag==false) {
+      amps_init_mesh();
+      AMPS2SWMF::amps_init_mesh_flag=true;
+    }
     
     PIC::CPLR::FLUID::read_param();
 
@@ -556,23 +564,23 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     };
 
     //import a single field line 
-    auto ExportSingleFieldLine = [&] (int iExportFieldLine) {
-      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
+    auto ImportSingleFieldLine = [&] (int iImportFieldLine) {
+      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
         double x[3]={0.0,0.0,0.0};    
-        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+        int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
         for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];   
 
-        FieldLinesAll[iExportFieldLine].Add(x);
+        FieldLinesAll[iImportFieldLine].Add(x);
       }
 
        nFieldLine++;
     };
 
     //update a single field line
-    auto UpdateSingleFieldLine = [&] (int iExportFieldLine) { 
-      for (int i=0;i<nVertex_B[iExportFieldLine];i++) {
-        int StateVectorOffset=1+(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+    auto UpdateSingleFieldLine = [&] (int iImportFieldLine) { 
+      for (int i=0;i<nVertex_B[iImportFieldLine];i++) {
+        int StateVectorOffset=1+(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
         //import 'new' data
         int x_offset=StateVectorOffset;
@@ -581,9 +589,9 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
         int rho_offset=StateVectorOffset+3;
         int t_offset=StateVectorOffset+4;
         int w_offset=StateVectorOffset+11;
-        int offset=(i+(*nVertexMax)*iExportFieldLine)*((*nMHData)+1);
+        int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
-        cFieldLineVertex* Vertex=FieldLinesAll[iExportFieldLine].GetVertex(i);
+        cFieldLineVertex* Vertex=FieldLinesAll[iImportFieldLine].GetVertex(i);
 
         Vertex->SetX(MHData_VIB+x_offset);
         Vertex->SetMagneticField(MHData_VIB+b_offset); 
@@ -607,7 +615,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     if (field_line_import_complete==false) {
       for (int i=0;i<*nLine;i++) {
-        ExportSingleFieldLine(i);  
+        ImportSingleFieldLine(i);  
       }
 
       field_line_import_complete=true;
@@ -628,7 +636,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
     char fname[200];
 
-    sprintf(fname,"exported-field-lines.cnt=%i.dat",cnt);    
+    sprintf(fname,"exported-field-lines.thread=%ld.cnt=%i.dat",PIC::ThisThread,cnt);    
     cnt++;  
 
     Output(fname,true);

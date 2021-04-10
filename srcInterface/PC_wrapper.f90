@@ -5,7 +5,7 @@
 !  $Id$
 !==========================================================================
 module PC_wrapper
-
+  use CON_time
   implicit none
 
   private ! except
@@ -99,8 +99,16 @@ contains
     !INPUT PARAMETERS:
     integer,  intent(in) :: iSession         ! session number (starting from 1)
     real,     intent(in) :: TimeSimulation   ! seconds from start time
-
+    integer::code
     character(len=*), parameter :: NameSub='PC_init_session'
+
+    if (DoTimeAccurate) then
+       code=1
+    else
+       code=0
+    end if
+
+    call amps_init_session(iSession,TimeSimulation,code)
 
     ! call AMPS_init(iSession, TimeSimulation)
 
