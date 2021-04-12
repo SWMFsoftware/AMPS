@@ -460,6 +460,91 @@ auto SimulateReaction = [&] () {
 //    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
     double c = (PlasmaNumberDensity>0.0) ? ParentParticleWeight/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)/CenterNode->Measure : 0.0;
 
+
+    /*
+      Erick Powell tests
+     */
+    /*
+    //Defining the values for the get_charge_exchange_wrapper
+    double PlasRho,v2_th_Plas,NeuRho;
+    double neu_v2_th=0;
+    double Source_V[5]; 
+    PlasRho = PlasmaNumberDensity; 
+    v2_th_Plas = 2.0*Kbol*PlasmaTemperature / _MASS_(_H_);
+    NeuRho =ParentParticleWeight/CenterNode->Measure;
+
+    //Calling the subroutine and separating the terms from the table
+    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,Source_V);
+
+    double rate,ForceDu[3],EnergySource;
+    rate=Source_V[0];
+    ForceDu[0]=Source_V[1];
+    ForceDu[1]=Source_V[2];
+    ForceDu[2]=Source_V[3];
+    EnergySource=Source_V[4];
+    
+
+    //Values going into the function
+    cout<<"\n\nPlas rho ->  "<<PlasRho;
+    cout<<"\nPlasma Velo   ->  ";
+    int dim;
+    for (int dim=0;dim<3;dim++){
+      cout<<PlasmaBulkVelocity[dim]<<"\t";
+    }
+    cout<<"\nNeutral Velo   ->  ";
+    for (int dim=0;dim<3;dim++){
+      cout<<vParent[dim]<<"\t";
+    }
+    cout<<"\nPlasma V2  -> "<<v2_th_Plas;
+    cout<<"\nNeutral V2  -> "<<neu_v2_th;
+      
+
+    //MonteCarlo for an appropriate value to compare to
+    double sampledVPlas[3], runningTotal[3];
+    for (int n=0;n<1000;n++){
+      //Calling many samples of VP 
+      OH::sampleVp(sampledVPlas,vParent,PlasmaBulkVelocity,PlasmaTemperature,spec);
+      for (int dim=0;dim<3;dim++){
+	//The net momentum change is the difference between (c*MASS*Velo_spec)
+	runningTotal[dim]+=(vParent[dim]-sampledVPlas[dim])*c*_MASS_(_H_);
+      }
+    }
+    //dividing each term by 1000 so that it is the average momentum change
+    for (int dim=0;dim<3;dim++){
+	runningTotal[dim]/=1000.;
+      }
+    //Printing out the final average momentum
+    cout<<"\n\nThe average values for the interactions\n";
+    for (int dim=0;dim<3;dim++){
+      cout<<runningTotal[dim]<<"\t";
+    }
+    cout<<"\n\n Force from get_charge_exchange (Divided by timestep and plasmaNumberDensity) \n";
+    for (int dim=0;dim<3;dim++){
+      cout<<ForceDu[0]/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)<<"\t"; 
+    }
+    
+    
+    //These are the weights that I was working with to find the appropriate thing to multiply by    
+    cout<<"\n\nParentParticle Weight   ->"<<ParentParticleWeight/WeightQuantum;
+    cout<<"\nquanta   ->"<<WeightQuantum;
+    cout<<"\nCenterNode ->Measure  ->"<<CenterNode->Measure;
+    cout<<"\nTimeSte    -> "<<PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+    cout<<"\n\n";
+
+
+    for (int dim=0;dim<3;dim++){
+      PlasmaBulkVelocity[dim]/=1000.;
+    }
+    cout<<"\n\n";
+    v2_th_Plas/=1000000.;
+    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,Source_V);
+
+    //End of work -> Erick Powell
+    */
+
+
+
+    
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceDensityOffset))-=c*_MASS_(_H_);
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c*_MASS_(_H_);
 
