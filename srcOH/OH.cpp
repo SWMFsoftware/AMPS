@@ -2,6 +2,7 @@
 
 #include "OH.h"
 #include "pic.h"
+#include "get_charge_exchange_wrapper_c.h"
 
 // user defined global time step
 double OH::UserGlobalTimeStep = 3.154e7;
@@ -468,20 +469,20 @@ auto SimulateReaction = [&] () {
     //Defining the values for the get_charge_exchange_wrapper
     double PlasRho,v2_th_Plas,NeuRho;
     double neu_v2_th=0;
-    double Source_V[5]; 
+    double SourceIon_V[5],SourceNeu_V[5]; 
     PlasRho = PlasmaNumberDensity; 
     v2_th_Plas = 2.0*Kbol*PlasmaTemperature / _MASS_(_H_);
     NeuRho =ParentParticleWeight/CenterNode->Measure;
 
     //Calling the subroutine and separating the terms from the table
-    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,Source_V);
+    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,SourceIon_V,SourceNeu_V);
 
     double rate,ForceDu[3],EnergySource;
-    rate=Source_V[0];
-    ForceDu[0]=Source_V[1];
-    ForceDu[1]=Source_V[2];
-    ForceDu[2]=Source_V[3];
-    EnergySource=Source_V[4];
+    rate=SourceIon_V[0];
+    ForceDu[0]=-SourceIon_V[1]+SourceNeu_V[1];
+    ForceDu[1]=-SourceIon_V[2]+SourceNeu_V[2];
+    ForceDu[2]=-SourceIon_V[3]+SourceNeu_V[3];
+    EnergySource=-SourceIon_V[4]+SourceNeu_V[4];
     
 
     //Values going into the function
@@ -537,7 +538,9 @@ auto SimulateReaction = [&] () {
     }
     cout<<"\n\n";
     v2_th_Plas/=1000000.;
-    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,Source_V);
+    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,SourceIon_V,SourceNeu_V);
+
+
 
     //End of work -> Erick Powell
     */
