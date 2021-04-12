@@ -41,15 +41,14 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
     // to avoid computing log() in vicinity of energy = 0:
     // substitute log(energy) with (-10*log(10))
     sigma = (a1 + a2*23.026) * (a1 + a2*23.026) * 1E-20; // m^2
-  return 1.0 / (PlasmaNumberDensity * v_rel * sigma);  
-
+  
   /*
     LOOKUP TABLE METHOD BELOW
    */
   
   /*
   //Declare relevant variables
-  double Source_V[5],v2_th_Plas,NeuRho,PlasRho;
+  double SourceIon_V[5],SourceNeu_V[5],v2_th_Plas,NeuRho,PlasRho;
   double neu_v2_th = 0;
   double rate;
 
@@ -59,11 +58,14 @@ double ChargeExchange::LindsayStebbings::LifeTime(int      spec,
   NeuRho = 1;
 
   //Using "Linear_solver_wrapper" calls as a template
-  get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,vPlasma,&NeuRho,&neu_v2_th,vParticle,Source_V); //need to use the pointers, velocities are already pointers
+  OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,vPlasma,&NeuRho,&neu_v2_th,vParticle,SourceIon_V,SourceNeu_V); //need to use the pointers, velocities are already pointers
 
   //I need to take the rate term (first term) of Source_V for the rate
-  rate = Source_V[0];
+  rate = SourceIon_V[0];
 
   return 1.0/rate;
   */
+
+  return 1.0 / (PlasmaNumberDensity * v_rel * sigma);  
+
 }
