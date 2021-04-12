@@ -477,11 +477,11 @@ auto SimulateReaction = [&] () {
     //Calling the subroutine and separating the terms from the table
     OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,SourceIon_V,SourceNeu_V);
 
-    double rate,ForceDu[3],EnergySource;
+    double rate,Force[3],EnergySource;
     rate=SourceIon_V[0];
-    ForceDu[0]=-SourceIon_V[1]+SourceNeu_V[1];
-    ForceDu[1]=-SourceIon_V[2]+SourceNeu_V[2];
-    ForceDu[2]=-SourceIon_V[3]+SourceNeu_V[3];
+    Force[0]=-SourceIon_V[1]+SourceNeu_V[1];
+    Force[1]=-SourceIon_V[2]+SourceNeu_V[2];
+    Force[2]=-SourceIon_V[3]+SourceNeu_V[3];
     EnergySource=-SourceIon_V[4]+SourceNeu_V[4];
     
 
@@ -521,7 +521,7 @@ auto SimulateReaction = [&] () {
     }
     cout<<"\n\n Force from get_charge_exchange (Divided by timestep and plasmaNumberDensity) \n";
     for (int dim=0;dim<3;dim++){
-      cout<<ForceDu[0]/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)<<"\t"; 
+      cout<<Force[0]*_MASS_(_H_)/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)<<"\t"; 
     }
     
     
