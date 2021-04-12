@@ -245,12 +245,14 @@ contains
     !
     ! if UseBLine_C(PT_), available: DataInputTime, MHData_VIB, nVertex_B
     ! stub  for amps_get_bline is put to the end of the file
-    if(UseBLine_C(PT_))then
+    if (UseBLine_C(PT_)) then
        call BL_update_r
-       if(DataInputTime > PTTime)then
+
+       if (DataInputTime > PTTime) then
           PTTime = DataInputTime
           call save_mhd(PTTime)
        end if
+
        call amps_get_bline(&
          DataInputTime, & ! real, intent in
          nVertexMax   , & ! integer, intent in
@@ -259,9 +261,12 @@ contains
          nMHData      , & ! integer, intent it
          NameVar_V    , & ! character(len=10), dimension(0:nMHData) intent in
          MHData_VIB)! real,intent in,dimension(0:nMHData,1:nVertexMax,1:nLine)
+
        TimeSimulation = TimeSimulationLimit  !For test purpose only
-       RETURN                                !For test purpose only
+
+!      RETURN                                !For test purpose only
     end if
+
     ! actually filled in part is for second index ranging 1:nVertex_B(1:nLine)
     ! call AMPS
     call AMPS_timestep(TimeSimulation, TimeSimulationLimit)

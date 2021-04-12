@@ -519,6 +519,20 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
   void amps_get_bline_c_(int* nVertexMax, int* nLine, int* nVertex_B,int *nMHData,char* NameVar_V, double* MHData_VIB) {
     using namespace PIC::FieldLine;
 
+    //init AMPS if needed 
+    if (AMPS2SWMF::amps_init_mesh_flag==false) {
+      amps_init_mesh();
+      AMPS2SWMF::amps_init_mesh_flag=true;
+    }
+
+    if (AMPS2SWMF::amps_init_flag==false) {
+      amps_init();
+      AMPS2SWMF::amps_init_flag=true;
+    }
+
+    //consider the first coupling occurs after extracting the first field line 
+    PIC::CPLR::SWMF::FirstCouplingOccured=true;
+
     static bool init_flag=false;
     static int *FirstVertexLagrIndex=NULL;
 
