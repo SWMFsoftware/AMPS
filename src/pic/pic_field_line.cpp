@@ -373,7 +373,7 @@ namespace PIC {
 
 
 
-    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment) {
+    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn) {
       //namespace alias
       namespace PB = PIC::ParticleBuffer;
 
@@ -394,12 +394,20 @@ namespace PIC {
       
       //Inject at the beginning of the field line FOR PARKER SPIRAL
       cFieldLineSegment* Segment=FieldLinesAll[iFieldLine].GetSegment(iSegment);
-      double S = iSegment + rnd();
+      double S = (sIn>=0) ? sIn : iSegment + rnd();
+
+
       PB::SetFieldLineCoord(S, ptrData);
       double x[3], v[3];
 
       FieldLinesAll[iFieldLine].GetCartesian(x, S);
       PB::SetX(x, ptrData);
+
+      //verify that the 'x' belongs to the subdomain of the current MPI process
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->findTreeNode(x,NULL);       
+
+      if (node==NULL) return -1;
+      else if (node->block==NULL) return -1;
       
       // fix kintic energy and pitch angle far now
       //    double cosPhi=pow(2,-0.5);
@@ -490,8 +498,8 @@ namespace PIC {
       double mu=pPerpAbs2/(2.0*m0*AbsB);
       PB::SetMagneticMoment(mu, ptrData);
 
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-      node=PIC::Mesh::mesh->findTreeNode(x);
+//      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+//      node=PIC::Mesh::mesh->findTreeNode(x);
       
       long int res=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
 

@@ -663,7 +663,9 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
 
   //set up the fields of the new particle with the user-defined data
   if (ParticleData!=NULL) {
-    memcpy((void*)ptrData,(void*)ParticleData,ParticleDataLength);
+    //memcpy((void*)ptrData,(void*)ParticleData,ParticleDataLength);
+
+    PIC::ParticleBuffer::CloneParticle(ptrData,ParticleData);
     SetParticleAllocated(ptrData);
   }
 

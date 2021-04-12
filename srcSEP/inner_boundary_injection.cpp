@@ -291,6 +291,12 @@ InjectionTangentionalSpeed+=sqrt(v1);
 long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int BoundaryElementType,void *BoundaryElement) {
   long int spec,res=0;
 
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+    //particles are injected directly onto the magnetic field lines
+    return 0;
+  }
+    
+
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=sphereParticleInjection(spec,BoundaryElementType,BoundaryElement);
 
   return res;
@@ -299,6 +305,11 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int Boundar
 long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(void *SphereDataPointer)  {
   long int res=0.0;
   int spec;
+
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+    //particles are injected directly onto the magnetic field lines
+    return 0;
+  }
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=sphereParticleInjection(spec,SphereDataPointer);
   return res;

@@ -57,6 +57,9 @@ bool AMPS2SWMF::amps_init_mesh_flag=false;
 //the counter of the field line update events since beginning of a new session
 int AMPS2SWMF::FieldLineUpdateCounter=0;
 
+//the table containing the field line segment indexes where the CME shock is currently localted
+int *AMPS2SWMF::iShockWaveSegmentTable=NULL;
+
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
@@ -533,6 +536,13 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
     //consider the first coupling occurs after extracting the first field line 
     PIC::CPLR::SWMF::FirstCouplingOccured=true;
 
+    //init the table of the shock wave localtion indexes
+    if (AMPS2SWMF::iShockWaveSegmentTable==NULL) {
+      AMPS2SWMF::iShockWaveSegmentTable=new int [*nLine];
+    
+      for (int i=0;i<(*nLine);i++) AMPS2SWMF::iShockWaveSegmentTable[i]=-1;
+    }
+
     static bool init_flag=false;
     static int *FirstVertexLagrIndex=NULL;
 
@@ -578,7 +588,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
         double x[3]={0.0,0.0,0.0};    
         int offset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
 
-        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset];   
+        for (int idim=0;idim<3;idim++) x[idim]=MHData_VIB[1+idim+offset]*_RADIUS_(_SUN_);   
 
         FieldLinesAll[iImportFieldLine].Add(x);
       }
@@ -639,7 +649,12 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
         cFieldLineVertex* Vertex=FieldLinesAll[iImportFieldLine].GetVertex(i);
 
-        Vertex->SetX(MHData_VIB+x_offset);
+        double x[3];
+
+        for (int idim=0;idim<3;idim++) x[idim]=(MHData_VIB+x_offset)[idim]*_RADIUS_(_SUN_);
+        Vertex->SetX(x);
+       // Vertex->SetX(MHData_VIB+x_offset);
+
         Vertex->SetMagneticField(MHData_VIB+b_offset); 
         Vertex->SetPlasmaVelocity(MHData_VIB+u_offset); 
         Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]/_AMU_); 
@@ -700,6 +715,7 @@ while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
         }
       }
 
+      AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
 
       cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };

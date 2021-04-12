@@ -38,6 +38,13 @@
 namespace SEP {
   using namespace Exosphere;
 
+  //functions related to tracing SEPs along field lines 
+  namespace FieldLine {
+    long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
+    long int InjectParticles();
+  }
+    
+
   //sphere describing the inner boundary of the domain 
   extern cInternalSphericalData* InnerBoundary;
 

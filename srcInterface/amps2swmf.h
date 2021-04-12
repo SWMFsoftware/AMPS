@@ -37,6 +37,10 @@ namespace AMPS2SWMF {
   //the counter of the field line update events since beginning of a new session
   extern int FieldLineUpdateCounter; 
 
+  //the table containing the field line segment indexes where the CME shock is currently localted
+  extern int *iShockWaveSegmentTable;
+  
+
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
 
