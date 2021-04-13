@@ -388,6 +388,10 @@ namespace Vector3D {
     for (int i=0;i<3;i++) x[i]*=t;
   }
 
+  inline void MultiplyScalar(double* res,double *source,double t=1.0) {
+    for (int i=0;i<3;i++) res[i]=t*source[i];
+  }
+
   inline void Copy(double *target,double *source,int length=3) {
     memcpy(target,source,length*sizeof(double));
   }
