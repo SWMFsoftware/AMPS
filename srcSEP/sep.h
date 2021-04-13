@@ -163,8 +163,11 @@ namespace SEP {
     }
 
 
-    namespace ScatteringMode {
-
+    namespace Scattering {
+      namespace AIAA2005 {
+        double MeanFreePath(PIC::ParticleBuffer::byte *ParticleData);
+        void Process(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+      }
     }
 
     namespace Mover {
