@@ -234,6 +234,7 @@ contains
 
     real:: xEarth(3)
     character(len=*), parameter:: NameSub = 'PT_run'
+    integer::ForceReachingSimulationTimeLimit=0 
     !--------------------------------------------------------------------------
 
     ! update the location of the Earth in the coupled on the AMPS side when
@@ -262,14 +263,17 @@ contains
          NameVar_V    , & ! character(len=10), dimension(0:nMHData) intent in
          MHData_VIB)! real,intent in,dimension(0:nMHData,1:nVertexMax,1:nLine)
 
-       TimeSimulation = TimeSimulationLimit  !For test purpose only
+       ForceReachingSimulationTimeLimit=1
 
+!      TimeSimulation = TimeSimulationLimit  !For test purpose only
 !      RETURN                                !For test purpose only
     end if
 
     ! actually filled in part is for second index ranging 1:nVertex_B(1:nLine)
     ! call AMPS
-    call AMPS_timestep(TimeSimulation, TimeSimulationLimit)
+    call AMPS_timestep(TimeSimulation, TimeSimulationLimit,&
+      ForceReachingSimulationTimeLimit)
+
   end subroutine PT_run
   !============================================================================
 

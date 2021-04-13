@@ -25,12 +25,16 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
   int idim;
   double SubsolarAngle;
 
-  return 0.1*_RADIUS_(_SUN_);
+  res=(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) ? 0.1 : 10.0; 
+
+  return res*_RADIUS_(_SUN_);
 }
 
 double SEP::Mesh::localResolution(double *x) {
 
-  if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
+  if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_OFF_) {
+    if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
+  }
 
   return 20.0*_RADIUS_(_SUN_);
 }

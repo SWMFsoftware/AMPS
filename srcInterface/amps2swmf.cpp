@@ -74,7 +74,7 @@ extern "C" {
 #endif
 
 
-  void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit);
+  void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit,int* ForceReachingSimulationTimeLimit);
   int initamps_();
   void amps_impose_global_time_step_(double *Dt);
   void amps_setmpicommunicator_(signed int* iComm,signed int* iProc,signed int* nProc, signed int* nThread);
@@ -291,7 +291,7 @@ extern "C" {
 
   }
 
-  void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit) {
+  void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit,int* ForceReachingSimulationTimeLimit) {
     using namespace AMPS2SWMF;
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
@@ -350,7 +350,7 @@ extern "C" {
       return res;
     };
 
-    bool call_amps_flag=true;
+    bool call_amps_flag=true; 
 
 do {
 
@@ -375,7 +375,7 @@ do {
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
 }
-while (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
+while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
 
   }

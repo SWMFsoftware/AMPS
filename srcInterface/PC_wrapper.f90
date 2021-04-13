@@ -153,10 +153,12 @@ contains
     real, intent(in):: TimeSimulationLimit ! simulation time not to be exceeded
 
     character(len=*), parameter :: NameSub='PC_run'
+    integer::ForceReachingSimulationTimeLimit=0 
 
     ! call AMPS_run(TimeSimulation, TimeSimulationLimit)
 
-    call AMPS_TimeStep(TimeSimulation, TimeSimulationLimit) 
+    call AMPS_TimeStep(TimeSimulation, TimeSimulationLimit,& 
+      ForceReachingSimulationTimeLimit) 
 
   end subroutine PC_run
 
