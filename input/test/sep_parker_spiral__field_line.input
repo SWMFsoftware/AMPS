@@ -72,6 +72,9 @@ CouplerMode=T96 !ices !!off, ices, swmf
   define _PIC__IDEAL_MHD_MODE_  _PIC_MODE_ON_
    
 
+  !the macro supress using 'AMPS2SWMF::iShockWaveSegmentTable' in the SEP model
+  define _SEP_SHOCK_LOCATION_COUPLER_TABLE_ _PIC_MODE_OFF_ ! _PIC_MODE_ON_, _PIC_MODE_OFF_ 
+
 #endGeneral
 
 #ParticleCollisions 

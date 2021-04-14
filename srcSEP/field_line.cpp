@@ -11,7 +11,13 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
 
   //determine the filed line to inject particles
+  iShockFieldLine=0; 
+
+  #ifdef _SEP_SHOCK_LOCATION_COUPLER_TABLE_
+  #if _SEP_SHOCK_LOCATION_COUPLER_TABLE_ == _PIC_MODE_ON_ 
   if ((iShockFieldLine=AMPS2SWMF::iShockWaveSegmentTable[iFieldLine])==-1) return 0; 
+  #endif
+  #endif
 
   //determine the number of particles to inject 
   anpart=23.0;
