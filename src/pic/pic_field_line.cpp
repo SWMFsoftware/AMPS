@@ -1343,10 +1343,11 @@ namespace FieldLine{
 
     if (FL::FieldLinesAll[iFieldLine].is_loop()) FL::FieldLinesAll[iFieldLine].fix_coord(FieldLineCoordFinal);
 
+    FL::cFieldLineSegment *Segment;
    
     //advance the particle's position and velocity
     //interaction with the faces of the block and internal surfaces
-    if (FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoordFinal)==NULL) {
+    if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoordFinal))==NULL) {
       //the particle left the computational domain
       int code=_PARTICLE_DELETED_ON_THE_FACE_;
       
@@ -1369,12 +1370,24 @@ namespace FieldLine{
     PIC::ParticleBuffer::SetMomentumParallel(pParFinal,ParticleData);
 
 
+    double l[3],e0[3],e1[3],SpeedPar,SpeedPerp;
+
+    Segment->GetDir(l);
+    Vector3D::GetNormFrame(e0,e1,l);
+
     switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
     case _PIC_MODE_OFF_:
-      vFinal[0]=pParFinal/m0,vFinal[1]=pPerpInit/m0,vFinal[2]=0.0;
+//      vFinal[0]=pParFinal/m0,vFinal[1]=pPerpInit/m0,vFinal[2]=0.0;
+
+      SpeedPar=pParFinal/m0;
+      SpeedPerp=pPerpInit/m0;
+
+      for (int idim=0;idim<3;idim++) vFinal[idim]=SpeedPar*l[idim]+SpeedPerp*e0[idim]; 
       break;
     case _PIC_MODE_ON_:
-      p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
+      //p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
+
+      for (int idim=0;idim<3;idim++) p[idim]=pParFinal*l[idim]+pPerpInit*e0[idim]; 
       ::Relativistic::Momentum2Vel(vFinal,p,m0);
     }
 
