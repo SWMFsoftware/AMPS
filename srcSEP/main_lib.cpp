@@ -69,6 +69,9 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 void amps_init_mesh() {
   PIC::InitMPI();
 
+  //set the function for the particle sampling 
+  SEP::Sampling::Init();
+
   //set the particle injection function used in case magnetic field lines are used 
   if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
     PIC::BC::UserDefinedParticleInjectionFunction=SEP::FieldLine::InjectParticles;

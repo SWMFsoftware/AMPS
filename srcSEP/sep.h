@@ -44,6 +44,162 @@ namespace SEP {
     long int InjectParticles();
   }
     
+  //functions used for the particle samplein
+  namespace Sampling {
+
+    class cSamplingBuffer {
+    public:
+      int nEnergyBins;
+      double MinEnergy,MaxEnergy,dLogEnergy;
+     
+      double *SamplingTable;
+      int SamplingCounter;
+      double SamplingTime;
+
+      int iFieldLine;
+      double HeliocentricDisctance;
+      FILE *fout;
+
+      PIC::FieldLine::cFieldLineSegment* GetFieldLineSegment() {
+        namespace FL=PIC::FieldLine;
+
+        double xBegin[3],xEnd[3]; 
+        double rBegin,rEnd;
+
+        if (iFieldLine>=FL::nFieldLine) exit(__LINE__,__FILE__,"Error: the filed line is out of range");
+
+        FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment(); 
+
+        while (Segment!=NULL) {
+          Segment->GetBegin()->GetX(xBegin);
+          Segment->GetEnd()->GetX(xEnd);
+
+          rBegin=Vector3D::Length(xBegin);
+          rEnd=Vector3D::Length(xEnd);
+
+          if ( ((rBegin<=HeliocentricDisctance)&&(HeliocentricDisctance<=rEnd)) || ((rBegin>=HeliocentricDisctance)&&(HeliocentricDisctance>=rEnd)) ) {
+            break;
+          } 
+        
+          Segment=Segment->GetNext();
+        }
+
+        return Segment;
+      }
+
+      void Sampling () {
+        namespace FL=PIC::FieldLine;
+        namespace PB=PIC::ParticleBuffer;
+    
+        FL::cFieldLineSegment* Segment=GetFieldLineSegment();
+        if (Segment==NULL) return;
+
+        //find cell;
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+        int i,j,k;
+        double xBegin[3],xEnd[3],xMiddle[3];
+
+        Segment->GetBegin()->GetX(xBegin);
+        Segment->GetEnd()->GetX(xEnd);
+
+        for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]); 
+   
+        node=PIC::Mesh::Search::FindBlock(xMiddle);
+        if (node->block==NULL) return;
+
+        SamplingTime+=node->block->GetLocalTimeStep(0);
+
+        PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
+        long int ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+        while (ptr!=-1) {
+          double *v,e,m0;
+          int spec,ibin;
+          PB::byte* ParticleData;
+
+          ParticleData=PB::GetParticleDataPointer(ptr); 
+          spec=PB::GetI(ParticleData);
+          v=PB::GetV(ParticleData);
+          m0=PIC::MolecularData::GetMass(spec);
+
+          if (PB::GetFieldLineId(ParticleData)!=iFieldLine) {
+            ptr=PB::GetNext(ParticleData);
+            continue;
+          } 
+          
+          switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+          case _PIC_MODE_OFF_: 
+            e=m0*Vector3D::DotProduct(v,v)/2.0;
+            break;
+
+          case _PIC_MODE_ON_: 
+            e=Relativistic::Speed2E(Vector3D::Length(v),m0);
+            break;
+          }
+
+          ibin=(int)(log(e/MinEnergy)/dLogEnergy);  
+
+          if ((ibin>=0)&&(ibin<nEnergyBins)) {  
+            double ParticleWeight;
+
+            ParticleWeight=node->block->GetLocalParticleWeight(spec); 
+            ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
+
+            SamplingTable[ibin]+=ParticleWeight;
+          } 
+
+          ptr=PB::GetNext(ParticleData);
+        }
+      }
+
+      void Clear() {
+        for (int i=0;i<nEnergyBins;i++) SamplingTable[i]=0.0;
+        
+        SamplingCounter=0;
+      }
+
+      void Output() {
+        fprintf(fout,"%e ",SamplingTime);
+
+        for (int i=0;i<nEnergyBins;i++) fprintf(fout,"  %e", SamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
+        
+        fprintf(fout,"\n");
+        fflush(fout);
+        Clear();
+      }
+
+      void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
+        nEnergyBins=n;
+        MinEnergy=e_min,MaxEnergy=e_max;
+        dLogEnergy=log(MaxEnergy/MinEnergy)/nEnergyBins; 
+        HeliocentricDisctance=r;
+        iFieldLine=l; 
+
+        char full_name[200];
+
+        sprintf(full_name,"%s.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        fout=fopen(full_name,"w"); 
+
+        fprintf(fout,"VARIABLES=\"time\"");
+        for (int i=0;i<nEnergyBins;i++) fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        fprintf(fout,"\n");   
+
+
+        SamplingTime=0.0;
+        SamplingTable=new double[nEnergyBins];
+        Clear(); 
+      }
+    };
+
+    extern int SamplingBufferTableLength;
+    extern cSamplingBuffer *SamplingBufferTable; 
+
+    //Manager is called by AMPS to perform sampling procedure 
+    void Manager();
+
+    //Init the samping module
+    void Init();
+  }
 
   //sphere describing the inner boundary of the domain 
   extern cInternalSphericalData* InnerBoundary;
