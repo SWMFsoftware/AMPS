@@ -13,7 +13,7 @@ void SEP::Sampling::Init() {
   SamplingBufferTable=new cSamplingBuffer [SamplingBufferTableLength];
 
   for (int i=0;i<SamplingBufferTableLength;i++) {
-    SamplingBufferTable[i].Init("sample",0.1*MeV2J,100.0*MeV2J,5,i*0.25*_AU_,0);
+    SamplingBufferTable[i].Init("sample",0.1*MeV2J,500.0*MeV2J,7,i*0.25*_AU_,0);
   } 
 }  
 

@@ -193,10 +193,14 @@ bool SEP::Mesh::NodeSplitCriterion(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
 
 
 double SEP::Mesh::localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  double CellSize,CharacteristicSpeed=40000E3;
+  double res,CellSize,CharacteristicSpeed=40000E3;
 
   CellSize=startNode->GetCharacteristicCellSize();
-  return 0.3*CellSize/CharacteristicSpeed;
+  res=0.3*CellSize/CharacteristicSpeed;
+
+  if (res>1.0) res=1.0;
+
+  return res;
 }
 
 //init the magnetic filed line in AMPS

@@ -108,6 +108,7 @@ namespace SEP {
         if (node->block==NULL) return;
 
         SamplingTime+=node->block->GetLocalTimeStep(0);
+        SamplingCounter++;
 
         PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
         long int ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];

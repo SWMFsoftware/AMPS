@@ -191,7 +191,7 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
 #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
   double v_perp2= mu * 2.0 * AbsB / m0;
   double v2     = v[0]*v[0]+v[1]*v[1]+v[2]*v[2] + v_perp2;
-  double gamma  = pow(1-v2/c2,-0.5);
+  double gamma  = pow(1-v2/(SpeedOfLight*SpeedOfLight),-0.5);
 #else
   double gamma  = 1.0;
 #endif //_PIC_PARTICLE_MOVER__RELATIVITY_MODE_
@@ -308,7 +308,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
 
 #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
   pInit=
-    pow(1-(misc*misc+2*mu*AbsBInit/m0)/c2,-0.5)*
+    pow(1-(misc*misc+2*mu*AbsBInit/m0)/(SpeedOfLight*SpeedOfLight),-0.5)*
     m0*(vInit[0]*bInit[0]+vInit[1]*bInit[1]+vInit[2]*bInit[2]);
 #else
   pInit=m0*(vInit[0]*bInit[0]+vInit[1]*bInit[1]+vInit[2]*bInit[2]);

@@ -213,6 +213,34 @@ void PIC::CPLR::SWMF::init() {
 
 void PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc) {
   MPI_GLOBAL_COMMUNICATOR=MPI_Comm_f2c(*iComm);
+
+ /* In case AMPS is used to trace particles along magnetic field lines, 
+ *  it could be beneficial to run multiple copies of AMPS that are not connected via MPI. 
+ *  For that, the communicator that AMPS receives from the SWMF is split such that the resulted communicator has only one MPI process.
+ */
+
+  if (_PIC_DISCONNECTED_MPI_PROCESSES_==_PIC_MODE_ON_) {
+    //set the output directories
+    char cmd[300]; 
+    int rank;
+
+    MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
+
+    if (strcmp(PIC::OutputDataFileDirectory,".")!=0) {
+      sprintf(PIC::OutputDataFileDirectory,"%s.thread=%ld",PIC::OutputDataFileDirectory,rank);
+    }
+    else {
+      sprintf(PIC::OutputDataFileDirectory,"amps-out.thread=%ld",rank);
+
+      sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
+      system(cmd);
+    }
+
+    //define the communicator
+    MPI_GLOBAL_COMMUNICATOR=MPI_COMM_SELF;
+  }
+
+
   PIC::InitMPI();
 
   if (PIC::ThisThread==0) {

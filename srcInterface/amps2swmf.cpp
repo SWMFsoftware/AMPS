@@ -763,7 +763,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     char fname[200];
 
     if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat\n",cnt);
-    sprintf(fname,"exported-field-lines.thread=%ld.cnt=%i.dat",PIC::ThisThread,cnt);    
+    sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
     cnt++;  
 
     Output(fname,true);
