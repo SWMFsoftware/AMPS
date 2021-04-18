@@ -47,6 +47,13 @@ namespace SEP {
   //functions used for the particle samplein
   namespace Sampling {
 
+    const int SamplingHeliocentricDistanceTableLength=5;
+    const double SamplingHeliocentricDistanceTable[]={0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
+    const double MinSampleEnergy=1.0*MeV2J;
+    const double MaxSampleEnergy=500.0*MeV2J;
+    const int nSampleIntervals=7;
+
+
     class cSamplingBuffer {
     public:
       int nEnergyBins;
@@ -65,6 +72,7 @@ namespace SEP {
 
         double xBegin[3],xEnd[3]; 
         double rBegin,rEnd;
+        int iSegment=0; //used for debugging only 
 
         if (iFieldLine>=FL::nFieldLine) exit(__LINE__,__FILE__,"Error: the filed line is out of range");
 
@@ -81,6 +89,7 @@ namespace SEP {
             break;
           } 
         
+          iSegment++;
           Segment=Segment->GetNext();
         }
 
@@ -98,6 +107,7 @@ namespace SEP {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
         int i,j,k;
         double xBegin[3],xEnd[3],xMiddle[3];
+        long int ptr;
 
         Segment->GetBegin()->GetX(xBegin);
         Segment->GetEnd()->GetX(xEnd);
@@ -107,11 +117,20 @@ namespace SEP {
         node=PIC::Mesh::Search::FindBlock(xMiddle);
         if (node->block==NULL) return;
 
+        switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+        case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+          PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
+          ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+          break;
+        case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+          ptr=Segment->FirstParticleIndex;
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: the option is unknown");
+        }
+ 
         SamplingTime+=node->block->GetLocalTimeStep(0);
         SamplingCounter++;
-
-        PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
-        long int ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
         while (ptr!=-1) {
           double *v,e,m0;
@@ -193,13 +212,14 @@ namespace SEP {
     };
 
     extern int SamplingBufferTableLength;
-    extern cSamplingBuffer *SamplingBufferTable; 
+    extern cSamplingBuffer **SamplingBufferTable; 
 
     //Manager is called by AMPS to perform sampling procedure 
     void Manager();
 
     //Init the samping module
     void Init();
+    void InitSingleFieldLineSampling(int iFieldLine); 
   }
 
   //sphere describing the inner boundary of the domain 

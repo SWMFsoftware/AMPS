@@ -234,6 +234,9 @@ void PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed i
 
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
       system(cmd);
+
+      sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
+      system(cmd);
     }
 
     //define the communicator

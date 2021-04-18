@@ -1,35 +1,61 @@
 
 #include "sep.h"
 
-int SEP::Sampling::SamplingBufferTableLength=0;
-SEP::Sampling::cSamplingBuffer *SEP::Sampling::SamplingBufferTable=NULL;
+/*
+int SEP::Sampling::SamplingHeliocentricDistanceTableLength=5;
+double SEP::Sampling::SamplingHeliocentricDistanceTable[]={0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_}; 
+double SEP::Sampling::MinSampleEnergy=0.1*MeV2J;
+double SEP::Sampling::MaxSampleEnergy=500.0*MeV2J;
+int SEP::Sampling::nSampleIntervals=7; 
+*/
+
+SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 
 void SEP::Sampling::Init() {
+  namespace FL=PIC::FieldLine; 
+
   PIC::IndividualModelSampling::SamplingProcedure.push_back(Manager);
 
-  //init the samplgin buffer;
-  SamplingBufferTableLength=4;
+  //init the sampling buffer table 
+  SamplingBufferTable=new cSamplingBuffer* [FL::nFieldLineMax];
 
-  SamplingBufferTable=new cSamplingBuffer [SamplingBufferTableLength];
-
-  for (int i=0;i<SamplingBufferTableLength;i++) {
-    SamplingBufferTable[i].Init("sample",0.1*MeV2J,500.0*MeV2J,7,i*0.25*_AU_,0);
-  } 
+  for (int i=0;i<FL::nFieldLineMax;i++) SamplingBufferTable[i]=NULL;
 }  
+
+void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
+  char fname[200];
+
+  if (SamplingBufferTable[iFieldLine]!=NULL) return; 
+
+  SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
+
+  for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
+    sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory); 
+
+    SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
+  }
+}
 
 
 void SEP::Sampling::Manager() {
-  for (int i=0;i<SamplingBufferTableLength;i++) {
-    SamplingBufferTable[i].Sampling();
-  }
+  namespace FL=PIC::FieldLine;
 
   static int cnt=0;
-
   cnt++;
 
-  if (cnt%2==0) {
-    for (int i=0;i<SamplingBufferTableLength;i++) {
-      SamplingBufferTable[i].Output();
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLineMax;iFieldLine++) if (FL::FieldLinesAll[iFieldLine].IsInitialized()==true) {
+    if (SamplingBufferTable[iFieldLine]==NULL) {
+      InitSingleFieldLineSampling(iFieldLine);
+    }  
+
+    //sample the field line data 
+    for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
+      SamplingBufferTable[iFieldLine][i].Sampling();
+
+      //output sampled data
+      if (cnt%2==0) {
+        SamplingBufferTable[iFieldLine][i].Output();
+      }
     }
   }
 }

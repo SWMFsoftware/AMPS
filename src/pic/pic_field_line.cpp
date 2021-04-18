@@ -13,6 +13,21 @@ int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 //offset of the field line related data in a particle state vector
 int PIC::FieldLine::ParticleDataOffset=-1; 
 
+      void PIC::FieldLine::cFieldLineSegment::DeleteAttachedParticles() {
+        if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+          long int ptr_next,ptr=FirstParticleIndex;
+
+          while (ptr!=-1) {
+            ptr_next=PIC::ParticleBuffer::GetNext(ptr);
+            PIC::ParticleBuffer::DeleteParticle(ptr);
+            ptr=ptr_next;
+          }
+
+          FirstParticleIndex=-1;
+        }
+      }
+
+
 namespace PIC {
   namespace FieldLine {
 
@@ -110,12 +125,18 @@ namespace PIC {
 
       for (s=FirstSegment;s!=NULL;s=s_next) {
         s_next=s->GetNext();
+
+        //delete particles that attached to the segment 
+        s->DeleteAttachedParticles();
+
+        //delete the segment
         SegmentsAll.deleteElement(s);
       }  
 
       nSegment=0; 
       FirstSegment=NULL,LastSegment=NULL;
       TotalLength=0.0,IsSet=0;
+      SegmentPointerTable.clear();
     }
 
     //=========================================================================
@@ -147,6 +168,9 @@ namespace PIC {
 
         FirstVertex=newVertex;
         FirstSegment=newSegment; 
+
+        SegmentPointerTable.insert(SegmentPointerTable.begin(),FirstSegment);        
+
         nSegment++; 
       }
 
@@ -184,6 +208,8 @@ namespace PIC {
          LastSegment = (FirstSegment = SegmentsAll.newElement());
          LastSegment->SetVertices(LastVertex->GetPrev(), LastVertex);
          nSegment++; TotalLength+= LastSegment->GetLength(); IsSet = 1;
+
+         SegmentPointerTable.push_back(FirstSegment);
        }
 
        return LastVertex;
@@ -217,6 +243,8 @@ namespace PIC {
      nSegment++;
      TotalLength += LastSegment->GetLength();
 
+     SegmentPointerTable.push_back(LastSegment);
+
      return LastVertex;
    }
 
@@ -224,20 +252,27 @@ namespace PIC {
 
      auto RemoveSingleSegment = [&] (cFieldLineSegment* s) {
        if ((s==FirstSegment)&&(s==LastSegment)) {
-         //the line consists only of one segment -> remove all segments of the line
+         //delete particles that attached to the segment 
+         s->DeleteAttachedParticles();
+
+         //remove the segment 
          VerticesAll.deleteElement(FirstVertex);
          VerticesAll.deleteElement(LastVertex);
          SegmentsAll.deleteElement(s);
 
          FirstVertex=NULL,LastVertex=NULL;
          FirstSegment=NULL,LastSegment=NULL;
-
+ 
          nSegment=0,TotalLength=0.0,IsSet=0;
+         SegmentPointerTable.clear();
        }
        else {
          //remove segment at the beginning of the line
          TotalLength-=s->GetLength();
          nSegment--;
+
+         //delete particles that attached to the segment
+         s->DeleteAttachedParticles();
 
          auto next_vertex=FirstVertex->GetNext();
          VerticesAll.deleteElement(FirstVertex);
@@ -247,6 +282,7 @@ namespace PIC {
          SegmentsAll.deleteElement(s);
 
          FirstSegment->SetPrev(NULL);
+         SegmentPointerTable.erase(SegmentPointerTable.begin());
        }
      };
 
@@ -257,6 +293,9 @@ namespace PIC {
    void cFieldLine::CutBack(int nDeletedSegments) {
      auto RemoveSingleSegment = [&] (cFieldLineSegment* s) {
        if ((s==FirstSegment)&&(s==LastSegment)) {
+         //delete particles that attached to the segment
+         s->DeleteAttachedParticles();
+         
          //the line consists only of one segment -> remove all segments of the line
          VerticesAll.deleteElement(FirstVertex);
          VerticesAll.deleteElement(LastVertex);
@@ -266,8 +305,12 @@ namespace PIC {
          FirstSegment=NULL,LastSegment=NULL;
 
          nSegment=0,TotalLength=0.0,IsSet=0;
+         SegmentPointerTable.clear();
        }
        else {
+         //delete particles that attached to the segment
+         s->DeleteAttachedParticles();
+         
          //remove segment at the end of the line
          TotalLength-=s->GetLength();
          nSegment--;
@@ -280,6 +323,7 @@ namespace PIC {
          SegmentsAll.deleteElement(s);
 
          LastSegment->SetNext(NULL);
+         SegmentPointerTable.pop_back();
        }
      };
 
@@ -501,11 +545,26 @@ namespace PIC {
 //      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 //      node=PIC::Mesh::mesh->findTreeNode(x);
       
-      long int res=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+      //generate a new particles
+      long int NewParticle;
+      PB::byte* NewParticleData;
 
-      double misc = PB::GetFieldLineCoord(res);
+      switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+      case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+        NewParticle=PB::GetNewParticle(Segment->FirstParticleIndex);
+        NewParticleData=PB::GetParticleDataPointer(NewParticle); 
 
-      return res;
+        PB::CloneParticle(NewParticleData,ptrData);
+        PB::SetParticleAllocated(NewParticleData);
+        break;
+      case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+        NewParticle=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }  
+
+      return NewParticle;
     }
 
     //=========================================================================
@@ -547,13 +606,40 @@ namespace PIC {
 
     //=========================================================================
     void cFieldLine::Output(FILE* fout, bool GeometryOnly=false) {
+      namespace PB = PIC::ParticleBuffer;
       
       if (!GeometryOnly)	exit(__LINE__, __FILE__,"Not implemented for multiple processors");
       
       cFieldLineVertex *Vertex=FirstVertex;
       int nVertex = (is_loop()) ? nSegment : nSegment+1;
+      int iVertex,iSegment;
 
-      for (int iVertex=0; iVertex<nVertex; iVertex++) {
+      int nSegmentParticles[nSegment];
+      double ModelParticleSpeedTable[nSegment],*v;
+      cFieldLineSegment* Segment;
+
+      if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+        for (iSegment=0,Segment=FirstSegment; iSegment<nSegment; iSegment++,Segment=Segment->GetNext()) {
+          nSegmentParticles[iSegment]=0; 
+          ModelParticleSpeedTable[iSegment]=0.0;
+     
+          long int ptr=Segment->FirstParticleIndex;
+
+          while (ptr!=-1) {
+            nSegmentParticles[iSegment]++;
+
+            v=PB::GetV(ptr);
+            ModelParticleSpeedTable[iSegment]+=Vector3D::Length(v);
+
+            ptr=PB::GetNext(ptr);
+          }
+
+          if (nSegmentParticles[iSegment]!=0) ModelParticleSpeedTable[iSegment]/=nSegmentParticles[iSegment];
+        }
+      }
+
+
+      for (iVertex=0; iVertex<nVertex; iVertex++) {
         //print coordinates
         double x[DIM];
         double Value[3];
@@ -562,6 +648,12 @@ namespace PIC {
         Vertex->GetX(x);
 
         for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
+
+        if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+          if (iVertex==0) fprintf(fout, "%e  %e  %ld  ",(double)nSegmentParticles[0],ModelParticleSpeedTable[0],iVertex);
+          else if (iVertex==nVertex-1) fprintf(fout, "%e  %e  %ld  ",(double)nSegmentParticles[iVertex-1],ModelParticleSpeedTable[iVertex-1],iVertex); 
+          else fprintf(fout, "%e  %e  %ld  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 0.5*(ModelParticleSpeedTable[iVertex-1]+ModelParticleSpeedTable[iVertex]),iVertex);
+        }
 
         for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end();  itrDatumStored++) {
           if ((*itrDatumStored)->doPrint) {
@@ -672,6 +764,12 @@ namespace PIC {
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
       //      double* Value;
+      //
+      
+
+      if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+        fprintf(fout,",\"nSegmentParticles\",\"Model Particle Speed\",\"iSegment\"");
+      }
 
       for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end(); itrDatumStored++) {
         if ((*itrDatumStored)->doPrint) (*itrDatumStored)->PrintName(fout);
@@ -1183,6 +1281,62 @@ namespace PIC {
 
 namespace Mover{
 namespace FieldLine{
+  //manager executing the particle moving procedure when the partice lists are attached to the field line segments
+  void MoveParticles () {
+    namespace FL = PIC::FieldLine;
+    namespace PB = PIC::ParticleBuffer; 
+  
+    if ((_PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_)||(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_)) {
+      exit(__LINE__,__FILE__,"Error: wrong options");
+    } 
+
+    auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+      long int ptr,ptr_next;
+      double *x,LocalTimeStep;
+      int spec;
+      PB::byte* ParticleData;
+
+      ptr=Segment->FirstParticleIndex;
+      
+      while (ptr!=-1) {
+        ParticleData=PB::GetParticleDataPointer(ptr);
+
+        x=PB::GetX(ParticleData);
+        spec=PB::GetI(ParticleData);
+        ptr_next=PB::GetNext(ParticleData);
+
+        node=PIC::Mesh::mesh->findTreeNode(x,node);
+        if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+        if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+        LocalTimeStep=node->block->GetLocalTimeStep(spec); 
+        _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+    
+        ptr=ptr_next;
+      }
+    };
+
+    //loop through the field lines 
+    int iFieldLine;
+    FL::cFieldLineSegment *Segment; 
+
+    for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+      for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+        ProcessSegment(Segment);
+      }
+    } 
+ 
+
+    //update particle list indexes 
+    for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+      for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+        Segment->FirstParticleIndex=Segment->tempFirstParticleIndex;
+        Segment->tempFirstParticleIndex=-1;                
+      }
+    }
+  }
+
   // procedure that returns parameters of the guiding center motion
   void GuidingCenterMotion(double& ForceParal, double& AbsB,int spec,long int ptr,int   iFieldLine,double FieldLineCoord) {
     /* function returns guiding center velocity in direction perpendicular
@@ -1413,21 +1567,34 @@ namespace FieldLine{
 
     if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
     
+    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+    case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:   
+      if (_COMPILATION_MODE_ == _COMPILATION_MODE__MPI_) { 
+        PIC::Mesh::cDataBlockAMR *block=startNode->block;
+        long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
     
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-    PIC::Mesh::cDataBlockAMR *block=startNode->block;
-    long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+        PIC::ParticleBuffer::SetPrev(-1,ParticleData);
     
-    PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
-    
-    if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
-    block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=ptr;
-#else
-    exit(__LINE__,__FILE__,"Error: the block need to be generalized to the case when _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_");
-#endif
-    
-    
+        if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+        block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=ptr;
+      }
+      else { 
+        exit(__LINE__,__FILE__,"Error: the block need to be generalized to the case when _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_");
+      }
+
+      break;
+    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+       PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+       PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+       if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
+       Segment->tempFirstParticleIndex=ptr;
+       break;
+     default:
+       exit(__LINE__,__FILE__,"Error: the option is unknown");
+     }
+ 
     return _PARTICLE_MOTION_FINISHED_;
   }
 
@@ -1437,3 +1604,40 @@ namespace FieldLine{
 
 }
 
+
+//check consistency of the particles lists in case the lists are attached to the filed line segments  
+void PIC::FieldLine::CheckParticleList() {
+  namespace FL = PIC::FieldLine;
+  namespace PB = PIC::ParticleBuffer;
+
+  if ((_PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_)||(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_)) {
+    exit(__LINE__,__FILE__,"Error: wrong options");
+  }
+
+  auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
+    long int ptr;
+    int cnt=0;
+
+    ptr=Segment->FirstParticleIndex;
+
+    while (ptr!=-1) {
+      cnt++;
+      ptr=PB::GetNext(ptr);
+    }
+
+    return cnt;
+  };
+ 
+  //loop through the field lines 
+  int iFieldLine;
+  FL::cFieldLineSegment *Segment;
+  long int nTotalParticles=0;
+
+  for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      nTotalParticles+=ProcessSegment(Segment);
+    }
+  }
+
+  if (nTotalParticles!=PB::NAllPart) exit(__LINE__,__FILE__,"Error: the total number of particles stored in the lists is different from that stored in the particle buffer");
+} 

@@ -716,7 +716,6 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       }
 
       AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
-
       cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };
 
@@ -766,7 +765,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
     cnt++;  
 
-    Output(fname,true);
+    if (cnt%10==0) Output(fname,true);
   } 
 
 }

@@ -408,5 +408,21 @@ at the end of each time step
 #define _PIC_DISCONNECTED_MPI_PROCESSES_ _PIC_MODE_OFF_ 
 
 
+/* Attaching of the particles to the blocks or segments of the files line:
+
+When using field-lines particles can be attached either to
+1. the blocks or 
+2. the segments of the field line
+
+Attaching to the blocks would allow the load balancing be done in the way it is done usually for other AMPS simulations. 
+Attaching to the segments would speed up the calcualtion, but complicated the local balancing => it is netter to use arraching to the segments 
+when each MPI process that runs AMPS is discunected from each other (_PIC_DISCONNECTED_MPI_PROCESSES_==_PIC_MODE_ON_) and so no-local balancing is performed at all. 
+*/
+#define _PIC_PARTICLE_LIST_ATTACHING_NODE_       0
+#define _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_ 1
+
+#define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_NODE_  
+
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

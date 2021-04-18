@@ -526,6 +526,13 @@ void PIC::Mover::MoveParticles() {
   nTotalCalls++;
   #endif
 
+  //in case when particles are 1) traced along filed lines, and 2) particle lists are attached to the 
+  //field line segments -> call particle mover procedure from PIC::Mover::FieldLine
+  if ((_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_)&&(_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_)) {
+    FieldLine::MoveParticles();
+    return;
+  } 
+
   //launch multi-threaded Lapenta particle mover
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_

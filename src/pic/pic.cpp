@@ -181,7 +181,6 @@ int PIC::TimeStep() {
      }
    }
 
-
    //Collect and exchange the run's statictic information
 //   static const int nRunStatisticExchangeIterationsMin=5,nRunStatisticExchangeIterationsMax=500,nRunStatisticExchangeTime=120;
    static long int nTotalIterations=0,nInteractionsAfterRunStatisticExchange=0;
@@ -224,6 +223,7 @@ int PIC::TimeStep() {
   SamplingTime=MPI_Wtime()-SamplingTime;
   RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
 //#endif
+//
 
   //injection boundary conditions
   InjectionBoundaryTime=MPI_Wtime();
@@ -325,6 +325,7 @@ int PIC::TimeStep() {
   //#endif
 #endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
 
+
   //particle photochemistry model
   #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
@@ -390,12 +391,25 @@ int PIC::TimeStep() {
     //check the consistence of the particles lists
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    PIC::ParticleBuffer::CheckParticleList();
+
+    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+      PIC::FieldLine::CheckParticleList(); 
+      break;
+
+    case _PIC_PARTICLE_LIST_ATTACHING_NODE_: 
+      PIC::ParticleBuffer::CheckParticleList();
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
 #endif
     
     //syncronize processors and exchange particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
+
+// PIC::FieldLine::CheckParticleList();
 
 
   auto FIELD_SOLVER_Task2 = [=] { 
@@ -486,7 +500,6 @@ int PIC::TimeStep() {
   //#else 
   //exit(__LINE__,__FILE__,"Error: not implemented");
   //#endif
-
 
   PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
@@ -1385,7 +1398,9 @@ void PIC::Sampling::Sampling() {
     #endif
 
     //check if the number of sampled particles coinsides with the number of particles in the buffer
-    if (nTotalSampledParticles!=ParticleBuffer::GetAllPartNum()) exit(__LINE__,__FILE__,"The number of the sampled particles is different from that in the particle buffer");
+    if ((nTotalSampledParticles!=ParticleBuffer::GetAllPartNum())&&(_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_)) {
+      exit(__LINE__,__FILE__,"The number of the sampled particles is different from that in the particle buffer");
+    }
 
     //sample user defined data
     if (PIC::IndividualModelSampling::SamplingProcedure.size()!=0) {

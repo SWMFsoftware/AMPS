@@ -342,10 +342,12 @@ namespace PIC {
 
   //field line
   namespace FieldLine{
-
     //flag setting use/not-use of the field lines in a simulation
     extern bool IsUsedInSimulation; 
     extern int ParticleDataOffset;
+
+    //check consistency of the particles lists in case the particles lists are attached to the field line segments 
+    void CheckParticleList();
 
     class cParticleFieldLineData {
     public:
@@ -775,6 +777,25 @@ namespace PIC {
 
     
       cFieldLineSegment() {cleanDataBuffer();}
+  
+      //in case particles are attached to the field line segment -> remove them when a segment is deleted
+      /*
+      void DeleteAttachedParticles() {
+        if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+          long int ptr_next,ptr=FirstParticleIndex;
+
+          while (ptr!=-1) {
+            ptr_next=PIC::ParticleBuffer::GetNext();
+            PIC::ParticleBuffer::DeleteParticle(ptr);
+            ptr=ptr_next;
+          }
+
+          FirstParticleIndex=-1;
+        }
+      }
+*/
+
+void DeleteAttachedParticles();
 
       //.......................................................................
       //check status of segment
@@ -960,6 +981,9 @@ namespace PIC {
       cFieldLineSegment *FirstSegment, *LastSegment;
       cFieldLineVertex  *FirstVertex,  *LastVertex;
 
+      //table of segment pointers needed for the segment random access
+      vector<cFieldLineSegment*> SegmentPointerTable;
+
       //check whether the line is broken
       bool is_broken();
     public:
@@ -985,6 +1009,8 @@ namespace PIC {
         if (TotalLength<0.0 || nSegment<0) {sprintf(res,"%s","Error"); return;}
         sprintf(res,"%s","OK"); return;
       }
+
+      bool IsInitialized() {return (status()==OK_);}
 
       //check whether the line is a loop
       inline void close_loop() {
@@ -1016,7 +1042,7 @@ namespace PIC {
         if (Increment>0) {
           remain = (int)(SInit+1) - SInit;
 
-          for (Segment = GetSegment(SInit); true; Segment = Segment->GetNext()) {
+          for (Segment = GetSegment(SInit); Segment!=NULL; Segment = Segment->GetNext()) {
             Length = Segment->GetLength();
 
             if (Increment < remain*Length) {
@@ -1032,7 +1058,7 @@ namespace PIC {
         else {
           remain = SInit - (int)(SInit) ;
 
-          for (Segment = GetSegment(SInit);true; Segment = Segment->GetPrev()) {
+          for (Segment = GetSegment(SInit);Segment!=NULL; Segment = Segment->GetPrev()) {
             Length = Segment->GetLength();
 
             if (-Increment < remain*Length) {
@@ -1046,7 +1072,7 @@ namespace PIC {
           }
         }
 
-        return res;
+        return (Segment!=NULL) ? res : -1;
       }
 
       // Segment access
@@ -1061,6 +1087,11 @@ namespace PIC {
 
       //access an arbitrary segment
       inline cFieldLineSegment* GetSegment(int iSegment) {
+        return ((iSegment>=0)&&(iSegment<nSegment)) ? SegmentPointerTable[iSegment] : NULL;
+
+       // return SegmentPointerTable[iSegment];
+
+/*
         cFieldLineSegment* Segment=NULL;
 
         if (iSegment > 0.5*nSegment && iSegment < nSegment) {
@@ -1077,6 +1108,7 @@ namespace PIC {
         if (Segment==NULL) exit(__LINE__,__FILE__, "ERROR: invalid index of a segment");
 
         return Segment;
+*/
       }
 
       inline cFieldLineSegment* GetSegment(double S) {
@@ -1143,6 +1175,8 @@ namespace PIC {
         cFieldLineSegment* Segment = GetSegment(S);
         double w = S - (int)S;
         double xBegin[3], xEnd[3];
+
+        if (Segment==NULL) exit(__LINE__,__FILE__,"Error: cannot find the segment");
 
         Segment->GetBegin()->GetX(xBegin);
         Segment->GetEnd()  ->GetX(xEnd);
@@ -4308,6 +4342,9 @@ namespace PIC {
 
       //mover itself
       int Mover_SecondOrder(long int ptr, double Dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+
+      //manager executing the particle moving procedure when the partice lists are attached to the field line segments
+       void MoveParticles ();
     }
 
     namespace GuidingCenter{
