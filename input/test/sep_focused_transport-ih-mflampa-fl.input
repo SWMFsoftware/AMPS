@@ -1,0 +1,7 @@
+
+#include input/test/sep_focused_transport-ih-mflampa.input
+
+#General
+  define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
+#endGeneral
+
