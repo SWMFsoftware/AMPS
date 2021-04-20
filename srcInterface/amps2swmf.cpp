@@ -657,9 +657,9 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
         Vertex->SetMagneticField(MHData_VIB+b_offset); 
         Vertex->SetPlasmaVelocity(MHData_VIB+u_offset); 
-        Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]/_AMU_); 
+        Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]); 
         Vertex->SetPlasmaTemperature(MHData_VIB[t_offset]); 
-        Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]/_AMU_*Kbol*MHData_VIB[t_offset]); 
+        Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]*Kbol*MHData_VIB[t_offset]); 
       }
 
       //update the size of the field line if needed
@@ -676,47 +676,100 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       double DensityGradientMax=0.0;
       cFieldLineSegment* s;
 
-/*
+
       if (AMPS2SWMF::FieldLineUpdateCounter>0) {
         //determine location of shock wave
         double max_ratio=0.0;
         int i;
         cFieldLineVertex *Vertex;
 
-        for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) {
-          int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
-          double rho_new,rho_prev;
+        auto DensityTemporalVariation = [&] () {
+          for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) {
+            int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
+            double rho_new,rho_prev;
 
-          if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
-            Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
-            Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
+            if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
+              Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
+              Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
 
-            if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
-              max_ratio=rho_new/rho_prev*(rho_new+rho_prev);
-              iSegmentShock=i;
+              if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
+                max_ratio=rho_new/rho_prev; //*(rho_new+rho_prev);
+                iSegmentShock=i;
+              }
             }
           }
-        }
+        }; 
+
+
+        //plasma density ratio
+        auto DensityRatio = [&] () {
+          for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
+            double grad,rho0,rho1;
+
+            //s->GetBegin()->GetPlasmaDensity(rho0);
+            //s->GetEnd()->GetPlasmaDensity(rho1);
+
+            s->GetBegin()->GetDatum(DatumAtVertexPlasmaDensity,&rho0);
+            s->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,&rho1);
+
+            if ((rho1/rho0>max_ratio)||(rho0/rho1>max_ratio)) { 
+              max_ratio=max(rho1/rho0,rho0/rho1);
+
+              iSegmentShock=iSegment;
+            }
+          }
+        }; 
+
+        //density bump search 
+        auto DensityBumpSearch = [&] () {
+          double rho,rho_global_max=0.0;
+          int cnt,iSegmentMax=-1,iSegment;
+
+          //the width of the shock wave front
+          const int Width=10; 
+
+          //the measure of the bump 
+          const double BumpMeasure=10.0;
+
+          //Density table 
+          double DensityTable[Width];
+
+          //loop through the field line from the end to the beginning 
+          for (cnt=0,iSegment=FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()-1,s=FieldLinesAll[iImportFieldLine].GetLastSegment();iSegment>=1;cnt++,iSegment--,s=s->GetPrev()) {
+            if (cnt<Width) {
+              //the first point 
+              s->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,DensityTable+Width-cnt-1);
+            }
+            else {
+              double rho_max_local=DensityTable[0];
+              int i_rho_max_local=-1;
+
+              for (int i=1;i<Width-1;i++) if (DensityTable[i]>rho_max_local) rho_max_local=DensityTable[i],i_rho_max_local=i;  
+
+              //check if the maximum is found
+              if ((rho_max_local/DensityTable[0]>BumpMeasure)&&(rho_max_local/DensityTable[Width-1])) if (rho_max_local>rho_global_max) {
+                rho_global_max=rho_max_local;
+                iSegmentMax=i_rho_max_local+iSegment+1;
+              }
+
+              //read a new data point 
+              for (int i=Width-1;i>=1;i--) DensityTable[i]=DensityTable[i-1];
+
+              s->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,DensityTable);
+            }
+          }
+
+          iSegmentShock=iSegmentMax;
+        };
+
+ 
+        //DensityTemporalVariation();
+        //DensityRatio();
+        DensityBumpSearch(); 
+
+        AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
+        cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", ratio=" << max_ratio << endl;
       }
-*/
-
-      // plasma density gradient criterion
-      for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
-        double grad,rho0,rho1;
-
-        s->GetBegin()->GetPlasmaDensity(rho0);
-        s->GetEnd()->GetPlasmaDensity(rho1);
-
-        grad=fabs(rho0-rho1)/s->GetLength();
-
-        if (grad>DensityGradientMax) {
-          DensityGradientMax=grad;
-          iSegmentShock=iSegment;
-        }
-      }
-
-      AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
-      cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << endl;
     };
 
     //check whether field lines are initialized
