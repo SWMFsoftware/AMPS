@@ -451,7 +451,8 @@ namespace PIC {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->findTreeNode(x,NULL);       
 
       if (node==NULL) return -1;
-      else if (node->block==NULL) return -1;
+      if (node->block==NULL) return -1;
+      if (node->Thread!=PIC::ThisThread) return -1;
       
       // fix kintic energy and pitch angle far now
       //    double cosPhi=pow(2,-0.5);
