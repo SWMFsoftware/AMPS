@@ -43,6 +43,9 @@ void SEP::Sampling::Manager() {
   static int cnt=0;
   cnt++;
 
+  //return if FL::FieldLinesAll not allocated
+  if (FL::FieldLinesAll==NULL) return;
+
   for (int iFieldLine=0;iFieldLine<FL::nFieldLineMax;iFieldLine++) if (FL::FieldLinesAll[iFieldLine].IsInitialized()==true) {
     if (SamplingBufferTable[iFieldLine]==NULL) {
       InitSingleFieldLineSampling(iFieldLine);
