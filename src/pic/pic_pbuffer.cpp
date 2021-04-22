@@ -600,6 +600,12 @@ void PIC::ParticleBuffer::CheckParticleList() {
                 //count the number and allocation flag of the active particles
                 ParticleList=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
+                #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+                if (node->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) { 
+                  exit(__LINE__,__FILE__,"Error: temp particle list is not empty");
+                }
+                #endif
+
                 while (ParticleList!=-1) {
                   double *x=PIC::ParticleBuffer::GetX(ParticleList);
                   int idim;
@@ -634,6 +640,22 @@ void PIC::ParticleBuffer::CheckParticleList() {
       node=node->nextNodeThisThread;
     }
   }
+
+
+  //verify that no particles were attached to the field lines 
+  if ((_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_)&&(PIC::FieldLine::FieldLinesAll!=NULL)) {
+    for (int iFieldLine=0;iFieldLine<PIC::FieldLine::nFieldLine;iFieldLine++) {
+      PIC::FieldLine::cFieldLineSegment* Segment;
+
+      for (Segment=PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) { 
+        if (Segment->FirstParticleIndex!=-1) exit(__LINE__,__FILE__,"Error: Segment->FirstParticleIndex!=-1");
+        if (Segment->tempFirstParticleIndex!=-1) exit(__LINE__,__FILE__,"Error: Segment->tempFirstParticleIndex!=-1");
+      }
+    }
+  } 
+
+         
+
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   if (nTotalListParticles!=NAllPart) exit(__LINE__,__FILE__,"Error: the total number of particles stored in the lists is different from that stored in the particle buffer");
