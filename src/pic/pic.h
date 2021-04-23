@@ -5352,12 +5352,19 @@ void DeleteAttachedParticles();
       extern int PlasmaNumberDensityOffset,PlasmaTemperatureOffset;
       extern int AlfvenWaveI01Offset;
 
+      extern int MagneticFieldOffset_last,BulkVelocityOffset_last,PlasmaPressureOffset_last;
+      extern int PlasmaNumberDensityOffset_last,PlasmaTemperatureOffset_last;
+      extern int AlfvenWaveI01Offset_last;
+
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
       extern int nCommunicatedIonFluids;
       extern bool OhCouplingFlag,IhCouplingFlag,BlCouplingFlag;
       //the flug if 'false; by default and is teruned to 'true' after the first coupling procedure (used to pospond initialization of AMPS till the backround field information is exported to AMPS)
       extern bool FirstCouplingOccured;
+
+      //the SWMF simulation time when the last two couplings have occured
+      extern double CouplingTime,CouplingTime_last;
 
       //init the coupler
       void init();
@@ -5375,7 +5382,7 @@ void DeleteAttachedParticles();
       void ResetCenterPointProcessingFlag();
       void GetCenterPointNumber(int *nCenterPoints,fTestPointInsideDomain TestPointInsideDomain=NULL);
       void GetCenterPointCoordinates(double *x,fTestPointInsideDomain TestPointInsideDomain=NULL);
-      void RecieveCenterPointData(char* ValiableList, int nVarialbes,double *data,int *index,fTestPointInsideDomain TestPointInsideDomain=NULL);
+      void RecieveCenterPointData(char* ValiableList, int nVarialbes,double *data,int *index,double SimulationTime,fTestPointInsideDomain TestPointInsideDomain=NULL);
 
       //send AMPS's data to SWMF: multiple user-defined send routines could be implemeted
 /*

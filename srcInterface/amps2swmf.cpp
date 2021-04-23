@@ -220,21 +220,21 @@ extern "C" {
   }
 
 
-  void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index) {
+  void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index);
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime);
 #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
     //PIC::CPLR::FLUID::RecieveCenterPointData(NameVar,*nVar,data,index);
 #endif 
   }
 
-  void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index) {
-    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,IsDomainSC);
+  void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainSC);
   }
 
-  void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index) {
-    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,IsDomainIH);
+  void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainIH);
   }
 
   void amps_get_corner_point_number_(int *nCornerPoints) {

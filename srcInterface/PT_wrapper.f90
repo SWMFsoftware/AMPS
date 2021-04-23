@@ -366,6 +366,7 @@ contains
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+    real::PTTime 
 
     character(len=*), parameter:: NameSub = 'PT_put_from_gm'
     !--------------------------------------------------------------------------
@@ -380,8 +381,10 @@ contains
        call amps_get_center_point_coordinates(Pos_DI)
 
     elseif(present(Data_VI))then
+       call get_time(tSimulationOut = PTTime) 
+
        call amps_recieve_batsrus2amps_center_point_data(&
-            NameVar//char(0), nVar, Data_VI, iPoint_I)
+            NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
@@ -400,6 +403,7 @@ contains
     integer::i,j,jj
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+    real::PTTime
 
     character(len=*), parameter:: NameSub = 'PT_put_from_oh'
     !--------------------------------------------------------------------------
@@ -433,8 +437,11 @@ contains
           end do
        end do
 
+
+       call get_time(tSimulationOut = PTTime)
+
        call amps_recieve_batsrus2amps_center_point_data(&
-            NameVar//char(0), nVar, Data_VI, iPoint_I)
+            NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
@@ -452,6 +459,7 @@ contains
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+    real::PTTime
 
     character(len=*), parameter:: NameSub = 'PT_put_from_ih'
     !--------------------------------------------------------------------------
@@ -466,8 +474,10 @@ contains
        call amps_get_center_point_coordinates_ih(Pos_DI)
 
     elseif(present(Data_VI))then
+       call get_time(tSimulationOut = PTTime)
+
        call amps_recieve_batsrus2amps_center_point_data_ih(&
-            NameVar//char(0), nVar, Data_VI, iPoint_I)
+            NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
@@ -483,6 +493,7 @@ contains
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
+    real::PTTime
 
     character(len=*), parameter:: NameSub = 'PT_put_from_sc'
     !--------------------------------------------------------------------------
@@ -496,8 +507,10 @@ contains
        ! get point positions from AMPS
        call amps_get_center_point_coordinates_sc(Pos_DI)
     elseif (present(Data_VI)) then
+       call get_time(tSimulationOut = PTTime)
+
        call amps_recieve_batsrus2amps_center_point_data_sc(&
-            NameVar//char(0), nVar, Data_VI, iPoint_I)
+            NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if

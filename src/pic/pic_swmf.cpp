@@ -34,6 +34,14 @@ int PIC::CPLR::SWMF::PlasmaPressureOffset=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
 
+int PIC::CPLR::SWMF::MagneticFieldOffset_last=-1;
+int PIC::CPLR::SWMF::PlasmaNumberDensityOffset_last=-1;
+int PIC::CPLR::SWMF::BulkVelocityOffset_last=-1;
+int PIC::CPLR::SWMF::PlasmaPressureOffset_last=-1;
+int PIC::CPLR::SWMF::PlasmaTemperatureOffset_last=-1;
+int PIC::CPLR::SWMF::AlfvenWaveI01Offset_last=-1;
+
+
 bool PIC::CPLR::SWMF::OhCouplingFlag=false;
 bool PIC::CPLR::SWMF::IhCouplingFlag=false;
 bool PIC::CPLR::SWMF::BlCouplingFlag=false;
@@ -43,6 +51,12 @@ double PIC::CPLR::SWMF::MeanPlasmaAtomicMass=1.0*_AMU_;
 bool PIC::CPLR::SWMF::FirstCouplingOccured=false;
 list<PIC::CPLR::SWMF::fSendCenterPointData> PIC::CPLR::SWMF::SendCenterPointData;
 int PIC::CPLR::SWMF::nCommunicatedIonFluids=1;
+
+
+//the SWMF simulation time when the last two couplings have occured
+double PIC::CPLR::SWMF::CouplingTime=-1.0; 
+double PIC::CPLR::SWMF::CouplingTime_last=-1.0; 
+
 //set the interpolation stencil that is used for interpolation in the coupler
 void PIC::CPLR::InitInterpolationStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   switch( _PIC_COUPLER__INTERPOLATION_MODE_) {
@@ -81,6 +95,44 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     AlfvenWaveI01Offset=offset+TotalDataLength*sizeof(double);
     TotalDataLength+=2;
   }
+
+  //keep two data sets exported from the SWMF for calculating time-derivatives
+  if (_PIC_SWMF_COUPLER__SAVE_TWO_DATA_SETS_== _PIC_MODE_ON_) {
+    MagneticFieldOffset_last=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=3;
+
+    BulkVelocityOffset_last=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=3*nCommunicatedIonFluids;
+
+    PlasmaPressureOffset_last=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=nCommunicatedIonFluids;
+
+    PlasmaNumberDensityOffset_last=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=nCommunicatedIonFluids;
+
+    PlasmaTemperatureOffset_last=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=nCommunicatedIonFluids;
+
+    if (IhCouplingFlag==true) {
+      AlfvenWaveI01Offset_last=offset+TotalDataLength*sizeof(double);
+      TotalDataLength+=2;
+    }
+  }
+  else {
+    MagneticFieldOffset_last=MagneticFieldOffset;
+    BulkVelocityOffset_last=BulkVelocityOffset;
+
+    PlasmaPressureOffset_last=PlasmaPressureOffset;
+    PlasmaNumberDensityOffset_last=PlasmaNumberDensityOffset;
+
+    PlasmaTemperatureOffset_last=PlasmaTemperatureOffset;
+
+    if (IhCouplingFlag==true) {
+      AlfvenWaveI01Offset_last=AlfvenWaveI01Offset;
+    }
+  } 
+     
+
 
   return TotalDataLength*sizeof(double);
 }
@@ -386,11 +438,46 @@ void PIC::CPLR::SWMF::GetCenterPointCoordinates(double *x,fTestPointInsideDomain
   }
 }
 
-void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes, double *data,int *index,fTestPointInsideDomain TestPointInsideDomain) {
+void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes, double *data,int *index,double SimulationTime,fTestPointInsideDomain TestPointInsideDomain) {
   int thread,i,j,k,idim,offset,cnt=0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCenterNode *cell;
+
+
+  //if the 'simulation time' is different from 'CouplingTimeCurrent' then exchange 'current' with 'last' datasets 
+  if (CouplingTime!=SimulationTime) {
+    //update the time counters 
+    CouplingTime_last=CouplingTime;
+    CouplingTime=SimulationTime;
+
+    //flip the offsets
+    int t;
+
+    t=MagneticFieldOffset_last;
+    MagneticFieldOffset_last=MagneticFieldOffset;
+    MagneticFieldOffset=t;
+
+    t=BulkVelocityOffset_last;
+    BulkVelocityOffset_last=BulkVelocityOffset;
+    BulkVelocityOffset=t;
+
+    t=PlasmaPressureOffset_last;
+    PlasmaPressureOffset_last=PlasmaPressureOffset;
+    PlasmaPressureOffset=t;
+
+    t=PlasmaNumberDensityOffset_last;
+    PlasmaNumberDensityOffset_last=PlasmaNumberDensityOffset;
+    PlasmaNumberDensityOffset=t;
+
+    t=PlasmaTemperatureOffset_last;
+    PlasmaTemperatureOffset_last=PlasmaTemperatureOffset;
+    PlasmaTemperatureOffset=t;
+
+    t=AlfvenWaveI01Offset_last;
+    AlfvenWaveI01Offset_last=AlfvenWaveI01Offset;
+    AlfvenWaveI01Offset=t;
+  }
 
   //set up the 'first coupling occuerd' flag
   FirstCouplingOccured=true;
