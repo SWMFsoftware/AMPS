@@ -261,6 +261,7 @@ namespace SEP {
   int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
@@ -274,7 +275,8 @@ namespace SEP {
       res=ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
       break;
     case _SEP_MOVER_HE_2019_AJL_:
-      res=ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
+      //res=ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
+      res=ParticleMover__He_2019_AJL(ptr,dtTotal,startNode);
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not found");

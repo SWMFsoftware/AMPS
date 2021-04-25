@@ -180,25 +180,31 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
   int idim;
   double t;
 
+  bool gather_print_data=false;
+
+  if (pipe==NULL) gather_print_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
+
+
   //Density
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_print_data==true) { //(pipe->ThisThread==CenterNodeThread) {
     t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaNumberDensityOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
     fprintf(fout,"%e ",t);
   }
   else pipe->send(t);
 
   //Pressure
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaPressureOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
     fprintf(fout,"%e ",t);
   }
@@ -206,12 +212,12 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
 
   //Bulk Velocity
   for (idim=0;idim<3;idim++) {
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+BulkVelocityOffset+idim*sizeof(double)));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -220,12 +226,12 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
 
   //Magnetic Field
   for (idim=0;idim<3;idim++) {
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_print_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+MagneticFieldOffset+idim*sizeof(double)));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -236,12 +242,12 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
   if (IhCouplingFlag==true) {
     double tt[2];
 
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       for (int i=0;i<2;i++) tt[i]=((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[i];
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(tt,2,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(tt,2,CenterNodeThread);
 
       fprintf(fout,"%e %e ",tt[0],tt[1]);
     }

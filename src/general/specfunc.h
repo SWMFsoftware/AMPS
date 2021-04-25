@@ -479,9 +479,12 @@ namespace Vector3D {
     double l,l0;
 
     l0=Length(x);
-    l=NewLength/l0;
 
-    for (int idim=0;idim<3;idim++) x[idim]*=l;
+    if (l0>0.0) {
+      l=NewLength/l0;
+
+      for (int idim=0;idim<3;idim++) x[idim]*=l;
+    }
 
     return l0;
   }
