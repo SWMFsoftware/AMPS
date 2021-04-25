@@ -215,7 +215,14 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   double mu2=mu*mu;
   double AbsV=Vector3D::Length(v);
 
-  p=Relativistic::Speed2Momentum(AbsV,m0);
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case _PIC_MODE_OFF_:
+    p=AbsV*m0;
+    break;
+  case _PIC_MODE_ON_:
+    p=Relativistic::Speed2Momentum(AbsV,m0);
+    break;
+  }
 
   p-=dtTotal*p*( (1.0-mu2)/2.0*(dUx_dx+dUy_dy) + mu2*dUz_dz); 
   mu+=dtTotal*(1.0-mu2)*0.5*( -AbsV/AbsB*dB_dz+ mu*(dUx_dx+dUy_dy-2.0*dUz_dz) ); 
@@ -229,7 +236,14 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   }
 
   //determine the final velocity of the particle in the frame related to the Sun 
-  AbsV=Relativistic::Momentum2Speed(p,m0);
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case _PIC_MODE_OFF_:
+    AbsV=p/m0;
+    break;
+  case _PIC_MODE_ON_:
+    AbsV=Relativistic::Momentum2Speed(p,m0);
+    break;
+  }
 
   double sin_mu=sqrt(1.0-mu*mu);
 
