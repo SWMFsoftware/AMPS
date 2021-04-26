@@ -269,7 +269,7 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   }
 
   //check that the new particle location is outside of the Sun and Earth
-  if (x[0]*x[0]+x[0]*x[0]+x[0]*x[0]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+  if (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
     //the particle is inside the Sun -> remove it
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;
@@ -548,9 +548,29 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   if (mu>1.0) mu=1.0;
 
   //determine the final location of the particle
-  for (idim=0;idim<3;idim++) {
-    x[idim]+=(AbsV*b[idim]+U[idim])*dtTotal;
+  if (_SEP_MOVER_DRIFT_==_PIC_MODE_OFF_) { 
+    for (idim=0;idim<3;idim++) {
+      x[idim]+=(AbsV*b[idim]+U[idim])*dtTotal;
+    }
   }
+  else {
+    double v_drift[3],t[3];
+    double v_parallel,v_perp;
+    double ElectricCharge=PIC::MolecularData::GetElectricCharge(spec);
+
+    v_parallel=Vector3D::DotProduct(v,b);
+
+    memcpy(t,v,3*sizeof(double));
+    Vector3D::Orthogonalize(b,t); 
+    v_perp=Vector3D::Length(t); 
+
+    GetDriftVelocity(v_drift,x,v_parallel,v_perp,ElectricCharge,m0,node);
+
+    for (idim=0;idim<3;idim++) {
+      x[idim]+=(AbsV*b[idim]+U[idim]+v_drift[idim])*dtTotal;
+    }
+  }
+
 
   //determine the final velocity of the particle in the frame related to the Sun
   switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
@@ -587,7 +607,7 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   }
 
   //check that the new particle location is outside of the Sun and Earth
-  if (x[0]*x[0]+x[0]*x[0]+x[0]*x[0]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+  if (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
     //the particle is inside the Sun -> remove it
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;

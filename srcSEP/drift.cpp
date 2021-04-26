@@ -21,7 +21,7 @@ and by introducing the unit vector, $\mathbf{b}=\mathbf{B}/B$, so that:
 */
 
 
-int SEP::b_times_div_absB_offset=-1;
+int SEP::b_times_grad_absB_offset=-1;
 int SEP::CurlB_offset=-1;
 int SEP::b_b_Curl_B_offset=-1;
 
@@ -54,49 +54,80 @@ void SEP::InitDriftVelData() {
   };    
 
   auto ProcessCell = [&] (PIC::Mesh::cDataCenterNode *cell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode ) {
-    double xcell[3],xtest[3];
+    double xcell[3],x_test[3];
     double Bdx[2][3],Bdy[2][3],Bdz[2][3]; //[i][idim] 
     int LocalCellNumber,idim,i,j,k;
-    double delta[3];
+    double delta;
     PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node_test;
 
     cell->GetX(xcell);
 
-    //get the magnetic field mesh
-    
+    delta=(startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_;
+    delta=min(delta,startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
+    delta=min(delta,startNode->xmax[2]-startNode->xmin[2])/_BLOCK_CELLS_Z_;
 
+    //get the magnetic field mesh
+    double AbsB,b[3];
+
+    PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xcell,startNode,MagneticFieldStencil);    
+    GetBackgroundMagneticField(b,MagneticFieldStencil);
+    AbsB=Vector3D::Normalize(b);
 
     for (i=0;i<2;i++) {
-      memcpy(xtest,xcell,3*sizeof(double));
-      xtest[0]+=(i==1) ? 0.5*delta[0] : -0.5*delta[0];
-      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,startNode,MagneticFieldStencil);
+      memcpy(x_test,xcell,3*sizeof(double));
+      x_test[0]+=(i==1) ? 0.5*delta : -0.5*delta;
+      node_test=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+ 
+      if (node_test->IsUsedInCalculationFlag==false) {
+        memcpy(x_test,xcell,3*sizeof(double));
+        node_test=startNode;
+      }
+
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x_test,node_test,MagneticFieldStencil);
       GetBackgroundMagneticField(&Bdx[i][0],MagneticFieldStencil);
 
-      memcpy(xtest,xcell,3*sizeof(double));
-      xtest[1]+=(i==1) ? 0.5*delta[1] : -0.5*delta[1];
-      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,startNode,MagneticFieldStencil);
+      memcpy(x_test,xcell,3*sizeof(double));
+      x_test[1]+=(i==1) ? 0.5*delta : -0.5*delta;
+      node_test=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+
+      if (node_test->IsUsedInCalculationFlag==false) {
+        memcpy(x_test,xcell,3*sizeof(double));
+        node_test=startNode;
+      }
+
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x_test,node_test,MagneticFieldStencil);
       GetBackgroundMagneticField(&Bdy[i][0],MagneticFieldStencil);
 
-      memcpy(xtest,xcell,3*sizeof(double));
-      xtest[2]+=(i==1) ? 0.5*delta[2] : -0.5*delta[2];
-      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest,startNode,MagneticFieldStencil);
+      memcpy(x_test,xcell,3*sizeof(double));
+      x_test[2]+=(i==1) ? 0.5*delta : -0.5*delta;
+      node_test=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+
+      if (node_test->IsUsedInCalculationFlag==false) {
+        memcpy(x_test,xcell,3*sizeof(double));
+        node_test=startNode;
+      }
+
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x_test,node_test,MagneticFieldStencil);
       GetBackgroundMagneticField(&Bdz[i][0],MagneticFieldStencil);
     }
 
     //magnetic field in the cell cented
-    double B[3],b[3],absB,absB2;
-    double div_absB[3],b_times_div_absB[3],CurlB[3];
+    double B[3];
+    double grad_absB[3],b_times_grad_absB[3],CurlB[3];
     double b_b_Curl_B[3],b_Curl_B;
 
-    div_absB[0]=(Vector3D::Length(Bdx[1])-Vector3D::Length(Bdx[0]))/(2.0*delta[0]); 
-    div_absB[1]=(Vector3D::Length(Bdy[1])-Vector3D::Length(Bdy[0]))/(2.0*delta[1]);
-    div_absB[2]=(Vector3D::Length(Bdz[1])-Vector3D::Length(Bdz[0]))/(2.0*delta[2]);
+    double AbsB2=AbsB*AbsB;
 
-    Vector3D::CrossProduct(b_times_div_absB,b,div_absB);
+    grad_absB[0]=(Vector3D::Length(Bdx[1])-Vector3D::Length(Bdx[0]))/(2.0*delta); 
+    grad_absB[1]=(Vector3D::Length(Bdy[1])-Vector3D::Length(Bdy[0]))/(2.0*delta);
+    grad_absB[2]=(Vector3D::Length(Bdz[1])-Vector3D::Length(Bdz[0]))/(2.0*delta);
 
-    CurlB[0]=(Bdy[1][2]-Bdy[0][2])/delta[1]-(Bdz[1][1]-Bdz[0][1])/delta[2];
-    CurlB[1]=(Bdz[1][0]-Bdz[0][0])/delta[2]-(Bdx[1][2]-Bdx[0][2])/delta[0];
-    CurlB[2]=(Bdx[1][1]-Bdx[0][1])/delta[0]-(Bdy[1][0]-Bdy[0][0])/delta[1]; 
+    Vector3D::CrossProduct(b_times_grad_absB,b,grad_absB);
+
+    CurlB[0]=(Bdy[1][2]-Bdy[0][2])/delta-(Bdz[1][1]-Bdz[0][1])/delta;
+    CurlB[1]=(Bdz[1][0]-Bdz[0][0])/delta-(Bdx[1][2]-Bdx[0][2])/delta;
+    CurlB[2]=(Bdx[1][1]-Bdx[0][1])/delta-(Bdy[1][0]-Bdy[0][0])/delta; 
 
     b_Curl_B=Vector3D::DotProduct(b,CurlB);
 
@@ -105,14 +136,16 @@ void SEP::InitDriftVelData() {
     //save the vectors in the cell cented state vector 
     char *CellStatevector=cell->GetAssociatedDataBufferPointer(); 
 
-    double *b_times_div_absB_ptr=(double*)(CellStatevector+b_times_div_absB_offset);
+    double *b_times_grad_absB_ptr=(double*)(CellStatevector+b_times_grad_absB_offset);
     double *CurlB_ptr=(double*)(CellStatevector+CurlB_offset); 
     double *b_b_Curl_B_ptr=(double*)(CellStatevector+b_b_Curl_B_offset);  
 
+    if (AbsB==0.0) AbsB2=1.0,AbsB=1.0;
+
     for (int i=0;i<3;i++) {
-      b_times_div_absB_ptr[i]=b_times_div_absB[i]/absB2;
-      CurlB_ptr[i]=CurlB[i]/absB2;
-      b_b_Curl_B[i]=b_b_Curl_B[i]/absB2;
+      b_times_grad_absB_ptr[i]=b_times_grad_absB[i]/AbsB2;
+      CurlB_ptr[i]=CurlB[i]/AbsB2;
+      b_b_Curl_B[i]=b_b_Curl_B[i]/AbsB2;
     }
   };
 
@@ -138,7 +171,7 @@ void SEP::InitDriftVelData() {
 }
 
 int SEP::RequestStaticCellData(int offset) {
-  b_times_div_absB_offset=offset;
+  b_times_grad_absB_offset=offset;
   offset+=3*sizeof(double);
 
   CurlB_offset=offset; 
@@ -151,19 +184,27 @@ int SEP::RequestStaticCellData(int offset) {
 }
 
 void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node) {
-  double mu,t,Speed,p,t1,t2,t3;
+  double mu,mu2,t,Speed,p,t1,t2,t3;
   int idim;
 
   Speed=sqrt(v_parallel*v_parallel+v_perp*v_perp);
   mu=v_parallel/Speed;   
+  mu2=mu*mu;
 
-  p=Relativistic::Speed2Momentum(Speed,mass); 
-  
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case _PIC_MODE_OFF_:
+    p=Speed*mass;
+    break;
+  case _PIC_MODE_ON_:
+    p=Relativistic::Speed2Momentum(Speed,mass);
+    break;
+  }
+
   t=p*Speed/ElectricCharge;
 
-  t2=mu*mu;
-  t1=0.5*(1+t2);
-  t3=0.5*(1.0-3.0*t2); 
+  t1=0.5*(1.0+mu2)*t;
+  t2=mu2*t;
+  t3=0.5*(1.0-3.0*mu2)*t; 
   
   for (idim=0;idim<3;idim++) v_drift[idim]=0.0;  
 
@@ -174,12 +215,12 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
     char *CellStateVector=Stencil.cell[iStencil]->GetAssociatedDataBufferPointer(); 
 
-    double *b_times_div_absB=(double*)(CellStateVector+b_times_div_absB_offset);
+    double *b_times_grad_absB=(double*)(CellStateVector+b_times_grad_absB_offset);
     double *CurlB=(double*)(CellStateVector+CurlB_offset);
     double *b_b_Curl_B=(double*)(CellStateVector+b_b_Curl_B_offset);
 
     for (idim=0;idim<3;idim++) {
-      v_drift[idim]+=Stencil.Weight[iStencil]*(t1*b_times_div_absB[idim]+t2*CurlB[idim]+t3*b_b_Curl_B[idim]);
+      v_drift[idim]+=Stencil.Weight[iStencil]*(t1*b_times_grad_absB[idim]+t2*CurlB[idim]+t3*b_b_Curl_B[idim]);
     } 
   }
 }

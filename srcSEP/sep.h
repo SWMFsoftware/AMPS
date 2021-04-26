@@ -20,6 +20,10 @@
 #define _SEP_MOVER_ _SEP_MOVER_DEFUALT_ 
 #endif
 
+#ifndef _SEP_MOVER_DRIFT_ 
+#define _SEP_MOVER_DRIFT_ _PIC_MODE_OFF_
+#endif
+
 #include "pic.h"
 
 
@@ -241,7 +245,7 @@ namespace SEP {
   extern int ParticleTrajectoryCalculation;
 
   //calcualtion of the drift velocity
-  extern int b_times_div_absB_offset;
+  extern int b_times_grad_absB_offset;
   extern int CurlB_offset;
   extern int b_b_Curl_B_offset;
 
@@ -268,6 +272,19 @@ namespace SEP {
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     int res;
+
+
+    //init drift velocity data if needed 
+    if (_SEP_MOVER_DRIFT_==_PIC_MODE_ON_) {
+      static double last_swmf_coupling_time=-10.0;
+
+      if (last_swmf_coupling_time!=PIC::CPLR::SWMF::CouplingTime) {
+        last_swmf_coupling_time=PIC::CPLR::SWMF::CouplingTime; 
+
+        SEP::InitDriftVelData();
+      }
+    } 
+
 
     switch(_SEP_MOVER_) {
     case _SEP_MOVER_DEFUALT_:

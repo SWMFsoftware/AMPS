@@ -417,16 +417,18 @@ namespace Vector3D {
 
      //get the dot products of the vectors 
      for (i=0;i<3;i++) {
-        l2+=PrimaryVector[i]*PrimaryVector[i];
-        c+=PrimaryVector[i]*OrthogonalVector[i];
+       l2+=PrimaryVector[i]*PrimaryVector[i];
+       c+=PrimaryVector[i]*OrthogonalVector[i];
      }
 
      //get the orthogonal component of 'OrthogonalVector'
-     c/=l2;
+     if (l2>0.0) {
+       c/=l2;
 
-     for (i=0;i<3;i++) {
-       OrthogonalVector[i]-=c*PrimaryVector[i];
-      }
+       for (i=0;i<3;i++) {
+         OrthogonalVector[i]-=c*PrimaryVector[i];
+       }
+     }
    }
 
   inline double ParallelComponentLength(double *Vector,double *Axis) {
