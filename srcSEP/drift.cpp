@@ -188,10 +188,10 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
   
 
 
+/*
 //=============================================================================
 //Focused transport mover He-2019-AJL 
-
-
+// a better implementation is in mover.cpp
 int SEP::ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   PIC::ParticleBuffer::byte *ParticleData;
   int spec;
@@ -512,7 +512,7 @@ if (trajectory_teminated==true) {
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-
+*/
 
 int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   struct cGetCoefficientManager {

@@ -335,8 +335,316 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
 
     
  
+int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
 
+
+  if (PIC::CPLR::SWMF::CouplingTime_last<0.0) {
+    return ParticleMover__He_2019_AJL(ptr,dtTotal,node);
+  }
+  else if (_PIC_SWMF_COUPLER__SAVE_TWO_DATA_SETS_!=_PIC_MODE_ON_) {
+    exit(__LINE__,__FILE__,"For this mover _PIC_SWMF_COUPLER__SAVE_TWO_DATA_SETS_ should be _PIC_MODE_ON_");
+  } 
+
+  double *x,*v,mu,mu2,p,m0,AbsV;
+  PB::byte* ParticleData;
+  int spec,idim;
+
+  static int ncall=0;
+  ncall++;
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+  v=PB::GetV(ParticleData);
+  x=PB::GetX(ParticleData);
+  spec=PB::GetI(ParticleData);
+  m0=PIC::MolecularData::GetMass(spec); 
+
+  //get the interpolation stencils that will be used for calculating the derivatives
+  PIC::InterpolationRoutines::CellCentered::cStencil xp_stencil;
+  PIC::InterpolationRoutines::CellCentered::cStencil x0_plus_stencil,x0_minus_stencil;
+  PIC::InterpolationRoutines::CellCentered::cStencil x1_plus_stencil,x1_minus_stencil;
+  PIC::InterpolationRoutines::CellCentered::cStencil x2_plus_stencil,x2_minus_stencil;
+
+
+  const int _dx_plus=0;
+  const int _dx_minus=1;
+
+  PIC::InterpolationRoutines::CellCentered::cStencil stencil_table[3][2];
+
+  //pointing vectors the would be used for calcualting the derivatives
+  double b[3],e0[3],e1[3];
+
+  //determine the spatial step for calculating the derivatives 
+  double dxStencil;
   
+  dxStencil=(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+  dxStencil=min(dxStencil,node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
+  dxStencil=min(dxStencil,node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+  
+  PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,node,xp_stencil);
+
+  //prepare the stencil table
+  for (int idim=0;idim<3;idim++) for (int idir=-1;idir<=1;idir+=2) {
+    double x_test[3];
+    int i;
+    PIC::InterpolationRoutines::CellCentered::cStencil stencil_test;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node_test;
+
+    for (i=0;i<3;i++) x_test[i]=x[i];
+
+    x_test[idim]+=idir*dxStencil;
+
+    node_test=PIC::Mesh::mesh->findTreeNode(x_test,node);
+
+    if (node_test->IsUsedInCalculationFlag==false) {
+      stencil_test=xp_stencil;   
+    }
+    else {
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x_test,node_test,stencil_test);
+    }
+     
+    switch (idir) {
+    case 1:
+      stencil_table[idim][_dx_plus]=stencil_test;
+      break;
+    case -1:
+      stencil_table[idim][_dx_minus]=stencil_test;
+      break; 
+    }
+  }
+
+  //calculate the interpoalted value
+  auto CalculateInterpolatedVector = [&] (double* res, int length,int offset,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
+    char *AssociatedDataPointer;
+    double weight,*ptr;
+    int i;
+
+    for (i=0;i<length;i++) res[i]=0.0; 
+
+    for (int icell=0; icell<Stencil.Length; icell++) {
+      AssociatedDataPointer=Stencil.cell[icell]->GetAssociatedDataBufferPointer();
+      weight=Stencil.Weight[icell];
+      ptr=(double*)(offset+AssociatedDataPointer);
+
+      for (i=0;i<length;i++) res[i]+=weight*ptr[i];
+    }
+  }; 
+
+  auto CalculateInterpolatedValue = [&] (int offset,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
+    double res;
+
+    CalculateInterpolatedVector(&res,1,offset,Stencil);
+    return res;
+  };
+
+
+  //generate a random frame of reference 
+  double Usw[3],AbsB;
+  
+  CalculateInterpolatedVector(b,3,PIC::CPLR::SWMF::MagneticFieldOffset,xp_stencil);
+  AbsB=Vector3D::Normalize(b);
+
+  if (AbsB==0.0) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
+
+  //create a coordinate frame where 'x' and 'y' are orthogonal to 'b'
+  Vector3D::GetRandomNormFrame(e0,e1,b);
+  
+  //all further calculations are done in the frame (e0,e1,b):
+  double dU0_dx0,dU1_dx1,dU2_dx2,dU_dt[3],U[3],B_shifted[3],AbsB_shifted,U_shifted[3]; 
+
+  //time detivative
+  double U_last[3];
+
+  CalculateInterpolatedVector(U,3,PIC::CPLR::SWMF::BulkVelocityOffset,xp_stencil);
+  CalculateInterpolatedVector(U_last,3,PIC::CPLR::SWMF::BulkVelocityOffset_last,xp_stencil);
+
+  //move to the frame of reference moving with the ambient plasma
+  for (idim=0;idim<3;idim++) v[idim]-=U[idim];
+
+  AbsV=Vector3D::Length(v);
+  mu=Vector3D::DotProduct(v,b)/AbsV;
+  mu2=mu*mu;
+
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case _PIC_MODE_OFF_:
+    p=AbsV*m0;
+    break;
+  case _PIC_MODE_ON_:
+    p=Relativistic::Speed2Momentum(AbsV,m0);
+    break;
+  }
+
+
+  //parameters 
+  double stencil_multiplyer=1.0/(2.0*dxStencil);
+
+  double db_i__dx_i=0.0; //\frac{\partial b}{\partial b}
+  double dU_i__dx_i=0.0; //\frac{\partial U_i}{\partial x_i}
+  double b_i__b_j__dU_i__dx_j=0.0; //b_i*b_j\frac{\partial U_i}{\partial x_j}
+  double b_i__du_i__dt=0.0; //b_i* \frac{\partial U_i}{\partial t} 
+  double b_i__U_j__dU_i__dx_j=0.0; //b_i*  U_j\frac{\partial U_i}{\partial x_j} 
+
+  double B_shifted_plus[3],B_shifted_minus[3],AbsB_shifted_plus,AbsB_shifted_minus;
+  double U_shifted_plus[3],U_shifted_minus[3];
+
+  double swmf_coupling_time_interval=PIC::CPLR::SWMF::CouplingTime-PIC::CPLR::SWMF::CouplingTime_last;
+
+  for (int j=0;j<3;j++) {
+    //magnetic field 
+    CalculateInterpolatedVector(B_shifted_plus,3,PIC::CPLR::SWMF::MagneticFieldOffset,stencil_table[j][_dx_plus]);        
+    CalculateInterpolatedVector(B_shifted_minus,3,PIC::CPLR::SWMF::MagneticFieldOffset,stencil_table[j][_dx_minus]); 
+
+    AbsB_shifted_plus=Vector3D::Normalize(B_shifted_plus);
+    AbsB_shifted_minus=Vector3D::Normalize(B_shifted_minus);
+
+    if ((AbsB_shifted_plus==0.0)||(AbsB_shifted_minus==0.0)) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_DELETED_ON_THE_FACE_;
+    }      
+
+    db_i__dx_i+=stencil_multiplyer*(B_shifted_plus[j]-B_shifted_minus[j]);
+
+    //plasma bulk velocity
+    CalculateInterpolatedVector(U_shifted_plus,3,PIC::CPLR::SWMF::BulkVelocityOffset,stencil_table[j][_dx_plus]); 
+    CalculateInterpolatedVector(U_shifted_minus,3,PIC::CPLR::SWMF::BulkVelocityOffset,stencil_table[j][_dx_minus]);
+
+    dU_i__dx_i+=stencil_multiplyer*(U_shifted_plus[j]-U_shifted_minus[j]); 
+
+    b_i__b_j__dU_i__dx_j+=stencil_multiplyer*b[j]*(
+      (U_shifted_plus[0]-U_shifted_minus[0])*b[0]+
+      (U_shifted_plus[1]-U_shifted_minus[1])*b[1]+
+      (U_shifted_plus[2]-U_shifted_minus[2])*b[2]); 
+
+    b_i__U_j__dU_i__dx_j+=stencil_multiplyer*U[j]*(
+      (U_shifted_plus[0]-U_shifted_minus[0])*b[0]+
+      (U_shifted_plus[1]-U_shifted_minus[1])*b[1]+
+      (U_shifted_plus[2]-U_shifted_minus[2])*b[2]);  
+
+    //time derivative: p3 
+    b_i__du_i__dt+=(b[j]*(U[j]-U_last[j]))/swmf_coupling_time_interval;
+  }
+
+
+  double dmu_dt,dp_dt;
+
+  dmu_dt=(1.0-mu2)/2.0*(
+    AbsV*db_i__dx_i+
+    mu*dU_i__dx_i-3.0*mu*b_i__b_j__dU_i__dx_j- 
+    2.0/AbsV*(b_i__du_i__dt+b_i__U_j__dU_i__dx_j));
+
+  dp_dt=p*(
+    (1.0-3.0*mu2)/2.0*b_i__b_j__dU_i__dx_j-
+    (1.0-mu2)/2.0*dU_i__dx_i-
+    mu/AbsV*(b_i__du_i__dt+b_i__U_j__dU_i__dx_j));
+
+  //calculate the updated value of 'mu' and 'p'
+  p+=dtTotal*dp_dt;
+  mu+=dtTotal*dmu_dt;
+
+  if (mu<-1.0) mu=-1.0;
+  if (mu>1.0) mu=1.0;
+
+  //determine the final location of the particle
+  for (idim=0;idim<3;idim++) {
+    x[idim]+=(AbsV*b[idim]+U[idim])*dtTotal;
+  }
+
+  //determine the final velocity of the particle in the frame related to the Sun
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case _PIC_MODE_OFF_:
+    AbsV=p/m0;
+    break;
+  case _PIC_MODE_ON_:
+    AbsV=Relativistic::Momentum2Speed(p,m0);
+    break;
+  }
+
+  double sin_mu=sqrt(1.0-mu*mu);
+
+  for (idim=0;idim<3;idim++) {
+    v[idim]=AbsV*(b[idim]*mu+e0[idim]*sin_mu)+U[idim];
+  }
+
+
+  //check whether the particle is still in the domain
+  node=PIC::Mesh::mesh->findTreeNode(x,node);
+
+  if (node==NULL) {
+    //the particle left the computational domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
+  else if (node->IsUsedInCalculationFlag==false) {
+    //the particle left the computational domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_DELETED_ON_THE_FACE_;
+  }
+  else {
+    if (node->block==NULL) exit(__LINE__,__FILE__,"Error: node->block==NULL -> the time step is too large");
+  }
+
+  //check that the new particle location is outside of the Sun and Earth
+  if (x[0]*x[0]+x[0]*x[0]+x[0]*x[0]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+    //the particle is inside the Sun -> remove it
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return _PARTICLE_LEFT_THE_DOMAIN_;
+  }
+
+  //save the trajectory point
+  if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+    PIC::ParticleTracker::RecordTrajectoryPoint(x,v,spec,ParticleData,(void*)node);
+
+    if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,ParticleData,(void*)node);
+    }
+  }
+
+
+  //determine the cell where the particle is located
+  int i,j,k;
+
+  PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
+
+  //update particle lists
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+
+  tempFirstCellParticlePtr=node->block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first=ptr;
+  #else
+  #error The option is unknown
+  #endif
+
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
 
 
 

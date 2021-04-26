@@ -14,6 +14,7 @@
 #define _SEP_MOVER_DEFUALT_              0
 #define _SEP_MOVER_BOROVIKOV_2019_ARXIV_ 1
 #define _SEP_MOVER_HE_2019_AJL_          2 
+#define _SEP_MOVER_KARTAVYKH_2016_AJ_    3 
 
 #ifndef _SEP_MOVER_
 #define _SEP_MOVER_ _SEP_MOVER_DEFUALT_ 
@@ -262,6 +263,7 @@ namespace SEP {
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
 
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
@@ -275,8 +277,10 @@ namespace SEP {
       res=ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
       break;
     case _SEP_MOVER_HE_2019_AJL_:
-      //res=ParticleMover_HE_2019_AJL(ptr,dtTotal,startNode);
       res=ParticleMover__He_2019_AJL(ptr,dtTotal,startNode);
+      break; 
+    case _SEP_MOVER_KARTAVYKH_2016_AJ_:
+      res=ParticleMover_Kartavykh_2016_AJ(ptr,dtTotal,startNode);
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not found");
