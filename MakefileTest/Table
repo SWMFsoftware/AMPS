@@ -766,14 +766,14 @@ Check=
 
 ------------------------------------------------------------------------------
 #>
-Name=SEP--focused_transport-IH-KARTAVYKH-DRIFT 
+Name=SEP--focused_transport-IH-Kartavykh-drift 
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_compile..." > test_SEP--focused_transport-IH-KARTAVYKH-DRIFT${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_compile..." > test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 >>>echo "Installing SWMF....."
 
 >>>mkdir -p SWMF-IH
@@ -801,43 +801,43 @@ Compile=
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_compile... done" >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_compile... done" >> test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 
 Rundir=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_rundir..." >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_rundir..." >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_rundir... done" >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_rundir... done" >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
 
 Run=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_run..." >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT.diff
->>>@echo Test test_SEP--focused_transport-IH-KARTAVYKH-DRIFT has started: `date`
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_run..." >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
+>>>@echo Test test_SEP--focused_transport-IH-Kartavykh-drift has started: `date`
 >>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH-DRIFT_run... done" >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_run... done" >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
 
 Check=
->>>@echo "SEP--focused_transport-IH-KARTAVYKH-DRIFT_check..." >> test_SEP--focused_transport-IH-KARTAVYKH-DRIFT${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.diff
+>>>@echo "SEP--focused_transport-IH-Kartavykh-drift_check..." >> test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH-DRIFT.Step=500${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.ref > test_SEP--focused_transport-IH-KARTAVYKH-DRIFT${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH-DRIFT.Step=500${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.ref > test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 
->>>@ls -l test_SEP--focused_transport-IH-KARTAVYKH-DRIFT${TESTSEP--focused_transport-IH-KARTAVYKH-DRIFT-REF}.diff
->>>@echo Test SEP--focused_transport-IH-KARTAVYKH-DRIFT has finished: `date`
+>>>@ls -l test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
+>>>@echo Test SEP--focused_transport-IH-Kartavykh-drift has finished: `date`
 <#
 
 
 ------------------------------------------------------------------------------
 #>
-Name=SEP--focused_transport-IH-KARTAVYKH
+Name=SEP--focused_transport-IH-Kartavykh
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_compile..." > test_SEP--focused_transport-IH-KARTAVYKH${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_compile..." > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 >>>echo "Installing SWMF....."
 
 >>>mkdir -p SWMF-IH
@@ -865,43 +865,43 @@ Compile=
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_compile... done" >> test_SEP--focused_transport-IH-KARTAVYKH${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_compile... done" >> test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
 Rundir=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_rundir..." >> test_SEP--focused_transport-IH-KARTAVYKH.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_rundir..." >> test_SEP--focused_transport-IH-Kartavykh.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_rundir... done" >> test_SEP--focused_transport-IH-KARTAVYKH.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_rundir... done" >> test_SEP--focused_transport-IH-Kartavykh.diff
 
 Run=
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_run..." >> test_SEP--focused_transport-IH-KARTAVYKH.diff
->>>@echo Test test_SEP--focused_transport-IH-KARTAVYKH has started: `date`
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_run..." >> test_SEP--focused_transport-IH-Kartavykh.diff
+>>>@echo Test test_SEP--focused_transport-IH-Kartavykh has started: `date`
 >>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
->>>@echo "test_SEP--focused_transport-IH-KARTAVYKH_run... done" >> test_SEP--focused_transport-IH-KARTAVYKH.diff
+>>>@echo "test_SEP--focused_transport-IH-Kartavykh_run... done" >> test_SEP--focused_transport-IH-Kartavykh.diff
 
 Check=
->>>@echo "SEP--focused_transport-IH-KARTAVYKH_check..." >> test_SEP--focused_transport-IH-KARTAVYKH${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.diff
+>>>@echo "SEP--focused_transport-IH-Kartavykh_check..." >> test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH.Step=500${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.ref > test_SEP--focused_transport-IH-KARTAVYKH${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH.Step=500${TESTSEP--focused_transport-IH-Kartavykh-REF}.ref > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
->>>@ls -l test_SEP--focused_transport-IH-KARTAVYKH${TESTSEP--focused_transport-IH-KARTAVYKH-REF}.diff
->>>@echo Test SEP--focused_transport-IH-KARTAVYKH has finished: `date`
+>>>@ls -l test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
+>>>@echo Test SEP--focused_transport-IH-Kartavykh has finished: `date`
 <#
 
 
 ------------------------------------------------------------------------------
 #>
-Name=SEP--focused_transport-IH-HE 
+Name=SEP--focused_transport-IH-He 
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport-IH-HE_compile..." > test_SEP--focused_transport-IH-HE${TESTSEP--focused_transport-IH-HE-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-He_compile..." > test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 >>>echo "Installing SWMF....."
 
 >>>mkdir -p SWMF-IH
@@ -929,30 +929,30 @@ Compile=
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
->>>@echo "test_SEP--focused_transport-IH-HE_compile... done" >> test_SEP--focused_transport-IH-HE${TESTSEP--focused_transport-IH-HE-REF}.diff
+>>>@echo "test_SEP--focused_transport-IH-He_compile... done" >> test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 
 Rundir=
->>>@echo "test_SEP--focused_transport-IH-HE_rundir..." >> test_SEP--focused_transport-IH-HE.diff
+>>>@echo "test_SEP--focused_transport-IH-He_rundir..." >> test_SEP--focused_transport-IH-He.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
->>>@echo "test_SEP--focused_transport-IH-HE_rundir... done" >> test_SEP--focused_transport-IH-HE.diff
+>>>@echo "test_SEP--focused_transport-IH-He_rundir... done" >> test_SEP--focused_transport-IH-He.diff
 
 Run=
->>>@echo "test_SEP--focused_transport-IH-HE_run..." >> test_SEP--focused_transport-IH-HE.diff
->>>@echo Test test_SEP--focused_transport-IH-HE has started: `date`
+>>>@echo "test_SEP--focused_transport-IH-He_run..." >> test_SEP--focused_transport-IH-He.diff
+>>>@echo Test test_SEP--focused_transport-IH-He has started: `date`
 >>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
->>>@echo "test_SEP--focused_transport-IH-HE_run... done" >> test_SEP--focused_transport-IH-HE.diff
+>>>@echo "test_SEP--focused_transport-IH-He_run... done" >> test_SEP--focused_transport-IH-He.diff
 
 Check=
->>>@echo "SEP--focused_transport-IH-HE_check..." >> test_SEP--focused_transport-IH-HE${TESTSEP--focused_transport-IH-HE-REF}.diff
+>>>@echo "SEP--focused_transport-IH-He_check..." >> test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-HE.Step=500${TESTSEP--focused_transport-IH-HE-REF}.ref > test_SEP--focused_transport-IH-HE${TESTSEP--focused_transport-IH-HE-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-HE.Step=500${TESTSEP--focused_transport-IH-He-REF}.ref > test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 
->>>@ls -l test_SEP--focused_transport-IH-HE${TESTSEP--focused_transport-IH-HE-REF}.diff
->>>@echo Test SEP--focused_transport-IH-HE has finished: `date`
+>>>@ls -l test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
+>>>@echo Test SEP--focused_transport-IH-He has finished: `date`
 <#
 
 
