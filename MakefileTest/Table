@@ -632,6 +632,138 @@ Check=
 <#
 
 
+-------------------------------------------------------------------------------
+
+#>
+Name=SEP--focused_transport-IH-mflampa 
+Time=4
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Compile=
+>>>@echo "test_SEP--focused_transport-IH-mflampa_compile..." > test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+>>>echo "Installing SWMF....."
+
+>>>mkdir -p SWMF-IH
+>>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+
+>>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
+>>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mflampa,amps-test=on
+>>>-cd SWMF-IH/SWMF;${MAKE} SWMF
+>>>-cd SWMF-IH/SWMF;make PIDL
+
+>>>@echo "test_SEP--focused_transport-IH-mflampa_compile... done" >> test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+
+Rundir=
+>>>@echo "test_SEP--focused_transport-IH-mflampa_rundir..." >> test_SEP--focused_transport-IH-mflampa.diff
+>>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
+>>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
+>>>@echo "test_SEP--focused_transport-IH-mflampa_rundir... done" >> test_SEP--focused_transport-IH-mflampa.diff
+
+Run=
+>>>@echo "test_SEP--focused_transport-IH-mflampa_run..." >> test_SEP--focused_transport-IH-mflampa.diff
+>>>@echo Test test_SEP--focused_transport-IH-mflampa has started: `date`
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>@echo "test_SEP--focused_transport-IH-mflampa_run... done" >> test_SEP--focused_transport-IH-mflampa.diff
+
+
+
+Check=
+>>>@echo "SEP--focused_transport-IH-mflampa_check..." >> test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+
+>>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat 500
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat.Reduced.Step=500 output/test_SEP3D/PT-SC-IH.Step=500${TESTSEP--focused_transport-IH-mflampa-REF}.ref > test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+
+>>>@ls -l test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+>>>@echo Test SEP--focused_transport-IH-mflampa has finished: `date`
+<#
+
+
+-------------------------------------------------------------------------------
+
+#>
+Name=SEP--focused_transport-IH-mflampa-fl 
+Time=4
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Compile=
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_compile..." > test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
+>>>echo "Installing SWMF....."
+
+>>>mkdir -p SWMF-IH
+>>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+
+>>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
+>>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mflampa-fl,amps-test=on
+>>>-cd SWMF-IH/SWMF;${MAKE} SWMF
+>>>-cd SWMF-IH/SWMF;make PIDL
+
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_compile... done" >> test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
+
+
+Rundir=
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_rundir..." >> test_SEP--focused_transport-IH-mflampa-fl.diff
+>>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
+>>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_rundir... done" >> test_SEP--focused_transport-IH-mflampa-fl.diff
+
+Run=
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_run..." >> test_SEP--focused_transport-IH-mflampa-fl.diff
+>>>@echo Test test_SEP--focused_transport-IH-mflampa-fl has started: `date`
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>@echo "test_SEP--focused_transport-IH-mflampa-fl_run... done" >> test_SEP--focused_transport-IH-mflampa-fl.diff
+
+
+
+Check=
+>>>@echo "SEP--focused_transport-IH-mflampa-fl_check..." >> test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
+
+>>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat 500
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat.Reduced.Step=500 output/test_SEP3D/PT-SC-IH.Step=500${TESTSEP--focused_transport-IH-mflampa-fl-REF}.ref > test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
+
+>>>@ls -l test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
+>>>@echo Test SEP--focused_transport-IH-mflampa-fl has finished: `date`
+<#
+
+
+
 ------------------------------------------------------------------------------
 #>
 Name=SEP--focused_transport-IH-KARTAVYKH-DRIFT 
