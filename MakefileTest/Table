@@ -580,6 +580,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-borovikov_compile..." > test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -594,6 +595,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test 
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
@@ -645,6 +649,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-mflampa_compile..." > test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -659,6 +664,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
@@ -710,6 +718,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-mflampa-fl_compile..." > test_SEP--focused_transport-IH-mflampa-fl${TESTSEP--focused_transport-IH-mflampa-fl-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -724,6 +733,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
@@ -776,6 +788,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_compile..." > test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -790,6 +803,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
@@ -840,6 +856,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh_compile..." > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -854,6 +871,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
@@ -904,6 +924,7 @@ Compile=
 >>>@echo "test_SEP--focused_transport-IH-He_compile..." > test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 >>>echo "Installing SWMF....."
 
+<<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
 >>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
@@ -918,6 +939,9 @@ Compile=
 
 <<<ifeq ($(COMPILE.c),pgcc)
 >>>cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<else
+>>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
