@@ -4057,6 +4057,8 @@ Check=
 
 <#
 
+--------------------------------------------------------------------------------------------------------------------------
+
 #>
 Name=SEP-SC-IH--FL--FL-attachment--GC
 Time=5
@@ -4095,7 +4097,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_run..." >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--GC has started: `date`
 
->>>-cd SWMF;$(MAKE) test15_pt 
+>>>-cd SWMF;$(MAKE) test15_pt
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
 >>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_run... done" >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
@@ -4107,9 +4109,69 @@ Check=
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=179.dat output/test_SEP3D/SC-IH--FL--PT/exported-field-lines.thread=0.cnt=179.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.diff)
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.field-line=2.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.field-line=2.r=2.000000e-01__GC__.dat  >> test_SEP-SC-IH--FL--FL-attachment--GC.diff)
 
->>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.diff 
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--GC has finished: `date`
+<#
+
+
+
+#>
+Name=SEP-SC-IH--FL--Node-attachment--GC
+Time=5
+
+Compile=
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_compile..." > test_SEP-SC-IH--FL--Node-attachment--GC.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF/*),)
+>>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_compile... done" >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
+
+
+Rundir=
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_rundir..." >> test_SEP-SC-IH--FL--Node-attachment--GC$(TESTSEP-SC-IH--FL--Node-attachment--GC-REF).diff
+>>>mkdir -p $(TESTSEP-SC-IH--FL--Node-attachment--GCDIR)
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_rundir... done" >> test_SEP-SC-IH--FL--Node-attachment--GC$(TESTSEP-SC-IH--FL--Node-attachment--GC-REF).diff
+
+
+Run=
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_run..." >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
+>>>@echo Test test_SEP-SC-IH--FL--Node-attachment--GC has started: `date`
+
+>>>-cd SWMF;$(MAKE) test15_pt 
+>>>-cd SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih-mflampa
+>>>-cd SWMF;$(MAKE) 
+
+>>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
+>>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_run... done" >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
+
+
+Check=
+>>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_check..." >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=179.dat output/test_SEP3D/SC-IH--FL--PT/exported-field-lines.thread=0.cnt=179.dat  > test_SEP-SC-IH--FL--Node-attachment--GC.diff)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.field-line=2.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.field-line=2.r=2.000000e-01__GC__.dat  >> test_SEP-SC-IH--FL--Node-attachment--GC.diff)
+
+>>>@ls -l test_SEP-SC-IH--FL--Node-attachment--GC.diff 
+
+>>>@echo Test test_SEP-SC-IH--FL--Node-attachment--GC has finished: `date`
 <#
 
 
