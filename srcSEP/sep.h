@@ -52,8 +52,8 @@ namespace SEP {
   //functions used for the particle samplein
   namespace Sampling {
 
-    const int SamplingHeliocentricDistanceTableLength=5;
-    const double SamplingHeliocentricDistanceTable[]={0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
+    const int SamplingHeliocentricDistanceTableLength=6;
+    const double SamplingHeliocentricDistanceTable[]={16.0*_RADIUS_(_SUN_),0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
     const double MinSampleEnergy=1.0*MeV2J;
     const double MaxSampleEnergy=500.0*MeV2J;
     const int nSampleIntervals=7;
@@ -193,14 +193,16 @@ namespace SEP {
         Clear();
       }
 
+
+      //full name of the output file is saved here for debugging purposes 
+      char full_name[200];
+
       void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
         nEnergyBins=n;
         MinEnergy=e_min,MaxEnergy=e_max;
         dLogEnergy=log(MaxEnergy/MinEnergy)/nEnergyBins; 
         HeliocentricDisctance=r;
         iFieldLine=l; 
-
-        char full_name[200];
 
         sprintf(full_name,"%s.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         fout=fopen(full_name,"w"); 
