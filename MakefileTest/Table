@@ -4058,11 +4058,11 @@ Check=
 <#
 
 #>
-Name=AMPS-SC-IH-FIELDLINE-Coupling
+Name=SEP-SC-IH--FL--FL-attachment--GC
 Time=5
 
 Compile=
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_compile..." > test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_compile..." > test_SEP-SC-IH--FL--FL-attachment--GC.diff
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
@@ -4082,33 +4082,34 @@ Compile=
 <<<endif
 <<<endif
 
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_compile... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
 
 Rundir=
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir..." >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
->>>mkdir -p $(TESTAMPS-SC-IH-FIELDLINE-CouplingDIR)
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_rundir... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling$(TESTAMPS-SC-IH-FIELDLINE-Coupling-REF).diff
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_rundir..." >> test_SEP-SC-IH--FL--FL-attachment--GC$(TESTSEP-SC-IH--FL--FL-attachment--GC-REF).diff
+>>>mkdir -p $(TESTSEP-SC-IH--FL--FL-attachment--GCDIR)
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_rundir... done" >> test_SEP-SC-IH--FL--FL-attachment--GC$(TESTSEP-SC-IH--FL--FL-attachment--GC-REF).diff
 
 
 Run=
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_run..." >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
->>>@echo Test test_AMPS-SC-IH-FIELDLINE-Coupling has started: `date`
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_run..." >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
+>>>@echo Test test_SEP-SC-IH--FL--FL-attachment--GC has started: `date`
 
 >>>-cd SWMF;$(MAKE) test15_pt 
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_run... done" >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
+>>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_run... done" >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
 
 Check=
->>>@echo "test_AMPS-SC-IH-FIELDLINE-Coupling_check..." >> test_AMPS-SC-IH-FIELDLINE-Coupling.diff
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_check..." >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
->>>-@${TESTAMPS-SC-IH-FIELDLINE-CouplingDIR}/../utility/ReduceFile.pl SWMF/run_test/exported-field-lines.cnt=8.dat 10
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=179.dat output/test_SEP3D/SC-IH--FL--PT/exported-field-lines.thread=0.cnt=179.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.diff)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.field-line=2.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.field-line=2.r=2.000000e-01__GC__.dat  >> test_SEP-SC-IH--FL--FL-attachment--GC.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/exported-field-lines.cnt=8.dat.Reduced.Step=10 output/test_AMPS-SC-IH-FIELDLINE-Coupling/exported-field-lines.cnt=8.dat.Reduced.Step=10  > test_AMPS-SC-IH-FIELDLINE-Coupling.diff)
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.diff 
 
->>>@ls -l test_AMPS-SC-IH-FIELDLINE-Coupling.diff 
-
->>>@echo Test test_AMPS-SC-IH-FIELDLINE-Coupling has finished: `date`
+>>>@echo Test test_SEP-SC-IH--FL--FL-attachment--GC has finished: `date`
 <#
 
 
