@@ -669,3 +669,94 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
 
 
 
+int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+  double mu,AbsB,L,vParallel,vNormal,v,DivAbsB;
+  double FieldLineCoord;
+  int iFieldLine;
+  FL::cFieldLineSegment *Segment; 
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+
+  FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+  iFieldLine=PB::GetFieldLineId(ParticleData); 
+
+  vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+
+  //determine the segment of the particle location 
+  Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+
+  //calcualte mu of the particle
+  mu=acos(vParallel/v);
+
+  //calculate B and L
+  double B[3],B0[3],B1[3], AbsBDeriv;
+
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B0, (int)FieldLineCoord);
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B,       FieldLineCoord);
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B1, (int)FieldLineCoord+1-1E-7);
+  AbsB   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
+
+  AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+    pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+  L=-Vector3D::Length(B)/AbsBDeriv;
+
+  //move the particle along the magnetic field line 
+  FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
+
+  //get the new value of 'mu'
+  mu+=(1.0-mu*mu)/(2.0*L)*v*dtTotal;
+
+  if (mu<-1.0) mu=-1.0;
+  if (mu>1.0) mu=1.0;
+
+  //get the segment of the new particle location 
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    //the particle left the computational domain
+    int code=_PARTICLE_DELETED_ON_THE_FACE_;
+    
+    //call the function that process particles that leaved the coputational domain
+    switch (code) {
+    case _PARTICLE_DELETED_ON_THE_FACE_:
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }
+  }
+
+  //set the newvalues of the normal and parallel particle velocities 
+  vParallel=mu*v;
+  vNormal=sqrt(1.0-mu*mu)*v;
+
+  PB::SetVParallel(vParallel,ParticleData);
+  PB::SetVNormal(vNormal,ParticleData);
+
+  //set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+
+  //attach the particle to the temporaty list
+  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+    break;
+  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
+    Segment->tempFirstParticleIndex=ptr;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
