@@ -1035,7 +1035,7 @@ void PIC::Sampling::Sampling() {
     PIC::Mesh::cDataCenterNode *cell;
     PIC::Mesh::cDataBlockAMR *block;
     char *SamplingData;
-    double *v,LocalParticleWeight,Speed2,v2;
+    double v[3],LocalParticleWeight,Speed2,v2;
     double lParallelTemepratureSampleDirection[3]={0.0,0.0,0.0},l0TangentialTemepratureSampleDirection[3]={0.0,0.0,0.0},l1TangentialTemepratureSampleDirection[3]={0.0,0.0,0.0};
 
     //the total number of the sampled particles to compare with the number of the partticles in the buffer
@@ -1233,7 +1233,17 @@ void PIC::Sampling::Sampling() {
                 Speed2=0.0;
 
                 s=PIC::ParticleBuffer::GetI(ParticleData);
-                v=PIC::ParticleBuffer::GetV(ParticleData);
+
+
+                switch (_PIC_FIELD_LINE_MODE_) {
+                case _PIC_MODE_OFF_:
+                  PIC::ParticleBuffer::GetV(v,ParticleData);
+                  break;
+                case _PIC_MODE_ON_:
+                  v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
+                  v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
+                  v[2]=0.0;
+                }
 
                 localSimulatedSpeciesParticleNumber[iThreadOpenMP][s]++;
 

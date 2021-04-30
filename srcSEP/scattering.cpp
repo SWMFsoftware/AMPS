@@ -24,13 +24,23 @@ void SEP::Scattering::AIAA2005::Process(long int ptr,long int& FirstParticleCell
   namespace FL = PIC::FieldLine;
 
   PB::byte *ParticleData;
-  double *v,p[3],prob;
+  double v[3],p[3],prob;
   int spec;
 
   if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) exit(__LINE__,__FILE__,"Error: the function is implemented only for the case when _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_");
 
   ParticleData=PB::GetParticleDataPointer(ptr);
-  v=PIC::ParticleBuffer::GetV(ParticleData);
+
+  switch (_PIC_FIELD_LINE_MODE_) {
+  case _PIC_MODE_OFF_:
+    PIC::ParticleBuffer::GetV(v,ParticleData);
+    break;
+  case _PIC_MODE_ON_: 
+    v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
+    v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
+    v[2]=0.0;
+  }
+
   spec=PB::GetI(ParticleData);
 
   //the probability of scattering
@@ -92,7 +102,20 @@ void SEP::Scattering::AIAA2005::Process(long int ptr,long int& FirstParticleCell
       break;
     }
 
-    PB::SetV(v,ParticleData);
+    double vParallel,vNormal;
+
+    switch (_PIC_FIELD_LINE_MODE_) {
+    case _PIC_MODE_OFF_:
+      PB::SetV(v,ParticleData);
+      break;
+
+    case _PIC_MODE_ON_:
+      Vector3D::GetComponents(vParallel,vNormal,v,l);
+
+      PB::SetVParallel(vParallel,ParticleData);
+      PB::SetVNormal(vNormal,ParticleData);
+    }
+
     PB::SetMomentumParallel(pParAbs,ParticleData);
     PB::SetMomentumNormal(pPerpAbs,ParticleData);
 

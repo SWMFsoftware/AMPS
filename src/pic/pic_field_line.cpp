@@ -566,7 +566,7 @@ namespace PIC {
         PB::SetParticleAllocated(NewParticleData);
         break;
       case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-        NewParticle=PB::InitiateParticle(x,v,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+        NewParticle=PB::InitiateParticle(x,NULL,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
         break;
       default:
         exit(__LINE__,__FILE__,"Error: the option is unknown");

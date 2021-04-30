@@ -200,7 +200,7 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
   long int ptr;
 
   int s;
-  double *v;
+  double v[3];
   double StatWeight,TotalStatWeight[PIC::nTotalSpecies],MeanSpeed[PIC::nTotalSpecies],MeanVelocity[3*PIC::nTotalSpecies];
 
   if (PIC::Mesh::mesh==NULL) return;
@@ -229,7 +229,17 @@ void PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(FILE* fout,co
               s=PIC::ParticleBuffer::GetI(ParticleData);
 
               StatWeight=node->block->GetLocalParticleWeight(s)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-              v=PIC::ParticleBuffer::GetV(ParticleData);
+              //v=PIC::ParticleBuffer::GetV(ParticleData);
+
+                switch (_PIC_FIELD_LINE_MODE_) {
+                case _PIC_MODE_OFF_:
+                  PIC::ParticleBuffer::GetV(v,ParticleData);
+                  break;
+                case _PIC_MODE_ON_:
+                  v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
+                  v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
+                  v[2]=0.0;
+                }
 
               TotalStatWeight[s]+=StatWeight;
               MeanSpeed[s]+=StatWeight*sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);

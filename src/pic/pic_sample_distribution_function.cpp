@@ -119,7 +119,7 @@ void PIC::DistributionFunctionSample::SampleDistributionFnction() {
     */
 
   for (node=SampleNodes[0],nProbe=0;nProbe<nSamleLocations;node=SampleNodes[++nProbe]) if (node->Thread==PIC::ThisThread) {
-      double *v;
+      double v[3];
       PIC::ParticleBuffer::byte *ParticleData;
       int i,j,k;
 
@@ -132,7 +132,17 @@ void PIC::DistributionFunctionSample::SampleDistributionFnction() {
       while (ptr!=-1) {
         ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
         spec=PIC::ParticleBuffer::GetI(ParticleData);
-        v=PIC::ParticleBuffer::GetV(ParticleData);
+
+                switch (_PIC_FIELD_LINE_MODE_) {
+                case _PIC_MODE_OFF_:
+                  PIC::ParticleBuffer::GetV(v,ParticleData);
+                  break;
+                case _PIC_MODE_ON_:
+                  v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
+                  v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
+                  v[2]=0.0;
+                }
+
 
         LocalParticleWeight=node->block->GetLocalParticleWeight(spec);
         LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
