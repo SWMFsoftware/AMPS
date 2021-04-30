@@ -530,7 +530,14 @@ namespace PIC {
       }
 
 
-      PB::SetV(v,ptrData);
+      //PB::SetV(v,ptrData);
+
+      double vParallel,vNormal;
+
+      Vector3D::GetComponents(vParallel,vNormal,v,l);
+      PB::SetVParallel(vParallel,ptrData);
+      PB::SetVNormal(vNormal,ptrData);
+
       PB::SetMomentumParallel(pParAbs,ptrData);
       PB::SetMomentumNormal(pPerpAbs,ptrData);
  
@@ -616,7 +623,7 @@ namespace PIC {
       int iVertex,iSegment;
 
       int nSegmentParticles[nSegment];
-      double ModelParticleSpeedTable[nSegment],*v;
+      double ModelParticleSpeedTable[nSegment],v[3];
       cFieldLineSegment* Segment;
 
       if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
@@ -629,7 +636,13 @@ namespace PIC {
           while (ptr!=-1) {
             nSegmentParticles[iSegment]++;
 
-            v=PB::GetV(ptr);
+            //v=PB::GetV(ptr);
+
+            v[0]=PB::GetVParallel(ptr);
+            v[1]=PB::GetVNormal(ptr); 
+            v[2]=0.0;
+
+
             ModelParticleSpeedTable[iSegment]+=Vector3D::Length(v);
 
             ptr=PB::GetNext(ptr);
@@ -818,7 +831,14 @@ namespace PIC {
       double v[3];
       double x[3];
 
-      PB::GetV(v, ptr);
+      //PB::GetV(v, ptr);
+
+
+      v[0]=PB::GetVParallel(ptr);
+      v[1]=PB::GetVNormal(ptr);
+      v[2]=0.0;
+
+
       PB::GetX(x, ptr);
 
       double m0= PIC::MolecularData::GetMass(spec);
@@ -1530,23 +1550,32 @@ namespace FieldLine{
     Segment->GetDir(l);
     Vector3D::GetNormFrame(e0,e1,l);
 
+    double vParallel,vNormal;
+
     switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
     case _PIC_MODE_OFF_:
 //      vFinal[0]=pParFinal/m0,vFinal[1]=pPerpInit/m0,vFinal[2]=0.0;
 
-      SpeedPar=pParFinal/m0;
-      SpeedPerp=pPerpInit/m0;
+      vParallel=pParFinal/m0;
+      vNormal=pPerpInit/m0;
 
       for (int idim=0;idim<3;idim++) vFinal[idim]=SpeedPar*l[idim]+SpeedPerp*e0[idim]; 
       break;
     case _PIC_MODE_ON_:
-      //p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
+      p[0]=pParFinal,p[1]=pPerpInit,p[2]=0.0;
 
-      for (int idim=0;idim<3;idim++) p[idim]=pParFinal*l[idim]+pPerpInit*e0[idim]; 
+      //for (int idim=0;idim<3;idim++) p[idim]=pParFinal*l[idim]+pPerpInit*e0[idim]; 
       ::Relativistic::Momentum2Vel(vFinal,p,m0);
+
+      vParallel=vFinal[0];
+      vNormal=vFinal[1];
     }
 
-    PIC::ParticleBuffer::SetV(vFinal,ParticleData);
+    //PIC::ParticleBuffer::SetV(vFinal,ParticleData);
+    PIC::ParticleBuffer::SetVParallel(vParallel,ParticleData);
+    PIC::ParticleBuffer::SetVNormal(vNormal,ParticleData);
+
+
     PIC::ParticleBuffer::SetX(xFinal,ParticleData);
     PB::SetFieldLineCoord(FieldLineCoordFinal, ParticleData);
   

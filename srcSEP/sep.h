@@ -138,13 +138,20 @@ namespace SEP {
         SamplingCounter++;
 
         while (ptr!=-1) {
-          double *v,e,m0;
+          double v[3],e,m0;
           int spec,ibin;
           PB::byte* ParticleData;
 
           ParticleData=PB::GetParticleDataPointer(ptr); 
           spec=PB::GetI(ParticleData);
-          v=PB::GetV(ParticleData);
+
+          //v=PB::GetV(ParticleData);
+
+          v[0]=PB::GetVParallel(ParticleData);
+          v[1]=PB::GetVNormal(ParticleData);
+          v[2]=0.0;
+
+
           m0=PIC::MolecularData::GetMass(spec);
 
           if (PB::GetFieldLineId(ParticleData)!=iFieldLine) {

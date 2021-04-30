@@ -442,6 +442,32 @@ namespace Vector3D {
 
     return c/sqrt(l);
   }
+
+  inline void GetComponents(double& ParallelComponent,double& NormalComponent,double *Vector,double *Axis) {
+    int i;
+    double l02=0.0,l0=0.0,c0=0.0,c1=0.0,t;
+
+    for (i=0;i<3;i++) {
+      l02+=pow(Axis[i],2);
+      c0+=Vector[i]*Axis[i];
+    }
+
+    //parallel component
+    l0=sqrt(l02);
+    ParallelComponent=c0/l0;
+
+    //normal component
+    c0/=l02;
+
+    for (i=0;i<3;i++) {
+      t=Vector[i]-c0*Axis[i]; 
+      c1+=t*t;
+    }
+
+    NormalComponent=sqrt(c1);
+  }
+  
+    
  
 
   //determine an orthogonal frame of rederence: z is input; e1 and e2 and orthogonal to z and form a right handed frame of reference
