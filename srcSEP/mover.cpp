@@ -692,7 +692,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
   //calcualte mu of the particle
-  mu=acos(vParallel/v);
+  mu=vParallel/v;
 
   //calculate B and L
   double B[3],B0[3],B1[3], AbsBDeriv;
