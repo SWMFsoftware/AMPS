@@ -221,6 +221,7 @@ namespace OH {
 
 
     void ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    void ReactionProcessor_Lookup_Table(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   }
 
   //---------------------------------------------------------------------------
