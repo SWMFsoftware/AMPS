@@ -2,6 +2,7 @@
 
 #include "OH.h"
 #include "pic.h"
+
 #include "get_charge_exchange_wrapper_c.h"
 
 // user defined global time step
@@ -311,7 +312,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
   return (lifetime>0.0) ? lifetime : std::numeric_limits<double>::infinity();
 }
 
-
+//----------------------------------------------------------------------
 void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   int spec;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -364,24 +365,24 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
 
 
-  
+
   //Update the Sources from the table
   double PlasNumDen,v2_th_Plas,NeuNumDen;
   double neu_v2_th=0;
-  double SourceIon_V[5],SourceNeu_V[5]; 
+  double SourceIon_V[5],SourceNeu_V[5];
   double c = (PlasmaNumberDensity>0.0) ? ParentParticleWeight/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)/CenterNode->Measure : 0.0;
   //double c2 = PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*CenterNode->Measure/PlasmaNumberDensity;
-  PlasNumDen = PlasmaNumberDensity; 
+  PlasNumDen = PlasmaNumberDensity;
   v2_th_Plas = 2.0*Kbol*PlasmaTemperature / _MASS_(_H_);
   NeuNumDen =ParentParticleWeight/CenterNode->Measure;
-    
+
   //Calling the subroutine and separating the terms from the table
   OH_get_charge_exchange_wrapper(&PlasNumDen,&v2_th_Plas,PlasmaBulkVelocity,&NeuNumDen,&neu_v2_th,vParent,SourceIon_V,SourceNeu_V);
 
   double rate,Force[3],EnergySource,EnergyLoss,ForceSource[3],ForceLoss[3];
-  
+
   rate=SourceIon_V[0];
-    
+
   for (int dim=0;dim<3;dim++){
     ForceSource[dim]=SourceNeu_V[dim+1]*_MASS_(_H_);
     ForceLoss[dim]=SourceIon_V[dim+1]*_MASS_(_H_);
@@ -401,7 +402,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   WeightLoss=CenterNode->Measure*rate*ParentTimeStep;
 
   if (ParentParticleWeight-WeightLoss<0.01*ParentParticleWeight) {
-    
+
     //delete the particle if more is lost than initial weight:
      PIC::ParticleBuffer::DeleteParticle(ptr);
   }
@@ -416,14 +417,13 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
 
     if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
     FirstParticleCell=ptr;
-    
   }
 
-  //Generate ENA is needed
-  //init the ENA geberation tables
+  //Generate ENA if needed
+  //Init the ENA geberation tables
   static bool init_flag=false;
-  static double MaxProductTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-  static double MinProductStatWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+  static double MaxProductTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_SPEC_];
+  static double MinProductStatWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_];
 
   if (init_flag==false) {
     //init stuff needed for generating ENAa
@@ -534,7 +534,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
 }
 
 
-
+//----------------------------------------------------------------------
 void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //as a result of the reaction only velocity of a particle is changed
   //----------------------------------------------------------------------
@@ -569,7 +569,7 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
 
   WeightLoss=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*(1.0-exp(-ParentTimeStep/ParentLifeTime));
   tWeightQuantumLoss=(int)(WeightLoss/WeightQuantum);  
-  cout<<"\n"<<WeightLoss<<"\n";
+
   if (tWeightQuantumLoss>EventLimiter) {
     WeightQuantum*=tWeightQuantumLoss/EventLimiter;
     tWeightQuantumLoss=EventLimiter;
@@ -683,133 +683,22 @@ auto SimulateReaction = [&] () {
 //    double c = ParentParticleWeight/PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/CenterNode->Measure;
     double c = (PlasmaNumberDensity>0.0) ? ParentParticleWeight/(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]*PlasmaNumberDensity)/CenterNode->Measure : 0.0;
 
-
-    /*
-      Erick Powell tests
-     */
-    
-    //Defining the values for the get_charge_exchange_wrapper
-    double PlasRho,v2_th_Plas,NeuRho;
-    double neu_v2_th=0;
-    double SourceIon_V[5],SourceNeu_V[5]; 
-    PlasRho = PlasmaNumberDensity; 
-    v2_th_Plas = 2.0*Kbol*PlasmaTemperature / _MASS_(_H_);
-    NeuRho =ParentParticleWeight/CenterNode->Measure;
-
-    //Calling the subroutine and separating the terms from the table
-    OH_get_charge_exchange_wrapper(&PlasRho,&v2_th_Plas,PlasmaBulkVelocity,&NeuRho,&neu_v2_th,vParent,SourceIon_V,SourceNeu_V);
-
-    double rate,Force[3],EnergySource,EnergyLoss,ForceSource[3],ForceLoss[3];
-
-    rate=SourceIon_V[0];
-    
-    int dim;
-    for (int dim=0;dim<3;dim++){
-      ForceSource[dim]=SourceNeu_V[dim+1];
-      ForceLoss[dim]=SourceIon_V[dim+1];
-    }
-
-    EnergySource=SourceNeu_V[4];
-    EnergyLoss=SourceIon_V[4];
-     
-    /*
-    //Values going into the function
-    cout<<"\n\nPlas rho ->  "<<PlasRho;
-    cout<<"\nPlasma Velo   ->  ";
-    
-    for (int dim=0;dim<3;dim++){
-      cout<<PlasmaBulkVelocity[dim]<<"\t";
-    }
-    cout<<"\nNeutral Velo   ->  ";
-    for (int dim=0;dim<3;dim++){
-      cout<<vParent[dim]<<"\t";
-    }
-    cout<<"\nPlasma V2  -> "<<v2_th_Plas;
-    cout<<"\nNeutral V2  -> "<<neu_v2_th;
-      
-
-    //MonteCarlo for an appropriate value to compare to
-    double sampledVPlas[3], runningTotalMomSource[3]={0,0,0},runningTotalEnSource=0;
-    double runningTotalMomLoss[3]={0,0,0},runningTotalEnLoss=0;
-    
-    for (int n=0;n<1000;n++){
-      //Calling many samples of VP 
-      OH::sampleVp(sampledVPlas,vParent,PlasmaBulkVelocity,PlasmaTemperature,spec);
-      for (int dim=0;dim<3;dim++){
-	//The net momentum change is the difference between (c*MASS*Velo_spec)
-	runningTotalMomSource[dim]+=(vParent[dim])*_MASS_(_H_)*c;
-	runningTotalEnSource+=(vParent[dim]*vParent[dim])*c*_MASS_(_H_)/2;
-	runningTotalMomLoss[dim]+=(-sampledVPlas[dim])*_MASS_(_H_)*c;
-	runningTotalEnLoss+=(-sampledVPlas[dim]*sampledVPlas[dim])*c*_MASS_(_H_)/2;
-      }
-    }
-    //dividing each term by 1000 so that it is the average momentum change
-    cout<<"\n\nThe average values for the interactions (Source\tLoss)\n";
-    for (int dim=0;dim<3;dim++){
-	runningTotalMomSource[dim]/=1000.;
-	runningTotalMomLoss[dim]/=1000.;
-	cout<<runningTotalMomSource[dim]<<"\t"<<runningTotalMomLoss[dim]<<"\t";
-    }
-    //Printing out the final average momentum
-    cout<<"\nAverage Energy/interaction  (Source \t Loss)\n"<<runningTotalEnSource/1000<<"\t"<<runningTotalEnLoss/1000<<"\n";
-    
-    
-   
-    cout<<"\n\n Force from get_charge_exchange (Divided by timestep and plasmaNumberDensity) (Source\tLoss) \n";
-    //-SourceIon_V[1]+SourceNeu_V[1]
-    for (int dim=0;dim<3;dim++){
-      cout<<SourceNeu_V[dim+1]/rate*_MASS_(_H_)*c<<"\t"<<-SourceIon_V[dim+1]/rate*_MASS_(_H_)*c<<"\t"; 
-    }
-    
-    cout<<"\nEnergy from lookuptable  (Source\tLoss)\n"<<SourceNeu_V[4]/rate*_MASS_(_H_)*c<<"\t"<<SourceIon_V[4]/rate*_MASS_(_H_)*c;
-    
-    //These are the weights that I was working with to find the appropriate thing to multiply by    
-    cout<<"\n\nParentParticle Weight   ->"<<ParentParticleWeight/WeightQuantum;
-    cout<<"\nquanta   ->"<<WeightQuantum;
-    cout<<"\nCenterNode ->Measure  ->"<<CenterNode->Measure;
-    cout<<"\nTimeSte    -> "<<PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-    cout<<"\n\n";
-
-    exit(__LINE__,__FILE__);
-      
-    
-    */
-    //End of work -> Erick Powell
-    
-
-
-
-    
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceDensityOffset))-=c*_MASS_(_H_);
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceDensityOffset))+=c*_MASS_(_H_);
 
-    for (int idim=0; idim<3; idim++) { 
-      //Monte-Carlo sampling method
+    for (int idim=0; idim<3; idim++) {
       *(3*ifluid_interact+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))-=c*_MASS_(_H_)*vp[idim];
       *(3*ifluid_contribute+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*vParent[idim];
-
-      //multi-fluid Lookup-table method
-      //*(3*ifluid_interact+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))-=c*_MASS_(_H_)*ForceLoss[idim]/rate;
-      //*(3*ifluid_contribute+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=c*_MASS_(_H_)*ForceSource[idim]/rate;
-
-      //Single fluid lookuptable
-      //*(3*ifluid_contribute+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=Force[idim]/rate*_MASS_(_H_)*c;
 
       vh2+=vParent[idim]*vParent[idim];
       vp2+=vp[idim]*vp[idim];
     }
 
     if ((isfinite(c)==false)||(isfinite(vh2)==false)||(isfinite(vp2)==false)) exit(__LINE__,__FILE__);
-    //multifluid montecarlo method
+
     *(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=c*0.5*_MASS_(_H_)*vp2;
     *(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=c*0.5*_MASS_(_H_)*vh2;
 
-    //multifluid lookuptable method
-    //*(ifluid_interact+(double*)(offset+OH::Output::ohSourceEnergyOffset))-=EnergyLoss/rate*_MASS_(_H_)*c;
-    //*(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=EnergySource/rate*_MASS_(_H_)*c;
-    
-    //single fluid Lookuptable method
-    //*(ifluid_contribute+(double*)(offset+OH::Output::ohSourceEnergyOffset))+=EnergySource/rate*_MASS_(_H_)*c;
 
 
     if ((isfinite(vp[0])==false)||(isfinite(vp[1])==false)||(isfinite(vp[2])==false)) exit(__LINE__,__FILE__,"Error: out of range");  
