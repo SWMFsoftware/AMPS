@@ -2,7 +2,7 @@
 #include "pic.h"
 
 
-int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace) {
   namespace PB = PIC::ParticleBuffer;
 
   PIC::ParticleBuffer::byte *ParticleData;
@@ -71,14 +71,8 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
           t=x[iOrthogonal2]+dt*v[iOrthogonal2];
 
           if ((xmin[iOrthogonal2]<=t)&&(t<=xmax[iOrthogonal2])) {
-            if (iIntersectedFace==-1) {
-              iIntersectedFace=iface,FlightTime=dt;                 
-            }
-            else {
-              if (dt<FlightTime) {
-                iIntersectedFace=iface,FlightTime=dt;
-              }
-            }
+              iIntersectedFace=iface,FlightTime=dt;
+              return;
           }
         }
       }
@@ -114,7 +108,7 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
   double FaceIntersectionFlightTime;
   double dt;
 
-  CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL;
+
   double CutTriangleIntersevtionFlightTime;
   CutCell::cTriangleFace* CutTriangleFace;
 
