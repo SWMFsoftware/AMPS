@@ -106,7 +106,7 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 
   int iFaceExclude=-1,iIntersectedFace;
   double FaceIntersectionFlightTime;
-  double dt;
+  double dt,accl[3];
 
 
   double CutTriangleIntersevtionFlightTime;
@@ -150,9 +150,15 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 	  }
 
 	  //advance the location of the particle
+    _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode);
+
+
 	  if (dtTotal<dt) {
 		  //the particles did not reach the boundary
-		  for (int idim=0;idim<3;idim++) x[idim]+=dtTotal*v[idim];
+		  for (int idim=0;idim<3;idim++) {
+		    x[idim]+=dtTotal*v[idim];
+		    v[idim]+=dtTotal*accl[idim];
+		  }
 
 		  dtTotal=0.0;
 	  }
@@ -162,18 +168,27 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 
 		  switch (IntersectionMode) {
 		  case _cut_triangle:
-			  for (int idim=0;idim<3;idim++) x[idim]+=dt*v[idim];
-
-			  code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,x,v,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
-
-			  if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
-				  PIC::ParticleBuffer::DeleteParticle(ptr);
-				  return _PARTICLE_LEFT_THE_DOMAIN_;
+			  for (int idim=0;idim<3;idim++) {
+			    x[idim]+=dt*v[idim];
+			    v[idim]+=dt*accl[idim];
 			  }
+
+			  do {
+			    code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,x,v,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+
+			    if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+				    PIC::ParticleBuffer::DeleteParticle(ptr);
+				    return _PARTICLE_LEFT_THE_DOMAIN_;
+			    }
+			  }
+			  while (Vector3D::DotProduct(v,CutTriangleFace->ExternalNormal)<=0.0);
 
 			  break;
 		  case _block_bounday:
-			  for (int idim=0;idim<3;idim++) x[idim]+=dt*v[idim];
+			  for (int idim=0;idim<3;idim++) {
+			    x[idim]+=dt*v[idim];
+			    v[idim]+=dt*accl[idim];
+			  }
 
 			  switch (iIntersectedFace) {
 			  case 0:case 1:

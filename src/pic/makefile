@@ -19,6 +19,7 @@ PICOBJ = pic.o \
 	pic_mover_boris.o \
 	pic_mover_guiding_center.o \
 	pic_mover_error.o \
+	pic_mover_trajectory_tracking.o \
 	pic_parser.o \
 	pic_pbuffer.o \
 	pic_weight_time.o \
