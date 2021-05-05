@@ -95,7 +95,7 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
         double xLocalIntersection[3],xIntersection[3];
 
         if (TriangleFace->RayIntersection(x,v,dt,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) { 
-          if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
+          if ((dt>0.0)&&(Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<0.0)&&(dt*Vector3D::Length(v)>PIC::Mesh::mesh->EPS)) if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
             CutTriangleFace=TriangleFace,FlightTime=dt;
           }
         }
@@ -165,6 +165,8 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 	  else {
 		  //the particle intersected the bounday
 		  int code;
+                  double x_test[3],c_init;
+                  
 
 		  switch (IntersectionMode) {
 		  case _cut_triangle:
@@ -172,6 +174,9 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 			    x[idim]+=dt*v[idim];
 			    v[idim]+=dt*accl[idim];
 			  }
+
+c_init=Vector3D::DotProduct(v,CutTriangleFace->ExternalNormal);
+
 
 			  do {
 			    code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,x,v,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
@@ -181,66 +186,68 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 				    return _PARTICLE_LEFT_THE_DOMAIN_;
 			    }
 			  }
-			  while (Vector3D::DotProduct(v,CutTriangleFace->ExternalNormal)<=0.0);
+			  while (c_init*Vector3D::DotProduct(v,CutTriangleFace->ExternalNormal)>=0.0); // (Vector3D::DotProduct(v,v_init)>=0.0);
 
 			  break;
 		  case _block_bounday:
 			  for (int idim=0;idim<3;idim++) {
 			    x[idim]+=dt*v[idim];
 			    v[idim]+=dt*accl[idim];
+ 
+                            x_test[idim]=x[idim];
 			  }
 
 			  switch (iIntersectedFace) {
 			  case 0:case 1:
 				  if (iIntersectedFace==0) {
 					  iFaceExclude=1;
-					  if (x[0]>=startNode->xmin[0]) x[0]=startNode->xmin[0]-PIC::Mesh::mesh->EPS;
+					  if (x_test[0]>=startNode->xmin[0]) x_test[0]=startNode->xmin[0]-PIC::Mesh::mesh->EPS;
 				  }
 				  else {
 					  iFaceExclude=0;
-					  if (x[0]<startNode->xmax[0]) x[0]=startNode->xmax[0];
+					  if (x_test[0]<startNode->xmax[0]) x_test[0]=startNode->xmax[0];
 				  }
 
 				  for (int iOrthogonal=1;iOrthogonal<3;iOrthogonal++) {
-					  if (x[iOrthogonal]<startNode->xmin[iOrthogonal])  x[iOrthogonal]=startNode->xmin[iOrthogonal];
-					  if (x[iOrthogonal]>=startNode->xmax[iOrthogonal]) x[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
+					  if (x_test[iOrthogonal]<startNode->xmin[iOrthogonal])  x_test[iOrthogonal]=startNode->xmin[iOrthogonal];
+					  if (x_test[iOrthogonal]>=startNode->xmax[iOrthogonal]) x_test[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
 				  }
 				  break;
 
 			  case 2:case 3:
 				  if (iIntersectedFace==2) {
 					  iFaceExclude=3;
-					  if (x[1]>=startNode->xmin[1]) x[1]=startNode->xmin[1]-PIC::Mesh::mesh->EPS;
+					  if (x_test[1]>=startNode->xmin[1]) x_test[1]=startNode->xmin[1]-PIC::Mesh::mesh->EPS;
 				  }
 				  else {
 					  iFaceExclude=2;
-					  if (x[1]<startNode->xmax[1]) x[1]=startNode->xmax[1];
+					  if (x_test[1]<startNode->xmax[1]) x_test[1]=startNode->xmax[1];
 				  }
 
 				  for (int iOrthogonal=0;iOrthogonal<3;iOrthogonal+=2) {
-					  if (x[iOrthogonal]<startNode->xmin[iOrthogonal])  x[iOrthogonal]=startNode->xmin[iOrthogonal];
-					  if (x[iOrthogonal]>=startNode->xmax[iOrthogonal]) x[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
+					  if (x_test[iOrthogonal]<startNode->xmin[iOrthogonal])  x_test[iOrthogonal]=startNode->xmin[iOrthogonal];
+					  if (x_test[iOrthogonal]>=startNode->xmax[iOrthogonal]) x_test[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
 				  }
 				  break;
 
 			  case 4:case 5:
 				  if (iIntersectedFace==4) {
 					  iFaceExclude=5;
-					  if (x[2]>=startNode->xmin[2]) x[2]=startNode->xmin[2]-PIC::Mesh::mesh->EPS;
+					  if (x_test[2]>=startNode->xmin[2]) x_test[2]=startNode->xmin[2]-PIC::Mesh::mesh->EPS;
 				  }
 				  else {
 					  iFaceExclude=4;
-					  if (x[2]<startNode->xmax[2]) x[2]=startNode->xmax[2];
+					  if (x_test[2]<startNode->xmax[2]) x_test[2]=startNode->xmax[2];
 				  }
 
 				  for (int iOrthogonal=0;iOrthogonal<2;iOrthogonal++) {
-					  if (x[iOrthogonal]<startNode->xmin[iOrthogonal])  x[iOrthogonal]=startNode->xmin[iOrthogonal];
-					  if (x[iOrthogonal]>=startNode->xmax[iOrthogonal]) x[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
+					  if (x_test[iOrthogonal]<startNode->xmin[iOrthogonal])  x_test[iOrthogonal]=startNode->xmin[iOrthogonal];
+					  if (x_test[iOrthogonal]>=startNode->xmax[iOrthogonal]) x_test[iOrthogonal]=startNode->xmax[iOrthogonal]-PIC::Mesh::mesh->EPS;
 				  }
 				  break;
 			  }
 
-			  startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+			  startNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
 
 			  if (startNode==NULL) {
 				  //the partcle is outside of the domain
