@@ -32,7 +32,7 @@ int PhotolyticReactions::H2O::Huebner1992ASS::ReactionCannelProductNumber[nReact
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::EmissionWaveLength[nReactionChannels]={
-    -1.0,-1.0,-1.0,-1.0,684.4*_A_,684.8*_A_,662.3*_A_
+    -1.0,-1.0,-1.0,-1.0,684.4*_A_,664.8*_A_,662.3*_A_
 };
 
 double PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable_QuietSun[nReactionChannels]={
@@ -43,6 +43,17 @@ double PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable_ActiveSun[nRe
     1.76E-5,1.48E-6,1.91E-6,8.28E-7,1.51E-7,2.21E-8,4.07E-8
 };
 
+double PhotolyticReactions::H2O::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
+    3.42*eV2J,3.84*eV2J,0.7*eV2J,12.4*eV2J,18.6*eV2J,36.5*eV2J,25.0*eV2J
+};
+
+double PhotolyticReactions::H2O::Huebner1992ASS::ExcessEnergyTable_ActiveSun[nReactionChannels]={
+    4.04*eV2J,3.94*eV2J,0.7*eV2J,15.2*eV2J,23.2*eV2J,39.8*eV2J,30.5*eV2J
+};
+
+
+
+
 double *PhotolyticReactions::H2O::Huebner1992ASS::ReactionRateTable=NULL;
 double PhotolyticReactions::H2O::Huebner1992ASS::TotalReactionRate=0.0;
 double *PhotolyticReactions::H2O::Huebner1992ASS::ExcessEnergyTable=NULL;
@@ -51,8 +62,14 @@ double PhotolyticReactions::H2O::Huebner1992ASS::ReturnReactionProductVelocity[3
 
 void PhotolyticReactions::H2O::Huebner1992ASS::Init() {
   //init the tables
-  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) ReactionRateTable=ReactionRateTable_ActiveSun;
-  else if  (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) ReactionRateTable=ReactionRateTable_QuietSun;
+  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) {
+    ReactionRateTable=ReactionRateTable_ActiveSun;
+    ExcessEnergyTable=ExcessEnergyTable_ActiveSun;
+  }
+  else if  (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) {
+    ReactionRateTable=ReactionRateTable_QuietSun;
+    ExcessEnergyTable=ExcessEnergyTable_QuietSun;
+  }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
   //calculate the total rate
@@ -82,7 +99,7 @@ int PhotolyticReactions::O2::Huebner1992ASS::ReactionCannelProductNumber[nReacti
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ReactionRateTable_QuietSun[nReactionChannels]={
-  1.45E-7,4.05E-6,3.90E-8,4.46E-7,1.10E-7
+  1.45E-7,4.05E-6,3.90E-8,4.64E-7,1.10E-7
 };
 
 double PhotolyticReactions::O2::Huebner1992ASS::ReactionRateTable_ActiveSun[nReactionChannels]={
@@ -164,8 +181,12 @@ double PhotolyticReactions::H::Huebner1992ASS::ReturnReactionProductVelocity[3*n
 
 void PhotolyticReactions::H::Huebner1992ASS::Init() {
   //init the tables
-  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) ReactionRateTable=ReactionRateTable_ActiveSun;
-  else if  (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) ReactionRateTable=ReactionRateTable_QuietSun;
+  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) {
+    ReactionRateTable=ReactionRateTable_ActiveSun,ExcessEnergyTable=ExcessEnergyTable_ActiveSun;
+  }
+  else if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) {
+    ReactionRateTable=ReactionRateTable_QuietSun,ExcessEnergyTable=ExcessEnergyTable_QuietSun;
+  }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
   //calculate the total rate
@@ -219,9 +240,14 @@ double PhotolyticReactions::H2::Huebner1992ASS::ReturnReactionProductVelocity[3*
 
 void PhotolyticReactions::H2::Huebner1992ASS::Init() {
   //init the tables
-  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) ReactionRateTable=ReactionRateTable_ActiveSun;
-  else if  (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) ReactionRateTable=ReactionRateTable_QuietSun;
+  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) {
+    ReactionRateTable=ReactionRateTable_ActiveSun,ExcessEnergyTable=ExcessEnergyTable_ActiveSun;
+  }
+  else if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) {
+    ReactionRateTable=ReactionRateTable_QuietSun,ExcessEnergyTable=ExcessEnergyTable_QuietSun;
+  }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
+
 
   //calculate the total rate
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
@@ -248,7 +274,7 @@ double PhotolyticReactions::O::Huebner1992ASS::ReactionRateTable_ActiveSun[nReac
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::EmissionWaveLength[nReactionChannels]={
-    -1.0
+   858.3*_A_
 };
 
 double PhotolyticReactions::O::Huebner1992ASS::ExcessEnergyTable_QuietSun[nReactionChannels]={
@@ -267,9 +293,15 @@ double PhotolyticReactions::O::Huebner1992ASS::ReturnReactionProductVelocity[3*n
 
 void PhotolyticReactions::O::Huebner1992ASS::Init() {
   //init the tables
-  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) ReactionRateTable=ReactionRateTable_ActiveSun;
-  else if  (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) ReactionRateTable=ReactionRateTable_QuietSun;
+  if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__ACTIVE_) {
+    ReactionRateTable=ReactionRateTable_ActiveSun,ExcessEnergyTable=ExcessEnergyTable_ActiveSun;
+  }
+  else if (_PHOTOLYTIC_REACTIONS__SUN_ == _PHOTOLYTIC_REACTIONS__SUN__QUIET_) {
+    ReactionRateTable=ReactionRateTable_QuietSun,ExcessEnergyTable=ExcessEnergyTable_QuietSun;
+  }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
+
+
 
   //calculate the total rate
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
@@ -332,6 +364,7 @@ void PhotolyticReactions::OH::Huebner1992ASS::Init() {
   }
   else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
+
   //calculate the total rate
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
@@ -349,10 +382,20 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
     if (summ>TotalReactionRate) break;
   }
 
-  if (i==nReactionChannels) i=-1;
+  if (i==nReactionChannels) i = i-1;
   ReactionChannel=i;
 
+  
+  for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+    int t;
+    if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
+      ReturnReactionProductTable[nReactionProducts++]=t;
+    }
+  }
 
+  if (nReactionProducts==0) return;
+
+  
   //2. Evaluate the total excess energy for the reaction channel
   double TotalEnergy=0.0;
 
@@ -387,7 +430,7 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
     //save velocity vector
     for (i=0;i<3;i++) {
       LocalRectionProductVelocityTable[iLightestSpecies][i]=l[i]*VelocityLightestSpecies+HeavyComplexCenterMassVelocity[i];
-      HeavyComplexCenterMassVelocity[i]+=l[i]*VelocityHeavyComplex;
+      HeavyComplexCenterMassVelocity[i]+=l[i]*VelocityHeavyComplex;    
     }
 
     //adjust the energy
@@ -401,14 +444,16 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
   memcpy(&LocalRectionProductVelocityTable[0][0],HeavyComplexCenterMassVelocity,3*sizeof(double));
 
   //4. Init the list of the reaction products
-  int t;
+ 
 
-  for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+  for (i=0;i<nMaxReactionProducts;i++) {
+    int t;
     if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
-      ReturnReactionProductTable[nReactionProducts++]=t;
+      //ReturnReactionProductTable[nReactionProducts++]=t;
       for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalRectionProductVelocityTable[i][idim];
     }
   }
+
 
 }
 

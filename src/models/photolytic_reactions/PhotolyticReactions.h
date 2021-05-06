@@ -46,6 +46,7 @@ namespace PhotolyticReactions {
 
       //the table of the rates for each channel
       extern double ReactionRateTable_QuietSun[nReactionChannels],ReactionRateTable_ActiveSun[nReactionChannels];
+      extern double ExcessEnergyTable_QuietSun[nReactionChannels],ExcessEnergyTable_ActiveSun[nReactionChannels];     
       extern double *ReactionRateTable,*ExcessEnergyTable;
       extern double TotalReactionRate;
 
@@ -63,7 +64,31 @@ namespace PhotolyticReactions {
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
             ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+	
+	//printf("ReactionChannel:%d, nReactionProducts:%d\n", ReactionChannel,nReactionProducts);
+	
+	/*
+	if (ReactionChannel==0){
+	printf("H2O ReactionChannel:%d,nReactionProducts:%d\n", ReactionChannel,nReactionProducts);
+	double mx=0,my=0,mz=0, energy=0;
+	for (int i=0; i<nReactionProducts; i++){
+	  double vx,vy,vz,mass;
+	  mass = ReactionProductMassTable[ReactionChannel][i];
+	  vx = ReturnReactionProductVelocity[3*i+0];
+	  vy = ReturnReactionProductVelocity[3*i+1];
+	  vz = ReturnReactionProductVelocity[3*i+2];
+	  mx += mass*vx;
+	  my += mass*vy;
+	  mz += mass*vz;
+	  energy +=0.5*mass*(vx*vx+vy*vy+vz*vz);
+	  printf("iProduct:%d,mass:%e,v:%e,%e,%e\n",i,mass,vx,vy,vz);
+	}
+	
+	printf("reactionChannel:%d mx:%e,%e,%e, energy:%e\n", ReactionChannel, mx,my,mz, energy/eV2J);
 
+	}
+	*/
+	  
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
