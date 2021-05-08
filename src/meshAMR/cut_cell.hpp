@@ -7,10 +7,10 @@ template <class cCornerNode,class cCenterNode,class cBlockAMR>
 int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node) {
   int res=0;
 
-    static int debug_loop_cnt=0;
-    static int debug_call_cnt=0;
+  static int debug_loop_cnt=0;
+  static int debug_call_cnt=0;
 
-    debug_call_cnt++;
+  debug_call_cnt++;
 
   const int _real=0;
   const int _ghost=1;
@@ -253,8 +253,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
   int edge_cut_cnt=0;
 
-  for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) CellCornerTable[i][j][k].status=_undef;
-  for (i=1;i<3;i+=2) for (j=1;j<3;j+=2) for (k=1;k<3;k+=2) CellCornerTable[i][j][k].status=_undef;
+  for (i=0;i<3;i++) for (j=0;j<3;j++) for (k=0;k<3;k++) CellCornerTable[i][j][k].status=_undef;
 
   for (int iedge=0;iedge<12;iedge++) {
     double x0[3],l[3];
@@ -316,7 +315,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     cInternalSphericalData* Sphere;
     int idim;
     double xMiddle[3];
-//    list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryDescriptor;
 
     for (idim=0;idim<DIM;idim++) xMiddle[idim]=0.5*(xmin[idim]+xmax[idim]);
  
@@ -377,7 +375,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   
   
   
-//  auto ConnectCornerNodes = [&] () {
     for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) if (CellCornerTable[i][j][k].status!=_undef) {
       cCorner *nd,*ConnectNode;
 
@@ -403,7 +400,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
         if (ConnectNode!=NULL) nd->Connect(ConnectNode);
       }
     }
-//  };
  
   //connect cutting nodes
   //connect cutting nodes: only those cutting nodes are connected that belongs to the same face
@@ -413,7 +409,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   if (GetIntersectedFaceNumber()<2) return _cell_not_cuted; 
 
 
-//  auto CreateTetrahedrons = [&] () { 
     //the total number of the nodes in the cell
     int nConnections,n,NodeListLength=0;
     cCorner *tn0,*nd0,*nd1,*nd2,*nd3,*NodeList[27];
@@ -423,11 +418,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
       NodeList[NodeListLength]=&CellCornerTable[i][j][k];
       NodeListLength++;
     }
-
- //   static int debug_loop_cnt=0;
- //   static int debug_call_cnt=0;
-
- //   debug_call_cnt++;
 
     auto TestConnectionConsistency = [&] () {
       for (int i=0;i<NodeListLength;i++) {
@@ -474,26 +464,26 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
     TestInsideSphere();
         
-bool found_ghost=false;
-bool found_real=false;
-bool real_ok,ghost_ok,cut_ok;
+    bool found_ghost=false;
+    bool found_real=false;
+    bool real_ok,ghost_ok,cut_ok;
 
     while (NodeListLength>3) {
       debug_loop_cnt++; 
 
-found_ghost=false;
-found_real=false;
+      found_ghost=false;
+      found_real=false;
 
-for (i=0;i<NodeListLength;i++) {
-   if (NodeList[i]->status==_ghost) found_ghost=true; 
-   if (NodeList[i]->status==_real) found_real=true; 
-}
+      for (i=0;i<NodeListLength;i++) {
+        if (NodeList[i]->status==_ghost) found_ghost=true; 
+        if (NodeList[i]->status==_real) found_real=true; 
+      }
 
-if (found_ghost==true) real_ok=false,ghost_ok=true,cut_ok=false; 
-else if (found_real==true) real_ok=true,ghost_ok=true,cut_ok=false;
-else real_ok=true,ghost_ok=true,cut_ok=true;
+      if (found_ghost==true) real_ok=false,ghost_ok=true,cut_ok=false; 
+      else if (found_real==true) real_ok=true,ghost_ok=true,cut_ok=false;
+      else real_ok=true,ghost_ok=true,cut_ok=true;
 
-TestConnectionConsistency();
+      //TestConnectionConsistency();
 
       //1. Search for 'ghost' nodes that has 3 connections
       for (n=0,nd0=NULL,nConnections=-1;n<NodeListLength;n++) if ( (((NodeList[n]->status==_ghost)&&(ghost_ok==true)) || ((NodeList[n]->status==_real)&&(real_ok==true)) || (cut_ok==true)) && (NodeList[n]->nConnections==3)) {
@@ -523,48 +513,14 @@ TestConnectionConsistency();
         }
       }
 
-/*
-      //2. If needed,search for the 'real' node that has 3 connections
-      if (nd0==NULL) for (n=0,nd0=NULL,nConnections=-1;n<NodeListLength;n++) if ((NodeList[n]->status==_real)&&(NodeList[n]->nConnections==3)) {
-        int itn1,itn2,itn3,tn0Connections;
-        bool zeroVolume=false;
-
-        //check the volume of possible tetraedrons
-        tn0=NodeList[n];
-        tn0Connections=tn0->nConnections;
-
-        xt0ptr=tn0->x;
-        xt1ptr=tn0->ConnectionTable[0]->x;
-        xt2ptr=tn0->ConnectionTable[1]->x;
-        xt3ptr=tn0->ConnectionTable[2]->x;
-
-        for (idim=0;idim<3;idim++) {
-          xt1[idim]=xt1ptr[idim]-xt0ptr[idim];
-          xt2[idim]=xt2ptr[idim]-xt0ptr[idim];
-          xt3[idim]=xt3ptr[idim]-xt0ptr[idim];
-        }
-
-        tVolume=fabs(xt1[0]*(xt2[1]*xt3[2]-xt2[2]*xt3[1])-xt1[1]*(xt2[0]*xt3[2]-xt2[2]*xt3[0])+xt1[2]*(xt2[0]*xt3[1]-xt2[1]*xt3[0]))/6.0;
-
-        if (tVolume>1.0E-25*(xmax[0]-xmin[0])*(xmax[1]-xmin[1])*(xmax[2]-xmin[2]))  {
-          nd0=NodeList[n],nConnections=NodeList[n]->nConnections;
-          break;
-        }
-      }
-
-*/
       //3. If needed -> loop through nodes with a larger number of connections 
       if (nd0==NULL) for (n=0,nd0=NULL,nConnections=-1;n<NodeListLength;n++) if ( (((NodeList[n]->status==_ghost)&&(ghost_ok==true)) || ((NodeList[n]->status==_real)&&(real_ok==true)) || (cut_ok==true)) && (NodeList[n]->nConnections>3)) { 
-//if ( ((NodeList[n]->status==_ghost)||(NodeList[n]->status==_real)||(found_ghost_real==false)) && (NodeList[n]->nConnections>3)) { 
-//if ( (NodeList[n]->nConnections>3)&& ((NodeList[n]->status==_real)||(NodeList[n]->status==_ghost)) ) {
         int itn1,itn2,itn3,tn0Connections;
         bool zeroVolume=false;
 
         //check the volume of possible tetraedrons
         tn0=NodeList[n];
         tn0Connections=tn0->nConnections;
-
-//        nd0=NULL;
 
         for (itn1=0;(itn1<tn0Connections)&&(zeroVolume==false);itn1++)  for (itn2=itn1+1;(itn2<tn0Connections)&&(zeroVolume==false);itn2++) for (itn3=itn2+1;(itn3<tn0Connections)&&(zeroVolume==false);itn3++) {
           xt0ptr=tn0->x;
@@ -588,15 +544,11 @@ zeroVolume=true;
           }
        //   else zeroVolume=true;
         }
-
-      //  if ((zeroVolume==false)&&(nd0!=NULL)) break;
       }
 
       //4.verify that a node was found
       if (nd0==NULL) {
-
-return _sucess;
-      //  ::exit(__LINE__,__FILE__,"Error: all possible corner nodes has a zero volume tetrahedron among their connections");
+        return _sucess;
       }
 
       //connect tetrahedron is the number of the nunnection == 3
@@ -626,7 +578,6 @@ return _sucess;
           }
 
           TetrahedronList.push_back(tetra);
-//PrintTetrahedronMesh(TetrahedronList,"test.dat");
         }
 
         //disconnect the point nd0
@@ -744,8 +695,6 @@ return _sucess;
             }
 
             TetrahedronList.push_back(tetra);
-
-//PrintTetrahedronMesh(TetrahedronList,"test.dat");
           }
         }
 
@@ -769,23 +718,11 @@ return _sucess;
         else {
           ::exit(__LINE__,__FILE__,"Error: inconsistence in the node connections");
         }
-
-
-           
       }
       else {
         ::exit(__LINE__,__FILE__,"Error: the number of connections is not correct");
       }
-          
-
-
     }
-
-
-
-  //}; 
-
-  //CreateTetrahedrons();
 
   return _sucess;
 } 
@@ -808,10 +745,6 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMesh(li
   for (cnt=1,it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
     for (i=0;i<4;i++) {
       fprintf(fout," %e  %e  %e\n",it->x[i][0],it->x[i][1],it->x[i][2]);
-
-if (sqrt(pow(it->x[i][0]-it->x[i][0],2)+pow(it->x[i][1]-it->x[i][1],2)+pow(it->x[i][2]-it->x[i][2],2))>100E3) {
-exit(__LINE__,__FILE__);
-}
 
       it->id[i]=cnt++;
     }
