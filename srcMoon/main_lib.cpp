@@ -1251,6 +1251,41 @@ void amps_init() {
       PIC::Mesh::mesh->readMeshFile(fname);
     }
 
+
+std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> test_cut_cell;
+
+list<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>::cTetrahedron> tetra_list; 
+
+test_cut_cell = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void {
+  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (startNode->block!=NULL) {
+
+      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+          for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+            PIC::Mesh::mesh->GetCutcellTetrahedronMesh(tetra_list,i,j,k,startNode);
+
+//if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat");
+          }
+        }
+      }
+    }
+  }
+  else {
+   int iDownNode;
+   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+   for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+     test_cut_cell(downNode);
+   }
+ }
+};
+
+test_cut_cell(PIC::Mesh::mesh->rootTree);
+if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat"); 
+
+
+
   //  }
   //  VT_USER_END("name");
   //  MPI_Finalize();
@@ -1274,6 +1309,10 @@ void amps_init() {
     //initialize the blocks
     PIC::Mesh::mesh->AllowBlockAllocation=true;
     PIC::Mesh::mesh->AllocateTreeBlocks();
+
+
+test_cut_cell(PIC::Mesh::mesh->rootTree);
+if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat");
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();

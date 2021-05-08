@@ -1708,6 +1708,20 @@ public:
   cAMRstack<cInternalBoundaryConditionsDescriptor> InternalBoundaryDescriptors;
   #endif
 
+  //member function used for meshing cut cells
+  class cTetrahedron {
+  public:
+    double x[4][3];
+    int id[4];
+  };
+
+  const int _cell_removed=0;
+  const int _sucess=1;
+  const int _cell_not_cuted=2; 
+
+  int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
+  void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
+
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
   int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
   int (*fDefaultUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
@@ -14465,6 +14479,7 @@ CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace=NULL
 //template <class cCornerNode,class cCenterNode,class cBlockAMR>
 //class cMeshAMRgeneric
 
+#include "cut_cell.hpp"
 
 
 #endif 
