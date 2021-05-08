@@ -190,12 +190,12 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     CellEdgeTable[iedge].MidPoint->status=_cut_location;
   };
 
-  auto TestIntersectionWithSphere = [&] (double *x0,double *l,cEdge& edge,int iedge) {
+  auto TestIntersectionWithSphere = [&] (double *x0,double *l,cEdge& edge,int iedge,cInternalSphericalData* Sphere) {
     double A,B,C,D,t0,t1;
     int res=_not_cut;
     int i,j,k;
 
-    double R=1737.10E3;
+    double R=Sphere->Radius;
 
     A=l[0]*l[0]+l[1]*l[1]+l[2]*l[2]; 
     B=2.0*(x0[0]*l[0]+x0[1]*l[1]+x0[2]*l[2]);
@@ -218,24 +218,15 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
       for (int idim=0;idim<3;idim++) edge.MidPoint->x[idim]=x0[idim]+t0*l[idim];
       res=_cut;
-
-
-//edge.MidPoint->r=Vector3D::Length(edge.MidPoint->x);
-
     }
     else if ((0.0<t1)&&(t1<1.0)) {
       AttachMidPoint(edge,iedge);
 
       for (int idim=0;idim<3;idim++) edge.MidPoint->x[idim]=x0[idim]+t1*l[idim];
       res=_cut;
-
-
-
-//edge.MidPoint->r=Vector3D::Length(edge.MidPoint->x);
-
     }
 
-//    if (res==_cut) {
+    if (res==_cut) {
       //deactivete corners that are within the sphere
       double *xc;
       int ic;
@@ -246,9 +237,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
       k=EdgeCornerMap[iedge][0][2];
 
       xc=CellCornerTable[i][j][k].x;
-//      if (Vector3D::DotProduct(xc,xc)<R*R) CellCornerTable[i][j][k].status=_ghost;
-
-CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _real;
+      CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _real;
 
       //second point
       i=EdgeCornerMap[iedge][1][0];
@@ -256,17 +245,16 @@ CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _re
       k=EdgeCornerMap[iedge][1][2];
 
       xc=CellCornerTable[i][j][k].x;
-//      if (Vector3D::DotProduct(xc,xc)<R*R) CellCornerTable[i][j][k].status=_ghost;
-
-CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _real;
-//    }
+      CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _real;
+    }
       
     return res;
   };
 
   int edge_cut_cnt=0;
 
-  for (i=0;i<3;i++) for (j=0;j<3;j++) for (k=0;k<3;k++) CellCornerTable[i][j][k].status=_undef;
+  for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) CellCornerTable[i][j][k].status=_undef;
+  for (i=1;i<3;i+=2) for (j=1;j<3;j+=2) for (k=1;k<3;k+=2) CellCornerTable[i][j][k].status=_undef;
 
   for (int iedge=0;iedge<12;iedge++) {
     double x0[3],l[3];
@@ -288,20 +276,26 @@ CellCornerTable[i][j][k].status=(Vector3D::DotProduct(xc,xc)<R*R) ? _ghost : _re
       l[idim]=CellCornerTable[i1][j1][k1].x[idim]-x0[idim];
     }
 
-double rr1=Vector3D::Length(CellCornerTable[i0][j0][k0].x);
-double rr2=Vector3D::Length(CellCornerTable[i1][j1][k1].x);
-
-
     //set the edge mid point 
     i=EdgeMidPointMap[iedge][0];
     j=EdgeMidPointMap[iedge][1];
     k=EdgeMidPointMap[iedge][2];
 
-//    CellEdgeTable[iedge].MidPoint=&CellCornerTable[i][j][k];
-
-
     //test intersection
-    int status=TestIntersectionWithSphere(x0,l,CellEdgeTable[iedge],iedge);
+    int status;
+    cInternalSphericalData* Sphere;
+    bool node_surface_found=false;
+
+    for (cInternalBoundaryConditionsDescriptor *bc=node->InternalBoundaryDescriptorList;bc!=NULL;bc=bc->nextInternalBCelement) {
+      switch (bc->BondaryType) {
+      case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+        Sphere=(cInternalSphericalData*)(bc->BoundaryElement); 
+        status=TestIntersectionWithSphere(x0,l,CellEdgeTable[iedge],iedge,Sphere);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: not implemented");
+      }
+    }
 
     if (status==_cut) {
       if (CellEdgeTable[iedge].status==_not_cut) {
@@ -310,14 +304,65 @@ double rr2=Vector3D::Length(CellCornerTable[i1][j1][k1].x);
       }
       else {
         //the edge is cat twice that is not allowed
-
-exit(__LINE__,__FILE__,"Error: in this configuration an edgege cannot be cut twice");
-
         return _cell_removed;
       }
     }  
   }
 
+  if (edge_cut_cnt==0) {
+    //either the entire cell is within the surface or it is outside 
+    //if intersection with the cut-face is not found, check the middle point of the block is within the domain
+    
+    cInternalSphericalData* Sphere;
+    int idim;
+    double xMiddle[3];
+//    list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryDescriptor;
+
+    for (idim=0;idim<DIM;idim++) xMiddle[idim]=0.5*(xmin[idim]+xmax[idim]);
+ 
+    for (auto InternalBoundaryDescriptor=InternalBoundaryList.begin();InternalBoundaryDescriptor!=InternalBoundaryList.end();InternalBoundaryDescriptor++) {
+      switch(InternalBoundaryDescriptor->BondaryType) {
+      case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+        Sphere=(cInternalSphericalData*)(InternalBoundaryDescriptor->BoundaryElement);
+
+        if (Vector3D::Length(xMiddle)<Sphere->Radius) {
+          //the cell is outside of the domain -> do not mesh it
+          return _cell_removed;
+        }
+
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: not tested");
+
+        if (CutCell::CheckPointInsideDomain(xMiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,EPS)==false) {
+          //the cell is outside of the domain -> do not mesh it
+          return _cell_removed;
+        } 
+      }
+    }
+  }
+  else {
+    cInternalSphericalData* Sphere;
+
+    //verify that the status of all corners is defined 
+    for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) {
+      if (CellCornerTable[i][j][k].status==_undef) {
+        //the status needs to be defined
+        for (auto InternalBoundaryDescriptor=InternalBoundaryList.begin();InternalBoundaryDescriptor!=InternalBoundaryList.end();InternalBoundaryDescriptor++) {
+          switch(InternalBoundaryDescriptor->BondaryType) {
+          case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
+            Sphere=(cInternalSphericalData*)(InternalBoundaryDescriptor->BoundaryElement);
+           
+            CellCornerTable[i][j][k].status=(Vector3D::Length(CellCornerTable[i][j][k].x)<Sphere->Radius) ? _ghost : _real;
+            break;
+          default:
+            exit(__LINE__,__FILE__,"Error: not implelented");
+          }
+        }
+      }
+    }
+  }
+ 
 
    
 
