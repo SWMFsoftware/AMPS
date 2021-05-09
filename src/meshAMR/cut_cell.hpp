@@ -339,7 +339,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
       }
       else {
         //the edge is cat twice that is not allowed
-        return _cell_removed;
+        return _removed_cell;
       }
     }  
   
@@ -381,20 +381,20 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
         if (Vector3D::Length(xMiddle)<Sphere->Radius) {
           //the cell is outside of the domain -> do not mesh it
-          return _cell_removed;
+          return _removed_cell;
         }
         else {
-          for (i=0;i<3;i+=2) CellCornerTable[i][j][k].status=_real; 
+          return _complete_cell;
         }
 
         break;
       default:
         if (CutCell::CheckPointInsideDomain(xMiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,EPS)==false) {
           //the cell is outside of the domain -> do not mesh it
-          return _cell_removed;
+          return _removed_cell;
         } 
         else {
-          for (i=0;i<3;i+=2) CellCornerTable[i][j][k].status=_real; 
+          return _complete_cell;
         }
       }
     }
@@ -474,7 +474,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
  
   
   //a block is considered to be cut if at lease two face are cuted
-  if (GetIntersectedFaceNumber()<2) return _cell_not_cuted; 
+  if (GetIntersectedFaceNumber()<2) return _complete_cell; 
 
 
     //the total number of the nodes in the cell
@@ -645,6 +645,7 @@ zeroVolume=true;
             tetra.x[3][idim]=nd3->x[idim]; 
           }
 
+          tetra.Node=node;
           TetrahedronList.push_back(tetra);
         }
 
@@ -762,6 +763,7 @@ zeroVolume=true;
               tetra.x[3][idim]=nd3->x[idim];
             }
 
+            tetra.Node=node;
             TetrahedronList.push_back(tetra);
           }
         }
@@ -825,3 +827,102 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMesh(li
 
   fclose(fout);
 } 
+
+//=============================================================================================================
+//print data stores at the mesh
+template <class cCornerNode,class cCenterNode,class cBlockAMR>
+void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber) {
+  FILE *fout;
+  typename list<cTetrahedron>::iterator it;
+  int cnt,i,ncells,npoints;
+
+  char full_fname[200];
+
+
+  sprintf(full_fname,"%s.tetra.thread=%ld.dat",fname,ThisThread);
+  fout=fopen(full_fname,"w");
+
+  //Print the header
+  fprintf(fout,"VARIABLES = \"X\", \"Y\", \"Z\", \"Maximum Refinment Level\", \"Temp_ID\""); 
+
+  if (_AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_) { 
+    fprintf(fout,", \"Thread\"");
+  } 
+
+  if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+  CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
+
+  if (_AMR_CENTER_NODE_ == _ON_AMR_MESH_) {
+    if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+    CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
+  }
+
+  rootTree->block->PrintVariableList(fout);
+
+  fprintf(fout,"\nZONE N=%ld, E=%ld, F=FEPOINT, ET=TETRAHEDRON\n",4*TetrahedronList.size(),TetrahedronList.size());
+
+  //print the data and count the nodeds
+  cCenterNode *tempCenterNode=CenterNodes.newElement(); 
+
+  const int nMaxCenterInterpolationCoefficients=64;
+  cCenterNode *CenterNodeInterpolationStencil[nMaxCenterInterpolationCoefficients];
+  double CenterNodeInterpolationCoefficients[nMaxCenterInterpolationCoefficients];
+  int centerNodeInterpolationStencilLength;
+
+  
+  for (cnt=1,it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
+    //location of the point
+    for (i=0;i<4;i++) {
+      fprintf(fout," %e  %e  %e  ",it->x[i][0],it->x[i][1],it->x[i][2]);
+
+      it->id[i]=cnt++;
+
+      int MaxRefinmentLevel=0; //CornerNode->nodeDescriptor.maxRefinmentLevel;
+      int NodeTempID=0; //CornerNode->Temp_ID;
+
+      fprintf(fout,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,it->Node->Thread);
+
+      //interpolated values 
+      double xNode[3]={it->x[i][0],it->x[i][1],it->x[i][2]}; 
+
+      tempCenterNode->SetX(xNode);
+
+      if (GetCenterNodesInterpolationCoefficients==NULL) {
+        switch(_MESH_DIMENSION_) {
+        case 1:
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_1D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
+          break;
+        case 2:
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_2D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
+          break;
+        case 3:
+          centerNodeInterpolationStencilLength=CenterNodesInterpolationCoefficients_3D_linear(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
+        }
+      }
+      else {
+        centerNodeInterpolationStencilLength=GetCenterNodesInterpolationCoefficients(xNode,CenterNodeInterpolationCoefficients,CenterNodeInterpolationStencil,it->Node,nMaxCenterInterpolationCoefficients);
+      }
+
+      tempCenterNode->Interpolate(CenterNodeInterpolationStencil,CenterNodeInterpolationCoefficients,centerNodeInterpolationStencilLength);
+      tempCenterNode->PrintData(fout,DataSetNumber,NULL,it->Node->Thread);
+
+      it->Node->block->PrintData(fout,DataSetNumber,NULL,it->Node->Thread);
+
+      fprintf(fout,"\n");
+    }
+  }
+  
+  CenterNodes.deleteElement(tempCenterNode);
+
+  //print the connectivity list
+  for (it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
+    fprintf(fout,"%ld %ld %ld %ld\n",it->id[0],it->id[1],it->id[2],it->id[3]);
+  }
+
+  fclose(fout);
+}  
+
+
+
+
+

@@ -1713,14 +1713,16 @@ public:
   public:
     double x[4][3];
     int id[4];
+    cTreeNodeAMR<cBlockAMR>* Node;
   };
 
-  const int _cell_removed=0;
+  const int _removed_cell=0;
   const int _sucess=1;
-  const int _cell_not_cuted=2; 
+  const int _complete_cell=2; 
 
   int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
   void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
+  void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber);
 
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
   int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
@@ -7685,9 +7687,9 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
    ResetNodeIndex(rootTree);
 
    //output the mesh 
-   std::function<void(cTreeNodeAMR<cBlockAMR>*)> OutputDataFile;
+   std::function<void(cTreeNodeAMR<cBlockAMR>*,list<cTetrahedron>&)> OutputDataFile;
    
-   OutputDataFile = [&] (cTreeNodeAMR<cBlockAMR>* Node) {
+   OutputDataFile = [&] (cTreeNodeAMR<cBlockAMR>* Node,list<cTetrahedron> &TetrahedronList) {
      if (Node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
        int nd,i,j,k,ii,jj,kk;
        cCornerNode *CornerNode;
@@ -7695,6 +7697,15 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
        if ((Node->IsUsedInCalculationFlag==true)&&(Node->block!=NULL)&&(Node->Thread==ThisThread)) {
          for (k=0;k<((_MESH_DIMENSION_==3) ? _BLOCK_CELLS_Z_ : 1);k++) for (j=0;j<((_MESH_DIMENSION_>=2) ? _BLOCK_CELLS_Y_ : 1);j++) for (i=0;i<_BLOCK_CELLS_X_;i++) { 
            bool flag=true;
+
+           //determine is that is a cutcell
+           if ((Node->FirstTriangleCutFace!=NULL)||(InternalBoundaryList.size()!=0)) {   
+             int status;
+
+             status=GetCutcellTetrahedronMesh(TetrahedronList,i,j,k,Node);
+
+             if (status!=_complete_cell) continue;
+           }
 
            for (ii=0;ii<2;ii++) for (jj=0;jj<2;jj++) for (kk=0;kk<2;kk++) {
              nd=getCornerNodeLocalNumber(i+ii,j+jj,k+kk);
@@ -7717,7 +7728,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
        cTreeNodeAMR<cBlockAMR>  *downNode;
 
        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=Node->downNode[iDownNode])!=NULL) {
-         OutputDataFile(downNode);
+         OutputDataFile(downNode,TetrahedronList);
        }
      }
    };
@@ -7730,15 +7741,24 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
    sprintf(fname_full,"%s.connectivity.tread=%ld.tmp",fname,ThisThread);
    fConnectivity=fopen(fname_full,"w");
+
+
+   //the list of the points of the tetrahedron cut cell mesh
+   list<cTetrahedron> TetrahedronList;
    
-   OutputDataFile(rootTree);
+   OutputDataFile(rootTree,TetrahedronList);
    PrintHeader();
    PrintMeshSize();
 
    fclose(fData);
    fclose(fConnectivity);
 
-  } 
+   //output cut cell mesh 
+   if (TetrahedronList.size()!=0) {
+     PrintTetrahedronMeshData(TetrahedronList,fname,DataSetNumber); 
+   } 
+
+} 
 
 
 //==============================================================
