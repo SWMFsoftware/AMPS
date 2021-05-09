@@ -31,7 +31,7 @@ void Exosphere::ChamberlainExosphere::PrintData(FILE* fout,int DataSetNumber,CMP
 
 //  exit(__LINE__,__FILE__,"Error: the coefficients are not consistent with Shen-1963-JAS and Arno's thetis. Chack other implementation of the model");
 
-  if (PIC::ThisThread==0) {
+//  if (PIC::ThisThread==0) {
     double R,H0,g0,E;
     double nT,nS,H,nH,nC,nA;
     double SurfaceNumberDensity;
@@ -75,6 +75,6 @@ void Exosphere::ChamberlainExosphere::PrintData(FILE* fout,int DataSetNumber,CMP
 
 
     fprintf(fout,"  %e  ",res);
-  }
+//  }
 
 }
