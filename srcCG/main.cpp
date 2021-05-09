@@ -695,6 +695,10 @@ int main(int argc,char **argv) {
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
 
+
+
+
+
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 
@@ -702,6 +706,45 @@ int main(int argc,char **argv) {
   //init the volume of the cells'
   PIC::Mesh::IrregularSurface::CheckPointInsideDomain=PIC::Mesh::IrregularSurface::CheckPointInsideDomain_default;
   PIC::Mesh::mesh->InitCellMeasure(PIC::UserModelInputDataPath);
+
+
+std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> test_cut_cell;
+
+list<cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR>::cTetrahedron> tetra_list;
+
+test_cut_cell = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) -> void {
+  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    if (startNode->block!=NULL) {
+
+      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
+          for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+            PIC::Mesh::mesh->GetCutcellTetrahedronMesh(tetra_list,i,j,k,startNode);
+          }
+        }
+      }
+    }
+  }
+  else {
+   int iDownNode;
+   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+   for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+     test_cut_cell(downNode);
+   }
+ }
+};
+
+test_cut_cell(PIC::Mesh::mesh->rootTree);
+
+
+char tetra_fname[200];
+
+sprintf(tetra_fname,"tetra_mesh.thread=%ld.dat",PIC::ThisThread);
+PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
+
+
+
   }
 
 

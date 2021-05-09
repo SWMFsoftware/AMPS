@@ -190,6 +190,41 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     CellEdgeTable[iedge].MidPoint->status=_cut_location;
   };
 
+  auto CheckIntersectionWithTriangularSurface = [&] (double *x0,double *x1,cEdge& edge,int iedge,CutCell::cTriangleFace* TriangleFace) {
+    int idim,res=_not_cut,i,j,k;
+    bool intersection_found; 
+    double c,*xc,xIntersection[3];
+
+    //find whether the triangle intersects the egde
+    intersection_found=TriangleFace->IntervalIntersection(x0,x1,xIntersection,EPS); 
+
+    if (intersection_found==true) {
+      if (edge.MidPoint==NULL) { 
+        AttachMidPoint(edge,iedge);
+      }
+
+      for (idim=0;idim<3;idim++) edge.MidPoint->x[idim]=xIntersection[idim];
+      res=_cut;
+     
+      //deactivate the corners of the edge if needed 
+      for (int icor=0;icor<2;icor++) { 
+        i=EdgeCornerMap[iedge][icor][0];
+        j=EdgeCornerMap[iedge][icor][1];
+        k=EdgeCornerMap[iedge][icor][2];
+
+        if (CellCornerTable[i][j][k].status!=_ghost) {
+          xc=CellCornerTable[i][j][k].x;
+
+          for (c=0.0,idim=0;idim<3;idim++) c+=(xc[idim]-TriangleFace->x0Face[idim])*TriangleFace->ExternalNormal[idim];
+
+          CellCornerTable[i][j][k].status=(c<0.0) ? _ghost : _real;
+        }
+      }
+    }
+
+    return res;
+  };
+
   auto TestIntersectionWithSphere = [&] (double *x0,double *l,cEdge& edge,int iedge,cInternalSphericalData* Sphere) {
     double A,B,C,D,t0,t1;
     int res=_not_cut;
@@ -256,7 +291,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   for (i=0;i<3;i++) for (j=0;j<3;j++) for (k=0;k<3;k++) CellCornerTable[i][j][k].status=_undef;
 
   for (int iedge=0;iedge<12;iedge++) {
-    double x0[3],l[3];
+    double x0[3],x1[3],l[3];
     int index_x0=GetCornetTableIndex(EdgeCornerMap[iedge][0][0],EdgeCornerMap[iedge][0][1],EdgeCornerMap[iedge][0][2]);
     int index_l=GetCornetTableIndex(EdgeCornerMap[iedge][1][0],EdgeCornerMap[iedge][1][1],EdgeCornerMap[iedge][1][2]);
 
@@ -272,7 +307,8 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
     for (idim=0;idim<3;idim++) {
       x0[idim]=CellCornerTable[i0][j0][k0].x[idim];
-      l[idim]=CellCornerTable[i1][j1][k1].x[idim]-x0[idim];
+      x1[idim]=CellCornerTable[i1][j1][k1].x[idim];
+      l[idim]=x1[idim]-x0[idim];
     }
 
     //set the edge mid point 
@@ -280,8 +316,8 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     j=EdgeMidPointMap[iedge][1];
     k=EdgeMidPointMap[iedge][2];
 
-    //test intersection
-    int status;
+    //test intersection with a sphere  
+    int status=_not_cut;
     cInternalSphericalData* Sphere;
     bool node_surface_found=false;
 
@@ -291,8 +327,8 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
         Sphere=(cInternalSphericalData*)(bc->BoundaryElement); 
         status=TestIntersectionWithSphere(x0,l,CellEdgeTable[iedge],iedge,Sphere);
         break;
-      default:
-        exit(__LINE__,__FILE__,"Error: not implemented");
+//      default:
+//        ::exit(__LINE__,__FILE__,"Error: not implemented");
       }
     }
 
@@ -306,6 +342,26 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
         return _cell_removed;
       }
     }  
+  
+    //test intersection with triangular surfaces 
+    CutCell::cTriangleFaceDescriptor *t;
+    CutCell::cTriangleFace *TriangleFace;
+
+    for (t=node->FirstTriangleCutFace;t!=NULL;t=t->next) {
+      TriangleFace=t->TriangleFace;
+
+      status=CheckIntersectionWithTriangularSurface(x0,x1,CellEdgeTable[iedge],iedge,TriangleFace);
+
+      if (status==_cut) {
+        CellEdgeTable[iedge].status=_cut;
+        edge_cut_cnt++;
+
+        break;
+      }
+    }
+
+ 
+
   }
 
   if (edge_cut_cnt==0) {
@@ -327,15 +383,19 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
           //the cell is outside of the domain -> do not mesh it
           return _cell_removed;
         }
+        else {
+          for (i=0;i<3;i+=2) CellCornerTable[i][j][k].status=_real; 
+        }
 
         break;
       default:
-        exit(__LINE__,__FILE__,"Error: not tested");
-
         if (CutCell::CheckPointInsideDomain(xMiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,EPS)==false) {
           //the cell is outside of the domain -> do not mesh it
           return _cell_removed;
         } 
+        else {
+          for (i=0;i<3;i+=2) CellCornerTable[i][j][k].status=_real; 
+        }
       }
     }
   }
@@ -346,6 +406,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) {
       if (CellCornerTable[i][j][k].status==_undef) {
         //the status needs to be defined
+        
         for (auto InternalBoundaryDescriptor=InternalBoundaryList.begin();InternalBoundaryDescriptor!=InternalBoundaryList.end();InternalBoundaryDescriptor++) {
           switch(InternalBoundaryDescriptor->BondaryType) {
           case _INTERNAL_BOUNDARY_TYPE_SPHERE_:
@@ -354,8 +415,15 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
             CellCornerTable[i][j][k].status=(Vector3D::Length(CellCornerTable[i][j][k].x)<Sphere->Radius) ? _ghost : _real;
             break;
           default:
-            exit(__LINE__,__FILE__,"Error: not implelented");
+            if (CutCell::CheckPointInsideDomain(CellCornerTable[i][j][k].x,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,EPS)==true) {
+              CellCornerTable[i][j][k].status=_real;
+            }
+            else {
+              CellCornerTable[i][j][k].status=_ghost;
+            }
           }
+
+          if (CellCornerTable[i][j][k].status!=_undef) break;
         }
       }
     }
@@ -422,7 +490,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     auto TestConnectionConsistency = [&] () {
       for (int i=0;i<NodeListLength;i++) {
         for (int j=0;j<NodeList[i]->nConnections;j++) {
-          if (NodeList[i]->ConnectionTable[j]->CheckConnection(NodeList[i])==false) exit(__LINE__,__FILE__,"Error: connection inconsistency found");
+          if (NodeList[i]->ConnectionTable[j]->CheckConnection(NodeList[i])==false) ::exit(__LINE__,__FILE__,"Error: connection inconsistency found");
         }
       }
     };
@@ -460,9 +528,9 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     };
 
     TestConnectionConsistency(); 
-    TestLocation();
+    //TestLocation();
 
-    TestInsideSphere();
+    //TestInsideSphere();
         
     bool found_ghost=false;
     bool found_real=false;
