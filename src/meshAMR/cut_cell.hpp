@@ -3,6 +3,7 @@
 //
 
 //create thetrahedron mesh of a cut cell
+#if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
 template <class cCornerNode,class cCenterNode,class cBlockAMR>
 int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node) {
   int res=0;
@@ -921,7 +922,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
 
   fclose(fout);
 }  
-
+#endif
 
 
 

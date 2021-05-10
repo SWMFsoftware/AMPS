@@ -1720,6 +1720,7 @@ public:
   const int _sucess=1;
   const int _complete_cell=2; 
 
+  _TARGET_HOST_
   int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
   void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
   void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber);
@@ -7699,6 +7700,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
            bool flag=true;
 
            //determine is that is a cutcell
+           #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
            if ((Node->FirstTriangleCutFace!=NULL)||(InternalBoundaryList.size()!=0)) {   
              int status;
 
@@ -7706,6 +7708,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
              if (status!=_complete_cell) continue;
            }
+           #endif
 
            for (ii=0;ii<2;ii++) for (jj=0;jj<2;jj++) for (kk=0;kk<2;kk++) {
              nd=getCornerNodeLocalNumber(i+ii,j+jj,k+kk);
