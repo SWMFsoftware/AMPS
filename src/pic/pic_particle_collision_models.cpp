@@ -52,13 +52,19 @@ void PIC::MolecularCollisions::ParticleCollisionModel::PrintData(FILE* fout,int 
   double *SamplingBuffer=(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+CollsionFrequentcySampling::SamplingBufferOffset);
   int s;
 
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
+
   for (s=0;s<PIC::nTotalSpecies;s++) {
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       t= *(SamplingBuffer+CollsionFrequentcySampling::Offset(DataSetNumber,s));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) { //if (pipe->ThisThread==0) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }

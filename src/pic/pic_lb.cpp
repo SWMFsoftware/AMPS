@@ -419,13 +419,19 @@ void PIC::IDF::LB::PrintVariableList(FILE* fout,int DataSetNumber) {
 void PIC::IDF::LB::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
   double Trot,Tvib;
 
-  if (pipe->ThisThread==CenterNodeThread) {
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
+
+  if (gather_output_data==true) { //if (pipe->ThisThread==CenterNodeThread) {
     Trot=GetCellRotTemp(DataSetNumber,CenterNode);
     Tvib=GetCellVibTemp(DataSetNumber,CenterNode);
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) {
       pipe->recv(Trot,CenterNodeThread);
       pipe->recv(Tvib,CenterNodeThread);
     }
