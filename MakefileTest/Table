@@ -985,6 +985,12 @@ Check=
 Name=Moon
 Time=2
 <#
+
+#>
+Name=Moon-tetra-cut-mesh 
+Time=2
+<#
+
 -------------------------------------------------------------------------------
 #>
 Name=Moon-restart
@@ -2877,6 +2883,60 @@ Check=
 >>>@ls -l test_CG-dust-test${TESTCG-dust-test-REF}.diff
 >>>@echo Test test_CG-dust-test has finished: `date`
 <#
+
+
+
+-------------------------------------------------------------------------------
+#>
+Name=CG-dust-test-tetra-cut-mesh@@(0+valeriy+pleiades+stampede+amps-gpu)
+Time=3
+
+Ref=1{gcc}@@(0+valeriy)
+Ref=2{icc}@@(0+valeriy)
+Ref=3{gcc}@@(0+stampede)
+Ref=4{icc}@@(0+stampede)
+Ref=5{gcc}@@(0+pleiades)
+Ref=6{icc}@@(0+pleiades)
+Ref=7{pgcc}@@(0+pleiades)
+Ref=1{pgcc}@@(0+valeriy)
+
+
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu)
+Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+pleiades)
+Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
+
+Run=
+>>>@echo "test_CG-dust-test-tetra-cut-mesh_run..." >> test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+>>>@echo Test test_CG-dust-test-tetra-cut-mesh has started: `date`
+>>>cp ${PTDIR}/srcCG/ModelData/CorrectedFluxRelativeDUST.bin  ${TESTCG-dust-test-tetra-cut-meshDIR}
+>>>cd ${TESTCG-dust-test-tetra-cut-meshDIR}; ${MPIRUN}  ./amps
+>>>@echo "test_CG-dust-test-tetra-cut-mesh_run... done" >> test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+
+Check=
+>>>@echo "test_CG-dust-test-tetra-cut-mesh_check..." >> test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+
+>>>@${TESTCG-dust-test-tetra-cut-meshDIR}/../utility/ReduceFile.pl ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/pic.H2O.s=0.out=0.dat 1000
+>>>@mv ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/pic.H2O.s=0.out=0.dat.Reduced.Step=1000 ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/test_CG-dust-test-tetra-cut-mesh--pic.H2O.s=0.out=0.dat.Reduced.Step=1000.dat
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/test_CG-dust-test-tetra-cut-mesh--pic.H2O.s=0.out=0.dat.Reduced.Step=1000.dat         \
+>>>output/test_CG-dust-test-tetra-cut-mesh/test_CG-dust-test-tetra-cut-mesh--pic.H2O.s=0.out=0.dat.Reduced.Step=1000${TESTCG-dust-test-tetra-cut-mesh-REF}.ref_np`ls ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/thread* |wc -l |tr -d ' '` > test_CG-dust-test-tetra-cut-mesh--H2O${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+>>>@ls -l test_CG-dust-test-tetra-cut-mesh--H2O${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+
+>>>@${TESTCG-dust-test-tetra-cut-meshDIR}/../utility/ReduceFile.pl ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/pic.DUST%0.s=2.out=0.dat 1000
+>>>@mv ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/pic.DUST%0.s=2.out=0.dat.Reduced.Step=1000 ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/test_CG-dust-test-tetra-cut-mesh--pic.DUST%0.s=2.out=0.dat.Reduced.Step=1000.dat
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/test_CG-dust-test-tetra-cut-mesh--pic.DUST%0.s=2.out=0.dat.Reduced.Step=1000.dat         \
+>>>output/test_CG-dust-test-tetra-cut-mesh/test_CG-dust-test-tetra-cut-mesh--pic.DUST%0.s=2.out=0.dat.Reduced.Step=1000${TESTCG-dust-test-tetra-cut-mesh-REF}.ref_np`ls ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/thread* |wc -l |tr -d ' '` > test_CG-dust-test-tetra-cut-mesh--DUST${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+>>>@ls -l test_CG-dust-test-tetra-cut-mesh--DUST${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/plots/test_CG-dust-test-tetra-cut-mesh.dat         \
+>>>output/test_CG-dust-test-tetra-cut-mesh/test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.ref_np`ls ${TESTCG-dust-test-tetra-cut-meshDIR}/PT/thread* |wc -l |tr -d ' '` > test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+>>>@ls -l test_CG-dust-test-tetra-cut-mesh${TESTCG-dust-test-tetra-cut-mesh-REF}.diff
+>>>@echo Test test_CG-dust-test-tetra-cut-mesh has finished: `date`
+<#
+
+
 -------------------------------------------------------------------------------
 #>
 Name=test/model-dust
