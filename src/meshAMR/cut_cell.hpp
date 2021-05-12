@@ -832,7 +832,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMesh(li
 //=============================================================================================================
 //print data stores at the mesh
 template <class cCornerNode,class cCenterNode,class cBlockAMR>
-void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber) {
+void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber,bool PrintVariableString) {
   FILE *fout;
   typename list<cTetrahedron>::iterator it;
   int cnt,i,ncells,npoints;
@@ -844,21 +844,23 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
   fout=fopen(full_fname,"w");
 
   //Print the header
-  fprintf(fout,"VARIABLES = \"X\", \"Y\", \"Z\", \"Maximum Refinment Level\", \"Temp_ID\""); 
+  if (PrintVariableString==true) {
+    fprintf(fout,"VARIABLES = \"X\", \"Y\", \"Z\", \"Maximum Refinment Level\", \"Temp_ID\""); 
 
-  if (_AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_) { 
-    fprintf(fout,", \"Thread\"");
-  } 
+    if (_AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_) { 
+      fprintf(fout,", \"Thread\"");
+    } 
 
-  if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
-  CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
+    if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+    CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
-  if (_AMR_CENTER_NODE_ == _ON_AMR_MESH_) {
-    if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
-    CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
+    if (_AMR_CENTER_NODE_ == _ON_AMR_MESH_) {
+      if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+      CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
+    }
+
+    rootTree->block->PrintVariableList(fout);
   }
-
-  rootTree->block->PrintVariableList(fout);
 
   fprintf(fout,"\nZONE N=%ld, E=%ld, F=FEPOINT, ET=TETRAHEDRON\n",4*TetrahedronList.size(),TetrahedronList.size());
 

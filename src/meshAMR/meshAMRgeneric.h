@@ -1723,7 +1723,7 @@ public:
   _TARGET_HOST_
   int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
   void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
-  void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber);
+  void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber,bool PrintVariableString);
 
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
   int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
@@ -7482,11 +7482,18 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
   void OutputDistributedDataTECPLOT(const char* fname,bool PrintMeshData,int DataSetNumber) {
     //the number of cells and nodes
     int nnodes=0,ncells=0;
-    FILE *fConnectivity,*fData;
+    FILE *fData;
 
     const static int CellCornerPrintOrder[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0}, {0,0,1},{1,0,1},{1,1,1},{0,1,1}}; 
 
     int nSubDomainTotalCellCorners=0,nSubDomainTotalCells=0; 
+
+    class cConnectivityElement {
+    public:
+      int node_id[8];
+    };
+
+    list <cConnectivityElement> ConnectivityList;
  
 
     auto PrintCellCornerData = [&] (int iNode,int jNode,int kNode,cTreeNodeAMR<cBlockAMR> *Node) {
@@ -7578,83 +7585,63 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
       }
     }; 
 
-    auto PrintHeader = [&] () {
-      FILE *fHeader; 
-      char fname_full[200];
-      
-      if (ThisThread==0) {
-        sprintf(fname_full,"%s.header.tmp",fname); 
-        fHeader=fopen(fname_full,"w");
-
-        fprintf(fHeader,"VARIABLES=\"X\", \"Y\", \"Z\"");
+    auto PrintHeader = [&] (FILE* fVariables,FILE *fHeader) {
+      fprintf(fVariables,"VARIABLES=\"X\", \"Y\", \"Z\"");
  
-        if (PrintMeshData==true) {
-          fprintf(fHeader,", \"Maximum Refinment Level\", \"Temp_ID\"");
+      if (PrintMeshData==true) {
+        fprintf(fVariables,", \"Maximum Refinment Level\", \"Temp_ID\"");
 
-          #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-          fprintf(fHeader,", \"Thread\"");
-          #endif
+        #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
+        fprintf(fVariables,", \"Thread\"");
+        #endif
 
-          if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
-          CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fHeader,DataSetNumber);
+        if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+        CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fVariables,DataSetNumber);
 
-          #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-          if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
-          CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fHeader,DataSetNumber);
-          #endif
+        #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
+        if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+        CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fVariables,DataSetNumber);
+        #endif
 
-         rootTree->block->PrintVariableList(fHeader);
-        }
+       rootTree->block->PrintVariableList(fVariables);
+      }
 
-        fclose(fHeader);
-      } 
+      fprintf(fHeader,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",nSubDomainTotalCellCorners,nSubDomainTotalCells);
     };
 
-   auto PrintMeshSize = [&] () {
-     FILE* fMeshSize;
-     char fname_full[200];
 
-     sprintf(fname_full,"%s.mesh-size.tread=%ld.tmp",fname,ThisThread);
-     fMeshSize=fopen(fname_full,"w"); 
-
-     fprintf(fMeshSize,"Corners=%ld\nCells=%ld\n",nSubDomainTotalCellCorners,nSubDomainTotalCells);  
-     fclose(fMeshSize);
-   };  
-
-   auto ProcessFullCell = [&] (int i,int j,int k,cTreeNodeAMR<cBlockAMR> *Node) {
+   auto ProcessFullCell = [&] (int i,int j,int k,cTreeNodeAMR<cBlockAMR> *Node,list<cConnectivityElement>& ConnectivityList) {
      int nd,icorner;
      cCornerNode *CornerNode;
+
+     cConnectivityElement c;
 
      for (icorner=0;icorner<8;icorner++) {
        nd=getCornerNodeLocalNumber(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2]); 
        CornerNode=Node->block->GetCornerNode(nd);
 
        if  (CornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_) { 
-          CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
-          CornerNode->nodeDescriptor.nodeno=nSubDomainTotalCellCorners++;
+         CornerNode->nodeDescriptor.nodeProcessedFlag=_AMR_TRUE_;
+         CornerNode->nodeDescriptor.nodeno=nSubDomainTotalCellCorners++;
 
          //print data
          PrintCellCornerLocation(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node);
 
-         if (PrintMeshData==true) {
+         int MaxRefinmentLevel=CornerNode->nodeDescriptor.maxRefinmentLevel;
+         int NodeTempID=CornerNode->Temp_ID;
 
-           int MaxRefinmentLevel=CornerNode->nodeDescriptor.maxRefinmentLevel;
-           int NodeTempID=CornerNode->Temp_ID;
+         fprintf(fData,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
 
-           fprintf(fData,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
-
-           PrintCellCornerData(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node); 
-           Node->block->PrintData(fData,DataSetNumber,NULL,Node->Thread);
-         }
-
+         PrintCellCornerData(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node); 
+         Node->block->PrintData(fData,DataSetNumber,NULL,Node->Thread);
+      
          fprintf(fData,"\n"); 
        }
 
-       //print connectivity data
-       fprintf(fConnectivity,"%ld  ",CornerNode->nodeDescriptor.nodeno); 
+       c.node_id[icorner]=CornerNode->nodeDescriptor.nodeno;
      }
 
-      fprintf(fConnectivity,"\n");
+     ConnectivityList.push_back(c);
    };
 
    //reset the node index
@@ -7685,12 +7672,10 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
      }
    };
 
-   ResetNodeIndex(rootTree);
-
    //output the mesh 
-   std::function<void(cTreeNodeAMR<cBlockAMR>*,list<cTetrahedron>&)> OutputDataFile;
+   std::function<void(cTreeNodeAMR<cBlockAMR>*,list<cTetrahedron>&,list<cConnectivityElement>&)> OutputDataFile;
    
-   OutputDataFile = [&] (cTreeNodeAMR<cBlockAMR>* Node,list<cTetrahedron> &TetrahedronList) {
+   OutputDataFile = [&] (cTreeNodeAMR<cBlockAMR>* Node,list<cTetrahedron> &TetrahedronList,list<cConnectivityElement> &ConnectivityList) {
      if (Node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
        int nd,i,j,k,ii,jj,kk;
        cCornerNode *CornerNode;
@@ -7720,7 +7705,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
            }
 
            if (flag==true) {
-             ProcessFullCell(i,j,k,Node); 
+             ProcessFullCell(i,j,k,Node,ConnectivityList); 
              nSubDomainTotalCells++;
            } 
          }
@@ -7731,36 +7716,119 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
        cTreeNodeAMR<cBlockAMR>  *downNode;
 
        for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=Node->downNode[iDownNode])!=NULL) {
-         OutputDataFile(downNode,TetrahedronList);
+         OutputDataFile(downNode,TetrahedronList,ConnectivityList);
        }
      }
    };
 
+   auto PrintConnectivity = [&] (FILE *fConnectivity,list<cConnectivityElement>& ConnectivityList) {
+     typename list<cConnectivityElement>::iterator it;
 
-   char fname_full[200];
-
-   sprintf(fname_full,"%s.data.tread=%ld.tmp",fname,ThisThread); 
-   fData=fopen(fname_full,"w");
-
-   sprintf(fname_full,"%s.connectivity.tread=%ld.tmp",fname,ThisThread);
-   fConnectivity=fopen(fname_full,"w");
+     for (it=ConnectivityList.begin();it!=ConnectivityList.end();it++) {
+       fprintf(fConnectivity,"%ld %ld %ld %ld   %ld %ld %ld %ld\n",1+it->node_id[0],1+it->node_id[1],1+it->node_id[2],1+it->node_id[3],1+it->node_id[4],1+it->node_id[5],1+it->node_id[6],1+it->node_id[7]);
+     }
+   };
 
 
-   //the list of the points of the tetrahedron cut cell mesh
+   char fname_variables[200],fname_data[200],fname_header[200],fname_connectivity[200];
+   FILE *fHeader,*fConnectivity,*fVariables;
    list<cTetrahedron> TetrahedronList;
-   
-   OutputDataFile(rootTree,TetrahedronList);
-   PrintHeader();
-   PrintMeshSize();
 
+   ResetNodeIndex(rootTree);
+
+   sprintf(fname_data,"%s.tread=%ld.data",fname,ThisThread); 
+   fData=fopen(fname_data,"w");
+
+   //print the data and create the tetrahedtal mesh of cut cells
+   OutputDataFile(rootTree,TetrahedronList,ConnectivityList);
+
+   //print the header and combine it with the datafile 
+   sprintf(fname_header,"%s.tread=%ld.header",fname,ThisThread);
+   fHeader=fopen(fname_header,"w");
+
+   sprintf(fname_variables,"%s.tread=%ld.variables",fname,ThisThread);
+   fVariables=fopen(fname_variables,"w");
+
+   PrintHeader(fVariables,fHeader);
+  
+   //Print the connectivity list 
+   sprintf(fname_connectivity,"%s.tread=%ld.connectivity",fname,ThisThread);
+   fConnectivity=fopen(fname_connectivity,"w");
+
+   PrintConnectivity(fConnectivity,ConnectivityList);
+
+   //Close all files 
    fclose(fData);
+   fclose(fHeader);
    fclose(fConnectivity);
+   fclose(fVariables);
 
-   //output cut cell mesh 
+
+   //output tetra meshs 
+   int TetraMeshLengthTable[nTotalThreads];
+   int TetraMeshLength=TetrahedronList.size();
+
    if (TetrahedronList.size()!=0) {
-     PrintTetrahedronMeshData(TetrahedronList,fname,DataSetNumber); 
-   } 
+     PrintTetrahedronMeshData(TetrahedronList,fname,DataSetNumber,false);
+   }
 
+   MPI_Gather(&TetraMeshLength,1,MPI_INT,TetraMeshLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+   //combibe all files together 
+   char fname_full[200],cmd[500];
+   int ConnectivityListLengthTable[nTotalThreads];
+ 
+   MPI_Gather(&nSubDomainTotalCells,1,MPI_INT,ConnectivityListLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+
+   if (ThisThread==0) {
+     std::ofstream  dst(fname,   std::ios::binary);
+     std::ifstream  src_variables(fname_variables, std::ios::binary);
+ 
+     dst<<src_variables.rdbuf();
+     src_variables.close();
+
+     for (int thread=0;thread<nTotalThreads;thread++) {
+       sprintf(fname_header,"%s.tread=%ld.header",fname,thread);
+       sprintf(fname_variables,"%s.tread=%ld.variables",fname,thread);
+       sprintf(fname_data,"%s.tread=%ld.data",fname,thread);
+       sprintf(fname_connectivity,"%s.tread=%ld.connectivity",fname,thread);
+
+       if (ConnectivityListLengthTable[thread]!=0) {
+         std::ifstream  src_header(fname_header, std::ios::binary);
+         std::ifstream  src_data(fname_data, std::ios::binary);
+         std::ifstream  src_connectivity(fname_connectivity, std::ios::binary);
+
+         dst<<src_header.rdbuf();
+         dst<<src_data.rdbuf();
+         dst<<src_connectivity.rdbuf();
+
+         src_header.close();
+         src_data.close();
+         src_connectivity.close();
+       }
+      
+       remove(fname_header);
+       remove(fname_variables);
+       remove(fname_data);
+       remove(fname_connectivity);
+     }
+
+     //append the tetra mesh if needed 
+     for (int thread=0;thread<nTotalThreads;thread++) if (TetraMeshLengthTable[thread]!=0) {
+       sprintf(fname_full,"%s.tetra.thread=%ld.dat",fname,thread);
+
+       std::ifstream  src(fname_full, std::ios::binary);
+
+       dst<<src.rdbuf();
+
+       src.close();
+       remove(fname_full);
+     }
+
+     dst.close();
+   }
+
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 } 
 
 
