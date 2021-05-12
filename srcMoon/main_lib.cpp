@@ -948,7 +948,19 @@ void amps_init() {
 
 
     PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber=20; //0; //00; //*10;
-    PIC::RequiredSampleLength=170; //00; //0; //0;
+
+
+    //the switch is used to set the same parameters for the test_Moon, but have enough iteration to output a data file for test_Moon-tetra-cut-mesh 
+    switch (_PIC_OUTPUT_MODE_) {
+    case _PIC_OUTPUT_MODE_SINGLE_FILE_:
+      PIC::RequiredSampleLength=170; //00; //0; //0;
+      break;
+    case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:
+      PIC::RequiredSampleLength=100;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }
 
     Moon::OrbitalMotion::nOrbitalPositionOutputMultiplier=10;
 
