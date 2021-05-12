@@ -150,7 +150,9 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
 	  }
 
 	  //advance the location of the particle
-    _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode);
+	  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node_tmp=PIC::Mesh::mesh->findTreeNode(x,startNode); 
+
+    _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,node_tmp);
 
 
 	  if (dtTotal<dt) {
