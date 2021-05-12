@@ -276,14 +276,20 @@ void Comet::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Center
   int idim;
   double t;
 
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
+
   //Gravity Field
   for (idim=0;idim<3;idim++) {
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) {  //(pipe->ThisThread==CenterNodeThread) {
       t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+GravityFieldOffset+idim*sizeof(double)));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
