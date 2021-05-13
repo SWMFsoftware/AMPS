@@ -400,6 +400,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
 
   //Accounting for how much is loss each time step
   WeightLoss=CenterNode->Measure*rate*ParentTimeStep;
+  Exosphere::ChemicalModel::TotalLossRate[spec]+=WeightLoss/ParentTimeStep;
 
   if (ParentParticleWeight-WeightLoss<0.01*ParentParticleWeight) {
 
