@@ -30,7 +30,7 @@ public:
   } 
 
   void ReadData(const char* fname) {
-    FILE *fout=fopen(fname,"w");
+    FILE *fout=fopen(fname,"r");
 
 
     for (auto& it : NodeDataVector) {
