@@ -17,6 +17,7 @@ class cSurfaceTriangulation {
 public:
   CutCell::cNASTRANnode* GetNode(int iNode) {return &Nodes[iNode];}
   cNodeDataContainer* GetNodeData(int iNode) {return &NodeDataVector[iNode];}
+  double* GetNodeX(int iNode) {return Nodes[iNode].x;}  
 
   void SaveData(const char* fname) {
     FILE *fout=fopen(fname,"w");
