@@ -7,39 +7,14 @@
 
 #include "meshAMRcutcell.h"
 
-template <class cNodeDataContainer> 
 class cSurfaceTriangulation {
+protected:
   vector<CutCell::cNASTRANnode> Nodes;
   vector<CutCell::cNASTRANface> Faces;
 
-  vector<cNodeDataContainer> NodeDataVector; 
-
 public:
   CutCell::cNASTRANnode* GetNode(int iNode) {return &Nodes[iNode];}
-  cNodeDataContainer* GetNodeData(int iNode) {return &NodeDataVector[iNode];}
   double* GetNodeX(int iNode) {return Nodes[iNode].x;}  
-
-  void SaveData(const char* fname) {
-    FILE *fout=fopen(fname,"w");
-
-
-    for (auto& it : NodeDataVector) {
-       it.Save(fout);
-    }
-
-    fclose(fout);
-  } 
-
-  void ReadData(const char* fname) {
-    FILE *fout=fopen(fname,"r");
-
-
-    for (auto& it : NodeDataVector) {
-       it.Read(fout);
-    }
-
-    fclose(fout);
-  }
 
   void ReadNastranSurfaceMeshLongFormat(const char* fname,double UnitConversitonFactor=1.0) {
    CiFileOperations ifile;
@@ -104,9 +79,44 @@ public:
    }
 
    ifile.closefile();
-   NodeDataVector.resize(Nodes.size());
   }
 };
 
+
+template <class cNodeDataContainer>
+class cSurfaceTriangulationNodeData : public cSurfaceTriangulation {
+private:
+  vector<cNodeDataContainer> NodeDataVector;
+
+public:
+  cNodeDataContainer* GetNodeData(int iNode) {return &NodeDataVector[iNode];}
+
+  void SaveData(const char* fname) {
+    FILE *fout=fopen(fname,"w");
+
+    for (auto& it : NodeDataVector) {
+       it.Save(fout);
+    }
+
+    fclose(fout);
+  }
+
+  void ReadData(const char* fname) {
+    FILE *fout=fopen(fname,"r");
+
+    for (auto& it : NodeDataVector) {
+       it.Read(fout);
+    }
+
+    fclose(fout);
+  }
+
+  void ReadNastranSurfaceMeshLongFormat(const char* fname,double UnitConversitonFactor=1.0) {
+    cSurfaceTriangulation::ReadNastranSurfaceMeshLongFormat(fname,UnitConversitonFactor);
+
+    NodeDataVector.resize(Nodes.size());
+  }
+
+};
 
 #endif
