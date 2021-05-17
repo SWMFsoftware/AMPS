@@ -146,8 +146,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
 
-  define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2) OH::Loss::ReactionProcessor(t0,t1,t2)
-  !define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2) OH::Loss::ReactionProcessor_Lookup_Table(t0,t1,t2)
+  !define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2) OH::Loss::ReactionProcessor(t0,t1,t2)
+  define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2) OH::Loss::ReactionProcessor_Lookup_Table(t0,t1,t2)
 
 
   define _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(t0,t1,t2,t3,t4) OH::Loss::LifeTime(t0,t1,t2,t3,t4)
