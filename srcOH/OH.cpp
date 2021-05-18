@@ -384,12 +384,12 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   rate=SourceIon_V[0];
 
   for (int dim=0;dim<3;dim++){
-    ForceSource[dim]=SourceNeu_V[dim+1]*_MASS_(_H_);
-    ForceLoss[dim]=SourceIon_V[dim+1]*_MASS_(_H_);
+    ForceSource[dim]=SourceNeu_V[dim+1];
+    ForceLoss[dim]=SourceIon_V[dim+1];
   }
 
-  EnergySource=SourceNeu_V[4]*_MASS_(_H_);
-  EnergyLoss=SourceIon_V[4]*_MASS_(_H_);
+  EnergySource=SourceNeu_V[4];
+  EnergyLoss=SourceIon_V[4];
 
   for (int idim=0; idim<3; idim++) {
     *(3*0+idim + (double*)(offset+OH::Output::ohSourceMomentumOffset))+=(ForceSource[idim]-ForceLoss[idim])/PlasmaNumberDensity;
