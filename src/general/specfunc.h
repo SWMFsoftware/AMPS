@@ -341,6 +341,13 @@ namespace VectorRotation {
 //=========================================================
 //Vector Operations
 namespace Vector3D {
+  inline bool IsInLimits(double *x,double *xmin,double *xmax) {
+    for (int idim=0;idim<3;idim++) if ((x[idim]<xmin[idim])||(xmax[idim]<x[idim])) return false; 
+  
+    return true;
+  }
+ 
+
   inline void CrossProduct(double *res,double *a,double *b) {
 
     /*
