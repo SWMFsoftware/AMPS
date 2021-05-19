@@ -102,10 +102,12 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     int status;
     cCorner* MidPoint;
     int CutExternalDirection[3];
+    int cut_cnt;
 
     cEdge() {
       status=_not_cut;
       MidPoint=NULL;
+      cut_cnt=0;
     } 
   };
 
@@ -142,6 +144,33 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
     return i+2*j+4*k;
   };
 
+
+  auto CheckEdgeIntersectionWithTriangularSurfaces = [&] (int iedge,CutCell::cTriangleFaceDescriptor *t) {
+    CutCell::cTriangleFace *TriangleFace;
+    bool intersection_found;
+    int i0,j0,k0,i1,j1,k1;
+    double xIntersection[3];
+
+    i0=EdgeCornerMap[iedge][0][0];
+    j0=EdgeCornerMap[iedge][0][1];
+    k0=EdgeCornerMap[iedge][0][2];
+
+    i1=EdgeCornerMap[iedge][1][0];
+    j1=EdgeCornerMap[iedge][1][1];
+    k1=EdgeCornerMap[iedge][1][2];
+
+    for (t=node->FirstTriangleCutFace;t!=NULL;t=t->next) {
+      TriangleFace=t->TriangleFace;
+
+      intersection_found=TriangleFace->IntervalIntersection(CellCornerTable[i0][j0][k0].x,CellCornerTable[i1][j1][k1].x,xIntersection,EPS);
+
+      if (intersection_found==true) return true;
+    }
+
+    return false;
+  };
+
+
   //get the number of intersected faces 
   auto GetIntersectedFaceNumber = [&] () {
     int iface,iedge,cnt=0;
@@ -165,6 +194,24 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   xmax[0]=node->xmin[0]+(icell+1)*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
   xmax[1]=node->xmin[1]+(jcell+1)*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
   xmax[2]=node->xmin[2]+(kcell+1)*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+
+
+
+
+double xt[3]={-1.5,-5.05,0.02};
+
+if (Vector3D::IsInLimits(xt,xmin,xmax)==true) {
+  double dd=0.0;
+
+  dd+=129312;
+
+  cout << __LINE__ << "at" << __FILE__  << endl;
+}
+
+
+
+
+
 
   for (i=0;i<3;i+=2) for (j=0;j<3;j+=2) for (k=0;k<3;k+=2) {
     CellCornerTable[i][j][k].x[0]=(i==0) ? xmin[0] : xmax[0];
@@ -293,9 +340,6 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
   for (int iedge=0;iedge<12;iedge++) {
     double x0[3],x1[3],l[3];
-    int index_x0=GetCornetTableIndex(EdgeCornerMap[iedge][0][0],EdgeCornerMap[iedge][0][1],EdgeCornerMap[iedge][0][2]);
-    int index_l=GetCornetTableIndex(EdgeCornerMap[iedge][1][0],EdgeCornerMap[iedge][1][1],EdgeCornerMap[iedge][1][2]);
-
     int i,j,k,i0,j0,k0,i1,j1,k1;
 
     i0=EdgeCornerMap[iedge][0][0];
@@ -354,8 +398,41 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
       status=CheckIntersectionWithTriangularSurface(x0,x1,CellEdgeTable[iedge],iedge,TriangleFace);
 
       if (status==_cut) {
-        CellEdgeTable[iedge].status=_cut;
-        edge_cut_cnt++;
+        if (CellEdgeTable[iedge].cut_cnt==0) {
+          CellEdgeTable[iedge].status=_cut;
+          edge_cut_cnt++;
+          CellEdgeTable[iedge].cut_cnt++;
+        }
+        else {
+          if (CellEdgeTable[iedge].cut_cnt==1) edge_cut_cnt--;
+
+          CellEdgeTable[iedge].status=_not_cut;
+
+          //activate the corners and deactivate the cut node
+
+          int i,j,k,i0,j0,k0,i1,j1,k1;
+
+          i0=EdgeCornerMap[iedge][0][0];
+          j0=EdgeCornerMap[iedge][0][1];
+          k0=EdgeCornerMap[iedge][0][2];
+
+          i1=EdgeCornerMap[iedge][1][0];
+          j1=EdgeCornerMap[iedge][1][1];
+          k1=EdgeCornerMap[iedge][1][2];
+
+          //the edge mid point
+          i=EdgeMidPointMap[iedge][0];
+          j=EdgeMidPointMap[iedge][1];
+          k=EdgeMidPointMap[iedge][2];
+
+
+          CellCornerTable[i][j][k].status=_undef;
+
+          CellCornerTable[i0][j0][k0].status=_real;
+          CellCornerTable[i1][j1][k1].status=_real;
+
+          CellEdgeTable[iedge].cut_cnt++;
+        }
 
         break;
       }
@@ -473,7 +550,122 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
   //connect cutting nodes
   //connect cutting nodes: only those cutting nodes are connected that belongs to the same face
  
-  
+
+    //check connection of the nodes: a node has to be connected to a cut-node if the opposite node is _ghost
+    for (int iedge=0;iedge<11;iedge++) {
+      int i,j,k,i0,j0,k0,i1,j1,k1;
+
+      i0=EdgeCornerMap[iedge][0][0];
+      j0=EdgeCornerMap[iedge][0][1];
+      k0=EdgeCornerMap[iedge][0][2];
+
+      i1=EdgeCornerMap[iedge][1][0];
+      j1=EdgeCornerMap[iedge][1][1];
+      k1=EdgeCornerMap[iedge][1][2];
+
+      //the edge mid point
+      i=EdgeMidPointMap[iedge][0];
+      j=EdgeMidPointMap[iedge][1];
+      k=EdgeMidPointMap[iedge][2];
+
+      bool inconsistency_found=false;
+
+  /*
+      if (CellCornerTable[i][j][k].status==_undef) {
+        //the cut-node is not defiend -> all corners must be _real
+        if ((CellCornerTable[i0][j0][k0].status!=_real)||(CellCornerTable[i1][j1][k1].status!=_real)) {
+       //   bool interection_fount=CheckEdgeIntersectionWithTriangularSurfaces(iedge,node->FirstTriangleCutFace);
+
+       //   ::exit(__LINE__,__FILE__,"Error: found inconsistency in the edge splitting");
+       //
+
+
+  // correct inconsistency
+  //inconsistency_found=true;
+
+
+  //if ((CellCornerTable[i0][j0][k0].status==_real)||(CellCornerTable[i1][j1][k1].status==_real)) {
+  //  CellCornerTable[i0][j0][k0].status=_real;
+  //  CellCornerTable[i1][j1][k1].status=_real;
+  //}
+
+
+
+        }
+
+      }
+      else {
+        //the edge is cut -> one node must be _ghost and another must be _real
+
+        if (CellCornerTable[i0][j0][k0].status==_real) {
+          if (CellCornerTable[i1][j1][k1].status!=_ghost) inconsistency_found=true;
+        }
+        else {
+          if (CellCornerTable[i1][j1][k1].status!=_real) inconsistency_found=true;
+        }
+      }
+  */
+
+
+  /*
+        if (inconsistency_found==true) {
+          if (inconsistency_found==true) {
+            bool interection_fount=CheckEdgeIntersectionWithTriangularSurfaces(iedge,node->FirstTriangleCutFace);
+
+            bool intersection_found_neib_table[2][2]={{false,false},{false,false}};
+            double dx[3],x_middle[3],x_test[3];
+            cTreeNodeAMR<cBlockAMR>* node_test;
+
+            const double xMiddleVectorCoeffTable[12][3]={ {0.5,0,0}, {0.5,1,0}, {0.5,1,1}, {0.5,0,1},
+                                                          {0,0.5,0}, {1,0.5,0}, {1,0.5,1}, {0,0.5,1},
+                                                          {0,0,0.5}, {1,0,0.5}, {1,1,0.5}, {0,1,0.5}};
+            //calculate x_middle of the edge
+            for (int idim=0;idim<3;idim++) {
+              dx[idim]=0.5*(xmin[idim]-xmax[idim]);
+
+              x_middle[idim]=xmin[idim]+xMiddleVectorCoeffTable[iedge][idim]*dx[idim];
+            }
+
+            //loop through blocks that might contain this edge
+            for (int di=-1;di<=1;di+=2) for (int dj=-1;dj<=1;dj+=2) {
+              for (int idim=0;idim<3;idim++) x_test[idim]=x_middle[idim];
+
+              switch (iedge) {
+              case 0: case 1: case 2: case 3:
+                x_test[1]+=di*dx[1];
+                x_test[2]+=dj*dx[2];
+                break;
+
+              case 4: case 5: case 6: case 7:
+                x_test[0]+=di*dx[0];
+                x_test[2]+=dj*dx[2];
+                break;
+
+              case 8: case 9: case 10: case 11:
+                x_test[0]+=di*dx[0];
+                x_test[1]+=dj*dx[1];
+              }
+
+              node_test=findTreeNode(x_test,node);
+
+              if (node_test!=node) {
+                //a neib node is found -> check the cut faces intersecting that block
+                intersection_found_neib_table[di][dj]=CheckEdgeIntersectionWithTriangularSurfaces(iedge,node_test->FirstTriangleCutFace);
+              }
+            }
+
+            ::exit(__LINE__,__FILE__,"Error: found inconsistency in the edge splitting");
+          }
+        }
+  */
+
+      }
+    //}
+
+
+
+
+
   //a block is considered to be cut if at lease two face are cuted
   if (GetIntersectedFaceNumber()<2) return _complete_cell; 
 
