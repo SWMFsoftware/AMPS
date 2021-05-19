@@ -80,6 +80,23 @@ public:
 
    ifile.closefile();
   }
+
+  void PrintTriangulation(const char *fname) {
+    FILE *fout=fopen(fname,"w"); 
+
+    fprintf(fout,"VARIABLES=\"X\",\"Y\",\"Z\"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FETRIANGLE\n",Nodes.size(),Faces.size());
+
+    for (int i=0;i<Nodes.size();i++) {
+      fprintf(fout,"%e  %e  %e\n",Nodes[i].x[0],Nodes[i].x[1],Nodes[i].x[2]);
+    }
+
+    for (int i=0;i<Faces.size();i++) {
+      fprintf(fout,"%ld %ld %ld\n",Faces[i].node[0]+1,Faces[i].node[1]+1,Faces[i].node[2]+1); 
+    }
+
+    fclose(fout);
+  }
+    
 };
 
 
