@@ -347,6 +347,40 @@ namespace Vector3D {
     return true;
   }
  
+  inline void CheckFinite(double *x,int length=3) { 
+    int code;
+
+    for (int idim=0;idim<length;idim++) {
+      code=fpclassify(x[idim]);
+
+      switch (code) {
+      case FP_INFINITE:
+        exit(__LINE__,__FILE__,"Error: FP_INFINITE"); 
+        break;
+      case FP_NAN:
+        exit(__LINE__,__FILE__,"Error: FP_NAN");            
+        break;
+      case FP_SUBNORMAL:
+        exit(__LINE__,__FILE__,"Error: FP_SUBNORMAL");            
+        break;
+      }
+
+      if (isfinite(x[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+    } 
+  }
+
+  inline void CheckFinite(double x) {
+    CheckFinite(&x,1);
+  }
+
+  inline bool CheckBelowLimit(double *x,double limit,int length=3) {
+    for (int i=0;i<length;i++) if ((x[i]!=0.0)&&(fabs(x[i])<limit)) {
+     printf("Error: below the limit found, (file=%s, line=$ld\n",__FILE__,__LINE__);
+     return true;
+    } 
+
+    return false;
+  } 
 
   inline void CrossProduct(double *res,double *a,double *b) {
 
