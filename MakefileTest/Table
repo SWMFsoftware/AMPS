@@ -360,6 +360,25 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
+Name=test/test-1853-shape
+Time=5
+
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE 
+
+
+Compile=
+>>>@echo "test_test-1853-shape_compile..." > test_test-1853-shape$(TESTtest-1853-shape).diff
+>>>./Config.pl -application=test/test-1853-shape -spice-path=nospice -spice-kernels=nospice  -amps-test=on $(TESTtest-1853-shapeKEYS)
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_test-1853-shape_compile... done" >> test_test-1853-shape$(TESTtest-1853-shape-REF).diff
+
+<#
+
+
+
+-------------------------------------------------------------------------------
+#>
 Name=test/X-Wing 
 Time=54 
 
