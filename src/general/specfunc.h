@@ -382,6 +382,18 @@ namespace Vector3D {
     return false;
   } 
 
+  inline double GetDistance(double *a,double *b,int length=3) {
+    double t,l2=0.0;
+
+    for (int i=0;i<length;i++) {
+      t=a[i]-b[i];
+      l2+=t*t;
+    } 
+
+    return sqrt(l2);
+  }
+
+
   inline void CrossProduct(double *res,double *a,double *b) {
 
     /*
