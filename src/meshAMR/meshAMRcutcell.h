@@ -39,6 +39,9 @@
 
 namespace CutCell {
 
+  //margin used in determening local coordincates
+  extern double xLocalMargin;
+
   //get the sugnature of the triangulation
 unsigned long int GetTriangulationSignature();
 
@@ -387,7 +390,14 @@ unsigned long int GetTriangulationSignature();
       else if ((a1<-EPS)||(a1>EPS+e1Length)) return false;
       else if (xLocal[0]+xLocal[1]>1.0) return false;*/
 
-      if ((xLocal[0]<0.0)||(xLocal[0]>1.0) || (xLocal[1]<0.0)||(xLocal[1]>1.0) || (xLocal[0]+xLocal[1]>1.0)) return false;
+///      if ((xLocal[0]<0.0)||(xLocal[0]>1.0) || (xLocal[1]<0.0)||(xLocal[1]>1.0) || (xLocal[0]+xLocal[1]>1.0)) return false;
+
+
+
+ if ((xLocal[0]<xLocalMargin)||(xLocal[0]>1.0-xLocalMargin) || (xLocal[1]<xLocalMargin)||(xLocal[1]>1.0-xLocalMargin) || (xLocal[0]+xLocal[1]>1.0-xLocalMargin)) return false;
+
+// if ((xLocal[0]<1.0E-5)||(xLocal[0]>1.0-1.0E-5) || (xLocal[1]<1.0E-5)||(xLocal[1]>1.0-1.0E-5) || (xLocal[0]+xLocal[1]>1.0-1.0E-5)) return false;
+
 
 // TEST:
 //      if ((xLocal[0]<-1.0E-5)||(xLocal[0]>1.0+1.0E-5) || (xLocal[1]<-1.0E-5)||(xLocal[1]>1.0+1.0E-5) || (xLocal[0]+xLocal[1]>1.0+1.0E-5)) return false;

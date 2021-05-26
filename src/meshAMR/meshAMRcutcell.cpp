@@ -42,6 +42,8 @@ cAMRstack<CutCell::cTriangleFaceDescriptor> CutCell::BoundaryTriangleFaceDescrip
 CutCell::fCheckPointInsideDomain CutCell::CheckPointInsideDomain=CutCell::CheckPointInsideDomain_default;
 CutCell::fInitRayTracingModule CutCell::InitRayTracingModule=CutCell::InitRayTracingModule_default;
 
+double CutCell::xLocalMargin=0.0;
+
 /*struct cNodeCoordinates {
   double *x;
   int id;

@@ -393,6 +393,42 @@ namespace Vector3D {
     return sqrt(l2);
   }
 
+  inline bool CheckDistance2Point(double *x,double *x_point,double EPS,int length=3) {
+    double rr=0,t;
+
+    for (int i=0;i<length;i++) {
+      t=x[i]-x_point[i];
+      rr+=t*t;
+    }
+
+    if (rr<EPS*EPS) {
+       printf("the point %e %e %e is in the vicility of the point %e  %e  %e (file=%s, line=%ld)\n",x[0],x[1],x[2],x_point[0],x_point[1],x_point[2],__FILE__,__LINE__);
+
+       return true; 
+    }
+
+    return false;
+  }
+
+  inline bool CheckDistance2Plane(double *x,double *x0_plane,double *norm_plane,double EPS) {
+    double d=0.0;
+
+    for (int i=0;i<3;i++) {
+      double t=(x[i]-x0_plane[i])*norm_plane[i];  
+ 
+      d+=t*t;
+    }
+
+    if (d<EPS*EPS) {
+       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%ld)\n",__FILE__,__LINE__);
+
+       return true;
+    }
+
+    return false;
+  }
+
+
 
   inline void CrossProduct(double *res,double *a,double *b) {
 
