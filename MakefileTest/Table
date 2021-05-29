@@ -854,8 +854,8 @@ Check=
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
->>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH-DRIFT.Step=500${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.ref > test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
+>>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat 500
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH-DRIFT.Step=500${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.ref > test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 
 >>>@ls -l test_SEP--focused_transport-IH-Kartavykh-drift${TESTSEP--focused_transport-IH-Kartavykh-drift-REF}.diff
 >>>@echo Test SEP--focused_transport-IH-Kartavykh-drift has finished: `date`
@@ -922,8 +922,8 @@ Check=
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
->>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH.Step=500${TESTSEP--focused_transport-IH-Kartavykh-REF}.ref > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
+>>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat 500
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH.Step=500${TESTSEP--focused_transport-IH-Kartavykh-REF}.ref > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
 >>>@ls -l test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 >>>@echo Test SEP--focused_transport-IH-Kartavykh has finished: `date`
@@ -990,8 +990,8 @@ Check=
 
 >>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
 
->>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.all.dat.Reduced.Step=500 output/test_SEP3D/IH-HE.Step=500${TESTSEP--focused_transport-IH-He-REF}.ref > test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
+>>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat 500
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.Reduced.Step=500 output/test_SEP3D/IH-HE.Step=500${TESTSEP--focused_transport-IH-He-REF}.ref > test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 
 >>>@ls -l test_SEP--focused_transport-IH-He${TESTSEP--focused_transport-IH-He-REF}.diff
 >>>@echo Test SEP--focused_transport-IH-He has finished: `date`
