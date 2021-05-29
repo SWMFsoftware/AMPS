@@ -639,7 +639,7 @@ Rundir=
 Run=
 >>>@echo "test_SEP--focused_transport-IH-borovikov_run..." >> test_SEP--focused_transport-IH-borovikov.diff
 >>>@echo Test test_SEP--focused_transport-IH-borovikov has started: `date`
->>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog 
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog 
 >>>@echo "test_SEP--focused_transport-IH-borovikov_run... done" >> test_SEP--focused_transport-IH-borovikov.diff
 
 
@@ -846,7 +846,7 @@ Rundir=
 Run=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_run..." >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
 >>>@echo Test test_SEP--focused_transport-IH-Kartavykh-drift has started: `date`
->>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_run... done" >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
 
 Check=
@@ -914,7 +914,7 @@ Rundir=
 Run=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh_run..." >> test_SEP--focused_transport-IH-Kartavykh.diff
 >>>@echo Test test_SEP--focused_transport-IH-Kartavykh has started: `date`
->>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh_run... done" >> test_SEP--focused_transport-IH-Kartavykh.diff
 
 Check=
@@ -982,7 +982,7 @@ Rundir=
 Run=
 >>>@echo "test_SEP--focused_transport-IH-He_run..." >> test_SEP--focused_transport-IH-He.diff
 >>>@echo Test test_SEP--focused_transport-IH-He has started: `date`
->>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog
 >>>@echo "test_SEP--focused_transport-IH-He_run... done" >> test_SEP--focused_transport-IH-He.diff
 
 Check=
@@ -4177,7 +4177,7 @@ Run=
 
 >>>-cd SWMF;$(MAKE) test15_pt
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
->>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
+>>>cd SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_run... done" >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
 
@@ -4234,7 +4234,7 @@ Run=
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
 >>>cd SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge 
 >>>cd SWMF;make -j
->>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
+>>>cd SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_run... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
 
 
@@ -4295,7 +4295,7 @@ Run=
 >>>-cd SWMF;$(MAKE) 
 
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF/run_test
->>>cd SWMF/run_test;mpirun -np 2 ./SWMF.exe >> runlog
+>>>cd SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_run... done" >> test_SEP-SC-IH--FL--Node-attachment--GC.diff
 
 
