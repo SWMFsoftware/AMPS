@@ -1,11 +1,14 @@
 #!/bin/csh
-cd $HOME/Sites
+
+#cd $HOME/Sites
+cd /homedata/vtenishe/AMPSTEST/Sites 
 
 # Remove code from yesterday as well as various logs
 rm -rf test.diff
 
 # Create directory for new test results
-setenv NEWTESTDIR AMPS_TEST_RESULTS/`date -v-1d +%Y/%m/%d`
+#setenv NEWTESTDIR AMPS_TEST_RESULTS/`date -v-1d +%Y/%m/%d`
+setenv NEWTESTDIR AMPS_TEST_RESULTS/`date +%Y/%m/%d`
 mkdir -p ${NEWTESTDIR}
 
 # Copy over test results but preserve the subdirectories in Current

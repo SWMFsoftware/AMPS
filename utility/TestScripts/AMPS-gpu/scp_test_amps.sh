@@ -61,7 +61,7 @@ if (-e GNU) then
    touch test_amps.res
   endif
 
-  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_gnu/  #
+  scp test_amps.res test_amps.log ${Server}:/homedata/vtenishe/AMPSTEST/Sites/Current/amps-gpu_gnu/  #
 
   mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
@@ -96,7 +96,7 @@ if (-e NVCC) then
     touch test_amps.res
   endif
 
-  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_nvcc/  #
+  scp test_amps.res test_amps.log ${Server}:/homedata/vtenishe/AMPSTEST/Sites/Current/amps-gpu_nvcc/  #
 
   mv test_amps.log.bak test_amps.log
   cd ../..
@@ -132,7 +132,7 @@ if (-e Intel) then
     touch test_amps.res
   endif 
 
-  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_intel/#
+  scp test_amps.res test_amps.log ${Server}:/homedata/vtenishe/AMPSTEST/Sites/Current/amps-gpu_intel/#
 
   mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
@@ -167,7 +167,7 @@ if (-e PGI) then
     touch test_amps.res
   endif
 
-  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_pgi/  #
+  scp test_amps.res test_amps.log ${Server}:/homedata/vtenishe/AMPSTEST/Sites/Current/amps-gpu_pgi/  #
 
   mv test_amps.log.bak test_amps.log
   cd ../..                                                                   
@@ -202,7 +202,7 @@ if (-e CUDA) then
     touch test_amps.res
   endif
 
-  scp test_amps.res test_amps.log ${Server}:Sites/Current/amps-gpu_cuda/  #
+  scp test_amps.res test_amps.log ${Server}:/homedata/vtenishe/AMPSTEST/Sites/Current/amps-gpu_cuda/  #
 
   mv test_amps.log.bak test_amps.log
   cd ../..
