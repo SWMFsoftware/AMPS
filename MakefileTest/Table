@@ -702,13 +702,13 @@ Compile=
 Rundir=
 >>>@echo "test_SEP--focused_transport-IH-mflampa_rundir..." >> test_SEP--focused_transport-IH-mflampa.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
->>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
+>>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
 >>>@echo "test_SEP--focused_transport-IH-mflampa_rundir... done" >> test_SEP--focused_transport-IH-mflampa.diff
 
 Run=
 >>>@echo "test_SEP--focused_transport-IH-mflampa_run..." >> test_SEP--focused_transport-IH-mflampa.diff
 >>>@echo Test test_SEP--focused_transport-IH-mflampa has started: `date`
->>>-cd SWMF-IH/SWMF/run_test;mpirun -np 2 ./SWMF.exe > runlog
+>>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog
 >>>@echo "test_SEP--focused_transport-IH-mflampa_run... done" >> test_SEP--focused_transport-IH-mflampa.diff
 
 
@@ -716,8 +716,8 @@ Run=
 Check=
 >>>@echo "SEP--focused_transport-IH-mflampa_check..." >> test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
 
->>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat.Reduced.Step=500 output/test_SEP3D/PT-SC-IH.Step=500${TESTSEP--focused_transport-IH-mflampa-REF}.ref > test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/amps-out.thread=4/sample.field-line=0.r=7.447640e-02.dat output/test_SEP3D/SC-IH--FL--PT/sample.field-line.r=7.447640e-02.IH-mflampa.ref > test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff 
 
 >>>@ls -l test_SEP--focused_transport-IH-mflampa${TESTSEP--focused_transport-IH-mflampa-REF}.diff
 >>>@echo Test SEP--focused_transport-IH-mflampa has finished: `date`
