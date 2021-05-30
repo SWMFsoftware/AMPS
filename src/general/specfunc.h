@@ -420,7 +420,7 @@ namespace Vector3D {
     }
 
     if (d<EPS*EPS) {
-       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%ld)\n",__FILE__,__LINE__);
+       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%ld)\n",x[0],x[1],x[2],__FILE__,__LINE__);
 
        return true;
     }
