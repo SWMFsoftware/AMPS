@@ -375,7 +375,7 @@ namespace Vector3D {
 
   inline bool CheckBelowLimit(double *x,double limit,int length=3) {
     for (int i=0;i<length;i++) if ((x[i]!=0.0)&&(fabs(x[i])<limit)) {
-     printf("Error: below the limit found, (file=%s, line=$ld\n",__FILE__,__LINE__);
+     printf("Error: below the limit found, (file=%s, line=%ld\n",__FILE__,__LINE__);
      return true;
     } 
 
