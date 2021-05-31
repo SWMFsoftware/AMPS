@@ -614,6 +614,29 @@ namespace Vector3D {
       Vector3D::Normalize(a,length);
     }
 
+    //normal distribution p(x) ~ exp(-x^2/2)
+    inline double Normal() {
+      return sqrt(-2.0*log(rnd()))*cos(2.0*Pi*rnd());
+    }
+
+    inline void Normal(double *res,int length) {
+      int npairs,ipair;
+      double phi,r;
+
+      npairs=length/2;
+
+      for (ipair=0;ipair<npairs;ipair++) {
+        r=sqrt(-2.0*log(rnd()));
+        phi=2.0*Pi*rnd();
+
+        res[2*ipair]=r*sin(phi);
+        res[1+2*ipair]=r*cos(phi);
+      }
+
+      if (length%2!=0) res[length-1]=Normal();
+    }
+ 
+
     namespace Circle {
        inline void Uniform(double *a, double Radius) {
          double phi,r;
