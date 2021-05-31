@@ -25,7 +25,7 @@
 #endif
 
 #include "pic.h"
-
+#include "specfunc.h"
 
 #include "Exosphere.h"
 #include "constants.h"
@@ -38,6 +38,15 @@
 #endif
 
 
+//define which diffution model is used in the simulation
+#define _DIFFUSION_NONE_       0
+#define _DIFFUSION_ROUX2004AJ_ 1 
+
+
+#ifndef _SEP_DIFFUSION_MODEL_
+#define _SEP_DIFFUSION_MODEL_  _DIFFUSION_NONE_
+#endif 
+
 
 
 namespace SEP {
@@ -47,6 +56,15 @@ namespace SEP {
   namespace FieldLine {
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
+  }
+
+  //the namespace contains the diffution models
+  namespace Diffusion {
+    //LeRoux-2004-AJ
+    namespace Roux2004AJ {
+      double D_mu_mu(double mu);
+      double dD_mu_mu_mu(double mu);
+    }
   }
     
   //functions used for the particle samplein
