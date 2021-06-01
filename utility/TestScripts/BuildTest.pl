@@ -65,8 +65,11 @@ my $fApp="$path/makefile.test.app";
 my @App=read_content($fApp);
 
 my $fFinal="Makefile.test";
+my $fFinalSWMF="Makefile.SWMF.test";
 my @Final;
+my @FinalSWMF;
 my @FinalApps;
+my @FinalAppsSWMF;
 
 #parameters of tests
 my $Name;
@@ -96,11 +99,13 @@ foreach (@ARGV) {
 } 
 
 #process table with test description
+
 while (@Table) {
   my $refTable;
   my $refTars;
+  my $TestType='AMPS';
 
-  ($refTable,$Name,$Time,$Keys,$CustomRefSolutionPaths,$Outs,$refTars,$Refs,$ExeptionCodes) = get_next_test(@Table);
+  ($refTable,$Name,$Time,$Keys,$CustomRefSolutionPaths,$Outs,$refTars,$Refs,$ExeptionCodes,$TestType) = get_next_test(@Table);
 
   @Table   = @$refTable;
   @Tars = @$refTars;
@@ -108,12 +113,54 @@ while (@Table) {
   if ($Name=~ m/(.*)\/(.*)$/) {$Name=$2;}
   $Outs="test_$Name" unless($Outs);
   next unless($Name);
-  $TimeTotal+=$Time;
-  &check_overtime;
+  
+  if ($TestType =~ m/AMPS/) {
+    $TimeTotal+=$Time;
+    &check_overtime;
+  }
    
 
   $Keys=~s/\s+$//; #remove spaces from the end of the line
   $CustomRefSolutionPaths=~s/\s+$//;
+    
+    if ($TestType=~m/SWMF/) {
+  for (my $i = 0; $i<=@Base-1; $i++) {
+    #general part with all tests
+    if ($Base[$i]=~m/<APP.*?>/) {
+      
+      if ($Base[$i]=~m/MAKE/) {
+        $FinalSWMF[$i]=$FinalSWMF[$i]."\nifneq (\$(TEST<APP>-EXEPTIONCODE),SKIP)\n".$Base[$i]."endif";
+      }
+      else {
+        $FinalSWMF[$i]=$FinalSWMF[$i].$Base[$i];
+      }
+            
+      $FinalSWMF[$i]=~s/<APP>/$Name/g;
+      $FinalSWMF[$i]=~s/<APPPATH>/$PathName/g;
+      $FinalSWMF[$i]=~s/<APPKEYS>/$Keys/g;
+      $FinalSWMF[$i]=~s/<APPCUSTOMREFSOLUTIONPATHS>/$CustomRefSolutionPaths/g;
+      $FinalSWMF[$i]=~s/<APPOUTS>/$Outs/g;
+      $FinalSWMF[$i]=~s/<APPREF>/$Refs/g;
+      $FinalSWMF[$i]=~s/<APPEXEPTIONCODE>/$ExeptionCodes/g;
+    }
+    else {
+      if ($Base[$i]=~m/<HOST.*?>/ ) {
+        if ($HostNameFlag==0) {
+          #hostname only prints once
+          $FinalSWMF[$i]=$FinalSWMF[$i].$Base[$i];
+          $FinalSWMF[$i]=~s/<HOSTNAME>/$hostname/g;
+          $HostNameFlag=1;
+        }
+      }
+      else {
+        $FinalSWMF[$i]=$Base[$i];
+      }
+    }
+  }
+
+
+}
+else {
     
   for (my $i = 0; $i<=@Base-1; $i++) {
     #general part with all tests
@@ -148,6 +195,13 @@ while (@Table) {
       }
     }
   }
+}
+
+
+
+
+
+
 
   #application specific blocks
   my @lines = @App;
@@ -176,8 +230,17 @@ while (@Table) {
     }
   }
 
-  push(@FinalApps,@lines);
+
+  if ($TestType=~m/SWMF/) {
+    push(@FinalAppsSWMF,@lines);
+  }
+  else {
+    push(@FinalApps,@lines);
+  }
 }
+
+
+
 
 #build the final Makefile
 push(@Final,"\n\n");
@@ -188,7 +251,32 @@ splice @Final,0,0,"SHELL=/bin/bash\n";
 
 #write it
 write_content($fFinal,"include");
-&write_content($fFinal,@Final);
+
+#if ($TestType=~m/SWMF/) {
+#  &write_content($fFinalSWMF,@Final);
+#}
+#else {
+  &write_content($fFinal,@Final);
+#}
+
+
+
+
+push(@FinalSWMF,"\n\n");
+push(@FinalSWMF,@FinalAppsSWMF);
+
+splice @FinalSWMF,0,0,"SHELL=/bin/bash\n";
+
+
+for (my $i = 0; $i<=@FinalSWMF-1; $i++)  {
+ $FinalSWMF[$i]=~s/test_all/test_all_swmf/;
+ $FinalSWMF[$i]=~s/test_help/test_help_swmf/;
+}
+
+write_content($fFinalSWMF,"include");
+
+write_content($fFinalSWMF,"include");
+&write_content($fFinalSWMF,@FinalSWMF);
 
 #return 1;
 
@@ -221,6 +309,7 @@ sub get_next_test{
   my $Name=''; my $Keys=''; my $CustomRefSolutionPaths=''; my $Outs=''; my $Time=0;
   my $Refs='';
   my $ExeptionCodes='';
+  my $TestType='AMPS';
 
   #target block flag
   my $iTar='';
@@ -258,6 +347,9 @@ sub get_next_test{
       elsif ($line =~ m/Outs=(.*)/) {$Outs="$Outs$1,," if($1);}
       elsif ($line =~ m/Ref=(.*)/) {$Refs="$Refs$1,," if($1);}  
       elsif ($line =~ m/ExeptionCode=(.*)/) {$ExeptionCodes="$ExeptionCodes$1,," if($1);}
+
+      #the type of the test
+      elsif ($line =~ m/TestType=(.*)/) {$TestType=$1;}
 
       #non-generic target description header
       elsif ($line =~ m/Compile=(.*)/) {
@@ -379,11 +471,11 @@ sub get_next_test{
       }
 
     }
-    (\@_,$Name,$Time,$Keys,$CustomRefSolutionPaths,$Outs,\@Tars,$Refs,$ExeptionCodes);
+    (\@_,$Name,$Time,$Keys,$CustomRefSolutionPaths,$Outs,\@Tars,$Refs,$ExeptionCodes,$TestType);
   }
   else {
     @Tars=('',0,'','','');
-    (\@_,'','','',\@Tars,$Refs,$ExeptionCodes);
+    (\@_,'','','',\@Tars,$Refs,$ExeptionCodes,$TestType);
   }
 }
 
