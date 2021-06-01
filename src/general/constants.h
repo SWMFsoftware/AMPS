@@ -34,11 +34,13 @@
 #define EV2J                 ElectronCharge
 #define GravityConstant      6.67300E-11
 #define VacuumPermittivity   8.854187817620E-12
+#define VacuumPermeability   1.256637062E-6 
 #define PlanckConstant       6.62606957E-34
 #define SpeedOfLight         299792458.0
 #define cm2m                 1.0E-2
 #define m2cm                 100.0
 #define J2eV                 (1.0/eV2J)
+#define J2GeV                (1.0E-9/eV2J)
 #define KeV2J                (1.0E3*eV2J)
 #define KEV2J                (1.0E3*eV2J)
 #define MeV2J                (1.0E6*eV2J)

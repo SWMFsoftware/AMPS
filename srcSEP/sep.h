@@ -39,8 +39,9 @@
 
 
 //define which diffution model is used in the simulation
-#define _DIFFUSION_NONE_       0
-#define _DIFFUSION_ROUX2004AJ_ 1 
+#define _DIFFUSION_NONE_                 0
+#define _DIFFUSION_ROUX2004AJ_           1 
+#define _DIFFUSION_BOROVIKOV_2019_ARXIV_ 2
 
 
 #ifndef _SEP_DIFFUSION_MODEL_
@@ -62,8 +63,14 @@ namespace SEP {
   namespace Diffusion {
     //LeRoux-2004-AJ
     namespace Roux2004AJ {
-      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu); 
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
     }
+
+    //Borovikov-2019-ARXIV (Eq. 6.11)_
+    namespace Borovokov_2019_ARXIV {
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+    }     
+ 
   }
     
   //functions used for the particle samplein

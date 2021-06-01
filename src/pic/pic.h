@@ -570,6 +570,8 @@ namespace PIC {
         for (int idim=0; idim<DIM; idim++) xOut[idim]=x[idim];
       }
 
+      inline double* GetX() {return x;}
+
       //.......................................................................
       //set individual stored variables
       inline void SetDatum(cDatumStored& Datum, double* In) {

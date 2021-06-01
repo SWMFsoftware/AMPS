@@ -660,6 +660,8 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         Vertex->SetPlasmaDensity(MHData_VIB[rho_offset]); 
         Vertex->SetPlasmaTemperature(MHData_VIB[t_offset]); 
         Vertex->SetPlasmaPressure(MHData_VIB[rho_offset]*Kbol*MHData_VIB[t_offset]); 
+
+        Vertex->SetDatum(PIC::FieldLine::DatumAtVertexPlasmaWaves,MHData_VIB+w_offset);
       }
 
       //update the size of the field line if needed

@@ -290,6 +290,12 @@ void PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed i
     else {
       sprintf(PIC::OutputDataFileDirectory,"amps-out.thread=%ld",rank);
 
+      if (rank==0) {
+        system("rm -rf amps-out.thread=*");
+      }
+
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);      
+
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
       system(cmd);
 

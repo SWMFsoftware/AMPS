@@ -38,7 +38,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", true);
     cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", true);
     cDatumStored DatumAtVertexMagneticFluxFunction(1,"\"MagneticFluxFunction [nT*m]\"", true);
-    cDatumStored DatumAtVertexPlasmaWaves(1,"\"Plasma waves\"",false);
+    cDatumStored DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
 
     cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",false);
@@ -46,7 +46,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaDensity(1,"\"Plasma number density [1/m^3]\"", false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", false);
-    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(1,"\"Plasma waves\"",false);
+    cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
 
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);

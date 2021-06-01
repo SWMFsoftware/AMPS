@@ -676,13 +676,14 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   PIC::ParticleBuffer::byte *ParticleData;
   double mu,AbsB,L,vParallel,vNormal,v,DivAbsB;
   double FieldLineCoord;
-  int iFieldLine;
+  int iFieldLine,spec;
   FL::cFieldLineSegment *Segment; 
 
   ParticleData=PB::GetParticleDataPointer(ptr);
 
   FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
   iFieldLine=PB::GetFieldLineId(ParticleData); 
+  spec=PB::GetI(ParticleData);
 
   vParallel=PB::GetVParallel(ParticleData);
   vNormal=PB::GetVNormal(ParticleData);
@@ -708,6 +709,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   L=-Vector3D::Length(B)/AbsBDeriv;
 
   //move the particle along the magnetic field line 
+  double FieldLineCoord_init=FieldLineCoord;
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
 
   //get the new value of 'mu'
@@ -715,7 +717,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   switch (_SEP_DIFFUSION_MODEL_) {
   case _DIFFUSION_ROUX2004AJ_:
-    SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu); 
+    SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
 
     mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
     mu+=dD_dmu*dtTotal;
