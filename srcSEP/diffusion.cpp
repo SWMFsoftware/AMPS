@@ -6,15 +6,10 @@
 
 
 //========= Roux2004AJ (LeRoux-2004-AJ) =============================
-double SEP::Diffusion::Roux2004AJ::D_mu_mu(double mu) {
+void SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu) {
   static double c=7.0*Pi/8.0*2.0E3/(0.01*_AU_)*(0.2*0.2);
 
-  return c*(1.0-mu*mu);
-} 
-
-double SEP::Diffusion::Roux2004AJ::dD_mu_mu_mu(double mu) {
-  static double c=7.0*Pi/8.0*2.0E3/(0.01*_AU_)*(0.2*0.2);
-
-  return -2.0*c*mu;
+  D=c*(1.0-mu*mu);
+  dD_dmu=-2.0*c*mu;
 } 
 

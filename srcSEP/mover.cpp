@@ -711,20 +711,21 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
 
   //get the new value of 'mu'
-  double mu_init=mu;
-  mu+=(1.0-mu*mu)/(2.0*L)*v*dtTotal;
+  double D,dD_dmu;
 
   switch (_SEP_DIFFUSION_MODEL_) {
   case _DIFFUSION_ROUX2004AJ_:
-    mu+=sqrt(2.0*Diffusion::Roux2004AJ::D_mu_mu(mu_init)*dtTotal)*Vector3D::Distribution::Normal();
-    mu+=Diffusion::Roux2004AJ::dD_mu_mu_mu(mu_init)*dtTotal; 
+    SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu); 
+
+    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
+    mu+=dD_dmu*dtTotal;
     break;
   }
 
+  mu+=(1.0-mu*mu)/(2.0*L)*v*dtTotal;
+
   if (mu<-1.0) mu=-1.0;
   if (mu>1.0) mu=1.0;
-
-
 
 
   //get the segment of the new particle location 

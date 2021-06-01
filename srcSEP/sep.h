@@ -62,8 +62,7 @@ namespace SEP {
   namespace Diffusion {
     //LeRoux-2004-AJ
     namespace Roux2004AJ {
-      double D_mu_mu(double mu);
-      double dD_mu_mu_mu(double mu);
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu); 
     }
   }
     
