@@ -73,3 +73,50 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
    }
 } 
 
+//========= Jokopii1966AJ (Jokopii-1966-AJ) =============================
+void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+  namespace FL = PIC::FieldLine;
+  namespace MD = PIC::MolecularData;
+
+  FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+  FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
+  double *B0,*B1;
+  double *x0,*x1;
+  double w0,w1;
+
+  //get the magnetic field and the plasma waves at the corners of the segment
+  B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+  B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+  //determine the interpolation coefficients
+  w1=fmod(FieldLineCoord,1);
+  w0=1.0-w1;
+
+  double absB2=0.0;
+  int idim;
+
+  for (idim=0;idim<3;idim++) {
+    double t;
+
+    t=w0*B0[idim]+w1*B1[idim];
+    absB2+=t*t;
+  }
+  
+  double omega,k,P;
+
+  omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
+  k=omega/fabs(vParallel);
+
+  P=1.0/pow(k,5.0/3.0); 
+ 
+  double c=Pi/4.0*omega*k*P/absB2;
+
+  D=c*(1.0-mu*mu);
+  dD_dmu=-c*2*mu;
+}
+
+
+
+
+

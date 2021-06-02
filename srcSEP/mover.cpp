@@ -716,12 +716,34 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   double D,dD_dmu;
 
   switch (_SEP_DIFFUSION_MODEL_) {
+  case _DIFFUSION_NONE_:
+    //no diffution model is used -> do nothing
+    break; 
+
   case _DIFFUSION_ROUX2004AJ_:
     SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
 
     mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
     mu+=dD_dmu*dtTotal;
     break;
+   
+  case _DIFFUSION_BOROVIKOV_2019_ARXIV_:
+    SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
+
+    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
+    mu+=dD_dmu*dtTotal;
+    break;
+
+  case _DIFFUSION_JOKIPII1966AJ_:
+    SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
+
+    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
+    mu+=dD_dmu*dtTotal;
+    break;
+
+
+  default: 
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
   mu+=(1.0-mu*mu)/(2.0*L)*v*dtTotal;

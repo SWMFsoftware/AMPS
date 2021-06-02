@@ -42,6 +42,7 @@
 #define _DIFFUSION_NONE_                 0
 #define _DIFFUSION_ROUX2004AJ_           1 
 #define _DIFFUSION_BOROVIKOV_2019_ARXIV_ 2
+#define _DIFFUSION_JOKIPII1966AJ_        3
 
 
 #ifndef _SEP_DIFFUSION_MODEL_
@@ -70,6 +71,10 @@ namespace SEP {
     namespace Borovokov_2019_ARXIV {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
     }     
+
+    namespace Jokopii1966AJ {
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+    }
  
   }
     
