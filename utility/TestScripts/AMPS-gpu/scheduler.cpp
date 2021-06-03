@@ -75,6 +75,7 @@ int main(int argc, char* argv[]) {
   bool status_intel_test=false;
   bool status_gcc_test=false;
   bool status_nvcc_test=false;
+  bool status_swmf_test=false;
   char test_dir[500];
   int nTestRoutineThreads=1;
   int nTotalCompilerCases=0;
@@ -85,6 +86,7 @@ int main(int argc, char* argv[]) {
   parse command line parameters:
   argument line parameter: -pgi -gcc -intel -path [directory that containes installations of AMPS for 
   each compiler, e.g. path/Intel/AMPS, path/GNU/AMPS, path/PGI/AMPS, etc] -threads [the number of threads for executing each set of tests]
+  -swmf [the key make the scheduler add target 'test_all_swmf' to the list of the jobs that will be executed]
   */
 
   for (i=1;i<argc;i++) {
@@ -117,6 +119,9 @@ int main(int argc, char* argv[]) {
     else if (strcmp("-run-only",argv[i])==0) { 
       run_only_flag=true;  
     }
+    else if (strcmp("-swmf",argv[i])==0) { 
+      status_swmf_test=true;  
+    }
     else {
       printf("Option %s is not found\n",argv[i]);
       exit(0);
@@ -132,10 +137,16 @@ int main(int argc, char* argv[]) {
   int index_intel_min=-1,index_intel_max=-1;
   int index_nvcc_min=-1,index_nvcc_max=-1;
 
-  cJobTableElement* JobTable=new cJobTableElement[nTotalCompilerCases*nTestRoutineThreads];
+  cJobTableElement* JobTable=new cJobTableElement[nTotalCompilerCases*(1+nTestRoutineThreads)];
+
 
   if (status_pgi_test==true) {
     index_pgi_min=index;
+    
+    if (status_swmf_test==true) {
+      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; make test_all_swmf ",test_dir,i);
+      index_pgi_max=index++;
+    }
 
     for (i=1;i<=nTestRoutineThreads;i++) {
       sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; utility/TestScripts/AMPS-gpu/RunPGI.sh %i",test_dir,i);
@@ -145,18 +156,25 @@ int main(int argc, char* argv[]) {
 
   if (status_gcc_test==true) {
     index_gcc_min=index;
+    
+    if (status_swmf_test==true) {
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make test_all_swmf ",test_dir,i);
+      index_gcc_max=index++;
+    }
 
     for (i=1;i<=nTestRoutineThreads;i++) {
       sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; utility/TestScripts/AMPS-gpu/RunGNU.sh %i",test_dir,i);
-
-//      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
-
       index_gcc_max=index++;
     }
   }
 
   if (status_intel_test==true) {
     index_intel_min=index;
+    
+    if (status_swmf_test==true) {
+      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; make test_all_swmf ",test_dir,i);
+      index_intel_max=index++;
+    } 
 
     for (i=1;i<=nTestRoutineThreads;i++) {
       sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; utility/TestScripts/AMPS-gpu/RunIntel.sh %i",test_dir,i);
@@ -168,8 +186,6 @@ int main(int argc, char* argv[]) {
     index_nvcc_min=index;
 
     for (i=1;i<=nTestRoutineThreads;i++) {
-//      sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; make TESTMPIRUN4=\"mpirun -np 4\"  MPIRUN=\"mpirun -np 8\" TESTMPIRUN1=\"mpirun -np 1\" test_run_thread%i > test_amps_thread%i.log",test_dir,i,i);
-
       sprintf(JobTable[index].cmd,"cd %s/NVCC/AMPS; utility/TestScripts/AMPS-gpu/RunNVCC.sh %i",test_dir,i);
       index_nvcc_max=index++;
     }

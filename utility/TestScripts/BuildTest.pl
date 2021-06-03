@@ -271,6 +271,8 @@ splice @FinalSWMF,0,0,"SHELL=/bin/bash\n";
 for (my $i = 0; $i<=@FinalSWMF-1; $i++)  {
  $FinalSWMF[$i]=~s/test_all/test_all_swmf/;
  $FinalSWMF[$i]=~s/test_help/test_help_swmf/;
+ $FinalSWMF[$i]=~s/test_compile/test_compile_swmf/;
+ $FinalSWMF[$i]=~s/test_run/test_run_swmf/;
 }
 
 write_content($fFinalSWMF,"include");

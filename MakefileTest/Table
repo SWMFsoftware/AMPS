@@ -564,6 +564,7 @@ Check=
 #>
 Name=SEP--focused_transport--borovikov
 Time=4
+TestType=SWMF
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -729,6 +730,8 @@ Check=
 #>
 Name=SEP--focused_transport-IH-mflampa-fl 
 Time=4
+TestType=SWMF
+
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
