@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
     index_pgi_min=index;
     
     if (status_swmf_test==true) {
-      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; make test_all_swmf ",test_dir,i);
+      sprintf(JobTable[index].cmd,"cd %s/PGI/AMPS; make test_all_swmf ",test_dir);
       index_pgi_max=index++;
     }
 
@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
     index_gcc_min=index;
     
     if (status_swmf_test==true) {
-      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make test_all_swmf ",test_dir,i);
+      sprintf(JobTable[index].cmd,"cd %s/GNU/AMPS; make test_all_swmf ",test_dir);
       index_gcc_max=index++;
     }
 
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
     index_intel_min=index;
     
     if (status_swmf_test==true) {
-      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; make test_all_swmf ",test_dir,i);
+      sprintf(JobTable[index].cmd,"cd %s/Intel/AMPS; make test_all_swmf ",test_dir);
       index_intel_max=index++;
     } 
 
