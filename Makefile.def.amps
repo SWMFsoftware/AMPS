@@ -18,4 +18,4 @@ ExternalModules=models/exosphere
 INTERFACE=off
 
 include ${PTDIR}/Makefile.test
-
+include ${PTDIR}/Makefile.SWMF.test
