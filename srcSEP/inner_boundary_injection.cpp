@@ -135,6 +135,14 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
       PIC::ParticleBuffer::SetV(v,newParticleData);
       PIC::ParticleBuffer::SetI(spec,newParticleData);
 
+/*
+      //apply condition of tracking the particle
+      if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) { 
+        PIC::ParticleTracker::InitParticleID(newParticleData);
+        PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,newParticleData,(void*)startNode);
+      } 
+*/
+
       PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleWeightCorrection,newParticleData);
       break;
     case ParticleTrajectoryCalculation_FieldLine: case  ParticleTrajectoryCalculation_IgorFieldLine:
@@ -194,7 +202,15 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 
 
     //inject the particle into the system
-    _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode);
+    int code;
+
+    code=_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,startNode->block->GetLocalTimeStep(spec)*rnd(),startNode);
+
+    //apply condition of tracking the particle
+    if ((_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_)&&(code==_PARTICLE_MOTION_FINISHED_)) { 
+      PIC::ParticleTracker::InitParticleID(newParticleData);
+      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,newParticleData,(void*)startNode);
+    } 
   }
 
   return nInjectedParticles;

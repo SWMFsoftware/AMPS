@@ -18,4 +18,9 @@ CouplerMode=swmf !!T96 !ices !!off, ices, swmf
 
   OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
 
+ TrajectoryTracing=on
+ MaxSampledTrajectoryNumber=1000
+
+ define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_ON_
+
 #endGeneral
