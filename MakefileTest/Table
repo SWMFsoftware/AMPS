@@ -920,9 +920,8 @@ Run=
 Check=
 >>>@echo "SEP--focused_transport-IH-Kartavykh_check..." >> test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
->>>-cd SWMF-IH/SWMF/run_test/;${MYDIR}/utility/ConOutput.pl -fname=pic.H_PLUS.s=0.out=4.dat
-
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat 500
+>>>-@utility/RemoveColumn.pl -c=5 SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.Reduced.Step=500
 >>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=4.dat.Reduced.Step=500 output/test_SEP3D/IH-KARTAVYKH.Step=500${TESTSEP--focused_transport-IH-Kartavykh-REF}.ref > test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
 
 >>>@ls -l test_SEP--focused_transport-IH-Kartavykh${TESTSEP--focused_transport-IH-Kartavykh-REF}.diff
