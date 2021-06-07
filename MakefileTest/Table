@@ -4228,6 +4228,15 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge has started: `date`
 
+>>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
+>>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-Droge,amps-test=on
+>>>-cd SWMF-IH/SWMF;${MAKE} SWMF
+>>>-cd SWMF-IH/SWMF;make PIDL
+
 >>>-cd SWMF-IH/SWMF;$(MAKE) test15_pt_rundir 
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
 >>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge 
