@@ -839,6 +839,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_rundir..." >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
+>>>-rm -rf SWMF-IH/SWMF/run_test
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh-drift_rundir... done" >> test_SEP--focused_transport-IH-Kartavykh-drift.diff
@@ -906,6 +907,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh_rundir..." >> test_SEP--focused_transport-IH-Kartavykh.diff
+>>>-rm -rf SWMF-IH/SWMF/run_test
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
 >>>@echo "test_SEP--focused_transport-IH-Kartavykh_rundir... done" >> test_SEP--focused_transport-IH-Kartavykh.diff
