@@ -771,6 +771,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_SEP--focused_transport-IH-mflampa-fl_rundir..." >> test_SEP--focused_transport-IH-mflampa-fl.diff
+>>>rm -rf SWMF-IH/SWMF/run_test
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
 >>>@echo "test_SEP--focused_transport-IH-mflampa-fl_rundir... done" >> test_SEP--focused_transport-IH-mflampa-fl.diff
