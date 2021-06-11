@@ -58,7 +58,9 @@ bool AMPS2SWMF::amps_init_mesh_flag=false;
 int AMPS2SWMF::FieldLineUpdateCounter=0;
 
 //the table containing the field line segment indexes where the CME shock is currently localted
-int *AMPS2SWMF::iShockWaveSegmentTable=NULL;
+//int *AMPS2SWMF::iShockWaveSegmentTable=NULL;
+
+AMPS2SWMF::cShockData *AMPS2SWMF::ShockData=NULL;
 
 //amps execution timer 
 PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
@@ -537,11 +539,15 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     PIC::CPLR::SWMF::FirstCouplingOccured=true;
 
     //init the table of the shock wave localtion indexes
-    if (AMPS2SWMF::iShockWaveSegmentTable==NULL) {
-      AMPS2SWMF::iShockWaveSegmentTable=new int [*nLine];
-    
-      for (int i=0;i<(*nLine);i++) AMPS2SWMF::iShockWaveSegmentTable[i]=-1;
-    }
+//    if (AMPS2SWMF::iShockWaveSegmentTable==NULL) {
+//      AMPS2SWMF::iShockWaveSegmentTable=new int [*nLine];
+//    
+//      for (int i=0;i<(*nLine);i++) AMPS2SWMF::iShockWaveSegmentTable[i]=-1;
+//    }
+
+    if (AMPS2SWMF::ShockData==NULL) {
+      AMPS2SWMF::ShockData=new AMPS2SWMF::cShockData [*nLine];
+    } 
 
     static bool init_flag=false;
     static int *FirstVertexLagrIndex=NULL;
@@ -735,12 +741,14 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
           //Density table 
           double DensityTable[Width];
+          double *VelocityTable[Width];
 
           //loop through the field line from the end to the beginning 
           for (cnt=0,iSegment=FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()-1,s=FieldLinesAll[iImportFieldLine].GetLastSegment();iSegment>=1;cnt++,iSegment--,s=s->GetPrev()) {
             if (cnt<Width) {
               //the first point 
               s->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,DensityTable+Width-cnt-1);
+              VelocityTable[Width-cnt-1]= s->GetEnd()->GetDatum_ptr(DatumAtVertexPlasmaVelocity);
             }
             else {
               double rho_max_local=DensityTable[0];
@@ -749,15 +757,20 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
               for (int i=1;i<Width-1;i++) if (DensityTable[i]>rho_max_local) rho_max_local=DensityTable[i],i_rho_max_local=i;  
 
               //check if the maximum is found
-              if ((rho_max_local/DensityTable[0]>BumpMeasure)&&(rho_max_local/DensityTable[Width-1])) if (rho_max_local>rho_global_max) {
+              if ((rho_max_local/DensityTable[0]>BumpMeasure)&&(rho_max_local/DensityTable[Width-1]>BumpMeasure)) if (rho_max_local>rho_global_max) {
                 rho_global_max=rho_max_local;
                 iSegmentMax=i_rho_max_local+iSegment+1;
+
+                AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentMax;
+                AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=Vector3D::Length(VelocityTable[i_rho_max_local]); 
+                AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=DensityTable[Width-1]; 
               }
 
               //read a new data point 
-              for (int i=Width-1;i>=1;i--) DensityTable[i]=DensityTable[i-1];
+              for (int i=Width-1;i>=1;i--) DensityTable[i]=DensityTable[i-1],VelocityTable[i]=VelocityTable[i-1];
 
               s->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,DensityTable);
+              VelocityTable[0]=s->GetEnd()->GetDatum_ptr(DatumAtVertexPlasmaVelocity);
             }
           }
 
@@ -769,7 +782,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         //DensityRatio();
         DensityBumpSearch(); 
 
-        AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
+    //    AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
         cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", ratio=" << max_ratio << endl;
       }
     };

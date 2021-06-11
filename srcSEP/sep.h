@@ -93,13 +93,14 @@ namespace SEP {
       int nEnergyBins;
       double MinEnergy,MaxEnergy,dLogEnergy;
      
-      double *SamplingTable;
+      double *DensitySamplingTable;
+      double *FluxSamplingTable,*ReturnFluxSamplingTable;
       int SamplingCounter;
       double SamplingTime;
 
       int iFieldLine;
       double HeliocentricDisctance;
-      FILE *fout;
+      FILE *foutDensity,*foutFlux,*foutReturnFlux;
 
       PIC::FieldLine::cFieldLineSegment* GetFieldLineSegment() {
         namespace FL=PIC::FieldLine;
@@ -151,13 +152,23 @@ namespace SEP {
         node=PIC::Mesh::Search::FindBlock(xMiddle);
         if (node->block==NULL) return;
 
+        double vol=0.0;
+        double xFirstFieldLine[3];
+
         switch (_PIC_PARTICLE_LIST_ATTACHING_) {
         case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
           PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
           ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+          vol=(node->xmax[0]-node->xmin[0])*(node->xmax[1]-node->xmin[1])*(node->xmax[2]-node->xmin[2])/(_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+
           break;
         case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
           ptr=Segment->FirstParticleIndex;
+
+          FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(xFirstFieldLine);
+          vol=pow(Vector3D::Length(xMiddle)/Vector3D::Length(xFirstFieldLine),2)*Segment->GetLength(); 
+
           break;
         default:
           exit(__LINE__,__FILE__,"Error: the option is unknown");
@@ -206,7 +217,10 @@ namespace SEP {
             ParticleWeight=node->block->GetLocalParticleWeight(spec); 
             ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
 
-            SamplingTable[ibin]+=ParticleWeight;
+            DensitySamplingTable[ibin]+=ParticleWeight/vol;
+            FluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v); 
+
+            if (v[0]<0.0) ReturnFluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v);
           } 
 
           ptr=PB::GetNext(ParticleData);
@@ -214,18 +228,35 @@ namespace SEP {
       }
 
       void Clear() {
-        for (int i=0;i<nEnergyBins;i++) SamplingTable[i]=0.0;
+        for (int i=0;i<nEnergyBins;i++) DensitySamplingTable[i]=0.0,FluxSamplingTable[i]=0.0,ReturnFluxSamplingTable[i]=0.0;
         
         SamplingCounter=0;
       }
 
       void Output() {
-        fprintf(fout,"%e ",SamplingTime);
+        fprintf(foutDensity,"%e ",SamplingTime);
 
-        for (int i=0;i<nEnergyBins;i++) fprintf(fout,"  %e", SamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,"  %e", DensitySamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
         
-        fprintf(fout,"\n");
-        fflush(fout);
+        fprintf(foutDensity,"\n");
+        fflush(foutDensity);
+
+        fprintf(foutFlux,"%e ",SamplingTime);
+
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,"  %e", FluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
+
+        fprintf(foutFlux,"\n");
+        fflush(foutFlux);
+
+        fprintf(foutReturnFlux,"%e ",SamplingTime);
+
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,"  %e", ReturnFluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
+
+        fprintf(foutReturnFlux,"\n");
+        fflush(foutReturnFlux);
+
+
+
         Clear();
       }
 
@@ -240,16 +271,31 @@ namespace SEP {
         HeliocentricDisctance=r;
         iFieldLine=l; 
 
-        sprintf(full_name,"%s.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
-        fout=fopen(full_name,"w"); 
+        sprintf(full_name,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutDensity=fopen(full_name,"w"); 
 
-        fprintf(fout,"VARIABLES=\"time\"");
-        for (int i=0;i<nEnergyBins;i++) fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
-        fprintf(fout,"\n");   
+        fprintf(foutDensity,"VARIABLES=\"time\"");
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        fprintf(foutDensity,"\n");   
 
+        sprintf(full_name,"%s.flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutFlux=fopen(full_name,"w");
+
+        fprintf(foutFlux,"VARIABLES=\"time\"");
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        fprintf(foutFlux,"\n");
+
+        sprintf(full_name,"%s.return_flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutReturnFlux=fopen(full_name,"w");
+
+        fprintf(foutReturnFlux,"VARIABLES=\"time\"");
+        for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
+        fprintf(foutReturnFlux,"\n");
 
         SamplingTime=0.0;
-        SamplingTable=new double[nEnergyBins];
+        DensitySamplingTable=new double[nEnergyBins];
+        FluxSamplingTable=new double[nEnergyBins];
+        ReturnFluxSamplingTable=new double[nEnergyBins];
         Clear(); 
       }
     };

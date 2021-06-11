@@ -32,6 +32,9 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
 
   W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves); 
   W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+
+  x0=VertexBegin->GetX();
+  x1=VertexEnd->GetX();
   
   //determine the interpolation coefficients
   w1=fmod(FieldLineCoord,1); 
@@ -55,7 +58,7 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
    SummedW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]); 
 
    double Lmax=0.03*sqrt(r2);
-   double rLarmor=MD::GetMass(spec)*vNorm/fabs(MD::GetElectricCharge(spec)*sqrt(absB2));
+   double rLarmor=MD::GetMass(spec)*Relativistic::E2Speed(1.0*GeV2J,MD::GetMass(spec))/fabs(MD::GetElectricCharge(spec)*sqrt(absB2));
    double speed=sqrt(vParallel*vParallel+vNorm*vNorm);
 
    lambda=0.5*absB2/(VacuumPermeability*SummedW)*pow(Lmax*Lmax*rLarmor*Relativistic::Speed2E(speed,MD::GetMass(spec))*J2GeV,1.0/3.0); 

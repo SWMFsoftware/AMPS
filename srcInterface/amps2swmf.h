@@ -38,7 +38,20 @@ namespace AMPS2SWMF {
   extern int FieldLineUpdateCounter; 
 
   //the table containing the field line segment indexes where the CME shock is currently localted
-  extern int *iShockWaveSegmentTable;
+  class cShockData {
+  public:
+    int iSegmentShock;
+    double ShockSpeed,DownStreamDensity;
+
+    cShockData() {
+      iSegmentShock=-1;
+      ShockSpeed=0.0,DownStreamDensity=0.0;
+    }
+  };
+
+  extern cShockData *ShockData;
+
+//  extern int *iShockWaveSegmentTable;
   
 
   //AMPS execution timer 
