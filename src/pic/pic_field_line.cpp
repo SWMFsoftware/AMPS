@@ -622,9 +622,15 @@ namespace PIC {
       int nVertex = (is_loop()) ? nSegment : nSegment+1;
       int iVertex,iSegment;
 
-      int nSegmentParticles[nSegment];
+      int nSegmentParticles[nSegment],nSegmentParticles_mu_negative[nSegment],nSegmentParticles_mu_positive[nSegment];
       double ModelParticleSpeedTable[nSegment],v[3];
       cFieldLineSegment* Segment;
+
+      for (iSegment=0;iSegment<nSegment; iSegment++) {
+        nSegmentParticles[iSegment]=0,nSegmentParticles_mu_negative[iSegment]=0,nSegmentParticles_mu_positive[iSegment]=0;
+        ModelParticleSpeedTable[iSegment]=0.0; 
+      }
+   
 
       if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
         for (iSegment=0,Segment=FirstSegment; iSegment<nSegment; iSegment++,Segment=Segment->GetNext()) {
@@ -645,6 +651,13 @@ namespace PIC {
 
             ModelParticleSpeedTable[iSegment]+=Vector3D::Length(v);
 
+            if (v[0]>0.0) {
+              nSegmentParticles_mu_positive[iSegment]++;
+            }
+            else {
+              nSegmentParticles_mu_negative[iSegment]++;
+            }
+
             ptr=PB::GetNext(ptr);
           }
 
@@ -664,9 +677,20 @@ namespace PIC {
         for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
 
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
-          if (iVertex==0) fprintf(fout, "%e  %e  %ld  ",(double)nSegmentParticles[0],ModelParticleSpeedTable[0],iVertex);
-          else if (iVertex==nVertex-1) fprintf(fout, "%e  %e  %ld  ",(double)nSegmentParticles[iVertex-1],ModelParticleSpeedTable[iVertex-1],iVertex); 
-          else fprintf(fout, "%e  %e  %ld  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 0.5*(ModelParticleSpeedTable[iVertex-1]+ModelParticleSpeedTable[iVertex]),iVertex);
+          if (iVertex==0) {
+            fprintf(fout, "%e  %e  %e  %e  %ld  ",(double)nSegmentParticles[0],
+              (double)nSegmentParticles_mu_positive[0],(double)nSegmentParticles_mu_negative[0],ModelParticleSpeedTable[0],iVertex);
+          }
+          else if (iVertex==nVertex-1) {
+            fprintf(fout, "%e  %e  %e  %e %ld  ",(double)nSegmentParticles[iVertex-1],
+              (double)nSegmentParticles_mu_positive[iVertex-1],(double)nSegmentParticles_mu_negative[iVertex-1],ModelParticleSpeedTable[iVertex-1],iVertex); 
+          }
+          else {
+            fprintf(fout, "%e  %e  %e  %e  %ld  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 
+              0.5*(nSegmentParticles_mu_positive[iVertex-1]+nSegmentParticles_mu_positive[iVertex]),
+              0.5*(nSegmentParticles_mu_negative[iVertex-1]+nSegmentParticles_mu_negative[iVertex]),
+              0.5*(ModelParticleSpeedTable[iVertex-1]+ModelParticleSpeedTable[iVertex]),iVertex);
+          }
         }
 
         for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end();  itrDatumStored++) {
@@ -782,7 +806,7 @@ namespace PIC {
       
 
       if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
-        fprintf(fout,",\"nSegmentParticles\",\"Model Particle Speed\",\"iSegment\"");
+        fprintf(fout,",\"nSegmentParticles\",\"nSegmentParticles_mu_positive\", \"nSegmentParticles_mu_negative\",\"Model Particle Speed\",\"iSegment\"");
       }
 
       for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end(); itrDatumStored++) {

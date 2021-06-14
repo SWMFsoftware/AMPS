@@ -85,12 +85,16 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
 
   double *B0,*B1;
+  double *W0,*W1;
   double *x0,*x1;
   double w0,w1;
 
   //get the magnetic field and the plasma waves at the corners of the segment
   B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
   B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+  W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+  W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
 
   //determine the interpolation coefficients
   w1=fmod(FieldLineCoord,1);
@@ -106,12 +110,23 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
     absB2+=t*t;
   }
   
+  double SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
   double omega,k,P;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
+
+  double kmin=omega/Relativistic::E2Speed(400.0*MeV2J,MD::GetMass(spec));
+  double C;
+
+  C=SummW*VacuumPermeability/(3.0*pow(kmin,-2.0/3.0)/2.0);
+
+
+
   k=omega/fabs(vParallel);
 
-  P=1.0/pow(k,5.0/3.0); 
+  C/=1.0E7;
+
+  P=C/pow(k,5.0/3.0); 
  
   double c=Pi/4.0*omega*k*P/absB2;
 
