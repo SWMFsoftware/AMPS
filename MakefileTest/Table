@@ -4178,7 +4178,7 @@ Run=
 >>>cd SWMF-IH/SWMF;./Config.pl -o=SC:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF;./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>cd SWMF-IH/SWMF;./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
->>>cd SWMF-IH/SWMF;./Config.pl -o=PT:application=test/sep_focused_transport-ih--fl-droge,spice-path=nospice,amps-test=on 
+>>>cd SWMF-IH/SWMF;./Config.pl -o=PT:application=test/sep_focused_transport-ih--fl-droge--jokipii,spice-path=nospice,amps-test=on 
 >>>cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
 
 >>>cd SWMF-IH/SWMF;${MAKE} SWMF -j 
