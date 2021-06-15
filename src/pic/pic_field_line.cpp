@@ -38,7 +38,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPlasmaTemperature(1,"\"Plasma Temperature [K]\"", true);
     cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", true);
     cDatumStored DatumAtVertexMagneticFluxFunction(1,"\"MagneticFluxFunction [nT*m]\"", true);
-    cDatumStored DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
+    cDatumStored DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",true);
 
     cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",false);
