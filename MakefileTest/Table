@@ -4135,6 +4135,62 @@ Check=
 
 <#
 
+
+--------------------------------------------------------------------------------------------------------------------------
+#>
+Name=SEP_SWMF_test19_fl
+Time=10 
+
+Compile=
+>>>@echo "test_SEP_SWMF_test19_fl_compile..." > test_SEP_SWMF_test19_fl.diff  
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF-IH/*),)
+>>>mkdir -p SWMF-IH
+>>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_SEP_SWMF_test19_fl_compile... done" >> test_SEP_SWMF_test19_fl.diff
+
+Rundir=
+>>>@echo "test_SEP_SWMF_test19_fl_rundir..." >> test_SEP_SWMF_test19_fl.diff
+>>>@echo "test_SEP_SWMF_test19_fl_rundir... done" >> test_SEP_SWMF_test19_fl.diff
+
+
+Run=
+>>>@echo "test_SEP_SWMF_test19_fl_run..." > test_SEP_SWMF_test19_fl.diff
+>>>cd SWMF-IH/SWMF; make test19
+
+>>>cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,OH/BATSRUS,SP/MFLAMPA,PT/AMPS 
+>>>cd SWMF-IH/SWMF;./Config.pl -o=SC:u=Awsom,e=Awsom,ng=2,g=4,4,4
+>>>cd SWMF-IH/SWMF;./Config.pl -o=IH:u=Awsom,e=Awsom,ng=2,g=4,4,4
+>>>cd SWMF-IH/SWMF;./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
+>>>cd SWMF-IH/SWMF;./Config.pl -o=PT:application=test/sep_focused_transport-ih--fl-droge,spice-path=nospice,amps-test=on 
+>>>cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
+
+>>>cd SWMF-IH/SWMF;${MAKE} SWMF -j 
+
+>>>cd SWMF-IH/SWMF/run_test;mkdir PT
+>>>cd SWMF-IH/SWMF/run_test/PT;mkdir plots
+>>>cp data/input/SEP/SC-IH--FL--PT/PARAM_test19_restart.in SWMF-IH/SWMF/run_test/PARAM.in
+
+>>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog 
+>>>@echo "test_SEP_SWMF_test19_fl_run... done" >> test_SEP_SWMF_test19_fl.diff 
+<#
+
 --------------------------------------------------------------------------------------------------------------------------
 
 #>
