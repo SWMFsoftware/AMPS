@@ -360,7 +360,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test/test-1853-shape
+Name=test-1853-shape
 Time=5
 
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE 
@@ -373,7 +373,16 @@ Compile=
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_test-1853-shape_compile... done" >> test_test-1853-shape$(TESTtest-1853-shape-REF).diff
 
-<#
+Check=
+>>>@echo "test_test-1853-shape_check..." >> test_test-1853-shape$(TESTtest-1853-shape).diff
+
+>>>-@gunzip  output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat.gz 
+
+>>>@${TESTtest-1853-shapeDIR}/../utility/ReduceFile.pl ${TESTtest-1853-shapeDIR}/PT/plots/pic.H2O.s=0.out=5.dat 20
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTtest-1853-shapeDIR}/PT/plots/pic.H2O.s=0.out=5.dat.Reduced.Step=20 output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat > test_test-1853-shape$(TESTtest-1853-shape).diff
+
+>>>@ls -l test_test-1853-shape$(TESTtest-1853-shape).diff
+<# 
 
 
 
