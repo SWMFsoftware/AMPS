@@ -36,7 +36,7 @@ double localResolution(double *x) {
 }
 
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  return TimeStepMultiplierTable[spec]*startNode->GetCharacteristicCellSize()/1500.0;
+  return TimeStepMultiplierTable[spec]*startNode->GetCharacteristicCellSize()/3500.0;
 }
 
 //distribute the blocks between processors
