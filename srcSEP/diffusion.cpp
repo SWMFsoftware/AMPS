@@ -89,6 +89,13 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   double *x0,*x1;
   double w0,w1;
 
+  //reference values of k_max and k_min at 1 AU
+  //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
+  const double k_ref_min=1.0E-10;
+  const double k_ref_max=1.0E-7;
+
+   
+
   //get the magnetic field and the plasma waves at the corners of the segment
   B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
   B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
@@ -96,11 +103,14 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
   W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
 
+  x0=VertexBegin->GetX();
+  x1=VertexEnd->GetX();
+
   //determine the interpolation coefficients
   w1=fmod(FieldLineCoord,1);
   w0=1.0-w1;
 
-  double absB2=0.0;
+  double absB2=0.0,r2=0.0;
   int idim;
 
   for (idim=0;idim<3;idim++) {
@@ -108,7 +118,17 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
     t=w0*B0[idim]+w1*B1[idim];
     absB2+=t*t;
+
+    t=w0*x0[idim]+w1*x1[idim]; 
+    r2+=t*t;
   }
+  
+  double k_min,k_max;
+
+  double t=_AU_*_AU_/r2;
+
+  k_min=t*k_ref_min;
+  k_max=t*k_ref_max;
   
   double SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
   double omega,k,P;
@@ -118,13 +138,11 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   double kmin=omega/Relativistic::E2Speed(400.0*MeV2J,MD::GetMass(spec));
   double C;
 
-  C=SummW*VacuumPermeability/(3.0*pow(kmin,-2.0/3.0)/2.0);
-
-
+  C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
 
   k=omega/fabs(vParallel);
 
-  C/=1.0E7;
+  //C/=1.0E7;
 
   P=C/pow(k,5.0/3.0); 
  

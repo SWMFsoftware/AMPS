@@ -715,6 +715,14 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   //get the new value of 'mu'
   double D,dD_dmu;
 
+  double mu_init=mu;
+  double time_counter=0.0;
+  double dt=dtTotal;
+  double dmu=0.0;
+
+  while (time_counter<dtTotal) { 
+   if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
+
   switch (_SEP_DIFFUSION_MODEL_) {
   case _DIFFUSION_NONE_:
     //no diffution model is used -> do nothing
@@ -723,22 +731,22 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   case _DIFFUSION_ROUX2004AJ_:
     SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
 
-    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
-    mu+=dD_dmu*dtTotal;
+    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    dmu+=dD_dmu*dt;
     break;
    
   case _DIFFUSION_BOROVIKOV_2019_ARXIV_:
     SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
 
-    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
-    mu+=dD_dmu*dtTotal;
+    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    dmu+=dD_dmu*dt;
     break;
 
   case _DIFFUSION_JOKIPII1966AJ_:
     SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
 
-    mu+=sqrt(2.0*D*dtTotal)*Vector3D::Distribution::Normal();
-    mu+=dD_dmu*dtTotal;
+    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    dmu+=dD_dmu*dt;
     break;
 
 
@@ -746,10 +754,21 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
-  mu+=(1.0-mu*mu)/(2.0*L)*v*dtTotal;
+  dmu+=(1.0-mu*mu)/(2.0*L)*v*dt;
+
+  if (fabs(dmu)>0.1) {
+    dt/=2.0;
+    time_counter=0.0;
+    mu=mu_init;
+    continue;
+  }
+
+  mu+=dmu;
+  time_counter+=dt;
 
   if (mu<-1.0) mu=-1.0;
   if (mu>1.0) mu=1.0;
+}
 
 
   //get the segment of the new particle location 
