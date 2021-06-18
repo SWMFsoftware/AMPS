@@ -723,6 +723,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   while (time_counter<dtTotal) { 
    if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
+   dmu=0.0;
+
   switch (_SEP_DIFFUSION_MODEL_) {
   case _DIFFUSION_NONE_:
     //no diffution model is used -> do nothing
