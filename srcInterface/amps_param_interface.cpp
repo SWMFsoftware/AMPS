@@ -1,6 +1,35 @@
 //$Id$
 //read the SWMF PARAM.in file
 
+/* Formal of SWMF's PARAM.in COMP PT commands that cabe be parsed here:
+
+#BEGIN_COMP PT ---------------------------------------------------------------
+
+#FIELDLINE
+1.5     ROrigin
+-175    LonMin
+175     LonMax
+-85     LatMin
+85      LatMax
+5       nLon
+4       nLat
+
+
+#TEST 
+T
+
+
+#RESTART
+
+
+#HELIOSPHERE
+2       MinRadius
+
+#END_COMP PT -----------------------------------------------------------------
+
+*/
+
+
 #include <iomanip>
 #include <sstream>
 
@@ -8,14 +37,17 @@
 
 using namespace std;
 
-int AMPS2SWMF::PARAMIN::read_paramin(stringstream *param) {//(int argc, char **argv, stringstream *param) {
-  string Command;
+int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
+  string t,Command;
   bool TestVar=false;
+  list<pair<string,string> >::iterator it;
 
-  while (*param) {
+  while (param_list.begin()!=param_list.end()) { 
     Command="";
-    get_next_command(param,&Command);
-    if (Command == "") continue;
+
+    Command=param_list.front().first;
+    cout << param_list.front().second << endl;
+    param_list.pop_front();
 
     if (Command == "#RESTART") {
        PIC::Restart::LoadRestartSWMF=true;
@@ -35,15 +67,66 @@ int AMPS2SWMF::PARAMIN::read_paramin(stringstream *param) {//(int argc, char **a
        }
     }
     else if (Command == "#HELIOSPHERE") {
-      read_var(param,"RMIN",&AMPS2SWMF::Heliosphere::rMin); 
-      AMPS2SWMF::Heliosphere::rMin*=_RADIUS_(_SUN_); 
+      t=param_list.front().first;
+      AMPS2SWMF::Heliosphere::rMin=atof(t.c_str())*_RADIUS_(_SUN_);
+
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
     }
     else if (Command == "#TEST"){
-      read_var(param,"DoTest",   &TestVar);
+      t=param_list.front().first;
+
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      TestVar=(t=="T") ? true : false;
 
       if (TestVar==true) {
         PIC::ModelTestRun::mode=true;
       }
+    }
+    else if (Command == "#FIELDLINE") { 
+      string t;
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::ROrigin=atof(t.c_str());
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::LonMin=atof(t.c_str())*_DEGREE_;
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::LonMax=atof(t.c_str())*_DEGREE_;
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::LatMin=atof(t.c_str())*_DEGREE_;
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::LatMax=atof(t.c_str())*_DEGREE_;
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+
+      std::string::size_type sz;
+
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::nLon=std::stoi(t,&sz); 
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      AMPS2SWMF::FieldLineData::nLat=std::stoi(t,&sz);
+      cout << param_list.front().second << endl;
+      param_list.pop_front();
     }
     //    if(      Command == "#CASE"){
     //      read_var(param,"Simulation Case",   &Case);

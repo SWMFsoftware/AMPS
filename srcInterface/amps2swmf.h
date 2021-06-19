@@ -51,9 +51,6 @@ namespace AMPS2SWMF {
 
   extern cShockData *ShockData;
 
-//  extern int *iShockWaveSegmentTable;
-  
-
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
 
@@ -66,44 +63,59 @@ namespace AMPS2SWMF {
     extern double rMin;
   }
 
+  //the namespace containes parameters of the initial locations of the field lines extracted with MFLAMPA 
+  namespace FieldLineData {
+    extern double ROrigin,LonMin,LonMax,LatMin,LatMax;
+    extern int nLon,nLat; 
+  } 
+
+
   //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
   extern double xEarthHgi[3]; 
 
   namespace PARAMIN {
-    int read_paramin(stringstream *param);
+    int read_paramin(list<pair<string,string> >&);
 
 
     //reading of the swmf PARAM.in file
-    inline void char_to_stringstream(char* chararray, int nlines, int linelength,std::stringstream  *ss){
+    inline void char_to_stringstream(char* chararray, int nlines, int linelength,list<pair<string,string> >& param_list) {
       int i,j;
+      char buff[linelength+1],full_buff[linelength+1];
+
+      for (i=0;i<nlines;i++) {
+        memcpy(full_buff,chararray+i*linelength,sizeof(char)*linelength);
+
+        for (j=linelength-1;j>=0;j--) {
+          if ((full_buff[j]==' ')||(full_buff[j]=='\n')||(full_buff[j]=='\t')) {
+            full_buff[j]=0;
+          }
+          else {
+            break;
+          }
+        }
+
+        for (j=0;j<linelength;j++) {
+          buff[j]=chararray[i*linelength+j];
+
+          if ((buff[j]==' ')||(buff[j]=='\t')||(j==linelength-1)) {
+            buff[j]=0; //'\n';
+            break;
+          }
+        } 
+
+        if (j==0) continue;
+   
+
+      string first_word(buff); 
+      string full_string(full_buff);
+
+      pair<string,string> p(first_word,full_string);
+     
+        param_list.push_back(p);
+      } 
 
       //add the end of the line symbols
       for (i=0;i<nlines;i+=nlines) chararray[linelength*(i+1)-1]='\n';
-
-      //remove the "empty" lines
-      for (i=0;i<nlines;i++) {
-        bool flag=false;
-
-        //check is the line is "empty";
-        for (j=0;j<linelength-1;j++) if (chararray[i*linelength+j]!=' ') {
-          flag=true;
-          break;
-        }
-
-        //if the line is "empty" -> move the next lines
-        if (flag==false) {
-          if (i!=nlines-1) {
-            for (;i<nlines-1;i++) for (j=0;j<linelength;j++) chararray[i*linelength+j]=chararray[(i+1)*linelength+j];
-            --nlines,i=-1;
-            continue;
-          }
-          else nlines--;
-        }
-      }
-
-
-      ss->str("");
-      ss->write(chararray,nlines*linelength);
     }
 
     template <class T>
@@ -114,6 +126,7 @@ namespace AMPS2SWMF {
 
       if (PIC::ThisThread==0) std::cout<<std::left<<std::setw(50)<<*var<<description<<std::endl;
     }
+
 
     inline void read_var(std::stringstream *ss, std::string description, bool *var){
       std::string text;

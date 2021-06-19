@@ -35,6 +35,24 @@ void amps_init();
 void amps_init_mesh();
 void amps_time_step();
 
+//the namespace containes parameters of the initial locations of the field lines extracted with MFLAMPA
+double AMPS2SWMF::FieldLineData::ROrigin=2.50;
+double AMPS2SWMF::FieldLineData::LonMin=-10.0*_DEGREE_;  
+double AMPS2SWMF::FieldLineData::LonMax=10.0*_DEGREE_; 
+double AMPS2SWMF::FieldLineData::LatMin=25.0*_DEGREE_; 
+double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_; 
+
+int AMPS2SWMF::FieldLineData::nLon=4;
+int AMPS2SWMF::FieldLineData::nLat=4;
+
+extern "C" {
+ void amps_bl_nlon_(int *nLon) {*nLon=AMPS2SWMF::FieldLineData::nLon;} 
+ void amps_bl_nlat_(int *nLat) {*nLat=AMPS2SWMF::FieldLineData::nLat;} 
+
+ void amps_bl_rorigin_(double *ROrigin) {*ROrigin=AMPS2SWMF::FieldLineData::ROrigin;} 
+ void amps_bl_lon_min_max_(double *LonMin,double *LonMax) {*LonMin=AMPS2SWMF::FieldLineData::LonMin,*LonMax=AMPS2SWMF::FieldLineData::LonMax;} 
+ void amps_bl_lat_min_max_(double *LatMin,double *LatMax) {*LatMin=AMPS2SWMF::FieldLineData::LatMin,*LatMax=AMPS2SWMF::FieldLineData::LatMax;} 
+}
 
 //the location of the Earth as calcualted with the SWMF. Used for heliophysics modeling  
 double AMPS2SWMF::xEarthHgi[3]={0.0,0.0,0.0}; 
@@ -436,8 +454,10 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     std::stringstream ss;
 
-    AMPS2SWMF::PARAMIN::char_to_stringstream(param, *nlines, *ncharline,&ss);
-    AMPS2SWMF::PARAMIN::read_paramin(&ss);
+    list<pair<string,string> > param_list;
+
+    AMPS2SWMF::PARAMIN::char_to_stringstream(param, *nlines, *ncharline,param_list);
+    AMPS2SWMF::PARAMIN::read_paramin(param_list);
 #endif
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
