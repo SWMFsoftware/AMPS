@@ -23,6 +23,7 @@
 #define _NANO_  1.0E-9
 #define _MICRO_ 1.0E-6
 #define _A_     1.0E-10
+#define _DEGREE_ (Pi/180.0)
 
 
 //physical constants
