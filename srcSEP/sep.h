@@ -273,6 +273,7 @@ namespace SEP {
 
         sprintf(full_name,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutDensity=fopen(full_name,"w"); 
+        if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting"); 
 
         fprintf(foutDensity,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
@@ -280,6 +281,7 @@ namespace SEP {
 
         sprintf(full_name,"%s.flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutFlux=fopen(full_name,"w");
+        if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
         fprintf(foutFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
@@ -287,6 +289,7 @@ namespace SEP {
 
         sprintf(full_name,"%s.return_flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutReturnFlux=fopen(full_name,"w");
+        if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
         fprintf(foutReturnFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
