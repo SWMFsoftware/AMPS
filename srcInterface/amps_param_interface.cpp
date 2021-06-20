@@ -46,7 +46,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     Command="";
 
     Command=param_list.front().first;
-    cout << param_list.front().second << endl;
+    cout << "PT: "  << param_list.front().second << endl;
     param_list.pop_front();
 
     if (Command == "#RESTART") {
@@ -70,14 +70,14 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       t=param_list.front().first;
       AMPS2SWMF::Heliosphere::rMin=atof(t.c_str())*_RADIUS_(_SUN_);
 
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
     }
     else if (Command == "#TEST"){
       t=param_list.front().first;
 
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       TestVar=(t=="T") ? true : false;
@@ -91,27 +91,27 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::ROrigin=atof(t.c_str());
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::LonMin=atof(t.c_str())*_DEGREE_;
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::LonMax=atof(t.c_str())*_DEGREE_;
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::LatMin=atof(t.c_str())*_DEGREE_;
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::LatMax=atof(t.c_str())*_DEGREE_;
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
 
@@ -120,46 +120,16 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::nLon=std::stoi(t,&sz); 
-      cout << param_list.front().second << endl;
+      cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
       AMPS2SWMF::FieldLineData::nLat=std::stoi(t,&sz);
-      cout << param_list.front().second << endl;
+      cout << "PT: " << param_list.front().second << endl;
       param_list.pop_front();
     }
-    //    if(      Command == "#CASE"){
-    //      read_var(param,"Simulation Case",   &Case);
-    //      read_var(param,"FieldsInit",        &FieldsInit);
-    //      read_var(param,"PartInit",          &PartInit);
-    //      read_var(param,"WriteMethod",       &wmethod);
-    //      read_var(param,"PoissonCorrection", &PoissonCorrection);
-    //      read_var(param,"SimulationName",    &SimName);
-    //      read_var(param,"verbose",           &verbose);
-    //
-    //    }
-    //    else if( Command == "#NSYNC"){
-    //      int tmp;
-    //      read_var(param,"nSync !!!!!!! Not USED !!!!!!!", &tmp);
-    //
-    //    }
-    //    else if( Command == "#UNIFORMSTATE"){
-    //      doInitSim = true;
-    //      read_var(param,"B0x", &B0x);
-    //      read_var(param,"B0y", &B0y);
-    //      read_var(param,"B0z", &B0z);
-    //      read_var(param,"B1x", &B1x);
-    //      read_var(param,"B1y", &B1y);
-    //      read_var(param,"B1z", &B1z);
-    //
-    //    }
-    //    else if( Command == "#TIMESTEP"){
-    //      doInitSim = true;
-    //      read_var(param,"dt", &dt);
-    //
-    //    }
     else {
-      cout<<"Can not find Comand : "<<Command<<endl;
+      if (Command.c_str()[0]=='#') cout<<"PT: Can not find Comand : "<<Command<<endl;
     }
 
   }
