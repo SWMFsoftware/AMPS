@@ -546,6 +546,8 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
     //init AMPS if needed 
     if (AMPS2SWMF::amps_init_mesh_flag==false) {
+      if (*nLine>nFieldLineMax) exit(__LINE__,__FILE__,"Error: the number of imported field lines exeeds the value of PIC::FieldLine::nFieldLineMax -> set a larget value in the input file");
+
       amps_init_mesh();
       AMPS2SWMF::amps_init_mesh_flag=true;
     }
