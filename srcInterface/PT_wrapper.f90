@@ -180,6 +180,17 @@ contains
        DoInit = .false.   ! Do this only once
        !
        ! Initialize and connect to the data
+
+
+
+      call amps_bl_nlon(nLon)
+      call amps_bl_nlat(nLat)
+      call amps_bl_rorigin(ROrigin);
+      call amps_bl_lon_min_max(LonMin,LonMax)
+      call amps_bl_lat_min_max(LatMin,LatMax)
+
+
+
        nullify(MHData_VIB); nullify(nVertex_B)
        call BL_init(nVertexMax, nLon, nLat,  &
             MHData_VIB, nVertex_B)
