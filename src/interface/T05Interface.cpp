@@ -43,7 +43,7 @@ void T05::GetMagneticField(double *B,double *x) {
    return;
 }*/
 
-  t05_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT96+0,bT96+1,bT96+2);
+  t05_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT05+0,bT05+1,bT05+2);
   
   // Calculate Earth's internal magentic field
   IGRF::GetMagneticField(B,x);
