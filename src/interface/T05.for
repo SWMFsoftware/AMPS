@@ -45,7 +45,7 @@ c
 c  (2)  N. A. Tsyganenko, H. J. Singer, J. C. Kasper, Storm-time distortion of the
 c           inner magnetosphere: How severe can it get ?  JGR v. 108(A5), 1209, doi:10.1029/2002JA009808, 2003.
 
-   (3)  N. A. Tsyganenko and M. I. Sitnov, Modeling the dynamics of the inner
+c  (3)  N. A. Tsyganenko and M. I. Sitnov, Modeling the dynamics of the inner
 c           magnetosphere during strong geomagnetic storms,  JGR v. 110, 2005, in press.
 c----------------------------------------------------------------------
 c

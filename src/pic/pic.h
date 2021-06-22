@@ -6122,7 +6122,7 @@ void DeleteAttachedParticles();
       cell=Stencil->cell;
 
       switch (_PIC_COUPLER_MODE_) {
-      case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__KMAG_: 
+      case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
         if (PIC::CPLR::DATAFILE::Offset::ElectricField.allocate==true) {
           double t[3];
 
@@ -6173,7 +6173,7 @@ void DeleteAttachedParticles();
 	 case  _PIC_COUPLER_MODE__SWMF_: 
            SWMF::GetBackgroundMagneticField(t,cell[iStencil]);
 	   break;
-	 case  _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__KMAG_: 
+	 case  _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
            DATAFILE::GetBackgroundData(t,3,DATAFILE::Offset::MagneticField.RelativeOffset,cell[iStencil]);
            break;
 	 case _PIC_COUPLER_MODE__DATAFILE_: 
@@ -6221,7 +6221,7 @@ void DeleteAttachedParticles();
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
          DATAFILE::GetBackgroundMagneticFieldGradient(t,Stencil.cell[iStencil], Time);
 
-         #elif _PIC_COUPLER_MODE_ ==_PIC_COUPLER_MODE__T96_ || _PIC_COUPLER_MODE_ ==_PIC_COUPLER_MODE__KMAG_ 
+         #elif _PIC_COUPLER_MODE_ ==_PIC_COUPLER_MODE__T96_ || _PIC_COUPLER_MODE_ ==_PIC_COUPLER_MODE__T05_ || _PIC_COUPLER_MODE_ ==_PIC_COUPLER_MODE__KMAG_ 
          DATAFILE::GetBackgroundMagneticFieldGradient(t,Stencil.cell[iStencil], Time);
 
          #else
@@ -6307,7 +6307,7 @@ void DeleteAttachedParticles();
            SWMF::GetBackgroundMagneticField(cellB,Stencil.cell[iStencil]);
 
            break;
-         case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__KMAG_: 
+         case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
            for (int i=0;i<3;i++) cellE[i]=0.0;
            DATAFILE::GetBackgroundData(cellB,3,DATAFILE::Offset::MagneticField.offset,Stencil.cell[iStencil]);
 

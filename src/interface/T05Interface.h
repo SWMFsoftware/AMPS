@@ -22,8 +22,9 @@ namespace T05 {
   //set of model parameters
   //PARMOD=array containing all parameters
   extern double PARMOD[11];
+
   //PDYN=solar wind pressure
-  void SetPDYN(double PDYN);
+  void SetSolarWindPressure(double SolarWindPressure); 
   //DST=disturbance storm time
   void SetDST(double DST);
   //BYIMF=y-component of IMF
@@ -37,6 +38,8 @@ namespace T05 {
   void SetW4(double W4);
   void SetW5(double W5);
   void SetW6(double W6);
+  void SetW(double W1,double W2,double W3,double W4,double W5,double W6); 
+
 
 
   void GetMagneticField(double *B,double *x);

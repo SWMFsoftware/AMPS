@@ -588,6 +588,7 @@ sub ReadMainBlock {
       elsif ($s0 eq "FLUID") {$CouplingMode="_PIC_COUPLER_MODE__FLUID_";}
       elsif ($s0 eq "GEOPACK") {$CouplingMode="_PIC_COUPLER_MODE__GEOPACK_";}
       elsif ($s0 eq "T96") {$CouplingMode="_PIC_COUPLER_MODE__T96_";}
+      elsif ($s0 eq "T05") {$CouplingMode="_PIC_COUPLER_MODE__T05_";}
       elsif ($s0 eq "KMAG") {$CouplingMode="_PIC_COUPLER_MODE__KMAG_";}
       elsif ($s0 eq "FILE") {
         $CouplingMode="_PIC_COUPLER_MODE__DATAFILE_";
@@ -602,6 +603,7 @@ sub ReadMainBlock {
         elsif ($s0 eq "KAMELEON") {$CouplingFileReader="_PIC_COUPLER_DATAFILE_READER_MODE__KAMELEON_";}
         elsif ($s0 eq "BATSRUS") {$CouplingFileReader="_PIC_COUPLER_DATAFILE_READER_MODE__BATSRUS_";}
         elsif ($s0 eq "T96") {$CouplingFileReader="_PIC_COUPLER_DATAFILE_READER_MODE__T96_";}
+        elsif ($s0 eq "T05") {$CouplingFileReader="_PIC_COUPLER_DATAFILE_READER_MODE__T05_";}
         else {
           warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
           die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
@@ -2376,6 +2378,10 @@ sub ReadInterfaceBlock {
   my $T96_MODE__OFF=0;
   my $T96_MODE__ON=1;
   my $T96_MODE_=$T96_MODE__OFF;
+
+  my $T05_MODE__OFF=0;
+  my $T05_MODE__ON=1;
+  my $T05_MODE_=$T05_MODE__OFF;
   
   my $KMAG_MODE__OFF=0;
   my $KMAG_MODE__ON=1;
@@ -2441,9 +2447,27 @@ sub ReadInterfaceBlock {
             
       if (uc($InputLine) eq "ON") {
         $T96_MODE_=$T96_MODE__ON;
+        $T05_MODE_=$T05_MODE__ON;
       }
       elsif (uc($InputLine) eq "OFF") {
         $T96_MODE_=$T96_MODE__OFF;
+      }
+      else  {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
+    #Tsyganenko T05 
+    elsif (uc($InputLine) eq "T05") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if (uc($InputLine) eq "ON") {
+        $T05_MODE_=$T05_MODE__ON;
+        $T96_MODE_=$T96_MODE__ON;
+      }
+      elsif (uc($InputLine) eq "OFF") {
+        $T05_MODE_=$T05_MODE__OFF;
       }
       else  {
         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
@@ -2509,6 +2533,14 @@ sub ReadInterfaceBlock {
 	      
         $UseInterface='on';
         $Interfaces="$Interfaces "."t96";
+      }
+
+      #T05 interface ---------------------------------------------------------
+      if ($T05_MODE_==$T05_MODE__ON) {
+        ampsConfigLib::RedefineMacro("_INTERFACE__T05__MODE_","_INTERFACE_MODE_ON_",'interface/interface.dfn');
+
+        $UseInterface='on';
+        $Interfaces="$Interfaces "."t05";
       }
 	    
       #KMAG interface ---------------------------------------------------------
