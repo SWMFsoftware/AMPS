@@ -150,6 +150,8 @@ namespace SEP {
         for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]); 
    
         node=PIC::Mesh::Search::FindBlock(xMiddle);
+        
+        if (node==NULL) return;
         if (node->block==NULL) return;
 
         double vol=0.0;
