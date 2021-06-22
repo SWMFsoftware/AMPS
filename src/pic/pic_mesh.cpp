@@ -27,8 +27,8 @@ namespace PIC {
     cDatumDerived DatumParallelTranslationalTemperature(1, "\"Parallel Translational Temperature [K]\"", true);
     cDatumDerived DatumTangentialTranslationalTemperature(1, "\"Tangential Translational Temperature [K]\"", true);
 
-    cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity(3,"\"Vpar [m/s]\", \"Vt0 [m/s]\", \"Vt1 [m/s]\"",false);
-    cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity2(3,"\"Vpar^2 [(m/s)^2]\", \"Vt0^2 [(m/s)^2]\", \"Vt1^2 [(m/s)^2]\"",false);
+    cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity(3,"\"Vpar [m/s]\", \"Vt0 [m/s]\", \"Vt1 [m/s]\"",false);
+    cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2(3,"\"Vpar^2 [(m/s)^2]\", \"Vt0^2 [(m/s)^2]\", \"Vt1^2 [(m/s)^2]\"",false);
 
     // vector of active sampling data
     vector<PIC::Datum::cDatumSampled*> DataSampledCenterNodeActive;
@@ -318,8 +318,8 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 #endif
 
       if ((w>0.0)&&(_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_)) {
-         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemepratureSample_Velocity,vtemp,s);
-         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemepratureSample_Velocity2,v2temp,s);
+         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity,vtemp,s);
+         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity2,v2temp,s);
 
          for (idim=0;idim<3;idim++) {
            vParallelTangentialTemperatureSample[idim]+=pow(vtemp[idim]/w,2)*w;  //get mean of <v>^2 over the satencil
@@ -349,8 +349,8 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
           v2ParallelTangentialTemperatureSample[idim]*=c;
         }
 
-        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity,vParallelTangentialTemperatureSample,s);
-        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity2,v2ParallelTangentialTemperatureSample,s);
+        SetDatum(&DatumParallelTantentialTemperatureSample_Velocity,vParallelTangentialTemperatureSample,s);
+        SetDatum(&DatumParallelTantentialTemperatureSample_Velocity2,v2ParallelTangentialTemperatureSample,s);
       }
     }
     else {
@@ -365,8 +365,8 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
       #endif
 
       if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
-        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity,v3temp,s);
-        SetDatum(&DatumParallelTantentialTemepratureSample_Velocity2,v3temp,s);
+        SetDatum(&DatumParallelTantentialTemperatureSample_Velocity,v3temp,s);
+        SetDatum(&DatumParallelTantentialTemperatureSample_Velocity2,v3temp,s);
       }
     }
 
@@ -445,8 +445,8 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 
     //sampling the 'parallel' and 'tangential' kinetic temperatures
     if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_ != _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
-      DatumParallelTantentialTemepratureSample_Velocity.activate(offset, &DataSampledCenterNodeActive);
-      DatumParallelTantentialTemepratureSample_Velocity2.activate(offset,&DataSampledCenterNodeActive);
+      DatumParallelTantentialTemperatureSample_Velocity.activate(offset, &DataSampledCenterNodeActive);
+      DatumParallelTantentialTemperatureSample_Velocity2.activate(offset,&DataSampledCenterNodeActive);
       DatumParallelTranslationalTemperature.activate(&cDataCenterNode::GetParallelTranslationalTemperature, &DataDerivedCenterNodeActive);
       DatumTangentialTranslationalTemperature.activate(&cDataCenterNode::GetTangentialTranslationalTemperature, &DataDerivedCenterNodeActive);
     }

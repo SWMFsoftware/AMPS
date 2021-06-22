@@ -152,7 +152,7 @@ namespace Europa {
 /*  namespace ThermalIon {
     namespace O {
       const double NumberDensity=35.0E6;
-      const double Temeprature=1.044E6;
+      const double Temperature=1.044E6;
       extern double BulkVelocity[3];
     }
   }*/
@@ -164,7 +164,7 @@ namespace Europa {
     extern double PlumeExternalNormal_SO[3]; //the normal to the Europa's surface at the location of the plume
 
     const double PlumeSourceRate[]={0.0};
-    const double PlumeSourceTemeprature=230.0;
+    const double PlumeSourceTemperature=230.0;
 
     const double PlumeWLon=180.0;
     const double PlumeLat=-66.0;
@@ -187,8 +187,8 @@ namespace Europa {
     const double HotElectronFraction=0.05;
     const double ThermalElectronFraction=0.95;
 
-    const double ThermalElectronTemeprature=20.0;
-    const double HotElectronTemeprature=250.0;
+    const double ThermalElectronTemperature=20.0;
+    const double HotElectronTemperature=250.0;
   }
 
   namespace Sampling {
@@ -246,7 +246,7 @@ namespace Europa {
 
   //surface temeprature of the planet
   /*
-  inline double GetSurfaceTemeprature(double CosSubSolarAngle) {
+  inline double GetSurfaceTemperature(double CosSubSolarAngle) {
     static const double Tn=110.0;
     static const double Td0_Aphelion=590.0,Td0_Perihelion=725.0;
     static const double TAA_Aphelion=Pi,TAA_Perihelion=0.0;
@@ -262,7 +262,7 @@ namespace Europa {
   */
 
   //Surface temeprature
-  inline double GetSurfaceTemeprature(double *x_IAU) {
+  inline double GetSurfaceTemperature(double *x_IAU) {
 /*    double x_GALL_ESOM[3];
     int i,j;
 
@@ -426,7 +426,7 @@ namespace Europa {
         ((cInternalSphericalData*)SphereDataPointer)->GetSurfaceElementMiddlePoint(xMiddle,SurfaceElement);
 
 
-        temp=GetSurfaceTemeprature(xMiddle);
+        temp=GetSurfaceTemperature(xMiddle);
         res=VibrationalFrequency*((cInternalSphericalData*)SphereDataPointer)->SurfaceElementPopulation[_NA_SPEC_][SurfaceElement]*exp(-uThermal/(Kbol*temp));
 
         return res;
@@ -478,7 +478,7 @@ namespace Europa {
         double CosSubSolarAngle,SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
 
         CosSubSolarAngle=sqrt(1.0-ExternalNormal[2]*ExternalNormal[2]);
-        SurfaceTemperature=GetSurfaceTemeprature(x_LOCAL_IAU_EUROPA);
+        SurfaceTemperature=GetSurfaceTemperature(x_LOCAL_IAU_EUROPA);
         PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_EUROPA,vbulk,SurfaceTemperature,ExternalNormal,_O2_SPEC_);
 
 
@@ -567,7 +567,7 @@ namespace Europa {
       const double HeliocentricDistance=0.387098*_AU_;
       const double SourceRatePowerIndex=1.9;
 
-      const double SourceTemeprature=2500.0;
+      const double SourceTemperature=2500.0;
 
       double GetTotalProductionRate(int spec,void *SphereDataPointer);
 
@@ -609,7 +609,7 @@ namespace Europa {
         if (startNode->Thread!=PIC::Mesh::mesh.ThisThread) return false;
 
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_EUROPA'
-        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_EUROPA,vbulk,SourceTemeprature,ExternalNormal,_O2_SPEC_);
+        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_EUROPA,vbulk,SourceTemperature,ExternalNormal,_O2_SPEC_);
 
         //transform the velocity vector to the coordinate frame 'GALL_EPHIOD'
         v_LOCAL_GALL_EPHIOD_EUROPA[0]=xform[3][0]*x_LOCAL_IAU_EUROPA[0]+xform[3][1]*x_LOCAL_IAU_EUROPA[1]+xform[3][2]*x_LOCAL_IAU_EUROPA[2]+
@@ -1581,7 +1581,7 @@ if (v[0]*x[0]+v[1]*x[1]+v[2]*x[2]<0) {
 
 
   namespace LossProcesses {
-   extern double PhotolyticReactionRate,ElectronImpactRate,ElectronTemeprature;
+   extern double PhotolyticReactionRate,ElectronImpactRate,ElectronTemperature;
 
    //the constant of the artificial increase of the primary species loss
    //the modification of the rate is compensated by the appropricate particle weight of the daugher products and

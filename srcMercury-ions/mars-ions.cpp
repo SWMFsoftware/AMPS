@@ -461,7 +461,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& Reemi
 }
 
 
-double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {
 
 
   return 100.0;

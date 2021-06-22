@@ -330,7 +330,7 @@ void RosinaSample::Liouville::EvaluateLocation(int spec,double& OriginalSourceRa
           cosSubSolarAngle=Vector3D::DotProduct(CutCell::BoundaryTriangleFaces[iSurfaceElement].ExternalNormal,positionSun)/Vector3D::Length(positionSun);
           if (CutCell::BoundaryTriangleFaces[iSurfaceElement].pic__shadow_attribute==_PIC__CUT_FACE_SHADOW_ATTRIBUTE__TRUE_) cosSubSolarAngle=-1; //Get Temperature from night side if in the shadow
 
-          Temperature=SurfaceTemperatureCorrectionFactor*Comet::GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+          Temperature=SurfaceTemperatureCorrectionFactor*Comet::GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
 
 
     //DEBUG: BEGIN

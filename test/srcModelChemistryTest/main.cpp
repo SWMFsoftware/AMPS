@@ -301,8 +301,8 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,i
   static double TotalProductYeld_ElectronImpact[PIC::nTotalSpecies*PIC::nTotalSpecies];
 
   double HotElectronFraction=0.05;
-  static const double ThermalElectronTemeprature=20.0;
-  static const double HotElectronTemeprature=250.0;
+  static const double ThermalElectronTemperature=20.0;
+  static const double HotElectronTemperature=250.0;
 
   if (initflag==false) {
     int iParent,iProduct;
@@ -319,7 +319,7 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,i
 
       if (ElectronImpact::ModelAvailable(iParent)==true) {
         TotalProductYeld_ElectronImpact[iProduct+iParent*PIC::nTotalSpecies]=
-            ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,HotElectronTemeprature);
+            ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,HotElectronTemperature);
       }
 
       ProductionYieldTable[iParent][iProduct]=TotalProductYeld_PhotolyticReaction[iProduct+iParent*PIC::nTotalSpecies]+
@@ -412,7 +412,7 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,i
              PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
            else {
-             ElectronImpact::GenerateReactionProducts(spec,HotElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+             ElectronImpact::GenerateReactionProducts(spec,HotElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
 
            //check whether the products contain species with spec=specProduct
@@ -500,8 +500,8 @@ void PhotochemicalModel(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PI
   static double TotalProductYeld_ElectronImpact[PIC::nTotalSpecies*PIC::nTotalSpecies];
 
   double HotElectronFraction=0.05;
-  static const double ThermalElectronTemeprature=20.0;
-  static const double HotElectronTemeprature=250.0;
+  static const double ThermalElectronTemperature=20.0;
+  static const double HotElectronTemperature=250.0;
 
   static double MeanLog=0.0;
 
@@ -520,7 +520,7 @@ void PhotochemicalModel(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PI
 
       if (ElectronImpact::ModelAvailable(iParent)==true) {
         TotalProductYeld_ElectronImpact[iProduct+iParent*PIC::nTotalSpecies]=
-            ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,HotElectronTemeprature);
+            ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,HotElectronTemperature);
       }
 
       ProductionYieldTable[iParent][iProduct]=TotalProductYeld_PhotolyticReaction[iProduct+iParent*PIC::nTotalSpecies]+
@@ -623,7 +623,7 @@ void PhotochemicalModel(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PI
              PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
            else {
-             ElectronImpact::GenerateReactionProducts(spec,HotElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+             ElectronImpact::GenerateReactionProducts(spec,HotElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
 
            //check whether the products contain species with spec=specProduct

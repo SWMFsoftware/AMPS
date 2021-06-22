@@ -38,7 +38,7 @@ double Exosphere::SourceProcesses::PhotonStimulatedDesorption::maxInjectionEnerg
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRate=1.89E22; //////1.79e21; //Killen-2012-JGR   ;1.1e22;  2.05e22 IV for Sarantos 2010
 double Exosphere::SourceProcesses::ImpactVaporization::HeliocentricDistance=1.0*_AU_;
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRatePowerIndex=0.0;
-double Exosphere::SourceProcesses::ImpactVaporization::SourceTemeprature=6000.0; //Killen-2012-JGR ;2500.0;
+double Exosphere::SourceProcesses::ImpactVaporization::SourceTemperature=6000.0; //Killen-2012-JGR ;2500.0;
 */
 
 /*double Exosphere::SourceProcesses::SolarWindSputtering::Yield=0.1;
@@ -73,7 +73,7 @@ void Moon::Init_AfterParser() {
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) { //ExosphereEscapeRate[spec]=0.0,ExospehreTemsprature[spec]=1000.0;
     ExosphereEscapeRate[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceRate[spec];
-    ExospehreTemsprature[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceTemeprature[spec];
+    ExospehreTemsprature[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceTemperature[spec];
   }
 
   Exosphere::ChamberlainExosphere::Init(ExosphereEscapeRate,ExospehreTemsprature);
@@ -186,7 +186,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
 
 
 //surface temeprature of the planet
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
 
   //determine if the point on the night side of the Moon
   if (CosSubSolarAngle<0.0) return 100.0;

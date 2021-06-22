@@ -3139,7 +3139,7 @@ sub ReadIDF {
   }
   
   #create the new TemperatureIndex Table
-  my $newTemperatureIndexTable="static const double TemepratureIndex[PIC::nTotalSpecies][PIC::nTotalSpecies]={";
+  my $newTemperatureIndexTable="static const double TemperatureIndex[PIC::nTotalSpecies][PIC::nTotalSpecies]={";
          
   for ($s0=0;$s0<$TotalSpeciesNumber;$s0++) {
     $newTemperatureIndexTable=$newTemperatureIndexTable."{";
@@ -3163,7 +3163,7 @@ sub ReadIDF {
     }     
   }
   
-  ampsConfigLib::SubstituteCodeLine("static const double TemepratureIndex",$newTemperatureIndexTable,"pic/pic.h");
+  ampsConfigLib::SubstituteCodeLine("static const double TemperatureIndex",$newTemperatureIndexTable,"pic/pic.h");
   
   
   ampsConfigLib::ChangeValueOfArray("static const int nTotalVibtationalModes\\[\\]",\@nTotalVibModes,"pic/pic.h");

@@ -57,7 +57,7 @@ bool Europa::Plume::GenerateParticleProperties(int spec,PIC::ParticleBuffer::byt
 
   //calculate velocity of the injected particle in the IAU frame (relative to the surface of Europa)
   double BulkVelocity[3]={0.0,0.0,0.0};
-  PIC::Distribution::InjectMaxwellianDistribution(v_IAU_OBJECT,BulkVelocity,PlumeSourceTemeprature,PlumeExternalNormal_SO,spec);
+  PIC::Distribution::InjectMaxwellianDistribution(v_IAU_OBJECT,BulkVelocity,PlumeSourceTemperature,PlumeExternalNormal_SO,spec);
 
   //copy the local coordinate to the 'global' variable
   for (idim=0;idim<3;idim++) x_IAU_OBJECT[idim]=xSource_IAU[idim],x_SO_OBJECT[idim]=xSource_SO[idim];

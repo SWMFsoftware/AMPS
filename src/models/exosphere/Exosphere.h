@@ -261,7 +261,7 @@ namespace Exosphere {
   }
 
   //surface temeprature of the planet
-  double GetSurfaceTemeprature(double CosSubSolarAngle,double *x_SO);
+  double GetSurfaceTemperature(double CosSubSolarAngle,double *x_SO);
 
 
 
@@ -499,7 +499,7 @@ namespace Exosphere {
             (OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]*x_LOCAL_IAU_OBJECT[2]);
 
 
-        temp=GetSurfaceTemeprature(res,x_LOCAL_SO_OBJECT);
+        temp=GetSurfaceTemperature(res,x_LOCAL_SO_OBJECT);
         res=ThermalDesorption_VibrationalFrequency[spec]*SodiumSurfaceElementPopulation*exp(-ThermalDesorption_uThermal[spec]/(Kbol*temp));
 
         return res;
@@ -559,7 +559,7 @@ namespace Exosphere {
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
         double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
 
-        SurfaceTemperature=GetSurfaceTemeprature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
+        SurfaceTemperature=GetSurfaceTemperature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
         PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
 
 
@@ -734,7 +734,7 @@ namespace Exosphere {
       static const double ImpactVaporization_SourceRate[]={0.0};
       static const double ImpactVaporization_HeliocentricDistance=1.0*_AU_;
       static const double ImpactVaporization_SourceRatePowerIndex=0.0;
-      static const double ImpactVaporization_SourceTemeprature[]={0.0};
+      static const double ImpactVaporization_SourceTemperature[]={0.0};
 
       double GetTotalProductionRate(int spec,int BoundaryElementType,void *SphereDataPointer);
 
@@ -776,7 +776,7 @@ namespace Exosphere {
         if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) return false;
 
         //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
-        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,ImpactVaporization_SourceTemeprature[spec],ExternalNormal,spec);
+        PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,ImpactVaporization_SourceTemperature[spec],ExternalNormal,spec);
 
 
 /*
@@ -806,7 +806,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
-        PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemeprature[spec],tempParticleData);
+        PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
   #endif
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_

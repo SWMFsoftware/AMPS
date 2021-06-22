@@ -86,7 +86,7 @@
                 //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
                 double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
 
-                SurfaceTemperature=Exosphere::GetSurfaceTemeprature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
+                SurfaceTemperature=Exosphere::GetSurfaceTemperature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
                 PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
 
 

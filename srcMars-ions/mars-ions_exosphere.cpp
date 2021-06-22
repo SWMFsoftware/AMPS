@@ -19,7 +19,7 @@ void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(double *res,int r
 
 //particle/surface interaction
 double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& ReemissionParticleFraction,double Temp) {return 1.0;}
-double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {return 100.0;}
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {return 100.0;}
 
 //the name of the simulation frame of reference
 char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EOJ";

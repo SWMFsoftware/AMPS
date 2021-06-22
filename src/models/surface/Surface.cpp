@@ -27,11 +27,11 @@ int Surface::ParticleInteractionProcessor(long int ptr,double* xInit,double* vIn
   return res;
 }
 
-double Surface::GetSurfaceTemeprature(CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+double Surface::GetSurfaceTemperature(CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double res;
 
 #if _SURFACE__TEMPERATURE_MODEL_ == _SURFACE__TEMPERATURE_MODEL__ISOTHERMAL_
-  res=Surface::Temeprature::Isothremal::Temp;
+  res=Surface::Temperature::Isothremal::Temp;
 #else
   exit(__LINE__,__FILE__,"Error: the option is unknown");
 #endif

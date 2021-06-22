@@ -239,7 +239,7 @@ void TigerStripes() {
 
   fprintf(fout,"const int nTypesTigerStripe=2;\n");
   fprintf(fout,"double TigerStripeProductionRate[2]={0.0,0.0};\n");
-  fprintf(fout,"double TigerStripeBulkVelocity=0.0,TigerStripeTemeprature=0.0;\n");
+  fprintf(fout,"double TigerStripeBulkVelocity=0.0,TigerStripeTemperature=0.0;\n");
 
   //output the array of types of the stripes
   fprintf(fout,"const int TypeTigerStripe[%i]={",nTotalTigerStripes);

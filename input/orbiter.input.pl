@@ -393,7 +393,7 @@ while ($line=<InputFile>) {
     my $t;
     
     ($t,$InputLine)=split(' ',$InputComment,2);
-    ampsConfigLib::ChangeValueOfVariable("double Orbiter::UpstreamBC::Temeprature",$t,"main/Orbiter.cpp");
+    ampsConfigLib::ChangeValueOfVariable("double Orbiter::UpstreamBC::Temperature",$t,"main/Orbiter.cpp");
   } 
   elsif ($InputLine eq "DOMAINLIMITS") {
     my @xMinOffset=(0.5)x3;

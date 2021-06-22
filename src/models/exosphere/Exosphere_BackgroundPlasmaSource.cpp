@@ -93,7 +93,7 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
   long int nBoundaryFace;
   list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* >::iterator end,nodeptr;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  double PlasmaTemeprature,PlasmaBulkVelocity[3],PlasmaNumberDensity,ExternalNormal[3],BlockSurfaceArea,x[3],x0[3],e0[3],e1[3];
+  double PlasmaTemperature,PlasmaBulkVelocity[3],PlasmaNumberDensity,ExternalNormal[3],BlockSurfaceArea,x[3],x0[3],e0[3],e1[3];
   int nface,idim,i;
   bool ExternalFaces[6];
 
@@ -192,14 +192,14 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
             PIC::CPLR::InitInterpolationStencil(x,node);
             PlasmaNumberDensity=PIC::CPLR::GetBackgroundPlasmaNumberDensity();
             PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
-            PlasmaTemeprature=PIC::CPLR::GetBackgroundPlasmaTemperature();
+            PlasmaTemperature=PIC::CPLR::GetBackgroundPlasmaTemperature();
 
-            if ( (isfinite(PlasmaNumberDensity)==false) || (isfinite(PlasmaTemeprature)==false) || (isfinite(PlasmaBulkVelocity[0])==false) || (isfinite(PlasmaBulkVelocity[1])==false) || (isfinite(PlasmaBulkVelocity[2])==false) ) {
+            if ( (isfinite(PlasmaNumberDensity)==false) || (isfinite(PlasmaTemperature)==false) || (isfinite(PlasmaBulkVelocity[0])==false) || (isfinite(PlasmaBulkVelocity[1])==false) || (isfinite(PlasmaBulkVelocity[2])==false) ) {
              exit(__LINE__,__FILE__,"Error: a non-normalized number is found");
             }
 
-            if (PlasmaTemeprature>0.0) {
-              InjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(PlasmaNumberDensity,PlasmaTemeprature,PlasmaBulkVelocity,ExternalNormal,spec);
+            if (PlasmaTemperature>0.0) {
+              InjectionRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(PlasmaNumberDensity,PlasmaTemperature,PlasmaBulkVelocity,ExternalNormal,spec);
 
               //sample the local face injection rate
               BoundaryFaceLocalInjectionRate[spec][nBoundaryFace][ii+jj*nFaceInjectionIntervals]=InjectionRate;
@@ -263,7 +263,7 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
 
   long int nBoundaryFace;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  double PlasmaTemeprature,PlasmaBulkVelocity[3],ExternalNormal[3],x[3],x0[3],e0[3],e1[3];
+  double PlasmaTemperature,PlasmaBulkVelocity[3],ExternalNormal[3],x[3],x0[3],e0[3],e1[3];
   int nface,idim;
 
   double v[3],c0,c1;
@@ -321,7 +321,7 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
          #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
          #pragma omp task default (shared) shared (PIC::Mesh::mesh,BoundaryFaceLocalInjectionRate,maxBoundaryFaceLocalInjectionRate,FluxIntegrationIncrement) \
          firstprivate (node,nface,spec,nBoundaryFace) \
-         private (x,x0,e0,e1,ExternalNormal,newParticle,newParticleData,PlasmaTemeprature,PlasmaBulkVelocity,idim,c0,c1,v)
+         private (x,x0,e0,e1,ExternalNormal,newParticle,newParticleData,PlasmaTemperature,PlasmaBulkVelocity,idim,c0,c1,v)
          {
          #endif
 
@@ -356,10 +356,10 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
 
 //          PlasmaNumberDensity=PIC::CPLR::GetBackgroundPlasmaNumberDensity();
           PIC::CPLR::GetBackgroundPlasmaVelocity(PlasmaBulkVelocity);
-          PlasmaTemeprature=PIC::CPLR::GetBackgroundPlasmaTemperature();
+          PlasmaTemperature=PIC::CPLR::GetBackgroundPlasmaTemperature();
 
           do {
-            PIC::Distribution::InjectMaxwellianDistribution(v,PlasmaBulkVelocity,PlasmaTemeprature,ExternalNormal,spec);
+            PIC::Distribution::InjectMaxwellianDistribution(v,PlasmaBulkVelocity,PlasmaTemperature,ExternalNormal,spec);
           }
           while (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>vmax*vmax);
 

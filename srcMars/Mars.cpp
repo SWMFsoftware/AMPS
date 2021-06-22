@@ -187,7 +187,7 @@ int newMars::RequestStaticCellData(int offset) {
   }
 
   void newMars::PrintVariableList(FILE* fout,int DataSetNumber) {
-    fprintf(fout,", \"Maximum cell Theoretical Oxigen Production Rate\", \"Minimum cell Theoretical Oxigen Production Rate\", \"O Theoretical Production Rate\", \"O Mean Cell Numerical Production Rate\", \"Electron Temeprature\", \"Electron Density\", \"O2PLUS Density\"");
+    fprintf(fout,", \"Maximum cell Theoretical Oxigen Production Rate\", \"Minimum cell Theoretical Oxigen Production Rate\", \"O Theoretical Production Rate\", \"O Mean Cell Numerical Production Rate\", \"Electron Temperature\", \"Electron Density\", \"O2PLUS Density\"");
 
     for (int bspec=0;bspec<PIC::MolecularCollisions::BackgroundAtmosphere::GetTotalNumberBackgroundSpecies();bspec++) {
       fprintf(fout,", \"Minimum Background Desnity s=%i\", \"Maximum Background Desnity s=%i\"",bspec,bspec);
@@ -596,7 +596,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
            betaO2=massO2/(2*k*Ti.Interpolate(x));
            BGMeanFlowVelocity(bulkVelocity,x);
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-    betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x));
+    betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x));
 #endif
 
 
@@ -870,7 +870,7 @@ long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kC
 #endif
         
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-        betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x));
+        betaO2=massCO/(2*k*MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x));
 #endif
         
         

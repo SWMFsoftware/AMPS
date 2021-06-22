@@ -32,7 +32,7 @@
 double Exosphere::OrbitalMotion::GetTAA(SpiceDouble et) {return 0.0;}
 int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {return 0;}
 void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(double *res,int resLength) {}
-double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {return 0.0;}
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {return 0.0;}
 char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EPHIOD";
 char Exosphere::IAU_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EPHIOD";
 char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="Europa";

@@ -270,7 +270,7 @@ namespace DragCoefficientTest {
   void ExecuteAllTests() {
 
     //set the test conditions 
-    Surface::Temeprature::Isothremal::Temp=300.0;
+    Surface::Temperature::Isothremal::Temp=300.0;
     Surface::MaxwellReflection::AccommodationCoefficient[0]=0.5;
 
     if (PIC::nTotalSpecies!=1) exit(__LINE__,__FILE__,"Error: the test is set to be exdcuted only with a single model speceis");

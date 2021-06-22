@@ -31,7 +31,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
   return res;
 }
 
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
   //return the day-side temeprature
   return 100.0;
 }

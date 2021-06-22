@@ -1487,7 +1487,7 @@ void DeleteAttachedParticles();
       //define the types of the particle generation for the tracking
       class cVelocityDistributionMaxwellian {
       public:
-        double Temeprature,BulkVelocity[3];
+        double Temperature,BulkVelocity[3];
       };
 
       class cVelocityDistributionTable {
@@ -2671,8 +2671,8 @@ void DeleteAttachedParticles();
     extern cDatumWeighted DatumParticleVelocity2;
     extern cDatumWeighted DatumParticleVelocity2Tensor;
     extern cDatumWeighted DatumParticleSpeed;
-    extern cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity;
-    extern cDatumWeighted DatumParallelTantentialTemepratureSample_Velocity2;
+    extern cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity;
+    extern cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2;
     extern cDatumDerived  DatumTranslationalTemperature;
     extern cDatumDerived  DatumParallelTranslationalTemperature;
     extern cDatumDerived  DatumTangentialTranslationalTemperature;
@@ -3037,8 +3037,8 @@ void DeleteAttachedParticles();
         #else
         double v[3],v2[3],res=0.0;
 
-        GetDatumAverage(DatumParallelTantentialTemepratureSample_Velocity,v,s);
-        GetDatumAverage(DatumParallelTantentialTemepratureSample_Velocity2,v2,s);
+        GetDatumAverage(DatumParallelTantentialTemperatureSample_Velocity,v,s);
+        GetDatumAverage(DatumParallelTantentialTemperatureSample_Velocity2,v2,s);
         res=PIC::MolecularData::GetMass(s)*(v2[2]-v[2]*v[2])/Kbol;
 
         // res may be negative due to rounding error, e.g.
@@ -3055,8 +3055,8 @@ void DeleteAttachedParticles();
         #else
         double v[3],v2[3],res=0.0;
 
-        GetDatumAverage(DatumParallelTantentialTemepratureSample_Velocity,v,s);
-        GetDatumAverage(DatumParallelTantentialTemepratureSample_Velocity2,v2,s);
+        GetDatumAverage(DatumParallelTantentialTemperatureSample_Velocity,v,s);
+        GetDatumAverage(DatumParallelTantentialTemperatureSample_Velocity2,v2,s);
         res=PIC::MolecularData::GetMass(s)*(v2[0]+v2[1]-v[0]*v[0]-v[1]*v[1])/(2.0*Kbol);
 
         // res may be negative due to rounding error, e.g.
@@ -4344,9 +4344,9 @@ void DeleteAttachedParticles();
       //calcualte the temperature index
       //get the temperature index
       inline double GetTempIndex(int s0,int s1) {
-        static const double TemepratureIndex[1][1]={0.0};
+        static const double TemperatureIndex[1][1]={0.0};
 
-        return TemepratureIndex[s0][s1];
+        return TemperatureIndex[s0][s1];
       }
     }
 

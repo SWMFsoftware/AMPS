@@ -15,7 +15,7 @@
 namespace Surface {
 
    //the models of the surface temeprature
-   namespace Temeprature {
+   namespace Temperature {
 
      //isothermal
      namespace Isothremal {
@@ -28,7 +28,7 @@ namespace Surface {
      }
    }
 
-   double GetSurfaceTemeprature(CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+   double GetSurfaceTemperature(CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
    //diffuse refrelction
    namespace DiffuseReflection {

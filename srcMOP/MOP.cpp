@@ -20,7 +20,7 @@ int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {return 0;}
 void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLength,double* x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {}
 void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(double *res,int resLength) {}
 double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& ReemissionParticleFraction,double Temp) {return 0.0;}
-double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x) {return 0.0;}
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x) {return 0.0;}
 
 
 //new particle injection functions

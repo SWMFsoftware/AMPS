@@ -49,7 +49,7 @@ double Exosphere::SourceProcesses::PhotonStimulatedDesorption::maxInjectionEnerg
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRate=1.89E22; //////1.79e21; //Killen-2012-JGR   ;1.1e22;  2.05e22 IV for Sarantos 2010
 double Exosphere::SourceProcesses::ImpactVaporization::HeliocentricDistance=1.0*_AU_;
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRatePowerIndex=0.0;
-double Exosphere::SourceProcesses::ImpactVaporization::SourceTemeprature=6000.0; //Killen-2012-JGR ;2500.0;
+double Exosphere::SourceProcesses::ImpactVaporization::SourceTemperature=6000.0; //Killen-2012-JGR ;2500.0;
 */
 
 /*double Exosphere::SourceProcesses::SolarWindSputtering::Yield=0.1;
@@ -86,7 +86,7 @@ void Comet::Init_AfterParser() {
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) { //ExosphereEscapeRate[spec]=0.0,ExospehreTemsprature[spec]=1000.0;
     ExosphereEscapeRate[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceRate[spec];
-    ExospehreTemsprature[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceTemeprature[spec];
+    ExospehreTemsprature[spec]=Exosphere::SourceProcesses::ImpactVaporization::ImpactVaporization_SourceTemperature[spec];
   }
 
   /*  Exosphere::ChamberlainExosphere::Init(ExosphereEscapeRate,ExospehreTemsprature);
@@ -199,7 +199,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
 
 
 //surface temeprature of the planet
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
   /*
   //determine if the point on the night side of the Comet
   if (CosSubSolarAngle<0.0) return 100.0;
@@ -408,7 +408,7 @@ bool Comet::GenerateParticlePropertiesBjorn(int spec,PIC::ParticleBuffer::byte* 
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
   
-  SurfaceTemperature=GetSurfaceTemeprature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
 
   
@@ -591,7 +591,7 @@ bool Comet::GenerateParticlePropertiesHartley2(int spec, double *x_SO_OBJECT,dou
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
 
-  SurfaceTemperature=GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
   
   //init the internal degrees of freedom if needed
@@ -744,7 +744,7 @@ bool Comet::GenerateParticlePropertiesJet(int spec, double *x_SO_OBJECT,double *
   }
   cosSubSolarAngle=c/sqrt(X);
   
-  SurfaceTemperature=GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
   
   //init the internal degrees of freedom if needed
@@ -887,7 +887,7 @@ bool Comet::GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double
   }
   cosSubSolarAngle=c/sqrt(X);
   
-  SurfaceTemperature=GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
   
   //init the internal degrees of freedom if needed
@@ -1058,7 +1058,7 @@ bool Comet::GenerateParticlePropertiesJet(int spec, double *x_SO_OBJECT,double *
     if (angle!=angle) SubSolarAngle=Pi/2;
   }
 
-  SurfaceTemperature=GetSurfaceTemeprature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
   // SurfaceTemperature=180.0;
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
   
@@ -1209,7 +1209,7 @@ bool Comet::GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double
     if (angle!=angle) SubSolarAngle=Pi/2;
   }
 
-   SurfaceTemperature=GetSurfaceTemeprature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
+   SurfaceTemperature=GetSurfaceTemperature(cos(SubSolarAngle),x_LOCAL_SO_OBJECT);
    //SurfaceTemperature=180.0;
   PIC::Distribution::InjectMaxwellianDistribution(v_LOCAL_IAU_OBJECT,vbulk,SurfaceTemperature,ExternalNormal,spec);
   
@@ -1416,7 +1416,7 @@ ot defined");
 
 double Comet::PhotolyticReactionRate=0.0;
 double Comet::ElectronImpactRate=0.0;
-double Comet::ElectronTemeprature=0.0;
+double Comet::ElectronTemperature=0.0;
 
 
 double Comet::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {

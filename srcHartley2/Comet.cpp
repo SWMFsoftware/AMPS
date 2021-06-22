@@ -349,7 +349,7 @@ void Comet::GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh:
 
 }				   
 
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
 #if _COMET_TEMPERATURE_MODE_ == _COMET_TEMPERATURE_MODE__BJORN_
   const double DistanceFromTheSun[6]={1.3,2.0,2.7,3.0,3.25,3.5};
   const double minTemp[6]={172.0,163.0,150.0,145.0,139.0,133.0};
@@ -1561,7 +1561,7 @@ bool Comet::BjornNASTRAN::GenerateParticle(int spec, double *x_SO_OBJECT,double 
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
   if(CutCell::BoundaryTriangleFaces[i].pic__shadow_attribute==_PIC__CUT_FACE_SHADOW_ATTRIBUTE__TRUE_) cosSubSolarAngle=-1; //Get Temperature from night side if in the shadow
-  SurfaceTemperature=GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
 
   if (spec>=_DUST_SPEC_ && spec<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups) {
@@ -1787,7 +1787,7 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
   if(CutCell::BoundaryTriangleFaces[i].pic__shadow_attribute==_PIC__CUT_FACE_SHADOW_ATTRIBUTE__TRUE_) cosSubSolarAngle=-1; //Get Temperature from night side if in the shadow
-  SurfaceTemperature=GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
   if (spec>=_DUST_SPEC_ && spec<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups) { 
     DustInitialVelocity::GetInitialVelocity(v_LOCAL_IAU_OBJECT,x_LOCAL_IAU_OBJECT,i);
@@ -2055,7 +2055,7 @@ void Comet::TrajectoryTracking::UpdateParticleCounter() {
 
 double Comet::LossProcesses::PhotolyticReactionRate=0.0;
 double Comet::LossProcesses::ElectronImpactRate=0.0;
-double Comet::LossProcesses::ElectronTemeprature=0.0;
+double Comet::LossProcesses::ElectronTemperature=0.0;
 
 
 double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
@@ -2116,20 +2116,20 @@ double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec
   static const double ThermalElectronDensity=Europa::ElectronModel::ThermalElectronFraction;
   static const double HotElectronDensity=Europa::ElectronModel::HotElectronFraction;
 
-  static const double HotElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
 
 
@@ -2179,8 +2179,8 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
   static double TotalProductYeld_ElectronImpact[PIC::nTotalSpecies*PIC::nTotalSpecies];
 
   /*  double HotElectronFraction=0.05;
-  static const double ThermalElectronTemeprature=20.0;
-  static const double HotElectronTemeprature=250.0;
+  static const double ThermalElectronTemperature=20.0;
+  static const double HotElectronTemperature=250.0;
   */
 
   if (initflag==false) {
@@ -2198,8 +2198,8 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
 
       /*      if (ElectronImpact::ModelAvailable(iParent)==true) {
         TotalProductYeld_ElectronImpact[iProduct+iParent*PIC::nTotalSpecies]=
-            Europa::ElectronModel::HotElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::HotElectronTemeprature) +
-            Europa::ElectronModel::ThermalElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::ThermalElectronTemeprature);
+            Europa::ElectronModel::HotElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::HotElectronTemperature) +
+            Europa::ElectronModel::ThermalElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::ThermalElectronTemperature);
 	    }*/
     }
   }
@@ -2281,8 +2281,8 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
              PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
            else {
-	     /*             if (rnd()<Europa::ElectronModel::HotElectronFraction) ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
-			    else ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);*/
+	     /*             if (rnd()<Europa::ElectronModel::HotElectronFraction) ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+			    else ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);*/
 	   }
 
            //check whether the products contain species with spec=specProduct

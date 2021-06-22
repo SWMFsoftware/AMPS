@@ -135,7 +135,7 @@ namespace Comet {
   }
 
   namespace LossProcesses {
-   extern double PhotolyticReactionRate,ElectronImpactRate,ElectronTemeprature;
+   extern double PhotolyticReactionRate,ElectronImpactRate,ElectronTemperature;
 
    //the constant of the artificial increase of the primary species loss
    //the modification of the rate is compensated by the appropricate particle weight of the daugher products and

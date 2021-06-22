@@ -188,7 +188,7 @@ while ($line=<InputFile>) {
       
       if ($InputLine eq "TEMP") {
         ($InputLine,$InputComment)=split(' ',$InputComment,2);
-        ampsConfigLib::ChangeValueOfVariable("const double PlumeSourceTemeprature",$InputLine,"main/Europa.h");
+        ampsConfigLib::ChangeValueOfVariable("const double PlumeSourceTemperature",$InputLine,"main/Europa.h");
       }
       elsif ($InputLine eq "LAT") {
         ($InputLine,$InputComment)=split(' ',$InputComment,2);

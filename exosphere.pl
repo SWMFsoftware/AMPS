@@ -762,7 +762,7 @@ while ($line=<InputFile>) {
       ampsConfigLib::ChangeValueOfVariable("static const double ImpactVaporization_HeliocentricDistance",$HeliocentricDistance,"models/exosphere/Exosphere.h");
       ampsConfigLib::ChangeValueOfVariable("static const double ImpactVaporization_SourceRatePowerIndex",$SourceRatePowerIndex,"models/exosphere/Exosphere.h");
       ampsConfigLib::ChangeValueOfArray("static const double ImpactVaporization_SourceRate\\[\\]",\@SourceRate,"models/exosphere/Exosphere.h");
-      ampsConfigLib::ChangeValueOfArray("static const double ImpactVaporization_SourceTemeprature\\[\\]",\@SourceTemperature,"models/exosphere/Exosphere.h");
+      ampsConfigLib::ChangeValueOfArray("static const double ImpactVaporization_SourceTemperature\\[\\]",\@SourceTemperature,"models/exosphere/Exosphere.h");
 
       ampsConfigLib::RedefineMacro("_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_",$SourceProcessID,"models/exosphere/Exosphere.dfn");
             

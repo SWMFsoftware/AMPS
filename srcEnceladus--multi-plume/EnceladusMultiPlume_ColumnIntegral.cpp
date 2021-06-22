@@ -15,7 +15,7 @@
 void Exosphere::ColumnIntegral::ProcessColumnIntegrationVector(double *res,int resLength) {}
 double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& ReemissionParticleFraction,double Temp) {return 0.0;}
 
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {return 100.0;}
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {return 100.0;}
 
 int Exosphere::ColumnIntegral::GetVariableList(char *vlist) {
   int s,nvars=0;

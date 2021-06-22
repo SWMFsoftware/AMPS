@@ -459,7 +459,7 @@ void PIC::CCMC::Parser::Read::VelocityDistribution::Maxwellian(PIC::CCMC::Partic
     }
     else if (strcmp("TEMPERATURE",str1)==0) {
       ifile.CutInputStr(str1,str);
-      InjectionBlock.VelocityDistribution.Maxwellian.Temeprature=atof(str1);
+      InjectionBlock.VelocityDistribution.Maxwellian.Temperature=atof(str1);
     }
     else if (strcmp("#ENDVELOCITYDISTRIBUTION",str1)==0) return;
     else exit(__LINE__,__FILE__,"Error: the option is not recognized");
@@ -638,7 +638,7 @@ void PIC::CCMC::LoadParticles() {
       case PIC::CCMC::DEF::VELOCITY_DISTRIBUTION::TYPE::Maxwellian:
         PIC::Distribution::MaxwellianVelocityDistribution(v,
             ParticleInjection::InjectionDescriptorList[iInjectionEntry].VelocityDistribution.Maxwellian.BulkVelocity,
-            ParticleInjection::InjectionDescriptorList[iInjectionEntry].VelocityDistribution.Maxwellian.Temeprature,
+            ParticleInjection::InjectionDescriptorList[iInjectionEntry].VelocityDistribution.Maxwellian.Temperature,
             spec);
         break;
 

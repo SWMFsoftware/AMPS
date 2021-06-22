@@ -29,7 +29,7 @@ double Exosphere::SourceProcesses::PhotonStimulatedDesorption::maxInjectionEnerg
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRate=2.6E23;
 double Exosphere::SourceProcesses::ImpactVaporization::HeliocentricDistance=0.387098*_AU_;
 double Exosphere::SourceProcesses::ImpactVaporization::SourceRatePowerIndex=1.9;
-double Exosphere::SourceProcesses::ImpactVaporization::SourceTemeprature=2500.0;
+double Exosphere::SourceProcesses::ImpactVaporization::SourceTemperature=2500.0;
 
 double Exosphere::SourceProcesses::SolarWindSputtering::Yield=0.1;
 double Exosphere::SourceProcesses::SolarWindSputtering::minInjectionEnergy=pow(10.0,2)*_NA__MASS_/2.0;
@@ -79,7 +79,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
 
 
 //surface temeprature of the planet
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
   static const double Tn=110.0;
   static const double Td0_Aphelion=590.0,Td0_Perihelion=725.0;
   static const double TAA_Aphelion=Pi,TAA_Perihelion=0.0;

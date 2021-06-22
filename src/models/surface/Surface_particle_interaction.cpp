@@ -31,7 +31,7 @@ int Surface::DiffuseReflection::Processor(long int ptr,double* xInit,double* vIn
   int spec;
 
   spec=PIC::ParticleBuffer::GetI(ptr);
-  temp=Surface::GetSurfaceTemeprature(TriangleCutFace,startNode);
+  temp=Surface::GetSurfaceTemperature(TriangleCutFace,startNode);
   beta=sqrt(PIC::MolecularData::GetMass(spec)/(2.0*Kbol*temp));
 
   //get the internal frame of reference related to the surface element
@@ -86,7 +86,7 @@ int Surface::CLL::Processor(long int ptr,double* xInit,double* vInit,CutCell::cT
   for (idim=0;idim<3;idim++) ksi_n_i+=vInit[idim]*e2[idim],ksi_t1_i+=vInit[idim]*e1[idim];
 
   spec=PIC::ParticleBuffer::GetI(ptr);
-  ksi_mp_w=sqrt(2.0*Kbol/PIC::MolecularData::GetMass(spec)*Surface::GetSurfaceTemeprature(TriangleCutFace,startNode));
+  ksi_mp_w=sqrt(2.0*Kbol/PIC::MolecularData::GetMass(spec)*Surface::GetSurfaceTemperature(TriangleCutFace,startNode));
 
   //get the normal component of the refrected velocity
   r1=sqrt(-alpha_n*log(rnd()));

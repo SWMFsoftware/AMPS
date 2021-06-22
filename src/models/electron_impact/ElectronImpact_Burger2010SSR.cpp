@@ -117,14 +117,14 @@ double ElectronImpact::O::Burger2010SSR::log10RateCoefficientTable[ElectronImpac
 
 
 //Calcualtion of the rate corfficient
-double ElectronImpact::Burger2010SSR::GetTotalRateCoefficient(double *RateCoefficientTable,double ElectronTemeprature,int nReactionChannels,double *log10RateCoefficientTable) {
+double ElectronImpact::Burger2010SSR::GetTotalRateCoefficient(double *RateCoefficientTable,double ElectronTemperature,int nReactionChannels,double *log10RateCoefficientTable) {
   int i0,i1;
   double t,el,c0,c1,TempLOG10,res=0.0;
   int nChannel;
 
   //determine the element number in the data table and the corresponding interpolation coefficients;
-  TempLOG10=log10(ElectronTemeprature);
-  el=(TempLOG10-minlog10RateCoefficientTableElectronTemeprature_LOG10)/dlog10RateCoefficientTableElectronTemeprature_LOG10;
+  TempLOG10=log10(ElectronTemperature);
+  el=(TempLOG10-minlog10RateCoefficientTableElectronTemperature_LOG10)/dlog10RateCoefficientTableElectronTemperature_LOG10;
 
   if (el<0.0) {
     // take the data from the first elecemnt of the data array
@@ -160,13 +160,13 @@ double ElectronImpact::Burger2010SSR::GetTotalRateCoefficient(double *RateCoeffi
   return res;
 }
 
-void ElectronImpact::Burger2010SSR::GenerateReactionProducts(double ElectronTemeprature,int &ReactionChannel,int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,int &nReactionProducts,
+void ElectronImpact::Burger2010SSR::GenerateReactionProducts(double ElectronTemperature,int &ReactionChannel,int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,int &nReactionProducts,
     int *ReactionChannelProducts,int nMaxReactionProducts,double *log10RateCoefficientTable,int nReactionChannels) {
 
   double RateCoefficientTable[nReactionChannels],TotalRateCoefficient,summ;
   int nChannel,i;
 
-  TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable);
+  TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemperature,nReactionChannels,log10RateCoefficientTable);
 
   //determine the channel of the impact reaction
   for (TotalRateCoefficient*=rnd(),nChannel=0,summ=0.0;nChannel<nReactionChannels;nChannel++) {
@@ -212,7 +212,7 @@ void ElectronImpact::Burger2010SSR::Print(const char* fname,const char* OutputDi
 
   //print the data
   for (int i=0;i<log10RateCoefficientTableLength;i++) {
-    fprintf(fout,"%e",pow(10.0,minlog10RateCoefficientTableElectronTemeprature_LOG10+i*dlog10RateCoefficientTableElectronTemeprature_LOG10));
+    fprintf(fout,"%e",pow(10.0,minlog10RateCoefficientTableElectronTemperature_LOG10+i*dlog10RateCoefficientTableElectronTemperature_LOG10));
 
     for (nChannel=0;nChannel<nReactionChannels;nChannel++) fprintf(fout,", %e",1.0E-6*pow(10.0,log10RateCoefficientTable[i+nChannel*log10RateCoefficientTableLength]));
     fprintf(fout,"\n");
@@ -222,11 +222,11 @@ void ElectronImpact::Burger2010SSR::Print(const char* fname,const char* OutputDi
   fclose(fout);
 }
 
-double ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(int spec,double ElectronTemeprature,double *log10RateCoefficientTable, int nReactionChannels, int* ReactionChannelProducts, int nMaxReactionProducts) {
+double ElectronImpact::Burger2010SSR::GetSpeciesReactionYield(int spec,double ElectronTemperature,double *log10RateCoefficientTable, int nReactionChannels, int* ReactionChannelProducts, int nMaxReactionProducts) {
   double yield=0.0,TotalRateCoefficient=0.0,RateCoefficientTable[nReactionChannels];
   int ReactionChannel,i;
 
-  TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable);
+  TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemperature,nReactionChannels,log10RateCoefficientTable);
 
   for (ReactionChannel=0;ReactionChannel<nReactionChannels;ReactionChannel++) {
     for (i=0;i<nMaxReactionProducts;i++) if (spec==ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts]) yield+=RateCoefficientTable[ReactionChannel];

@@ -117,7 +117,7 @@ double Exosphere::SourceProcesses::SolarWindSputtering::EnergyDistributionFuncti
 
 
 //surface temperature
-double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_SO_OBJECT) {
 
 
   return 100.0;
@@ -633,7 +633,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
 
   //get local surface temperature
 //  cosSubsolarAngle=Europa::OrbitalMotion::GetCosineSubsolarAngle(x_LOCAL_GALL_EPHIOD_EUROPA);
-  SurfaceTemp=Europa::GetSurfaceTemeprature(x_LOCAL_IAU_EUROPA);
+  SurfaceTemp=Europa::GetSurfaceTemperature(x_LOCAL_IAU_EUROPA);
 
 
   //sample parameters of the back flux: speed is calculate in IAU (relative to the planet) but the flux is sampled in GALL_EPHIOD (one axis is always directed to the Sun)
@@ -1440,7 +1440,7 @@ void Europa::Sampling::O2InjectionSpeed::OutputSampledModelData(int DataOutputFi
 
 double Europa::LossProcesses::PhotolyticReactionRate=0.0;
 double Europa::LossProcesses::ElectronImpactRate=0.0;
-double Europa::LossProcesses::ElectronTemeprature=0.0;
+double Europa::LossProcesses::ElectronTemperature=0.0;
 
 double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   double BackgroundPlasmaNumberDensity;
@@ -1553,20 +1553,20 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
   static const double ThermalElectronDensity=Europa::ElectronModel::ThermalElectronFraction;
   static const double HotElectronDensity=Europa::ElectronModel::HotElectronFraction;
 
-  static const double HotElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_O2=ElectronImpact::O2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H2=ElectronImpact::H2::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_H=ElectronImpact::H::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
-  static const double HotElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::HotElectronTemeprature)*HotElectronDensity;
-  static const double ThermalElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemeprature)*ThermalElectronDensity;
+  static const double HotElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
+  static const double ThermalElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
 
 
 
@@ -1615,8 +1615,8 @@ int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIn
   static double TotalProductYeld_ElectronImpact[PIC::nTotalSpecies*PIC::nTotalSpecies];
 
   double HotElectronFraction=0.05;
-  static const double ThermalElectronTemeprature=20.0;
-  static const double HotElectronTemeprature=250.0;
+  static const double ThermalElectronTemperature=20.0;
+  static const double HotElectronTemperature=250.0;
 
   if (initflag==false) {
     int iParent,iProduct;
@@ -1633,8 +1633,8 @@ int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIn
 
       if (ElectronImpact::ModelAvailable(iParent)==true) {
         TotalProductYeld_ElectronImpact[iProduct+iParent*PIC::nTotalSpecies]=
-            Europa::ElectronModel::HotElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::HotElectronTemeprature) +
-            Europa::ElectronModel::ThermalElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::ThermalElectronTemeprature);
+            Europa::ElectronModel::HotElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::HotElectronTemperature) +
+            Europa::ElectronModel::ThermalElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::ThermalElectronTemperature);
       }
     }
   }
@@ -1711,8 +1711,8 @@ int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIn
              PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
            else {
-             if (rnd()<Europa::ElectronModel::HotElectronFraction) ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
-             else ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+             if (rnd()<Europa::ElectronModel::HotElectronFraction) ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+             else ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemperature,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
            }
 
            //check whether the products contain species with spec=specProduct

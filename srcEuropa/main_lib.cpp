@@ -479,7 +479,7 @@ bool GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJECT,doub
   //generate particle's velocity vector in the coordinate frame related to the planet 'IAU_OBJECT'
   double SurfaceTemperature,vbulk[3]={0.0,0.0,0.0};
   //  if(CutCell::BoundaryTriangleFaces[i].pic__shadow_attribute==_PIC__CUT_FACE_SHADOW_ATTRIBUTE__TRUE_) cosSubSolarAngle=-1; //Get Temperature from night side if in the shadow
-  SurfaceTemperature=100;//GetSurfaceTemeprature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemperature=100;//GetSurfaceTemperature(cosSubSolarAngle,x_LOCAL_SO_OBJECT);
 
   double r2Tang=0.0;
   double xFace[3];

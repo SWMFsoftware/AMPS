@@ -153,7 +153,7 @@ int ProcessLeftBoundaryIntersection(double *x,double *v) {  //process boundary i
   double r2,c;
   int idim;
 
-  static const double SurfaceTemeprature=90.0;
+  static const double SurfaceTemperature=90.0;
 
   //move the particle to the surface of the sphere
   for (r2=0.0,idim=0;idim<3;idim++) r2+=pow(x[idim],2);
@@ -162,7 +162,7 @@ int ProcessLeftBoundaryIntersection(double *x,double *v) {  //process boundary i
 
 
   //init velocity of the particle
-  double c1,beta=sqrt(ParticleMass/(2.0*Kbol*SurfaceTemeprature));
+  double c1,beta=sqrt(ParticleMass/(2.0*Kbol*SurfaceTemperature));
 
   v[0]=sqrt(-log(rnd()))/beta;  //radial velocity
 

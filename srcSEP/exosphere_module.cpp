@@ -29,7 +29,7 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
 }
 
 //surface temeprature of the planet
-double Exosphere::GetSurfaceTemeprature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
   static const double Tn=110.0;
   static const double Td0_Aphelion=590.0,Td0_Perihelion=725.0;
   static const double TAA_Aphelion=Pi,TAA_Perihelion=0.0;

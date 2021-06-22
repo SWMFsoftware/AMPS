@@ -1060,7 +1060,7 @@ void testPrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuth
       }
       CosSubSolarAngle=c/sqrt(X);
             
-      SurfaceTemperature+=InterpolationCoefficient*Comet::GetSurfaceTemeprature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
+      SurfaceTemperature+=InterpolationCoefficient*Comet::GetSurfaceTemperature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
       totalInterpolationCoefficient+=InterpolationCoefficient;
     }
     fprintf(fout," %e",SurfaceTemperature/totalInterpolationCoefficient);

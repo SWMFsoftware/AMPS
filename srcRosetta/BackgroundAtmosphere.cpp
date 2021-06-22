@@ -23,7 +23,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   int idim;
   double *xmin,*xmax,*xMiddle,x[3],v[3],beta;
 
-  static const double GlobalNeutalTemeprature=179.0;
+  static const double GlobalNeutalTemperature=179.0;
 
   //generate positions of the background particle in the cell
   xmin=node->xmin;
@@ -37,7 +37,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   PIC::ParticleBuffer::SetX(x,BackgroundAtmosphereParticleData);
 
   //generate velocity vector for a particle representing the bacground atmosphere
-  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemeprature);
+  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemperature);
 
   for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta);
 

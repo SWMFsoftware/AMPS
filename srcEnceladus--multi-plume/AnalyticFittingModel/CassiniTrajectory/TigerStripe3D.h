@@ -2,7 +2,7 @@ const int nTotalTigerStripes=8;
 const double dxTigerStripe=1.000000e+03;
 const int nTypesTigerStripe=2;
 double TigerStripeProductionRate[2]={0.0,0.0};
-double TigerStripeBulkVelocity=0.0,TigerStripeTemeprature=0.0;
+double TigerStripeBulkVelocity=0.0,TigerStripeTemperature=0.0;
 const int TypeTigerStripe[8]={0,1,0,1,0,1,0,0};
 
 const int StripePointListLength[8]={91,60,147,60,101,65,107,37};

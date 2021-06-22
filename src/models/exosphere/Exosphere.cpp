@@ -2338,7 +2338,7 @@ int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation
 
   //get local surface temperature
   cosSubsolarAngle=Exosphere::OrbitalMotion::GetCosineSubsolarAngle(x_LOCAL_SO_OBJECT);
-  SurfaceTemp=Exosphere::GetSurfaceTemeprature(cosSubsolarAngle,x_LOCAL_SO_OBJECT);
+  SurfaceTemp=Exosphere::GetSurfaceTemperature(cosSubsolarAngle,x_LOCAL_SO_OBJECT);
 
 
   //sample parameters of the back flux: speed is calcalate in IAU (relative to the planet) but the flux is samplined in SO (one axis is alwais directed to the Sun)
@@ -2616,7 +2616,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
         (OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]*x_LOCAL_IAU_OBJECT[2]);
 
     CosSubSolarAngle=norm[0];
-    SurfaceTemperature=GetSurfaceTemeprature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
+    SurfaceTemperature=GetSurfaceTemperature(CosSubSolarAngle,x_LOCAL_SO_OBJECT);
     fprintf(fout," %e",SurfaceTemperature);
 
     //Print Sampled Surface data

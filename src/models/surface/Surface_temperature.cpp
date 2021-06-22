@@ -11,7 +11,7 @@
 
 
 //surface temeprature in the model of the isothremal temeprature
-double Surface::Temeprature::Isothremal::Temp=0.0;
+double Surface::Temperature::Isothremal::Temp=0.0;
 
 
 
