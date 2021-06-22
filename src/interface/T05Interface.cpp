@@ -60,13 +60,24 @@ void T05::GetMagneticField(double *B,double *x) {
 #endif
 }
   
-void T05::SetPDYN(double PDYN) {PARMOD[0]=PDYN/_NANO_};
-void T05::SetDST(double Dst) {PARMOD[1]=DST/_NANO_};
-void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_};
-void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_};
-void T05::SetW1(double W1) {PARMOD[4]=W1/_NANO_};
-void T05::SetW2(double W2) {PARMOD[5]=W2/_NAN0_};
-void T05::SetW3(double W3) {PARMOD[6]=W3/_NANO_};
-void T05::SetW4(double W4) {PARMOD[7]=W4/_NANO_};
-void T05::SetW5(double W5) {PARMOD[8]=W5/_NANO_};
-void T05::SetW6(double W6) {PARMOD[9]=W6/_NANO_};
+void T05::SetSolarWindPressure(double PDYN) {PARMOD[0]=PDYN/_NANO_;}
+void T05::SetDST(double DST) {PARMOD[1]=DST/_NANO_;}
+void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_;}
+void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_;}
+
+void T05::SetW1(double W1) {PARMOD[4]=W1/_NANO_;}
+void T05::SetW2(double W2) {PARMOD[5]=W2/_NANO_;}
+void T05::SetW3(double W3) {PARMOD[6]=W3/_NANO_;}
+void T05::SetW4(double W4) {PARMOD[7]=W4/_NANO_;}
+void T05::SetW5(double W5) {PARMOD[8]=W5/_NANO_;}
+void T05::SetW6(double W6) {PARMOD[9]=W6/_NANO_;}
+
+void T05::SetW(double W1,double W2,double W3,double W4,double W5,double W6) {
+  SetW1(W1);
+  SetW2(W2);
+  SetW3(W3);
+  SetW4(W4);
+  SetW5(W5);
+  SetW6(W6);
+}
+
