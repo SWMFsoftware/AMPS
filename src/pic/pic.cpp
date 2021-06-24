@@ -205,7 +205,9 @@ int PIC::TimeStep() {
 #endif
 
   auto DoSampling = [=] () {
+    timing_start("PT::Sampling");
     PIC::Sampling::Sampling();
+    timing_stop("PT::Sampling");
   };
 
   //#if _CUDA_MODE_ == _OFF_ 

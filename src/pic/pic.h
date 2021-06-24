@@ -116,6 +116,14 @@ using cAmpsMesh=cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
 //macro function to access the pointer to the particle data
 #define _GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer) (particle_data_buffer+ptr*particle_data_length) 
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "../../share/Library/src/Timing_c.h"
+
+#else
+#include "share/Library/src/Timing_c.h"
+
+#endif
+
 namespace PIC {
 
   //Global constants of the PIC solver
