@@ -27,7 +27,7 @@ double PhotolyticReactions::H2O::Huebner1992ASS::ReactionProductMassTable[nReact
     {_OH__MASS_,_H__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::H2O::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::H2O::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2,2,3,2,3,3,3
 };
 
@@ -94,7 +94,7 @@ double PhotolyticReactions::O2::Huebner1992ASS::ReactionProductMassTable[nReacti
     {_O__MASS_,_O__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::O2::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::O2::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2,2,2,2,3
 };
 
@@ -149,7 +149,7 @@ double PhotolyticReactions::H::Huebner1992ASS::ReactionProductMassTable[nReactio
     {_H__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::H::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::H::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2
 };
 
@@ -208,7 +208,7 @@ double PhotolyticReactions::H2::Huebner1992ASS::ReactionProductMassTable[nReacti
     {_H__MASS_,_H__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::H2::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::H2::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2,2,2,3
 };
 
@@ -261,7 +261,7 @@ double PhotolyticReactions::O::Huebner1992ASS::ReactionProductMassTable[nReactio
     {_O__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::O::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::O::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2
 };
 
@@ -322,7 +322,7 @@ double PhotolyticReactions::OH::Huebner1992ASS::ReactionProductMassTable[nReacti
     {_OH__MASS_,_ELECTRON__MASS_}
 };
 
-int PhotolyticReactions::OH::Huebner1992ASS::ReactionCannelProductNumber[nReactionChannels]={
+int PhotolyticReactions::OH::Huebner1992ASS::ReactionChannelProductNumber[nReactionChannels]={
     2,2,2,2
 };
 
@@ -369,9 +369,112 @@ void PhotolyticReactions::OH::Huebner1992ASS::Init() {
   for (int nChannel=0;nChannel<nReactionChannels;nChannel++) TotalReactionRate+=ReactionRateTable[nChannel];
 }
 
+void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_2(double excessEnergy,double * productMassArray, double * productVelocityTable){
+  double m1 = productMassArray[0]/_ELECTRON__MASS_;
+  double m2 = productMassArray[1]/_ELECTRON__MASS_;
+  double p1x,p1y,p1z,p2x,p2y,p2z;
+  double e = excessEnergy/_ELECTRON__MASS_;
+  double e_calc = e;
+  
+  double positiveTemp=-1;
+  double r1sq, r1;
+  
+  while (positiveTemp<0){
+    r1sq = e_calc*rnd();
+    r1 = sqrt(r1sq*2*m1);
+    positiveTemp = 2*e_calc*m1*m2-(m1+m2)*r1*r1;
+  }
+
+  double phi = rnd()*Pi*2;
+  p1x = r1*cos(phi);
+  p1y = r1*sin(phi);
+  p1z = -sqrt(positiveTemp/(m1+m2));
+  p2x = -p1x;
+  p2y = -p1y;
+  p2z = -p1z;
+
+  productVelocityTable[0] = p1x/m1;
+  productVelocityTable[1] = p1y/m1;
+  productVelocityTable[2] = p1z/m1;
+  
+  productVelocityTable[3] = p2x/m2;
+  productVelocityTable[4] = p2y/m2;
+  productVelocityTable[5] = p2z/m2;
+  
+  /*
+  printf("photo_test_Prod2,px-p0:%e,py:%e,pz:%e,total energy diff:%e,e:%e\n", (p1x+p2x), (p1y+p2y),(p1z+p2z),
+	 ((p1x*p1x+p1y*p1y+p1z*p1z)/m1+
+	  (p2x*p2x+p2y*p2y+p2z*p2z)/m2
+	  )*0.5-e,e);
+  */
+
+  return;
+}
+
+
+void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEnergy,double * productMassArray, double * productVelocityTable){
+  double m1 = productMassArray[0]/_ELECTRON__MASS_;
+  double m2 = productMassArray[1]/_ELECTRON__MASS_;
+  double m3 = productMassArray[2]/_ELECTRON__MASS_;
+  double p1x,p1y,p1z,p2x,p2y,p2z,p3x,p3y,p3z;
+  double e = excessEnergy/_ELECTRON__MASS_;
+  double e_calc = 2*e;
+  
+  double positiveTemp=-1;
+  double r1sq, r1, r2sq, r2;
+
+  double phi;
+  double theta;
+  while (positiveTemp<0){
+    r1sq = e_calc*rnd();
+    r1 = sqrt(r1sq*2*m1);
+    phi = rnd()*Pi*2;
+    theta = acos(2*rnd()-1);
+    p1x = r1*cos(phi)*sin(theta);
+    p1y = r1*sin(phi)*sin(theta);
+    p1z = r1*cos(theta);
+    r2sq = (e_calc-r1sq)*rnd();
+    r2 = sqrt(r2sq*2*m2);
+    phi = rnd()*Pi*2;
+    p2x = r2*cos(phi);
+    p2y = r2*sin(phi);
+    positiveTemp = (m1*(m1*m2*m2*p1z*p1z+(m2+m3)*(e_calc*m1*m2*m3-m2*m3*r1*r1-m1*(m3*r2*r2+m2*(r1*r1+r2*r2+2*p1x*p2x+2*p1y*p2y)))));
+  }
+
+  
+  p2z = -(m1*m2*p1z+sqrt(positiveTemp))/(m1*(m2+m3));
+  p3x = -p1x-p2x;
+  p3y = -p1y-p2y;
+  p3z = (-m1*m3*p1z+sqrt(positiveTemp))/(m1*(m2+m3));
+
+  productVelocityTable[0] = p1x/m1;
+  productVelocityTable[1] = p1y/m1;
+  productVelocityTable[2] = p1z/m1;
+  
+  productVelocityTable[3] = p2x/m2;
+  productVelocityTable[4] = p2y/m2;
+  productVelocityTable[5] = p2z/m2;
+
+  productVelocityTable[6] = p3x/m3;
+  productVelocityTable[7] = p3y/m3;
+  productVelocityTable[8] = p3z/m3;
+
+  /*
+  printf("photo_test_Prod3,px:%e,py:%e,pz:%e,total energy diff:%e,e:%e\n", (p1x+p2x+p3x), (p1y+p2y+p3y),(p1z+p2z+p3z),
+	 ((p1x*p1x+p1y*p1y+p1z*p1z)/m1+
+	  (p2x*p2x+p2y*p2y+p2z*p2z)/m2+
+	  (p3x*p3x+p3y*p3y+p3z*p3z)/m3
+	  )*0.5-e,e);
+  */
+  return;
+
+
+}
+
+
 //-----------------------------------  Chemical model ----------------------------------------
 void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
-    double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionCannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
+    double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
     double TotalReactionRate,double *ExcessEnergyTable) {
   int i;
   double summ=0.0;
@@ -401,10 +504,29 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
 
   if (ExcessEnergyTable!=NULL) TotalEnergy=ExcessEnergyTable[ReactionChannel];
 
+
+    
+  double LocalReactionProductVelocityTable[nMaxReactionProducts][3];
+  int nSpecies=ReactionChannelProductNumber[ReactionChannel];
+  
+  if (nSpecies==2){
+    GetProductVelocity_2(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else if (nSpecies==3){
+    GetProductVelocity_3(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else{
+    exit(__LINE__,__FILE__,"Error: something is wrong, nSpecies cannot be this number");
+  }
+
+
+
+
   //3. Distribute velocity of the reaction components:
   //the momnetum and energy conservation laws are applied to the pair of the lighest element and the complex of other elements in a loop untill new velocity is prescribed to all reaction products
+ 
+
+  /*
   double HeavyComplexCenterMassVelocity[3]={0.0,0.0,0.0},LocalRectionProductVelocityTable[nMaxReactionProducts][3];
-  int iLightestSpecies=ReactionCannelProductNumber[ReactionChannel]-1;
+  int iLightestSpecies=ReactionChannelProductNumber[ReactionChannel]-1;
   double MassHeavyComplex,MassLightestSpecies;
   double l[3],ll=0.0; //the direction of the relative velocity of the "heavy" part of the products and the electron
   double VelocityHeavyComplex,VelocityLightestSpecies;
@@ -442,15 +564,38 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
 
   //save velocity of the heaviest species
   memcpy(&LocalRectionProductVelocityTable[0][0],HeavyComplexCenterMassVelocity,3*sizeof(double));
+  */
+
 
   //4. Init the list of the reaction products
- 
+  
+  //for test
+  /*
+  double mx=0.0,my=0.0,mz=0.0,energy=0.0;
+  for (i=0;i<nMaxReactionProducts;i++) {
+   
+      double mass=ReactionProductMassTable[i+ReactionChannel*nMaxReactionProducts];
+      if (mass<0) continue;
+      double vx =LocalReactionProductVelocityTable[i][0];
+      double vy =LocalReactionProductVelocityTable[i][1];
+      double vz =LocalReactionProductVelocityTable[i][2];
+	    
+      printf("Huebner ReactionChannel:%d,iProduct:%d, mass:%e, v:%e,%e,%e\n", ReactionChannel,i,mass,vx,vy,vz);
+      mx+= mass*vx;
+      my+= mass*vy;
+      mz+= mass*vz;
+      energy +=0.5*mass*(vx*vx+vy*vy+vz*vz);	 
+  }
+  printf("Huebner reactionChannel:%d momtum:%e,%e,%e, energy:%e,excess energy:%e\n", ReactionChannel, mx,my,mz,energy/eV2J,TotalEnergy/eV2J);
+  */
+  
+
 
   for (i=0;i<nMaxReactionProducts;i++) {
     int t;
     if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
       //ReturnReactionProductTable[nReactionProducts++]=t;
-      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalRectionProductVelocityTable[i][idim];
+      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
     }
   }
 

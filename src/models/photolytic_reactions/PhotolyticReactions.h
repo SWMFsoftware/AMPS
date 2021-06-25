@@ -26,13 +26,19 @@ namespace PhotolyticReactions {
 
     //generate the channel of the reaction, determin its products and velocities
     void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
-        double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionCannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
+        double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
         double TotalReactionRate,double *ExcessEnergyTable);
 
 
     //calculate the yield fpr a particular specie
     double GetSpeciesReactionYield(int spec,double *ReactionRateTable, int nReactionChannels, int* TotalReactionProductTable, int nMaxReactionProducts);
+    
+    void GetProductVelocity_2(double excessEnergy,double * productMassArray, double * productVelocityTable);
+  
+    void GetProductVelocity_3(double excessEnergy,double * productMassArray, double * productVelocityTable);
+
   }
+
 
   //reaction rates for H2O
   namespace H2O {
@@ -41,7 +47,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=7;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -63,7 +69,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 	
 	//printf("ReactionChannel:%d, nReactionProducts:%d\n", ReactionChannel,nReactionProducts);
 	
@@ -121,7 +127,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=5;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -142,7 +148,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
@@ -173,7 +179,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=1;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -194,7 +200,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
@@ -224,7 +230,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=4;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -245,7 +251,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
@@ -275,7 +281,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=4;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -296,7 +302,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
@@ -326,7 +332,7 @@ namespace PhotolyticReactions {
       const int nReactionChannels=1;
       const double TableHeliocentricDistance=1.0*_AU_;
 
-      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionCannelProductNumber[nReactionChannels];
+      extern int ReactionProducts[nReactionChannels][nMaxReactionProducts],ReactionChannelProductNumber[nReactionChannels];
       extern double EmissionWaveLength[nReactionChannels],ReactionProductMassTable[nReactionChannels][nMaxReactionProducts];
 
       //the table of the rates for each channel
@@ -347,7 +353,7 @@ namespace PhotolyticReactions {
 
       inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
-            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionCannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
 
         ReactionProductTable=ReturnReactionProductList;
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
@@ -404,6 +410,28 @@ namespace PhotolyticReactions {
       exit(__LINE__,__FILE__,"Error: the species is unknown");
     }
   }
+  
+  inline void GenerateReactionProducts_test(){
+    int ReactionChannel, nReactionProducts;
+    int *ReactionProductsList;
+    double * ReactionProductVelocity;
+    
+
+    for (int iSpec=0; iSpec<6;iSpec++){
+      
+      printf("iSpec:%d start\n", iSpec); 
+     
+      for (int j=0; j<10; j++){
+	GenerateReactionProducts(iSpec, ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	  //printf("ReactionChannel:%d, nReactionProducts:%d\n", ReactionChannel,nReactionProducts);	
+	  printf("iSpec:%d, ReactionChannel:%d,nReactionProducts:%d\n",iSpec,ReactionChannel,nReactionProducts);
+      }
+      printf("iSpec:%d end\n", iSpec);
+    }
+    
+  };
+  
+
 
   //calculate the fraction of product reaction output
   inline double GetSpeciesReactionYield(int ProductSpec, int ParentSpec) {
