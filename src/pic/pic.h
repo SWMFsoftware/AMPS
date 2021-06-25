@@ -118,10 +118,10 @@ using cAmpsMesh=cMeshAMR1d<cDataCornerNode,cDataCenterNode,cDataBlockAMR>;
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 #include "../../share/Library/src/Timing_c.h"
-
 #else
-#include "share/Library/src/Timing_c.h"
-
+//When AMPS is compileds as a component of the SWMF, timing_start() and timing_stop() that defined in share are used. Otherwise, the following functions are used  
+inline void timing_start(std::string name) {} 
+inline void timing_stop(std::string name) {} 
 #endif
 
 namespace PIC {
