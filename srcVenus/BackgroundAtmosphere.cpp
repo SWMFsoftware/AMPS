@@ -63,7 +63,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   int idim;
   double *xmin,*xmax,*xMiddle,x[3],v[3],beta;
 
-  double GlobalNeutalTemperature=179.0;
+  double GlobalNeutalTemeprature=179.0;
 
   //generate positions of the background particle in the cell
   xmin=node->xmin;
@@ -76,10 +76,10 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
 
   PIC::ParticleBuffer::SetX(x,BackgroundAtmosphereParticleData);
 
-  GlobalNeutalTemperature=newMars::Tn.Interpolate(x);
+  GlobalNeutalTemeprature=newMars::Tn.Interpolate(x);
 
   //generate velocity vector for a particle representing the bacground atmosphere
-  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemperature);
+  beta=GetBackgroundMolecularMass(BackgroundSpecieNumber)/(2*Kbol*GlobalNeutalTemeprature);
 
   for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta);
 
@@ -300,16 +300,16 @@ bool  PIC::MolecularCollisions::BackgroundAtmosphere::KeepConditionModelParticle
 
 
 #if _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__MTGCM_
-  double GlobalNeutalTemperature=179.0;
+  double GlobalNeutalTemeprature=179.0;
 
-//  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemperature;
+//  temp=(Tn.DataValueDefined(x)==true) ? Tn.Interpolate(x) : GlobalNeutalTemeprature;
 
   temp=Tn.Interpolate(x);
 
 
   //if (Tn.DataValueDefined(x)) printf("background:Tn.Interpolate(x):%e\n", Tn.Interpolate(x));
 #elif _MARS_BACKGROUND_ATMOSPHERE_MODEL_ == _MARS_BACKGROUND_ATMOSPHERE_MODEL__FOX_
-  temp=MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemperature(x);
+  temp=MARS_BACKGROUND_ATMOSPHERE_J_FOX_::GetNeutralTemeprature(x);
 #else
         exit(__LINE__,__FILE__,"Error: the option is not defined");
 #endif

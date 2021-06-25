@@ -1641,7 +1641,7 @@ namespace MARS_BACKGROUND_ATMOSPHERE_J_FOX_ {
 
 
   //calcualte the temeprature in the background atmoshere
-  inline void GetTemperatureInterpolation(double& c0,int& n0,double& c1,int &n1,double *x) {
+  inline void GetTemepratureInterpolation(double& c0,int& n0,double& c1,int &n1,double *x) {
     double r;
 
 #if DIM == 3
@@ -1670,27 +1670,27 @@ namespace MARS_BACKGROUND_ATMOSPHERE_J_FOX_ {
   }
 
 
-  inline double GetNeutralTemperature(double *x) {
+  inline double GetNeutralTemeprature(double *x) {
     double c0,c1;
     int n0,n1;
 
-    GetTemperatureInterpolation(c0,n0,c1,n1,x);
+    GetTemepratureInterpolation(c0,n0,c1,n1,x);
     return c0*BackgroundTemperatureProfile[n0].Tn+c1*BackgroundTemperatureProfile[n1].Tn;
   }
 
-  inline double GetIonTemperature(double *x) {
+  inline double GetIonTemeprature(double *x) {
     double c0,c1;
     int n0,n1;
 
-    GetTemperatureInterpolation(c0,n0,c1,n1,x);
+    GetTemepratureInterpolation(c0,n0,c1,n1,x);
     return c0*BackgroundTemperatureProfile[n0].Ti+c1*BackgroundTemperatureProfile[n1].Ti;
   }
 
-  inline double GetElectronlTemperature(double *x) {
+  inline double GetElectronlTemeprature(double *x) {
     double c0,c1;
     int n0,n1;
 
-    GetTemperatureInterpolation(c0,n0,c1,n1,x);
+    GetTemepratureInterpolation(c0,n0,c1,n1,x);
     return c0*BackgroundTemperatureProfile[n0].Te+c1*BackgroundTemperatureProfile[n1].Te;
   }
 

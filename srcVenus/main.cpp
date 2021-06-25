@@ -37,7 +37,7 @@
 
 //the parameters of the domain and the sphere
 
-const double DebugRunMultiplier=2.0;
+const double DebugRunMultiplier=2.0; //1.0;  
 
 
 const double rSphere=_RADIUS_(_TARGET_);
@@ -95,7 +95,7 @@ double localSphericalSurfaceResolution(double *x) {
 
 //  return rSphere*res;
 
-  return DebugRunMultiplier*800.0E3;
+  return DebugRunMultiplier*40.0E3; ///800.0E3; //40.0E3;
 }
 
 double localResolution(double *x) {
@@ -106,7 +106,7 @@ double localResolution(double *x) {
 
   r=sqrt(r);
 
-  if ((6.051E6<r)&&(r<6.3E6)) return DebugRunMultiplier*100.0E3;
+  if ((6.051E6<r)&&(r<6.351E6)) return DebugRunMultiplier*40.0E3; ///100.0E3; //40.0E3;
   else return DebugRunMultiplier*rSphere*dxMaxGlobal;
 
 
@@ -403,7 +403,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
+//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
 
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
@@ -415,7 +415,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
+//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
 
   //init the volume of the cells'
   PIC::Mesh::mesh->InitCellMeasure();
@@ -497,8 +497,8 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
 
-//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
-//  PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh.data.dat",_C_SPEC_);
+//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh.outputMeshDataTECPLOT("mesh.data.dat",_C_SPEC_);
 
   MPI_Barrier(MPI_COMM_WORLD);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
