@@ -277,6 +277,7 @@ namespace PIC {
          auto next_vertex=FirstVertex->GetNext();
          VerticesAll.deleteElement(FirstVertex);
          FirstVertex=next_vertex;
+         FirstVertex->SetPrev(NULL);
 
          FirstSegment=FirstSegment->GetNext();
          SegmentsAll.deleteElement(s);
@@ -318,6 +319,7 @@ namespace PIC {
          auto prev_vertex=LastVertex->GetPrev();
          VerticesAll.deleteElement(LastVertex);
          LastVertex=prev_vertex;
+         LastVertex->SetNext(NULL);
 
          LastSegment=LastSegment->GetPrev();
          SegmentsAll.deleteElement(s);

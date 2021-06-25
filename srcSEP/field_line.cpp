@@ -24,6 +24,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   //determine the radiaus of the magnetic tube at the middle of the magnetic tube
   FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iShockFieldLine); 
+
+  if (Segment==NULL) return 0;
  
   //determine the volume swept by the shock wave during the time step 
   double xBegin[3],xEnd[3],xMiddle[3],rMiddle,rMiddleTube,xFirstFieldLine[3];

@@ -709,12 +709,14 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
       if (AMPS2SWMF::FieldLineUpdateCounter>0) {
         //determine location of shock wave
-        double max_ratio=0.0;
+        double max_ratio=1.4;
         int i;
         cFieldLineVertex *Vertex;
 
         auto DensityTemporalVariation = [&] () {
-          for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) {
+          int imin=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;
+
+          for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) if ((i>0)&&(i>=imin)) {
             int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
             double rho_new,rho_prev;
 
@@ -725,6 +727,23 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
               if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
                 max_ratio=rho_new/rho_prev; //*(rho_new+rho_prev);
                 iSegmentShock=i;
+
+                cFieldLineVertex *t;
+                double v[3],n;
+
+                t=Vertex->GetPrev();
+                if (t==NULL) t=Vertex;
+         
+                t->GetDatum(DatumAtVertexPlasmaVelocity,v);
+
+                t=Vertex->GetNext();
+                if (t==NULL) t=Vertex;
+
+                t->GetDatum(DatumAtVertexPlasmaDensity,&n);
+
+                AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
+                AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=Vector3D::Length(v);
+                AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=n;
               }
             }
           }
@@ -800,9 +819,9 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         };
 
  
-        //DensityTemporalVariation();
+        DensityTemporalVariation();
         //DensityRatio();
-        DensityBumpSearch(); 
+//        DensityBumpSearch(); 
 
     //    AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
         cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", ratio=" << max_ratio << endl;
