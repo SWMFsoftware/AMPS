@@ -200,6 +200,11 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
   double mu,mu2,t,Speed,p,t1,t2,t3;
   int idim;
 
+  if (_SEP_MOVER_DRIFT_==_PIC_MODE_OFF_) {
+    for (idim=0;idim<3;idim++) v_drift[idim]=0.0;
+    return;
+  }
+
   Speed=sqrt(v_parallel*v_parallel+v_perp*v_perp);
   mu=v_parallel/Speed;   
   mu2=mu*mu;
