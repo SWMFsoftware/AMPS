@@ -171,16 +171,21 @@ void SEP::InitDriftVelData() {
 }
 
 int SEP::RequestStaticCellData(int offset) {
-  b_times_grad_absB_offset=offset;
-  offset+=3*sizeof(double);
+  int size=0;
 
-  CurlB_offset=offset; 
-  offset+=3*sizeof(double);
+  b_times_grad_absB_offset=offset+size;
+  size+=3*sizeof(double);
 
-  b_b_Curl_B_offset=offset; 
-  offset+=3*sizeof(double);
+  CurlB_offset=offset+size; 
+  size+=3*sizeof(double);
 
-  return 9*sizeof(double);
+  b_b_Curl_B_offset=offset+size; 
+  size+=3*sizeof(double);
+
+  SEP::ParticleSource::ShockWave::ShockStateFlag_offset=offset+size; 
+  size+=sizeof(double);
+
+  return size;
 }
 
 void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node) {

@@ -38,6 +38,11 @@ void SEP::OutputAMPS::SamplingParticleData::Init() {
   PIC::IndividualModelSampling::PrintVariableList.push_back(PrintVariableList);
   PIC::IndividualModelSampling::InterpolateCenterNodeData.push_back(Interpolate);
   PIC::IndividualModelSampling::PrintSampledData.push_back(PrintData);
+
+  //print the shock data
+  PIC::IndividualModelSampling::PrintVariableList.push_back(SEP::ParticleSource::ShockWave::Output::PrintVariableList);
+  PIC::IndividualModelSampling::InterpolateCenterNodeData.push_back(SEP::ParticleSource::ShockWave::Output::Interpolate);
+  PIC::IndividualModelSampling::PrintSampledData.push_back(SEP::ParticleSource::ShockWave::Output::PrintData);
 }
 
 
@@ -193,7 +198,7 @@ void SEP::OutputAMPS::SamplingParticleData::PrintData(FILE* fout,int DataSetNumb
   if ((PIC::ThisThread==0)||(pipe==NULL)) {
     if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(v,3,CenterNodeThread);
 
-    fprintf(fout," %e  %e  %e  \n",v[0],v[1],v[2]);
+    fprintf(fout," %e  %e  %e ",v[0],v[1],v[2]);
   }
   else {
     pipe->send(v,3);

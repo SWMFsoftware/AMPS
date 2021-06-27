@@ -422,6 +422,18 @@ namespace SEP {
   }
 
   namespace ParticleSource {
+    namespace ShockWave {
+      bool IsShock(PIC::Mesh::cDataCenterNode *CenterNode);
+
+      extern int ShockStateFlag_offset;
+
+      namespace Output {
+        void PrintVariableList(FILE* fout,int DataSetNumber);
+        void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
+        void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
+      }
+    }
+
     namespace OuterBoundary {
       bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
       long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
