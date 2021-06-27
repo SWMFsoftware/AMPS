@@ -537,7 +537,7 @@ namespace Vector3D {
     double l02=0.0,l0=0.0,c0=0.0,c1=0.0,t;
 
     for (i=0;i<3;i++) {
-      l02+=pow(Axis[i],2);
+      l02+=Axis[i]*Axis[i];
       c0+=Vector[i]*Axis[i];
     }
 
