@@ -36,7 +36,7 @@ void SEP::InitDriftVelData() {
     for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
       double *ptr=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset); 
 
-      B[idim]+=Stencil.Weight[iStencil]*ptr[idim];
+      for (idim=0;idim<3;idim++) B[idim]+=Stencil.Weight[iStencil]*ptr[idim];
     }
   }; 
 
@@ -184,6 +184,14 @@ int SEP::RequestStaticCellData(int offset) {
 }
 
 void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node) {
+  PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+
+  PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,Node,Stencil);
+  SEP::GetDriftVelocity(v_drift,x,v_parallel,v_perp,ElectricCharge,mass,Node,Stencil);
+}
+
+
+void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
   double mu,mu2,t,Speed,p,t1,t2,t3;
   int idim;
 
@@ -207,10 +215,6 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
   t3=0.5*(1.0-3.0*mu2)*t; 
   
   for (idim=0;idim<3;idim++) v_drift[idim]=0.0;  
-
-  PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-
-  PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,Node,Stencil);
 
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
     char *CellStateVector=Stencil.cell[iStencil]->GetAssociatedDataBufferPointer(); 

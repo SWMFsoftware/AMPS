@@ -14,6 +14,8 @@ SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
 
+  SEP::OutputAMPS::SamplingParticleData::Init();
+
   PIC::IndividualModelSampling::SamplingProcedure.push_back(Manager);
 
   //init the sampling buffer table 

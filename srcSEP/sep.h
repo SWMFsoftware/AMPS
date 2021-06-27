@@ -54,6 +54,26 @@
 namespace SEP {
   using namespace Exosphere;
 
+  //functions used to sample and output macroscopic somulated data into the AMPS' output file
+  namespace OutputAMPS {
+    namespace SamplingParticleData {
+      extern int DriftVelocityOffset;
+      extern int absDriftVelocityOffset;
+      extern int NumberDensity_PlusMu,NumberDensity_MinusMu;
+
+      void PrintVariableList(FILE* fout,int DataSetNumber);
+      void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
+      void SampleParticleData(char *ParticleData,double LocalParticleWeight,char  *SamplingBuffer,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node);
+      int RequestSamplingData(int offset);
+
+      void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
+
+      void Init();
+    }
+  }
+
+
+
   //functions related to tracing SEPs along field lines 
   namespace FieldLine {
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
@@ -349,6 +369,7 @@ namespace SEP {
 
   int RequestStaticCellData(int);
   void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node);
+  void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
   void InitDriftVelData();
 
 
