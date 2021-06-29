@@ -7725,7 +7725,19 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
      typename list<cConnectivityElement>::iterator it;
 
      for (it=ConnectivityList.begin();it!=ConnectivityList.end();it++) {
-       fprintf(fConnectivity,"%ld %ld %ld %ld   %ld %ld %ld %ld\n",1+it->node_id[0],1+it->node_id[1],1+it->node_id[2],1+it->node_id[3],1+it->node_id[4],1+it->node_id[5],1+it->node_id[6],1+it->node_id[7]);
+       int i0,i1,i2,i3,i4,i5,i6,i7;
+
+       i0=1+it->node_id[0];
+       i1=1+it->node_id[1];
+       i2=1+it->node_id[2];
+       i3=1+it->node_id[3];
+       i4=1+it->node_id[4];
+       i5=1+it->node_id[5];
+       i6=1+it->node_id[6];
+       i7=1+it->node_id[7];
+
+       fprintf(fConnectivity,"%ld %ld %ld %ld   ",i0,i1,i2,i3);
+       fprintf(fConnectivity,"   %ld %ld %ld %ld\n",i4,i5,i6,i7);
      }
    };
 
