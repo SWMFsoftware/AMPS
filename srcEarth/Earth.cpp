@@ -28,6 +28,9 @@ double Earth::T96::by=0.0;
 double Earth::T96::bz=0.0;
 
 
+//simulation physics time 
+double Earth::SimulationPhysicsTime=0.0;
+
 
 //composition of the GCRs
 cCompositionGroupTable *Earth::CompositionGroupTable=NULL;

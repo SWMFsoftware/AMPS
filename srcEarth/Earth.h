@@ -71,6 +71,9 @@ public:
 
 namespace Earth {
   using namespace Exosphere;
+
+  //simulation physics time 
+  extern double SimulationPhysicsTime;
   
   //the function that created the SampledDataRecoveryTable
   void DataRecoveryManager(list<pair<string,list<int> > >&,int,int);
