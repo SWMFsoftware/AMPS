@@ -42,7 +42,12 @@ void T96::GetMagneticField(double *B,double *x) {
     return;
   }*/
 
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T96_
   t96_01_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT96+0,bT96+1,bT96+2);
+  #else
+  exit(__LINE__,__FILE__,"Error: T96 is not setup for this run. Use option \'CouplerMode=T96\' in the input file to use T96");
+  #endif
+
 
   //calcualte the Earth's internal magnetis field
   IGRF::GetMagneticField(B,x);

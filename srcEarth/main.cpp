@@ -18,6 +18,9 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include "T05Interface.h"
+#include "T96Interface.h"
+
 //$Id$
 
 
@@ -985,6 +988,39 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
 
 int main(int argc,char **argv) {
   static int LastDataOutputFileNumber=0;
+
+
+  //TEST T96/T05
+  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
+    //SI unit are used
+    double x[3]={4.0*_RADIUS_(_EARTH_),1.0E-5*_RADIUS_(_EARTH_),-1.0E-5*_RADIUS_(_EARTH_)};
+    double B[3];
+
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__T05_: 
+      T05::Init(Exosphere::SimulationStartTimeString,NULL);
+
+      T05::SetSolarWindPressure(2.97*_NANO_); 
+      T05::SetDST(-10.0*_NANO_);
+      T05::SetBYIMF(-16.600000*_NANO_);
+      T05::SetBZIMF(-8.200000*_NANO_);
+      T05::SetW(1.022,0.874,0.807,1.657000,2.737,4.542000);
+
+      T05::GetMagneticField(B,x);
+      break;
+    case _PIC_COUPLER_MODE__T96_:
+      T96::Init(Exosphere::SimulationStartTimeString,NULL);
+
+      T96::SetSolarWindPressure(Earth::T96::solar_wind_pressure);
+      T96::SetDST(Earth::T96::dst);
+      T96::SetBYIMF(Earth::T96::by);
+      T96::SetBZIMF(Earth::T96::bz);
+    } 
+  
+    if (PIC::ThisThread==0) {
+      cout << "T05 test: x=" << x[0] << ", " << x[1] << ", " << x[2] << ",  B=" << B[0] << ", " << B[1] << ",  " << B[2] << endl;
+    }
+  }
 
 
   Earth::CutoffRigidity::SampleRigidityMode=true;

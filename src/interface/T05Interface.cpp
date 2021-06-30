@@ -28,7 +28,7 @@ double T05::PS=0.170481;
 double T05::PARMOD[11]={2.0,-50.0,1.0,-3.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
 extern "C"{
-  void t05_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
+  void t04_s_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
 }
 
 void T05::GetMagneticField(double *B,double *x) {
@@ -38,12 +38,11 @@ void T05::GetMagneticField(double *B,double *x) {
 
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-/* if (pow(xLocal[0],2)+pow(xLocal[1],2)+pow(xLocal[2],2)<1.0) {
-   for (idim=0;idim<3;idim++) B[idim]=0.0;
-   return;
-}*/
-
-  t05_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT05+0,bT05+1,bT05+2);
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T05_
+  t04_s_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT05+0,bT05+1,bT05+2);
+  #else 
+  exit(__LINE__,__FILE__,"Error: T05 is not setup for this run. Use option \'CouplerMode=T05\' in the input file to use T05"); 
+  #endif
   
   // Calculate Earth's internal magentic field
   IGRF::GetMagneticField(B,x);
@@ -65,12 +64,12 @@ void T05::SetDST(double DST) {PARMOD[1]=DST/_NANO_;}
 void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_;}
 void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_;}
 
-void T05::SetW1(double W1) {PARMOD[4]=W1/_NANO_;}
-void T05::SetW2(double W2) {PARMOD[5]=W2/_NANO_;}
-void T05::SetW3(double W3) {PARMOD[6]=W3/_NANO_;}
-void T05::SetW4(double W4) {PARMOD[7]=W4/_NANO_;}
-void T05::SetW5(double W5) {PARMOD[8]=W5/_NANO_;}
-void T05::SetW6(double W6) {PARMOD[9]=W6/_NANO_;}
+void T05::SetW1(double W1) {PARMOD[4]=W1;}
+void T05::SetW2(double W2) {PARMOD[5]=W2;}
+void T05::SetW3(double W3) {PARMOD[6]=W3;}
+void T05::SetW4(double W4) {PARMOD[7]=W4;}
+void T05::SetW5(double W5) {PARMOD[8]=W5;}
+void T05::SetW6(double W6) {PARMOD[9]=W6;}
 
 void T05::SetW(double W1,double W2,double W3,double W4,double W5,double W6) {
   SetW1(W1);
