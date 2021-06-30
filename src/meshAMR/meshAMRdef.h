@@ -390,7 +390,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
 
     if (rank==0) {
       printf("%s:\nsizeof(T)=%i\n",msg,sizeof(T));
-      printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capavity\n");
+      printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
       for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
     }
@@ -664,7 +664,7 @@ public:
 
     if (rank==0) {
       printf("%s:\nsizeof(T)=%i\nAssociatedDataLength=%i\n",msg,sizeof(T),t.AssociatedDataLength());
-      printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capavity\n");
+      printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
       for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
     }
