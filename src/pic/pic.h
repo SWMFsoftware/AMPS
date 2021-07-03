@@ -4973,11 +4973,18 @@ void DeleteAttachedParticles();
       time_hres_start=chrono::high_resolution_clock::now();
 
       if ((ModeIn!=_PIC_TIMER_MODE_HRES_)&&(ModeIn!=_PIC_TIMER_MODE_CLOCK_)) exit(__LINE__,__FILE__,"Error: the mode is not recognized");
-
     }
 
     void clear() {dT=0.0;}
     double counter() {return dT;}
+
+    void SetMode(int ModeIn) {
+      mode=ModeIn;
+      clear();
+
+      if ((ModeIn!=_PIC_TIMER_MODE_HRES_)&&(ModeIn!=_PIC_TIMER_MODE_CLOCK_)) exit(__LINE__,__FILE__,"Error: the mode is not recognized");
+    }
+
 
     void Start() {
       switch (mode) {
@@ -5007,6 +5014,8 @@ void DeleteAttachedParticles();
         time_hres_start=time_now;
       }
     }
+
+    void Stop() {UpdateTimer();}
 
 
     void Print(const char *msg=NULL) {
@@ -5051,7 +5060,7 @@ void DeleteAttachedParticles();
 
         double dTtotal=0,dTmax=dtTable[0],dTmin=dtTable[0];
 
-	for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+        for (int thread=0;thread<PIC::nTotalThreads;thread++) {
           dTtotal+=dtTable[thread];
 
           if (dTmax<dtTable[thread]) dTmax=dtTable[thread];
@@ -5069,6 +5078,183 @@ void DeleteAttachedParticles();
       delete [] dtTable;
     }
   };
+
+  class cGenericTimer {
+  public:
+    int mode;
+    string label;
+    cTimer timer;
+
+    const int _active=0;
+    const int _not_active=1; 
+    int status;
+    
+    bool IsInitialized() {
+      return (mode==_active);
+    }
+
+    class cTimerDataElement {
+    public:
+      string label;
+      int StartLine,EndLine,nPassCounter;
+      double TotalSampledTime;
+
+      friend bool operator == (const cTimerDataElement& a,const cTimerDataElement& b) {
+        if ((a.label!=b.label)||(a.StartLine!=b.StartLine)||(a.EndLine!=b.EndLine)) return false;
+
+        return true;
+      }
+
+      cTimerDataElement() {
+        StartLine-1,EndLine-1,nPassCounter=0;
+        TotalSampledTime=0.0;
+      }
+    };
+
+    list <cTimerDataElement> TimedSegmetList;
+    cTimerDataElement CurrentSegment;
+
+    cGenericTimer(int ModeIn) {
+      mode=ModeIn;
+      status=_not_active; 
+    }
+    
+    cGenericTimer() {
+      mode=_PIC_TIMER_MODE_HRES_;
+      status=_not_active; 
+    }
+    
+    void clear () {
+      label="";
+      TimedSegmetList.clear();
+      timer.clear();
+    }
+    
+    void Start(string FinctionName,int LineNumber) {
+      if (status!=_not_active) exit(__LINE__,__FILE__,"Error: attempt to start timer that is already active");
+  
+      status=_active;
+      label=FinctionName;
+      
+      CurrentSegment.label=FinctionName;
+      CurrentSegment.StartLine=LineNumber;
+      CurrentSegment.EndLine=-1;
+      
+      //reset timer
+      timer.Start();
+    }
+
+
+       
+    void Stop(int LineNumber) {
+      if (status!=_active) exit(__LINE__,__FILE__,"Error: attempt to stop timer that is already not active");
+      
+      status=_not_active;
+      timer.Stop(); 
+      
+      CurrentSegment.EndLine=LineNumber;
+      CurrentSegment.TotalSampledTime=timer.counter();
+
+      timer.clear();
+
+      for (auto it=TimedSegmetList.begin();it!=TimedSegmetList.end();it++) {
+        if (*it==CurrentSegment) {
+          it->TotalSampledTime+=CurrentSegment.TotalSampledTime;
+          it->nPassCounter++;
+          return;
+        }
+      }
+
+      //the segment was not found -> place the current segment in the list  
+      CurrentSegment.nPassCounter=1;
+      TimedSegmetList.push_front(CurrentSegment);
+    }
+ 
+    void SwitchTimeSegment(int LineNumber) {
+      Stop(LineNumber);
+      status=_active;
+
+      CurrentSegment.StartLine=LineNumber;
+      CurrentSegment.EndLine=-1; 
+          
+      timer.Start();
+    }
+
+    void PrintSampledData() {
+      //sort the sample data
+
+      class cTimedSegmentDescriptor {
+      public:
+        list <cTimerDataElement>::iterator ptr;
+        
+        bool operator <(const cTimedSegmentDescriptor& t) const
+        {
+          return (ptr->StartLine < t.ptr->StartLine);
+        }
+      };
+      
+      list<pair<string,list<list <cTimerDataElement>::iterator> > > LabelTable;
+
+      //populate LabelTable
+      for (auto it=TimedSegmetList.begin();it!=TimedSegmetList.end();it++) {
+        //find element of LabelTable with it->label
+        bool found=false;
+        
+        for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+          if (p->first==it->label) {
+            found=true;
+            
+            p->second.push_front(it);
+            break;
+          }
+        }
+          
+        if (found==false) {
+          pair<string,list<list <cTimerDataElement>::iterator> > t;
+            
+          t.first=it->label;
+          t.second.push_front(it);
+        
+          LabelTable.push_front(t);
+        }
+      }
+   
+      //sort element of LabelTable in the order of the start line of individual timed segment
+      for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+        p->second.sort([](const list <cTimerDataElement>::iterator& t0,const list <cTimerDataElement>::iterator& t1) 
+            {return t0->StartLine<t1->StartLine;}
+        );
+      }
+
+      //print sampled information
+      printf("$PREFIX: ================================================================================\n");
+      bool first_pass=false;
+      
+      for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+        double TotalTime=0.0;
+        
+        for (const auto& it : p->second) TotalTime+=it->TotalSampledTime;
+        
+        if (first_pass==false) {
+          first_pass=true;
+        }
+        else {
+          printf("\n");
+        }
+        
+        printf("$PREFIX: Sampled Segment Label: %s\n",p->first.c_str());
+        printf("$PREFIX: Sampled Segment Time: %e [sec]\n",TotalTime);
+        
+        for (const auto& it : p->second) {
+          printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+        }
+      }
+
+      printf("$PREFIX: ================================================================================\n");
+   
+    }
+  };
+ 
 
     //catch variation of a variable located at a particular address
     //MatchMode == true -> print when the match is found; MatchMode == false -> print when the variables are not match

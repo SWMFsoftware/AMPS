@@ -34,9 +34,13 @@ void amps_time_step();
 int main(int argc,char **argv) {
   
   clock_t runtime =-clock();
+
+PIC::Debugger::cGenericTimer t;
   
+t.Start("main",__LINE__);
   amps_init();
 
+t.SwitchTimeSegment(__LINE__); 
 
   int niter,nTotalIterations=100000001;
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
@@ -46,7 +50,11 @@ int main(int argc,char **argv) {
 
   for (niter=0;niter<nTotalIterations;niter++) {
 
+
+t.SwitchTimeSegment(__LINE__);
     amps_time_step();
+
+t.SwitchTimeSegment(__LINE__);
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
@@ -64,13 +72,33 @@ int main(int argc,char **argv) {
       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
     }
 
+t.SwitchTimeSegment(__LINE__);
+
   }
 
+t.SwitchTimeSegment(__LINE__);
 
   char fname[400];
 
   sprintf(fname,"%s/test_Moon.dat",PIC::OutputDataFileDirectory);
   PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+
+t.SwitchTimeSegment(__LINE__);
+t.Stop(__LINE__);
+
+
+if (PIC::ThisThread==0) t.PrintSampledData(); 
+
+t.Start("part2",__LINE__);
+t.Stop(__LINE__);
+if (PIC::ThisThread==0) t.PrintSampledData();
+
+
+t.clear();
+t.Start("part3",__LINE__);
+t.Stop(__LINE__);
+if (PIC::ThisThread==0) t.PrintSampledData();
+
 
 //  cout << "End of the run:" << PIC::nTotalSpecies << endl;
   MPI_Finalize();
