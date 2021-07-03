@@ -5181,18 +5181,6 @@ void DeleteAttachedParticles();
     }
 
     void PrintSampledData() {
-      //sort the sample data
-
-      class cTimedSegmentDescriptor {
-      public:
-        list <cTimerDataElement>::iterator ptr;
-        
-        bool operator <(const cTimedSegmentDescriptor& t) const
-        {
-          return (ptr->StartLine < t.ptr->StartLine);
-        }
-      };
-      
       list<pair<string,list<list <cTimerDataElement>::iterator> > > LabelTable;
 
       //populate LabelTable
