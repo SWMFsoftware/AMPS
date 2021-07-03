@@ -5106,7 +5106,7 @@ void DeleteAttachedParticles();
       }
 
       cTimerDataElement() {
-        StartLine-1,EndLine-1,nPassCounter=0;
+        StartLine=-1,EndLine=-1,nPassCounter=0;
         TotalSampledTime=0.0;
       }
     };
