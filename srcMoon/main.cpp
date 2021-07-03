@@ -95,7 +95,7 @@ if (PIC::ThisThread==0) t.PrintSampledData();
 
 
 t.clear();
-t.Start("part3",__LINE__);
+t.Start("part3",__LINE__,__FILE__);
 t.Stop(__LINE__);
 if (PIC::ThisThread==0) t.PrintSampledData();
 

@@ -5082,8 +5082,18 @@ void DeleteAttachedParticles();
   class cGenericTimer {
   public:
     int mode;
-    string label;
     cTimer timer;
+
+    class cLabel {
+    public:
+      string segment_name,file_name;
+
+      cLabel() {segment_name="",file_name="";}
+
+      friend bool operator == (const cLabel& a,const cLabel& b) {
+        return (a.segment_name==b.segment_name)&&(a.file_name==b.file_name);
+      }
+    };
 
     const int _active=0;
     const int _not_active=1; 
@@ -5095,14 +5105,12 @@ void DeleteAttachedParticles();
 
     class cTimerDataElement {
     public:
-      string label;
       int StartLine,EndLine,nPassCounter;
       double TotalSampledTime;
+      cLabel label; 
 
       friend bool operator == (const cTimerDataElement& a,const cTimerDataElement& b) {
-        if ((a.label!=b.label)||(a.StartLine!=b.StartLine)||(a.EndLine!=b.EndLine)) return false;
-
-        return true;
+        return (a.label.segment_name==b.label.segment_name)&&(a.label.file_name==b.label.file_name)&&(a.StartLine==b.StartLine)&&(a.EndLine==b.EndLine);
       }
 
       cTimerDataElement() {
@@ -5125,18 +5133,18 @@ void DeleteAttachedParticles();
     }
     
     void clear () {
-      label="";
       TimedSegmetList.clear();
       timer.clear();
     }
     
-    void Start(string FinctionName,int LineNumber) {
+    void Start(string FunctionName,int LineNumber,string fname) {
       if (status!=_not_active) exit(__LINE__,__FILE__,"Error: attempt to start timer that is already active");
   
       status=_active;
-      label=FinctionName;
       
-      CurrentSegment.label=FinctionName;
+      CurrentSegment.label.segment_name=FunctionName;
+      CurrentSegment.label.file_name=fname;
+
       CurrentSegment.StartLine=LineNumber;
       CurrentSegment.EndLine=-1;
       
@@ -5144,6 +5152,7 @@ void DeleteAttachedParticles();
       timer.Start();
     }
 
+    void Start(string FunctionName,int LineNumber) {Start(FunctionName,LineNumber,"");}
 
        
     void Stop(int LineNumber) {
@@ -5181,7 +5190,7 @@ void DeleteAttachedParticles();
     }
 
     void PrintSampledData() {
-      list<pair<string,list<list <cTimerDataElement>::iterator> > > LabelTable;
+      list<pair<cLabel,list<list <cTimerDataElement>::iterator> > > LabelTable;
 
       //populate LabelTable
       for (auto it=TimedSegmetList.begin();it!=TimedSegmetList.end();it++) {
@@ -5198,7 +5207,7 @@ void DeleteAttachedParticles();
         }
           
         if (found==false) {
-          pair<string,list<list <cTimerDataElement>::iterator> > t;
+          pair<cLabel,list<list <cTimerDataElement>::iterator> > t;
             
           t.first=it->label;
           t.second.push_front(it);
@@ -5230,7 +5239,9 @@ void DeleteAttachedParticles();
           printf("\n");
         }
         
-        printf("$PREFIX: Sampled Segment Label: %s\n",p->first.c_str());
+        printf("$PREFIX: Sampled Segment Label: %s\n",p->first.segment_name.c_str());
+        if (p->first.file_name!="") printf("$PREFIX: Sampled Segment File: %s\n",p->first.file_name.c_str());
+
         printf("$PREFIX: Sampled Segment Time: %e [sec]\n",TotalTime);
         
         for (const auto& it : p->second) {
