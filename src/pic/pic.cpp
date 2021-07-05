@@ -716,7 +716,7 @@ int PIC::TimeStep() {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
-      fprintf(PIC::DiagnospticMessageStream,"\n$PREFIX: (%i/%i %i:%i:%i), Iteration: %ld  (currect sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,nTotalIterations,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+      fprintf(PIC::DiagnospticMessageStream,"\n$PREFIX: (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,nTotalIterations,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
 
 
 

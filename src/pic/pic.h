@@ -5252,6 +5252,107 @@ void DeleteAttachedParticles();
       printf("$PREFIX: ================================================================================\n");
    
     }
+    
+    
+    void PrintSampledDataMPI() {
+      list<pair<cLabel,list<list <cTimerDataElement>::iterator> > > LabelTable;
+
+      //populate LabelTable
+      for (auto it=TimedSegmetList.begin();it!=TimedSegmetList.end();it++) {
+        //find element of LabelTable with it->label
+        bool found=false;
+        
+        for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+          if (p->first==it->label) {
+            found=true;
+            
+            p->second.push_front(it);
+            break;
+          }
+        }
+          
+        if (found==false) {
+          pair<cLabel,list<list <cTimerDataElement>::iterator> > t;
+            
+          t.first=it->label;
+          t.second.push_front(it);
+        
+          LabelTable.push_front(t);
+        }
+      }
+   
+      //sort element of LabelTable in the order of the start line of individual timed segment
+      for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+        p->second.sort([](const list <cTimerDataElement>::iterator& t0,const list <cTimerDataElement>::iterator& t1) 
+            {return t0->StartLine<t1->StartLine;}
+        );
+      }
+
+      //print sampled information
+      if (PIC::ThisThread==0) printf("$PREFIX: ================================================================================\n");
+      bool first_pass=false;
+      
+      for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
+        double TotalTime=0.0;
+        
+        for (const auto& it : p->second) TotalTime+=it->TotalSampledTime;
+        
+        if (first_pass==false) {
+          first_pass=true;
+        }
+        else {
+          printf("\n");
+        }
+        
+        if (PIC::ThisThread==0) {
+          printf("$PREFIX: Sampled Segment Label: %s\n",p->first.segment_name.c_str());
+          if (p->first.file_name!="") printf("$PREFIX: Sampled Segment File: %s\n",p->first.file_name.c_str());
+        }
+        
+        double TotalTimeTable[PIC::nTotalThreads];
+        int nPassTable[PIC::nTotalThreads];
+        double min_time=TotalTime,max_time=TotalTime,summed_time=TotalTime;
+        
+        MPI_Gather(&TotalTime,1,MPI_DOUBLE,TotalTimeTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+        
+        for (int thread=1;thread<PIC::nTotalThreads;thread++) {
+          if (min_time>TotalTimeTable[thread]) min_time=TotalTimeTable[thread];
+          if (max_time<TotalTimeTable[thread]) max_time=TotalTimeTable[thread];
+          
+          summed_time+=TotalTimeTable[thread];
+        }
+
+        if (PIC::ThisThread==0) printf("$PREFIX: Sampled Segment Time Range: %e - %e [sec]\tsummed over all processes: %e [sec]\n",min_time,max_time,summed_time);
+        
+        for (const auto& it : p->second) {
+          double t=it->TotalSampledTime;
+          int n=it->nPassCounter,min_npass,max_npass;
+          
+          MPI_Gather(&t,1,MPI_DOUBLE,TotalTimeTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Gather(&n,1,MPI_INT,nPassTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+          
+          min_time=TotalTimeTable[0],max_time=TotalTimeTable[0],summed_time=TotalTimeTable[0];
+          min_npass=nPassTable[0],max_npass=nPassTable[0];
+          
+          for (int thread=1;thread<PIC::nTotalThreads;thread++) {
+            if (min_time>TotalTimeTable[thread]) min_time=TotalTimeTable[thread];
+            if (max_time<TotalTimeTable[thread]) max_time=TotalTimeTable[thread];
+            
+            summed_time+=TotalTimeTable[thread];
+            
+            if (min_npass>nPassTable[thread]) min_npass=nPassTable[thread];
+            if (max_npass<nPassTable[thread]) max_npass=nPassTable[thread];
+          }
+          
+          if (PIC::ThisThread==0) printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t npass range: %ld - %ld\n", 
+              it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
+        }
+      }
+
+      if (PIC::ThisThread==0) printf("$PREFIX: ================================================================================\n");
+   
+    }
+    
   };
  
 

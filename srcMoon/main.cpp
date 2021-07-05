@@ -89,6 +89,8 @@ t.Stop(__LINE__);
 
 if (PIC::ThisThread==0) t.PrintSampledData(); 
 
+t.PrintSampledDataMPI();
+
 t.Start("part2",__LINE__);
 t.Stop(__LINE__);
 if (PIC::ThisThread==0) t.PrintSampledData();
