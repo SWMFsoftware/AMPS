@@ -3442,15 +3442,21 @@ if (nLoopCycle>100) {
 
       newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
 
-      if (newNode!=NULL) if (newNode->block==NULL) {
-        cout << "$PREFIX: Most probably the time step is too large. Error at " << __FILE__ << "@" << __LINE__  << endl;
-        cout << "$PREFIX: newNode->block==NULL" << endl;
-        cout << "$PREFIX: ThisThread=" << PIC::ThisThread << ", newNode->Thread=" << newNode->Thread << endl;
-        cout << "$PREFIX: x=" << xFinal[0] << ", " << xFinal[1] << ", " << xFinal[2] << endl;
-        cout << "$PREFIX: v=" << vFinal[0] << ", " << vFinal[1] << ", " << vFinal[2] << endl;
-        cout << "$PREFIX: spec=" << spec << endl;
-        cout << "$PREFIX: newNode->xmin=" << newNode->xmin[0] << ", " << newNode->xmin[1] << ", " << newNode->xmin[2] << endl;
-        cout << "$PREFIX: newNode->xmax=" << newNode->xmax[0] << ", " << newNode->xmax[1] << ", " << newNode->xmax[2] << endl;
+      if (newNode!=NULL) {
+        if (newNode->IsUsedInCalculationFlag==false) {
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_LEFT_THE_DOMAIN_;
+        }
+        else if (newNode->block==NULL) {
+          cout << "$PREFIX: Most probably the time step is too large. Error at " << __FILE__ << "@" << __LINE__  << endl;
+          cout << "$PREFIX: newNode->block==NULL" << endl;
+          cout << "$PREFIX: ThisThread=" << PIC::ThisThread << ", newNode->Thread=" << newNode->Thread << endl;
+          cout << "$PREFIX: x=" << xFinal[0] << ", " << xFinal[1] << ", " << xFinal[2] << endl;
+          cout << "$PREFIX: v=" << vFinal[0] << ", " << vFinal[1] << ", " << vFinal[2] << endl;
+          cout << "$PREFIX: spec=" << spec << endl;
+          cout << "$PREFIX: newNode->xmin=" << newNode->xmin[0] << ", " << newNode->xmin[1] << ", " << newNode->xmin[2] << endl;
+          cout << "$PREFIX: newNode->xmax=" << newNode->xmax[0] << ", " << newNode->xmax[1] << ", " << newNode->xmax[2] << endl;
+        }
       }
 
 

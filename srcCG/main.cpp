@@ -692,10 +692,13 @@ int main(int argc,char **argv) {
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
 
+  PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
+
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
 
 
+  PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
 
 
 

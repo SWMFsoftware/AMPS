@@ -1039,6 +1039,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::MarkUnusedInsideObjectB
     if (CutCell::CheckPointInsideDomain(xMiddle,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,EPS)==false) {
       //the cell is outside of the domain -> mark it unused 
       ThisThreadUnusedBlockListPtr->push_front(node->AMRnodeID);
+      node->IsUsedInCalculationFlag=false;
 
       if (node->block!=NULL) DeallocateBlock(node);
     }
@@ -1053,7 +1054,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::MarkUnusedInsideObjectB
       SendBuffer[SendBufferLength++]=*it; 
     } 
 
-    MPI_Bcast(&SendBufferLength,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Bcast(&SendBufferLength,1,MPI_INT,ThisThread,MPI_GLOBAL_COMMUNICATOR);
     MPI_Bcast(SendBuffer,SendBufferLength*sizeof(cAMRnodeID),MPI_CHAR,ThisThread,MPI_GLOBAL_COMMUNICATOR);
 
     delete [] SendBuffer;
@@ -1064,7 +1065,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::MarkUnusedInsideObjectB
     cAMRnodeID *RecvBuffer=NULL;
     cTreeNodeAMR<cBlockAMR>* node; 
 
-    MPI_Bcast(&RecvBufferLength,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR); 
+    MPI_Bcast(&RecvBufferLength,1,MPI_INT,From,MPI_GLOBAL_COMMUNICATOR); 
     
     RecvBuffer=new cAMRnodeID[RecvBufferLength];
 
@@ -1098,9 +1099,9 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::MarkUnusedInsideObjectB
   };
  
   //run the function
-  if (false) SearchTree(rootTree,&ThisThreadUnusedBlockList);
+  SearchTree(rootTree,&ThisThreadUnusedBlockList);
 
-  if (false) for (int thread=0;thread<nTotalThreads;thread++) {
+  for (int thread=0;thread<nTotalThreads;thread++) {
     if (thread==ThisThread) {
       SendUnusedBlockList(&ThisThreadUnusedBlockList);
     }
