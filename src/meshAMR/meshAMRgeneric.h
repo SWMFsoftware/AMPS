@@ -258,6 +258,13 @@ public:
     for (int i=0;i<1+(int)((3*_MAX_REFINMENT_LEVEL_)/8);i++) id[i]=0;
   }
 
+  cAMRnodeID& operator = (const cAMRnodeID& v) {
+    ResolutionLevel=v.ResolutionLevel;
+    memcpy(id,v.id,1+(int)((3*_MAX_REFINMENT_LEVEL_)/8));
+
+    return *this;
+  }
+
   unsigned int MemUsage() {
     return sizeof(int)+Length();
   }
@@ -1724,6 +1731,8 @@ public:
   int GetCutcellTetrahedronMesh(list<cTetrahedron> &TetrahedronList,int icell,int jcell,int kcell,cTreeNodeAMR<cBlockAMR>* node); 
   void PrintTetrahedronMesh(list<cTetrahedron> &TetrahedronList,const char* fname);
   void PrintTetrahedronMeshData(list<cTetrahedron> &TetrahedronList,const char* fname,int DataSetNumber,bool PrintVariableString);
+
+  void MarkUnusedInsideObjectBlocks();
 
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
   int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
