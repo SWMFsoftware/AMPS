@@ -256,7 +256,7 @@ MoverIntegratorMode=Boris-relativistic
 ! IcesLocationPath=/left/ices/ICES  !location of ICES is set using Config.pl -ices-path  
 !  IcesModelCase=Europa09
 
-  SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
+! SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
 
   addPhysicalModelHeader=Earth.h
 
