@@ -5354,6 +5354,8 @@ void DeleteAttachedParticles();
     }
     
   };
+
+  extern cGenericTimer Timer;
  
 
     //catch variation of a variable located at a particular address

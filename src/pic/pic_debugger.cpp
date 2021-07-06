@@ -18,6 +18,8 @@ void PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(void* data,int length
   PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(data,length,msg);
 }
 
+//timer
+PIC::Debugger::cGenericTimer PIC::Debugger::Timer;
 
 void PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(void* data,int length,const char* msg) {
 
