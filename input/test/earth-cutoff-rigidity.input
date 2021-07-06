@@ -8,11 +8,6 @@ Prefix=AMPS
 DiagnosticStream=amps.log !!screen, filename 'something like amps.log' 
 OutputDirectory=out
 
-
-DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=on ! on,off 
-
-
 makefile  SOURCES=src
 makefile  RUNDIR=run
 makefile  MPIRUN=mpirun -np 4
@@ -59,6 +54,10 @@ MoverIntegratorMode=Boris-relativistic
   Mesh=on ! on, off
 #endUserDefinitions
 
+#Mesh
+  define _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
+#endMesh
+
 #General
   ReferenceInjectionParticleNumber=10 
   MaxMeshRefinmentLevel=12
@@ -67,6 +66,11 @@ MoverIntegratorMode=Boris-relativistic
   FirstPrintedOutputFile=100 
 
   RequestedParticleBufferLength=15000000
+
+  define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+
+  define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
 
   BlockCells=4,4,4
   GhostCells=1,1,1
@@ -82,14 +86,14 @@ MoverIntegratorMode=Boris-relativistic
   define _PIC_OUTPUT__DRIFT_VELOCITY__MODE_ _PIC_MODE_ON_
   define _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE_  _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE__LINEAR_
 
-  define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
-  define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
+! define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
+! define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
 
   define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
 !  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Europa::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
 
-define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
-define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+!define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
+!define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
 
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__NONE_
 
@@ -167,13 +171,28 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
   GCR=on
   SEP=off
 
-  nZenithElements=10
-  nAzimuthalElements=10
+  !Before the storm on March 16, 2015, 0600 UT: 
+  T96=off  \\
+   solar_wind_pressure=2.0*_NANO_  \\ !nPa 
+   DST=1.0*_NANO_ \\ !nT 
+   By=-0.08*_NANO_ \\ !nT  
+   Bz=2.0*_NANO_ !nT  
 
+ !Storm on March 17, 2015, 2230 UT:
+  T96=on \\
+   solar_wind_pressure=10.0*_NANO_  \\ !nPa
+   DST=-200.0*_NANO_ \\ !nT 
+   By=-7.0*_NANO_ \\ !nT
+   Bz=-10.0*_NANO_ !nT
+
+ 
+
+  nZenithElements=5
+  nAzimuthalElements=5
 
   CutOffTestLocations=on \\
     emin=100.0*Mev2J \\
-    emax=30000.0*Mev2J \\
+    emax=20000.0*Mev2J \\
     nTotalParticles=5000000 \\
     nInjectionIterations=1000 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
