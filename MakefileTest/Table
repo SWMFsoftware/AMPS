@@ -4263,6 +4263,21 @@ Run=
 
 >>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog 
 >>>@echo "test_SEP_SWMF_test19_fl_run... done" >> test_SEP_SWMF_test19_fl.diff 
+
+
+Check=
+>>>@echo "test_SEP_SWMF_test19_fl_check..." >> test_SEP_SWMF_test19_fl.diff
+
+>>>cd SWMF-IH/SWMF/run_test;cat amps-out.thread=?/exported-field-lines.thread=0.cnt=299.dat > all.dat
+>>>@${MYDIR}/utility/ReduceFile.pl SWMF-IH/SWMF/run_test/all.dat 10
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.dat.Reduced.Step=10 output/test_SEP3D/SC-IH--FL--PT/test_SEP_SWMF_test19_fl-exported-field-lines.ref  > test_SEP_SWMF_test19_fl.diff)
+
+>>>@ls -l test_SEP_SWMF_test19_fl.diff
+
+>>>@echo Test test_SEP_SWMF_test19_fl has finished: `date`
+
+
 <#
 
 --------------------------------------------------------------------------------------------------------------------------
