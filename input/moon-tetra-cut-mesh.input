@@ -52,12 +52,6 @@ ParticleWeightCorrectionMode=off !on,off
 
 #General 
 
-
-  OutputMode=DistributedFiles !off !DistributedFiles !!SingleFile !SingleFile,DistributedFiles
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::TrajectoryTrackingMover(ptr,LocalTimeStep,node)
-
-  InitialSampleLength=100
-
 ! ReferenceInjectionParticleNumber=200
 ! MaxMeshRefinmentLevel=8! 2 !4
 ! EnforceRequestedMeshResolution=off !on,off
