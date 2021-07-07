@@ -1324,7 +1324,9 @@ if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_
 
 
 test_cut_cell(PIC::Mesh::mesh->rootTree);
-if (PIC::ThisThread==0) PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,"tetra_mesh.dat");
+
+sprintf(fname,"tetra_mesh.thread=%ld.dat",PIC::ThisThread); 
+PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname);
 
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();

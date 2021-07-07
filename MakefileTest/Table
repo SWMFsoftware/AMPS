@@ -1079,8 +1079,27 @@ Time=2
 <#
 
 #>
-Name=Moon-tetra-cut-mesh 
+Name=Moon-tetra-cut-cells  
 Time=2
+
+Check=
+>>>@echo "test_Moon-tetra-cut-cells_check..." >> test_Moon-tetra-cut-cells$(TESTMoon-tetra-cut-cells-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMoon-tetra-cut-cellsDIR}/PT/plots/test_Moon.dat output/test_Moon-tetra-cut-cells/test_Moon.ref_np`ls $(TESTMoon-tetra-cut-cellsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Moon-tetra-cut-cells--particles$(TESTMoon-tetra-cut-cells-REF).diff
+
+>>>@${MYDIR}/utility/ReduceFile.pl ${TESTMoon-tetra-cut-cellsDIR}/tetra_mesh.thread=1.dat 10
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTMoon-tetra-cut-cellsDIR}/tetra_mesh.thread=1.dat.Reduced.Step=10 output/test_Moon-tetra-cut-cells/tetra_mesh.thread=1.dat.Reduced.Step=10.ref_np`ls $(TESTMoon-tetra-cut-cellsDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Moon-tetra-cut-cells--mesh$(TESTMoon-tetra-cut-cells-REF).diff
+
+>>>cat test_Moon-tetra-cut-cells--particles$(TESTMoon-tetra-cut-cells-REF).diff test_Moon-tetra-cut-cells--mesh$(TESTMoon-tetra-cut-cells-REF).diff > test_Moon-tetra-cut-cells$(TESTMoon-tetra-cut-cells-REF).diff 
+
+>>>@ls -l test_Moon-tetra-cut-cells--mesh$(TESTMoon-tetra-cut-cells-REF).diff
+>>>@ls -l test_Moon-tetra-cut-cells--particles$(TESTMoon-tetra-cut-cells-REF).diff
+
+>>>@ls -l test_Moon-tetra-cut-cells$(TESTMoon-tetra-cut-cells-REF).diff
+>>>@echo Test Moon-tetra-cut-cells has finished: `date`
+
+
 <#
 
 -------------------------------------------------------------------------------
