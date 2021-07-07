@@ -3,7 +3,7 @@
 
 #include "pic.h"
 #include "constants.h"
-#include "Surface.h"
+#include "../models/surface/Surface.h"
 
 #include <stdio.h>
 #include <stdlib.h>
