@@ -991,7 +991,7 @@ int main(int argc,char **argv) {
 
 
   //TEST T96/T05
-  if (false) if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
+  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
     //SI unit are used
     double x[3]={4.0*_RADIUS_(_EARTH_),1.0E-5*_RADIUS_(_EARTH_),-1.0E-5*_RADIUS_(_EARTH_)};
     double B[3];
@@ -1015,6 +1015,8 @@ int main(int argc,char **argv) {
       T96::SetDST(Earth::T96::dst);
       T96::SetBYIMF(Earth::T96::by);
       T96::SetBZIMF(Earth::T96::bz);
+
+      T96::GetMagneticField(B,x);
     } 
   
     if (PIC::ThisThread==0) {
