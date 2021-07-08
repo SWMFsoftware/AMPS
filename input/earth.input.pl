@@ -314,6 +314,63 @@ while ($line=<InputFile>) {
   }
 
   
+    #parameters of the T05 model 
+  elsif ($InputLine eq "T05") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+
+    if ($s0 eq "ON") {
+      while (defined $InputComment) {
+        ($s0,$InputComment)=split(' ',$InputComment,2);
+
+        ampsConfigLib::ChangeValueOfVariable("bool Earth::T05::active_flag","true","main/Earth.cpp");
+
+        if ($s0 eq "SOLAR_WIND_PRESSURE") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T05::solar_wind_pressure",$s0,"main/Earth.cpp");
+        } 
+        elsif ($s0 eq "DST") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T05::dst",$s0,"main/Earth.cpp");
+        }
+        elsif ($s0 eq "BY") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T05::by",$s0,"main/Earth.cpp");
+        }
+        elsif ($s0 eq "BZ") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::T05::bz",$s0,"main/Earth.cpp");
+        }
+   
+        elsif ($s0 eq "W") {
+          my @W;
+        	
+          ($s0,$InputComment)=split(' ',$InputComment,2); 
+          push(@W,$s0);
+
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          push(@W,$s0);
+
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          push(@W,$s0);
+
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          push(@W,$s0);
+
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          push(@W,$s0);
+
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          push(@W,$s0);
+
+          ampsConfigLib::ChangeValueOfArray("double Earth::T05::W\\[6\\]",\@W,"main/Earth.cpp");    
+        }
+        else {
+          die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+    }
+  }
+  
   #locations of points where the cutoff rigidity and the energetic particle flux are calculated
   elsif ($InputLine eq "CUTOFFTESTLOCATIONS") {
     ($s0,$InputComment)=split(' ',$InputComment,2);

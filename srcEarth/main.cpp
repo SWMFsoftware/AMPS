@@ -991,7 +991,7 @@ int main(int argc,char **argv) {
 
 
   //TEST T96/T05
-  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
+  if (false) if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
     //SI unit are used
     double x[3]={4.0*_RADIUS_(_EARTH_),1.0E-5*_RADIUS_(_EARTH_),-1.0E-5*_RADIUS_(_EARTH_)};
     double B[3];

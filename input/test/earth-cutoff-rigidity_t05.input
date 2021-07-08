@@ -1,17 +1,12 @@
 
 #main
 
-SpeciesList=H_PLUS 
+SpeciesList=H_PLUS1, Electron 
 
 ErrorLog=error.log
 Prefix=AMPS
 DiagnosticStream=amps.log !!screen, filename 'something like amps.log' 
 OutputDirectory=out
-
-
-DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=on ! on,off 
-
 
 makefile  SOURCES=src
 makefile  RUNDIR=run
@@ -42,7 +37,7 @@ ForceRepeatableSimulationPath=off ! on,off
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
 
-CouplerMode=T05  !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
+CouplerMode=T05 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
 
 TimeStepMode=SpeciesGlobalTimeStep
 ParticleWeightMode=SpeciesGlobalParticleWeight
@@ -59,6 +54,10 @@ MoverIntegratorMode=Boris-relativistic
   Mesh=on ! on, off
 #endUserDefinitions
 
+#Mesh
+  define _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
+#endMesh
+
 #General
   ReferenceInjectionParticleNumber=10 
   MaxMeshRefinmentLevel=12
@@ -67,6 +66,11 @@ MoverIntegratorMode=Boris-relativistic
   FirstPrintedOutputFile=100 
 
   RequestedParticleBufferLength=15000000
+
+  define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+
+  define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
 
   BlockCells=4,4,4
   GhostCells=1,1,1
@@ -82,14 +86,14 @@ MoverIntegratorMode=Boris-relativistic
   define _PIC_OUTPUT__DRIFT_VELOCITY__MODE_ _PIC_MODE_ON_
   define _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE_  _PIC_OUTPUT__CELL_CORNER_INTERPOLATION_STENCIL_MODE__LINEAR_
 
-  define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
-  define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
+! define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
+! define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
 
   define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
 !  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Europa::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
 
-define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
-define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+!define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
+!define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
 
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__NONE_
 
@@ -129,8 +133,6 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
 ! define _EUROPA_MESH_RESOLUTION_MODE_  _EUROPA_MESH_RESOLUTION_MODE__FULL_
 ! define _EUROPA_MESH_RESOLUTION_MODE_  _EUROPA_MESH_RESOLUTION_MODE__REDUCED_
 
-OutputMode=DistributedFiles !off !DistributedFiles !!SingleFile !SingleFile,DistributedFiles
-
 #endGeneral
 
 #interface
@@ -139,7 +141,6 @@ OutputMode=DistributedFiles !off !DistributedFiles !!SingleFile !SingleFile,Dist
 
   geopack=on
   T96=on
-  T05=on
 #endinterface
 
 
@@ -170,13 +171,19 @@ OutputMode=DistributedFiles !off !DistributedFiles !!SingleFile !SingleFile,Dist
   GCR=on
   SEP=off
 
-  nZenithElements=10
-  nAzimuthalElements=10
+  T05=on \\
+   solar_wind_pressure=2.97*_NANO_  \\ !nPa
+   DST=-10.0*_NANO_ \\ !nT 
+   By=-16.6*_NANO_ \\ !nT
+   Bz=-8.2*_NANO_ \\ !nT
+   W=1.022,0.874,0.807,1.657000,2.737,4.542000 
 
+  nZenithElements=5
+  nAzimuthalElements=5
 
   CutOffTestLocations=on \\
     emin=100.0*Mev2J \\
-    emax=30000.0*Mev2J \\
+    emax=20000.0*Mev2J \\
     nTotalParticles=5000000 \\
     nInjectionIterations=1000 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
@@ -240,7 +247,7 @@ OutputMode=DistributedFiles !off !DistributedFiles !!SingleFile !SingleFile,Dist
 ! IcesLocationPath=/left/ices/ICES  !location of ICES is set using Config.pl -ices-path  
 !  IcesModelCase=Europa09
 
-  SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
+! SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
 
   addPhysicalModelHeader=Earth.h
 

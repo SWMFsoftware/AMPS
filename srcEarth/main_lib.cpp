@@ -26,6 +26,7 @@
 
 #include "GeopackInterface.h"
 #include "T96Interface.h"
+#include "T05Interface.h"
 
 
 const double rSphere=_EARTH__RADIUS_;
@@ -468,98 +469,98 @@ void amps_init_mesh() {
      }
 
      break;
-   case _PIC_COUPLER_MODE__T96_ :
-     if (PIC::CPLR::DATAFILE::BinaryFileExists("EARTH-T96")==true)  {
-       PIC::CPLR::DATAFILE::LoadBinaryFile("EARTH-T96");
+   case _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_:
+     //calculate the geomegnetic filedT05::active_flag
+   
+     if (Earth::T05::active_flag==true) {
+       T05::Init(Exosphere::SimulationStartTimeString,NULL);
      }
      else {
-       //calculate the geomegnetic filed
        T96::Init(Exosphere::SimulationStartTimeString,NULL);
-
-       //set the magnetic field;
-       //set default == 0 electric field
-
-
-       class cSetBackgroundMagneticField {
-       public:
-         void Set(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-
-           const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-           const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-           const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
-
-           if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-             int ii,S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
-
-             if (startNode->block!=NULL) {
-               #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-               #pragma omp parallel for schedule(dynamic,1) default (none) shared (PIC::Mesh::mesh,iMin,jMin,kMin,S,PIC::CPLR::DATAFILE::Offset::MagneticField, \
-                   PIC::CPLR::DATAFILE::Offset::ElectricField,startNode,PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin,PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset)
-               #endif
-
-               for (ii=0;ii<S;ii++) {
-                 int i,j,k;
-                 double *xNodeMin=startNode->xmin;
-                 double *xNodeMax=startNode->xmax;
-                 double x[3],B[3],xCell[3];
-                 PIC::Mesh::cDataCenterNode *CenterNode;
-
-                 //set the value of the geomagnetic field calculated at the centers of the cells
-                 int nd,idim;
-                 char *offset;
-
-                 //determine the coordinates of the cell
-                 int S1=ii;
-
-                 i=iMin+S1/((kMax-kMin+1)*(jMax-jMin+1));
-                 S1=S1%((kMax-kMin+1)*(jMax-jMin+1));
-
-                 j=jMin+S1/(kMax-kMin+1);
-                 k=kMin+S1%(kMax-kMin+1);
-
-                 //locate the cell
-                 nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
-                 if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
-                 offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
-
-                 //the interpolation location
-                 xCell[0]=(xNodeMin[0]+(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_*(0.5+i));
-                 xCell[1]=(xNodeMin[1]+(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_*(0.5+j));
-                 xCell[2]=(xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k));
-
-                 //calculate the geomagnetic field
-                 T96::GetMagneticField(B,xCell);
-
-                 //save E and B
-                 for (idim=0;idim<3;idim++) {
-                   if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
-                     *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
-                   }
-
-                   if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
-                     *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
-                   }
-                 }
-               }
-
-             }
-           }
-           else {
-             int i;
-             cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
-
-             for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) Set(downNode);
-           }
-
-
-         }
-       } SetBackgroundMagneticField;
-
-       SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
-       //PIC::CPLR::DATAFILE::SaveBinaryFile("EARTH-T96");
      }
 
 
+     class cSetBackgroundMagneticField {
+     public:
+       void Set(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+
+         const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+         const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+         const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+
+         if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+           int ii,S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
+
+           if (startNode->block!=NULL) {
+             #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+             #pragma omp parallel for schedule(dynamic,1) default (none) shared (PIC::Mesh::mesh,iMin,jMin,kMin,S,PIC::CPLR::DATAFILE::Offset::MagneticField, \
+                 PIC::CPLR::DATAFILE::Offset::ElectricField,startNode,PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin,PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset)
+             #endif
+
+             for (ii=0;ii<S;ii++) {
+               int i,j,k;
+               double *xNodeMin=startNode->xmin;
+               double *xNodeMax=startNode->xmax;
+               double x[3],B[3],xCell[3];
+               PIC::Mesh::cDataCenterNode *CenterNode;
+
+               //set the value of the geomagnetic field calculated at the centers of the cells
+               int nd,idim;
+               char *offset;
+
+               //determine the coordinates of the cell
+               int S1=ii;
+
+               i=iMin+S1/((kMax-kMin+1)*(jMax-jMin+1));
+               S1=S1%((kMax-kMin+1)*(jMax-jMin+1));
+
+               j=jMin+S1/(kMax-kMin+1);
+               k=kMin+S1%(kMax-kMin+1);
+
+               //locate the cell
+               nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+               if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
+               offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+               //the interpolation location
+               xCell[0]=(xNodeMin[0]+(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_*(0.5+i));
+               xCell[1]=(xNodeMin[1]+(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_*(0.5+j));
+               xCell[2]=(xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k));
+
+               //calculate the geomagnetic field
+               if (Earth::T05::active_flag==true) {
+                 T05::GetMagneticField(B,xCell);
+               }
+               else {
+                 T96::GetMagneticField(B,xCell);
+               }
+
+               //save E and B
+               for (idim=0;idim<3;idim++) {
+                 if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
+                   *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
+                 }
+
+                 if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
+                   *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
+                 }
+               }
+             }
+
+           }
+         }
+         else {
+           int i;
+           cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+           for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) Set(downNode);
+         }
+
+
+       }
+     } SetBackgroundMagneticField;
+
+     SetBackgroundMagneticField.Set(PIC::Mesh::mesh->rootTree);
      break;
    default:
      exit(__LINE__,__FILE__,"Error: the option is unknown");

@@ -12,6 +12,7 @@
 #include "pic.h"
 #include "Earth.h"
 #include "T96Interface.h"
+#include "T05Interface.h"
 
 void amps_time_step();
 
@@ -27,6 +28,13 @@ double Earth::T96::dst=0.0;
 double Earth::T96::by=0.0;
 double Earth::T96::bz=0.0;
 
+//parameters of the TO5 model
+bool Earth::T05::active_flag=false;
+double Earth::T05::solar_wind_pressure=0.0;
+double Earth::T05::dst=0.0;
+double Earth::T05::by=0.0;
+double Earth::T05::bz=0.0;
+double Earth::T05::W[6]={0,0,0, 0,0,0};
 
 //simulation physics time 
 double Earth::SimulationPhysicsTime=0.0;
@@ -439,6 +447,14 @@ void Earth::Init() {
     ::T96::SetBZIMF(T96::bz); 
   }
 
+  //init the T05 model
+  if (T05::active_flag==true) {
+    ::T05::SetSolarWindPressure(T05::solar_wind_pressure);
+    ::T05::SetDST(T05::dst);
+    ::T05::SetBYIMF(T05::by);
+    ::T05::SetBZIMF(T05::bz);
+    ::T05::SetW(T05::W[0],T05::W[1],T05::W[2],T05::W[3],T05::W[4],T05::W[5]); 
+  }
 
   //init the composition gourp tables
   //!!!!!!!!!!!!! For now only hydrogen is considered !!!!!!!!!!!!!!!!!

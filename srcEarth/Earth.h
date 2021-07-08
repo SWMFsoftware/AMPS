@@ -93,6 +93,15 @@ namespace Earth {
     extern double bz;
   } 
 
+  namespace T05 {
+    extern bool active_flag;
+    extern double solar_wind_pressure;
+    extern double dst;
+    extern double by;
+    extern double bz;
+    extern double W[6];
+  }
+
   //the mesh parameters
   namespace Mesh {
     extern char sign[_MAX_STRING_LENGTH_PIC_];
