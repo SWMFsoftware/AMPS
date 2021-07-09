@@ -5,7 +5,7 @@ c          #####################################################################
 c          #                                                                        #
 c          #                             GEOPACK-2008                               #
 c          #                     (MAIN SET OF FORTRAN CODES)                        #
-c          #                                                                        #
+c          #                 (IGRF coefficients updated 01/01/2020)                 #
 c          ##########################################################################
 C
 c
@@ -56,7 +56,7 @@ c
 c
 C  CALCULATES COMPONENTS OF THE MAIN (INTERNAL) GEOMAGNETIC FIELD IN THE GEOCENTRIC SOLAR-WIND
 C  (GSW) COORDINATE SYSTEM, USING IAGA INTERNATIONAL GEOMAGNETIC REFERENCE MODEL COEFFICIENTS
-C  (e.g., http://www.ngdc.noaa.gov/IAGA/vmod/igrf.html, revised 22 March, 2005)
+C  (e.g., https://www.ngdc.noaa.gov/IAGA/vmod/coeffs/igrf13coeffs.txt, revised 01 January, 2020)
 c
 C  THE GSW SYSTEM IS ESSENTIALLY SIMILAR TO THE STANDARD GSM (THE TWO SYSTEMS BECOME IDENTICAL
 C  TO EACH OTHER IN THE CASE OF STRICTLY ANTI-SUNWARD SOLAR WIND FLOW). FOR A DETAILED
@@ -76,7 +76,7 @@ C     HXGSW,HYGSW,HZGSW - CARTESIAN GEOCENTRIC SOLAR-WIND COMPONENTS OF THE MAIN
 C                           FIELD IN NANOTESLA
 C
 C     LAST MODIFICATION:  FEB 07, 2008.
-C     THIS VERSION OF THE CODE ACCEPTS DATES FROM 1965 THROUGH 2015.
+C     THIS VERSION OF THE CODE ACCEPTS DATES FROM 1965 THROUGH 2025.
 c
 C     AUTHOR: N. A. TSYGANENKO
 C
@@ -531,38 +531,40 @@ C
 C    OTHER SUBROUTINES CALLED BY THIS ONE: SUN_08
 C
 C    AUTHOR:  N.A. TSYGANENKO
-C    DATE:    DEC.1, 1991
 C
-C    REVISION OF JANUARY 30, 2015:
+C    ORIGINALLY WRITTEN:    DEC.1, 1991
 C
-C     The table of IGRF coefficients was extended to include those for the epoch 2015 (igrf-12)
-c         (for details, see http://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
+C    MOST RECENT REVISION: JANUARY 01, 2020:
 C
+C     The table of IGRF coefficients was extended to include those for the epoch 2020 (igrf-13)
+c         (for details, see https://www.ngdc.noaa.gov/IAGA/vmod/coeffs/igrf13coeffs.txt)
+C-----------------------------------------------------------------------------------   
+c    EARLIER REVISIONS:
+c                                
 C    REVISION OF NOVEMBER 30, 2010:
 C
 C     The table of IGRF coefficients was extended to include those for the epoch 2010
 c         (for details, see http://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
-C
+C------------------------------------------------------------------------------------
 C    REVISION OF NOVEMBER 15, 2007: ADDED THE POSSIBILITY TO TAKE INTO ACCOUNT THE OBSERVED
 C     DEFLECTION OF THE SOLAR WIND FLOW FROM STRICTLY RADIAL DIRECTION. TO THAT END, THREE
 C     GSE COMPONENTS OF THE SOLAR WIND VELOCITY WERE ADDED TO THE INPUT PARAMETERS.
-C
+C ---------------------------------------------------------------------------------------
 c    CORRECTION OF MAY 9, 2006:  INTERPOLATION OF THE COEFFICIENTS (BETWEEN
 C     LABELS 50 AND 105) IS NOW MADE THROUGH THE LAST ELEMENT OF THE ARRAYS
 C     G(105)  AND H(105) (PREVIOUSLY MADE ONLY THROUGH N=66, WHICH IN SOME
 C     CASES CAUSED RUNTIME ERRORS)
-c
+c --------------------------------------------------------------------------------------------
 C    REVISION OF MAY 3, 2005:
 C     The table of IGRF coefficients was extended to include those for the epoch 2005
 c       the maximal order of spherical harmonics was also increased up to 13
 c         (for details, see http://www.ngdc.noaa.gov/IAGA/vmod/igrf.html)
-c
+c ---------------------------------------------------------------------------------------------
 C    REVISION OF APRIL 3, 2003:
 c    The code now includes preparation of the model coefficients for the subroutines
 c    IGRF_08 and GEOMAG_08. This eliminates the need for the SAVE statements, used
 c    in the old versions, making the codes easier and more compiler-independent.
-C
-      SAVE ISW
+C---------------------------------------------------------------------------------------------------
 C
       COMMON /GEOPACK1/ ST0,CT0,SL0,CL0,CTCL,STCL,CTSL,STSL,SFI,CFI,
      * SPS,CPS,DS3,CGST,SGST,PSI,A11,A21,A31,A12,A22,A32,A13,A23,A33,
@@ -580,10 +582,9 @@ C
       DIMENSION G65(105),H65(105),G70(105),H70(105),G75(105),H75(105),
      + G80(105),H80(105),G85(105),H85(105),G90(105),H90(105),G95(105),
      + H95(105),G00(105),H00(105),G05(105),H05(105),G10(105),H10(105),
-     + G15(105),H15(105),DG15(45),DH15(45)
+     + G15(105),H15(105),DG15(45),DH15(45),
+     + G20(105),H20(105),DG20(45),DH20(45)
 C
-      DATA ISW /0/
-c
       DATA G65/0.,-30334.,-2119.,-1662.,2997.,1594.,1297.,-2038.,1292.,
      *856.,957.,804.,479.,-390.,252.,-219.,358.,254.,-31.,-157.,-62.,
      *45.,61.,8.,-228.,4.,1.,-111.,75.,-57.,4.,13.,-26.,-6.,13.,1.,13.,
@@ -779,77 +780,89 @@ C
      *         0.00, -0.87,    0.30,    1.66,   -0.59,   -1.14,   -0.07,
      *         0.54,  0.10,    0.49,    0.44,   -0.25,   -0.53,   -0.79/
 C
-      DATA G15/0.,-29442.0, -1501.0, -2445.1,  3012.9,  1676.7,  1350.7,
-     *    -2352.3,  1225.6,   582.0,   907.6,   813.7,   120.4,  -334.9,
-     *       70.4,  -232.6,   360.1,   192.4,  -140.9,  -157.5,     4.1,
-     *       70.0,    67.7,    72.7,  -129.9,   -28.9,    13.2,   -70.9,
-     *       81.6,   -76.1,    -6.8,    51.8,    15.0,     9.4,    -2.8,
-     *        6.8,    24.2,     8.8,   -16.9,    -3.2,   -20.6,    13.4,
-     *       11.7,   -15.9,    -2.0,     5.4,     8.8,     3.1,    -3.3,
-     *        0.7,   -13.3,    -0.1,     8.7,    -9.1,   -10.5,    -1.9,
-     *       -6.3,     0.1,     0.5,    -0.5,     1.8,    -0.7,     2.1,
-     *        2.4,    -1.8,    -3.6,     3.1,    -1.5,    -2.3,     2.0,
-     *       -0.8,     0.6,    -0.7,     0.2,     1.7,    -0.2,     0.4,
-     *        3.5,    -1.9,    -0.2,     0.4,     1.2,    -0.8,     0.9,
-     *        0.1,     0.5,    -0.3,    -0.4,     0.2,    -0.9,     0.0,
-     *        0.0,    -0.9,     0.4,     0.5,    -0.5,     1.0,    -0.2,
-     *        0.8,    -0.1,     0.3,     0.1,     0.5,    -0.4,    -0.3/
+      DATA G15/0.00,-29441.46,-1501.77,-2445.88,3012.20,1676.35,1350.33,
+     *     -2352.26,  1225.85,  581.69,  907.42, 813.68, 120.49,-334.85,
+     *        70.38,  -232.91,  360.14,  192.35,-140.94,-157.40,   4.30,
+     *        69.55,    67.57,   72.79, -129.85, -28.93,  13.14, -70.85,
+     *        81.29,   -75.99,   -6.79,   51.82,  15.07,   9.32,  -2.88,
+     *         6.61,    23.98,    8.89,  -16.78,  -3.16, -20.56,  13.33,
+     *        11.76,   -15.98,   -2.02,    5.33,   8.83,   3.02,  -3.22,
+     *         0.67,   -13.20,   -0.10,    8.68,  -9.06, -10.54,  -2.01,
+     *        -6.26,     0.17,    0.55,   -0.55,   1.70,  -0.67,   2.13,
+     *         2.33,    -1.80,   -3.59,    3.00,  -1.40,  -2.30,   2.08,
+     *        -0.79,     0.58,   -0.70,    0.14,   1.70,  -0.22,   0.44,
+     *         3.49,    -2.09,   -0.16,    0.46,   1.23,  -0.89,   0.85,
+     *         0.10,     0.54,   -0.37,   -0.43,   0.22,  -0.94,  -0.03,
+     *        -0.02,    -0.92,    0.42,    0.63,  -0.42,   0.96,  -0.19,
+     *         0.81,    -0.13,    0.38,    0.08,   0.46,  -0.35,  -0.36/
 c
-      DATA H15/0.0,    0.0,  4797.1,     0.0, -2845.6,  -641.9,     0.0,
-     *      -115.3,  244.9,  -538.4,     0.0,   283.3,  -188.7,   180.9,
-     *      -329.5,    0.0,    47.3,   197.0,  -119.3,    16.0,   100.2,
-     *         0.0,  -20.8,    33.2,    58.9,   -66.7,     7.3,    62.6,
-     *         0.0,  -54.1,   -19.5,     5.7,    24.4,     3.4,   -27.4,
-     *        -2.2,    0.0,    10.1,   -18.3,    13.3,   -14.6,    16.2,
-     *         5.7,   -9.1,     2.1,     0.0,   -21.6,    10.8,    11.8,
-     *        -6.8,   -6.9,     7.8,     1.0,    -4.0,     8.4,     0.0,
-     *         3.2,   -0.4,     4.6,     4.4,    -7.9,    -0.6,    -4.2,
-     *        -2.8,   -1.2,    -8.7,     0.0,    -0.1,     2.0,    -0.7,
-     *        -1.1,    0.8,    -0.2,    -2.2,    -1.4,    -2.5,    -2.0,
-     *        -2.4,    0.0,    -1.1,     0.4,     1.9,    -2.2,     0.3,
-     *         0.7,   -0.1,     0.3,     0.2,    -0.9,    -0.1,     0.7,
-     *         0.0,   -0.9,     0.4,     1.6,    -0.5,    -1.2,    -0.1,
-     *         0.4,   -0.1,     0.4,     0.5,    -0.3,    -0.4,    -0.8/
+      DATA H15/0.00,   0.00,  4795.99,    0.00,-2845.41,-642.17,   0.00,
+     *      -115.29, 245.04,  -538.70,    0.00,  283.54,-188.43, 180.95,
+     *      -329.23,   0.00,    46.98,  196.98, -119.14,  15.98, 100.12,
+     *         0.00, -20.61,    33.30,   58.74,  -66.64,   7.35,  62.41,
+     *         0.00, -54.27,   -19.53,    5.59,   24.45,   3.27, -27.50,
+     *        -2.32,   0.00,    10.04,  -18.26,   13.18, -14.60,  16.16,
+     *         5.69,  -9.10,     2.26,    0.00,  -21.77,  10.76,  11.74,
+     *        -6.74,  -6.88,     7.79,    1.04,   -3.89,   8.44,   0.00,
+     *         3.28,  -0.40,     4.55,    4.40,   -7.92,  -0.61,  -4.16,
+     *        -2.85,  -1.12,    -8.72,    0.00,    0.00,   2.11,  -0.60,
+     *        -1.05,   0.76,    -0.20,   -2.12,   -1.44,  -2.57,  -2.01,
+     *        -2.34,   0.00,    -1.08,    0.37,    1.75,  -2.19,   0.27,
+     *         0.72,  -0.09,     0.29,    0.23,   -0.89,  -0.16,   0.72,
+     *         0.00,  -0.88,     0.49,    1.56,   -0.50,  -1.24,  -0.10,
+     *         0.42,  -0.04,     0.48,    0.48,   -0.30,  -0.43,  -0.71/
 c
-      DATA DG15/0.0,  10.3,    18.1,    -8.7,    -3.3,     2.1,     3.4,
-     *         -5.5,  -0.7,   -10.1,    -0.7,     0.2,    -9.1,     4.1,
-     *         -4.3,  -0.2,     0.5,    -1.3,    -0.1,     1.4,     3.9,
-     *         -0.3,  -0.1,    -0.7,     2.1,    -1.2,     0.3,     1.6,
-     *          0.3,  -0.2,    -0.5,     1.3,     0.1,    -0.6,    -0.8,
-     *          0.2,   0.2,     0.0,    -0.6,     0.5,    -0.2,     0.4,
-     *          0.1,  -0.4,     0.3/
+      DATA G20/0.0,  -29404.8, -1450.9, -2499.6, 2982.0, 1677.0, 1363.2,
+     *     -2381.2,    1236.2,   525.7,   903.0,  809.5,   86.3, -309.4,
+     *        48.0,    -234.3,   363.2,   187.8, -140.7, -151.2,   13.5,
+     *        66.0,      65.5,    72.9,  -121.5,  -36.2,   13.5,  -64.7,
+     *        80.6,     -76.7,    -8.2,    56.5,   15.8,    6.4,   -7.2,
+     *         9.8,      23.7,     9.7,   -17.6,   -0.5,  -21.1,   15.3,
+     *        13.7,     -16.5,    -0.3,     5.0,    8.4,    2.9,   -1.5,
+     *        -1.1,     -13.2,     1.1,     8.8,   -9.3,  -11.9,   -1.9,
+     *        -6.2,      -0.1,     1.7,    -0.9,    0.7,   -0.9,    1.9,
+     *         1.4,      -2.4,    -3.8,     3.0,   -1.4,   -2.5,    2.3,
+     *        -0.9,       0.3,    -0.7,    -0.1,    1.4,   -0.6,    0.2,
+     *         3.1,      -2.0,    -0.1,     0.5,    1.3,   -1.2,    0.7,
+     *         0.3,       0.5,    -0.3,    -0.5,    0.1,   -1.1,   -0.3,
+     *         0.1,      -0.9,     0.5,     0.7,   -0.3,    0.8,    0.0,
+     *         0.8,       0.0,     0.4,     0.1,    0.5,   -0.5,   -0.4/
 c
-      DATA DH15/0.0,   0.0,   -26.6,     0.0,   -27.4,   -14.1,     0.0,
-     *          8.2,  -0.4,     1.8,     0.0,    -1.3,     5.3,     2.9,
-     *         -5.2,   0.0,     0.6,     1.7,    -1.2,     3.4,     0.0,
-     *          0.0,   0.0,    -2.1,    -0.7,     0.2,     0.9,     1.0,
-     *          0.0,   0.8,     0.4,    -0.2,    -0.3,    -0.6,     0.1,
-     *         -0.2,   0.0,    -0.3,     0.3,     0.1,     0.5,    -0.2,
-     *         -0.3,   0.3,     0.0/
-C
-c      IF (VGSEY.EQ.0..AND.VGSEZ.EQ.0..AND.ISW.NE.1) THEN
-c      PRINT *, ''
-c      PRINT *,
-c     *' RECALC_08: RADIAL SOLAR WIND --> GSW SYSTEM IDENTICAL HERE'
-c      PRINT *,
-c     *' TO STANDARD GSM (I.E., XGSW AXIS COINCIDES WITH EARTH-SUN LINE)'
-c      PRINT *, ''
-c      ISW=1
-c      ENDIF
-
-c      IF ((VGSEY.NE.0..OR.VGSEZ.NE.0.).AND.ISW.NE.2) THEN           !  CORRECTED NOV.27, 2009
-c      PRINT *, ''
-c      PRINT *,
-c     *' WARNING: NON-RADIAL SOLAR WIND FLOW SPECIFIED IN RECALC_08;'
-c      PRINT *,
-c     *' HENCE XGSW AXIS IS ASSUMED ORIENTED ANTIPARALLEL TO V_SW VECTOR'
-c      PRINT *, ''
-c      ISW=2
-c      ENDIF
+      DATA H20/0.0,    0.0,    4652.5,     0.0, -2991.6, -734.6,    0.0,
+     *       -82.1,  241.9,    -543.4,     0.0,   281.9, -158.4,  199.7,
+     *      -349.7,    0.0,      47.7,   208.3,  -121.2,   32.3,   98.9,
+     *         0.0,  -19.1,      25.1,    52.8,   -64.5,    8.9,   68.1,
+     *         0.0,  -51.5,     -16.9,     2.2,    23.5,   -2.2,  -27.2,
+     *        -1.8,    0.0,       8.4,   -15.3,    12.8,  -11.7,   14.9,
+     *         3.6,   -6.9,       2.8,     0.0,   -23.4,   11.0,    9.8,
+     *        -5.1,   -6.3,       7.8,     0.4,    -1.4,    9.6,    0.0,
+     *         3.4,   -0.2,       3.6,     4.8,    -8.6,   -0.1,   -4.3,
+     *        -3.4,   -0.1,      -8.8,     0.0,     0.0,    2.5,   -0.6,
+     *        -0.4,    0.6,      -0.2,    -1.7,    -1.6,   -3.0,   -2.0,
+     *        -2.6,    0.0,      -1.2,     0.5,     1.4,   -1.8,    0.1,
+     *         0.8,   -0.2,       0.6,     0.2,    -0.9,    0.0,    0.5,
+     *         0.0,   -0.9,       0.6,     1.4,    -0.4,   -1.3,   -0.1,
+     *         0.3,   -0.1,       0.5,     0.5,    -0.4,   -0.4,   -0.6/
+c
+      DATA DG20/0.0,    5.7,     7.4,   -11.0,    -7.0,   -2.1,     2.2,  
+     *         -5.9,    3.1,   -12.0,    -1.2,    -1.6,   -5.9,     5.2,
+     *         -5.1,   -0.3,     0.5,    -0.6,     0.2,    1.3,     0.9,
+     *         -0.5,   -0.3,     0.4,     1.3,    -1.4,    0.0,     0.9,
+     *         -0.1,   -0.2,     0.0,     0.7,     0.1,   -0.5,    -0.8,
+     *          0.8,    0.0,     0.1,    -0.1,     0.4,   -0.1,     0.4,
+     *          0.3,   -0.1,     0.4/ 
+c
+      DATA DH20/0.0,    0.0,   -25.9,     0.0,   -30.2,  -22.4,     0.0,
+     *          6.0,   -1.1,     0.5,     0.0,    -0.1,    6.5,     3.6,
+     *         -5.0,    0.0,     0.0,     2.5,    -0.6,    3.0,     0.3,
+     *          0.0,    0.0,    -1.6,    -1.3,     0.8,    0.0,     1.0,
+     *          0.0,    0.6,     0.6,    -0.8,    -0.2,   -1.1,     0.1,
+     *          0.3,    0.0,    -0.2,     0.6,    -0.2,    0.5,    -0.3,
+     *         -0.4,    0.5,     0.0/
 C
       IY=IYEAR
 C
-C  WE ARE RESTRICTED BY THE INTERVAL 1965-2020, FOR WHICH EITHER THE IGRF/DGRF COEFFICIENTS OR SECULAR VELOCITIES
+C  WE ARE RESTRICTED BY THE INTERVAL 1965-2025, FOR WHICH EITHER THE IGRF/DGRF COEFFICIENTS OR SECULAR VELOCITIES
 c    ARE KNOWN; IF IYEAR IS OUTSIDE THIS INTERVAL, THEN THE SUBROUTINE USES THE
 C      NEAREST LIMITING VALUE AND PRINTS A WARNING:
 C
@@ -858,8 +871,8 @@ C
        WRITE (*,10) IYEAR,IY
       ENDIF
 
-      IF(IY.GT.2020) THEN
-       IY=2020
+      IF(IY.GT.2025) THEN
+       IY=2025
        WRITE (*,10) IYEAR,IY
       ENDIF
 C
@@ -884,16 +897,17 @@ C
       IF (IY.LT.2005) GOTO 120         !INTERPOLATE BETWEEN 2000 - 2005
       IF (IY.LT.2010) GOTO 130         !INTERPOLATE BETWEEN 2005 - 2010
       IF (IY.LT.2015) GOTO 140         !INTERPOLATE BETWEEN 2010 - 2015
+      IF (IY.LT.2020) GOTO 150         !INTERPOLATE BETWEEN 2015 - 2020
 C
-C       EXTRAPOLATE BEYOND 2015:
+C       EXTRAPOLATE BEYOND 2020:
 C
-      DT=FLOAT(IY)+FLOAT(IDAY-1)/365.25-2015.
+      DT=FLOAT(IY)+FLOAT(IDAY-1)/365.25-2020.
       DO 40 N=1,105
-         G(N)=G15(N)
-         H(N)=H15(N)
+         G(N)=G20(N)
+         H(N)=H20(N)
          IF (N.GT.45) GOTO 40
-         G(N)=G(N)+DG15(N)*DT
-         H(N)=H(N)+DH15(N)*DT
+         G(N)=G(N)+DG20(N)*DT
+         H(N)=H(N)+DH20(N)*DT
 40    CONTINUE
       GOTO 300
 C
@@ -987,23 +1001,32 @@ C
 145      H(N)=H10(N)*F1+H15(N)*F2
       GOTO 300
 C
+C       INTERPOLATE BETWEEN 2015 - 2020:
+C
+150   F2=(FLOAT(IY)+FLOAT(IDAY-1)/365.25-2015)/5.
+      F1=1.-F2
+      DO 155 N=1,105
+         G(N)=G15(N)*F1+G20(N)*F2
+155      H(N)=H15(N)*F1+H20(N)*F2
+      GOTO 300
+c
 C   COEFFICIENTS FOR A GIVEN YEAR HAVE BEEN CALCULATED; NOW MULTIPLY
 C   THEM BY SCHMIDT NORMALIZATION FACTORS:
 C
 300   S=1.
-      DO 150 N=2,14
+      DO 250 N=2,14
          MN=N*(N-1)/2+1
          S=S*FLOAT(2*N-3)/FLOAT(N-1)
          G(MN)=G(MN)*S
          H(MN)=H(MN)*S
          P=S
-         DO 150 M=2,N
+         DO 250 M=2,N
             AA=1.
             IF (M.EQ.2) AA=2.
             P=P*SQRT(AA*FLOAT(N-M+1)/FLOAT(N+M-2))
             MNN=MN+M-1
             G(MNN)=G(MNN)*P
-150         H(MNN)=H(MNN)*P
+250         H(MNN)=H(MNN)*P
 
            G_10=-G(2)
            G_11= G(3)
@@ -1047,7 +1070,7 @@ C
       DZ2=-SIN(OBLIQ)
       DZ3=COS(OBLIQ)
 C
-C  NOW WE OBTAIN GEI COMPONENTS OF THE UNIT VECTOR EYGSE=(DY1,DY2,DY3),
+C  NOW OBTAIN GEI COMPONENTS OF THE UNIT VECTOR EYGSE=(DY1,DY2,DY3),
 C  COMPLETING THE RIGHT-HANDED SYSTEM. THEY CAN BE FOUND FROM THE VECTOR
 C  PRODUCT EZGSE x EXGSE = (DZ1,DZ2,DZ3) x (S1,S2,S3):
 C
@@ -1055,7 +1078,7 @@ C
       DY2=DZ3*S1-DZ1*S3
       DY3=DZ1*S2-DZ2*S1
 C
-C  NOW LET'S CALCULATE GEI COMPONENTS OF THE UNIT VECTOR X = EXGSW, DIRECTED ANTIPARALLEL
+C  NOW CALCULATE GEI COMPONENTS OF THE UNIT VECTOR X = EXGSW, DIRECTED ANTIPARALLEL
 C  TO THE OBSERVED SOLAR WIND FLOW. FIRST, CALCULATE ITS COMPONENTS IN GSE:
 C
       V=SQRT(VGSEX**2+VGSEY**2+VGSEZ**2)
@@ -1165,7 +1188,7 @@ C
       SFI=Y1*EXMAGX+Y2*EXMAGY+Y3*EXMAGZ
 C
  10   FORMAT(//1X,
-     *'**** RECALC_08 WARNS: YEAR IS OUT OF INTERVAL 1965-2020: IYEAR=',
+     *'**** RECALC_08 WARNS: YEAR IS OUT OF INTERVAL 1965-2025: IYEAR=',
      *I4,/,6X,'CALCULATIONS WILL BE DONE FOR IYEAR=',I4,/)
       RETURN
       END
