@@ -25,6 +25,17 @@ c OF THE ARRAY PARMOD(10).
 double T96::PS=0.170481;
 double T96::PARMOD[11]={2.0,-50.0,1.0,-3.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
+std::string T96::UserFrameName="";
+
+double T96::UserFrame2GSM[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+double T96::GSM2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+bool T96::Rotate2GSM=false;
+
+double T96::UserFrame2GSE[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+double T96::GSE2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+bool T96::Rotate2GSE=false;
+
+
 extern "C"{
   void t96_01_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
 }
@@ -37,19 +48,30 @@ void T96::GetMagneticField(double *B,double *x) {
 
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-/*  if (pow(xLocal[0],2)+pow(xLocal[1],2)+pow(xLocal[2],2)<1.0) {
-    for (idim=0;idim<3;idim++) B[idim]=0.0;
-    return;
-  }*/
-
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T96_
-  t96_01_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT96+0,bT96+1,bT96+2);
+  //SUBROUTINE T96_01 (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
+  //X,Y,Z -  GSM POSITION (RE)
+
+  if (Rotate2GSM==false) {
+    t96_01_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT96+0,bT96+1,bT96+2);
+  }
+  else {
+    double xLocal_GSM[3],bT96_GSM[3];
+
+    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    t96_01_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bT96_GSM+0,bT96_GSM+1,bT96_GSM+2);
+    mxv_c(GSM2UserFrame,bT96_GSM,bT96);
+  }
+
   #else
   exit(__LINE__,__FILE__,"Error: T96 is not setup for this run. Use option \'CouplerMode=T96\' in the input file to use T96");
   #endif
 
 
   //calcualte the Earth's internal magnetis field
+  // IGRF_GSW_08 (XGSW,YGSW,ZGSW,HXGSW,HYGSW,HZGSW)
+  // SUBROUTINE GSWGSE_08 (XGSW,YGSW,ZGSW,XGSE,YGSE,ZGSE,J)
+  //
   IGRF::GetMagneticField(B,x);
 
   //sum contributions of the internal Earth's magnetic field, and the global field in the magnetoshere

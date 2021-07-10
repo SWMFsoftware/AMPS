@@ -83,6 +83,8 @@ namespace Earth {
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
 
+  //velocity of the solar wind
+  extern double SolarWindVelocity[3];
 
   //parameterd of the T96 model
   namespace T96 {

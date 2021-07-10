@@ -473,10 +473,10 @@ void amps_init_mesh() {
      //calculate the geomegnetic filedT05::active_flag
    
      if (Earth::T05::active_flag==true) {
-       T05::Init(Exosphere::SimulationStartTimeString,NULL);
+       T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME,Earth::SolarWindVelocity);
      }
      else {
-       T96::Init(Exosphere::SimulationStartTimeString,NULL);
+       T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME,Earth::SolarWindVelocity);
      }
 
 

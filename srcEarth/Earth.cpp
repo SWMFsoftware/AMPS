@@ -18,8 +18,11 @@ void amps_time_step();
 
 
 char Earth::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
-char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="";
-char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="";
+char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="EARTH";
+char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GSE";
+
+//solar wind velocity
+double Earth::SolarWindVelocity[3]={-400.0E3,0.0,0.0};
 
 //parameters of the T96 model
 bool Earth::T96::active_flag=false;

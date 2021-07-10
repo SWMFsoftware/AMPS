@@ -16,17 +16,40 @@
 #include "ifileopr.h"
 #include "specfunc.h"
 
+std::string Geopack::UserFrameName;
+double Geopack::UserFrame2GSE[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+double Geopack::GSE2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+bool Geopack::Rotate2GSE=false;
+
+
+
 extern "C"{
   void recalc_08_(int*,int*,int*,int*,int*,double*,double*,double*);
   void sphcar_08_(double*,double*,double*,double*,double*,double*,int*);
   void bspcar_08_(double*,double*,double*,double*,double*,double*,double*,double*);
   void igrf_geo_08_(double*,double*,double*,double*,double*,double*);
   void igrf_gsw_08_(double*,double*,double*,double*,double*,double*);
+
+  void gswgse_08_(double*,double*,double*,double*,double*,double*,int*);
 }
 
 
-void Geopack::Init(const char* Epoch,double *SolarWindVelocity) {
+void Geopack::Init(const char* Epoch,std::string FrameNameIn,double *SolarWindVelocity) {
   CiFileOperations Parser;
+
+  UserFrameName=FrameNameIn;
+
+  if (UserFrameName!="GSE") {
+    double et;
+
+    Rotate2GSE=true;
+
+    utc2et_c(Epoch,&et);
+
+    pxform_c(UserFrameName.c_str(),"GSE",et,UserFrame2GSE);
+    pxform_c("GSE",UserFrameName.c_str(),et,GSE2UserFrame);
+  }
+
 
   //conver the epoch string to the Geopack format
   int cnt=0;
@@ -68,19 +91,17 @@ void Geopack::Init(const char* Epoch,double *SolarWindVelocity) {
 
   //init Geopack
   double VGSE[3];
-  double defaultSolarWindVelocity[3]={-400.0*1.0E-3,0.0,0.0};
 
-  if (SolarWindVelocity!=NULL) {
-    for (int idim=0;idim<3;idim++) VGSE[idim]=SolarWindVelocity[idim]/1.0E3;
+  if (UserFrameName!="GSE") {
+    //convert velocity to the GSE frame
+    double t[3];
 
-    if (fabs(SolarWindVelocity[0])*1.0E-5<sqrt(pow(SolarWindVelocity[1],2)+pow(SolarWindVelocity[2],2))) {
-      //the direction of the solar wind is not alighned with the x-axis
-      exit(__LINE__,__FILE__,"Error: the field extraction in Geopack::IGRF is done usin the GSW frame. GSW coinsides with GCM only when the solar wind velocity is aligned with the x-direction. The frame conversion need to be implemented. See Geopack manual. :-(");
-    }
+    for (int idim=0;idim<3;idim++) t[idim]=SolarWindVelocity[idim]/1.0E3;
 
+    mxv_c(UserFrame2GSE,t,VGSE);
   }
-  else {
-    for (int idim=0;idim<3;idim++) VGSE[idim]=defaultSolarWindVelocity[idim];
+  else { 
+    for (int idim=0;idim<3;idim++) VGSE[idim]=SolarWindVelocity[idim]/1.0E3;
   }
 
   recalc_08_(&Year,&DayOfYear,&Hour,&Minute,&Second,VGSE+0,VGSE+1,VGSE+2);
@@ -89,54 +110,50 @@ void Geopack::Init(const char* Epoch,double *SolarWindVelocity) {
 
 void Geopack::IGRF::GetMagneticField(double *B,double *x) {
   /*
-   *       SUBROUTINE IGRF_GEO_08 (R,THETA,PHI,BR,BTHETA,BPHI)
-c
-C  CALCULATES COMPONENTS OF THE MAIN (INTERNAL) GEOMAGNETIC FIELD IN THE SPHERICAL GEOGRAPHIC
-C  (GEOCENTRIC) COORDINATE SYSTEM, USING IAGA INTERNATIONAL GEOMAGNETIC REFERENCE MODEL
-C  COEFFICIENTS  (e.g., http://www.ngdc.noaa.gov/IAGA/vmod/igrf.html, revised: 22 March, 2005)
-C
-C  BEFORE THE FIRST CALL OF THIS SUBROUTINE, OR IF THE DATE (IYEAR AND IDAY) WAS CHANGED,
-C  THE MODEL COEFFICIENTS SHOULD BE UPDATED BY CALLING THE SUBROUTINE RECALC_08
-C
-C-----INPUT PARAMETERS:
-C
-C   R, THETA, PHI - SPHERICAL GEOGRAPHIC (GEOCENTRIC) COORDINATES:
-C   RADIAL DISTANCE R IN UNITS RE=6371.2 KM, COLATITUDE THETA AND LONGITUDE PHI IN RADIANS
-C
-C-----OUTPUT PARAMETERS:
-C
-C     BR, BTHETA, BPHI - SPHERICAL COMPONENTS OF THE MAIN GEOMAGNETIC FIELD IN NANOTESLA
-C      (POSITIVE BR OUTWARD, BTHETA SOUTHWARD, BPHI EASTWARD)
-
-
-    SUBROUTINE SPHCAR_08 (R,THETA,PHI,X,Y,Z,J)
-C
-C   CONVERTS SPHERICAL COORDS INTO CARTESIAN ONES AND VICE VERSA
-C    (THETA AND PHI IN RADIANS).
-C
-C                  J>0            J<0
-C-----INPUT:   J,R,THETA,PHI     J,X,Y,Z
-C----OUTPUT:      X,Y,Z        R,THETA,PHI
-C
-C  NOTE: AT THE POLES (X=0 AND Y=0) WE ASSUME PHI=0 WHEN CONVERTING
-C        FROM CARTESIAN TO SPHERICAL COORDS (I.E., FOR J<0)
-C
-C   LAST MOFIFICATION:  APRIL 1, 2003 (ONLY SOME NOTATION CHANGES AND MORE
-C                         COMMENTS ADDED)
-C
-C   AUTHOR:  N. A. TSYGANENKO
-C
+   *      SUBROUTINE IGRF_GSW_08 (XGSW,YGSW,ZGSW,HXGSW,HYGSW,HZGSW)
+   *
+   *      SUBROUTINE GSWGSE_08 (XGSW,YGSW,ZGSW,XGSE,YGSE,ZGSE,J)
+   *      C                    J>0                       J<0
+   *      C-----INPUT:   J,XGSW,YGSW,ZGSW          J,XGSE,YGSE,ZGSE
+   *      C-----OUTPUT:    XGSE,YGSE,ZGSE            XGSW,YGSW,ZGSW
+   *
+   *
    */
 
   int idim;
-  double xLocal[3];
+  double xLocal[3],xLocalGSE[3],xLocalGSW[3],bGSW[3],bGSE[3];
 
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
-  //extract the magnetic field vector
-  igrf_gsw_08_(xLocal+0,xLocal+1,xLocal+2,B+0,B+1,B+2);
+  //convert xLocal in Usr Frame to xLocalGSE
+  if (Rotate2GSE==true) {
+    mxv_c(UserFrame2GSE,xLocal,xLocalGSE);
+  }
+  else {
+    memcpy(xLocalGSE,xLocal,3*sizeof(double));
+  }
+    
+  //convert xLocalGSE to xLocalGSW
+  int J=-1;
 
-  for (idim=0;idim<3;idim++) B[idim]*=_NANO_;
+  gswgse_08_(xLocalGSW+0,xLocalGSW+1,xLocalGSW+2,xLocalGSE+0,xLocalGSE+1,xLocalGSE+2,&J); 
+
+  //extract the magnetic field vector
+  igrf_gsw_08_(xLocalGSW+0,xLocalGSW+1,xLocalGSW+2,bGSW+0,bGSW+1,bGSW+2);
+
+  //convert bGSW to bGSE
+  J=1;
+  gswgse_08_(bGSW+0,bGSW+1,bGSW+2,bGSE+0,bGSE+1,bGSE+2,&J); 
+  
+  
+  //cover bGSE to b in the User frame
+  if (Rotate2GSE==true) {
+    mxv_c(GSE2UserFrame,bGSE,B);
+    for (idim=0;idim<3;idim++) B[idim]*=_NANO_;
+  }
+  else {
+    for (idim=0;idim<3;idim++) B[idim]=bGSE[idim]*_NANO_;
+  }
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_

@@ -27,6 +27,17 @@ C       OF ARRAY PARMOD(10).
 double T05::PS=0.170481;
 double T05::PARMOD[11]={2.0,-50.0,1.0,-3.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
+std::string T05::UserFrameName="";
+
+double T05::UserFrame2GSM[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+double T05::GSM2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}}; 
+bool T05::Rotate2GSM=false;
+
+double T05::UserFrame2GSE[3][3]={{1,0,0},{0,1,0},{0,0,1}}; 
+double T05::GSE2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}};
+bool T05::Rotate2GSE=false;
+
+
 extern "C"{
   void t04_s_(int*,double*,double*,double*,double*,double*,double*,double*,double*);
 }
@@ -39,12 +50,29 @@ void T05::GetMagneticField(double *B,double *x) {
   for (idim=0;idim<3;idim++) xLocal[idim]=x[idim]/_EARTH__RADIUS_;
 
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__T05_
-  t04_s_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT05+0,bT05+1,bT05+2);
+  //T04_s (IOPT,PARMOD,PS,X,Y,Z,BX,BY,BZ)
+  //X,Y,Z -  GSM POSITION (RE) 
+
+  if (Rotate2GSM==false) {
+    t04_s_(&IOPT,PARMOD,&PS,xLocal+0,xLocal+1,xLocal+2,bT05+0,bT05+1,bT05+2);
+  }
+  else {
+    double xLocal_GSM[3],bT05_GSM[3];
+
+    mxv_c(UserFrame2GSM,xLocal,xLocal_GSM);
+    t04_s_(&IOPT,PARMOD,&PS,xLocal_GSM+0,xLocal_GSM+1,xLocal_GSM+2,bT05_GSM+0,bT05_GSM+1,bT05_GSM+2); 
+    mxv_c(GSM2UserFrame,bT05_GSM,bT05);
+  } 
+
+
   #else 
   exit(__LINE__,__FILE__,"Error: T05 is not setup for this run. Use option \'CouplerMode=T05\' in the input file to use T05"); 
   #endif
   
   // Calculate Earth's internal magentic field
+  // IGRF_GSW_08 (XGSW,YGSW,ZGSW,HXGSW,HYGSW,HZGSW)
+  // SUBROUTINE GSWGSE_08 (XGSW,YGSW,ZGSW,XGSE,YGSE,ZGSE,J)
+  //
   IGRF::GetMagneticField(B,x);
 
   // Sum contributions from Earth's internal magnetic field and global magnetic field
