@@ -1429,6 +1429,40 @@ Check=
 <#
 
 
+#>
+Name=Earth-cutoff-rigidity_t96
+Time=15
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity_t96_compile..." > test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
+
+>>>./Config.pl -application=test/earth-cutoff-rigidity_t96  -amps-test=on ${TESTEarth-cutoff-rigidity_t96KEYS}
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-cutoff-rigidity_t96_compile... done" >> test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
+
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity_t96_check..." >> test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t96DIR}/PT/plots/CutoffRigidityMap\[R=6.871000e+06\].dat \
+>>>output/test_Earth-cutoff-rigidity_t96/CutoffRigidityMap\[R=6.871000e+06\]$(TESTEarth-cutoff-rigidity_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t96-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t96-REF).diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t96DIR}/PT/plots/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d.dat \
+>>>output/test_Earth-cutoff-rigidity_t96/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d$(TESTEarth-cutoff-rigidity_t96-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t96-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t96-REF).diff
+
+>>>@cat test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t96-REF).diff test_Earth-cutoff-rigidity_t96--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t96-REF).diff  > test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity_t96 has finished: `date`
+<#
+
 -------------------------------------------------------------------------------
 #> 
 Name=test/Earth-T96
