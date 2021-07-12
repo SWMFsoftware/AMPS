@@ -183,11 +183,13 @@ MoverIntegratorMode=Boris-relativistic
   nZenithElements=5
   nAzimuthalElements=5
 
+  CoordinateSystem=GSE !GSE,GSM 
+
   CutOffTestLocations=on \\
-    emin=100.0*Mev2J \\
+    emin=10.0*Mev2J \\
     emax=20000.0*Mev2J \\
-    nTotalParticles=5000000 \\
-    nInjectionIterations=1000 \\
+    nTotalParticles=5000 \\
+    nInjectionIterations=100 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
     x=500.0E3+_RADIUS_(_TARGET_),0,0 \\
     x=500.0E3+_RADIUS_(_TARGET_),0,500.0E3+_RADIUS_(_TARGET_) \\ 
