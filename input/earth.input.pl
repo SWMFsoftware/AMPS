@@ -370,6 +370,13 @@ while ($line=<InputFile>) {
       }
     }
   }
+
+  #define the coordinate systen for the simulation
+  elsif ($InputLine eq "COORDINATESYSTEM") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+
+    ampsConfigLib::ChangeValueOfVariable("char Exosphere::SO_FRAME\\[_MAX_STRING_LENGTH_PIC_\\]","\"".$s0."\"","main/Earth.cpp");
+  }
   
   #locations of points where the cutoff rigidity and the energetic particle flux are calculated
   elsif ($InputLine eq "CUTOFFTESTLOCATIONS") {
