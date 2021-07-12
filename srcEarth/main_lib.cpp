@@ -177,7 +177,8 @@ void amps_init_mesh() {
  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
- Earth::Init_BeforeParser();
+// Earth::Init_BeforeParser();
+// Earth::Init_AfterParser(); 
 
  //init the particle solver
  PIC::Init_BeforeParser();

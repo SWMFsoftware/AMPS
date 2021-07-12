@@ -400,10 +400,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
 
-
-  int nTotalInjectedParticlePerPoint=25;
-
-  Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000;
+  //Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000;
 
   cInternalSphericalData Sphere;
   Sphere.SetGeneralSurfaceMeshParameters(nZenithElements,nAzimuthalElements);
@@ -466,6 +463,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   //deallocate the individual location sampling buffer
   Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.Deallocate();
 
+  //calculate the rotation matrix to transfer IAU_EARTH -> Exosphere::SO_FRAME
+  double x_iau_earth[3],et,IAU_EARTH2UserFrame[3][3]; 
+  
+  utc2et_c(Exosphere::SimulationStartTimeString,&et);
+  pxform_c("IAU_EARTH",Exosphere::SO_FRAME,et,IAU_EARTH2UserFrame);
 
   do { //while there are particles in the system
     localParticleGenerationFlag=0;
@@ -495,7 +497,11 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         mass=PIC::MolecularData::GetMass(spec);
 
         for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
-          Sphere.GetSurfaceElementRandomPoint(x,iZenithElement,iAzimutalElement);
+          Sphere.GetSurfaceElementRandomPoint(x_iau_earth,iZenithElement,iAzimutalElement);
+
+          //convert 'x' from the frame related to the sphere to the frame related to the simulation domain 
+          mxv_c(IAU_EARTH2UserFrame,x_iau_earth,x); 
+
           startNode=PIC::Mesh::mesh->findTreeNode(x);
 
           if (startNode->Thread!=PIC::ThisThread) continue;

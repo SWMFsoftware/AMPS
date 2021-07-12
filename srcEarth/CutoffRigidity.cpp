@@ -38,7 +38,8 @@ long int Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex=-1;
 long int Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed=-1;
 
 
-int Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=0;  //the total number of model particles ejected from a test location
+//the total number of model particles ejected from a test location
+int Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000; 
 int Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations=1;
 
 void Earth::CutoffRigidity::Init_BeforeParser() {
