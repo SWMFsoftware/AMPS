@@ -3070,7 +3070,7 @@ Check=
 -------------------------------------------------------------------------------
 #>
 Name=CG-dust-test-tetra-cut-mesh@@(0+valeriy+pleiades+stampede+amps-gpu)
-Time=3
+Time=100 
 
 Ref=1{gcc}@@(0+valeriy)
 Ref=2{icc}@@(0+valeriy)
