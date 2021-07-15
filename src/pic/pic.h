@@ -163,14 +163,17 @@ namespace PIC {
   //DataOutputFileNumber: the number of the NEXT output file
   //SamplingMode: if _RESTART_SAMPLING_MODE_ -> after each output of the data file, the sampling buffer is flushed, _ACCUMULATE_SAMPLING_MODE_ -> the sampling data are saved and used for the next output of the flow file
 
-  #define _RESTART_SAMPLING_MODE_    0
-  #define _ACCUMULATE_SAMPLING_MODE_ 1
+  #define _RESTART_SAMPLING_MODE_           0
+  #define _ACCUMULATE_SAMPLING_MODE_        1
+  #define _DISABLED_SAMPLING_MODE_          2
+  #define _SINGLE_OUTPUT_FILE_SAMPING_MODE_ 3
+
   extern long int LastSampleLength,CollectingSampleCounter,RequiredSampleLength,DataOutputFileNumber;
   extern int SamplingMode;
 
   //the tags for the data exchenge between processors
   #define _PIC_SUBDOMAIN_BOUNDARY_LAYER_SAMPLING_DATA_EXCHANGE_TAG_   0
-  #define _PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_     1
+  #define _PIC_DYNAMIC_BALANCE_SEND_RECV_MESH_NODE_EXCHANGE_TAG_      1
 
   //handle run time signals and exeptions
   void SignalHandler(int);

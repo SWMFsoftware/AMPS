@@ -9,13 +9,19 @@
 
 void PIC::TimeStepInternal::PrintTimeStep() {
   using namespace PIC;
-  
+
   if (ThisThread==0) {
     static int InteractionCouinter=0;
     time_t TimeValue=time(NULL);
     tm *ct=localtime(&TimeValue);
 
-    printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter,RequiredSampleLength,RequiredSampleLength-CollectingSampleCounter);
+    if (SamplingMode!=_DISABLED_SAMPLING_MODE_) {
+      printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter,RequiredSampleLength,RequiredSampleLength-CollectingSampleCounter);
+    }
+    else {
+      printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (sampling is disabled)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter);
+    }
+
     InteractionCouinter++;
   }
 }
@@ -206,6 +212,14 @@ void PIC::TimeStepInternal::Init() {
 //===============================================================================================
 //sampling of the particle properties and creating an output file
 void PIC::TimeStepInternal::Sampling(double &SamplingTime) {
+
+  using namespace PIC;
+
+  if (SamplingMode==_DISABLED_SAMPLING_MODE_) {
+    SamplingTime=0.0;
+    return;
+  }
+
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   SamplingTime=MPI_Wtime();
 

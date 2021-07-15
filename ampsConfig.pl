@@ -1057,6 +1057,19 @@ sub ReadGeneralBlock {
       ampsConfigLib::ChangeValueOfVariable("static const int FirstPrintedOutputFile",$InputLine,"pic/pic.h");
     }
 
+    #sampling mode
+    elsif ($InputLine eq "SAMPLINGMODE") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "DISABLED") {
+        ampsConfigLib::ChangeValueOfVariable("int PIC::SamplingMode","_DISABLED_SAMPLING_MODE_","pic/pic.h");
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
     #create a single output file vs a set of separated output files that need to be concatenated using AMPS/utility/ConOutput.pl script
     elsif ($InputLine eq "OUTPUTMODE") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);

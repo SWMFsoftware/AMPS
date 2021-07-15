@@ -1167,6 +1167,10 @@ void PIC::Sampling::Sampling() {
                 }
             }
           }
+          
+          if (SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_) {
+            SamplingMode=_DISABLED_SAMPLING_MODE_;
+          }
         }
 
         if (PIC::Mesh::mesh->ThisThread==0) {
