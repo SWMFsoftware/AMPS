@@ -277,17 +277,17 @@ void amps_init_mesh(){
   
   if (PIC::Mesh::mesh->ThisThread==0) {
     PIC::Mesh::mesh->buildMesh();
-    PIC::Mesh::mesh->saveMeshFile("mesh->msh");
+    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    PIC::Mesh::mesh->readMeshFile("mesh->msh");
+    PIC::Mesh::mesh->readMeshFile("mesh.msh");
   }
   
   // cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
   
-  PIC::Mesh::mesh->outputMeshTECPLOT("mesh->dat");
+  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
   
   if ((_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_) && (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_OFF_)) {
     PIC::Mesh::mesh->memoryAllocationReport();
