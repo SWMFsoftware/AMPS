@@ -214,14 +214,52 @@ void PIC::TimeStepInternal::Sampling(double &SamplingTime) {
   timing_stop("PT::Sampling");
 
 
-  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
-      (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
-    Sampling::CatchOutLimitSampledValue();
-  }
-
   SamplingTime=MPI_Wtime()-SamplingTime;
 }
 
 
+//===============================================================================================
+//Background atmosphere model
+void PIC::TimeStepInternal::BackgroundAtmosphereModel(double& BackgroundAtmosphereCollisionTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  BackgroundAtmosphereCollisionTime=MPI_Wtime();
 
+  using namespace PIC;
+ 
+  #if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_
+  #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
+  MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
+  #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
+  MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
+  #else
+  exit(__LINE__,__FILE__,"Error: the option is unknown");
+  #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
+  #endif
+
+  BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
+}
+
+
+//===============================================================================================
+//Simulate photolytic reactions 
+void PIC::TimeStepInternal::PhtolyticReactions(double &PhotoChemistryTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  PhotoChemistryTime=MPI_Wtime();
+
+  ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
+
+  PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
+  RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
+}
+
+//===============================================================================================
+//perform user-define processing of the model particles
+void PIC::TimeStepInternal::UserDefinedParticleProcessing(double& UserDefinedParticleProcessingTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  UserDefinedParticleProcessingTime=MPI_Wtime();
+
+  PIC::UserParticleProcessing::Processing();
+
+  UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
+}
 

@@ -185,6 +185,9 @@ namespace PIC {
     void ParticleCollisions(double &ParticleCollisionTime);
     void ParticleInjectionBC(double &InjectionBoundaryTime);
     void Sampling(double& SamplingTime);
+    void BackgroundAtmosphereModel(double& BackgroundAtmosphereCollisionTime);
+    void PhtolyticReactions(double &PhotoChemistryTime);
+    void UserDefinedParticleProcessing(double& UserDefinedParticleProcessingTime);
   }
   
   

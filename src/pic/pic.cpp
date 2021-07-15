@@ -109,79 +109,25 @@ int PIC::TimeStep() {
   }  
 
   //simulate collisions with the background atmosphere
-#if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_
-  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  BackgroundAtmosphereCollisionTime=MPI_Wtime();
+  if (_PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_) {
+    TimeStepInternal::BackgroundAtmosphereModel(BackgroundAtmosphereCollisionTime);
 
-  auto DoBackgroundAtmosphere = [=] () {
-    #if _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__PARTICLE_COLLISIONS_
-    MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();
-    #elif _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
-    MolecularCollisions::BackgroundAtmosphere::StoppingPowerProcessor();
-    #else
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
-    #endif //_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  DoBackgroundAtmosphere();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
-  RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
-#elif _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__STOPPING_POWER_
-
-  auto DoBackgroundAtmosphere = [=] () {
-    MolecularCollisions::StoppingPowerModel::ModelProcessor();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  DoBackgroundAtmosphere();
-  //#else
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-#endif //_PIC_BACKGROUND_ATMOSPHERE_MODE_
+    BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
+    RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
+  }
 
 
   //particle photochemistry model
-  #if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  PhotoChemistryTime=MPI_Wtime();
-
-  auto DoPhotolyticReactions = [=] () {
-    ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_
-  DoPhotolyticReactions();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif 
-
-  PhotoChemistryTime=MPI_Wtime()-PhotoChemistryTime;
-  RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
-  #endif  //_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
+  if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
+    TimeStepInternal::PhtolyticReactions(PhotoChemistryTime);
+    RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
+  }
 
   //perform user-define processing of the model particles
-#if _PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_
-  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  UserDefinedParticleProcessingTime=MPI_Wtime();
-
-  auto DoUserParticleProcessing = [=] () {
-    PIC::UserParticleProcessing::Processing();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_
-  DoUserParticleProcessing();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  UserDefinedParticleProcessingTime=MPI_Wtime()-UserDefinedParticleProcessingTime;
-  RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
-#endif
+  if (_PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_) {
+    TimeStepInternal::UserDefinedParticleProcessing(UserDefinedParticleProcessingTime);
+    RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime+=UserDefinedParticleProcessingTime;
+  }
 
   //move existing particles
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
