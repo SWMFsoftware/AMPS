@@ -25,6 +25,10 @@ T
 #HELIOSPHERE
 2       MinRadius
 
+#SAMPLING
+F                       Particle data sampling
+
+
 #END_COMP PT -----------------------------------------------------------------
 
 */
@@ -74,6 +78,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
 
     }
+
     else if (Command == "#TEST"){
       t=param_list.front().first;
 
@@ -86,6 +91,20 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         PIC::ModelTestRun::mode=true;
       }
     }
+
+    else if (Command == "#SAMPLING"){
+      t=param_list.front().first;
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      TestVar=(t=="T") ? true : false;
+
+      if (TestVar==false) {
+        PIC::SamplingMode=_DISABLED_SAMPLING_MODE_;
+      }
+    }
+
     else if (Command == "#FIELDLINE") { 
       string t;
 
