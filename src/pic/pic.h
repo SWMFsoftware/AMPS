@@ -188,6 +188,12 @@ namespace PIC {
     void BackgroundAtmosphereModel(double& BackgroundAtmosphereCollisionTime);
     void PhtolyticReactions(double &PhotoChemistryTime);
     void UserDefinedParticleProcessing(double& UserDefinedParticleProcessingTime);
+    
+    void CheckParticleLists();
+    
+    
+    void ExecutionTrackDefault(double& ParticleMovingTime,double& ParticleExchangeTime);
+    void ExecutinoTrackFieldSolverECSIM(double& ParticleMovingTime,double& ParticleExchangeTime,double& FieldSolverTime);
   }
   
   

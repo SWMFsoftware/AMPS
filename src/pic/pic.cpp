@@ -132,213 +132,26 @@ int PIC::TimeStep() {
   //move existing particles
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   
-#if _PIC_FIELD_SOLVER_MODE_!=_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-    ParticleMovingTime=MPI_Wtime();
-
-    auto FIELD_SOLVER_Task1 = [=] () {
-      PIC::Mover::MoveParticles();
- 
-      if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
-        PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-      }
-    }; 
-
-    //#if _CUDA_MODE_ == _OFF_
-    FIELD_SOLVER_Task1();
-   // #else
-   // exit(__LINE__,__FILE__,"Error: not implemented");
-    //#endif
-
-
-    ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
-    RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
-
-    //check the consistence of the particles lists
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-
-    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-      PIC::FieldLine::CheckParticleList(); 
-      break;
-
-    case _PIC_PARTICLE_LIST_ATTACHING_NODE_: 
-      PIC::ParticleBuffer::CheckParticleList();
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: the option is unknown");
-    }
-#endif
+  switch (_PIC_FIELD_SOLVER_MODE_) {
+  case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
+    TimeStepInternal::ExecutinoTrackFieldSolverECSIM(ParticleMovingTime,ParticleExchangeTime,FieldSolverTime);
     
-    //syncronize processors and exchange particle data
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  ParticleExchangeTime=MPI_Wtime();
-
-// PIC::FieldLine::CheckParticleList();
-
-
-  auto FIELD_SOLVER_Task2 = [=] { 
-    PIC::Parallel::ExchangeParticleData();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_
-  FIELD_SOLVER_Task2();
-  //#else
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-
-
-  ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
-  RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
-#endif  
-  //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
-  #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-
-  auto FIELD_SOLVER_Task3 = [=] {
-    PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-    PIC::Parallel::UpdateGhostBlockData();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  FIELD_SOLVER_Task3();
- // #else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  #endif
- 
-  //update elecrtic and magnetic fields
-  #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__OFF_
-  //do nothing
-  #else
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  FieldSolverTime=MPI_Wtime();
-
-  auto FIELD_SOLVER_Task4 = [=] () {
-    switch (_PIC_FIELD_SOLVER_MODE_) {
-    case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
-      FieldSolver::Electromagnetic::ECSIM::TimeStep();
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: unknown value of _PIC_FIELD_SOLVER_MODE_");
-    }
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  FIELD_SOLVER_Task4();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-
-#if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-  ParticleMovingTime=MPI_Wtime();
-  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.Start();
-
-  auto FIELD_SOLVER_Task5 = [=] () {
-    PIC::Mover::MoveParticles();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  FIELD_SOLVER_Task5();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
-  RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
-
-  //check the consistence of the particles lists
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  PIC::ParticleBuffer::CheckParticleList();
-  #endif
-
-  //syncronize processors and exchange particle data
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  ParticleExchangeTime=MPI_Wtime();
-
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  PIC::Parallel::ExchangeParticleData();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::ParticleMoverTime.UpdateTimer();
-  ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
-  RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
-
-  auto FIELD_SOLVER_Task6 = [=] () {
-    if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ )
-      PIC::FieldSolver::Electromagnetic::ECSIM::setParticle_BC();
-  
-    if (PIC::FieldSolver::Electromagnetic::ECSIM::DoDivECorrection)
-      PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection();
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  FIELD_SOLVER_Task6();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  
-  if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_ ) { 
-    auto FIELD_SOLVER_Task7 = [=] () {
-      PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
-    };
-
-    //#if _CUDA_MODE_ == _OFF_ 
-    FIELD_SOLVER_Task7();
-    //#else
-    //exit(__LINE__,__FILE__,"Error: not implemented");
-    //#endif
+    RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
+    RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
+    RunTimeSystemState::CumulativeTiming::FieldSolverTime+=FieldSolverTime;
+    break;
+    
+  case _PIC_FIELD_SOLVER_MODE__OFF_:
+    TimeStepInternal::ExecutionTrackDefault(ParticleMovingTime,ParticleExchangeTime);
+    
+    RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
+    RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;
+    break;
+    
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is not recognized");
   }
 
-
-  auto FIELD_SOLVER_Task8 = [=] () {
-    PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix();
-  };
- 
-  //#if _CUDA_MODE_ == _OFF_
-  FIELD_SOLVER_Task8();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-  
-
-  PIC::CPLR::FLUID::iCycle++;
-  {// Output
-
-    //#if _CUDA_MODE_ == _ON_
-    //exit(__LINE__,__FILE__,"Error: not implemented");
-    //#endif
-
-    double timeNow = PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*PIC::CPLR::FLUID::iCycle;    
-    if (PIC::ThisThread==0) printf("pic.cpp timeNow:%e,iCycle:%d\n",timeNow,PIC::CPLR::FLUID::iCycle);
-    PIC::CPLR::FLUID::write_output(timeNow);
-    PIC::CPLR::FLUID::check_max_mem_usage();
-    PIC::FieldSolver::Electromagnetic::ECSIM::CumulativeTiming::Print();
-
-  }
-  
-  #endif
-  //if the periodeic boundary conditions are in use -> exchange new values of the electric and magnetic fields between 'real' and 'ghost' blocks
-  #if _PIC_FIELD_SOLVER_MODE_ == _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
-
-  //#if _CUDA_MODE_ == _ON_
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  PIC::Parallel::ProcessBlockBoundaryNodes(); 
-
-  #endif
-
-  FieldSolverTime=MPI_Wtime()-FieldSolverTime;
-  RunTimeSystemState::CumulativeTiming::FieldSolverTime+=FieldSolverTime;
-  #endif //_PIC_FIELD_SOLVER_MODE_
   
   IterationExecutionTime=MPI_Wtime()-StartTime;
   summIterationExecutionTime+=IterationExecutionTime;
@@ -353,16 +166,16 @@ int PIC::TimeStep() {
 
   //incase OpenMP is used: rebalance the list of the available particles between OpenMP threads
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   PIC::ParticleBuffer::Thread::RebalanceParticleList();
   #endif
 
 
   //update the total number of the sampled trajecotries
-#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  PIC::ParticleTracker::UpdateTrajectoryCounter();
-#endif
+  if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    PIC::ParticleTracker::UpdateTrajectoryCounter();
+  }
 
   //call user defined MPI procedure
 #if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_
