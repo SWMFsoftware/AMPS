@@ -1062,7 +1062,7 @@ sub ReadGeneralBlock {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
 
       if ($InputLine eq "DISABLED") {
-        ampsConfigLib::ChangeValueOfVariable("int PIC::SamplingMode","_DISABLED_SAMPLING_MODE_","pic/pic.h");
+        ampsConfigLib::ChangeValueOfVariable("int PIC::SamplingMode","_DISABLED_SAMPLING_MODE_","pic/pic.cpp");
       }
       else {
         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
