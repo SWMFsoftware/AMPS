@@ -181,6 +181,7 @@ namespace PIC {
     void RecoverSamplingDataRestart();
     void ReadParticleDataRestartFile();
     void SaveParticleRestartFile();
+    void ParticleCollisions();
   }
   
   

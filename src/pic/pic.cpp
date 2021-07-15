@@ -114,11 +114,11 @@ int PIC::TimeStep() {
   //sampling of the particle data
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
    SamplingTime=MPI_Wtime();
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-   Sampling::CatchOutLimitSampledValue();
-#endif
-#endif
+   
+   if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
+       (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
+     Sampling::CatchOutLimitSampledValue();
+   }
 
   auto DoSampling = [=] () {
     timing_start("PT::Sampling");
@@ -132,11 +132,10 @@ int PIC::TimeStep() {
   //exit(__LINE__,__FILE__,"Error: not implemented");
   //#endif
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-   Sampling::CatchOutLimitSampledValue();
-#endif
-#endif
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
+      (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
+    Sampling::CatchOutLimitSampledValue();
+  }
 
   SamplingTime=MPI_Wtime()-SamplingTime;
   RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
@@ -181,31 +180,16 @@ int PIC::TimeStep() {
 
 
   //simulate particle collisions
-#if _PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_
-  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-  ParticleCollisionTime=MPI_Wtime();
-
-  auto DoCollisions = [=] () {
-    #if _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__NTC_
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-    #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__MF_
-    PIC::MolecularCollisions::ParticleCollisionModel::mf();
-    #elif _PIC__PARTICLE_COLLISION_MODEL_ == _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_
-    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
-    #else
-    exit(__LINE__,__FILE__,"Error: the option is not implemented");
-    #endif
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  DoCollisions();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif 
-
-  ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
-  RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
-#endif
+  if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    ParticleCollisionTime=MPI_Wtime();
+    
+    TimeStepInternal::ParticleCollisions();
+    
+    ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
+    RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
+  }
+  
 
   //simulate collisions with the background atmosphere
 #if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_

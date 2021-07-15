@@ -117,6 +117,26 @@ void PIC::TimeStepInternal::SaveParticleRestartFile() {
 }
 
 //===============================================================================================
+//simulate particle collisions
+void PIC::TimeStepInternal::ParticleCollisions() {
+  
+  switch (_PIC__PARTICLE_COLLISION_MODEL_) {
+  case _PIC__PARTICLE_COLLISION_MODEL__NTC_:
+    PIC::MolecularCollisions::ParticleCollisionModel::ntc();
+    break;
+    
+  case _PIC__PARTICLE_COLLISION_MODEL__MF_:
+    PIC::MolecularCollisions::ParticleCollisionModel::mf();
+    break;
+    
+  case _PIC__PARTICLE_COLLISION_MODEL__USER_DEFINED_:
+    exit(__LINE__,__FILE__,"Error: the option is not implemented");
+    break;
+    
+  default:  
+    exit(__LINE__,__FILE__,"Error: the option is not implemented");
+  }
+}
 
 
 
