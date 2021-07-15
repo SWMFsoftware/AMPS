@@ -143,50 +143,13 @@ int PIC::TimeStep() {
 //
 
   //injection boundary conditions
-  InjectionBoundaryTime=MPI_Wtime();
-
-  //inject particle through the domain's boundaries
-  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-
-  auto DoBC = [=] () {
-    PIC::BC::InjectionBoundaryConditions();
-
-    //inject particles into the volume of the domain
-#if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-    if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
-#endif
-
-    //call a user-defined injection function
-    if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
-      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-      PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
-    }
-
-    //the extra injection process by the exosphere model (src/models/exosphere)
-    if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
-      SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-      PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
-    }
-  }; 
-
-  InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
+  TimeStepInternal::ParticleInjectionBC(InjectionBoundaryTime);
   RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
-
-  //#if _CUDA_MODE_ == _OFF_
-  DoBC();
-  //#else 
-  //exit(__LINE__,__FILE__);
-  //#endif
 
 
   //simulate particle collisions
   if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) {
-    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-    ParticleCollisionTime=MPI_Wtime();
-    
-    TimeStepInternal::ParticleCollisions();
-    
-    ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
+    TimeStepInternal::ParticleCollisions(ParticleCollisionTime);
     RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
   }
   

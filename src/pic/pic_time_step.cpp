@@ -118,7 +118,9 @@ void PIC::TimeStepInternal::SaveParticleRestartFile() {
 
 //===============================================================================================
 //simulate particle collisions
-void PIC::TimeStepInternal::ParticleCollisions() {
+void PIC::TimeStepInternal::ParticleCollisions(double &ParticleCollisionTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  ParticleCollisionTime=MPI_Wtime();
   
   switch (_PIC__PARTICLE_COLLISION_MODEL_) {
   case _PIC__PARTICLE_COLLISION_MODEL__NTC_:
@@ -136,9 +138,41 @@ void PIC::TimeStepInternal::ParticleCollisions() {
   default:  
     exit(__LINE__,__FILE__,"Error: the option is not implemented");
   }
+  
+  ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
 }
 
 
+
+//===============================================================================================
+//injection boundary conditions
+void PIC::TimeStepInternal::ParticleInjectionBC(double &InjectionBoundaryTime) {
+  InjectionBoundaryTime=MPI_Wtime();
+
+  //inject particle through the domain's boundaries
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+
+  PIC::BC::InjectionBoundaryConditions();
+
+  //inject particles into the volume of the domain
+  #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
+  if (PIC::VolumeParticleInjection::nRegistratedInjectionProcesses!=0) PIC::BC::nTotalInjectedParticles+=PIC::VolumeParticleInjection::InjectParticle();
+  #endif
+
+  //call a user-defined injection function
+  if (PIC::BC::UserDefinedParticleInjectionFunction!=NULL) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    PIC::BC::nTotalInjectedParticles+=PIC::BC::UserDefinedParticleInjectionFunction();
+  }
+
+  //the extra injection process by the exosphere model (src/models/exosphere)
+  if (BC::ExosphereModelExtraInjectionFunction!=NULL) {
+    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+    PIC::BC::nTotalInjectedParticles+=BC::ExosphereModelExtraInjectionFunction();
+  }
+
+  InjectionBoundaryTime=MPI_Wtime()-InjectionBoundaryTime;
+}
 
 
 
