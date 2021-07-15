@@ -8,6 +8,7 @@ include ../../Makefile.conf
 include ../../Makefile.local
 
 PICOBJ = pic.o \
+	pic_time_step.o \
 	pic_parallel.o \
 	pic_bc.o \
 	pic_init_const.o \

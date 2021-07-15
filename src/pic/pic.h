@@ -176,6 +176,14 @@ namespace PIC {
   void SignalHandler(int);
 
   //perform one time step
+  namespace TimeStepInternal {
+    void PrintTimeStep();
+    void RecoverSamplingDataRestart();
+    void ReadParticleDataRestartFile();
+    void SaveParticleRestartFile();
+  }
+  
+  
   int TimeStep();
 //  void Sampling();
 
