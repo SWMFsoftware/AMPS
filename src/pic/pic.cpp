@@ -134,7 +134,7 @@ int PIC::TimeStep() {
   
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
-    TimeStepInternal::ExecutinoTrackFieldSolverECSIM(ParticleMovingTime,ParticleExchangeTime,FieldSolverTime);
+    TimeStepInternal::ExecutionTrackFieldSolverECSIM(ParticleMovingTime,ParticleExchangeTime,FieldSolverTime);
     
     RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
     RunTimeSystemState::CumulativeTiming::ParticleExchangeTime+=ParticleExchangeTime;

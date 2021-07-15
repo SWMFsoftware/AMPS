@@ -314,7 +314,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
 //===============================================================================================
 //execution track specific to the ECSIM field solver
-void PIC::TimeStepInternal::ExecutinoTrackFieldSolverECSIM(double& ParticleMovingTime,double& ParticleExchangeTime,double& FieldSolverTime) {
+void PIC::TimeStepInternal::ExecutionTrackFieldSolverECSIM(double& ParticleMovingTime,double& ParticleExchangeTime,double& FieldSolverTime) {
 
   //if the periodeic boundary conditions are in use -> exchange particles between 'real' and 'ghost' blocks
 

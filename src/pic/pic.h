@@ -193,7 +193,7 @@ namespace PIC {
     
     
     void ExecutionTrackDefault(double& ParticleMovingTime,double& ParticleExchangeTime);
-    void ExecutinoTrackFieldSolverECSIM(double& ParticleMovingTime,double& ParticleExchangeTime,double& FieldSolverTime);
+    void ExecutionTrackFieldSolverECSIM(double& ParticleMovingTime,double& ParticleExchangeTime,double& FieldSolverTime);
   }
   
   
