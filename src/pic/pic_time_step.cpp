@@ -175,10 +175,52 @@ void PIC::TimeStepInternal::ParticleInjectionBC(double &InjectionBoundaryTime) {
 }
 
 
+//===============================================================================================
+//initialization at the first call of PIC::TimeStep()
+void PIC::TimeStepInternal::Init() {
+  if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: the option is only implemented for single global time step");
+
+  if (PIC::Sampling::SampleTimeInterval<0) exit(__LINE__,__FILE__,"Error: the sample time interval is negative");
+
+  if (PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)<0) {
+    exit(__LINE__,__FILE__,"Error: the global time step is negative");
+  }
+  else {
+    PIC::RequiredSampleLength=(long int)(PIC::Sampling::SampleTimeInterval/PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)+0.5);
+
+    if (PIC::RequiredSampleLength==0) {
+      char msg[600];
+      sprintf(msg,"Error: the required sample length is 0, PIC::Sampling::SampleTimeInterval:%e, PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0):%e", PIC::Sampling::SampleTimeInterval,PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0));
+      exit(__LINE__,__FILE__,msg);
+    }
+
+    if (PIC::ThisThread==0) printf("PIC::RequiredSampleLength is set to %ld \n", PIC::RequiredSampleLength);
+  } 
+}
+
+//===============================================================================================
+//sampling of the particle properties and creating an output file
+void PIC::TimeStepInternal::Sampling(double &SamplingTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  SamplingTime=MPI_Wtime();
+
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
+      (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
+    Sampling::CatchOutLimitSampledValue();
+  }
+
+  timing_start("PT::Sampling");
+  PIC::Sampling::Sampling();
+  timing_stop("PT::Sampling");
 
 
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
+      (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
+    Sampling::CatchOutLimitSampledValue();
+  }
 
-
+  SamplingTime=MPI_Wtime()-SamplingTime;
+}
 
 
 

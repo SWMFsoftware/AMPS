@@ -61,25 +61,8 @@ int PIC::TimeStep() {
    static bool SampleTimeInitialized=false;
    
    if ((_PIC_SAMPLE_OUTPUT_MODE_==_PIC_SAMPLE_OUTPUT_MODE_TIME_INTERVAL_) && (SampleTimeInitialized==false)) {
-     if (_SIMULATION_TIME_STEP_MODE_ != _SINGLE_GLOBAL_TIME_STEP_) exit(__LINE__,__FILE__,"Error: the option is only implemented for single global time step");
-     
-     if (PIC::Sampling::SampleTimeInterval<0) exit(__LINE__,__FILE__,"Error: the sample time interval is negative");
-     
-     if (PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)<0) {
-       exit(__LINE__,__FILE__,"Error: the global time step is negative");
-     }
-     else {
-       PIC::RequiredSampleLength=(long int)(PIC::Sampling::SampleTimeInterval/PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)+0.5);
-       
-       if (PIC::RequiredSampleLength==0) {
-         char msg[600];
-         sprintf(msg,"Error: the required sample length is 0, PIC::Sampling::SampleTimeInterval:%e, PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0):%e", PIC::Sampling::SampleTimeInterval,PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0));
-         exit(__LINE__,__FILE__,msg);
-       }
-
-       SampleTimeInitialized=true;
-       if (PIC::ThisThread==0) printf("PIC::RequiredSampleLength is set to %ld \n", PIC::RequiredSampleLength);
-     }  
+     TimeStepInternal::Init();
+     SampleTimeInitialized=true; 
    }
    
    //recover the sampling data from the sampling data restart file, print the TECPLOT files and quit
@@ -98,7 +81,6 @@ int PIC::TimeStep() {
    }
 
    //Collect and exchange the run's statictic information
-//   static const int nRunStatisticExchangeIterationsMin=5,nRunStatisticExchangeIterationsMax=500,nRunStatisticExchangeTime=120;
    static long int nTotalIterations=0,nInteractionsAfterRunStatisticExchange=0;
    static int nExchangeStatisticsIterationNumberSteps=10;
 
@@ -111,48 +93,20 @@ int PIC::TimeStep() {
       PIC::Debugger::GetMemoryUsageStatus(__LINE__,__FILE__,false);
    }
 
-  //sampling of the particle data
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
-   SamplingTime=MPI_Wtime();
-   
-   if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
-       (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
-     Sampling::CatchOutLimitSampledValue();
-   }
+   //sampling of the particle data
+   TimeStepInternal::Sampling(SamplingTime); 
+   RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
 
-  auto DoSampling = [=] () {
-    timing_start("PT::Sampling");
-    PIC::Sampling::Sampling();
-    timing_stop("PT::Sampling");
-  };
-
-  //#if _CUDA_MODE_ == _OFF_ 
-  DoSampling();
-  //#else 
-  //exit(__LINE__,__FILE__,"Error: not implemented");
-  //#endif
-
-  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) && 
-      (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_)) {
-    Sampling::CatchOutLimitSampledValue();
-  }
-
-  SamplingTime=MPI_Wtime()-SamplingTime;
-  RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
-//#endif
-//
 
   //injection boundary conditions
   TimeStepInternal::ParticleInjectionBC(InjectionBoundaryTime);
   RunTimeSystemState::CumulativeTiming::InjectionBoundaryTime+=InjectionBoundaryTime;
 
-
   //simulate particle collisions
   if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) {
     TimeStepInternal::ParticleCollisions(ParticleCollisionTime);
     RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
-  }
-  
+  }  
 
   //simulate collisions with the background atmosphere
 #if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_

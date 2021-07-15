@@ -177,12 +177,14 @@ namespace PIC {
 
   //perform one time step
   namespace TimeStepInternal {
+    void Init();
     void PrintTimeStep();
     void RecoverSamplingDataRestart();
     void ReadParticleDataRestartFile();
     void SaveParticleRestartFile();
     void ParticleCollisions(double &ParticleCollisionTime);
     void ParticleInjectionBC(double &InjectionBoundaryTime);
+    void Sampling(double& SamplingTime);
   }
   
   
