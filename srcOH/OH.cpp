@@ -820,6 +820,8 @@ auto SimulateReaction = [&] () {
 void OH::FinalizeSimulation() {
   //print timing 
   ReactionProcessorTimer.PrintMeanMPI("$PREFIX: time used by OH::Loss::ReactionProcessor()");
+
+  PIC::Debugger::Timer.PrintSampledDataMPI();
 }
 
 void OH::Init_BeforeParser(){

@@ -44,6 +44,8 @@ int PIC::TimeStep() {
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
    
+   PIC::Debugger::Timer.Start("PIC::TimeStep",__LINE__);
+
    //print the iteration time stamp
    TimeStepInternal::PrintTimeStep();
 
@@ -52,6 +54,8 @@ int PIC::TimeStep() {
    
    //init the random number generator is needed
    if ((_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_)&&(Rnd::CenterNode::CompletedSeedFlag==false)) Rnd::CenterNode::Seed(PIC::Mesh::mesh->rootTree);
+
+   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
    //update the local block list
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
@@ -70,15 +74,21 @@ int PIC::TimeStep() {
      TimeStepInternal::RecoverSamplingDataRestart();
    }
 
+   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+
    //recover the particle data restart file
    if ((_PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_READ_PARTICLE_DATA_RESTART_FILE__MODE_ON_)||(PIC::Restart::LoadRestartSWMF==true)) {
      TimeStepInternal::ReadParticleDataRestartFile();
    }
 
+   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+
    //save the particle data restart file
    if (_PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ == _PIC_AUTOSAVE_PARTICLE_DATA_RESTART_FILE__MODE_ON_) {
      TimeStepInternal::SaveParticleRestartFile();
    }
+
+   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
    //Collect and exchange the run's statictic information
    static long int nTotalIterations=0,nInteractionsAfterRunStatisticExchange=0;
@@ -116,12 +126,15 @@ int PIC::TimeStep() {
     RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
   }
 
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
   //particle photochemistry model
   if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
     TimeStepInternal::PhtolyticReactions(PhotoChemistryTime);
     RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   }
+
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
   //perform user-define processing of the model particles
   if (_PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_) {
@@ -131,6 +144,8 @@ int PIC::TimeStep() {
 
   //move existing particles
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
   
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
@@ -170,6 +185,7 @@ int PIC::TimeStep() {
   PIC::ParticleBuffer::Thread::RebalanceParticleList();
   #endif
 
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
   //update the total number of the sampled trajecotries
   if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
@@ -179,9 +195,11 @@ int PIC::TimeStep() {
 
   //call user defined MPI procedure
 #if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_
-   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime();
   _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_();
+
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime()-UserDefinedMPI_RoutineExecutionTime;
   RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime+=UserDefinedMPI_RoutineExecutionTime;
 #endif
@@ -324,9 +342,6 @@ int PIC::TimeStep() {
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:16:\t Background Atmosphere Collision Time\n");
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:17:\t User Defined Particle Processing Time\n");
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:18:\t Field Solver Time\n");
-
-
-//      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:1\t 2\t 3\t\t 4\t\t 5\t\t 6\t\t 7\t\t 8\t\t 9\t\t 10\t 11\t 12\t 13\t\t 14\t\t 15\t 16\t 17\t\t18\n");
 
 
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX: ");
@@ -566,6 +581,8 @@ int PIC::TimeStep() {
       fflush(PIC::DiagnospticMessageStream);
     }
   }
+
+  PIC::Debugger::Timer.Stop(__LINE__);
 
   PIC::RunTimeSystemState::CumulativeTiming::TotalRunTime+=MPI_Wtime()-StartTime;
   return _PIC_TIMESTEP_RETURN_CODE__SUCCESS_;
