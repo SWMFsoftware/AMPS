@@ -5132,6 +5132,7 @@ void DeleteAttachedParticles();
       int StartLine,EndLine,nPassCounter;
       double TotalSampledTime;
       cLabel label; 
+      string SubSectionLabel;
 
       friend bool operator == (const cTimerDataElement& a,const cTimerDataElement& b) {
         return (a.label.segment_name==b.label.segment_name)&&(a.label.file_name==b.label.file_name)&&(a.StartLine==b.StartLine)&&(a.EndLine==b.EndLine);
@@ -5140,6 +5141,7 @@ void DeleteAttachedParticles();
       cTimerDataElement() {
         StartLine=-1,EndLine=-1,nPassCounter=0;
         TotalSampledTime=0.0;
+        SubSectionLabel="";
       }
     };
 
@@ -5171,6 +5173,8 @@ void DeleteAttachedParticles();
 
       CurrentSegment.StartLine=LineNumber;
       CurrentSegment.EndLine=-1;
+
+      CurrentSegment.SubSectionLabel=FunctionName;
       
       //reset timer
       timer.Start();
@@ -5203,12 +5207,14 @@ void DeleteAttachedParticles();
       TimedSegmetList.push_front(CurrentSegment);
     }
  
-    void SwitchTimeSegment(int LineNumber) {
+    void SwitchTimeSegment(int LineNumber,string sub_label="") {
       Stop(LineNumber);
       status=_active;
 
       CurrentSegment.StartLine=LineNumber;
       CurrentSegment.EndLine=-1; 
+
+      CurrentSegment.SubSectionLabel=sub_label;
           
       timer.Start();
     }
@@ -5269,7 +5275,12 @@ void DeleteAttachedParticles();
         printf("$PREFIX: Sampled Segment Time: %e [sec]\n",TotalTime);
         
         for (const auto& it : p->second) {
-          printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+          if (it->SubSectionLabel=="") {
+            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+          }
+          else {
+            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
+          }
         }
       }
 
@@ -5368,8 +5379,16 @@ void DeleteAttachedParticles();
             if (max_npass<nPassTable[thread]) max_npass=nPassTable[thread];
           }
           
-          if (PIC::ThisThread==0) printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\n", 
-              it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
+          if (PIC::ThisThread==0) {
+            if (it->SubSectionLabel=="") {
+              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\n", 
+                it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
+            }
+            else {
+              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\t(%s)\n",
+                it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass,it->SubSectionLabel.c_str());
+            }
+          }
         }
       }
 
