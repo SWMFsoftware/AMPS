@@ -5276,10 +5276,10 @@ void DeleteAttachedParticles();
         
         for (const auto& it : p->second) {
           if (it->SubSectionLabel=="") {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
           }
           else {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\tnpass: %ld\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
+            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
           }
         }
       }

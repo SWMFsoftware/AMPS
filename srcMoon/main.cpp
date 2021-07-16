@@ -40,7 +40,7 @@ PIC::Debugger::cGenericTimer t;
 t.Start("main",__LINE__);
   amps_init();
 
-t.SwitchTimeSegment(__LINE__); 
+t.SwitchTimeSegment(__LINE__,"first switch"); 
 
   int niter,nTotalIterations=100000001;
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
@@ -54,7 +54,7 @@ t.SwitchTimeSegment(__LINE__);
 t.SwitchTimeSegment(__LINE__);
     amps_time_step();
 
-t.SwitchTimeSegment(__LINE__);
+t.SwitchTimeSegment(__LINE__,"another switch");
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
