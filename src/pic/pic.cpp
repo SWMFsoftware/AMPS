@@ -126,7 +126,7 @@ int PIC::TimeStep() {
     RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime+=BackgroundAtmosphereCollisionTime;
   }
 
-  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Photolytic Reactions");
 
   //particle photochemistry model
   if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
@@ -145,7 +145,7 @@ int PIC::TimeStep() {
   //move existing particles
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
-  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Particle Mover/Field Solver/Dust");
   
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
@@ -185,7 +185,7 @@ int PIC::TimeStep() {
   PIC::ParticleBuffer::Thread::RebalanceParticleList();
   #endif
 
-  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Run statistics/Rebalancing");
 
   //update the total number of the sampled trajecotries
   if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
