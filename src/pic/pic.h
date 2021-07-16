@@ -5368,7 +5368,7 @@ void DeleteAttachedParticles();
             if (max_npass<nPassTable[thread]) max_npass=nPassTable[thread];
           }
           
-          if (PIC::ThisThread==0) printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t npass range: %ld - %ld\n", 
+          if (PIC::ThisThread==0) printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\n", 
               it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
         }
       }

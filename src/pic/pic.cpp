@@ -44,7 +44,7 @@ int PIC::TimeStep() {
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
    
-   PIC::Debugger::Timer.Start("PIC::TimeStep",__LINE__);
+   PIC::Debugger::Timer.Start("PIC::TimeStep",__LINE__,__FILE__);
 
    //print the iteration time stamp
    TimeStepInternal::PrintTimeStep();
