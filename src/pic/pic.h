@@ -3950,6 +3950,7 @@ void DeleteAttachedParticles();
       //model of the particle collisions
       void ntc();
       void mf();
+      void mf_new();
     }
 
     //models for calculation of the relative velocity after a collision
