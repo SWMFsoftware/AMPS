@@ -125,13 +125,13 @@ string test_help_base="\t@echo \"    test_all\t\t(run all tests with ${MPIRUN})\
   "\t@echo \"    test_all MPIRUN=\t(run all tests with serially)\"\n";  
 string test_help_app_base=  "\t@echo \"    test_<APP>\t\t(run application <APP> test with ${MPIRUN})\n"; 
 
-string test_all_base="\t@rm -f *.diff\n" 
-   "\t-@($(MAKE) test_<APP>)\n"; 
+string test_all_base="ifneq ($(TEST<APP>-EXEPTIONCODE),SKIP)\n" 
+   "\t-@($(MAKE) test_<APP>)\n"  
+   "endif\n";
 
-string test_compile_base="\t@rm -rf *.diff\n" 
-   "\tcd ./share/; mkdir -p lib\n" 
-   "\t-(cd ./share/Library/src; make LIB)\n" 
-   "\t-@($(MAKE) test_<APP>_compile && $(MAKE) test_<APP>_rundir)\n"; 
+string test_compile_base="ifneq ($(TEST<APP>-EXEPTIONCODE),SKIP)\n" 
+   "\t-@($(MAKE) test_<APP>_compile && $(MAKE) test_<APP>_rundir)\n"  
+   "endif\n";
 
 string test_run_base="ifneq ($(TEST<APP>-EXEPTIONCODE),SKIP)\n" 
    "\t-@$(if $(findstring rundir... done,$(shell tail test_<APP>$(TEST<APP>-REF).diff)),$(MAKE) test_<APP>_run && $(MAKE) test_<APP>_check)\n"  
@@ -578,8 +578,49 @@ int main(int argc, char** argv) {
   PrintHelpTarget(TestsSWMF);
   PrintHelpTarget(TestsAMPS);
 
+  //=============== test_all ================================
+  auto PrintAllTarget = [&] (list<cTest>& Tests) {
+    for (it=Tests.begin();it!=Tests.end();it++) {
+      t=test_all_base; 
+
+      FindAndReplaceAll(t,"<APP>",it->Name);
+      fMakefile << t;
+    }
+  };
+
+  fMakefile << "\ntest_all:\n\t@rm -f *.diff\n\n";
+
+  PrintAllTarget(TestsSWMF);
+  PrintAllTarget(TestsAMPS);
+
+  //=============== test_compile =================================
+   auto PrintCompileTarget = [&] (list<cTest>& Tests) {
+    for (it=Tests.begin();it!=Tests.end();it++) {
+      t=test_compile_base;
+
+      FindAndReplaceAll(t,"<APP>",it->Name);
+      fMakefile << t;
+    }
+  };
+
+  fMakefile << "\ntest_compile:\n\t@rm -rf *.diff\n\tcd ./share/; mkdir -p lib\n\t-(cd ./share/Library/src; make LIB)\n\n";
+
+  PrintCompileTarget(TestsSWMF);
+  PrintCompileTarget(TestsAMPS);
+ 
+
   //=============== test_run =================================
   int cnt=0,segment_size,iTarget=1;
+  
+  //segment size for the AMPS stand along tests
+  segment_size=TestsAMPS.size()/(test_execution_blocks-1);
+  if (segment_size==0) segment_size=1;
+
+  fMakefile << "\ntest_run:";
+  for (int i=1;i<=test_execution_blocks;i++) fMakefile << " test_run_thread"+to_string(i);
+  fMakefile << "\n\n";
+
+  
  
   //process the SWMF test
   fMakefile << "test_run_thread1:\n";
@@ -592,9 +633,6 @@ int main(int argc, char** argv) {
   }
 
   //process the AMPS tests
-  segment_size=TestsAMPS.size()/(test_execution_blocks-1);
-  if (segment_size==0) segment_size=1;
- 
   for (cnt=0,it=TestsAMPS.begin();it!=TestsAMPS.end();it++,cnt++) {
     if ((cnt%segment_size==0)&&(iTarget<test_execution_blocks)) {
       //print new target 
@@ -607,6 +645,8 @@ int main(int argc, char** argv) {
     FindAndReplaceAll(t,"<APP>",it->Name);
     fMakefile << t;    
   } 
+
+
 
   //=============== Individual applications' test targets  =================================
   
