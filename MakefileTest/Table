@@ -46,6 +46,8 @@ started with a 'TAB'. If a line starts with '<<<' the 'TAB' is omitted.
 Name=test/Saturn-MOP 
 Time=2
 
+Type=amps
+
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
@@ -600,6 +602,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-borovikov
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -669,6 +672,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-mflampa@@(0+) 
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -738,6 +742,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-mflampa-fl 
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -808,6 +813,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-Kartavykh-drift 
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -876,6 +882,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-Kartavykh
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -944,6 +951,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-He 
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -1010,6 +1018,7 @@ Check=
 #>
 Name=SEP--focused_transport-IH-He-drift 
 Time=4
+Type=swmf
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
@@ -4220,6 +4229,7 @@ Check=
 #>
 Name=test/AMPS-BATSRUS-PIC-coupling
 Time=30 
+Type=swmf
 
 ExeptionCode=SKIP{pgcc}
 
@@ -4303,6 +4313,7 @@ Check=
 #>
 Name=SEP_SWMF_test19_fl
 Time=10 
+Type=swmf
 
 Compile=
 >>>@echo "test_SEP_SWMF_test19_fl_compile..." > test_SEP_SWMF_test19_fl.diff  
@@ -4374,6 +4385,7 @@ Check=
 #>
 Name=SEP-SC-IH--FL--FL-attachment--GC
 Time=5
+Type=swmf
 
 Compile=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_compile..." > test_SEP-SC-IH--FL--FL-attachment--GC.diff
@@ -4429,6 +4441,7 @@ Check=
 #>
 Name=SEP-SC-IH--FL--FL-attachment--Droge 
 Time=5
+Type=swmf
 
 Compile=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_compile..." > test_SEP-SC-IH--FL--FL-attachment--Droge.diff
@@ -4499,6 +4512,7 @@ Check=
 #>
 Name=SEP-SC-IH--FL--Node-attachment--GC
 Time=5
+Type=swmf
 
 Compile=
 >>>@echo "test_SEP-SC-IH--FL--Node-attachment--GC_compile..." > test_SEP-SC-IH--FL--Node-attachment--GC.diff
@@ -4558,6 +4572,7 @@ Check=
 #>
 Name=test/AMPS-BATSRUS-Europa 
 Time=15 
+Type=swmf
 
 ExeptionCode=SKIP{pgcc}
 
@@ -4612,6 +4627,7 @@ Check=
 #>
 Name=test/AMPS-BATSRUS-OH  
 Time=15 
+Type=swmf
 
 ExeptionCode=SKIP{pgcc}
 
@@ -4669,6 +4685,7 @@ Check=
 #>
 Name=test/AMPS-BATSRUS_dynamic_fluxrope  
 Time=15 
+Type=swmf
 
 ExeptionCode=SKIP{pgcc}
 

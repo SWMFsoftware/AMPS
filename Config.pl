@@ -44,8 +44,11 @@ if (! -e "Makefile.local") {
 # build AMPS' Makefile.test
 foreach (@Arguments) { 
     if(/^-install/) {
-      `utility/TestScripts/BuildTest.pl`;
-     
+      `g++ utility/TestScripts/table_parser.cpp -o table_parser`;      
+      `cp MakefileTest/Table .`;
+      `table_parser 2`;
+      `rm Table`; 
+
       #create .general.conf if not exists
       `touch .general.conf` unless (-e ".general.conf");
     }
@@ -54,9 +57,9 @@ foreach (@Arguments) {
 
 # Run the shared Config.pl script
 if(-f $config){
-    require $config;
+  require $config;
 }else{
-    require "../../$config";
+  require "../../$config";
 }
 
 our %Remaining;   # Arguments not handled by share/Scripts/Config.pl
@@ -104,14 +107,15 @@ foreach (@Arguments) {
      print "-set-test=(NAME)\/comp\t\tinstall nightly tests (e.g. comp=gnu,intel|pgi|all; NAME parameter is optional)\n";
      print "-rm-test\/comp\t\t\tremove nightly tests\n";
      print "-amps-test=[on,off]\t\ttells the code that a nightly test is executed\n";
+     print "test-blocks=n_execution_blocks\tsplits the entire list of tests in n_execution_blocks for concurrent execution. All SWMF related tests are combibed in a single target\n"; 
      print "-openmp=[on,off]\t\twhen \"on\" use OpenMP and MPI libraries for compiling AMPS\n";
      print "-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker\n";
-     print "-compiler-option=opt1,opt2\t\tadd option \'opt\' into the compiler argument line\n";
+     print "-compiler-option=opt1,opt2\tadd option \'opt\' into the compiler argument line\n";
      print "-f-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe fortran compiler is used as a linker \n";
      print "-cpp-link-option=-opt1,-opt2\tadd options \"-opt1 -opt2\" to linker whe c++ compiler is used as a linker \n";
      print "-cpp-compiler=opt\t\treplace C++ compiler name defined by the variable COMPILE.mpicxx in Makefile.conf\n";
      print "-cpplib-rm=opt\t\t\tremove libraty flag from the list defined by variable CPPLIB in Makefile.conf\n";
-     print "-avx=[256,512,off]\t\t\tsettings for using AVX instructions\n";
+     print "-avx=[256,512,off]\t\tsettings for using AVX instructions\n";
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
      print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
@@ -296,6 +300,15 @@ foreach (@Arguments) {
 
     next;
   }; 
+
+  #regenerate Makefile.input with a number of the test execution blocks proveded to ./Config.pl 
+  if (/^-test-blocks=(.*)$/i) {
+    `g++ utility/TestScripts/table_parser.cpp -o table_parser`;
+    `cp MakefileTest/Table .`;
+    `table_parser $1`;
+    `rm Table`;
+    next;
+  }
 
   #set the APPEND flog to append .amps.conf instead of re-defining of AMPS' settings
   if (/^-append$/i) { 
