@@ -175,7 +175,7 @@ const int _type_swmf=1;
 class cTest {
 public:
   double Time;
-  string Name,Compile,Rundir,Run,Check,Keys;
+  string PathName,Name,Compile,Rundir,Run,Check,Keys;
   string Ref,CustomRefSolutionPath,Outs,ExeptionCode;
   int type;
   
@@ -184,7 +184,7 @@ public:
     Time=0.0; 
     Ref="",type=_type_amps;
 
-    Name="",Compile="",Rundir="",Run="",Check="",Keys="";
+    PathName="",Name="",Compile="",Rundir="",Run="",Check="",Keys="";
     CustomRefSolutionPath="",Outs="",ExeptionCode="";
   }
 
@@ -316,8 +316,10 @@ CutFirstWord(keyword,line);
          //================================= Name ====================
          if (keyword=="Name") {
            if (IsThisHost(line)==true) {
-             FindAndReplaceAll(line,"test/", "");
+             test.PathName=line;
              test.Name=line;
+
+             FindAndReplaceAll(test.Name,"test/","");
            }
            else {
              status=_not_test;
@@ -450,6 +452,7 @@ void PrintMakefile(list<cTest>::iterator  Test, ofstream& fTestLine) {
   if (Test->Compile=="") {
     t=test_compile_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
+    FindAndReplaceAll(t,"<APPPATH>",Test->PathName);
     res+=t;
   }
   else {
