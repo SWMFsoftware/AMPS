@@ -605,7 +605,7 @@ int main(int argc, char** argv) {
 
   fMakefile << "\ntest_compile:\n\t@rm -rf *.diff\n\tcd ./share/; mkdir -p lib\n\t-(cd ./share/Library/src; make LIB)\n\n";
 
-  PrintCompileTarget(TestsSWMF);
+//  PrintCompileTarget(TestsSWMF);
   PrintCompileTarget(TestsAMPS);
  
 
@@ -626,10 +626,7 @@ int main(int argc, char** argv) {
   fMakefile << "test_run_thread1:\n";
 
   for (it=TestsSWMF.begin();it!=TestsSWMF.end();it++) {
-    t=test_run_base;
-
-    FindAndReplaceAll(t,"<APP>",it->Name);
-    fMakefile << t;
+    fMakefile << "ifneq ($(TEST" + it->Name + "-EXEPTIONCODE),SKIP)\n\t-@$(MAKE) test_" + it->Name+"\nendif\n";
   }
 
   //process the AMPS tests
