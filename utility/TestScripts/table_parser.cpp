@@ -316,7 +316,7 @@ CutFirstWord(keyword,line);
          //================================= Name ====================
          if (keyword=="Name") {
            if (IsThisHost(line)==true) {
-             FindAndReplaceAll(line,"/", "_");
+             FindAndReplaceAll(line,"test/", "");
              test.Name=line;
            }
            else {
@@ -438,51 +438,59 @@ void PrintMakefile(list<cTest>::iterator  Test, ofstream& fTestLine) {
   string res,t; 
 
   //test_<APP>:
-  res="test_" + Test->Name + ":\n"; 
+  res="\ntest_" + Test->Name + ":\n"; 
 
   t=test_app;
   FindAndReplaceAll(t,"<APP>",Test->Name); 
   res= res+t+"\n"; 
 
   //test_<APP>_compile:
+  res+="\ntest_" + Test->Name + "_compile:\n";  
+  
   if (Test->Compile=="") {
     t=test_compile_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
   else {
-    res+="test_" + Test->Name + "_compile:\n"+Test->Compile+"\n";   
+    res+=Test->Compile+"\n";   
   }
 
 
   //test_<APP>_rundir:
+  res+="\ntest_" + Test->Name + "_rundir:\n"; 
+  
   if (Test->Rundir=="") {
     t=test_rundir_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
   else {
-    res+="test_" + Test->Name + "_rundir:\n"+Test->Rundir+"\n";
+    res+=Test->Rundir+"\n";
   }
 
   //test_<APP>_run
+  res+="\ntest_" + Test->Name + "_run:\n"; 
+  
   if (Test->Run=="") {
     t=test_run_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
   else {
-    res+="test_" + Test->Name + "_run:\n"+Test->Run+"\n";
+    res+=Test->Run+"\n";
   }
 
   //test_<APP>_check:
+  res+="\ntest_" + Test->Name + "_check:\n"; 
+  
   if (Test->Check=="") {
     t=test_check_app;
     FindAndReplaceAll(t,"<APP>",Test->Name);
     res+=t;
   }
   else {
-    res+="test_" + Test->Name + "_check:\n"+Test->Check+"\n";
+    res+=Test->Check+"\n";
   }
 
   fTestLine << res;
