@@ -48,6 +48,23 @@ bool FindAndReplaceAll(std::string & data, std::string toSearch, std::string rep
   return found_flag;
 }
 
+bool FindAndReplaceFirst(std::string & data, std::string toSearch, std::string replaceStr) {
+  bool found_flag=false;
+
+  // Get the first occurrence
+  size_t pos = data.find(toSearch);
+
+  if (pos != std::string::npos) {
+    found_flag=true;
+
+    // Replace this occurrence of Sub String
+    data.replace(pos, toSearch.size(), replaceStr);
+   }
+  
+   return found_flag;
+ }
+     
+
 void ltrim(std::string &s) {
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
       return !std::isspace(ch);
@@ -307,7 +324,7 @@ if (section==_check) {
 
 string keyword,s;
 
-FindAndReplaceAll(line,"=", " ");
+FindAndReplaceFirst(line,"=", " ");
 std::string::size_type sz;     // alias of size_t
 
 
@@ -551,7 +568,13 @@ int main(int argc, char** argv) {
 
       FindAndReplaceAll(t,"<APPKEYS>",it->Keys);
       FindAndReplaceAll(t,"<APPCUSTOMREFSOLUTIONPATHS>",it->CustomRefSolutionPath);
-      FindAndReplaceAll(t,"<APPOUTS>",it->Outs);
+
+      if (it->Outs=="") {
+        FindAndReplaceAll(t,"<APPOUTS>","test_"+it->Name); 
+      }
+      else {
+        FindAndReplaceAll(t,"<APPOUTS>",it->Outs);
+      }
 
       FindAndReplaceAll(t,"<APPREF>",it->Ref);
       FindAndReplaceAll(t,"<APPEXEPTIONCODE>",it->ExeptionCode);
