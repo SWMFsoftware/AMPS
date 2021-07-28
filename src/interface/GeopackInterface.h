@@ -36,16 +36,19 @@ namespace Geopack {
 
   extern std::string UserFrameName;
 
+  extern double UserFrame2GSM[3][3],GSM2UserFrame[3][3];
+  extern bool Rotate2GSM;
+
   extern double UserFrame2GSE[3][3],GSE2UserFrame[3][3];
   extern bool Rotate2GSE;
-  
+
 
   //IGRF mgnetoc field model
   namespace IGRF {
     void GetMagneticField(double *B,double *x);
   }
 
-  void Init(const char* Epoch,std::string FrameNameIn,double *SolarWindVelocity);
+  void Init(const char* Epoch,std::string FrameNameIn);
 }
 
 

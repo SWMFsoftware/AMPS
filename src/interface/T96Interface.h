@@ -45,8 +45,8 @@ namespace T96 {
   extern double UserFrame2GSE[3][3],GSE2UserFrame[3][3];
   extern bool Rotate2GSE;
 
-  void inline Init(const char* Epoch, std::string FrameNameIn,double *SolarWindVelocity) {
-    Geopack::Init(Epoch,FrameNameIn,SolarWindVelocity);
+  void inline Init(const char* Epoch, std::string FrameNameIn) {
+    Geopack::Init(Epoch,FrameNameIn);
 
     UserFrameName=FrameNameIn;
 
