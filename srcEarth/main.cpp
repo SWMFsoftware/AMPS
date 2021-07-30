@@ -1006,7 +1006,7 @@ int main(int argc,char **argv) {
 
     switch (_PIC_COUPLER_MODE_) {
     case _PIC_COUPLER_MODE__T05_: 
-      T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME,Earth::SolarWindVelocity);
+      T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
 
       T05::SetSolarWindPressure(2.97*_NANO_); 
       T05::SetDST(-10.0*_NANO_);
@@ -1017,7 +1017,7 @@ int main(int argc,char **argv) {
       T05::GetMagneticField(B,xGSE);
       break;
     case _PIC_COUPLER_MODE__T96_:
-      T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME,Earth::SolarWindVelocity);
+      T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
 
       T96::SetSolarWindPressure(Earth::T96::solar_wind_pressure);
       T96::SetDST(Earth::T96::dst);
