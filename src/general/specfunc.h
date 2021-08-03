@@ -382,6 +382,22 @@ namespace Vector3D {
     return false;
   } 
 
+  inline void Decrement(double *v,double *d,int length=3) {
+    for (int i=0;i<length;i++) v[i]-=d[i];
+  }
+
+  inline void Decrement(double *v,double d,int length=3) {
+    for (int i=0;i<length;i++) v[i]-=d;
+  }
+
+  inline void Increment(double *v,double *d,int length=3) {
+    for (int i=0;i<length;i++) v[i]+=d[i];
+  }
+
+  inline void Increment(double *v,double d,int length=3) {
+    for (int i=0;i<length;i++) v[i]+=d;
+  }
+
   inline double GetDistance(double *a,double *b,int length=3) {
     double t,l2=0.0;
 
