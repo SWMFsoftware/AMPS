@@ -176,6 +176,12 @@ namespace Earth {
     const double RigidityTestMinEnergy=1.0*MeV2J;
     const double RigidityTestMaxEnergy=1.0E4*MeV2J;
 
+    //the distribution of the injected particles velocity vector 
+    extern int ParticleVelocityDirectionMode;
+    const int ParticleVelocityDirectionUniform=0;
+    const int ParticleVelocityDirectionVertical=1;
+    
+
     //calculation of the cutoff rigidity in discrete locations
     namespace IndividualLocations {
       extern int xTestLocationTableLength;

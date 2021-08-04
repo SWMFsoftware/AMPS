@@ -518,10 +518,24 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 #endif
 
           //generate energy of the new particle
-          energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
+          double c;
 
+          energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
           speed=Relativistic::E2Speed(energy,mass);
-          Vector3D::Distribution::Uniform(v,speed);
+
+          switch (Earth::CutoffRigidity::ParticleVelocityDirectionMode) {
+          case Earth::CutoffRigidity::ParticleVelocityDirectionUniform: 
+            Vector3D::Distribution::Uniform(v,speed);
+            break;
+
+          case Earth::CutoffRigidity::ParticleVelocityDirectionVertical:
+            c=speed/Vector3D::Length(x);
+            for (int idim=0;idim<3;idim++) v[idim]=c*x[idim];
+            break;
+         
+          default:
+            exit(__LINE__,__FILE__,"Error: the option is not recognized");
+          }            
 
           //generate a new particle
           long int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);

@@ -1,7 +1,7 @@
 
 #main
 
-SpeciesList=H_PLUS1, Electron 
+SpeciesList=H_PLUS1 !, Electron 
 
 ErrorLog=error.log
 Prefix=AMPS
@@ -184,6 +184,8 @@ MoverIntegratorMode=Boris-relativistic
   nAzimuthalElements=5 
 
   CoordinateSystem=GSM !GSE !GSE,GSM 
+
+  InjectionParticleVelocityDirection=Vertical !Uniform !Uniform,Vertical
 
   CutOffTestLocations=off \\
     emin=10.0*Mev2J \\

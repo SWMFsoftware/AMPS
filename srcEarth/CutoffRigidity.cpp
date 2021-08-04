@@ -42,6 +42,9 @@ long int Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed=-1;
 int Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000; 
 int Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations=1;
 
+//the direction of the injected particle velocity
+int Earth::CutoffRigidity::ParticleVelocityDirectionMode=Earth::CutoffRigidity::ParticleVelocityDirectionUniform; 
+
 void Earth::CutoffRigidity::Init_BeforeParser() {
   if ((SampleRigidityMode==true)&&(InitialRigidityOffset==-1)) {
     //request data for sampling of the cutoff rigidity in the particle state vector
