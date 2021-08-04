@@ -75,13 +75,14 @@ void Earth::CutoffRigidity::Init_BeforeParser() {
     for (int i=0;i<CutoffRigidityTestLocationTableLength;i++) {
       for (int j=0;j<3;j++) IndividualLocations::xTestLocationTable[i][j]=CutoffRigidityTestLocationTable[i][j];
     }
-
-    //request particle storage if needed
-    if (Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex==-1) {
-      PIC::ParticleBuffer::RequestDataStorage(Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex,sizeof(int));
-      PIC::ParticleBuffer::RequestDataStorage(Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed,sizeof(double));
-    }
   }
+
+  //request particle storage if needed
+  if (Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex==-1) {
+    PIC::ParticleBuffer::RequestDataStorage(Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex,sizeof(int));
+    PIC::ParticleBuffer::RequestDataStorage(Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed,sizeof(double));
+  }
+  
 }
 
 void Earth::CutoffRigidity::AllocateCutoffRigidityTable() {

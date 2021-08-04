@@ -180,12 +180,12 @@ MoverIntegratorMode=Boris-relativistic
    Bz=-8.2*_NANO_ \\ !nT
    W=1.022,0.874,0.807,1.657000,2.737,4.542000 
 
-  nZenithElements=5
-  nAzimuthalElements=5
+  nZenithElements=5 
+  nAzimuthalElements=5 
 
-  CoordinateSystem=GSE !GSE,GSM 
+  CoordinateSystem=GSM !GSE !GSE,GSM 
 
-  CutOffTestLocations=on \\
+  CutOffTestLocations=off \\
     emin=10.0*Mev2J \\
     emax=20000.0*Mev2J \\
     nTotalParticles=5000 \\
@@ -202,13 +202,13 @@ MoverIntegratorMode=Boris-relativistic
     New: x=2.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6 \\
     New: x=4.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6
 
-  SphericalShells=off \\
-    x=125.0E3+_RADIUS_(_TARGET_),400.0E3+_RADIUS_(_TARGET_), \\
-       1.5*_RADIUS_(_TARGET_),2.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
-       10.0*_RADIUS_(_TARGET_),15.0*_RADIUS_(_TARGET_) \\
+  SphericalShells=on \\
+       x=3.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
     emin=1.0*MeV2J \\
     emax=50.0*MeV2J \\
-    nLevels=10
+    nLevels=10 \\ 
+    nTotalParticles=5000 \\
+    nInjectionIterations=100 
 
 
   ParticleDataSamplingMode=on \\
@@ -257,7 +257,7 @@ MoverIntegratorMode=Boris-relativistic
 ! IcesLocationPath=/left/ices/ICES  !location of ICES is set using Config.pl -ices-path  
 !  IcesModelCase=Europa09
 
-! SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
+  SimulationStartTime=2003-10-10T02:00:00 !2013-04-01T12:59:30 !!!2009-01-24T00:00:00
 
   addPhysicalModelHeader=Earth.h
 

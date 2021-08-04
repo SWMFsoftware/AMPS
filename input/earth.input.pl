@@ -229,7 +229,7 @@ while ($line=<InputFile>) {
             ($s0,$InputComment)=split(' ',$InputComment,2);
             
             if ( ($s0 eq "EMIN") || ($s0 eq "EMAX") || ($s0 eq "NLEVELS") ) {
-              #the entry is a keyword of the section -> exist and parse the rest of the line
+              #the entry is a keyword of the section -> exist from the 'if statment' and parse the rest of the line
               last;
             }
             else {
@@ -248,14 +248,24 @@ while ($line=<InputFile>) {
         if ($s0 eq "EMIN") {
           ($s0,$InputComment)=split(' ',$InputComment,2);
           ampsConfigLib::ChangeValueOfVariable("double Earth::Sampling::Fluency::minSampledEnergy",$s0,"main/Earth.cpp");         
+          ampsConfigLib::ChangeValueOfVariable("double Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit",$s0,"main/CutoffRigidity.cpp");
         }
         elsif ($s0 eq "EMAX") {
           ($s0,$InputComment)=split(' ',$InputComment,2);
           ampsConfigLib::ChangeValueOfVariable("double Earth::Sampling::Fluency::maxSampledEnergy",$s0,"main/Earth.cpp");          
+          ampsConfigLib::ChangeValueOfVariable("double Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit",$s0,"main/CutoffRigidity.cpp");
         }
         elsif ($s0 eq "NLEVELS") {
           ($s0,$InputComment)=split(' ',$InputComment,2);
           ampsConfigLib::ChangeValueOfVariable("int Earth::Sampling::Fluency::nSampledLevels",$s0,"main/Earth.cpp");
+        }
+        elsif ($s0 eq "NTOTALPARTICLES") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations",$s0,"main/CutoffRigidity.cpp");
+        }
+        elsif ($s0 eq "NINJECTIONITERATIONS") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations",$s0,"main/CutoffRigidity.cpp");
         }
         else {
           die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";

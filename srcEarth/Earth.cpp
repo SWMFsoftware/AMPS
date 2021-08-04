@@ -196,12 +196,15 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
 
   switch (PIC::ParticleBuffer::GetI(ptr)) {
   case _ELECTRON_SPEC_:
-//    res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
-    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+   // res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
+   res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
     break;
   default:
-    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+   // res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+
+   res=PIC::Mover::Boris(ptr,dtTotal,startNode);
+
   }
 
   if ((Sampling::SamplingMode==true)&&(res==_PARTICLE_MOTION_FINISHED_)) {
