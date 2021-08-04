@@ -5345,8 +5345,8 @@ void DeleteAttachedParticles();
           if (p->first.file_name!="") printf("$PREFIX: Sampled Segment File: %s\n",p->first.file_name.c_str());
         }
         
-        double TotalTimeTable[PIC::nTotalThreads];
-        int nPassTable[PIC::nTotalThreads];
+        double *TotalTimeTable=new double [PIC::nTotalThreads];
+        int *nPassTable=new int [PIC::nTotalThreads];
         double min_time=TotalTime,max_time=TotalTime,summed_time=TotalTime;
         
         MPI_Gather(&TotalTime,1,MPI_DOUBLE,TotalTimeTable,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
@@ -5391,6 +5391,9 @@ void DeleteAttachedParticles();
             }
           }
         }
+
+        delete [] TotalTimeTable;
+        delete [] nPassTable;
       }
 
       if (PIC::ThisThread==0) printf("$PREFIX: ================================================================================\n");
