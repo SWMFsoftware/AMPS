@@ -31,6 +31,10 @@ double Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit=0.0;
 double Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit=0.0;
 array_2d<double>  Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable;
 
+//calculate the cutoff regidity for spherical shells 
+int Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength=0;
+double Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[]={0.0};
+
 double CutoffRigidityTestLocationTable[][3]={{0.0,0.0,0.0}};
 int CutoffRigidityTestLocationTableLength=0;
 

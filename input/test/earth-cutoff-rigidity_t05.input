@@ -91,8 +91,9 @@ MoverIntegratorMode=Boris-relativistic
 ! define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
 ! define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
 
-  define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
-!  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Europa::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
+  !trajecgtory tracing
+  TrajectoryTracing=on
+  MaxSampledTrajectoryNumber=100
 
 !define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
 !define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -161,7 +162,7 @@ MoverIntegratorMode=Boris-relativistic
     nSampleIntervals=200
 
 
- EnergyDistributionSamplingRelativistic=on \\ !on, off
+ EnergyDistributionSamplingRelativistic=off \\ !on, off
    x=(1.8E8,0.0,0.0), (1.3E8,0.0,0.0), (9.4E7,0.0,0.0), (5.7E7,0.0,0.0), (3.6E7,0.0,0.0), (2.3E7,0.0,0.0), (7.3E6,0.0,0.0) \\ 
    nSampleIntervals=100 \\
    samplingScale=LOGARITHMIC \\
@@ -180,22 +181,30 @@ MoverIntegratorMode=Boris-relativistic
    Bz=-8.2*_NANO_ \\ !nT
    W=1.022,0.874,0.807,1.657000,2.737,4.542000 
 
-  nZenithElements=5 
-  nAzimuthalElements=5 
+  nZenithElements=20 
+  nAzimuthalElements=20 
 
-  CoordinateSystem=GSM !GSE !GSE,GSM 
+  CoordinateSystem=GSM !GSE !!GSM !GSE !GSE,GSM 
 
-  InjectionParticleVelocityDirection=Vertical !Uniform !Uniform,Vertical
+  !InjectionParticleVelocityDirection=Vertical !Uniform !Uniform,Vertical
 
   CutOffTestLocations=off \\
-    emin=10.0*Mev2J \\
-    emax=20000.0*Mev2J \\
+    emin=1000.0*Mev2J \\
+    emax=2000.0*Mev2J \\
     nTotalParticles=5000 \\
     nInjectionIterations=100 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
     x=500.0E3+_RADIUS_(_TARGET_),0,0 \\
     x=500.0E3+_RADIUS_(_TARGET_),0,500.0E3+_RADIUS_(_TARGET_) \\ 
     x=1000.0E3+_RADIUS_(_TARGET_),0,1000.0E3+_RADIUS_(_TARGET_)   
+
+  CutoffTestSphericalShells=on \\
+    x=3.0*_RADIUS_(_TARGET_) \\
+    emin=1.0*MeV2J \\
+    emax=50.0*MeV2J \\
+    nTotalParticles=5000 \\
+    nInjectionIterations=100
+
 
   ImpulseSource=off \\
     Spectrum=constant(1.0E1*MeV2J) \\ 
@@ -204,13 +213,11 @@ MoverIntegratorMode=Boris-relativistic
     New: x=2.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6 \\
     New: x=4.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6
 
-  SphericalShells=on \\
-       x=3.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
+  SamplingSphericalShells=off \\
+    x=3.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
     emin=1.0*MeV2J \\
     emax=50.0*MeV2J \\
-    nLevels=10 \\ 
-    nTotalParticles=5000 \\
-    nInjectionIterations=100 
+    nLevels=10  
 
 
   ParticleDataSamplingMode=on \\

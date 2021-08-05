@@ -112,6 +112,9 @@ double localResolution(double *x) {
     }
   }
 
+
+res*=3;
+
   if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(_PIC_NIGHTLY_TEST__REDUCE_RESOLUTION_MODE_==_PIC_MODE_ON_)) { 
     return 2.5*res;
   }

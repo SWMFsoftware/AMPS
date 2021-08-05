@@ -521,6 +521,9 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           double c;
 
           energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
+
+////energy*=10000.0;
+
           speed=Relativistic::E2Speed(energy,mass);
 
           switch (Earth::CutoffRigidity::ParticleVelocityDirectionMode) {
@@ -926,12 +929,12 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 }
 
 
-void CutoffRigidityCalculation(int nMaxIterations) {
+void CutoffRigidityCalculation(double TestShellRadius,int nMaxIterations) {
   //disable sampling
   PIC::Sampling::RuntimeSamplingSwitch=false;
 
   //estimate the total flux and rigidity at a sphere
-  SampleSphericalMaplLocations(_EARTH__RADIUS_+500.0E3,nMaxIterations);
+  SampleSphericalMaplLocations(TestShellRadius,nMaxIterations);
 
   /*
   //start forward integration
@@ -1064,7 +1067,14 @@ int main(int argc,char **argv) {
     case _NIGHTLY_TEST__CUTOFF_:
       if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_" << endl;
 
-      CutoffRigidityCalculation(10000);
+      if (Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1) {
+        exit(__LINE__,__FILE__,"Error: Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1 is not implemented");
+      }
+
+      for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
+        CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],5000);
+      }
+
       break;
     case _NIGHTLY_TEST__LEGACY_:
       if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_" << endl;
@@ -1080,7 +1090,13 @@ int main(int argc,char **argv) {
 
   }
   else {
-    CutoffRigidityCalculation(10000);
+    if (Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1) {
+      exit(__LINE__,__FILE__,"Error: Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1 is not implemented");
+    }
+   
+    for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
+      CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],10000);
+    }
   }
 
 

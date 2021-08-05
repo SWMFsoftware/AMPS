@@ -197,6 +197,12 @@ namespace Earth {
       extern int nParticleInjectionIterations;
     }
 
+    //calculate the cutoff regidity for spherical shells 
+    namespace ShericalShells {
+      extern int rTestSphericalShellTableLength;
+      extern double rTestSphericalShellTable[];
+    }
+
     //offset in the particle state vector pointing to the index describing the index of the origin location of the particles
     namespace ParticleDataOffset {
       extern long int OriginLocationIndex;

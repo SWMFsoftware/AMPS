@@ -225,7 +225,7 @@ while ($line=<InputFile>) {
   }
  
   
-  #the number, locations, energy range, and the number of the ebergy intervals used in the spherical sampling surfaces 
+  #the number, locations, energy range, and the number of the energy intervals used in the spherical sampling surfaces 
   elsif ($InputLine eq "SPHERICALSHELLS") {
     ($s0,$InputComment)=split(' ',$InputComment,2);
     
@@ -291,6 +291,138 @@ while ($line=<InputFile>) {
     }
     elsif ($s0 eq "OFF") {
        ampsConfigLib::ChangeValueOfVariable("bool Earth::Sampling::SamplingMode","false","main/Earth_Sampling.cpp");
+    }     
+    else {
+      die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }  
+  }
+  
+  
+  
+  
+    #the number, locations, energy range, and the number of the energy intervals used in the spherical sampling surfaces 
+  elsif ($InputLine eq "SAMPLINGSPHERICALSHELLS") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+    
+    if ($s0 eq "ON")  {
+      my @ShellRadiiTable;
+      my $ShellRadiiTableLength=0;
+      
+      #sampling will occurs
+      ampsConfigLib::ChangeValueOfVariable("bool Earth::Sampling::SamplingMode","true","main/Earth_Sampling.cpp");
+      
+      #read the rest of the line
+      while (defined $InputComment) {
+        ($s0,$InputComment)=split(' ',$InputComment,2);
+      
+        #cgeck wether the entry is the list of the shells radii
+        if ($s0 eq "X") {
+          while (defined $InputComment) {
+            ($s0,$InputComment)=split(' ',$InputComment,2);
+            
+            if ( ($s0 eq "EMIN") || ($s0 eq "EMAX") || ($s0 eq "NLEVELS") ) {
+              #the entry is a keyword of the section -> exist from the 'if statment' and parse the rest of the line
+              last;
+            }
+            else {
+              #the entry seems to be the next location of the samplign shell -> add it the list of the radii
+              push(@ShellRadiiTable,$s0);
+              $ShellRadiiTableLength++;
+            }            
+          }
+          
+          #the list of the shell's radii is complete -> add it to the sources 
+          ampsConfigLib::ChangeValueOfArray("double Earth::Sampling::SampleSphereRadii\\[Earth::Sampling::nSphericalShells\\]",\@ShellRadiiTable,"main/Earth_Sampling.cpp");
+          ampsConfigLib::ChangeValueOfVariable("    const int nSphericalShells",$ShellRadiiTableLength,"main/Earth.h");                   
+        }
+        
+        #check whether the entry is another setting parameter
+        if ($s0 eq "EMIN") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::Sampling::Fluency::minSampledEnergy",$s0,"main/Earth.cpp");         
+        }
+        elsif ($s0 eq "EMAX") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::Sampling::Fluency::maxSampledEnergy",$s0,"main/Earth.cpp");          
+        }
+        elsif ($s0 eq "NLEVELS") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int Earth::Sampling::Fluency::nSampledLevels",$s0,"main/Earth.cpp");
+        }
+
+        else {
+          die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }       
+      }      
+    }
+    elsif ($s0 eq "OFF") {
+       ampsConfigLib::ChangeValueOfVariable("bool Earth::Sampling::SamplingMode","false","main/Earth_Sampling.cpp");
+    }     
+    else {
+      die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }  
+  }
+  
+  
+  
+  
+    #the number, locations, energy range, and the number of the energy intervals used in the spherical sampling surfaces 
+  elsif ($InputLine eq "CUTOFFTESTSPHERICALSHELLS") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+    
+    if ($s0 eq "ON")  {
+      my @ShellRadiiTable;
+      my $ShellRadiiTableLength=0;
+      
+      #read the rest of the line
+      while (defined $InputComment) {
+        ($s0,$InputComment)=split(' ',$InputComment,2);
+      
+        #cgeck wether the entry is the list of the shells radii
+        if ($s0 eq "X") {
+          while (defined $InputComment) {
+            ($s0,$InputComment)=split(' ',$InputComment,2);
+            
+            if ( ($s0 eq "EMIN") || ($s0 eq "EMAX") || ($s0 eq "NTOTALPARTICLES") || ($s0 eq "NINJECTIONITERATIONS") ) {
+              #the entry is a keyword of the section -> exist from the 'if statment' and parse the rest of the line
+              last;
+            }
+            else {
+              #the entry seems to be the next location of the samplign shell -> add it the list of the radii
+              push(@ShellRadiiTable,$s0);
+              $ShellRadiiTableLength++;
+            }            
+          }
+          
+          #the list of the shell's radii is complete -> add it to the sources 
+          ampsConfigLib::ChangeValueOfArray("double Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable\\[\\]",\@ShellRadiiTable,"main/CutoffRigidity.cpp");
+          ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength",$ShellRadiiTableLength,"main/CutoffRigidity.cpp");                   
+        }
+        
+        #check whether the entry is another setting parameter
+        if ($s0 eq "EMIN") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::CutoffRigidity::IndividualLocations::MinEnergyLimit",$s0,"main/CutoffRigidity.cpp");
+        }
+        elsif ($s0 eq "EMAX") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("double Earth::CutoffRigidity::IndividualLocations::MaxEnergyLimit",$s0,"main/CutoffRigidity.cpp");
+        }
+        elsif ($s0 eq "NTOTALPARTICLES") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations",$s0,"main/CutoffRigidity.cpp");
+        }
+        elsif ($s0 eq "NINJECTIONITERATIONS") {
+          ($s0,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations",$s0,"main/CutoffRigidity.cpp");
+        }    
+        else {
+          die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }       
+      }      
+    }
+    elsif ($s0 eq "OFF") {
+      #do nothing
     }     
     else {
       die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
