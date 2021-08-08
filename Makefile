@@ -259,7 +259,7 @@ distclean:
 	./Config.pl -uninstall
 
 allclean: clean
-	rm -rf main srcTemp *.input* amps Makefile.local Makefile.test \
+	rm -rf main srcTemp *.input* amps table_parser Makefile.local Makefile.test \
 		.amps.conf .general.conf
 	rm -f output
 	rm -f AMPS.pdf
