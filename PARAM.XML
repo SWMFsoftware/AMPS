@@ -183,6 +183,38 @@ Determine if this is a restart run.
 
 </command>
 
+
+
+<command name="FIELDLINE">
+  <parameter name="ROrigin" type = "real" />
+  <parameter name="LonMin" type = "real" />
+  <parameter name="LonMax" type = "real" />
+  <parameter name="LatMin" type = "real" />
+  <parameter name="LatMax" type = "real" />
+  <parameter name="nLon" type = "real" />
+  <parameter name="nLon" type = "real" />  
+ 
+#FIELDLINE
+1.5     ROrigin
+-175    LonMin
+175     LonMax
+-85     LatMin
+85      LatMax
+5       nLon
+4       nLat
+
+Sets initial points for tracking field lines
+</command>
+
+<command name="SAMPLING"> 
+  <parameter name="SamplingMode" type="logical" /> 
+
+#SAMPLING
+F      SamplingMode
+
+if SamplingMode is false, AMPS' sampling procedure is disables. The default value is true
+</command> 
+
 <command name="TIMESTEPPING">
   <parameter name="useSWMFDt" type="logical" />
   <parameter name="useFixedDt" type="logical" /> 
