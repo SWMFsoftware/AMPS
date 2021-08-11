@@ -272,6 +272,55 @@ void Comet::PrintVariableList(FILE* fout,int DataSetNumber) {
   fprintf(fout,",\"Gx\",\"Gy\",\"Gz\"");
 }
 
+void Comet::PrintCutCellVariable(FILE* fout,int DataSetNumber) {
+  fprintf(fout,",\"CutCell\"");
+}
+
+void Comet::PrintCutCellData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode) {
+  
+  bool gather_output_data=false;
+  int t;
+  
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CornerNodeThread) gather_output_data=true;
+ 
+  if (!PIC::Mover::IsSetCellIntersectTypes()){
+    //printf("PIC::Mover::cellIntersectTypeArr:%p\n",PIC::Mover::cellIntersectTypeArr);
+    printf("SetBlockCellIntersectTypes called in comet.cpp\n");
+    PIC::Mover::SetBlockCellIntersectTypes();
+      
+  }
+  //printf("outside if null PIC::Mover::cellIntersectTypeArr:%p\n",PIC::Mover::cellIntersectTypeArr);
+  
+  if (gather_output_data==true) {  //(pipe->ThisThread==CenterNodeThread) {
+    double* xTemp;
+    xTemp = CornerNode->GetX();
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *node=PIC::Mesh::mesh->findTreeNode(xTemp);
+    if (node==NULL){
+      t=-1;
+    }else{
+      t=PIC::Mover::CellIntersectType(node,xTemp);
+      /*
+      if (node->FirstTriangleCutFace==NULL) {
+	t=0;
+      }else{
+	t=1;
+      }
+      */
+    }
+  }
+  
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {
+    if ((CornerNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CornerNodeThread);
+    
+    fprintf(fout,"%d ",t);
+    //printf("print cell data:%d\n",t);
+  }
+  else pipe->send(t);
+  
+}
+
+
 void Comet::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
   int idim;
   double t;

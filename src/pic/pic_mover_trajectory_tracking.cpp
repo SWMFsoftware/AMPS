@@ -1,6 +1,898 @@
 
 #include "pic.h"
 
+//static short** PIC::Mover::cellIntersectTypeArr=NULL;
+static std::vector<short> NodeTypeArr_all;
+static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>  NodeArr_type2, NodeArr_all;
+static short** cellIntersectTypeArr=NULL;  
+
+bool PIC::Mover::IsSetCellIntersectTypes(){
+  if (cellIntersectTypeArr){
+    return true;
+  }else{
+    return false;
+  }
+
+}
+
+
+void PopulateAllNodeThisThread(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode=NULL){
+  
+  if (startNode==NULL){
+    startNode=PIC::Mesh::mesh->rootTree;
+  }
+  
+    if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+
+      if (startNode->block!=NULL) {
+	NodeArr_all.push_back(startNode);
+      }
+    }
+    else {
+      for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) PopulateAllNodeThisThread(startNode->downNode[nDownNode]);
+    }
+
+
+}
+
+void PIC::Mover::SetBlockCellIntersectTypes(){
+  //block types: 1, outside body,not intersection with body
+  // 2, has intersection with body 
+  // 3, inside the body, no intersection with body  
+  // only block type 2 has cell types: 1, outside body,not intersection with body 
+  // 2, has intersection with body 
+  // 3, inside the body, no intersection with body 
+  //cells in block type 1&3 have the same cell type as block.
+
+  printf("SetBlockCellIntersectTypes() is called\n");
+  if (cellIntersectTypeArr!=NULL){
+    delete [] cellIntersectTypeArr[0];
+    delete [] cellIntersectTypeArr;
+    cellIntersectTypeArr=NULL;
+  }
+
+  NodeTypeArr_all.clear();
+  NodeArr_type2.clear();
+  NodeArr_all.clear();
+  
+  //populate NodeArr_all
+  PopulateAllNodeThisThread();
+  
+  //set the block type for all nodes on this thread
+  for (int i=0; i<NodeArr_all.size(); i++ ){
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node= NodeArr_all[i];
+
+    short blockType;
+    if (node->FirstTriangleCutFace){
+      blockType=2;
+      NodeArr_type2.push_back(node);
+    }else{
+      double xmiddle[3];
+      double origin[3]={0.0,0.0,0.0};//it must be inside the nucleus
+      for (int i=0;i<3;i++){
+	xmiddle[i]= 0.5*(node->xmin[i]+node->xmax[i]);
+      }
+      int nIntersection=0;
+      for (int iTriangle=0; iTriangle<CutCell::nBoundaryTriangleFaces; iTriangle++){
+	if (CutCell::BoundaryTriangleFaces[iTriangle].IntervalIntersection(xmiddle,origin,0.0)==true){
+	  nIntersection++;
+	}
+      }
+
+      if (nIntersection%2==0){
+	//even number of intersections means inside
+	blockType=1;
+      }else{
+	blockType=3;
+      }
+
+    }
+    NodeTypeArr_all.push_back(blockType);
+   
+    
+    //printf("SetBlockCellIntersectTypes cnt:%d processed\n",i);
+
+  }
+  /*
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    NodeArr_all.push_back(node);
+    
+    short blockType;
+    if (node->FirstTriangleCutFace){
+      blockType=2;
+      NodeArr_type2.push_back(node);
+    }else{
+      double xmiddle[3];
+      double origin[3]={0.0,0.0,0.0};//it must be inside the nucleus
+      for (int i=0;i<3;i++){
+	xmiddle[i]= 0.5*(node->xmin[i]+node->xmax[i]);
+      }
+      int nIntersection=0;
+      for (int iTriangle=0; iTriangle<CutCell::nBoundaryTriangleFaces; iTriangle++){
+	if (CutCell::BoundaryTriangleFaces[iTriangle].IntervalIntersection(xmiddle,origin,0.0)==true){
+	  nIntersection++;
+	}
+      }
+
+      if (nIntersection%2==0){
+	//even number of intersections means inside
+	blockType=1;
+      }else{
+	blockType=3;
+      }
+
+    }
+    NodeTypeArr_all.push_back(blockType);
+   
+    cnt++;
+    printf("SetBlockCellIntersectTypes cnt:%d processed\n",cnt);
+  }
+  */
+  //short cellIntersectTypeArr[][]
+  int nNode_type2 = NodeArr_type2.size();
+  printf("nNode_type2:%d\n", nNode_type2);
+  printf("before allocation cellIntersectTypeArr:%p\n",cellIntersectTypeArr);
+  cellIntersectTypeArr = new short * [nNode_type2];
+  cellIntersectTypeArr[0] = new short [nNode_type2*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  printf("after allocation cellIntersectTypeArr:%p\n",cellIntersectTypeArr);
+  for (int i=1; i<nNode_type2; i++) {
+    cellIntersectTypeArr[i]=cellIntersectTypeArr[i-1]+_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_; 
+  }
+  
+  int nBlocks[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
+  for (int iBlock=0; iBlock<nNode_type2; iBlock++){
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*   node = NodeArr_type2[iBlock];
+    double dx[3];
+    double *xmin = node->xmin;
+    double *xmax = node->xmax;
+    for (int idim=0;idim<3;idim++){
+      dx[idim]=(xmax[idim]-xmin[idim])/nBlocks[idim]; 
+    }
+    double EPS=min(dx[0],dx[1]);
+    EPS =min(EPS, dx[2]);
+    EPS *=1e-4;
+
+    for (int i=0; i<_BLOCK_CELLS_X_; i++){
+      for (int j=0; j<_BLOCK_CELLS_Y_; j++){
+	for (int k=0; k<_BLOCK_CELLS_Z_; k++){
+
+	  CutCell::cTriangleFaceDescriptor *t;
+	  CutCell::cTriangleFace *TriangleFace;
+	  bool isIntersected=false;
+  
+	  double cell_xmin[3],cell_xmax[3];
+	  int ind[3]={i,j,k};
+	  for (int idim=0;idim<3; idim++){
+	    cell_xmin[idim]=xmin[idim]+dx[idim]*ind[idim];
+	    cell_xmax[idim]=cell_xmin[idim]+dx[idim];
+	  }
+
+	  for (t=node->FirstTriangleCutFace;t!=NULL;t=t->next) {
+	    if(t->TriangleFace->BlockIntersection(cell_xmin,cell_xmax,EPS)==true){
+	      isIntersected=true;
+	      break;
+	    }
+	  }
+
+	  if (isIntersected){
+	    cellIntersectTypeArr[iBlock][i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)] = 2;
+	  }else{
+     
+	    double origin[3]={0.0,0.0,0.0};//it must be inside the nucleus
+	    
+	    int nIntersection=0;
+	    for (int iTriangle=0; iTriangle<CutCell::nBoundaryTriangleFaces; iTriangle++){
+	      if (CutCell::BoundaryTriangleFaces[iTriangle].IntervalIntersection(cell_xmin,origin,0.0)==true){
+		nIntersection++;
+	      }
+	    }
+
+	    if (nIntersection%2==0){
+	      //even number of intersections means inside
+	      cellIntersectTypeArr[iBlock][i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=1;
+	    }else{
+	      cellIntersectTypeArr[iBlock][i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=3;
+	    }
+	  }
+	  
+	}//k
+      }//j
+    }//i
+
+    //printf("Type 2 block i:%d processed\n", iBlock);
+  }//iBlock
+  
+
+}
+
+int nodeIndexInArr(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+  //if the node is not in the array return -1
+  int i;
+  
+  for ( i=0; i< NodeArr_all.size(); i++){
+    if (NodeArr_all[i]==node) break;
+  }
+  
+  if (i==NodeArr_all.size()) {
+    i=-1;
+  }
+  
+  return i;
+}
+
+
+short PIC::Mover::CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,double *x){
+  //assuming x is in the node
+  
+  int i;
+  /*
+  for ( i=0; i< NodeArr_all.size(); i++){
+    if (NodeArr_all[i]==node) break;
+  }
+
+  if (i==NodeArr_all.size()) {
+    printf("node:%p, NodeArr_all.size():%d,threadid:%d \n", node,NodeArr_all.size(),PIC::ThisThread);
+    
+    exit(__LINE__,__FILE__,"Error: the node is not in the array processed by  SetBlockCellIntersectTypes()");
+  }
+  */
+  i = nodeIndexInArr(node);
+
+  short blockType = NodeTypeArr_all[i];
+  if (i==-1) {
+    printf("node:%p, NodeArr_all.size():%d,threadid:%d \n", node,NodeArr_all.size(),PIC::ThisThread);
+    
+    exit(__LINE__,__FILE__,"Error: the node is not in the array processed by  SetBlockCellIntersectTypes()");
+  }
+
+  if (blockType==1 || blockType==3){
+    return blockType;
+  }else if (blockType==2){
+    int iCell, jCell, kCell;
+    int iBlock;
+    for ( iBlock=0; iBlock< NodeArr_type2.size(); iBlock++){
+      if (NodeArr_type2[iBlock]==node) break;
+    }
+    
+    if (iBlock==NodeArr_type2.size()) 
+      exit(__LINE__,__FILE__,"Error: the node is not in the type 2 array processed by  SetBlockCellIntersectTypes()");
+
+    if (PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,node,false)==-1) {
+      printf("x:%e,%e,%e, Node->xmin:%e,%e,%e, Node->xmax:%e,%e,%e\n",x[0],x[1],x[2],node->xmin[0],node->xmin[1],
+	     node->xmin[2], node->xmax[0],node->xmax[1],node->xmax[2]);
+      exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+    }
+
+    return cellIntersectTypeArr[iBlock][iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
+
+  }else{
+    exit(__LINE__,__FILE__,"Error: unknown block type."); 
+  }
+
+
+}  
+
+
+void findNeibNodesWithCutCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> & neibNodeArr, bool & IntersectWithCutCell){
+  neibNodeArr.clear();
+
+  //loop through face neibor
+  for (int iFace=0; iFace<6; iFace++){
+    for (int i=0; i<2; i++){
+      for (int j=0; j<2; j++){
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * Node=startNode->GetNeibFace(iFace,i,j,PIC::Mesh::mesh);
+      if (Node){
+	bool isSame=false;
+	//ensure every element in the vector is unique
+	for (int k=0; k<neibNodeArr.size(); k++){
+	  if (Node==neibNodeArr[k]){
+	    isSame=true;
+	    break;
+	  }
+	}
+	if (!isSame) neibNodeArr.push_back(Node);
+	if (Node->FirstTriangleCutFace) IntersectWithCutCell=true;
+      }
+      }
+    }
+  }
+
+  //loop through edge neibor
+  for (int iEdge=0; iEdge<12; iEdge++){
+    for (int i=0; i<2; i++){
+     
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * Node=startNode->GetNeibEdge(iEdge,i,PIC::Mesh::mesh);
+      if (Node){
+	bool isSame=false;
+	//ensure every element in the vector is unique
+	for (int k=0; k<neibNodeArr.size(); k++){
+	  if (Node==neibNodeArr[k]){
+	    isSame=true;
+	    break;
+	  }
+	}
+	if (!isSame) neibNodeArr.push_back(Node);
+	if (Node->FirstTriangleCutFace) IntersectWithCutCell=true;
+
+      }
+      
+    }
+  }
+
+  //loop through corner neibor
+  for (int iCorner=0; iCorner<8; iCorner++){
+    
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * Node=startNode->GetNeibCorner(iCorner,PIC::Mesh::mesh);
+    if (Node){
+      bool isSame=false;
+      //ensure every element in the vector is unique
+      for (int k=0; k<neibNodeArr.size(); k++){
+	if (Node==neibNodeArr[k]){
+	  isSame=true;
+	  break;
+	}
+      }
+      if (!isSame) neibNodeArr.push_back(Node);
+      if (Node->FirstTriangleCutFace) IntersectWithCutCell=true;
+    }
+    
+    
+  }
+
+}
+int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundaryFlag) {
+  namespace PB = PIC::ParticleBuffer;
+  //if firstBoundaryFlag is true, the particle is injected from the boundary
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
+  PIC::ParticleBuffer::byte *ParticleData;
+  double vInit[3],xInit[3]={0.0,0.0,0.0};
+  int idim,i,j,k,spec;
+
+  double vFinal[3] , xFinal[3];
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+  PB::GetV(vInit,ParticleData);
+  PB::GetX(xInit,ParticleData);
+  spec=PB::GetI(ParticleData);
+
+  //the description of the boundaries of the block faces
+  struct cExternalBoundaryFace {
+    double norm[3];
+    int nX0[3];
+    double e0[3],e1[3],x0[3];
+    double lE0,lE1;
+  };
+
+  static bool initExternalBoundaryFaceTable=false;
+
+  static cExternalBoundaryFace ExternalBoundaryFaceTable[6]={
+      {{-1.0,0.0,0.0}, {0,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{1.0,0.0,0.0}, {1,0,0}, {0,1,0},{0,0,1},{0,0,0}, 0.0,0.0},
+      {{0.0,-1.0,0.0}, {0,0,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0}, {{0.0,1.0,0.0}, {0,1,0}, {1,0,0},{0,0,1},{0,0,0}, 0.0,0.0},
+      {{0.0,0.0,-1.0}, {0,0,0}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}, {{0.0,0.0,1.0}, {0,0,1}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}
+  };
+
+  if (initExternalBoundaryFaceTable==false) {
+    initExternalBoundaryFaceTable=true;
+
+    for (int nface=0;nface<6;nface++) {
+      double cE0=0.0,cE1=0.0;
+
+      for (idim=0;idim<3;idim++) {
+        ExternalBoundaryFaceTable[nface].x0[idim]=(ExternalBoundaryFaceTable[nface].nX0[idim]==0) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim];
+
+        cE0+=pow(((ExternalBoundaryFaceTable[nface].e0[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+        cE1+=pow(((ExternalBoundaryFaceTable[nface].e1[idim]+ExternalBoundaryFaceTable[nface].nX0[idim]<0.5) ? PIC::Mesh::mesh->rootTree->xmin[idim] : PIC::Mesh::mesh->rootTree->xmax[idim])-ExternalBoundaryFaceTable[nface].x0[idim],2);
+      }
+
+      ExternalBoundaryFaceTable[nface].lE0=sqrt(cE0);
+      ExternalBoundaryFaceTable[nface].lE1=sqrt(cE1);
+    }
+  }
+
+  static long int nLoop=0;
+  static long int nCall=0;
+  nCall++;
+
+
+
+  //determine the flight time to the mearest boundary of the block
+  auto GetBlockBoundaryFlightTime = [] (int& iIntersectedFace,int iFaceExclude,double *x,double *v,double *xmin,double *xmax) {
+    int iface;
+    double dtMin=-1;
+
+    iIntersectedFace=-1;
+
+    for (iface=0;iface<6;iface++) if (iface!=iFaceExclude) {
+     
+      int iOrthogonal1,iOrthogonal2;
+      double dt;
+
+      switch (iface) {
+      case 0:
+        iOrthogonal1=1,iOrthogonal2=2;
+        if (v[0]!=0.0) dt=(xmin[0]-x[0])/v[0];
+        break;
+
+      case 1:
+        iOrthogonal1=1,iOrthogonal2=2;
+        if (v[0]!=0.0) dt=(xmax[0]-x[0])/v[0];
+        break;
+
+      case 2:
+        iOrthogonal1=0,iOrthogonal2=2;
+        if (v[1]!=0.0) dt=(xmin[1]-x[1])/v[1];
+        break;
+
+      case 3:
+        iOrthogonal1=0,iOrthogonal2=2;
+        if (v[1]!=0.0) dt=(xmax[1]-x[1])/v[1];
+
+        break;
+      case 4:
+        iOrthogonal1=0,iOrthogonal2=1;
+        if (v[2]!=0.0) dt=(xmin[2]-x[2])/v[2];
+
+        break;
+      case 5:
+        iOrthogonal1=0,iOrthogonal2=1;
+        if (v[2]!=0.0) dt=(xmax[2]-x[2])/v[2];
+
+        break;
+      }
+
+      //find the face the particle will reach first.
+      if (dt>0){
+	if (dtMin<0 || dt< dtMin){
+	  dtMin=dt;
+	  iIntersectedFace=iface;
+	}
+      }
+
+      }// for (iface=0;iface<6;iface++) if (iface!=iFaceExclude)
+
+    //check the distance of the point ot the boundary of the block: is the distance is less that EPS -> return dt=0
+    for (int i=0;i<3;i++) {
+      if (fabs(x[i]-xmin[i])<PIC::Mesh::mesh->EPS) {
+        iIntersectedFace=2*i;
+        return 0.0;
+      }
+
+      if (fabs(x[i]-xmax[i])<PIC::Mesh::mesh->EPS) {
+        iIntersectedFace=1+2*i;
+        return 0.0;
+      }
+    }
+
+    return dtMin;
+  };
+
+  //determine the flight time to the neares cut surface
+  auto GetCutSurfaceIntersectionTime = [] (CutCell::cTriangleFace* &CutTriangleFace,CutCell::cTriangleFace* ExcludeCutTriangleFace,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+    CutCell::cTriangleFaceDescriptor *t;
+    CutCell::cTriangleFace *TriangleFace;
+    double dt,FlightTime;
+    int cnt=0;
+
+    CutTriangleFace=NULL,FlightTime=-1.0;
+
+    for (t=node->FirstTriangleCutFace;t!=NULL;t=t->next) {
+      TriangleFace=t->TriangleFace;
+      //printf("cnt:%d\n", cnt);
+      cnt++;
+      if (TriangleFace!=ExcludeCutTriangleFace) {
+        double xLocalIntersection[3],xIntersection[3];
+
+        if (TriangleFace->RayIntersection(x,v,dt,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
+	  /*
+          if ((dt>0.0)&&(Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<0.0)&&(dt*Vector3D::Length(v)>PIC::Mesh::mesh->EPS)) if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
+            CutTriangleFace=TriangleFace,FlightTime=dt;
+          }
+	  */
+	  //RayIntersection==true ensures dt>=0
+	  
+	  if ((Vector3D::DotProduct(v,TriangleFace->ExternalNormal)<0.0)&&(dt*Vector3D::Length(v)>PIC::Mesh::mesh->EPS)) if ((CutTriangleFace==NULL)||(dt<FlightTime)) {
+	      CutTriangleFace=TriangleFace,FlightTime=dt;
+	    }
+	  
+
+
+
+        }
+
+      }
+    }
+
+    return FlightTime;
+  };
+
+  static const int iFaceExcludeTable[6]={1,0,3,2,5,4};
+  int IntersectionMode,iIntersectedFace,iFaceExclude=-1;
+  double FaceIntersectionFlightTime,dt;
+
+  double CutTriangleFlightTime;
+  CutCell::cTriangleFace* CutTriangleFace;
+
+  const int _block_bounday=0;
+  const int _cut_triangle=1;
+  const int _normal=2;
+  static std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>  neibNodeArr;
+  static cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  lastNode=NULL;
+  bool intersectCutCell=false;
+  int code;
+
+
+  static long int meshID = -1;
+  
+  if (meshID!=PIC::Mesh::mesh->GetMeshID() || meshID==-1){
+    //re-do mesh related functions if mesh changes
+    printf("cellIntersectTypeArr cleaned in pic_mover_traj\n");
+
+    if (cellIntersectTypeArr!=NULL){
+      delete [] cellIntersectTypeArr[0];
+      delete [] cellIntersectTypeArr;
+      cellIntersectTypeArr=NULL;
+    }
+    NodeTypeArr_all.clear();
+    NodeArr_type2.clear();
+    NodeArr_all.clear();
+    
+    meshID=PIC::Mesh::mesh->GetMeshID();
+    printf("SetBlockCellIntersectTypes() called in pic_mover_traj\n");
+    SetBlockCellIntersectTypes();
+    findNeibNodesWithCutCell(startNode,  neibNodeArr, intersectCutCell);
+    lastNode =startNode;
+  }
+  
+
+  if (lastNode!=startNode){
+    findNeibNodesWithCutCell(startNode,  neibNodeArr, intersectCutCell);
+    lastNode=startNode;
+  }
+  CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL;
+
+  
+  bool isTest=false;
+  if (ptr==1230) isTest=true;
+
+  //printf("mover called, x:%e,%e,%e, v:%e,%e,%e\n", xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2]);
+
+  while (dtTotal>0.0){
+    CutTriangleFlightTime=GetCutSurfaceIntersectionTime(CutTriangleFace,ExcludeCutTriangleFace,xInit,vInit,startNode);
+    //printf("test1 xInit:%e,%e,%e, vInit:%e,%e,%e,startNode:%p\n",xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],startNode);     
+
+    if (CutTriangleFlightTime>0.0){
+      //printf("flighttime:%e, xInit:%e,%e,%e, vInit:%e,%e,%e,normal:%e,%e,%e,x0:%e,%e,%e  \n",CutTriangleFlightTime, xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2], CutTriangleFace->ExternalNormal[0],CutTriangleFace->ExternalNormal[1],CutTriangleFace->ExternalNormal[2],CutTriangleFace->x0Face[0],CutTriangleFace->x0Face[1],CutTriangleFace->x0Face[2]);
+    }
+
+    if (isTest) {
+      printf("CutTriangleFlightTime:%e\n", CutTriangleFlightTime);
+    }
+    if (intersectCutCell){
+      if (CutTriangleFlightTime>dtTotal || CutTriangleFlightTime<0.0 ){
+
+	IntersectionMode=_normal;
+      }else{
+	IntersectionMode=_cut_triangle;
+      }
+    }else{
+      //neighbor blocks intersects with cutcells
+      FaceIntersectionFlightTime=GetBlockBoundaryFlightTime(iIntersectedFace,-1,xInit,vInit,startNode->xmin,startNode->xmax);
+      // 0: dt<cut<face; 1: dt<face<cut; 2: face<dt<cut; 3: face<cut<dt; 4: 0<cut<dt<face 5: 0<cut<face<dt
+      // 6: cut<0, dt<face; 7:cut<0, face<dt
+      if (CutTriangleFlightTime<0.0){
+	if (dtTotal<FaceIntersectionFlightTime){
+	  IntersectionMode=_normal;//case 6
+	}else{
+	  IntersectionMode=_block_bounday;//case 7
+	}
+      }else{
+	if (dtTotal<min(FaceIntersectionFlightTime,CutTriangleFlightTime)) {
+	  IntersectionMode=_normal;// case 0 & 1
+	}else{
+	  if (FaceIntersectionFlightTime<min(dtTotal,CutTriangleFlightTime)){
+	    IntersectionMode=_block_bounday; // case 2&3
+	  }else{
+	    IntersectionMode=_cut_triangle;// case 4&5
+	  }
+	}     
+      }
+    }
+
+    
+    
+    switch(IntersectionMode){
+           
+    case _block_bounday:
+      {
+	if (isTest) printf("block boundary\n");
+      double x_test[3];
+      for (int i=0;i<3;i++) {
+	xInit[i]+=FaceIntersectionFlightTime*vInit[i];
+	x_test[i]=xInit[i];
+      }
+      dtTotal -=FaceIntersectionFlightTime;
+      switch (iIntersectedFace) {
+      case 0:
+	x_test[0]-=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	xInit[0]+=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	break;
+      case 1:
+	x_test[0]+=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	xInit[0]-=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	break;
+      case 2:
+	x_test[1]-=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	xInit[1]+=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	break;
+      case 3:
+	x_test[1]+=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	xInit[1]-=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	break;
+      case 4:
+	x_test[2]-=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	xInit[2]+=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	break;
+      case 5:
+	x_test[2]+=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	xInit[2]-=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	break;
+      }
+
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* testNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
+      if (isTest){
+	printf("testNode:%p\n",testNode);
+	if (testNode){
+	  printf("testNode:%p,testNode-xmin:%e,%e,%e,testNode-xmax:%e,%e,%e\n",testNode,testNode->xmin[0], testNode->xmin[1],testNode->xmin[2],
+		 testNode->xmax[0],  testNode->xmax[1], testNode->xmax[2]);
+	  printf("startNode:%p,startNode-xmin:%e,%e,%e,startNode-xmax:%e,%e,%e\n",startNode,startNode->xmin[0], startNode->xmin[1],startNode->xmin[2],
+		 startNode->xmax[0], startNode->xmax[1], startNode->xmax[2]);
+	  printf("xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
+	}
+      }
+      if (testNode==NULL) {
+	//for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
+	//intersects with outer bounary
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
+	//printf("delete test1\n");
+	PIC::ParticleBuffer::DeleteParticle(ptr);
+	return _PARTICLE_LEFT_THE_DOMAIN_;
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+    code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+    //xInit,vInit, startNode may change inside the user defined function
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
+    exit(__LINE__,__FILE__,"Error: not implemented");
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+    //reflect the particle back into the domain
+    {
+      double c=0.0;
+      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
+      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
+      //startNode stays the same
+      //xInit stays the same
+    }
+
+    code=_PARTICLE_REJECTED_ON_THE_FACE_;
+#else
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+#endif
+
+      }else{
+	//enter a new non-null block
+	//if (isTest)
+	//  printf("before cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
+	for (int idim=0;idim<3;idim++) xInit[idim]=x_test[idim];
+	
+	
+	//if (isTest)
+	//  printf("after cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
+	//vInit does not change
+	bool isNeib=false;
+	
+	if (testNode==startNode){
+	  isNeib=true;
+	}else{ 
+	  for (int i=0; i<neibNodeArr.size(); i++) {
+	    if (neibNodeArr[i]==testNode) isNeib=true;
+	  }
+	}
+
+	if (!isNeib){
+	 
+	  //printf("block particle removed\n");
+	  //remove particle if it goes outside neib blocks
+	  PIC::ParticleBuffer::DeleteParticle(ptr);
+	  return _PARTICLE_LEFT_THE_DOMAIN_;
+	}else{
+	  startNode=testNode;
+	}
+      }
+      }//case _block_bounday
+      break;
+
+    case _cut_triangle:
+      {
+	if (isTest) printf("cut triangle\n");
+
+      code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
+      //for the comet test
+      //if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+	if (isTest) printf("cut triangle deleted\n");
+	//printf("cut triangle dtTotal:%e,CutTriangleFlightTime:%e\n ",dtTotal, CutTriangleFlightTime);
+	PIC::ParticleBuffer::DeleteParticle(ptr);
+	return _PARTICLE_LEFT_THE_DOMAIN_;
+	//}
+      dtTotal -=CutTriangleFlightTime;
+      //if paritcle is not deleted, new xInit,vInit and startNode should 
+      //be given in ProcessTriangleCutFaceIntersection
+      }
+      break;
+
+
+    case _normal:
+      {
+	if (isTest) printf("normal\n");
+	
+	for (int idim=0;idim<3;idim++){
+	  xInit[idim] +=dtTotal*vInit[idim];
+	  //vInit stays the same
+	  //vInit[idim] +=0.0;
+	}
+	dtTotal=0.0;
+	
+	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* testNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
+
+	if (isTest){
+	  printf("testNode:%p",testNode);
+	  if (testNode){
+	    printf("testNode:%p,testNode-xmin:%e,%e,%e,testNode-xmax:%e,%e,%e\n",testNode,testNode->xmin[0], testNode->xmin[1],testNode->xmin[2],
+		   testNode->xmax[0],  testNode->xmax[1], testNode->xmax[2]);
+	
+	  }
+	}
+	
+
+	if (testNode==NULL) {
+	//for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
+	//intersects with outer bounary
+#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
+	  //printf("delete test2 out\n");
+	PIC::ParticleBuffer::DeleteParticle(ptr);
+	return _PARTICLE_LEFT_THE_DOMAIN_;
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+    code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+    //xInit,vInit, startNode may change inside the user defined function
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
+    exit(__LINE__,__FILE__,"Error: not implemented");
+#elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
+    //reflect the particle back into the domain
+    {
+      double c=0.0;
+      for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
+      for (int idim=0;idim<3;idim++) vInit[idim]-=2.0*c*ExternalBoundaryFaceTable[nIntersectionFace].norm[idim];
+      //startNode stays the same
+      //xInit stays the same
+    }
+
+    code=_PARTICLE_REJECTED_ON_THE_FACE_;
+#else
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+#endif
+
+	}else{
+	//enter a  non-null block
+	//vInit does not change
+	bool isNeib=false;
+	
+	if (testNode==startNode){
+	  isNeib=true;
+	}else{ 
+	  for (int i=0; i<neibNodeArr.size(); i++) {
+	    if (neibNodeArr[i]==testNode) isNeib=true;
+	  }
+	}
+
+	if (!isNeib){
+	 
+	  //printf("normal particle removed\n");
+	  //remove particle if it goes outside neib blocks
+	  PIC::ParticleBuffer::DeleteParticle(ptr);
+	  return _PARTICLE_LEFT_THE_DOMAIN_;
+	}else{
+	  startNode=testNode;
+	}
+
+	}
+
+
+      }//case_normal
+      break;
+    }
+
+
+    //check if the particle enters into cells inside the body
+    if (nodeIndexInArr(startNode)==-1){
+      printf("not in ghost block\n");
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;   
+    }else if (PIC::Mover::CellIntersectType(startNode,xInit)==1){
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;      
+    }    
+
+  }//while (dtTotal>0.0)
+
+
+
+  newNode = startNode;
+
+  memcpy(xFinal,xInit,3*sizeof(double));
+  memcpy(vFinal,vInit,3*sizeof(double));
+
+  
+  
+  //save the trajectory point
+#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+  PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
+
+#if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
+  PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)newNode);
+#endif
+#endif
+
+  //finish the trajectory integration procedure
+  PIC::Mesh::cDataBlockAMR *block;
+
+  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) {
+    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%d\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
+	   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
+    exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  }
+  if ((block=newNode->block)==NULL) {
+    exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
+  }
+
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+
+  tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  PIC::ParticleBuffer::SetV(vFinal,ParticleData);
+  PIC::ParticleBuffer::SetX(xFinal,ParticleData);
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
 
 int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace) {
   namespace PB = PIC::ParticleBuffer;

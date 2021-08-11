@@ -4556,6 +4556,12 @@ void DeleteAttachedParticles();
 
     //move a particle by calculating by tracing its trajectory
     int TrajectoryTrackingMover(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL);
+    
+    int TrajectoryTrackingMover_new(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundary=false);
+    short CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node,double * x);
+    void SetBlockCellIntersectTypes();
+    bool IsSetCellIntersectTypes();
+
 
     int Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     void BorisSplitAcceleration_default(double *accl, double *rotation, int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
