@@ -217,6 +217,28 @@ void PIC::TimeStepInternal::Sampling(double &SamplingTime) {
 
   if (SamplingMode==_DISABLED_SAMPLING_MODE_) {
     SamplingTime=0.0;
+
+
+    //in case the dynamic load balancing is activated and set to use the particle number -> count the particles 
+    if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+      PIC::Mesh::cDataBlockAMR *block;
+      int i,j,k;
+      long int ptr;
+
+      for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if ((block=node->block)!=NULL) { 
+        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) { 
+          ptr=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+          while (ptr!=-1) {
+            node->ParallelLoadMeasure++;
+            ptr=PIC::ParticleBuffer::GetNext(ptr);
+          }
+        }
+      }
+    }   
+
+
     return;
   }
 
