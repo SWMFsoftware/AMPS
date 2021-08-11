@@ -59,6 +59,9 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
 
+  SamplingMode=disabled
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
+
   RequestedParticleBufferLength=2000000
 
   BlockCells=6,6,6
