@@ -871,6 +871,11 @@ void PIC::Mover::MoveParticles() {
            #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
            nTotalCalls++;
            #endif
+
+           //if dynamics load balancing is done according to the particle number -> count particle in the particle mover (in case that the sampling procedure is disabled)  
+           if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_) {
+             node->ParallelLoadMeasure++;
+           } 
          }
       }
 
