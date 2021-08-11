@@ -269,7 +269,8 @@ short PIC::Mover::CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node
     exit(__LINE__,__FILE__,"Error: unknown block type."); 
   }
 
-
+  return 0;
+  // just to make compiler happy, if 0 is returned, there is something wrong
 }  
 
 
