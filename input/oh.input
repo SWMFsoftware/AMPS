@@ -72,6 +72,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::Simple(ptr,LocalTimeStep,node)
 
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
