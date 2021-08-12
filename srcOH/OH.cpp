@@ -115,13 +115,18 @@ void OH::Output::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,doub
 void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode){
   double t,v[3]={0.0,0.0,0.0},v2[3]={0.0,0.0,0.0};
 
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
   //SourceDensity
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceDensityOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) { //(pipe->ThisThread==0) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
     fprintf(fout,"%e ",t);
   }
@@ -129,12 +134,12 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 
   //SourceMomentum
   for(int idim=0; idim < 3; idim++){
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       t= *(idim+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceMomentumOffset));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL))  {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL))  pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t);
     }
@@ -142,12 +147,12 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
   }
 
   //SourceEnergy
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
     t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Output::ohSourceEnergyOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL))  {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL))  pipe->recv(t,CenterNodeThread);
 
     fprintf(fout,"%e ",t);
   }
@@ -156,12 +161,12 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
   // ENA origin sampling output
   if (DoPrintSpec[DataSetNumber]) for (int iSource=0;iSource<OH::Sampling::OriginLocation::nSampledOriginLocations+1;iSource++) {
     //density of the ENAs produced in specific origin regions
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       t= *(iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetDensitySample));
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",t/PIC::LastSampleLength);
     }
@@ -169,12 +174,12 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
 
     // velocity of the ENAs produced in specific origin regions
     for (int idim=0; idim<3; idim++){
-      if (pipe->ThisThread==CenterNodeThread) {
+      if (gather_output_data==true) { //(pipe->ThisThread==CenterNodeThread) {
         t= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
       }
 
-      if (pipe->ThisThread==0) {
-        if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+      if ((PIC::ThisThread==0)||(pipe==NULL)) {
+        if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
         fprintf(fout,"%e ",t);
       }
@@ -182,7 +187,7 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
     }
 
     // Temp of the ENAs produced in specific origin regions calculated using the average sqruared velocity and the square of the average velocity components
-    if (pipe->ThisThread==CenterNodeThread) {
+    if (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
       for (int idim=0; idim<3; idim++){
         v[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetVelocitySample));
         v2[idim]= *(idim+3*iSource+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[DataSetNumber]+(double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset+OH::Sampling::OriginLocation::OffsetV2Sample));
@@ -194,8 +199,8 @@ void OH::Output::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int C
       }
     }
 
-    if (pipe->ThisThread==0) {
-      if (CenterNodeThread!=0) pipe->recv(t,CenterNodeThread);
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
 
       fprintf(fout,"%e ",PIC::MolecularData::GetMass(DataSetNumber)*t/(3.0*Kbol));
     }
