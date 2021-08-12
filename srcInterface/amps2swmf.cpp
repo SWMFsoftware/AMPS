@@ -45,6 +45,9 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 int AMPS2SWMF::FieldLineData::nLon=4;
 int AMPS2SWMF::FieldLineData::nLat=4;
 
+//in case sampling in AMPS is disabled SamplingOutputCadence is the interval when the sampling get tempoparely enabled to output a data file 
+int AMPS2SWMF::SamplingOutputCadence=1;
+
 extern "C" {
  void amps_bl_nlon_(int *nLon) {*nLon=AMPS2SWMF::FieldLineData::nLon;} 
  void amps_bl_nlat_(int *nLat) {*nLat=AMPS2SWMF::FieldLineData::nLat;} 
@@ -313,6 +316,15 @@ extern "C" {
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit,int* ForceReachingSimulationTimeLimit) {
     using namespace AMPS2SWMF;
+
+     static int ncalls=0;
+
+     ncalls++;
+
+     if ((PIC::SamplingMode==_DISABLED_SAMPLING_MODE_)&&(ncalls%SamplingOutputCadence==0)) {
+       PIC::SamplingMode=_SINGLE_OUTPUT_FILE_SAMPING_MODE_;
+     } 
+
 
     if (swmfTimeSimulation<0.0) swmfTimeSimulation=*TimeSimulation;
     

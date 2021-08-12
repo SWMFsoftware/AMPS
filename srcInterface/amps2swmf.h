@@ -28,6 +28,9 @@ namespace AMPS2SWMF {
   extern double swmfTimeSimulation;
   extern bool swmfTimeAccurate;
 
+  //in case sampling in AMPS is disabled SamplingOutputCadence is the interval when the sampling get tempoparely enabled to output a data file 
+  extern int SamplingOutputCadence; 
+
   //amps_init_flag
   extern bool amps_init_flag;
 

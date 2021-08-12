@@ -28,6 +28,15 @@ T
 #SAMPLING
 F                       Particle data sampling
 
+#SAMPLING_LENGTH
+2                       sampling length
+
+
+
+#SAMPLE_OUTPUT_CADENCE
+20                      the cadence between starting sampled procedure for output AMPS' data file
+
+
 
 #END_COMP PT -----------------------------------------------------------------
 
@@ -104,6 +113,25 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         PIC::SamplingMode=_DISABLED_SAMPLING_MODE_;
       }
     }
+
+    else if (Command == "#SAMPLING_LENGTH") {
+      t=param_list.front().first;
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      PIC::RequiredSampleLength=atoi(t.c_str());
+    }
+
+    else if (Command == "#SAMPLING_OUTPUT_CADENCE") {
+      t=param_list.front().first;
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      AMPS2SWMF::SamplingOutputCadence=atoi(t.c_str());
+    }
+
 
     else if (Command == "#FIELDLINE") { 
       string t;
