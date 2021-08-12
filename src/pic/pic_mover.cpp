@@ -4152,3 +4152,90 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrde
   return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(ptr,dtTotal,startNode,false);
 }
 
+//==================================================================
+//simple particle mover that does not account for any force nor internal boundaries
+int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
+  PIC::ParticleBuffer::byte *ParticleData;
+  int idim,i,j,k,spec;
+  double *v,*x;
+
+  ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  v=PIC::ParticleBuffer::GetV(ParticleData);
+  x=PIC::ParticleBuffer::GetX(ParticleData);
+
+  static long int nCall=0;
+  nCall++;
+
+  for (int idim=0;idim<3;idim++) {
+    x[idim]+=v[idim]*dtTotal;
+  }
+
+  newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+
+  if (newNode==NULL) {
+    //the particle left the computational domain
+    int code=_PARTICLE_DELETED_ON_THE_FACE_;
+    
+    //call the function that process particles that leaved the coputational domain
+    switch (code) {
+    case _PARTICLE_DELETED_ON_THE_FACE_:
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }
+  }
+
+
+  //finish the trajectory integration procedure
+  PIC::Mesh::cDataBlockAMR *block;
+
+  if (PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+  if ((block=newNode->block)==NULL) {
+    exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
+  }
+
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+
+  
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
+  tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
+
