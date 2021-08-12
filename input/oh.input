@@ -62,17 +62,22 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   SamplingMode=disabled
   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
 
+  define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
+  define _PIC_RUNTIME_STAT_OUTPUT__MAX_ITERATION_NUMBER_ 5
+
+
   RequestedParticleBufferLength=2000000
 
   BlockCells=6,6,6
   GhostCells=2,2,2
 
   define _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE_ _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__EXECUTION_MODE__CONTINUE_
-  define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
+! define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
 
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::Simple(ptr,LocalTimeStep,node)
 
   OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::Simple(ptr,LocalTimeStep,node)
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
