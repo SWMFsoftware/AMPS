@@ -1063,7 +1063,7 @@ void PIC::Sampling::Sampling() {
 
     //check different sampling modes
     #if _PIC_SAMPLING_MODE_ == _PIC_MODE_ON_
-    if (SamplingMode==_RESTART_SAMPLING_MODE_) {
+    if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)) {
       PIC::Mesh::switchSamplingBuffers();
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
@@ -1278,7 +1278,7 @@ void PIC::Sampling::Sampling() {
       }
 
       //flush sampled surface data
-      if (SamplingMode==_RESTART_SAMPLING_MODE_) {
+      if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_DISABLED_SAMPLING_MODE_)) {
         for (iSphericalSurface=0;iSphericalSurface<nTotalSphericalSurfaces;iSphericalSurface++) {
           cInternalSphericalData *Sphere=PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface);
           PIC::BC::InternalBoundary::Sphere::flushCollectingSamplingBuffer(Sphere);
