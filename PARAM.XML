@@ -191,8 +191,8 @@ Determine if this is a restart run.
   <parameter name="LonMax" type = "real" />
   <parameter name="LatMin" type = "real" />
   <parameter name="LatMax" type = "real" />
-  <parameter name="nLon" type = "real" />
-  <parameter name="nLon" type = "real" />  
+  <parameter name="nLon" type = "integer" />
+  <parameter name="nLon" type = "integer" />  
  
 #FIELDLINE
 1.5     ROrigin
@@ -218,7 +218,7 @@ if SamplingMode is false, AMPS' sampling procedure is disables. The default valu
 
 
 <command name="SAMPLING_LENGTH">
-  <parameter name="SamplingLength" type="real" />
+  <parameter name="SamplingLength" type="integer" />
 
 #SAMPLING_LENGTH
 2                       SamplingLength
@@ -230,7 +230,7 @@ The number of iteractions that AMPS uses to commect the statistical information 
 
 
 <command name="SAMPLING_OUTPUT_CADENCE">
-  <parameter name="SamplingOutputCadence" type="real" />
+  <parameter name="SamplingOutputCadence" type="integer" />
 
 #SAMPLING_OUTPUT_CADENCE
 9                      SamplingOutputCadence 
