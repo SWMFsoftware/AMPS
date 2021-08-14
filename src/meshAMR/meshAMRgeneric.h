@@ -9517,6 +9517,9 @@ nMPIops++;
         IntersectionFlagTable.SetFlag(true,cnt);
       }
     }
+
+    IntersectionFlagTable.SetSize(cnt);
+
     #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     #pragma omp parallel default (none) shared (xmax,xmin,BoundaryFaces,IntersectionFlagTable) private (t)
     {
@@ -9532,6 +9535,11 @@ nMPIops++;
             }
           }
         }
+
+        #pragma omp taskwait
+
+        IntersectionFlagTable.SetSize(cnt);
+        IntersectionFlagTable.GatherFlagsOpenMP();
       }
     }
     #else
