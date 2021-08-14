@@ -215,6 +215,33 @@ F      SamplingMode
 if SamplingMode is false, AMPS' sampling procedure is disables. The default value is true
 </command> 
 
+
+
+<command name="SAMPLING_LENGTH">
+  <parameter name="SamplingLength" type="real" />
+
+#SAMPLING_LENGTH
+2                       SamplingLength
+
+The number of iteractions that AMPS uses to commect the statistical information before output the numerical solution in a file
+</command>
+
+
+
+
+<command name="SAMPLING_OUTPUT_CADENCE">
+  <parameter name="SamplingOutputCadence" type="real" />
+
+#SAMPLING_OUTPUT_CADENCE
+9                      SamplingOutputCadence 
+
+The cadence between starting sampled procedure for output AMPS' data file. #SAMPLING_OUTPUT_CADENCE is active only when #SAMPLING==false. It activates sampling periodically. Each time sampling is activated, it continues for #SAMPLING_LENGTH iterations, output data file, and disable sampling again.
+ 
+</command>
+
+
+
+
 <command name="TIMESTEPPING">
   <parameter name="useSWMFDt" type="logical" />
   <parameter name="useFixedDt" type="logical" /> 
