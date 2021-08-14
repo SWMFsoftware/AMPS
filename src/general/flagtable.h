@@ -147,6 +147,30 @@ public:
     }
   }
 
+  void SetSize(int NewFlagTableElementSize) {
+    int iBit,iByte,iThreadOpenMP=0;
+    unsigned char mask;
+
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    iThreadOpenMP=omp_get_thread_num();
+    #endif
+
+    iByte=NewFlagTableElementSize/8;
+    iBit=NewFlagTableElementSize%8;
+
+    if (iByte>=FlagTableLength[iThreadOpenMP]) {
+      //re-allocate the table
+      int NewFlagTableLength=(int)(FlagTableLengthIncrement*iByte);
+
+      AllocateTable(NewFlagTableLength,iThreadOpenMP);
+    }
+  }
+
+  //combine flags from all OpenMP threads
+  void GatherFlagsOpenMP() {
+    for (int thread=1;thread<nThreadsOpenMP;thread++) for (int i=0;i<FlagTableLength[0];i++) FlagTable[0][i]|=FlagTable[thread][i];
+  }
+
   //collect flags from all processors (strided)
   void Gather() {
     int rank,size,i,thread;
