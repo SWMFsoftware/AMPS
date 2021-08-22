@@ -658,8 +658,11 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	PIC::ParticleBuffer::DeleteParticle(ptr);
 	return _PARTICLE_LEFT_THE_DOMAIN_;
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
-    code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
-    //xInit,vInit, startNode may change inside the user defined function
+    //code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+    
+    
+    exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
+    
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
     exit(__LINE__,__FILE__,"Error: not implemented");
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
@@ -760,8 +763,12 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	PIC::ParticleBuffer::DeleteParticle(ptr);
 	return _PARTICLE_LEFT_THE_DOMAIN_;
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
-    code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
+   // code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
     //xInit,vInit, startNode may change inside the user defined function
+	
+	
+  exit(__LINE__,__FILE__,"Error: branch _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_ is not implemented");
+
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_
     exit(__LINE__,__FILE__,"Error: not implemented");
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_
