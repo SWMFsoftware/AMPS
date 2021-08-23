@@ -203,6 +203,12 @@ void newMars::SampleModelData() {
 
 void newMars::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
 
+
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
   struct cDataExchengeBuffer {
     double NumericalLocalInjectionRate,TheoreticalLocalInjectionRate;
     double maxTheoreticalLocalInjectionRate,minTheoreticalLocalInjectionRate;
@@ -217,7 +223,7 @@ void newMars::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Cent
   cDataExchengeBuffer buffer;
   cBackgroundDensityBuffer BackgroundDensityBuffer[nBackgroundSpecies];
 
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (gather_output_data==true) { //if (pipe->ThisThread==CenterNodeThread) {
       if (_C_SPEC_>=0) {
           buffer.TheoreticalLocalInjectionRate=PIC::VolumeParticleInjection::GetCellInjectionRate(_C_SPEC_,CenterNode);
           buffer.NumericalLocalInjectionRate=*(_C_SPEC_+(double*)(sampledLocalInjectionRateOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()));
@@ -237,8 +243,8 @@ void newMars::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Cent
   }
 
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) { //(pipe->ThisThread==0) {
+     if ((CenterNodeThread!=0)&&(pipe!=NULL)) { //if (CenterNodeThread!=0) {
       pipe->recv((char*)&buffer,sizeof(cDataExchengeBuffer),CenterNodeThread);
       pipe->recv((char*)&BackgroundDensityBuffer,nBackgroundSpecies*sizeof(cBackgroundDensityBuffer),CenterNodeThread);
     }
