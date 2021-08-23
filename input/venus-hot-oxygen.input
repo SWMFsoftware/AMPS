@@ -48,6 +48,8 @@ CouplerMode=off !!!ices !!off, ices, swmf
   InitialSampleLength=200
   TestRunTotalIteration=200
 
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
 ! ReferenceInjectionParticleNumber=200
 ! MaxMeshRefinmentLevel=8! 2 !4
 ! EnforceRequestedMeshResolution=off !on,off
