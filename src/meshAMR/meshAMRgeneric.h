@@ -9439,7 +9439,7 @@ nMPIops++;
       int nface;
 
       double xmin[3],xmax[3];
-
+      /*
       xmin[0]=startNode->xmin[0]-(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
       xmin[1]=startNode->xmin[1]-(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
       xmin[2]=startNode->xmin[2]-(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
@@ -9447,6 +9447,16 @@ nMPIops++;
       xmax[0]=startNode->xmax[0]+(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
       xmax[1]=startNode->xmax[1]+(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
       xmax[2]=startNode->xmax[2]+(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
+      */
+      xmin[0]=startNode->xmin[0];
+      xmin[1]=startNode->xmin[1];
+      xmin[2]=startNode->xmin[2];
+
+      xmax[0]=startNode->xmax[0];
+      xmax[1]=startNode->xmax[1];
+      xmax[2]=startNode->xmax[2];
+
+
 
       //create a table to storing the result of checking of the intersection checks
       cBitwiseFlagTable IntersectionFlagTable(CutCell::nBoundaryTriangleFaces);
@@ -9495,7 +9505,7 @@ nMPIops++;
     //check all boundary faces for intersection with the block
     //check all boundary faces for intersection with the block
     double xmin[3],xmax[3];
-
+    /*
     xmin[0]=startNode->xmin[0]-(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
     xmin[1]=startNode->xmin[1]-(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
     xmin[2]=startNode->xmin[2]-(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
@@ -9503,6 +9513,15 @@ nMPIops++;
     xmax[0]=startNode->xmax[0]+(startNode->xmax[0]-startNode->xmin[0])/double(_BLOCK_CELLS_X_)*double(_GHOST_CELLS_X_);
     xmax[1]=startNode->xmax[1]+(startNode->xmax[1]-startNode->xmin[1])/double(_BLOCK_CELLS_Y_)*double(_GHOST_CELLS_Y_);
     xmax[2]=startNode->xmax[2]+(startNode->xmax[2]-startNode->xmin[2])/double(_BLOCK_CELLS_Z_)*double(_GHOST_CELLS_Z_);
+    */
+    xmin[0]=startNode->xmin[0];
+    xmin[1]=startNode->xmin[1];
+    xmin[2]=startNode->xmin[2];
+
+    xmax[0]=startNode->xmax[0];
+    xmax[1]=startNode->xmax[1];
+    xmax[2]=startNode->xmax[2];
+
 
     //create a table to storing the result of checking of the intersection checks
     static cBitwiseFlagTable IntersectionFlagTable(100);
