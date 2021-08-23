@@ -387,23 +387,23 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   if (PIC::Mesh::mesh->ThisThread==0) {
     PIC::Mesh::mesh->buildMesh();
-    PIC::Mesh::mesh->saveMeshFile("mesh.msh");
+    PIC::Mesh::mesh->saveMeshFile("mesh->msh");
     MPI_Barrier(MPI_COMM_WORLD);
   }
   else {
     MPI_Barrier(MPI_COMM_WORLD);
-    PIC::Mesh::mesh->readMeshFile("mesh.msh");
+    PIC::Mesh::mesh->readMeshFile("mesh->msh");
   }
 
 
   cout << __LINE__ << " rnd=" << rnd() << " " << PIC::Mesh::mesh->ThisThread << endl;
 
-//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh.dat");
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh->dat");
 
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
@@ -415,7 +415,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   PIC::Mesh::mesh->memoryAllocationReport();
   PIC::Mesh::mesh->GetMeshTreeStatistics();
 
-//  PIC::Mesh::mesh.checkMeshConsistency(PIC::Mesh::mesh.rootTree);
+//  PIC::Mesh::mesh->checkMeshConsistency(PIC::Mesh::mesh->rootTree);
 
   //init the volume of the cells'
   PIC::Mesh::mesh->InitCellMeasure();
@@ -497,8 +497,8 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
 
 
-//  PIC::Mesh::mesh.outputMeshTECPLOT("mesh.dat");
-//  PIC::Mesh::mesh.outputMeshDataTECPLOT("mesh.data.dat",_C_SPEC_);
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh->dat");
+//  PIC::Mesh::mesh->outputMeshDataTECPLOT("mesh->data.dat",_C_SPEC_);
 
   MPI_Barrier(MPI_COMM_WORLD);
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;

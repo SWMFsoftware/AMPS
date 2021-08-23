@@ -4,7 +4,7 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = main_lib.o Venus.o MarsBackgroundAtmosphereFox.o BackgroundAtmosphere.o 
+MAINLIBOBJ = Venus.o MarsBackgroundAtmosphereFox.o BackgroundAtmosphere.o 
 MAINOBJ = main.o
 
 lib : $(MAINLIBOBJ)
