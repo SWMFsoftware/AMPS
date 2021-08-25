@@ -37,7 +37,7 @@
 
 //the parameters of the domain and the sphere
 
-const double DebugRunMultiplier=2.0; //1.0;  
+const double DebugRunMultiplier=0.5*3*2.0; //1.0;  
 
 
 const double rSphere=_RADIUS_(_TARGET_);

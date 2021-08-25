@@ -42,7 +42,7 @@ CouplerMode=off !!!ices !!off, ices, swmf
 #endUserDefinitions
 
 #General
-  ReferenceInjectionParticleNumber=200000
+  ReferenceInjectionParticleNumber=2000000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=200
