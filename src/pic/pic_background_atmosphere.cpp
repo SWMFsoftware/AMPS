@@ -104,6 +104,11 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::PrintVariableList(FILE* fou
 
 void PIC::MolecularCollisions::BackgroundAtmosphere::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
 
+  bool gather_output_data=false;
+
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;
+
   struct cDataExchengeBuffer {
     double TotalCollisionFreq;
     double EnergyExchangeRate;
@@ -111,13 +116,13 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::PrintData(FILE* fout,int Da
 
   cDataExchengeBuffer buffer={0.0,0.0};
 
-  if ((pipe->ThisThread==CenterNodeThread)&&(LocalTotalCollisionFreqSamplingOffset!=-1)) {
+  if ((gather_output_data==true)&&(LocalTotalCollisionFreqSamplingOffset!=-1)) { // ((pipe->ThisThread==CenterNodeThread)&&(LocalTotalCollisionFreqSamplingOffset!=-1)) {
     buffer.TotalCollisionFreq=*(DataSetNumber+(double*)(LocalTotalCollisionFreqSamplingOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()));
     buffer.EnergyExchangeRate=*(DataSetNumber+(double*)(LocalEnergyTransferRateSamplingOffset+PIC::Mesh::completedCellSampleDataPointerOffset+CenterNode->GetAssociatedDataBufferPointer()));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) { //if (pipe->ThisThread==0) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) { //if (CenterNodeThread!=0) {
       pipe->recv((char*)&buffer,sizeof(cDataExchengeBuffer),CenterNodeThread);
     }
 
