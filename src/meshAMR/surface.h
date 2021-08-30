@@ -15,6 +15,46 @@ protected:
 public:
   CutCell::cNASTRANnode* GetNode(int iNode) {return &Nodes[iNode];}
   double* GetNodeX(int iNode) {return Nodes[iNode].x;}  
+  
+  int nFaces(){return Faces.size();}
+  int nNodes(){return Nodes.size();}
+  
+  void GetCenterPosition(double *x){
+
+    for (int iFace=0; iFace<Faces.size();iFace++){
+      for (int idim=0;idim<3;idim++){
+	CutCell::cNASTRANface face= Faces[iFace];
+	x[3*iFace+idim]=(Nodes[face.node[0]].x[idim]+
+			 Nodes[face.node[1]].x[idim]+
+			 Nodes[face.node[2]].x[idim])/3.0;
+      }
+    }
+
+  }
+  
+  void GetSurfaceArea_normal(double * area, double * normArr){
+     for (int iFace=0; iFace<Faces.size();iFace++){
+       CutCell::cNASTRANface face= Faces[iFace];
+       double * x0 = Nodes[face.node[0]].x;
+       double * x1 = Nodes[face.node[1]].x;
+       double * x2 = Nodes[face.node[2]].x;
+
+       double e0[3],e1[3],l,norm[3];
+       for (int idim=0;idim<3;idim++) e0[idim]=x1[idim]-x0[idim],e1[idim]=x2[idim]-x0[idim];
+       
+       norm[0]=e0[1]*e1[2]-e1[1]*e0[2];
+       norm[1]=e1[0]*e0[2]-e0[0]*e1[2];
+       norm[2]=e0[0]*e1[1]-e1[0]*e0[1];
+
+       l=sqrt(norm[0]*norm[0]+norm[1]*norm[1]+norm[2]*norm[2]);
+       normArr[iFace*3]=norm[0]/l;
+       normArr[iFace*3+1]=norm[1]/l;
+       normArr[iFace*3+2]=norm[2]/l;
+       area[iFace]=0.5*l;
+     }
+
+  }
+
 
   void ReadNastranSurfaceMeshLongFormat(const char* fname,double UnitConversitonFactor=1.0) {
    CiFileOperations ifile;

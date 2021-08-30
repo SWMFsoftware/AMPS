@@ -223,7 +223,7 @@ unsigned long int GetTriangulationSignature();
     #endif
 
     void GetCenterPosition(double *x) {
-      for (int idim=0;idim<3;idim++) x[idim]=(2.0*x0Face[idim]+x1Face[idim]+x2Face[idim])/4.0;
+      for (int idim=0;idim<3;idim++) x[idim]=(x0Face[idim]+x1Face[idim]+x2Face[idim])/3.0;
     }
 
     void GetRandomPosition(double *x,double EPS=0.0) {
