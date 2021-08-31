@@ -397,9 +397,10 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 
 
   //determine the flight time to the mearest boundary of the block
-  auto GetBlockBoundaryFlightTime = [] (int& iIntersectedFace,int iFaceExclude,double *x,double *v,double *xmin,double *xmax) {
+  auto GetBlockBoundaryFlightTime = [] (int& iIntersectedFace,int iFaceExclude,double *x,double *v,double *xmin,double *xmax, double *eps) {
     int iface;
     double dtMin=-1;
+   
 
     iIntersectedFace=-1;
 
@@ -411,32 +412,32 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       switch (iface) {
       case 0:
         iOrthogonal1=1,iOrthogonal2=2;
-        if (v[0]!=0.0) dt=(xmin[0]-x[0])/v[0];
+        if (v[0]!=0.0) dt=(xmin[0]-x[0]-eps[0])/v[0];
         break;
 
       case 1:
         iOrthogonal1=1,iOrthogonal2=2;
-        if (v[0]!=0.0) dt=(xmax[0]-x[0])/v[0];
+        if (v[0]!=0.0) dt=(xmax[0]-x[0]+eps[0])/v[0];
         break;
 
       case 2:
         iOrthogonal1=0,iOrthogonal2=2;
-        if (v[1]!=0.0) dt=(xmin[1]-x[1])/v[1];
+        if (v[1]!=0.0) dt=(xmin[1]-x[1]-eps[1])/v[1];
         break;
 
       case 3:
         iOrthogonal1=0,iOrthogonal2=2;
-        if (v[1]!=0.0) dt=(xmax[1]-x[1])/v[1];
+        if (v[1]!=0.0) dt=(xmax[1]-x[1]+eps[1])/v[1];
 
         break;
       case 4:
         iOrthogonal1=0,iOrthogonal2=1;
-        if (v[2]!=0.0) dt=(xmin[2]-x[2])/v[2];
+        if (v[2]!=0.0) dt=(xmin[2]-x[2]-eps[2])/v[2];
 
         break;
       case 5:
         iOrthogonal1=0,iOrthogonal2=1;
-        if (v[2]!=0.0) dt=(xmax[2]-x[2])/v[2];
+        if (v[2]!=0.0) dt=(xmax[2]-x[2]+eps[2])/v[2];
 
         break;
       }
@@ -538,8 +539,9 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
     NodeArr_all.clear();
     
     meshID=PIC::Mesh::mesh->GetMeshID();
-    printf("SetBlockCellIntersectTypes() called in pic_mover_traj\n");
+    printf("SetBlockCellIntersectTypes() called in pic_mover_traj, thread_id:%d\n", PIC::ThisThread);
     SetBlockCellIntersectTypes();
+    //MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
     findNeibNodesWithCutCell(startNode,  neibNodeArr, intersectCutCell);
     lastNode =startNode;
   }
@@ -553,7 +555,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 
   
   bool isTest=false;
-  if (ptr==1230) isTest=true;
+  //if (ptr==33752) isTest=true;
 
   //printf("mover called, x:%e,%e,%e, v:%e,%e,%e\n", xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2]);
 
@@ -577,7 +579,12 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       }
     }else{
       //neighbor blocks intersects with cutcells
-      FaceIntersectionFlightTime=GetBlockBoundaryFlightTime(iIntersectedFace,-1,xInit,vInit,startNode->xmin,startNode->xmax);
+      double xEPS[3];
+      
+      for (int idim=0;idim<3;idim++) xEPS[idim]=1e-4*(startNode->xmax[idim]-startNode->xmin[idim]);
+
+      
+      FaceIntersectionFlightTime=GetBlockBoundaryFlightTime(iIntersectedFace,-1,xInit,vInit,startNode->xmin,startNode->xmax,xEPS);
       // 0: dt<cut<face; 1: dt<face<cut; 2: face<dt<cut; 3: face<cut<dt; 4: 0<cut<dt<face 5: 0<cut<face<dt
       // 6: cut<0, dt<face; 7:cut<0, face<dt
       if (CutTriangleFlightTime<0.0){
@@ -605,7 +612,10 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
            
     case _block_bounday:
       {
-	if (isTest) printf("block boundary\n");
+	if (isTest) {
+	  printf("block boundary\n");
+	  printf("FaceIntersectionFlightTime:%e, vInit:%e,%e,%e, dtTotal:%e, iIntersectedFace:%d\n", FaceIntersectionFlightTime, vInit[0],vInit[1],vInit[2], dtTotal, iIntersectedFace);
+	}
       double x_test[3];
       for (int i=0;i<3;i++) {
 	xInit[i]+=FaceIntersectionFlightTime*vInit[i];
@@ -614,34 +624,35 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       dtTotal -=FaceIntersectionFlightTime;
       switch (iIntersectedFace) {
       case 0:
-	x_test[0]-=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
-	xInit[0]+=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	x_test[0]-=1e-4*(startNode->xmax[0]-startNode->xmin[0]);
+	xInit[0]+=1e-4*(startNode->xmax[0]-startNode->xmin[0]);
 	break;
       case 1:
-	x_test[0]+=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
-	xInit[0]-=1e-5*(startNode->xmax[0]-startNode->xmin[0]);
+	x_test[0]+=1e-4*(startNode->xmax[0]-startNode->xmin[0]);
+	xInit[0]-=1e-4*(startNode->xmax[0]-startNode->xmin[0]);
 	break;
       case 2:
-	x_test[1]-=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
-	xInit[1]+=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	x_test[1]-=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
+	xInit[1]+=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
 	break;
       case 3:
-	x_test[1]+=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
-	xInit[1]-=1e-5*(startNode->xmax[1]-startNode->xmin[1]);
+	x_test[1]+=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
+	xInit[1]-=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
 	break;
       case 4:
-	x_test[2]-=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
-	xInit[2]+=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	x_test[2]-=1e-4*(startNode->xmax[2]-startNode->xmin[2]);
+	xInit[2]+=1e-4*(startNode->xmax[2]-startNode->xmin[2]);
 	break;
       case 5:
-	x_test[2]+=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
-	xInit[2]-=1e-5*(startNode->xmax[2]-startNode->xmin[2]);
+	x_test[2]+=1e-4*(startNode->xmax[2]-startNode->xmin[2]);
+	xInit[2]-=1e-4*(startNode->xmax[2]-startNode->xmin[2]);
 	break;
       }
 
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* testNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
       if (isTest){
 	printf("testNode:%p\n",testNode);
+	
 	if (testNode){
 	  printf("testNode:%p,testNode-xmin:%e,%e,%e,testNode-xmax:%e,%e,%e\n",testNode,testNode->xmin[0], testNode->xmin[1],testNode->xmin[2],
 		 testNode->xmax[0],  testNode->xmax[1], testNode->xmax[2]);
@@ -649,6 +660,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 		 startNode->xmax[0], startNode->xmax[1], startNode->xmax[2]);
 	  printf("xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
 	}
+	
       }
       if (testNode==NULL) {
 	//for (int i=0;i<3;i++) xInit[idim]=x_test[idim];
@@ -682,13 +694,13 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 
       }else{
 	//enter a new non-null block
-	//if (isTest)
-	//  printf("before cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
+	if (isTest)
+	  printf("before cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
 	for (int idim=0;idim<3;idim++) xInit[idim]=x_test[idim];
 	
 	
-	//if (isTest)
-	//  printf("after cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
+	if (isTest)
+	  printf("after cpy xInit:%e,%e,%e, x_test:%e,%e,%e\n",xInit[0],xInit[1],xInit[2],x_test[0],x_test[1],x_test[2]);
 	//vInit does not change
 	bool isNeib=false;
 	
@@ -720,8 +732,8 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xInit,vInit,CutTriangleFace,startNode) : _PARTICLE_DELETED_ON_THE_FACE_;
       //for the comet test
       //if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
-	if (isTest) printf("cut triangle deleted\n");
-	//printf("cut triangle dtTotal:%e,CutTriangleFlightTime:%e\n ",dtTotal, CutTriangleFlightTime);
+      if (isTest) printf("cut triangle deleted\n");
+      //printf("cut triangle dtTotal:%e,CutTriangleFlightTime:%e\n ",dtTotal, CutTriangleFlightTime);
 	PIC::ParticleBuffer::DeleteParticle(ptr);
 	return _PARTICLE_LEFT_THE_DOMAIN_;
 	//}
@@ -744,7 +756,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	dtTotal=0.0;
 	
 	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* testNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
-
+	
 	if (isTest){
 	  printf("testNode:%p",testNode);
 	  if (testNode){
@@ -826,6 +838,11 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;      
     }    
+
+    if (isTest){
+      printf("nodeIndexInArr(startNode):%d,PIC::Mover::CellIntersectType(startNode,xInit):%d,xInit:%e,%e,%e\n",nodeIndexInArr(startNode),PIC::Mover::CellIntersectType(startNode,xInit),xInit[0],xInit[1],xInit[2]);
+      printf("end of the loop dtTotal:%e\n",  dtTotal);
+    }
 
   }//while (dtTotal>0.0)
 
