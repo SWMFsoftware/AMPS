@@ -52,6 +52,7 @@ bool cPostProcess3D::cColumnIntegral::FindIntegrationLimits(double *x0,double *l
   std::vector<double> IntersectionTime;
 
   //determine the intersection time for all boundary faces
+  /*
   for (nface=0;nface<6;nface++) {
      for (idim=0,lPerp=0.0;idim<3;idim++) lPerp+=l[idim]*BoundingBoxFace[nface].Normal[idim];
 
@@ -74,6 +75,32 @@ bool cPostProcess3D::cColumnIntegral::FindIntegrationLimits(double *x0,double *l
 
      }
   }
+  */
+
+  //intersection time is the length between the starting point and the intersecting point
+  double tMin=-1;
+  for (int iFace=0; iFace<6; iFace++){
+    int iDir= iFace/2;
+    int ii = iFace-2*iDir;
+    double *xx;
+    if (ii==0) xx=xGlobalMin;
+    if (ii==1) xx=xGlobalMax;
+    
+    double tTemp = (xx[iDir]-x0[iDir])/(l[iDir]+1e-10);
+    printf("iFace:%d, iDir:%d, xx[iDir]:%e, x0[iDir]:%e,l[iDir]:%e\n",iFace, iDir, xx[iDir],x0[iDir],l[iDir]);
+    if (tTemp>0){
+      if (tMin<0 || tTemp<tMin) tMin = tTemp;
+    }
+  }
+  
+  if (tMin>0) {
+    tMin *= sqrt(l[0]*l[0]+l[1]*l[1]+l[2]*l[2]);
+    //printf("tMin:%e\n",tMin);
+    IntersectionTime.push_back(tMin); 
+  }
+
+
+
 
   //determine the intersection time with the triangulated surface (if any)
   int iStartFace,iFinishFace;
