@@ -1,5 +1,5 @@
 #!MC 1410
-$!ReadStyleSheet  "/Data01/Venus/060920/untitled.sty"
+$!ReadStyleSheet  "untitled.sty"
   IncludePlotStyle = Yes
   IncludeText = Yes
   IncludeGeom = Yes
@@ -36,7 +36,7 @@ $!AttachGeom
     X = 25
     Y = 30.97904624277457
     }
-  ImageFileName = '/Data01/Venus/060920/data.png'
+  ImageFileName = 'data.png'
   PixelAspectRatio = 1
   RawData
 50 38.0419075145 
@@ -67,7 +67,7 @@ $!AttachGeom
     Y = 25.85149478393877
     }
   DrawOrder = BeforeData
-  ImageFileName = '/Data01/Venus/060920/data.png'
+  ImageFileName = 'data.png'
   PixelAspectRatio = 1
   RawData
 65.2626395226 49.6543059373 
