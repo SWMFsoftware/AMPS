@@ -69,17 +69,17 @@ rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/; 
 cp -r BATL GNU/AMPS/
 
-rm -rf NVCC 
-mkdir -p NVCC;   cp -r AMPS NVCC/;
-cp -r BATL NVCC/AMPS/
+#rm -rf NVCC 
+#mkdir -p NVCC;   cp -r AMPS NVCC/;
+#cp -r BATL NVCC/AMPS/
 
-rm -rf Intel
-mkdir -p Intel; cp -r AMPS Intel/; 
-cp -r BATL Intel/AMPS/
+#rm -rf Intel
+#mkdir -p Intel; cp -r AMPS Intel/; 
+#cp -r BATL Intel/AMPS/
 
-rm -rf PGI
-mkdir -p PGI;   cp -r AMPS PGI/; 
-cp -r BATL  PGI/AMPS
+#rm -rf PGI
+#mkdir -p PGI;   cp -r AMPS PGI/; 
+#cp -r BATL  PGI/AMPS
 
 rm -rf CUDA 
 mkdir -p CUDA;   cp -r AMPS CUDA/;
@@ -98,15 +98,16 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -cpplib-rm=-lmpi_cxx
 #./Config.pl -compiler-option=-g
 
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
+./Config.pl -test-blocks=10
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 ############### Install CUDA-DEV branch to compile with gcc ################################## 
-cd $WorkDir/Tmp_AMPS_test/NVCC/AMPS
-echo AMPS was checked out on $CheckoutTime > test_amps.log
+#cd $WorkDir/Tmp_AMPS_test/NVCC/AMPS
+#echo AMPS was checked out on $CheckoutTime > test_amps.log
 
-git checkout CUDA-DEV
+########git checkout CUDA-DEV
 
-./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log
+#./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log
 #./Config.pl -fexit=exit
 #./Config.pl -f-link-option=-lmpi_cxx
 
@@ -119,10 +120,10 @@ git checkout CUDA-DEV
 
 #./Config.pl -compiler-option=-g
 
-./Config.pl -f-link-option=-lstdc++
-./Config.pl -cpplib-rm=-lmpi_cxx
+#./Config.pl -f-link-option=-lstdc++
+#./Config.pl -cpplib-rm=-lmpi_cxx
 
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 ######################## Install CUDA ########################################################## 
 cd $WorkDir/Tmp_AMPS_test/CUDA/AMPS
@@ -137,7 +138,7 @@ cd ../../..
 
 mv Makefile.bak Makefile
 
-git checkout CUDA-DEV
+########git checkout CUDA-DEV
 ./Config.pl -install -compiler=gfortran,gcc_mpicc -f-link-option=-lmpi_cxx
 
 ./Config.pl -cuda
@@ -152,7 +153,8 @@ git checkout CUDA-DEV
 ./Config.pl -cpp-link-option=-lcudart
 ./Config.pl -f-link-option=-lcudart:-L/usr/local/cuda-11.1/lib64
 
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
+./Config.pl -test-blocks=10
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
 #execute test with CUDA - at this point that is the only test that will be executed with CUDA. More tests will be added in the Table
 module load mpi
@@ -164,17 +166,18 @@ cd ..
 make test_fast-wave_check >>& test_amps.log
 
 ######################## Install Intel ######################################################### 
-cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
-echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -install -compiler=ifort,iccmpicxx   >>& test_amps.log
-#./Config.pl -fexit=exit
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
+#cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
+#echo AMPS was checked out on $CheckoutTime > test_amps.log
+#./Config.pl -install -compiler=ifort,iccmpicxx   >>& test_amps.log
+#./Config.pl -cpplib-rm=-lmpi_cxx
+##./Config.pl -fexit=exit
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
-cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
-echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -f-link-option=-lmpi_cxx -install -compiler=pgf90,pgccmpicxx    >>& test_amps.log    
-#./Config.pl -fexit=exit
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
+#cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
+#echo AMPS was checked out on $CheckoutTime > test_amps.log
+#./Config.pl -f-link-option=-lmpi_cxx -install -compiler=pgf90,pgccmpicxx    >>& test_amps.log    
+##./Config.pl -fexit=exit
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10 
 
 ########################  start scheduler to compile/execute tests #############################
 #Execute the tests
@@ -187,6 +190,6 @@ g++ ./scheduler.cpp -g -o scheduler -lpthread
 #./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -intel -gcc -pgi -nvcc > runlog 
 
 
-./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -gcc  -nvcc > runlog
+./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -gcc   > runlog
 
 
