@@ -53,7 +53,20 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   MaxNPart=BufrerLength;
 //  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
 
-  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+  if ( _CUDA_MODE_ == _ON_) {
+    amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+  }
+  else {
+    switch (_ALIGN_STATE_VECTORS_) {
+    case _ON_ : 
+      ParticleDataLength=64*(1+(ParticleDataLength/64));
+      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(64,ParticleDataLength*MaxNPart));
+      break;
+
+    default:
+      amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+    }
+  }
 
   char *p=(char*)ParticleDataBuffer;
   for (long int i=0;i<ParticleDataLength*MaxNPart;i++) p[i]=0;

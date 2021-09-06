@@ -1131,7 +1131,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
         cStencilElementData *data,*data_next,*data_next_next=NULL;
         double *u_vect,*u_vect_next;
 
-#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+#if (_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_)&&(_AVX_MATMUL_==_ON_)) 
         //add most of the vector
         for (;iElement+3<iElementMax;iElement+=4) {
           alignas(32) double a[4],b[4],*r;
@@ -1155,7 +1155,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
           res+=r[1]+r[2];
         }
 
-#elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+#elif (_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_)&&(_AVX_MATMUL_==_ON_)) 
         //add most of the vector
         for (;iElement+7<iElementMax;iElement+=8) {
           __m512d av,bv,cv;

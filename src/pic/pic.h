@@ -1928,34 +1928,34 @@ void DeleteAttachedParticles();
     inline long int GetNext(long int ptr) {
 
       #ifdef __CUDA_ARCH__
-      long int res;
+      long int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
 
       return res;
       #endif
 
-      return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
+      return *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetNext(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      long int res;
+      long int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
 
       return res;
       #endif
 
-      return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
+      return *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -1966,14 +1966,14 @@ void DeleteAttachedParticles();
       #endif
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else
 
       char *source,*target;
 
       source=(char*)&next;
       target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
       #endif
     }
     //.........................................................................
@@ -1985,13 +1985,13 @@ void DeleteAttachedParticles();
       #endif
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else 
       char *source,*target;
 
       source=(char*)&next;
       target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
       #endif 
     }
     //-------------------------------------------------------------------------
@@ -2002,34 +2002,34 @@ void DeleteAttachedParticles();
     inline long int GetPrev(long int ptr) {
 
       #ifdef __CUDA_ARCH__
-      long int res;
+      long int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
 
       return res;
       #endif
 
-      return *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+      return *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline long int GetPrev(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      long int res;
+      long int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
 
       return res;
       #endif
 
-      return *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+      return *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -2041,13 +2041,13 @@ void DeleteAttachedParticles();
 
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
       char *source,*target;
 
       source=(char*)&prev;
       target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
       #endif
     }
     //.........................................................................
@@ -2060,13 +2060,13 @@ void DeleteAttachedParticles();
 
 
       #ifndef __CUDA_ARCH__
-      *((long int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
       char *source,*target;
 
       source=(char*)&prev;
       target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,source,sizeof(long int));
+      memcpy(target,source,sizeof(int32_t));
       #endif
     }
     //-------------------------------------------------------------------------
