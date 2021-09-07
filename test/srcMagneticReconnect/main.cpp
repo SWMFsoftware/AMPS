@@ -71,17 +71,17 @@ void CleanParticles(){
 
   for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
    
-     long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+     int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
 	 for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-	   long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+	   int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
 	   while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
 
 //////
 /*
-long int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
+int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
 
 while (ptr!=-1) {
 
@@ -121,12 +121,12 @@ double xB = -0.25*WaveLengthX, xT=0.25*WaveLengthX;
 double IonP=2.45e-3, ElectronP=4.9e-4;
 
 
-long int PrepopulateDomain() {
+int PrepopulateDomain() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
-  long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
+  int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
   double Velocity[3];
   int ionSpec=0, electronSpec=1;
   double ionMass = PIC::MolecularData::GetMass(ionSpec)/_AMU_;
@@ -549,7 +549,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -586,7 +586,7 @@ int main(int argc,char **argv) {
 
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-  long int newParticle;
+  int newParticle;
 
  
   // PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(0);
@@ -650,7 +650,7 @@ int main(int argc,char **argv) {
    
       double protonNumDensity=4, antiprotonNumDensity=4;
       double Temperature=0.0;
-      long int popNum1,popNum2;
+      int popNum1,popNum2;
       int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
       int GlobalParticleNumber;
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);

@@ -1319,7 +1319,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -1408,7 +1408,7 @@ int main(int argc,char **argv) {
 
   int parSize=10;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
-  long int newParticle;
+  int newParticle;
 
   if (PIC::ThisThread==0) printf("test2\n");
  
