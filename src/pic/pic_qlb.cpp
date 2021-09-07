@@ -44,7 +44,7 @@ int PIC::IDF::qLB::RequestSamplingData(int offset) {
 //===================================================
 void PIC::IDF::qLB::Init() {
   //request the additional particle data
-  long int offset;
+  int offset;
   int DataLength;
 
   DataLength=(1+PIC::IDF::nSpeciesMaxVibrationalModes)*sizeof(double);
@@ -124,7 +124,7 @@ double PIC::IDF::qLB::GetCellVibTemp(int s,PIC::Mesh::cDataCenterNode* cell) {
 
 //===================================================
 double PIC::IDF::qLB::GetCellVibTemp(int nmode_in,int s,PIC::Mesh::cDataCenterNode* cell) {
-  long int nmode; 
+  int nmode; 
   double Tvib,ThetaVib,Ev,EtaVib,EtaVibSumm=0.0;
   double TempOfTheMode,VibTempSumm=0.0;
 
@@ -176,7 +176,7 @@ double PIC::IDF::qLB::GetFirstExitedVibLevelPopulationFraction(int nmode,int s,P
 //===================================================
 void PIC::IDF::qLB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
 /*  PIC::ParticleBuffer::byte ptr[2];
-  long int nptr;
+  int nptr;
   unsigned char s[2];
   double TempIndex,Ec,TrDF;
   double m[2],mr;

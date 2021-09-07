@@ -8,7 +8,7 @@
 #include <map>
 #include "pic.h"
 
-long int PIC::Parallel::sendParticleCounter=0,PIC::Parallel::recvParticleCounter=0,PIC::Parallel::IterationNumberAfterRebalancing=0;
+int PIC::Parallel::sendParticleCounter=0,PIC::Parallel::recvParticleCounter=0,PIC::Parallel::IterationNumberAfterRebalancing=0;
 double PIC::Parallel::RebalancingTime=0.0,PIC::Parallel::CumulativeLatency=0.0;
 double PIC::Parallel::EmergencyLoadRebalancingFactor=3.0;
 double PIC::Parallel::Latency=0.0;
@@ -61,7 +61,7 @@ void PIC::Parallel::CopyCenterNodeAssociatedData_default(char *TargetBlockAssoci
 //Exchange particles between Processors
 void PIC::Parallel::ExchangeParticleData() {
   int From,To,i,iFrom,flag;
-  long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
+  int Particle,NextParticle,newParticle,LocalCellNumber=-1;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
 
   int RecvMessageSizeRequestTableLength=0;
@@ -128,7 +128,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
   auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<MPI_Aint> *SendParticleList,int& nTotalSendParticles,int To) {
     int npart,SendSellNumber=0;
-    long int *FirstCellParticleTable;
+    int *FirstCellParticleTable;
     bool block_header_saved,cell_header_saved; 
 
     cMessageDescriptorList p;
@@ -192,7 +192,7 @@ void PIC::Parallel::ExchangeParticleData() {
        
     MPI_Datatype particle_send_type;
 
-    MPI_Type_create_hindexed_block(nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(long int),offset_table,MPI_BYTE,&particle_send_type);
+    MPI_Type_create_hindexed_block(nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(int),offset_table,MPI_BYTE,&particle_send_type);
     MPI_Type_commit(&particle_send_type);
 
     MPI_Isend(MPI_BOTTOM,1,particle_send_type,To,12,MPI_GLOBAL_COMMUNICATOR,SendParticleDataRequest);
@@ -391,7 +391,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
         MPI_Datatype particle_send_type;
 
-        MPI_Type_create_hindexed_block(RecvDataInfo[From].nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(long int),offset_table,MPI_BYTE,&particle_send_type);
+        MPI_Type_create_hindexed_block(RecvDataInfo[From].nTotalSendParticles,PIC::ParticleBuffer::ParticleDataLength-2*sizeof(int),offset_table,MPI_BYTE,&particle_send_type);
         MPI_Type_commit(&particle_send_type);
 
         MPI_Irecv(MPI_BOTTOM,1,particle_send_type,From,12,MPI_GLOBAL_COMMUNICATOR,RecvRequestParticleDataTable+RecvRequestParticleDataTableLength);
@@ -435,8 +435,8 @@ void PIC::Parallel::ExchangeParticleData() {
 
     class cParticleDescriptor {
     public:
-      long int ptr;
-      unsigned long int checksum;
+      int ptr;
+      unsigned int checksum;
 
       bool operator < (const cParticleDescriptor& p) const {
         return checksum<p.checksum;
@@ -446,7 +446,7 @@ void PIC::Parallel::ExchangeParticleData() {
     //put together the particle list
     vector <cParticleDescriptor> ParticleList;
     cParticleDescriptor p;
-    long int Particle;
+    int Particle;
     CRC32 sig;
 
 

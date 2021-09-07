@@ -4,12 +4,12 @@
 
 #include "SEP3D.h"
 
-int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode){
+int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode){
   return SEP3D::Physics::Mover_Axisymmetric_SecondOrder(ptr, dtTotal, startNode,false);
 }
 
 
-int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, bool FirstBoundaryFlag){
+int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, bool FirstBoundaryFlag){
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL,*middleNode=NULL;
   double dtTemp;
@@ -17,7 +17,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
   double vInit[3],xInit[3]={0.0,0.0,0.0},vMiddle[3],xMiddle[3],vFinal[3],xFinal[3],xminBlock[3],xmaxBlock[3];
   int idim;
 
-  long int LocalCellNumber;
+  int LocalCellNumber;
   int i,j,k,spec;
 
   PIC::Mesh::cDataCenterNode *cell;
@@ -32,7 +32,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
 
 
 
-  static long int nCall=0;
+  static int nCall=0;
 
 
   nCall++;
@@ -164,7 +164,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
 
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
-  long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+  int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
   PIC::ParticleBuffer::SetV(vFinal,ParticleData);
   PIC::ParticleBuffer::SetX(xFinal,ParticleData);
@@ -197,7 +197,7 @@ void SEP3D::GlobalEnergyDistribution::sample() {
   for(int iBin=0; iBin<nBin; iBin++) Distribution[iBin] = 0.0;
   
   // go through all particles
-  for (long int ptr=0;ptr<PB::MaxNPart;ptr++) {
+  for (int ptr=0;ptr<PB::MaxNPart;ptr++) {
     PB::byte *PData = PB::GetParticleDataPointer(ptr); 
     
     // skip if particle is not used
@@ -245,7 +245,7 @@ void SEP3D::GlobalEnergyDistribution::print(char *fname,int spec) {
   //aliases
   namespace MS = PIC::Mesh;
   
-  long int idim,nProbe,i,nVariable,thread,offset;
+  int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,dInterval=0.0;

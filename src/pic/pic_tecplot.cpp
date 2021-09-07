@@ -674,7 +674,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
 void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
   //create and output the mesh signature
-  unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+  unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
   if (PIC::ThisThread==0) printf("$PREFIX: Import Background data (tecplot): mesh signature=0x%lx, fname=%s\n",MeshSignature,fname);
 

@@ -197,7 +197,7 @@ namespace ElectricallyChargedDust {
       extern int nSamplingLocations;
       extern double **SamplingLocations;
       extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
-      extern long int *SampleLocalCellNumber;
+      extern int *SampleLocalCellNumber;
 
       void Init(double ProbeLocations[][DIM],int nProbeLocations,int nIntervals);
 
@@ -231,7 +231,7 @@ namespace ElectricallyChargedDust {
         void Print2dMap(const char *fname, bool PrintStateVectorFlag=true);
 
         //get direction of the velocity vector
-        double GetSpeed(double *v,double &ZenithAngle,long int &nZenithElement, double &AzimuthalAngle,long int &nAzimuthalElement);
+        double GetSpeed(double *v,double &ZenithAngle,int &nZenithElement, double &AzimuthalAngle,int &nAzimuthalElement);
 
         cSampleLocation() : cInternalSphericalData() {
           node=NULL,SampleData_NumberDensityFlux=NULL,SampleData_NumberDensity=NULL;
@@ -352,10 +352,10 @@ namespace ElectricallyChargedDust {
     void UpdateGrainCharge(double dt,double* ParticleVelocity,double* PlasmaVelocity,double  PlasmaPressure,double  PlasmaTemperature,double  PlasmaNumberDensity,double  GrainRadius, double& GrainElectricCharge,int CHARGE_INTEGRATION_MODE);
 
     //wrapper for the function above
-    int UpdateGrainCharge(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode,int CHARGE_INTEGRATION_MODE);
+    int UpdateGrainCharge(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode,int CHARGE_INTEGRATION_MODE);
 
-    int UpdateGrainCharge__EQUILIBRIUM_POTENTIAL(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
-    int UpdateGrainCharge__TIME_DEPENDENT(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
+    int UpdateGrainCharge__EQUILIBRIUM_POTENTIAL(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
+    int UpdateGrainCharge__TIME_DEPENDENT(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
 
       //electron collection current
       namespace ElectronColelction {
@@ -406,7 +406,7 @@ namespace ElectricallyChargedDust {
   void Init_BeforeParser();
 
   //acceleration of the dust grains
-  void inline TotalGrainAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalGrainAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     char ParticleData[PIC::ParticleBuffer::ParticleDataLength];
     double GrainCharge,GrainMass;
 
@@ -447,7 +447,7 @@ namespace ElectricallyChargedDust {
 
 
   //charging of the dust grains (as a generic transformation in the PIC code)
-  inline int DustChargingProcessorIndicator(double *x,double *v,int spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  inline int DustChargingProcessorIndicator(double *x,double *v,int spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
     return _GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_;
   }
 
@@ -456,7 +456,7 @@ namespace ElectricallyChargedDust {
 //integrate the equation of charging of a duts grain
 
 /*--------------------------------------     First Order Integration Scheme ----------------------------------------------------
-inline int DustChargingProcessor(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+inline int DustChargingProcessor(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
 
 
   double electronCurrent,ionCurrent,plasmaTemperature,plasmaNumberDensity,basisElectronCurrent,basisIonCurrent;
@@ -464,7 +464,7 @@ inline int DustChargingProcessor(double *xInit,double *xFinal,double *v,int& spe
 
   PIC::Mesh::cDataCenterNode* cell;
   int i,j,k;
-  long int LocalCellNumber;
+  int LocalCellNumber;
 
   if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   cell=initNode->block->GetCenterNode(LocalCellNumber);
@@ -491,7 +491,7 @@ inline int DustChargingProcessor(double *xInit,double *xFinal,double *v,int& spe
 
 
 //==========  DEBUG  BEGIN =================
-  static long int nFunctionCalls=0;
+  static int nFunctionCalls=0;
 
   nFunctionCalls++;
 
@@ -693,13 +693,13 @@ if (fabs(newGrainElectricCharge)>1.0E-3) {
 */
 
   /*---------------------------------------------------    Second Order Integration Scheme -----------------------------------*/
-  inline int DustChargingProcessor_Implicit_SecondOrder(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+  inline int DustChargingProcessor_Implicit_SecondOrder(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
   double plasmaTemperature,plasmaNumberDensity;
   double GrainElectricCharge,GrainElectricCharge_NEW_Iteration,GrainElectricCharge_LAST_Iteration;
 
 //  PIC::Mesh::cDataCenterNode* cell;
   int i,j,k;
-//  long int LocalCellNumber;
+//  int LocalCellNumber;
 
   //the procesure is applied only to dust
   if ((spec<_DUST_SPEC_) || (spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) return _GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
@@ -740,7 +740,7 @@ if (fabs(newGrainElectricCharge)>1.0E-3) {
 
 
 //==========  DEBUG  BEGIN =================
-  static long int nFunctionCalls=0;
+  static int nFunctionCalls=0;
 
   nFunctionCalls++;
 /*
@@ -1034,14 +1034,14 @@ if (fabs(newGrainElectricCharge)>1.0E-3) {
 
 
   /*-----------------------  Steady State Dust Charging ------------------------------- */
-int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
-/*  inline int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode);
+/*  inline int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
     double plasmaTemperature,plasmaNumberDensity;
     double GrainElectricCharge,GrainElectricCharge_NEW;
 
     PIC::Mesh::cDataCenterNode* cell;
     int i,j,k;
-    long int LocalCellNumber;
+    int LocalCellNumber;
     double swVel[3];
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *finalNode=PIC::Mesh::mesh->findTreeNode(xFinal,initNode);
 
@@ -1097,7 +1097,7 @@ int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int
 
 
   //==========  DEBUG  BEGIN =================
-    static long int nFunctionCalls=0;
+    static int nFunctionCalls=0;
 
     nFunctionCalls++;
 
@@ -1397,7 +1397,7 @@ int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int
 typedef bool (*fGenerateNewDustGrainInternalProperties)(double *x,double *v,double& GrainRadius, double& GrainWeightCorrection,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode);
 extern fGenerateNewDustGrainInternalProperties GenerateNewDustGrainInternalProperties;
 
-long int DustInjection__Sphere(int BoundaryElementType,void *SphereDataPointer);
+int DustInjection__Sphere(int BoundaryElementType,void *SphereDataPointer);
 }
 
 

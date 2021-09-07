@@ -37,13 +37,13 @@ bool Earth::BoundingBoxInjection::InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDa
 }
 
 //injection of model particles through the faces of the bounding box
-long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
  bool ExternalFaces[6];
  double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
  int nface,idim;
- long int newParticle;
+ int newParticle;
  PIC::ParticleBuffer::byte *newParticleData;
- long int nInjectedParticles=0;
+ int nInjectedParticles=0;
  double v[3];
  double ModelParticlesInjectionRate;
 
@@ -145,8 +145,8 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
  return nInjectedParticles;
 }
 
-long int Earth::BoundingBoxInjection::InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  long int nInjectedParticles=0;
+int Earth::BoundingBoxInjection::InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  int nInjectedParticles=0;
 
   for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=InjectionProcessor(s,startNode);
 

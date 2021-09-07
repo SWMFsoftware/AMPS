@@ -136,7 +136,7 @@ bool IsOutside(double * x){
 
 void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   
-  long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+  int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
 
   if (FirstCellParticleTable==NULL) {
     if (node->block) PIC::Mesh::mesh->DeallocateBlock(node);
@@ -146,7 +146,7 @@ void deleteBlockParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
     for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
       for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-        long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+        int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
         while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
         
       }   
@@ -168,7 +168,7 @@ void init_from_restart(){
 void saveRestartData(FILE* fname){                                                                                    
   // Only the root processor can write.                                                                                 
   if (PIC::Mesh::mesh->ThisThread==0) {                                                                                
-    fwrite(&PIC::CPLR::FLUID::iCycle, sizeof(long int),1, fname);
+    fwrite(&PIC::CPLR::FLUID::iCycle, sizeof(int),1, fname);
     fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,sizeof(int),1,fname);
     fwrite(&PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset,sizeof(int),1,fname);
     std::cout<<"save iter number="<<PIC::CPLR::FLUID::iCycle<<std::endl;                                                            
@@ -177,7 +177,7 @@ void saveRestartData(FILE* fname){
 
 
 void readRestartData(FILE* fname){                                                                                    
-  fread(&PIC::CPLR::FLUID::iCycle, sizeof(long int),1, fname);                                                              
+  fread(&PIC::CPLR::FLUID::iCycle, sizeof(int),1, fname);                                                              
   fread(&PIC::FieldSolver::Electromagnetic::ECSIM::PrevBOffset,sizeof(int),1,fname);
   fread(&PIC::FieldSolver::Electromagnetic::ECSIM::CurrentBOffset,sizeof(int),1,fname);
   std::cout<<"read iter number="<<PIC::CPLR::FLUID::iCycle<<std::endl;                                                              
@@ -827,7 +827,7 @@ void SendDataToFluid(char *NameVar, int *nVarIn, int *nDimIn, int *nPointIn, dou
 
 void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
                         int iCell,int jCell,int kCell,double * dx,double * xminBlock,
-                        double * ParticleWeight,double CellVolume,long & nLocalInjectedParticles){
+                        double * ParticleWeight,double CellVolume,int & nLocalInjectedParticles){
 
   double cellParNumPerSp = PIC::CPLR::FLUID::npcelx[0]*PIC::CPLR::FLUID::npcely[0]*PIC::CPLR::FLUID::npcelz[0];
   int nSubCells[3]={PIC::CPLR::FLUID::npcelx[0],PIC::CPLR::FLUID::npcely[0],PIC::CPLR::FLUID::npcelz[0]};
@@ -1034,7 +1034,7 @@ void SetParticleForCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,int iBlock,
 }
 
 
-long int setFixedParticle_BC(){
+int setFixedParticle_BC(){
   
 
   //printf("setFixedBC, iCycle:%ld\n",PIC::CPLR::FLUID::iCycle);
@@ -1049,7 +1049,7 @@ long int setFixedParticle_BC(){
   sprintf(fullname,"test_fixedbc_before_iter=%d.dat",cnt);
   //PIC::Mesh::mesh->outputMeshDataTECPLOT(fullname,0);                                                                          
   
-  long nParticleDeleted=0, nParticleCreated=0;
+  int nParticleDeleted=0, nParticleCreated=0;
     
   int nAllocatedBlocks =0;
   int ** countedFaceBC;
@@ -1111,7 +1111,7 @@ long int setFixedParticle_BC(){
           
       for (int idim=0;idim<3;idim++) dx[idim]=(xmaxBlock[idim]-xminBlock[idim])/nCells[idim];
  
-      long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+      int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
       double CellVolume=1;
       for (int idim=0;idim<3;idim++) CellVolume *= dx[idim];
       double ParticleWeight[PIC::nTotalSpecies];
@@ -1154,7 +1154,7 @@ long int setFixedParticle_BC(){
            
 
             if (FirstCellParticleTable!=NULL){
-              long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+              int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
               while ((*ptr)!=-1) {
                 PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
                 nParticleDeleted++;
@@ -1429,17 +1429,17 @@ void CleanParticles(){
 
   for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
    
-     long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+     int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
 	 for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-	   long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+	   int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
 	   while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
 
 //////
 /*
-long int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
+int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
 
 while (ptr!=-1) {
 
@@ -1461,10 +1461,10 @@ FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]=-1;
 }
 
 
-long int PrepopulateDomain() {
+int PrepopulateDomain() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   
-  long int nGlobalInjectedParticles,nLocalInjectedParticles=0;
+  int nGlobalInjectedParticles,nLocalInjectedParticles=0;
  
   int nBlock[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
@@ -1778,10 +1778,10 @@ void SetIC() {
 
 
 
-long int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
+int setBlockParticleMhd(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nodeIn) {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   
-  long int nLocalInjectedParticles=0;
+  int nLocalInjectedParticles=0;
  
   int nBlock[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
@@ -1951,7 +1951,7 @@ void amps_init_mesh() {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];

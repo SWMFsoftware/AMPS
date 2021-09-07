@@ -15,11 +15,11 @@ double SEP::ParticleSource::InnerBoundary::sphereInjectionRate(int spec,int Boun
   return res;
 }
 
-long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,int BoundaryElementType,void *SphereDataPointer) {
+int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,int BoundaryElementType,void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ParticleWeight,LocalTimeStep,/*ExternalNormal[3],*/x[3],v[3],/*r,*/*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nInjectedParticles=0;
+  int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
 //  int idim;
 
@@ -257,7 +257,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 //====================  DEBUG ===========================
     {
 static double InjectionRadialVelocity=0.0,InjectionTangentionalSpeed=0.0;
-static long int nTotalInjectedParticles=0;
+static int nTotalInjectedParticles=0;
 
 double l[3],r=0.0,v0=0.0,v1=0.0;
 int idim;
@@ -304,8 +304,8 @@ InjectionTangentionalSpeed+=sqrt(v1);
 */
 }
 
-long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int BoundaryElementType,void *BoundaryElement) {
-  long int spec,res=0;
+int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int BoundaryElementType,void *BoundaryElement) {
+  int spec,res=0;
 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
     //particles are injected directly onto the magnetic field lines
@@ -318,8 +318,8 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int Boundar
   return res;
 }
 
-long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(void *SphereDataPointer)  {
-  long int res=0.0;
+int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(void *SphereDataPointer)  {
+  int res=0.0;
   int spec;
 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {

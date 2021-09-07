@@ -13,10 +13,10 @@
 PIC::BC::fBlockInjectionIndicator PIC::BC::BlockInjectionBCindicatior=NULL;
 PIC::BC::fBlockInjectionBC PIC::BC::userDefinedBoundingBlockInjectionFunction=NULL;
 list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* > PIC::BC::boundingBoxInjectionBlocksList;
-long int* PIC::BC::nInjectedParticles=NULL;
+int* PIC::BC::nInjectedParticles=NULL;
 double *PIC::BC::ParticleProductionRate=NULL;
 double *PIC::BC::ParticleMassProductionRate=NULL;
-long int PIC::BC::nTotalInjectedParticles=0;
+int PIC::BC::nTotalInjectedParticles=0;
 PIC::BC::fUserDefinedParticleInjectionFunction PIC::BC::UserDefinedParticleInjectionFunction=NULL;
 
 //the extra injection process by the exosphere model (src/models/exosphere)
@@ -275,9 +275,9 @@ int PIC::BC::ExternalBoundary::OpenFlow::InjectBlock(int spec,cTreeNodeAMR<PIC::
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-  long int newParticle;
+  int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
-  long int nInjectedParticles=0;
+  int nInjectedParticles=0;
   double v[3];
   int nInjectionFaceBegin,nInjectionFaceEnd;
 

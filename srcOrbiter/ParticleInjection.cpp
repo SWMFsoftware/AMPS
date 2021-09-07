@@ -104,14 +104,14 @@ void Orbiter::InjectionModel::FaceEjection::Init() {
 }
 
 //inject model particles from faces
-long int Orbiter::InjectionModel::FaceEjection::InjectParticles() {
+int Orbiter::InjectionModel::FaceEjection::InjectParticles() {
   int spec,iSource;
   double ParticleWeight,TimeStep,ModelParticlesInjectionRate,TimeCounter;
   double x[3],v[3];
-  long int newParticle;
+  int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int nTotalInjectedParticles=0;
+  int nTotalInjectedParticles=0;
 
   //check whether the model is initialized
   if (SourceInitFlag==false) Init();
@@ -195,12 +195,12 @@ long int Orbiter::InjectionModel::FaceEjection::InjectParticles() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //inject particle from a point source
-long int Orbiter::InjectionModel::PointSource::InjectParticles() {
+int Orbiter::InjectionModel::PointSource::InjectParticles() {
   double TimeCounter,ModelParticlesInjectionRate;
   int spec,idim;
   double *x,v[3];
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nTotalInjectedParticles=0;
+  int newParticle,nTotalInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   int iSourceLocation;
 
@@ -252,12 +252,12 @@ long int Orbiter::InjectionModel::PointSource::InjectParticles() {
 }
 
 //inject particle from a "ring"
-long int Orbiter::InjectionModel::Ring::InjectParticles() {
+int Orbiter::InjectionModel::Ring::InjectParticles() {
   double TimeCounter,ModelParticlesInjectionRate;
   int spec,idim;
   double x[3],v[3];
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nTotalInjectedParticles=0;
+  int newParticle,nTotalInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
 
   //the produre works only for the case of the "global" time step and "global" particle weight
@@ -320,8 +320,8 @@ long int Orbiter::InjectionModel::Ring::InjectParticles() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //the manager of the particle injection module
-long int  Orbiter::InjectionModel::InjectParticles() {
-  long int res=0;
+int  Orbiter::InjectionModel::InjectParticles() {
+  int res=0;
 
   if (FaceEjection::InjectionDataTableLength!=0) res+=FaceEjection::InjectParticles();
   if (PointSource::InjectionDataTableLength!=0) res+=PointSource::InjectParticles();

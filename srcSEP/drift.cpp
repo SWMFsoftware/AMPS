@@ -247,7 +247,7 @@ void SEP::GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_
 //=============================================================================
 //Focused transport mover He-2019-AJL 
 // a better implementation is in mover.cpp
-int SEP::ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
+int SEP::ParticleMover_HE_2019_AJL(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   PIC::ParticleBuffer::byte *ParticleData;
   int spec;
 
@@ -550,7 +550,7 @@ if (trajectory_teminated==true) {
 
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
@@ -569,7 +569,7 @@ if (trajectory_teminated==true) {
 }
 */
 
-int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   struct cGetCoefficientManager {
     double Dln_B_Dt,dln_B_ds,Dln_rho_B_Dt,b_Du_Dt;
     double* x0;
@@ -831,7 +831,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
 
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);

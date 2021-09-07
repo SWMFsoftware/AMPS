@@ -20,11 +20,11 @@
 #define _PIC_PARTICLE_DATA__NEXT_OFFSET_ 0 
 // Mandatory parameter: prev particle in the stack
 #define _PIC_PARTICLE_DATA__PREV_OFFSET_ \
-    (_PIC_PARTICLE_DATA__NEXT_OFFSET_ + sizeof(int32_t))
+    (_PIC_PARTICLE_DATA__NEXT_OFFSET_ + sizeof(int))
 
 // Mandatory parameter: species ID
 #define _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_ \
-  (_PIC_PARTICLE_DATA__PREV_OFFSET_ + sizeof(int32_t)) 
+  (_PIC_PARTICLE_DATA__PREV_OFFSET_ + sizeof(int)) 
 
 
 // Mandatory parameter: velocity of a particle

@@ -106,7 +106,7 @@ void SampleIndividualLocations(int nMaxIterations) {
               Vector3D::Distribution::Uniform(v,speed);
 
               //generate a new particle
-              long int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
+              int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
               PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
               PIC::ParticleBuffer::SetV(v,newParticleData);
@@ -541,7 +541,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
           }            
 
           //generate a new particle
-          long int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
+          int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
           PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
           nTotalInjectedParticles++;
@@ -763,7 +763,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   }
 
   //interpolate and print the state vector
-  long int InterpolationList[nZenithElements*nAzimuthalElements],InterpolationListLength=0;
+  int InterpolationList[nZenithElements*nAzimuthalElements],InterpolationListLength=0;
   int AzimuthalShift=nAzimuthalElements/2;
 
   for (int iZenith=0;iZenith<nZenithElements+1;iZenith++) for (int iAzimuthalIn=0;iAzimuthalIn<nAzimuthalElements+1;iAzimuthalIn++) { 
@@ -960,7 +960,7 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
     Earth::BoundingBoxInjection::BoundaryInjectionMode=false;
     Earth::CutoffRigidity::ParticleInjector::ParticleInjectionMode=true;
 
-    for (long int niter=0;(niter<nTotalIterations)&&(LastDataOutputFileNumber<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SamplingParameters::LastActiveOutputCycleNumber);niter++) {
+    for (int niter=0;(niter<nTotalIterations)&&(LastDataOutputFileNumber<Earth::CutoffRigidity::DomainBoundaryParticleProperty::SamplingParameters::LastActiveOutputCycleNumber);niter++) {
       amps_time_step();
 
       if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
@@ -985,7 +985,7 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
   }
 
   //time step with the forward integration
-  for (long int niter=0;niter<nTotalIterations;niter++) {
+  for (int niter=0;niter<nTotalIterations;niter++) {
     amps_time_step();
     
     if (PIC::Mesh::mesh->ThisThread==0) {

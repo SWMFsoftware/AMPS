@@ -44,7 +44,7 @@ int main(int argc,char **argv) {
 
 
   //time step
-  for (long int niter=0;niter<TotalIterations;niter++) {
+  for (int niter=0;niter<TotalIterations;niter++) {
     //SEP::InitDriftVelData();
     amps_time_step();
   }

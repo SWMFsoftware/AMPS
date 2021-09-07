@@ -25,7 +25,7 @@ void PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(void* data,int length
 
   struct cStreamBuffer {
     int CollCounter;
-    unsigned long CheckSum;
+    unsigned int CheckSum;
     char CallPoint[200];
   };
 
@@ -78,8 +78,8 @@ void PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(void* data,int length
 bool PIC::Debugger::InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int nDownNode,i,j,k;
   bool res=false;
-  long int ptr;
-  static long int nAllCountedParticles=0;
+  int ptr;
+  static int nAllCountedParticles=0;
 
   if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
   if (startNode==PIC::Mesh::mesh->rootTree) nAllCountedParticles=0;
@@ -143,21 +143,21 @@ bool PIC::Debugger::InfiniteLoop(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startN
 
 void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int nDownNode,i,j,k;
-  long int ptr,ptrNext;
-  static long int nAllCountedParticles=0;
+  int ptr,ptrNext;
+  static int nAllCountedParticles=0;
 
   static char* ParticleAllocationTable=NULL;
-  static long int* ptrPrevTable=NULL;
+  static int* ptrPrevTable=NULL;
 
   if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
 
   //create table of allocated/not-allocated flag table
   if (startNode==PIC::Mesh::mesh->rootTree) {
-    long int cnt=0;
+    int cnt=0;
 
     nAllCountedParticles=0;
     ParticleAllocationTable=new char [PIC::ParticleBuffer::MaxNPart];
-    ptrPrevTable=new long int [PIC::ParticleBuffer::MaxNPart];
+    ptrPrevTable=new int [PIC::ParticleBuffer::MaxNPart];
 
     //the definition of the bits of ParticleAllocationTable[]
     //ParticleAllocationTable[] & 1: == 0 --> particle is not allocated; == 1 --> the particle is allocated
@@ -172,7 +172,7 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
 
       if (ptrNext!=-1) {
         if ((ParticleAllocationTable[ptrNext]&2)==2) {
-          printf("Error: have found double-referenced particle in the list of un-allocated particles\n%ld --> %ld\n%ld --> %ld\n",ptr,ptrNext,ptrPrevTable[ptrNext],ptrNext);
+          printf("Error: have found double-referenced particle in the list of un-allocated particles\n%i --> %i\n%i --> %i\n",ptr,ptrNext,ptrPrevTable[ptrNext],ptrNext);
 
           exit(__LINE__,__FILE__,"Error: an un-allocated particle is double-referenced");
         }
@@ -217,7 +217,7 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
         }
 
         if ((ParticleAllocationTable[ptr]&2)==2) {
-          printf("Error: the first particle in the list is referenced: %ld --> %ld\n%ld --> %ld\n",ptr,ptrNext,ptrPrevTable[ptr],ptr);
+          printf("Error: the first particle in the list is referenced: %i --> %i\n%i --> %i\n",ptr,ptrNext,ptrPrevTable[ptr],ptr);
           exit(__LINE__,__FILE__,"Error: the first particle in the list is referenced");
         }
         else ParticleAllocationTable[ptr]|=2;
@@ -241,7 +241,7 @@ void PIC::Debugger::FindDoubleReferencedParticle(cTreeNodeAMR<PIC::Mesh::cDataBl
           }
 
           if ((ParticleAllocationTable[ptrNext]&2)==2) {
-            printf("Error: have found double-referenced particle in the list of un-allocated particles\n%ld --> %ld\n%ld --> %ld\n",ptr,ptrNext,ptrPrevTable[ptrNext],ptrNext);
+            printf("Error: have found double-referenced particle in the list of un-allocated particles\n%i --> %i\n%i --> %i\n",ptr,ptrNext,ptrPrevTable[ptrNext],ptrNext);
             exit(__LINE__,__FILE__,"Error: have found double-referenced particle in the list");
           }
 
@@ -284,7 +284,7 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
   int s,i,j,k;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  long int LocalCellNumber;
+  int LocalCellNumber;
   char *SamplingBuffer;
 
 
@@ -339,12 +339,12 @@ void PIC::Sampling::CatchOutLimitSampledValue() {
 
 //==========================================================================================
 //get checksum of the corner and center node associated data
-unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   return PIC::Debugger::SaveCornerNodeAssociatedDataSignature(0,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
 }
 
 
-unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int i,j,k;
   PIC::Mesh::cDataCornerNode *CornerNode;
   PIC::Mesh::cDataBlockAMR *block;
@@ -405,25 +405,25 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
               }
 
               if (fnameOutput!=NULL) {
-                fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
               }
             }
             else {
               if (PIC::ThisThread==0) {
                 MPI_Status status;
 
-                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
-                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                MPI_Send(&CheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
                 if (fnameOutput!=NULL) {
-                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-                  fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                  fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
                 MPI_Status status;
-                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
                 if (block!=NULL) if ((CornerNode=block->GetCornerNode(_getCornerNodeLocalNumber(i,j,k)))!=NULL) {
                   CheckSum.add(CornerNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
@@ -433,10 +433,10 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
                   }
                 }
 
-                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Send(&CheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
 
                 if (fnameOutput!=NULL) {
-                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
                 }
 
               }
@@ -462,7 +462,7 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
     if (PIC::ThisThread==0) {
       char msg[500];
 
-      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fnameSource,nCallCounter);
+      sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fnameSource,nCallCounter);
       CheckSum.PrintChecksumSingleThread(msg);
 
       if (fnameOutput!=NULL) {
@@ -475,20 +475,20 @@ unsigned long int PIC::Debugger::SaveCornerNodeAssociatedDataSignature(int Sampl
   return CheckSum.checksum();
 }
 
-unsigned long int PIC::Debugger::GetCornerNodeAssociatedDataSignature(long int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::GetCornerNodeAssociatedDataSignature(int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   return SaveCornerNodeAssociatedDataSignature(nline,fname,NULL,startNode);
 }
 
-unsigned long int PIC::Debugger::GetCenterNodeAssociatedDataSignature(long int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::GetCenterNodeAssociatedDataSignature(int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   return SaveCenterNodeAssociatedDataSignature(nline,fname,NULL,startNode);
 }
 
-unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   return SaveCenterNodeAssociatedDataSignature(0,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,nline,fnameSource,fnameOutput,startNode);
 }
 
 
-unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset, int SampleVectorLength, long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+unsigned int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset, int SampleVectorLength, int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int i,j,k;
   PIC::Mesh::cDataCenterNode *CenterNode;
   PIC::Mesh::cDataBlockAMR *block;
@@ -549,7 +549,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
               }
 
               if (fnameOutput!=NULL) {
-                fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
               }
 
             }
@@ -557,19 +557,19 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
               if (PIC::ThisThread==0) {
                 MPI_Status status;
 
-                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
-                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                MPI_Send(&CheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
 
                 if (fnameOutput!=NULL) {
-                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                  MPI_Recv(&SingleVectorCheckSum.crc_accum,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
-                  fprintf(fout,"node: id=%ld, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
+                  fprintf(fout,"node: id=%i, i=%i, j=%i, k=%i, CheckSum=0x%lx\n",startNode->Temp_ID,i,j,k,SingleVectorCheckSum.checksum());
                 }
               }
               else {
                 MPI_Status status;
-                MPI_Recv(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+                MPI_Recv(&CheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
                 if (block!=NULL) if ((CenterNode=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k)))!=NULL) {
                   CheckSum.add(CenterNode->GetAssociatedDataBufferPointer()+SampleVectorOffset,SampleVectorLength);
@@ -579,10 +579,10 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
                   }
                 }
 
-                MPI_Send(&CheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+                MPI_Send(&CheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
 
                 if (fnameOutput!=NULL) {
-                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+                  MPI_Send(&SingleVectorCheckSum.crc_accum,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
                 }
 
               }
@@ -608,7 +608,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
     if (PIC::ThisThread==0) {
       char msg[500];
 
-      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fnameSource,nCallCounter);
+      sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fnameSource,nCallCounter);
       CheckSum.PrintChecksumSingleThread(msg);
 
       if (fnameOutput!=NULL) {
@@ -622,7 +622,7 @@ unsigned long int PIC::Debugger::SaveCenterNodeAssociatedDataSignature(int Sampl
 }
 
 
-unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nline,const char* fname) {
+unsigned int PIC::Debugger::GetParticlePopulationSignatureAll(int nline,const char* fname) {
   CRC32 Checksum;
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
@@ -656,7 +656,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nlin
 
   char msg[500];
 
-  sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+  sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fname,CallCounter);
   Checksum.PrintChecksum(msg);
 
   CallCounter++;
@@ -666,7 +666,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignatureAll(long int nlin
 
 //=====================================================================================
 //get signature describe the particle population
-unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,const char* fname,FILE *fout) {
+unsigned int PIC::Debugger::GetParticlePopulationSignature(int nline,const char* fname,FILE *fout) {
   CRC32 Checksum;
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
@@ -728,14 +728,14 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
     if (PIC::ThisThread==0) {
       char msg[500];
 
-      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+      sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fname,CallCounter);
       Checksum.PrintChecksumSingleThread(msg);
     }
   }
   else {
     char msg[500];
 
-    sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+    sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fname,CallCounter);
     Checksum.PrintChecksumSingleThread(fout,msg);
   }
 
@@ -744,7 +744,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationSignature(long int nline,c
 }
 
 
-unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname,FILE* fout) {
+unsigned int PIC::Debugger::GetParticlePopulationStateVectorSignature(int offset,int length,int nline,const char* fname,FILE* fout) {
   CRC32 Checksum;
   PIC::ParticleBuffer::byte *ParticleDataPtr,ParticleBuffer[PIC::ParticleBuffer::ParticleDataLength];
   int i,j,k,ptr;
@@ -758,7 +758,7 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
 
   auto AddPartcle2Checksum = [&] (CRC32 *Checksum,PIC::ParticleBuffer::byte *ParticleBuffer,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
     int i,j,k;
-    long int ptr;
+    int ptr;
     PIC::ParticleBuffer::byte *ParticleDataPtr;
 
     if (node->block!=NULL) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
@@ -827,14 +827,14 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
     if (PIC::ThisThread==0) {
       char msg[500];
 
-      sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+      sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fname,CallCounter);
       Checksum.PrintChecksumSingleThread(msg);
     }
   }
   else {
     char msg[500];
 
-    sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+    sprintf(msg," line=%i, file=%s (Call Counter=%i)",nline,fname,CallCounter);
     Checksum.PrintChecksumSingleThread(fout,msg);
   }
 
@@ -842,28 +842,28 @@ unsigned long int PIC::Debugger::GetParticlePopulationStateVectorSignature(int o
   return Checksum.checksum();
 }
 
-unsigned long int PIC::Debugger::GetParticlePopulationLocationSignature(long int nline,const char* fname,FILE* fout) {
+unsigned int PIC::Debugger::GetParticlePopulationLocationSignature(int nline,const char* fname,FILE* fout) {
   return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double),nline,fname,fout);
 }
-unsigned long int PIC::Debugger::GetParticlePopulationVelocitySignature(long int nline,const char* fname,FILE* fout) {
+unsigned int PIC::Debugger::GetParticlePopulationVelocitySignature(int nline,const char* fname,FILE* fout) {
   return GetParticlePopulationStateVectorSignature(_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double),nline,fname,fout);
 }
 
 //=========================================================================================================
 //save the map of the domain decomposition
-void PIC::Debugger::SaveDomainDecompositionMap(long int nline,const char* fname,int Index) {
+void PIC::Debugger::SaveDomainDecompositionMap(int nline,const char* fname,int Index) {
   FILE *fout;
   char FullFileName[100];
   int id,i,j,iface,iedge,icorner;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neibNode;
 
-  sprintf(FullFileName,"DomainDecompositionMap.thread=%i(line=%ld,file=%s,Index=%i).dat",PIC::ThisThread,nline,fname,Index);
+  sprintf(FullFileName,"DomainDecompositionMap.thread=%i(line=%i,file=%s,Index=%i).dat",PIC::ThisThread,nline,fname,Index);
   fout=fopen(FullFileName,"w");
 
   fprintf(fout,"VARIABLES=\"NodeTempID\", \"Thread\", \"Face Neib\", \"Edge Neib\", \"Corner Neib\"\n");
 
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    fprintf(fout,"node->Temp_ID=%ld, thread=%i\n",node->Temp_ID,node->Thread);
+    fprintf(fout,"node->Temp_ID=%i, thread=%i\n",node->Temp_ID,node->Thread);
 
     //face neib
     for (iface=0;iface<6;iface++) for (i=0;i<2;i++) for (j=0;j<2;j++) {
@@ -908,7 +908,7 @@ bool PIC::Debugger::ParticleDebugData::CompareParticleDebugData(const PIC::Debug
 }
 
 //accumulate the partilce debug data
-void PIC::Debugger::ParticleDebugData::AddParticleDebugData(long int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,bool InitChckSumMode) {
+void PIC::Debugger::ParticleDebugData::AddParticleDebugData(int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,bool InitChckSumMode) {
   int i,j,k,di,dj,dk;
   double *x;
   cDebugData p;
@@ -1083,15 +1083,15 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
     fout=fopen("SaveNodeSignature.dat","w");
   }
 
-  unsigned long s=PIC::Debugger::GetCornerNodeAssociatedDataSignature(nline,fname);
-  unsigned long int p=PIC::Debugger::GetParticlePopulationSignature(nline,fname);
+  unsigned int s=PIC::Debugger::GetCornerNodeAssociatedDataSignature(nline,fname);
+  unsigned int p=PIC::Debugger::GetParticlePopulationSignature(nline,fname);
 
   //'corner' data
   for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
     for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_+1;k++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_+1;j++)  {
         for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_+1;i++) {
-          unsigned long int cs;
+          unsigned int cs;
           CRC32 CheckSum;
           PIC::Mesh::cDataCornerNode *CornerNode;
 
@@ -1105,19 +1105,19 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
 
             if (PIC::ThisThread!=0) {
               //send the checksum to the root
-              MPI_Send(&cs,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+              MPI_Send(&cs,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
             }
           }
           else if (PIC::ThisThread==0) {
             //recieve the checksum
             MPI_Status status;
 
-            MPI_Recv(&cs,1,MPI_UNSIGNED_LONG,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+            MPI_Recv(&cs,1,MPI_INT,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
           }
 
           //print the checksum to a file
           if (PIC::ThisThread==0) {
-            fprintf(fout,"Corner CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%ld, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
+            fprintf(fout,"Corner CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%i, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
           }
         }
       }
@@ -1129,7 +1129,7 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
     for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
       for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++)  {
          for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-           unsigned long int cs;
+           unsigned int cs;
            CRC32 CheckSum;
            PIC::Mesh::cDataCenterNode *CenterNode;
 
@@ -1143,19 +1143,19 @@ void PIC::Debugger::SaveNodeSignature(int nline,const char *fname) {
 
              if (PIC::ThisThread!=0) {
                //send the checksum to the root
-               MPI_Send(&cs,1,MPI_UNSIGNED_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+               MPI_Send(&cs,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
              }
            }
            else if (PIC::ThisThread==0) {
              //recieve the checksum
              MPI_Status status;
 
-             MPI_Recv(&cs,1,MPI_UNSIGNED_LONG,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+             MPI_Recv(&cs,1,MPI_INT,node->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
            }
 
            //print the checksum to a file
            if (PIC::ThisThread==0) {
-             fprintf(fout,"Center CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%ld, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
+             fprintf(fout,"Center CheckSum=0x%lx, i=%i, j=%i, k=%i,id=%i, ncall=%i, line=%i,file=%s \n",cs,i,j,k,node->Temp_ID,ncall,nline,fname);
            }
         }
       }
@@ -1188,8 +1188,8 @@ double PIC::Debugger::read_mem_usage() {
     string O, itrealvalue, starttime;
 
     // Two values we want                                                                                                                                                             
-    unsigned long vsize;
-    unsigned long rss;
+    unsigned int vsize;
+    unsigned int rss;
 
     stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
       tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
@@ -1284,7 +1284,7 @@ void PIC::Debugger::check_max_mem_usage(string tag) {
   cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << PIC::ThisThread << endl;
 }
 
-void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag) {
+void PIC::Debugger::GetMemoryUsageStatus(int nline,const char *fname,bool ShowUsagePerProcessFlag) {
   double LocalMemoryUsage,GlobalMemoryUsage;
   double *MemoryUsageTable=NULL;
 
@@ -1301,7 +1301,7 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
     int thread;
 
     if (ShowUsagePerProcessFlag==true) {
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld)\nThread\tUsed Memory (MB)\n",fname,nline);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%i)\nThread\tUsed Memory (MB)\n",fname,nline);
 
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) {
         GlobalMemoryUsage+=MemoryUsageTable[thread];
@@ -1313,7 +1313,7 @@ void PIC::Debugger::GetMemoryUsageStatus(long int nline,const char *fname,bool S
     else {
       for (thread=0,GlobalMemoryUsage=0.0;thread<PIC::nTotalThreads;thread++) GlobalMemoryUsage+=MemoryUsageTable[thread];
 
-      printf("$PREFIX: Memory Usage Status (file=%s,line=%ld): Total Memory Used=%e [MB], %e [MB per MPI Process]\n",fname,nline,GlobalMemoryUsage,GlobalMemoryUsage/PIC::nTotalThreads);
+      printf("$PREFIX: Memory Usage Status (file=%s,line=%i): Total Memory Used=%e [MB], %e [MB per MPI Process]\n",fname,nline,GlobalMemoryUsage,GlobalMemoryUsage/PIC::nTotalThreads);
     }
 
     delete [] MemoryUsageTable;
@@ -1353,7 +1353,7 @@ void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool Cu
   if (nTotalParticles!=PIC::ParticleBuffer::GetAllPartNum()) {
     char msg[1000];
 
-    sprintf(msg,"Error: the particle number is inconsistent (particles in the lists: %i, particle buffer: %ld",nTotalParticles,PIC::ParticleBuffer::GetAllPartNum());
+    sprintf(msg,"Error: the particle number is inconsistent (particles in the lists: %i, particle buffer: %i",nTotalParticles,PIC::ParticleBuffer::GetAllPartNum());
     exit(line,fname,msg);
   }
 }
@@ -1362,7 +1362,7 @@ void PIC::Debugger::VerifyTotalParticleNumber(int line,const char* fname,bool Cu
 //=======================================================================================
 //ger check summs of the corner abd center nodes in all blocks excluding the ghost blocks
 
-void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nline,const char* fname) {
+void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(int nline,const char* fname) {
   CRC32 CenterNodeCheckSum,CornerNodeCheckSum;
 
 
@@ -1515,10 +1515,10 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
 
     static int cnt=0;
 
-    sprintf(msg,"CenterNode CheckSum (%s@%ld, cnt=%i)",fname,nline,cnt);
+    sprintf(msg,"CenterNode CheckSum (%s@%i, cnt=%i)",fname,nline,cnt);
     CenterNodeCheckSum.PrintChecksumSingleThread(msg);
 
-    sprintf(msg,"CornerNode CheckSum (%s@%ld, cnt=%i)",fname,nline,cnt);
+    sprintf(msg,"CornerNode CheckSum (%s@%i, cnt=%i)",fname,nline,cnt);
     CornerNodeCheckSum.PrintChecksumSingleThread(msg);
 
     cnt++;
@@ -1527,13 +1527,13 @@ void PIC::Debugger:: GetBlockAssociatedDataSignature_no_ghost_blocks(long int nl
 
 //=======================================================================================================================================
 //order particle lists
-void PIC::Debugger::OrderParticleList(long int &first_particle) {
-  long int ptr=first_particle;
+void PIC::Debugger::OrderParticleList(int &first_particle) {
+  int ptr=first_particle;
 
   class cLocalParticleData {
   public:
-    long int ptr;
-    unsigned long int checksum;
+    int ptr;
+    unsigned int checksum;
 
     bool operator < (const cLocalParticleData& __y) const {return (checksum < __y.checksum);}
   };

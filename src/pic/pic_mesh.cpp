@@ -148,7 +148,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   static vector<cDatumDerived*>  DataDerivedPrint;
 
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  static unsigned long int nCallCounter=0;
+  static unsigned int nCallCounter=0;
   ++nCallCounter;
   #endif
 
@@ -427,7 +427,7 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   #endif
 
   //set up the offsets for 'center node' sampled data
-  long int offset=0;
+  int offset=0;
 
   if (_PIC_SAMPLING_MODE_==_PIC_MODE_ON_) {
     DatumParticleWeight.activate(offset, &DataSampledCenterNodeActive);
@@ -595,7 +595,7 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL)  {
     int iDataInterval,iCell,jCell,kCell;
-    long int LocalCellNumber;
+    int LocalCellNumber;
     PIC::Mesh::cDataCenterNode *CenterNode=NULL;
     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
     int BeginSendBufferIndex=SendBufferIndex;
@@ -845,7 +845,7 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
 
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {
      int iCell,jCell,kCell,iDataInterval;
-     long int LocalCellNumber;
+     int LocalCellNumber;
      PIC::Mesh::cDataCenterNode *CenterNode=NULL;
      PIC::Mesh::cDataCornerNode *CornerNode=NULL;
 
@@ -1036,7 +1036,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
   using namespace PIC::Mesh::cDataBlockAMR_static_data;
 
   int iCell,jCell,kCell;
-  long int LocalCellNumber;
+  int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
   int SendBufferIndex=0;
@@ -1215,7 +1215,7 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
 
 void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node) {
   int iCell,jCell,kCell;
-  long int LocalCellNumber;
+  int LocalCellNumber;
 
   sendBoundaryLayerBlockData(pipe,Node,NULL);
 
@@ -1230,7 +1230,7 @@ void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,
   #endif
 
   //send all blocks' data when the blocks is moved to another processor
-  long int Particle,NextParticle;
+  int Particle,NextParticle;
   char *buffer=new char[PIC::ParticleBuffer::ParticleDataLength];
 
   const int _CENTRAL_NODE_NUMBER_SIGNAL_=1;
@@ -1268,7 +1268,7 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   using namespace PIC::Mesh::cDataBlockAMR_static_data;
 
   int iCell,jCell,kCell;
-  long int LocalCellNumber;
+  int LocalCellNumber;
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
   int RecvDataBufferIndex=0;
@@ -1439,12 +1439,12 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
 
 //recieve all blocks' data when the blocks is moved to another processo
 void PIC::Mesh::cDataBlockAMR::recvMoveBlockAnotherProcessor(CMPI_channel *pipe,int From,void *Node) {
-  long int LocalCellNumber=-1;
+  int LocalCellNumber=-1;
   int i=-10,j=-10,k=-10;
 
   recvBoundaryLayerBlockData(pipe,From,Node,NULL);
 
-  long int Particle;
+  int Particle;
   char buffer[PIC::ParticleBuffer::ParticleDataLength];
 
   int Signal;

@@ -18,7 +18,7 @@ double Exosphere::OrbitalMotion::GetTAA(double t) {return 0.0;}
 
 
 //Acceleration of the model particles
-void EnceladusMultiPlume::TotalAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void EnceladusMultiPlume::TotalAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
   //copy to local variables
   double accl_LOCAL[3]={0.0,0.0,0.0},x_LOCAL[3],v_LOCAL[3];
@@ -115,7 +115,7 @@ double EnceladusMultiPlume::sphereInjectionRate(int spec,int BoundaryElementType
    return TotalMassDustProductionRate/MeanDustGrainMass;
 }
 
-int EnceladusMultiPlume::ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int EnceladusMultiPlume::ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
   /*double r=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   double c=v[0]*x[0]/r+v[1]*x[1]/r+v[2]*x[2]/r;
 
@@ -136,7 +136,7 @@ int EnceladusMultiPlume::ParticleSphereInteraction(int spec,long int ptr,double 
   //sample the injection flux
   //sample the particle data
   double *SampleData;
-  long int nSurfaceElement,nZenithElement,nAzimuthalElement;
+  int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
   Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
   nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);

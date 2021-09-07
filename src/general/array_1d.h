@@ -25,7 +25,7 @@ public:
 
   //===================================================
   _TARGET_HOST_ _TARGET_DEVICE_
-    void init(long int n) {
+    void init(int n) {
     if (size!=0) {
       printf("Error: initialization of allocated array_1d object\n");
       exit(__LINE__,__FILE__);
@@ -70,7 +70,7 @@ T* get_data_ptr() {return data;}
   T sum() const {
     T f = (T)0;
 
-    for (long int i=0; i<size;i++) f=f+data[i];
+    for (int i=0; i<size;i++) f=f+data[i];
 
     return f;
   }
@@ -120,7 +120,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
 //===================================================
   array_1d<T>& operator = (T f) {
-    for (long int i=0; i<size;i++) data[i]=f;
+    for (int i=0; i<size;i++) data[i]=f;
 
     return *this;
   }
@@ -153,7 +153,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 //===================================================
   friend array_1d<T> operator * (const array_1d<T> &v1, const T t) {
     array_1d<T> v3(v1.size);
-    for (long int i=0;i<v1.size;i++) v3.data[i]=t*v1.data[i];
+    for (int i=0;i<v1.size;i++) v3.data[i]=t*v1.data[i];
     return v3;
   }
 
@@ -254,22 +254,22 @@ _TARGET_HOST_ _TARGET_DEVICE_
 
   friend void printf (const array_1d<T> &v) {
     if (v.size<4) {
-      for (long int i=0;i<v.size;i++)
+      for (int i=0;i<v.size;i++)
         if (v.data[i]<0) printf("  %e",(double)v.data[i]);
         else printf("   %e",(double)v.data[i]);
       printf("\n");
     }
-    else for (long int i=0;i<v.size;i++) printf(" %e\n",(double)v.data[i]);
+    else for (int i=0;i<v.size;i++) printf(" %e\n",(double)v.data[i]);
   }
 
   friend void fprintf (FILE* fout,const array_1d<T> &v) {
     if (v.size<4) {
-      for (long int i=0;i<v.size;i++)
+      for (int i=0;i<v.size;i++)
         if (v.data[i]<0) fprintf(fout,"  %e",(double)v.data[i]);
         else fprintf(fout,"   %e",(double)v.data[i]);
       fprintf(fout,"\n");
     }
-    else for (long int i=0;i<v.size;i++) fprintf(fout," %e\n",(double)v.data[i]);
+    else for (int i=0;i<v.size;i++) fprintf(fout," %e\n",(double)v.data[i]);
   }
 //===================================================
 };

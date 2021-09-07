@@ -58,7 +58,7 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
    //delete all particles that was not reflected on the surface
    //PIC::ParticleBuffer::DeleteParticle(ptr);
    return _PARTICLE_DELETED_ON_THE_FACE_;
@@ -147,7 +147,7 @@ void amps_init_mesh() {
     #endif
 
     //reserve memory for sampling of the surface balance of sticking species
-    long int ReserveSamplingSpace[PIC::nTotalSpecies];
+    int ReserveSamplingSpace[PIC::nTotalSpecies];
 
     for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=_OBJECT_SURFACE_SAMPLING__TOTAL_SAMPLED_VARIABLES_;
 
@@ -519,7 +519,7 @@ void amps_init() {
 
 
   //time step
-// for (long int niter=0;niter<100000001;niter++) {
+// for (int niter=0;niter<100000001;niter++) {
 void amps_time_step(){
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_

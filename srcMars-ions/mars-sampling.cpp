@@ -50,7 +50,7 @@ void MarsIon::Sampling::SphericalShells::Output::PrintVariableList(FILE* fout) {
   }
 }
 
-void MarsIon::Sampling::SphericalShells::Output::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
+void MarsIon::Sampling::SphericalShells::Output::PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
     int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
 
   double Flux=0.0,Rigidity=-1.0,ParticleFluxUp=0.0,ParticleFluxDown=0.0;

@@ -33,7 +33,7 @@ int main(int argc,char **argv) {
   amps_init();
 
   //time step
-  for (long int niter=0;niter<100000001;niter++) {
+  for (int niter=0;niter<100000001;niter++) {
 
     if(amps_time_step() == _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_) break;
 

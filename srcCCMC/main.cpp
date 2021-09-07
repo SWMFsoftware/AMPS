@@ -60,7 +60,7 @@ int main(int argc,char **argv) {
   case _CCMC_CALCULATION_MODE__ENTIRE_FLOW_ :
     if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
 
-    for (long int niter=0;niter<nTotalIterations;niter++) {
+    for (int niter=0;niter<nTotalIterations;niter++) {
 
       //print the iteration number
       if (PIC::Mesh::mesh->ThisThread==0) {

@@ -639,8 +639,8 @@ void PIC::CPLR::FLUID::find_output_list(const Writer& writerIn, long int & nPoin
     }    
   }
 
-  long nPointLocal = pointList_II.size();
-  MPI_Allreduce(&nPointLocal, &nPointAllProc, 1, MPI_LONG, MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  int nPointLocal = pointList_II.size();
+  MPI_Allreduce(&nPointLocal, &nPointAllProc, 1, MPI_INT, MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   
   // Global min/max
   double xMinG_D[nDimMax], xMaxG_D[nDimMax];
@@ -667,7 +667,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
   int ix_=0, iy_=1, iz_=2,ixx_=3,iyy_=4,izz_=5, iBlk_=6;
   int ix, iy, iz, iBlock; 
 
-  long nPoint = pointList_II.size();
+  int nPoint = pointList_II.size();
   int nVar = sVar_I.size();   
 
 
@@ -725,8 +725,7 @@ void PIC::CPLR::FLUID::get_field_var(const VectorPointList & pointList_II,
 void PIC::CPLR::FLUID::write_output(double timeNow, bool doForceOutput){
   //  fix_plasma_node_boundary();
   timeNow *= FluidInterface.getNo2SiT();
-  FluidInterface.writers_write(timeNow, iCycle, doForceOutput, find_output_list,
-                               get_field_var);
+  FluidInterface.writers_write(timeNow, iCycle, doForceOutput, find_output_list,get_field_var);
 }
 
 void PIC::CPLR::FLUID::fix_plasma_node_boundary(){
@@ -1398,8 +1397,8 @@ double PIC::CPLR::FLUID::read_mem_usage(){
     string O, itrealvalue, starttime;
                             
     // Two values we want                                                       
-    unsigned long vsize;                
-    unsigned long rss;
+    unsigned int vsize;                
+    unsigned int rss;
 
     stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
       tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>

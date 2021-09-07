@@ -43,7 +43,7 @@ void PIC::InterpolationRoutines::Init() {
 _TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil) {
   int i,j,k;
-  long int nd;
+  int nd;
   PIC::Mesh::cDataCenterNode *cell;
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -738,7 +738,7 @@ void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolation
 
 _TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::CellCentered::Linear::GetTriliniarInterpolationMutiBlockStencil(double *x,double *xStencilMin,double *xStencilMax,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,PIC::InterpolationRoutines::CellCentered::cStencil &Stencil) {
-  long int nd;
+  int nd;
   PIC::Mesh::cDataCenterNode *cell;
 
   Stencil.flush();

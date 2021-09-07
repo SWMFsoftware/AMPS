@@ -381,7 +381,7 @@ int PIC::IDF::LB::RequestSamplingData(int offset) {
 
 void PIC::IDF::LB::Init() {
   //request the additional particle data
-  long int offset;
+  int offset;
   int DataLength;
 
   DataLength=(1+nSpeciesMaxVibrationalModes)*sizeof(double);

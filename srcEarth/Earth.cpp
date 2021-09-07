@@ -77,7 +77,7 @@ void Earth::Sampling::PrintTitle(FILE* fout) {
   fprintf(fout,"TITLE=\"Sampled particle flux and max rigidity\"");
 }
 
-void Earth::Sampling::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
+void Earth::Sampling::PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
     int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
 
   double Flux=0.0,Rigidity=-1.0,ParticleFluxUp=0.0,ParticleFluxDown=0.0;
@@ -186,7 +186,7 @@ void Earth::Sampling::PrintManager(int nDataSet) {
 void Earth::Sampling::SamplingManager() {}
 
 //particle mover: call relativistic Boris, ans sample particle flux
-int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Earth::ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double xInit[3],xFinal[3];
   int res,iShell;
 
@@ -243,7 +243,7 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
         if (t>0.0) {
           //the point of intersection is found. Sample flux and rigidity at that location
           double xIntersection[3];
-          long int iSurfaceElementNumber,iZenithElement,iAzimuthalElement;
+          int iSurfaceElementNumber,iZenithElement,iAzimuthalElement;
 
           for (idim=0;idim<3;idim++) xIntersection[idim]=xInit[idim]+t*(xFinal[idim]-xInit[idim]);
 
@@ -433,7 +433,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
 }
 
 //particle/sphere interactions
-int Earth::BC::ParticleSphereInteraction(int spec,long int ptr,double *x,double *v, double &dtTotal, void *NodeDataPonter,void *SphereDataPointer)  {
+int Earth::BC::ParticleSphereInteraction(int spec,int ptr,double *x,double *v, double &dtTotal, void *NodeDataPonter,void *SphereDataPointer)  {
   return _PARTICLE_DELETED_ON_THE_FACE_;
 }
 

@@ -43,8 +43,8 @@ double **Exosphere::Sampling::PlanetNightSideReturnFlux=NULL;
 double *Exosphere::Sampling::TotalPlanetReturnFlux=NULL,*Exosphere::Sampling::PlanetSurfaceStickingRate=NULL;
 
 //the field in the particle's data that keeps the id of the source process due to which the particle has beed produced
-long int Exosphere::Sampling::ParticleData_SourceProcessID_Offset=-1;
-long int Exosphere::Sampling::ParticleData_OriginSurfaceElementNumber_Offset=-1;
+int Exosphere::Sampling::ParticleData_SourceProcessID_Offset=-1;
+int Exosphere::Sampling::ParticleData_OriginSurfaceElementNumber_Offset=-1;
 
 //the total number of source processes
 int Exosphere::nTotalSourceProcesses=0;
@@ -523,12 +523,12 @@ void Exosphere::ColumnIntegral::Limb(char *fname) {
 
   //the 'altitude' points are distributed logarithmicaly
   //determin the factor 'rr' of the geometrical progression that defined the location od radial points of the map
-  long int t;
+  int t;
   double dAlt,rr,R=dAltmin;
 
   dAlt=dAltmin;
   rr=(maxAltitude+dAltmax)/(maxAltitude+dAltmin);
-  t=(long int)(log(dAltmax/dAltmin)/log(rr)-2.0);
+  t=(int)(log(dAltmax/dAltmin)/log(rr)-2.0);
   rr=pow(dAltmax/dAltmin,1.0/(t+2.0));
 
 
@@ -728,12 +728,12 @@ void Exosphere::ColumnDensityIntegration_Limb(char *fname) {
 
   //the 'altitude' points are distributed logarithmicaly
   //determin the factor 'rr' of the geometrical progression that defined the location od radial points of the map
-  long int t;
+  int t;
   double dAlt,rr,R=dAltmin;
 
   dAlt=dAltmin;
   rr=(maxAltitude+dAltmax)/(maxAltitude+dAltmin);
-  t=(long int)(log(dAltmax/dAltmin)/log(rr)-2.0);
+  t=(int)(log(dAltmax/dAltmin)/log(rr)-2.0);
   rr=pow(dAltmax/dAltmin,1.0/(t+2.0));
 
   //determine positions of the Easth and the Sun
@@ -954,11 +954,11 @@ void Exosphere::ColumnDensityIntegration_CircularMap(char *fname,double rmax,dou
   if (dRmax<0.0) dRmax=10.0*_RADIUS_(_TARGET_);
 
   //determin the factor 'rr' of the geometrical progression that defined the location od radial points of the map
-  long int t;
+  int t;
 
   dR=dRmin;
   rr=(rmax+dRmax)/(rmax+dRmin);
-  t=(long int)(log(dRmax/dRmin)/log(rr)-2.0);
+  t=(int)(log(dRmax/dRmin)/log(rr)-2.0);
   rr=pow(dRmax/dRmin,1.0/(t+2.0));
 
   //determine the coordinate frame with z-axis align with the Eath-Mercury direction
@@ -1087,11 +1087,11 @@ void Exosphere::ColumnIntegral::CircularMap(char *fname,double rmax,double dRmin
   if (dRmax<0.0) dRmax=10.0*_RADIUS_(_TARGET_);
 
   //determin the factor 'rr' of the geometrical progression that defined the location od radial points of the map
-  long int t;
+  int t;
 
   dR=dRmin;
   rr=(rmax+dRmax)/(rmax+dRmin);
-  t=(long int)(log(dRmax/dRmin)/log(rr)-2.0);
+  t=(int)(log(dRmax/dRmin)/log(rr)-2.0);
   rr=pow(dRmax/dRmin,1.0/(t+2.0));
 
 
@@ -1269,8 +1269,8 @@ void Exosphere::Sampling::SampleModelData() {
 
   //sample sodium surface content
   int nZenithSurfaceElements,nAzimuthalSurfaceElements,spec;
-  long int iZenith_SO,iAzimuth_SO,el_SO;
-  long int iZenith_IAU,iAzimuth_IAU,el_IAU;
+  int iZenith_SO,iAzimuth_SO,el_SO;
+  int iZenith_IAU,iAzimuth_IAU,el_IAU;
   double rSurfaceElement_IAU[3],rSurfaceElement_SO[3],SurfaceArea_IAU;
   SpiceDouble xform[6][6];
 
@@ -1989,9 +1989,9 @@ double Exosphere::SourceProcesses::totalProductionRate(int spec,int BoundaryElem
 }
 
 
-long int Exosphere::SourceProcesses::InjectionBoundaryModel(int BoundaryElementType,void *BoundaryElement)  {
+int Exosphere::SourceProcesses::InjectionBoundaryModel(int BoundaryElementType,void *BoundaryElement)  {
   int spec;
-  long int res=0;
+  int res=0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) {
     #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -2017,14 +2017,14 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int BoundaryElementT
   return res;
 }
 
-long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int BoundaryElementType,void *BoundaryElement) {
+int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int BoundaryElementType,void *BoundaryElement) {
   cInternalSphericalData *Sphere=NULL;
 //  void *SphereDataPointer=NULL;
   double *sphereX0=NULL,sphereRadius=0.0;
 
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3];
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nInjectedParticles=0;
+  int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0,SpeciesWeightCorrection=1.0; //the first is used to correct weight of a particulat particle, the latter is to correct the weight al all particles of the species to limit the number of the injected model particles
   bool flag;
@@ -2226,7 +2226,7 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
 */
 
    //determine the surface element of the particle origin
-   long int nZenithElement,nAzimuthalElement;
+   int nZenithElement,nAzimuthalElement;
    int el;
 
 #if _EXOSPHERE__SOURCE_PROCESSES__CONTROL_POSITIVE_VOLATILE_SURFACE_ABOUNDANCE_ == _PIC_MODE_ON_
@@ -2315,7 +2315,7 @@ cout << __FILE__ << "@" << __LINE__ << "  " << x_IAU_OBJECT[0] << "  " << x_IAU_
 
 
 /*=============================== INTERACTION WITH THE SURFACE: BEGIN  ===========================================*/
-int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(int spec,int ptr,double *x_SO_OBJECT,double *v_SO_OBJECT,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
   double radiusSphere,*x0Sphere,lNorm[3],rNorm,lVel[3],rVel,c;
   cInternalSphericalData *Sphere;
 //  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
@@ -2355,7 +2355,7 @@ int Exosphere::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation
 
   vi=sqrt(v_LOCAL_IAU_OBJECT[0]*v_LOCAL_IAU_OBJECT[0]+v_LOCAL_IAU_OBJECT[1]*v_LOCAL_IAU_OBJECT[1]+v_LOCAL_IAU_OBJECT[2]*v_LOCAL_IAU_OBJECT[2]);
 
-  long int nZenithElement,nAzimuthalElement;
+  int nZenithElement,nAzimuthalElement;
   int el;
   double ParticleWeight;
 
@@ -2502,7 +2502,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintVariableList(FILE* fout) {
 #endif
 }
 
-void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 

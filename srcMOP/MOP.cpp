@@ -24,7 +24,7 @@ double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x) {retu
 
 
 //new particle injection functions
-long int MOP::InjectParticles() {
+int MOP::InjectParticles() {
   int res=0;
 
   switch (_PLANET_SYSTEM_) {

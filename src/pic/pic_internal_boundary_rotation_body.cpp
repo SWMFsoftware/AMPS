@@ -27,7 +27,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::RotationBody::R
 
   //init the internal parameters of the new sphere
   double *sBuffer;
-  long int i,sBufferTotalLength;
+  int i,sBufferTotalLength;
 
   TotalSurfaceElementNumber=newRotationBody->GetTotalSurfaceElementsNumber();
   sBufferTotalLength=2*TotalSurfaceElementNumber*TotalSampleSetLength;
@@ -49,7 +49,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::RotationBody::R
   return RotationBodyDescriptor;
 }
 
-void PIC::BC::InternalBoundary::RotationBody::PrintDefaultDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *RotationBody,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void PIC::BC::InternalBoundary::RotationBody::PrintDefaultDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *RotationBody,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
 
 }
 

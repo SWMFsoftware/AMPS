@@ -56,7 +56,7 @@ namespace MarsIon {
   extern double DomainDXMax;
   /* _MARS_ION_H_ */
 
-  int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
   //background atmosphere density
   double GetBackgroundAtmosphereDensity(double *x,int spec);
@@ -81,8 +81,8 @@ namespace MarsIon {
 
       namespace Output {
         void PrintTitle(FILE* fout);
-        void PrintDataStateVector(FILE* fout,long int nZenithPoint,
-            long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
+        void PrintDataStateVector(FILE* fout,int nZenithPoint,
+            int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
             int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
         void PrintVariableList(FILE* fout);
       }
@@ -96,14 +96,14 @@ namespace MarsIon {
   void Init_AfterParser();
 
   //process interaction of the particles with the boundaries of the domain and the surface of the planet
-  int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
+  int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
 
   namespace SourceProcesses {
     double GetCellInjectionRate(int spec,double *xMiddle);
     double GetCellInjectionRate(int spec,PIC::Mesh::cDataCenterNode *cell);
     double GetBlockInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
-    long int InjectParticles();
+    int InjectParticles();
   }
 
   namespace Output{

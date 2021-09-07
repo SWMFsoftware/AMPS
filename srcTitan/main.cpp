@@ -52,7 +52,7 @@ int main(int argc,char **argv) {
 
 
   //time step
-  for (long int niter=0;niter<nTotalIterations;niter++) {
+  for (int niter=0;niter<nTotalIterations;niter++) {
     amps_time_step();
 
      //print the iteration number

@@ -168,7 +168,7 @@ namespace PIC {
   #define _DISABLED_SAMPLING_MODE_          2
   #define _SINGLE_OUTPUT_FILE_SAMPING_MODE_ 3
 
-  extern long int LastSampleLength,CollectingSampleCounter,RequiredSampleLength,DataOutputFileNumber;
+  extern int LastSampleLength,CollectingSampleCounter,RequiredSampleLength,DataOutputFileNumber;
   extern int SamplingMode;
 
   //the tags for the data exchenge between processors
@@ -209,7 +209,7 @@ namespace PIC {
   void Init_AfterParser();
 
   //the list of functions used to exchenge the execution statiscics
-  typedef void (*fExchangeExecutionStatistics) (CMPI_channel*,long int);
+  typedef void (*fExchangeExecutionStatistics) (CMPI_channel*,int);
   extern vector<fExchangeExecutionStatistics> ExchangeExecutionStatisticsFunctions;
 
   //structural elements of the solver
@@ -239,7 +239,7 @@ namespace PIC {
       static const int Weighted_ = 4; // sampled, averaged over particle weight
       static const int Derived_  = 5; // derived from other types
 
-      long int offset;
+      int offset;
       int length;
       char name[_MAX_STRING_LENGTH_PIC_];
       int type;
@@ -301,7 +301,7 @@ namespace PIC {
       //......................................................................
       inline bool is_active() {return offset >= 0;}
 
-      inline void activate(long int& offsetInOut, vector<cDatumStored*>* DatumVector) {
+      inline void activate(int& offsetInOut, vector<cDatumStored*>* DatumVector) {
         if (is_active()) exit(__LINE__,__FILE__,"ERROR: trying to activate datum a second time");
 
         // set offset to the variable
@@ -332,7 +332,7 @@ namespace PIC {
 
       cDatumSampled() {}; //degault constructor
 
-      inline void activate(long int& offsetInOut, vector<cDatumSampled*>* DatumVector) {
+      inline void activate(int& offsetInOut, vector<cDatumSampled*>* DatumVector) {
         if (is_active()) exit(__LINE__,__FILE__,"ERROR: trying to activate datum a second time");
 
         // set offset to the variable
@@ -387,13 +387,13 @@ namespace PIC {
       double x,v;
 
       //next,prev particles in the list attached to a given segment of the field line
-      long int next,prev;
+      int next,prev;
 
-      long int GetNext() {return next;}
-      void SetNext(long int t) {next=t;}
+      int GetNext() {return next;}
+      void SetNext(int t) {next=t;}
 
-      long int GetPrev() {return prev;}
-      void SetPrev(long int t) {prev=t;};
+      int GetPrev() {return prev;}
+      void SetPrev(int t) {prev=t;};
      }; 
 
 
@@ -508,7 +508,7 @@ namespace PIC {
       cFieldLineVertex* next;
 
     public:
-      long int Temp_ID;
+      int Temp_ID;
       bool ActiveFlag; //used to prevent multiple deallocation of the Vertix 
 
       cFieldLineVertex() {
@@ -787,11 +787,11 @@ namespace PIC {
       cFieldLineVertex* begin;
       cFieldLineVertex* end;
     public:
-      long int Temp_ID;
+      int Temp_ID;
       bool ActiveFlag;
 
       //index of the first particle attached to the segment
-      long int FirstParticleIndex,tempFirstParticleIndex; 
+      int FirstParticleIndex,tempFirstParticleIndex; 
 
       //.......................................................................
       // interface with stack functionality
@@ -816,7 +816,7 @@ namespace PIC {
       /*
       void DeleteAttachedParticles() {
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
-          long int ptr_next,ptr=FirstParticleIndex;
+          int ptr_next,ptr=FirstParticleIndex;
 
           while (ptr!=-1) {
             ptr_next=PIC::ParticleBuffer::GetNext();
@@ -1249,10 +1249,10 @@ void DeleteAttachedParticles();
 
 
     // max number of field line in the simulation
-    const long int nFieldLineMax=100;
+    const int nFieldLineMax=100;
 
     //current number of field lines
-    extern long int nFieldLine;
+    extern int nFieldLine;
 
     //delete all field lines 
     inline void DeleteAll() {
@@ -1282,14 +1282,14 @@ void DeleteAttachedParticles();
     void FieldLineWeight_Uniform(double* Weight, cFieldLineSegment* Segment);
 
     // sample data from a particle
-    void Sampling(long int ptr, double Weight, char* SamplingBuffer);
+    void Sampling(int ptr, double Weight, char* SamplingBuffer);
 
     // inject particle onto the field line:
     // 1st function is a wrapper in the case
     // there is a user-defined procedure
-    long int InjectParticle(int spec);
-    long int InjectParticle_default(int spec);
-    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn=-1.0);
+    int InjectParticle(int spec);
+    int InjectParticle_default(int spec);
+    int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn=-1.0);
   }
 
   //the first part of the namespace Debugger difinition
@@ -1301,12 +1301,12 @@ void DeleteAttachedParticles();
 
   //the particle trajectory tracing
   namespace ParticleTracker {
-    extern long int ParticleDataRecordOffset; //the offset of the trajecotry specific informaion within the particle data
+    extern int ParticleDataRecordOffset; //the offset of the trajecotry specific informaion within the particle data
     extern int maxSampledTrajectoryNumber; //tha maximum number of the particle trajectories that will be sampled for each species
     extern int **threadSampledTrajectoryNumber; //the number of trajectories sampled by the current processor for each species. Format: [spec][threadOpenMP]
     extern int *totalSampledTrajectoryNumber; //the number of trajectories sampled by ALL PROCESSORS for each species. Format: [spec]
-    extern unsigned long int *SampledTrajectoryCounter; //the total number of traced trajectories originate on the current processor -> used as a part of the trajecotry ID
-    extern unsigned long int *SampledTrajectoryPointCounter; //the total number of sampled trajectory points
+    extern unsigned int *SampledTrajectoryCounter; //the total number of traced trajectories originate on the current processor -> used as a part of the trajecotry ID
+    extern unsigned int *SampledTrajectoryPointCounter; //the total number of sampled trajectory points
 
     extern int nMaxSavedSignleTrajectoryPoints; //the maximum number of the trajectory points saved in the output trajectory file for each particle trajectory
 
@@ -1363,8 +1363,8 @@ void DeleteAttachedParticles();
 
     struct cTrajectoryData {
       PIC::ParticleTracker::cTrajectoryDataRecord *buffer;
-      unsigned long int CurrentPosition,nfile;
-      static unsigned long int Size;
+      unsigned int CurrentPosition,nfile;
+      static unsigned int Size;
 
       void flush(); //save in a file the trajecotry information
       inline void clean() {CurrentPosition=0;nfile=0;} //reset to the initial set all counters
@@ -1377,8 +1377,8 @@ void DeleteAttachedParticles();
     extern cTrajectoryData *TrajectoryDataTable;
 
     struct cTrajectoryList {
-      unsigned long int CurrentPosition,nfile;
-      static unsigned long int Size;
+      unsigned int CurrentPosition,nfile;
+      static unsigned int Size;
       PIC::ParticleTracker::cTrajectoryListRecord *buffer;
 
       void flush(); //save in a file the list of the trajectories
@@ -1640,20 +1640,20 @@ void DeleteAttachedParticles();
   //run tame calculation of the check sums
   namespace RunTimeSystemState {
     void GetParticleFieldCheckSum(const char *msg=NULL);
-    void GetParticleFieldCheckSum(long int nline,const char *fname);
+    void GetParticleFieldCheckSum(int nline,const char *fname);
     void GetParticleFieldCheckSum_CallCounter(const char *msg=NULL);
-    void GetParticleFieldCheckSum_CallCounter(long int nline,const char *fname);
+    void GetParticleFieldCheckSum_CallCounter(int nline,const char *fname);
 
-    void GetIndividualParticleFieldCheckSum_CallCounter(long int ptr,const char *msg=NULL);
+    void GetIndividualParticleFieldCheckSum_CallCounter(int ptr,const char *msg=NULL);
     void GetIndividualParticleFieldCheckSum_CallCounter(void *ParticleData,const char *msg=NULL);
-    void GetIndividualParticleFieldCheckSum_CallCounter(long int ptr,long int nline,const char *fname,const char *msg=NULL);
-    void GetIndividualParticleFieldCheckSum_CallCounter(void *ParticleData,long int nline,const char *fname,const char *msg=NULL);
+    void GetIndividualParticleFieldCheckSum_CallCounter(int ptr,int nline,const char *fname,const char *msg=NULL);
+    void GetIndividualParticleFieldCheckSum_CallCounter(void *ParticleData,int nline,const char *fname,const char *msg=NULL);
 
     void GetDomainDecompositionCheckSum(const char *msg=NULL);
-    void GetDomainDecompositionCheckSum(long int nline,const char *fname);
+    void GetDomainDecompositionCheckSum(int nline,const char *fname);
 
     void GetMeanParticleMicroscopicParameters(FILE* fout,const char *msg=NULL);
-    void GetMeanParticleMicroscopicParameters(FILE* fout,long int nline,const char *fname);
+    void GetMeanParticleMicroscopicParameters(FILE* fout,int nline,const char *fname);
     void GetMeanParticleMicroscopicParameters(const char *fname);
 
     //timing of the code execution
@@ -1739,7 +1739,7 @@ void DeleteAttachedParticles();
 #endif
     }
 
-    inline double GetTotalCrossSect(double Vrel,int ptr0,int s0,int ptr1,int s1,long int ncell) {
+    inline double GetTotalCrossSect(double Vrel,int ptr0,int s0,int ptr1,int s1,int ncell) {
 #if _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
       return MolecularModels::HS::GetTotalCrossSection(s0,s1);
 #else
@@ -1809,16 +1809,16 @@ void DeleteAttachedParticles();
     void PrintBufferChecksum(int nline,const char* fname);
 
     //the total length of a data allocated for a particle
-    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int ParticleDataLength;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int ParticleDataLength;
 
     //The particle buffer's internal data
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ byte *ParticleDataBuffer;
-    extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int MaxNPart,NAllPart,FirstPBufferParticle;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int MaxNPart,NAllPart,FirstPBufferParticle;
 
     //namespace combibes all GPU-relates data
     struct cParticleTable {
       int icell;
-      long int ptr;
+      int ptr;
     };
 
     //create a 'global' particle table 
@@ -1831,13 +1831,13 @@ void DeleteAttachedParticles();
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ cParticleTable *ParticlePopulationTable;
       
     //Request additional data for a particle
-    void RequestDataStorage(long int &offset,int TotalDataLength);
+    void RequestDataStorage(int &offset,int TotalDataLength);
 
     //the basic data access functions for a particle
-    byte *GetParticleDataPointer(long int);
+    byte *GetParticleDataPointer(int);
 
     //get particle data offset (pass next ans prev)
-    inline int GetParticleDataOffset(long int ptr) {
+    inline int GetParticleDataOffset(int ptr) {
       return _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_+ptr*ParticleDataLength; 
     }
 
@@ -1845,11 +1845,11 @@ void DeleteAttachedParticles();
     void CheckParticleList();
 
     //create and populate a table containing all particles located in a cell; the return value is the number of elements in the cell
-    int GetCellParticleTable(long int* &ParticleIndexTable,int &ParticleIndexTableLength,long int first_particle_index);
+    int GetCellParticleTable(int* &ParticleIndexTable,int &ParticleIndexTableLength,int first_particle_index);
 
     //get signature of an particle
-    unsigned long int GetParticleSignature(long int ptr,CRC32* sig,bool IncludeListInfo=false);
-    unsigned long int GetParticleSignature(long int ptr,bool IncludeListInfo=false);
+    unsigned int GetParticleSignature(int ptr,CRC32* sig,bool IncludeListInfo=false);
+    unsigned int GetParticleSignature(int ptr,bool IncludeListInfo=false);
 
     //table controlling memory allocation for optional parameters 
     class cOptionalParticleFieldAllocationManager {
@@ -1867,7 +1867,7 @@ void DeleteAttachedParticles();
     //the namespace contains data used in case when OpenMP is used
     namespace Thread {
       extern int NTotalThreads;
-      extern long int *AvailableParticleListLength,*FirstPBufferParticle;
+      extern int *AvailableParticleListLength,*FirstPBufferParticle;
       void RebalanceParticleList();
     }
 
@@ -1893,7 +1893,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline unsigned int GetI(long int ptr) {
+    inline unsigned int GetI(int ptr) {
       return ((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
     }
     //.........................................................................
@@ -1909,7 +1909,7 @@ void DeleteAttachedParticles();
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
     //.........................................................................
-    inline void SetI(int spec,long int ptr) {
+    inline void SetI(int spec,int ptr) {
       unsigned char flag,t=spec;
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -1925,73 +1925,73 @@ void DeleteAttachedParticles();
     // Operations related to the next particle in the stack
     //-------------------------------------------------------------------------
     _TARGET_HOST_ _TARGET_DEVICE_ 
-    inline long int GetNext(long int ptr) {
+    inline int GetNext(int ptr) {
 
       #ifdef __CUDA_ARCH__
-      long int res=0;
+      int res;
       char *source,*target;
 
       source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
 
       return res;
       #endif
 
-      return *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
+      return *((int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline long int GetNext(byte* ParticleDataStart) {
+    inline int GetNext(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      long int res=0;
+      int res;
       char *source,*target;
 
       source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
 
       return res;
       #endif
 
-      return *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
+      return *((int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetNext(long int next,long int ptr) {
+    inline void SetNext(int next,int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
-      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
+      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(int),__LINE__,__FILE__);
       #endif
 
       #ifndef __CUDA_ARCH__
-      *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      *((int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else
 
       char *source,*target;
 
       source=(char*)&next;
       target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
       #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetNext(long int next,byte* ParticleDataStart) {
+    inline void SetNext(int next,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
-      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(long int),__LINE__,__FILE__);
+      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&next,sizeof(int),__LINE__,__FILE__);
       #endif
 
       #ifndef __CUDA_ARCH__
-      *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
+      *((int*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_))=next;
       #else 
       char *source,*target;
 
       source=(char*)&next;
       target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__NEXT_OFFSET_);
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
       #endif 
     }
     //-------------------------------------------------------------------------
@@ -1999,74 +1999,74 @@ void DeleteAttachedParticles();
     // Operations related to the previous particle in the stack
     //-------------------------------------------------------------------------
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline long int GetPrev(long int ptr) {
+    inline int GetPrev(int ptr) {
 
       #ifdef __CUDA_ARCH__
-      long int res=0;
+      int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
 
       return res;
       #endif
 
-      return *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+      return *((int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline long int GetPrev(byte* ParticleDataStart) {
+    inline int GetPrev(byte* ParticleDataStart) {
 
       #ifdef __CUDA_ARCH__
-      long int res=0;
+      int res=0;
       char *source,*target;
 
       source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
       target=(char*)&res;
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
 
       return res;
       #endif
 
-      return *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
+      return *((int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetPrev(long int prev,long int ptr) {
+    inline void SetPrev(int prev,int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
-      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
+      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(int),__LINE__,__FILE__);
       #endif
 
 
       #ifndef __CUDA_ARCH__
-      *((int32_t*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      *((int*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
       char *source,*target;
 
       source=(char*)&prev;
       target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
       #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetPrev(long int prev,byte* ParticleDataStart) {
+    inline void SetPrev(int prev,byte* ParticleDataStart) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
-      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(long int),__LINE__,__FILE__);
+      PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&prev,sizeof(int),__LINE__,__FILE__);
       #endif
 
 
       #ifndef __CUDA_ARCH__
-      *((int32_t*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
+      *((int*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_))=prev;
       #else
       char *source,*target;
 
       source=(char*)&prev;
       target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__PREV_OFFSET_);
-      memcpy(target,source,sizeof(int32_t));
+      memcpy(target,source,sizeof(int));
       #endif
     }
     //-------------------------------------------------------------------------
@@ -2074,7 +2074,7 @@ void DeleteAttachedParticles();
     // Operations related to the particle velocity
     //-------------------------------------------------------------------------
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVParallel(long int ptr) {
+    inline double GetVParallel(int ptr) {
       double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
@@ -2096,7 +2096,7 @@ void DeleteAttachedParticles();
     }
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVParallel(double t,long int ptr) {
+    inline void SetVParallel(double t,int ptr) {
       double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
@@ -2120,7 +2120,7 @@ void DeleteAttachedParticles();
 
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetVNormal(long int ptr) {
+    inline double GetVNormal(int ptr) {
       double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
@@ -2143,7 +2143,7 @@ void DeleteAttachedParticles();
 
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetVNormal(double t,long int ptr) {
+    inline void SetVNormal(double t,int ptr) {
       double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
@@ -2167,7 +2167,7 @@ void DeleteAttachedParticles();
 
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline double *GetV(long int ptr) {
+    inline double *GetV(int ptr) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
       #endif
@@ -2185,7 +2185,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void GetV(double* v,long int ptr) {
+    inline void GetV(double* v,int ptr) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
       #endif
@@ -2214,7 +2214,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetV(double* v,long int ptr) {
+    inline void SetV(double* v,int ptr) {
 /*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
         exit(__LINE__,__FILE__,"the velocity is too large");
       }*/
@@ -2264,7 +2264,7 @@ void DeleteAttachedParticles();
 
     // Operations related to the particle position
     //-------------------------------------------------------------------------
-    inline double *GetX(long int ptr) {
+    inline double *GetX(int ptr) {
       return (double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_);
     }
     //.........................................................................
@@ -2273,7 +2273,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void GetX(double* x,long int ptr) {
+    inline void GetX(double* x,int ptr) {
       memcpy(x,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
@@ -2283,7 +2283,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetX(double* x,long int ptr) {
+    inline void SetX(double* x,int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(x,3*sizeof(double),__LINE__,__FILE__);
@@ -2304,7 +2304,7 @@ void DeleteAttachedParticles();
     //-------------------------------------------------------------------------
 
     // Operations related to the particles' parallel and normal momentum
-    inline double GetMomentumParallel(long int ptr) {
+    inline double GetMomentumParallel(int ptr) {
       return *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_)); 
     }
 
@@ -2312,7 +2312,7 @@ void DeleteAttachedParticles();
       return *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_));
     } 
 
-    inline void SetMomentumParallel(double p,long int ptr) {
+    inline void SetMomentumParallel(double p,int ptr) {
       *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_))=p;
     }
 
@@ -2322,7 +2322,7 @@ void DeleteAttachedParticles();
 
 
 
-    inline double GetMomentumNormal(long int ptr) {
+    inline double GetMomentumNormal(int ptr) {
       return *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_));
     }
 
@@ -2330,7 +2330,7 @@ void DeleteAttachedParticles();
       return *((double*)(ParticleDataStart+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_));
     }
 
-    inline void SetMomentumNormal(double p,long int ptr) {
+    inline void SetMomentumNormal(double p,int ptr) {
       *((double*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_))=p;
     }
 
@@ -2343,7 +2343,7 @@ void DeleteAttachedParticles();
     // Operations related to the individual particle weight correction    
     //-------------------------------------------------------------------------
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline double GetIndividualStatWeightCorrection(long int ptr) {
+    inline double GetIndividualStatWeightCorrection(int ptr) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       #ifndef __CUDA_ARCH__
       return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
@@ -2387,7 +2387,7 @@ void DeleteAttachedParticles();
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
-    inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,long int ptr) {
+    inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,int ptr) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
@@ -2445,7 +2445,7 @@ void DeleteAttachedParticles();
 
     // Operations related to the particle magnetic moment
     //-------------------------------------------------------------------------
-    inline double GetMagneticMoment(long int ptr) {
+    inline double GetMagneticMoment(int ptr) {
       return *(double*)(ParticleDataBuffer + ptr*ParticleDataLength + _PIC_PARTICLE_DATA__MAGNETIC_MOMENT_OFFSET_);
     }
 
@@ -2455,7 +2455,7 @@ void DeleteAttachedParticles();
     }
 
     //.........................................................................
-    inline void SetMagneticMoment(double MagneticMoment, long int ptr) {
+    inline void SetMagneticMoment(double MagneticMoment, int ptr) {
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&MagneticMoment,sizeof(double),__LINE__,__FILE__);
@@ -2501,7 +2501,7 @@ void DeleteAttachedParticles();
 
     // Operations related to the field line particle sits on                    
     //-------------------------------------------------------------------------
-    inline int GetFieldLineId(long int ptr) {
+    inline int GetFieldLineId(int ptr) {
       return *(int*)(ParticleDataBuffer + ptr*ParticleDataLength + _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_);
     }
 
@@ -2511,7 +2511,7 @@ void DeleteAttachedParticles();
     }
 
     //.........................................................................
-    inline void SetFieldLineId(int FieldLineId, long int ptr) {
+    inline void SetFieldLineId(int FieldLineId, int ptr) {
       *(int*)(ParticleDataBuffer +ptr*ParticleDataLength + _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_) = FieldLineId;
     }
 
@@ -2520,7 +2520,7 @@ void DeleteAttachedParticles();
       *(int*)(ParticleDataStart + _PIC_PARTICLE_DATA__FIELD_LINE_ID_OFFSET_) = FieldLineId;
     }
     //.........................................................................
-    inline double GetFieldLineCoord(long int ptr) {
+    inline double GetFieldLineCoord(int ptr) {
       return *(double*)(ParticleDataBuffer + ptr*ParticleDataLength +_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_);
     }
 
@@ -2530,7 +2530,7 @@ void DeleteAttachedParticles();
     }
 
     //.........................................................................
-    inline void SetFieldLineCoord(double FieldLineCoord, long int ptr) {
+    inline void SetFieldLineCoord(double FieldLineCoord, int ptr) {
       *(double*)(ParticleDataBuffer +ptr*ParticleDataLength +_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_)= FieldLineCoord;
     }
 
@@ -2548,7 +2548,7 @@ void DeleteAttachedParticles();
       return (flag==0) ? false : true;
     }
 
-    inline bool IsParticleAllocated(long int ptr) {
+    inline bool IsParticleAllocated(int ptr) {
       unsigned char flag;
 
       flag=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x80);
@@ -2562,7 +2562,7 @@ void DeleteAttachedParticles();
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
 
-    inline void SetParticleDeleted(long int ptr) {
+    inline void SetParticleDeleted(int ptr) {
       unsigned char t;
 
       t=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
@@ -2578,7 +2578,7 @@ void DeleteAttachedParticles();
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
 
-    inline void SetParticleAllocated(long int ptr) {
+    inline void SetParticleAllocated(int ptr) {
       unsigned char t;
 
       t=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
@@ -2607,40 +2607,40 @@ void DeleteAttachedParticles();
     //========================================================
 
     //the particle buffer procedure
-    void Init(long int);
-    long int GetMaxNPart();
-    long int GetAllPartNum();
-    long int GetTotalParticleNumber();
-    long int GetParticleDataLength();
+    void Init(int);
+    int GetMaxNPart();
+    int GetAllPartNum();
+    int GetTotalParticleNumber();
+    int GetParticleDataLength();
 
-    long int GetNewParticle(bool RandomThreadOpenMP=false);
-    long int GetNewParticle(long int&,bool RandomThreadOpenMP=false);
+    int GetNewParticle(bool RandomThreadOpenMP=false);
+    int GetNewParticle(int&,bool RandomThreadOpenMP=false);
 
     /*DeleteParticle_withoutTrajectoryTermination() acts as  DeleteParticle() when _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_OFF_;
      if _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_ON_ DeleteParticle_withoutTrajectoryTermination() does not terminate sampling of the particle trajectory; the function should be used only
      from PIC::Parallel::ExchangeParticleData() when particles are moved between processors
     */
-    void DeleteParticle(long int);
-    void DeleteParticle(long int,long int&);
-    void DeleteParticle_withoutTrajectoryTermination(long int,bool RandomThreadOpenMP=false);
+    void DeleteParticle(int);
+    void DeleteParticle(int,int&);
+    void DeleteParticle_withoutTrajectoryTermination(int,bool RandomThreadOpenMP=false);
 
     void DeleteAllParticles();
 
-    void CloneParticle(long int,long int);
+    void CloneParticle(int,int);
     void CloneParticle(byte*,byte*);
 
-    void ExcludeParticleFromList(long int,long int&);
+    void ExcludeParticleFromList(int,int&);
 
     void SaveImageFile(int);
     void LoadImageFile(int);
 
-    void PackParticleData(char*,long int,CRC32* t=NULL);
-    void UnPackParticleData(char*,long int,CRC32* t=NULL);
+    void PackParticleData(char*,int,CRC32* t=NULL);
+    void UnPackParticleData(char*,int,CRC32* t=NULL);
 
-    unsigned long GetChecksum();
-    unsigned long GetChecksum(const char *msg);
-    unsigned long GetChecksum(int nline,const char *fname);
-    unsigned long GetChecksum(int code,int nline,const char *fname);
+    unsigned int GetChecksum();
+    unsigned int GetChecksum(const char *msg);
+    unsigned int GetChecksum(int nline,const char *fname);
+    unsigned int GetChecksum(int code,int nline,const char *fname);
   }
 
 
@@ -2757,7 +2757,7 @@ void DeleteAttachedParticles();
       //parameters that defines the parameters of the associated data used for sampling and code running
 //      static int totalAssociatedDataLength,LocalParticleVolumeInjectionRateOffset;
       
-      //      long int FirstCellParticle,tempParticleMovingList;
+      //      int FirstCellParticle,tempParticleMovingList;
       
       char *associatedDataPointer;
       unsigned char FlagTable;
@@ -3299,7 +3299,7 @@ void DeleteAttachedParticles();
 //    public:
 //      static int LoadBalancingMeasureOffset;
 //      static int UserAssociatedDataOffset;
-      long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+      int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
       bool ActiveFlag; //used for debugging to prevent repeatable de-allocation of the block
 
@@ -3310,7 +3310,7 @@ void DeleteAttachedParticles();
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
 
       struct cTempParticleMovingListMultiThreadTable {
-        long int first,last;
+        int first,last;
       };
 
       //get pointer to element of tempParticleMovingListTableThread when OpenMP is in use
@@ -3335,9 +3335,9 @@ void DeleteAttachedParticles();
       //tempParticleMovingListTable is used only when _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
       //when _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_ tempParticleMovingListTableThreadOffset is used instead
       #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
-      std::atomic<long int> tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+      std::atomic<int> tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-      long int tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+      int tempParticleMovingListTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
       #endif
 
       _TARGET_HOST_ _TARGET_DEVICE_
@@ -3790,7 +3790,7 @@ void DeleteAttachedParticles();
     void Init();
 
     //Generte new particle internal properties
-    typedef void (*fGenerateInternalParticleProperties)(long int ptr,int spec,int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    typedef void (*fGenerateInternalParticleProperties)(int ptr,int spec,int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
     extern fGenerateInternalParticleProperties GenerateInternalParticleProperties;
 
     //generate a random position in a cell
@@ -3801,7 +3801,7 @@ void DeleteAttachedParticles();
     typedef void (*fSpeciesInjectionRate)(bool *InjectionFlag,double *Rate, int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
     //the function that process that injection reaction (generate the particles)
-    typedef long int (*fInjectionProcessor)(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    typedef int (*fInjectionProcessor)(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
     //the limit of the local time step due to the injection process
     typedef double (*fLocalTimeStepLimit)(int spec,bool& TimeStepLimitationImposed, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
@@ -3842,7 +3842,7 @@ void DeleteAttachedParticles();
     }
 
 
-    long int  InjectParticle();
+    int  InjectParticle();
 
     //paericle weight injection rates
     void InitTotalInjectionRate();
@@ -4113,7 +4113,7 @@ void DeleteAttachedParticles();
 
     //the range of the velocity scale and the number of nodes in the sample
     extern double vMax,vMin;
-    extern long int nSampledFunctionPoints;
+    extern int nSampledFunctionPoints;
     extern double dV,dV2,dSpeed;
 
     //the sampling buffers
@@ -4123,13 +4123,13 @@ void DeleteAttachedParticles();
     extern int Sample_Velocity_Offset,Sample_Speed_Offset,Sample_V2_Offset,SampleDataLength;
 
     //get the offset to the beginig of the sampling data for a particular samplePoint, spec,.....
-    long int GetSampleDataOffset(int spec,int nInterval);
+    int GetSampleDataOffset(int spec,int nInterval);
 
     //sampling  locations
     extern double SamplingLocations[][3];
     extern int nSamleLocations;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
-    extern long int *SampleLocalCellNumber;
+    extern int *SampleLocalCellNumber;
 
     void Init();
 
@@ -4154,7 +4154,7 @@ void DeleteAttachedParticles();
 
     //the range of the velocity scale and the number of nodes in the sample
     extern double eMax,eMin,log10eMax,log10eMin;
-    extern long int nSampledFunctionPoints;
+    extern int nSampledFunctionPoints;
     extern double dE,log10dE;
 
     //the sampling buffers
@@ -4164,7 +4164,7 @@ void DeleteAttachedParticles();
     extern double SamplingLocations[][3];
     extern int nSamleLocations;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
-    extern long int *SampleLocalCellNumber;
+    extern int *SampleLocalCellNumber;
 
     void AddCombinedCombinedParticleDistributionList(vector<int> CombinedSpecies);
 
@@ -4187,7 +4187,7 @@ void DeleteAttachedParticles();
 
     //the range of the sine of pitch angle scale and the number of nodes in the sample
     extern double CosPAMax, CosPAMin;
-    extern long int nSampledFunctionPoints;
+    extern int nSampledFunctionPoints;
     extern double dCosPA;
 
     //the sampling buffers
@@ -4198,13 +4198,13 @@ void DeleteAttachedParticles();
     extern int Sample_PitchAngle_Offset,SampleDataLength;
 
     //get the offset to the beginig of the sampling data for a particular samplePoint, spec,.....
-    long int GetSampleDataOffset(int spec,int nInterval);
+    int GetSampleDataOffset(int spec,int nInterval);
 
     //sampling  locations
     extern double SamplingLocations[][3];
     extern int nSampleLocations;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
-    extern long int *SampleLocalCellNumber;
+    extern int *SampleLocalCellNumber;
 
     void Init();//double ProbeLocations[][DIM],int nProbeLocations);
 
@@ -4226,7 +4226,7 @@ void DeleteAttachedParticles();
 
     //the range of the velocity scale and the number of nodes in the sample
     extern double vMax,vMin;
-    extern long int nSampledFunctionPoints;
+    extern int nSampledFunctionPoints;
     extern double dV2,dSpeed;
 
     //the sampling buffers
@@ -4237,7 +4237,7 @@ void DeleteAttachedParticles();
     extern int Sample_Speed_Offset,Sample_V2_Offset,SampleDataLength;
 
     //get the offset to the beginig of the sampling data for a particular samplePoint, spec,.....
-    long int GetSampleDataOffset(int spec,int nInterval);
+    int GetSampleDataOffset(int spec,int nInterval);
 
     //sampling  locations
     extern double **SamplingLocations;
@@ -4246,7 +4246,7 @@ void DeleteAttachedParticles();
 
     extern int nSamleLocations;
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
-    extern long int *SampleLocalCellNumber;
+    extern int *SampleLocalCellNumber;
 
     void Init(double ProbeLocations[][DIM],double ProbeDirections[][DIM],double maxConeAngles,int nProbeLocations);
 
@@ -4492,10 +4492,10 @@ void DeleteAttachedParticles();
 
     namespace FieldLine {
       // procedure that returns parameters of the guiding center motion
-      void GuidingCenterMotion(double *Vguide_perp,double &ForceParal,double &BAbsoluteValue, double *BDirection,double *PParal,int spec,long int ptr,double *x,double *v);
+      void GuidingCenterMotion(double *Vguide_perp,double &ForceParal,double &BAbsoluteValue, double *BDirection,double *PParal,int spec,int ptr,double *x,double *v);
 
       //mover itself
-      int Mover_SecondOrder(long int ptr, double Dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+      int Mover_SecondOrder(int ptr, double Dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
       //manager executing the particle moving procedure when the partice lists are attached to the field line segments
        void MoveParticles ();
@@ -4509,23 +4509,23 @@ void DeleteAttachedParticles();
 
       void Init_BeforeParser();
       void Init();
-      void InitiateMagneticMoment(int spec, double *x, double *v, long int ptr, void *node);
+      void InitiateMagneticMoment(int spec, double *x, double *v, int ptr, void *node);
       void InitiateMagneticMoment(int spec, double *x, double *v, PIC::ParticleBuffer::byte *ParticleData, void *node);
 
       //mover
-      void GuidingCenterMotion_default(double *Vguide, double &ForceParal, double &BAbsValue, double *BDirection, double *PParal,int spec,long int ptr,double *x, double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
-      int Mover_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+      void GuidingCenterMotion_default(double *Vguide, double &ForceParal, double &BAbsValue, double *BDirection, double *PParal,int spec,int ptr,double *x, double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+      int Mover_SecondOrder(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     }
 
 
     namespace Relativistic {
-      int Boris(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+      int Boris(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     }
 
 
-//    typedef void (*fTotalParticleAcceleration)(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
-    typedef int (*fSpeciesDependentParticleMover) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
-    typedef int (*fSpeciesDependentParticleMover_BoundaryInjection) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,bool);
+//    typedef void (*fTotalParticleAcceleration)(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+    typedef int (*fSpeciesDependentParticleMover) (int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+    typedef int (*fSpeciesDependentParticleMover_BoundaryInjection) (int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,bool);
 
 
     //the vector containing the species specific particle moving procedures
@@ -4534,10 +4534,10 @@ void DeleteAttachedParticles();
 //    extern fSpeciesDependentParticleMover_BoundaryInjection *MoveParticleBoundaryInjection;
 
     //process a particle when it leaves the boundary of the computational domain
-    typedef int (*fProcessOutsideDomainParticles) (long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+    typedef int (*fProcessOutsideDomainParticles) (int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
     extern fProcessOutsideDomainParticles ProcessOutsideDomainParticles;
 
-    typedef int (*fProcessTriangleCutFaceIntersection) (long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    typedef int (*fProcessTriangleCutFaceIntersection) (int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     extern fProcessTriangleCutFaceIntersection ProcessTriangleCutFaceIntersection;
 
     void Init_BeforeParser();
@@ -4545,32 +4545,32 @@ void DeleteAttachedParticles();
     void MoveParticles();
 
     //simple particle mover: forces are neglected, interaction with internal/expernal boundaries is neglected
-    int Simple(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int Simple(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
-    int UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool FirstBoundaryFlag);
+    int UniformWeight_UniformTimeStep_noForce(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool FirstBoundaryFlag);
 
-    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-    int UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool FirstBoundaryFlag,CutCell::cTriangleFace *lastIntersectedTriangleFace=NULL);
+    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int UniformWeight_UniformTimeStep_SecondOrder(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool FirstBoundaryFlag,CutCell::cTriangleFace *lastIntersectedTriangleFace=NULL);
 
-    void TotalParticleAcceleration_default(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+    void TotalParticleAcceleration_default(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
     //move a particle by calculating by tracing its trajectory
-    int TrajectoryTrackingMover(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL);
+    int TrajectoryTrackingMover(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace=NULL);
     
-    int TrajectoryTrackingMover_new(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundary=false);
+    int TrajectoryTrackingMover_new(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundary=false);
     short CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*  node,double * x);
     void SetBlockCellIntersectTypes();
     bool IsSetCellIntersectTypes();
 
 
-    int Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-    void BorisSplitAcceleration_default(double *accl, double *rotation, int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+    int Boris(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    void BorisSplitAcceleration_default(double *accl, double *rotation, int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
     //particle mover for the energy conserving scheme (Stefano Markidis et al., 2010, Mathematics and Computers in Simulation 80 (2010) 1509–1519
-    int Markidis2010(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int Markidis2010(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
     //particle mover that is used in iPIC3D (G. Lapenta/JournalofComputationalPhysics334(2017)349–366)
 
@@ -4590,10 +4590,10 @@ void DeleteAttachedParticles();
 
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    int Lapenta2017(long int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int Lapenta2017(int ptr,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
     _TARGET_HOST_ _TARGET_DEVICE_
-    int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data); 
+    int Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,int ptr,cLapentaInputData *data); 
   }
 
 
@@ -4653,7 +4653,7 @@ void DeleteAttachedParticles();
 
   namespace Parallel {
      //count the number of particles that were send and recieve by the thread
-     extern long int sendParticleCounter,recvParticleCounter,IterationNumberAfterRebalancing;
+     extern int sendParticleCounter,recvParticleCounter,IterationNumberAfterRebalancing;
      extern double RebalancingTime,CumulativeLatency;
 
      //the factor the trrigeres the emergency load rebalancing. The condition for the rebalancing:
@@ -4961,7 +4961,7 @@ void DeleteAttachedParticles();
     //contains functions that are used for debugging the code
 
     //order particle list: order particle lists such that it would be the same for MPI only and MPI+OpenMP
-    void OrderParticleList(long int&);
+    void OrderParticleList(int&);
     void OrderParticleLists();
 
 
@@ -5286,10 +5286,10 @@ void DeleteAttachedParticles();
         
         for (const auto& it : p->second) {
           if (it->SubSectionLabel=="") {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+            printf("$PREFIX: Lines %i-%i:\t sampled time: %e\t#passes: %i\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
           }
           else {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
+            printf("$PREFIX: Lines %i-%i:\t sampled time: %e\t#passes: %i\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
           }
         }
       }
@@ -5391,11 +5391,11 @@ void DeleteAttachedParticles();
           
           if (PIC::ThisThread==0) {
             if (it->SubSectionLabel=="") {
-              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\n", 
+              printf("$PREFIX: Lines %i-%i:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %i - %i\n", 
                 it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
             }
             else {
-              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\t(%s)\n",
+              printf("$PREFIX: Lines %i-%i:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %i - %i\t(%s)\n",
                 it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass,it->SubSectionLabel.c_str());
             }
           }
@@ -5463,28 +5463,28 @@ void DeleteAttachedParticles();
     }
 
     //get check sum of the associated data
-    unsigned long int GetCornerNodeAssociatedDataSignature(long int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
-    unsigned long int GetCenterNodeAssociatedDataSignature(long int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int GetCornerNodeAssociatedDataSignature(int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int GetCenterNodeAssociatedDataSignature(int nline,const char* fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
-    unsigned long int SaveCornerNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
-    unsigned long int SaveCenterNodeAssociatedDataSignature(long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int SaveCornerNodeAssociatedDataSignature(int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int SaveCenterNodeAssociatedDataSignature(int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
-    void GetBlockAssociatedDataSignature_no_ghost_blocks(long int nline,const char* fname);
+    void GetBlockAssociatedDataSignature_no_ghost_blocks(int nline,const char* fname);
 
-    unsigned long int SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
-    unsigned long int SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,long int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int SaveCornerNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
+    unsigned int SaveCenterNodeAssociatedDataSignature(int SampleVectorOffset,int SampleVectorLength,int nline,const char* fnameSource,const char* fnameOutput,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL);
 
     void SaveNodeSignature(int nline,const char *fname);
 
     //save the block distribution
-    void SaveDomainDecompositionMap(long int nline,const char* fname,int Index);
+    void SaveDomainDecompositionMap(int nline,const char* fname,int Index);
 
     //get the signature of the particle population
-    unsigned long int GetParticlePopulationSignature(long int nline,const char* fname,FILE *fout=NULL);
-    unsigned long int GetParticlePopulationStateVectorSignature(int offset,int length,long int nline,const char* fname,FILE *fout=NULL);
-    unsigned long int GetParticlePopulationLocationSignature(long int nline,const char* fname,FILE *fout=NULL);
-    unsigned long int GetParticlePopulationVelocitySignature(long int nline,const char* fname,FILE *fout=NULL);
-    unsigned long int GetParticlePopulationSignatureAll(long int nline,const char* fname);
+    unsigned int GetParticlePopulationSignature(int nline,const char* fname,FILE *fout=NULL);
+    unsigned int GetParticlePopulationStateVectorSignature(int offset,int length,int nline,const char* fname,FILE *fout=NULL);
+    unsigned int GetParticlePopulationLocationSignature(int nline,const char* fname,FILE *fout=NULL);
+    unsigned int GetParticlePopulationVelocitySignature(int nline,const char* fname,FILE *fout=NULL);
+    unsigned int GetParticlePopulationSignatureAll(int nline,const char* fname);
 
     //get signature of a data buffer
     template <typename  T>
@@ -5516,8 +5516,8 @@ void DeleteAttachedParticles();
 
       //the type of the sampled debug data
       struct cDebugData {
-        unsigned long int initCheckSum,finalCheckSum;
-        unsigned long int CornerNodeChecksum[2][2][2],CenterNodeChecksum[2][2][2];
+        unsigned int initCheckSum,finalCheckSum;
+        unsigned int CornerNodeChecksum[2][2][2],CenterNodeChecksum[2][2][2];
         int ptr,i,j,k,nodeid;
       };
 
@@ -5526,7 +5526,7 @@ void DeleteAttachedParticles();
       //add data to the 'DebugParticleData' list.
       //if InitChckSumMode==true  -> initial addition of the particle dat ato the list: 'init' parameters are defined
       //if InitChckSumMode==false -> 'final' parameters are defined
-      void AddParticleDebugData(long int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,bool InitChckSumMode);
+      void AddParticleDebugData(int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,bool InitChckSumMode);
 
       //outout the data and clean the data list
       void OutputParticleDebugData(int nline,const char *fname,int Index=-1);
@@ -5538,7 +5538,7 @@ void DeleteAttachedParticles();
     //check memory usage
     void check_max_mem_usage(string tag);
     double read_mem_usage();
-    void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag=true);
+    void GetMemoryUsageStatus(int nline,const char *fname,bool ShowUsagePerProcessFlag=true);
 
     namespace MemoryLeakCatch {
       extern bool Active;
@@ -6144,7 +6144,7 @@ void DeleteAttachedParticles();
         for (i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
       }
 
-      inline void GetBackgroundData(double *DataVector,int DataVectorLength,int BackgroundDataOffset,double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+      inline void GetBackgroundData(double *DataVector,int DataVectorLength,int BackgroundDataOffset,double *x,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
         int i;
         double *offset=(double*)(BackgroundDataOffset+MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
 
@@ -6286,7 +6286,7 @@ void DeleteAttachedParticles();
         extern int NeutralBullVelocityOffset,NeutralNumberDensityOffset,NeutralTemperatureOffset,DataStatusOffsetDSMC;
 
         //calcualte the total number of cells in the mesh
-        long int getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+        int getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
         //create the trajectory file
         void createCellCenterCoordinateList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
@@ -6943,11 +6943,11 @@ void DeleteAttachedParticles();
     typedef bool (*fPrepopulateCellCondition)(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
 
     //constant number density
-    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
-    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
+    int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
+    int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
 
     // put a single particle (for each thread)
-    long int PutParticle(int spec, double *x, double *v);
+    int PutParticle(int spec, double *x, double *v);
   }
 
   //Save and read the restart files
@@ -6994,10 +6994,10 @@ void DeleteAttachedParticles();
 
     void ReadParticleData(const char*);
     void ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
-    long int GetRestartFileParticleNumber(const char *fname);
+    int GetRestartFileParticleNumber(const char *fname);
 
     //calcualte the check sum of the save/read particle data
-    unsigned long GetParticleDataCheckSum();
+    unsigned int GetParticleDataCheckSum();
     void GetParticleDataBlockCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,CRC32* CheckSum,int &PrevNodeThread);
 
     //flag: read particle restart file when run as a component of the SWMF
@@ -7013,10 +7013,10 @@ void DeleteAttachedParticles();
       extern double *ConstantTotalLifeTime;
 
 /*
-      typedef double (*fTotalLifeTime)(double *x,int spec,long int ptr,bool &ReactionAllowedFlag);
+      typedef double (*fTotalLifeTime)(double *x,int spec,int ptr,bool &ReactionAllowedFlag);
       extern fTotalLifeTime *TotalLifeTime;
 
-      typedef int (*fReactionProcessor)(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData);
+      typedef int (*fReactionProcessor)(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData);
       extern fReactionProcessor *ReactionProcessorTable;
 */
 
@@ -7032,7 +7032,7 @@ void DeleteAttachedParticles();
       #define _PHOTOLYTIC_REACTIONS_PARTICLE_SPECIE_CHANGED_ 3
 
       //the default function that returns the constant life time value
-      double TotalLifeTime_default(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      double TotalLifeTime_default(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
 
       //multiply the lifetime by the following constant (use it for example for adjectment to variation of a heliocentric distance)
@@ -7073,7 +7073,7 @@ void DeleteAttachedParticles();
       void InitProductStatWeight();
 
       //the default function for processing the photolytic reactions -> the particle is removed if the reaction occured
-      void PhotolyticReactionProcessor_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+      void PhotolyticReactionProcessor_default(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
       /*{
         return _PHOTOLYTIC_REACTIONS_PARTICLE_REMOVED_;
       }
@@ -7081,8 +7081,8 @@ void DeleteAttachedParticles();
       //the manager of the photolytic reaction module
       //if the reaction has occured-> spes returns the species number of the transformed particles, TimeInterval return the time when the reaction had occured
 
-       int PhotolyticReaction(double *x,long int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-/*      inline int PhotolyticReaction(double *x,long int ptr,int &spec,double &TimeInterval) {
+       int PhotolyticReaction(double *x,int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+/*      inline int PhotolyticReaction(double *x,int ptr,int &spec,double &TimeInterval) {
         int code=_PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
         register double p,lifetime,c;
         bool flag;
@@ -7112,10 +7112,10 @@ void DeleteAttachedParticles();
     namespace GenericParticleTranformation {
       //contains functions that are used to describe transformations (changing of internal parameters of a particle) that are not due to chemical reactions
       //dt <- can be limited by the function
-      typedef int (*fTransformationIndicator)(double *x,double *v,int spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      typedef int (*fTransformationIndicator)(double *x,double *v,int spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 //      extern fTransformationIndicator *TransformationIndicator;
 
-      typedef int (*fTransformationProcessor)(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      typedef int (*fTransformationProcessor)(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 //      extern fTransformationProcessor *TransformationProcessor;
 
       inline void Init() {
@@ -7150,7 +7150,7 @@ void DeleteAttachedParticles();
 
   //process model particles with a user-defined functions
   namespace UserParticleProcessing {
-    void Processing_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    void Processing_default(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
     //call the processing function
     void Processing();
@@ -7165,12 +7165,12 @@ void DeleteAttachedParticles();
     typedef bool (*fBlockInjectionIndicator)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
     extern fBlockInjectionIndicator BlockInjectionBCindicatior;
 
-    typedef long int (*fBlockInjectionBC)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+    typedef int (*fBlockInjectionBC)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
     extern fBlockInjectionBC userDefinedBoundingBlockInjectionFunction;
 
     //the number of injected particles and injection rate
-    extern long int nTotalInjectedParticles;
-    extern long int *nInjectedParticles;
+    extern int nTotalInjectedParticles;
+    extern int *nInjectedParticles;
     extern double *ParticleProductionRate,*ParticleMassProductionRate;
 
     void InitBoundingBoxInjectionBlockList(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=PIC::Mesh::mesh->rootTree);
@@ -7182,11 +7182,11 @@ void DeleteAttachedParticles();
     double CalculateInjectionRate_MaxwellianDistribution(const double NumberDesnity,const double Temp,const double *BulkVelocity,double *ExternalNormal,const int spec);
 
     //user-defined generic particle-injection function
-    typedef long int (*fUserDefinedParticleInjectionFunction)();
+    typedef int (*fUserDefinedParticleInjectionFunction)();
     extern fUserDefinedParticleInjectionFunction UserDefinedParticleInjectionFunction;
 
     //the extra injection process by the exosphere model (src/models/exosphere)
-    typedef long int (*fExosphereModelExtraInjectionFunction)();
+    typedef int (*fExosphereModelExtraInjectionFunction)();
     extern fExosphereModelExtraInjectionFunction ExosphereModelExtraInjectionFunction;
 
     namespace ExternalBoundary {
@@ -7304,10 +7304,10 @@ void DeleteAttachedParticles();
         extern int sampledMeanEnergyDownRelativeOffset,sampledMeanEnergyUpRelativeOffset;
         extern int sampledSurfaceNumberDensityRelativeOffset;
 
-        extern long int TotalSampleSetLength;
-        extern long int *SpeciesSampleDataOffset;
-        extern long int *SpeciesSampleUserDefinedDataOffset;
-        extern long int TotalSurfaceElementNumber;
+        extern int TotalSampleSetLength;
+        extern int *SpeciesSampleDataOffset;
+        extern int *SpeciesSampleUserDefinedDataOffset;
+        extern int TotalSurfaceElementNumber;
 
         extern bool UserDefinedSamplingProcedureFlag;
 
@@ -7337,7 +7337,7 @@ void DeleteAttachedParticles();
 
 
         void Init();
-        void Init(long int *RequestedSamplingSetDataLength,long int *UserDefinedSampleDataRelativeOffset);
+        void Init(int *RequestedSamplingSetDataLength,int *UserDefinedSampleDataRelativeOffset);
 
         cInternalBoundaryConditionsDescriptor RegisterInternalSphere();
 //        cSurfaceDataSphere* GetSphereSurfaceData(cInternalBoundaryConditionsDescriptor);
@@ -7353,11 +7353,11 @@ void DeleteAttachedParticles();
 
         //====================================================
         //the offset of sampling data for a particular specie
-        inline int completeSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
+        inline int completeSpecieSamplingDataOffset(int spec,int SurfaceElement) {
           return 2*SurfaceElement*TotalSampleSetLength+completedCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
         }
 
-        inline int collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
+        inline int collectingSpecieSamplingDataOffset(int spec,int SurfaceElement) {
           return 2*SurfaceElement*TotalSampleSetLength+collectingCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
         }
 
@@ -7368,8 +7368,8 @@ void DeleteAttachedParticles();
 //        double* GetCollectingSamplingBuffer(cInternalBoundaryConditionsDescriptor);
 
         //the offset of the sampling data for a particular specie
-//        int completeSpecieSamplingDataOffset(int spec,long int SurfaceElement);
-//        int collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement);
+//        int completeSpecieSamplingDataOffset(int spec,int SurfaceElement);
+//        int collectingSpecieSamplingDataOffset(int spec,int SurfaceElement);
         int SurfaceElementSamplingSetLength();
         void switchSamplingBuffers();
 
@@ -7380,25 +7380,25 @@ void DeleteAttachedParticles();
         typedef void (*fPrintTitle)(FILE*);
         extern fPrintTitle PrintUserDefinedTitle;
 
-        typedef void (*fPrintDataStateVector)(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        typedef void (*fPrintDataStateVector)(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
         extern fPrintDataStateVector PrintUserDefinedDataStateVector;
 
         //print default surface data (3D)
         void PrintDefaultVariableList(FILE*);
         void PrintDefaultTitle(FILE*);
-        void PrintDefaultDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        void PrintDefaultDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
 
         //clear the sampling buffers
         void flushCollectingSamplingBuffer(cInternalSphericalData* Sphere);
 
         //particle-spherical surface interaction
-        typedef int (*fParticleSphereInteraction)(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
-        int ParticleSphereInteraction_SpecularReflection(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        typedef int (*fParticleSphereInteraction)(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        int ParticleSphereInteraction_SpecularReflection(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
 
 
         //Sampling of the particles data
-        typedef void (*fSampleParticleData)(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
-        void SampleDefaultParticleData(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        typedef void (*fSampleParticleData)(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        void SampleDefaultParticleData(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
         extern fSampleParticleData SampleParticleData;
       }
 
@@ -7407,7 +7407,7 @@ void DeleteAttachedParticles();
         extern cAMRheap<cInternalRotationBodyData> InternalRotationBody;
 
         cInternalBoundaryConditionsDescriptor RegisterInternalRotationBody();
-        void PrintDefaultDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *RotationBody,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        void PrintDefaultDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *RotationBody,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
       }
 
       namespace NastranSurface {
@@ -7415,7 +7415,7 @@ void DeleteAttachedParticles();
         extern cAMRheap<cInternalNastranSurfaceData> InternalNastranSurface;
 
         cInternalBoundaryConditionsDescriptor RegisterInternalNastranSurface();
-        void PrintDefaultDataStateVector(FILE* fout,long int nElement,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalNastranSurfaceData *NastranSurface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        void PrintDefaultDataStateVector(FILE* fout,int nElement,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalNastranSurfaceData *NastranSurface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
       }
 
       namespace Circle {
@@ -7425,10 +7425,10 @@ void DeleteAttachedParticles();
         extern int sampledMeanEnergyDownRelativeOffset,sampledMeanEnergyUpRelativeOffset;
         extern int sampledSurfaceNumberDensityRelativeOffset;
 
-        extern long int TotalSampleSetLength;
-        extern long int *SpeciesSampleDataOffset;
-        extern long int *SpeciesSampleUserDefinedDataOffset;
-        extern long int TotalSurfaceElementNumber;
+        extern int TotalSampleSetLength;
+        extern int *SpeciesSampleDataOffset;
+        extern int *SpeciesSampleUserDefinedDataOffset;
+        extern int TotalSurfaceElementNumber;
 
         extern bool UserDefinedSamplingProcedureFlag;
 
@@ -7442,15 +7442,15 @@ void DeleteAttachedParticles();
         //4. surface number density
 
         void Init();
-        void Init(long int *RequestedSamplingSetDataLength,long int *UserDefinedSampleDataRelativeOffset);
+        void Init(int *RequestedSamplingSetDataLength,int *UserDefinedSampleDataRelativeOffset);
 
         cInternalBoundaryConditionsDescriptor RegisterInternalCircle();
         double* GetCompletedSamplingBuffer(cInternalBoundaryConditionsDescriptor);
         double* GetCollectingSamplingBuffer(cInternalBoundaryConditionsDescriptor);
 
         //the offset of the sampling data for a particular specie
-        int completeSpecieSamplingDataOffset(int spec,long int SurfaceElement);
-        int collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement);
+        int completeSpecieSamplingDataOffset(int spec,int SurfaceElement);
+        int collectingSpecieSamplingDataOffset(int spec,int SurfaceElement);
         int SurfaceElementSamplingSetLength();
         void switchSamplingBuffers();
 
@@ -7461,25 +7461,25 @@ void DeleteAttachedParticles();
         typedef void (*fPrintTitle)(FILE*);
         extern fPrintTitle PrintUserDefinedTitle;
 
-        typedef void (*fPrintDataStateVector)(FILE* fout,long int nPolarPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        typedef void (*fPrintDataStateVector)(FILE* fout,int nPolarPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
         extern fPrintDataStateVector PrintUserDefinedDataStateVector;
 
         //print default surface data (3D)
         void PrintDefaultVariableList(FILE*);
         void PrintDefaultTitle(FILE*);
-        void PrintDefaultDataStateVector(FILE* fout,long int nPolarPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+        void PrintDefaultDataStateVector(FILE* fout,int nPolarPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
 
         //clear the sampling buffers
         void flushCollectingSamplingBuffer(cInternalCircleData* Sphere);
 
         //particle-spherical surface interaction
-        typedef int (*fParticleCircleInteraction)(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
-        int ParticleCircleInteraction_SpecularReflection(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        typedef int (*fParticleCircleInteraction)(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        int ParticleCircleInteraction_SpecularReflection(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
 
 
         //Sampling of the particles data
-        typedef void (*fSampleParticleData)(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
-        void SampleDefaultParticleData(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        typedef void (*fSampleParticleData)(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        void SampleDefaultParticleData(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
         extern fSampleParticleData SampleParticleData;
       }
 
@@ -7490,10 +7490,10 @@ void DeleteAttachedParticles();
         extern int sampledMeanEnergyDownRelativeOffset,sampledMeanEnergyUpRelativeOffset;
         extern int sampledSurfaceNumberDensityRelativeOffset;
 
-        extern long int TotalSampleSetLength;
-        extern long int *SpeciesSampleDataOffset;
-        extern long int *SpeciesSampleUserDefinedDataOffset;
-        extern long int TotalSurfaceElementNumber;
+        extern int TotalSampleSetLength;
+        extern int *SpeciesSampleDataOffset;
+        extern int *SpeciesSampleUserDefinedDataOffset;
+        extern int TotalSurfaceElementNumber;
 
         extern bool UserDefinedSamplingProcedureFlag;
 
@@ -7523,7 +7523,7 @@ void DeleteAttachedParticles();
 
 
         void Init();
-        void Init(long int *RequestedSamplingSetDataLength,long int *UserDefinedSampleDataRelativeOffset);
+        void Init(int *RequestedSamplingSetDataLength,int *UserDefinedSampleDataRelativeOffset);
 
         cInternalBoundaryConditionsDescriptor RegisterInternalSphere();
 //        cSurfaceDataSphere* GetSphereSurfaceData(cInternalBoundaryConditionsDescriptor);
@@ -7531,8 +7531,8 @@ void DeleteAttachedParticles();
         double* GetCollectingSamplingBuffer(cInternalBoundaryConditionsDescriptor);
 
         //the offset of the sampling data for a particular specie
-        int completeSpecieSamplingDataOffset(int spec,long int SurfaceElement);
-        int collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement);
+        int completeSpecieSamplingDataOffset(int spec,int SurfaceElement);
+        int collectingSpecieSamplingDataOffset(int spec,int SurfaceElement);
         int SurfaceElementSamplingSetLength();
         void switchSamplingBuffers();
 
@@ -7555,12 +7555,12 @@ void DeleteAttachedParticles();
         void flushCollectingSamplingBuffer(cInternalSphericalData* Sphere);
 
         //particle-spherical surface interaction
-        typedef int (*fParticleSphereInteraction)(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
-        int ParticleSphereInteraction_SpecularReflection(int spec,long int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        typedef int (*fParticleSphereInteraction)(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
+        int ParticleSphereInteraction_SpecularReflection(int spec,int ptr,double *x,double *v,double &dtTotal, void* NodeDataPointer,void *SphereDataPointer);
 
         //Sampling of the particles data
-        typedef void (*fSampleParticleData)(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
-        void SampleDefaultParticleData(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        typedef void (*fSampleParticleData)(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+        void SampleDefaultParticleData(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
         extern fSampleParticleData SampleParticleData;
       }
     }
@@ -7681,8 +7681,8 @@ _TARGET_HOST_ _TARGET_DEVICE_
 bool ProcessCell(int iCellIn,int jCellIn,int kCellIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node,cCellData *CellData,int id_pack,int size_pack,double *MassTable,double *ChargeTable,int particle_data_length,PIC::ParticleBuffer::byte *particle_data_buffer,cProcessCellData DataIn=cProcessCellData());
           
             typedef void (*fUserDefinedFieldBC)();
-            typedef long int (*fUserDefinedParticleBC)();
-            typedef long int (*fUserDefinedSetBlockParticle)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *node);
+            typedef int (*fUserDefinedParticleBC)();
+            typedef int (*fUserDefinedSetBlockParticle)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *node);
             extern fUserDefinedSetBlockParticle setBlockParticle;
             extern fUserDefinedParticleBC setParticle_BC;
             extern fUserDefinedFieldBC setE_half_BC,setE_curr_BC;

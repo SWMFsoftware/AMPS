@@ -218,7 +218,7 @@ void MarsIon::InitBackgroundData() {
 
 
 //particle mover: call relativistic Boris, ans sample particle flux
-int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int MarsIon::ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double xInit[3],xFinal[3];
   int res,iShell;
 
@@ -267,7 +267,7 @@ int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
         if (t>0.0) {
           //the point of intersection is found. Sample flux and rigidity at that location
           double xIntersection[3];
-          long int iSurfaceElementNumber,iZenithElement,iAzimuthalElement;
+          int iSurfaceElementNumber,iZenithElement,iAzimuthalElement;
 
           for (idim=0;idim<3;idim++) xIntersection[idim]=xInit[idim]+t*(xFinal[idim]-xInit[idim]);
 
@@ -467,7 +467,7 @@ double MarsIon::GetBackgroundAtmosphereDensity(double *x,int spec) {
 /*
 // Loss -------------------------------------------------------------------------------------
 
-double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+double OH::Loss::LifeTime(double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
 
   double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
   double PlasmaBulkVelocity[3];
@@ -505,7 +505,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
 
 }
 
-int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //for one lost particle one new particle is generated
   //----------------------------------------------------------------------
   //inject the products of the reaction
@@ -579,7 +579,7 @@ int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long
 #endif
 
   //get and injection into the system the new model particle
-  long int newParticle;
+  int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
   newParticle=PIC::ParticleBuffer::GetNewParticle();
   newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);

@@ -44,10 +44,10 @@ double erf(double);
 double gam(double);
 */
 
-long int nint(double);
+int nint(double);
 
 void PrintErrorLog(const char*);
-void PrintErrorLog(long int,const char*,const char*);
+void PrintErrorLog(int,const char*,const char*);
 
 //===================================================
 //operation with the ExitErrorCode
@@ -73,12 +73,12 @@ void inline UnpackExitErrorCode(int& Line,int& FunctionCode) {
 
 
 _TARGET_HOST_ _TARGET_DEVICE_
-void exit(long int,const char*,const char* =NULL);
-void PrintLineMark(long int,char*,char* =NULL);
+void exit(int,const char*,const char* =NULL);
+void PrintLineMark(int,char*,char* =NULL);
 
 template<class T>
-void PrintLineMark(long int nline ,char* fname ,T code,const char *msg=NULL) {
-  long thread;
+void PrintLineMark(int nline ,char* fname ,T code,const char *msg=NULL) {
+  int thread;
   char *buffer=new char[sizeof(T)*TotalThreadsNumber];
 
 #ifdef MPI_ON
@@ -106,9 +106,9 @@ void PrintLineMark(long int nline ,char* fname ,T code,const char *msg=NULL) {
 
 #ifdef DIM
 template<class TMesh>
-bool GetGradient(double* gradQ,double cellQ,double* Q,long int ncell,TMesh &grid) {
+bool GetGradient(double* gradQ,double cellQ,double* Q,int ncell,TMesh &grid) {
   int counter,pface;
-  long int neib;
+  int neib;
   double dx2,x[4][3],x0[3],df[4];
   double A[3][3],aa[3][3],af[3],detaa;
 
@@ -170,17 +170,17 @@ bool GetGradient(double* gradQ,double cellQ,double* Q,long int ncell,TMesh &grid
 //calculation of CRC-32
 class CRC32 {
 public:
-  unsigned long crc_accum;
+  unsigned int crc_accum;
 
 private:
-  unsigned long crc_table[256];
+  unsigned int crc_table[256];
   int CallCounter;
 
   //generate the table of CRC remainders for all possible bytes 
   _TARGET_HOST_ _TARGET_DEVICE_
   void generare_crc_table() { 
     int i, j;
-    unsigned long crc_accum;
+    unsigned int crc_accum;
 
     for (i=0;i<256;i++) { 
       crc_accum=((unsigned long)i<<24);
@@ -200,10 +200,10 @@ public:
 
   //update the CRC on the data block one byte at a time
   template <class T> 
-  void add(T* buffer, long int size) {
+  void add(T* buffer, int size) {
     char *data_blk_ptr=(char*)buffer;
-    long int data_blk_size=size*sizeof(T); 
-    long int i,j;
+    int data_blk_size=size*sizeof(T); 
+    int i,j;
 
     for (j=0;j<data_blk_size;j++) { 
       i=((int)(crc_accum>>24)^ *data_blk_ptr++)&0xff;
@@ -223,43 +223,43 @@ public:
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  unsigned long checksum() { 
+  unsigned int checksum() { 
     return crc_accum;
   }
 
-  void PrintChecksum(long int nline,const char* fname,const char* msg=NULL) {
+  void PrintChecksum(int nline,const char* fname,const char* msg=NULL) {
     char message[1000];
     
     if (msg==NULL) {
-      sprintf(message," line=%ld, file=%s",nline,fname);
+      sprintf(message," line=%i, file=%s",nline,fname);
     }
     else {
-      sprintf(message," %s (line=%ld, file=%s)",msg,nline,fname);
+      sprintf(message," %s (line=%i, file=%s)",msg,nline,fname);
     }
 
     PrintChecksum(message);
   }
 
-  void PrintChecksumThread(long int nline,const char* fname,int ThisThread=-1) {
+  void PrintChecksumThread(int nline,const char* fname,int ThisThread=-1) {
     char message[1000];
 
-    sprintf(message," line=%ld, file=%s",nline,fname);
+    sprintf(message," line=%i, file=%s",nline,fname);
     if (ThisThread!=-1)  sprintf(message,"%s, thread=%i",message,ThisThread);
 
     printf("$PREFIX:CRC32 checksum=0x%lx, message=%s\n",checksum(),message);
   }
 
   void PrintChecksum(const char* message=NULL) {
-    unsigned long int *buffer=new unsigned long int[TotalThreadsNumber];
-    long int thread;
+    unsigned int *buffer=new unsigned int[TotalThreadsNumber];
+    int thread;
 
     buffer[0]=checksum();
 
 #ifdef MPI_ON
-    unsigned long int bufferRecv[TotalThreadsNumber];
+    unsigned int bufferRecv[TotalThreadsNumber];
 
-    MPI_Gather(buffer,1,MPI_UNSIGNED_LONG,bufferRecv,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
-    memcpy(buffer,bufferRecv,TotalThreadsNumber*sizeof(unsigned long int));
+    MPI_Gather(buffer,1,MPI_INT,bufferRecv,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    memcpy(buffer,bufferRecv,TotalThreadsNumber*sizeof(unsigned int));
 #endif
 
     if (ThisThread==0) {
@@ -269,7 +269,7 @@ public:
       if (message!=NULL) printf("$PREFIX:CRC32 checksum, cumulativeSignature=0x%lx, message=%s:\n",cumulativeSignature.checksum(),message);
       else printf("$PREFIX:CRC32 checksum, cumulativeSignature=0x%lx:\n",cumulativeSignature.checksum());
 
-      for (thread=0;thread<TotalThreadsNumber;thread++) printf("$PREFIX:thread=%ld, sum=0x%lx\n",thread,buffer[thread]);
+      for (thread=0;thread<TotalThreadsNumber;thread++) printf("$PREFIX:thread=%i, sum=0x%lx\n",thread,buffer[thread]);
     }
 
     delete [] buffer;
@@ -300,11 +300,11 @@ public:
   }
 
   bool Compare() {
-    unsigned long int t,*buffer=new unsigned long int[TotalThreadsNumber];
+    unsigned int t,*buffer=new unsigned int[TotalThreadsNumber];
     int res=1;
 
     t=checksum();
-    MPI_Gather(&t,1,MPI_UNSIGNED_LONG,buffer,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&t,1,MPI_INT,buffer,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (ThisThread==0) {
       for (int thread=0;thread<TotalThreadsNumber;thread++) if (buffer[0]!=buffer[thread]) {
@@ -375,7 +375,7 @@ namespace Vector3D {
 
   inline bool CheckBelowLimit(double *x,double limit,int length=3) {
     for (int i=0;i<length;i++) if ((x[i]!=0.0)&&(fabs(x[i])<limit)) {
-     printf("Error: below the limit found, (file=%s, line=%ld\n",__FILE__,__LINE__);
+     printf("Error: below the limit found, (file=%s, line=%i\n",__FILE__,__LINE__);
      return true;
     } 
 
@@ -418,7 +418,7 @@ namespace Vector3D {
     }
 
     if (rr<EPS*EPS) {
-       printf("the point %e %e %e is in the vicility of the point %e  %e  %e (file=%s, line=%ld)\n",x[0],x[1],x[2],x_point[0],x_point[1],x_point[2],__FILE__,__LINE__);
+       printf("the point %e %e %e is in the vicility of the point %e  %e  %e (file=%s, line=%i)\n",x[0],x[1],x[2],x_point[0],x_point[1],x_point[2],__FILE__,__LINE__);
 
        return true; 
     }
@@ -436,7 +436,7 @@ namespace Vector3D {
     }
 
     if (d<EPS*EPS) {
-       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%ld)\n",x[0],x[1],x[2],__FILE__,__LINE__);
+       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%i)\n",x[0],x[1],x[2],__FILE__,__LINE__);
 
        return true;
     }
@@ -952,7 +952,7 @@ void amps_new_managed(T* &buff,int length) {
 }
 
 template<class T>
-void amps_malloc_managed(T* &buff,long int length) {
+void amps_malloc_managed(T* &buff,int length) {
   T* t;
 
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");

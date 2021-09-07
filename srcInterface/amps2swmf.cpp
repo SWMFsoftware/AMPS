@@ -396,7 +396,7 @@ do {
     }
 
     //call AMPS
-    static long int counter=0;
+    static int counter=0;
     counter++;
 
     if (call_amps_flag==true) {

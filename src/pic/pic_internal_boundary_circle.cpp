@@ -17,10 +17,10 @@ int PIC::BC::InternalBoundary::Circle::sampledMeanVelocityDownRelativeOffset=0,P
 int PIC::BC::InternalBoundary::Circle::sampledMeanEnergyDownRelativeOffset=0,PIC::BC::InternalBoundary::Circle::sampledMeanEnergyUpRelativeOffset=0;
 int PIC::BC::InternalBoundary::Circle::sampledSurfaceNumberDensityRelativeOffset=0;
 
-long int PIC::BC::InternalBoundary::Circle::TotalSampleSetLength=0;
-long int *PIC::BC::InternalBoundary::Circle::SpeciesSampleDataOffset=NULL;
-long int *PIC::BC::InternalBoundary::Circle::SpeciesSampleUserDefinedDataOffset=NULL;
-long int PIC::BC::InternalBoundary::Circle::TotalSurfaceElementNumber=0;
+int PIC::BC::InternalBoundary::Circle::TotalSampleSetLength=0;
+int *PIC::BC::InternalBoundary::Circle::SpeciesSampleDataOffset=NULL;
+int *PIC::BC::InternalBoundary::Circle::SpeciesSampleUserDefinedDataOffset=NULL;
+int PIC::BC::InternalBoundary::Circle::TotalSurfaceElementNumber=0;
 
 bool PIC::BC::InternalBoundary::Circle::UserDefinedSamplingProcedureFlag=false;
 cAMRheap<cInternalCircleData> PIC::BC::InternalBoundary::Circle::InternalCircles;
@@ -33,15 +33,15 @@ PIC::BC::InternalBoundary::Circle::fSampleParticleData PIC::BC::InternalBoundary
 
 //====================================================
 //init the data for the circular body installed into the mesh:
-void PIC::BC::InternalBoundary::Circle::Init(long int* RequestedSamplingSetDataLength,long int* UserDefinedSampleDataRelativeOffset) {
+void PIC::BC::InternalBoundary::Circle::Init(int* RequestedSamplingSetDataLength,int* UserDefinedSampleDataRelativeOffset) {
 
   if (TotalSampleSetLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of PIC::BC::InternalBoundary::Circle:");
 
   //init the sampling offsets
   int DefaultDataLength=0;
 
-  SpeciesSampleDataOffset=new long int[PIC::nTotalSpecies];
-  SpeciesSampleUserDefinedDataOffset=new long int[PIC::nTotalSpecies];
+  SpeciesSampleDataOffset=new int[PIC::nTotalSpecies];
+  SpeciesSampleUserDefinedDataOffset=new int[PIC::nTotalSpecies];
 
 
   //set the offsets to the default sampled data
@@ -108,7 +108,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Circle::Registe
 
   //init the internal parameters of the new Circle
   double *sBuffer;
-  long int i,sBufferTotalLength;
+  int i,sBufferTotalLength;
 
   TotalSurfaceElementNumber=newCircle->GetTotalSurfaceElementsNumber();
   sBufferTotalLength=2*TotalSurfaceElementNumber*TotalSampleSetLength;
@@ -134,7 +134,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Circle::Registe
 //====================================================
 //clear sampling buffer
 void PIC::BC::InternalBoundary::Circle::flushCollectingSamplingBuffer(cInternalCircleData* Circle) {
-  long int offset,i,nSurfaceElement,nSurfaceElementsMax;
+  int offset,i,nSurfaceElement,nSurfaceElementsMax;
   double *SamplingBuffer;
 
   //flush sampling data from Circle->SamplingBuffer
@@ -178,11 +178,11 @@ double* PIC::BC::InternalBoundary::Circle::GetCollectingSamplingBuffer(cInternal
 
 //====================================================
 //the offset of sampling data for a particular specie
-int PIC::BC::InternalBoundary::Circle::completeSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
+int PIC::BC::InternalBoundary::Circle::completeSpecieSamplingDataOffset(int spec,int SurfaceElement) {
   return 2*SurfaceElement*TotalSampleSetLength+completedCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
 }
 
-int PIC::BC::InternalBoundary::Circle::collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
+int PIC::BC::InternalBoundary::Circle::collectingSpecieSamplingDataOffset(int spec,int SurfaceElement) {
   return 2*SurfaceElement*TotalSampleSetLength+collectingCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
 }
 
@@ -191,7 +191,7 @@ int PIC::BC::InternalBoundary::Circle::SurfaceElementSamplingSetLength() {
 }
 
 void PIC::BC::InternalBoundary::Circle::switchSamplingBuffers() {
-  long int tempSamplingOffset;
+  int tempSamplingOffset;
 
   tempSamplingOffset=completedCellSampleDataPointerOffset;
   completedCellSampleDataPointerOffset=collectingCellSampleDataPointerOffset;
@@ -201,7 +201,7 @@ void PIC::BC::InternalBoundary::Circle::switchSamplingBuffers() {
 //====================================================
 //particle-circle surface interaction
 //specular reflection of the particle velocity vector on the surface of the Circle
-int PIC::BC::InternalBoundary::Circle::ParticleCircleInteraction_SpecularReflection(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void* CircleDataPointer)  {
+int PIC::BC::InternalBoundary::Circle::ParticleCircleInteraction_SpecularReflection(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void* CircleDataPointer)  {
    double radiusCircle,*x0Circle,l[3],r,vNorm,c;
    cInternalCircleData *Circle;
    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*startNode;
@@ -230,7 +230,7 @@ int PIC::BC::InternalBoundary::Circle::ParticleCircleInteraction_SpecularReflect
 
    //sample the particle data
    double *SampleData;
-   long int nSurfaceElement,nPolarElement;
+   int nSurfaceElement,nPolarElement;
 
    Circle->GetSurfaceElementProjectionIndex(x,nPolarElement);
    nSurfaceElement=Circle->GetLocalSurfaceElementNumber(nPolarElement);
@@ -271,7 +271,7 @@ void PIC::BC::InternalBoundary::Circle::PrintDefaultTitle(FILE* fout) {
   fprintf(fout,"TITLE=\"SurfaceData\"");
 }
 
-void PIC::BC::InternalBoundary::Circle::PrintDefaultDataStateVector(FILE* fout,long int nPolarPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void PIC::BC::InternalBoundary::Circle::PrintDefaultDataStateVector(FILE* fout,int nPolarPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 //  cSurfaceDataCircle *SurfaceData;
@@ -330,6 +330,6 @@ if (nSurfaceElement==311) {
 /*
 //Sampling of the particles data
 
-void SampleDefaultParticleData(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* CircleDescriptor);
+void SampleDefaultParticleData(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* CircleDescriptor);
 
 */

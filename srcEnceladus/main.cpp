@@ -52,7 +52,7 @@ void SWMFdataPreProcessor(double *x,PIC::CPLR::DATAFILE::ICES::cDataNodeSWMF& da
 
 
 //double SodiumRadiationPressureAcceleration_Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance);
-void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
 
   accl[0]=0.0,accl[1]=0.0,accl[2]=0.0;
@@ -217,7 +217,7 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
   double r=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   double c=v[0]*x[0]/r+v[1]*x[1]/r+v[2]*x[2]/r;
 
@@ -537,7 +537,7 @@ int main(int argc,char **argv) {
   //time step
   int nTotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_OFF_) ? 100000001 : 150;
 
-  for (long int niter=0;niter<nTotalIterations;niter++) {
+  for (int niter=0;niter<nTotalIterations;niter++) {
      PIC::TimeStep();
 
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {

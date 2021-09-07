@@ -99,7 +99,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
   int s,s0,s1,i,j,k;
 
   int nParticleNumber[PIC::nTotalSpecies],nMaxSpecParticleNumber,cnt;
-  long int FirstCellParticle,ptr;
+  int FirstCellParticle,ptr;
   double cellMeasure;
   int thread;
 
@@ -280,7 +280,7 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
 
                   //simulate collsions between the pair of species
                   double SigmaCrMax=0.0,SigmaCr,ancoll;
-                  long int ncoll;
+                  int ncoll;
                   double v0[3],v1[3],cr;
 
                   //1.Evaluate the maximum value of SigmaCr
@@ -320,7 +320,7 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
                         SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
                   }
 
-                  ncoll=(long int)ancoll;
+                  ncoll=(int)ancoll;
                   ancoll-=ncoll;
                   if (rnd()<ancoll) ncoll++;
 
@@ -503,8 +503,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf() {
   int s,s0,s1,i,j,k;
 
   int nParticleNumber[PIC::nTotalSpecies],nMaxSpecParticleNumber,cnt;
-//  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],
-  long int FirstCellParticle,ptr;
+//  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],
+  int FirstCellParticle,ptr;
   double cellMeasure;
   int thread;
 
@@ -920,8 +920,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf_new() {
   int s,s0,s1,i,j,k;
 
   int nParticleNumber[PIC::nTotalSpecies],nMaxSpecParticleNumber,cnt;
-//  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],
-  long int FirstCellParticle,ptr;
+//  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],
+  int FirstCellParticle,ptr;
   double cellMeasure;
   int thread;
 

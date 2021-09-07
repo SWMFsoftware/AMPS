@@ -131,7 +131,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   int i,j,k,nd,cnt=0,spec;
   double NumberDensity;
 
-  static unsigned long int nCallCounter=0;
+  static unsigned int nCallCounter=0;
 
   //DEBUGGING: BEGIN 
   ++nCallCounter;  

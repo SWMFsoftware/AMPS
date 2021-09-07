@@ -27,7 +27,7 @@ void Moon::Sampling::VelocityDistribution::Init() {
 
   dZ=dZenithAngleMin;
   rr=(maxZenithAngle+dZenithAngleMax)/(maxZenithAngle+dZenithAngleMin);
-  nZenithPoints=(long int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
+  nZenithPoints=(int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
   rr=pow(dZenithAngleMax/dZenithAngleMin,1.0/(nZenithPoints+2.0));
 
   nZenithPoints=0,ZenithAngle=dZenithAngleMin,dZenithAngle=dZenithAngleMin;
@@ -45,7 +45,7 @@ void Moon::Sampling::VelocityDistribution::Init() {
   //calculate the pointing direction of the sampling
   dZ=dZenithAngleMin;
   rr=(maxZenithAngle+dZenithAngleMax)/(maxZenithAngle+dZenithAngleMin);
-  nZenithPoints=(long int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
+  nZenithPoints=(int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
   rr=pow(dZenithAngleMax/dZenithAngleMin,1.0/(nZenithPoints+2.0));
 
   nZenithPoints=0,ZenithAngle=dZenithAngleMin,dZenithAngle=dZenithAngleMin;
@@ -114,7 +114,7 @@ void Moon::Sampling::VelocityDistribution::Sampling() {
       if (xNode->Thread==PIC::ThisThread) {
         //find the cell for sampling
         int i,j,k;
-        long int ncell,ptr;
+        int ncell,ptr;
         PIC::ParticleBuffer::byte *ParticleData;
         int spec;
         double *v,*x,LocalParticleWeight,VelocityLineOfSight,HeliocentricRadialVelocity,c,cellMeasure,rHeliocentric,Speed;

@@ -665,7 +665,7 @@ void PIC::CCMC::LoadParticles() {
       if (node->Thread!=PIC::Mesh::mesh->ThisThread) continue;
 
       //create and inject the particle into the system
-      long int newParticle;
+      int newParticle;
 
       PIC::ParticleBuffer::SetX(x,(PIC::ParticleBuffer::byte*)tempParticleData);
       PIC::ParticleBuffer::SetV(v,(PIC::ParticleBuffer::byte*)tempParticleData);
@@ -695,7 +695,7 @@ void PIC::CCMC::LoadParticles() {
 
 //the main tracking procedure
 int PIC::CCMC::TraceParticles() {
-  long int nTotalParticles;
+  int nTotalParticles;
   char fname[_MAX_STRING_LENGTH_PIC_];
   double TimeCounter[PIC::nTotalSpecies];
   int spec;
@@ -707,9 +707,9 @@ int PIC::CCMC::TraceParticles() {
   for (spec=0;spec<PIC::nTotalSpecies;spec++) TimeCounter[spec]=0.0;
 
   //continue simulation untill particles are in the system
-  MPI_Allreduce(&PIC::ParticleBuffer::NAllPart,&nTotalParticles,PIC::nTotalSpecies,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&PIC::ParticleBuffer::NAllPart,&nTotalParticles,PIC::nTotalSpecies,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::ThisThread==0) printf("$PREFIX: Particle Tracking: The total number of tracked particle is %ld\n",nTotalParticles);
+  if (PIC::ThisThread==0) printf("$PREFIX: Particle Tracking: The total number of tracked particle is %i\n",nTotalParticles);
 
   int niter=0;
   const int nOutputStep=1000;
@@ -725,7 +725,7 @@ int PIC::CCMC::TraceParticles() {
       PIC::ParticleTracker::OutputTrajectory(fname);
     }
 
-    MPI_Allreduce(&PIC::ParticleBuffer::NAllPart,&nTotalParticles,PIC::nTotalSpecies,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Allreduce(&PIC::ParticleBuffer::NAllPart,&nTotalParticles,PIC::nTotalSpecies,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
 
     //update the time counter
     PIC::SimulationTime::Update();
@@ -741,7 +741,7 @@ int PIC::CCMC::TraceParticles() {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
         PIC::Mesh::cDataBlockAMR *block;
         int i,j,k;
-        long int ptr,ptrNext;
+        int ptr,ptrNext;
 
         for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
           block=node->block;

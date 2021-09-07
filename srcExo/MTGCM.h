@@ -44,7 +44,7 @@
 class cDataSetMTGCM {
 public:
   char Label[_MTGCM_READER_STRING_LENGTH_],DataFileName[_MTGCM_READER_STRING_LENGTH_];
-  long int nAltitudePoints,nLongitudePoints,nLatitudePoints;
+  int nAltitudePoints,nLongitudePoints,nLatitudePoints;
   double minAltitude,maxAltitude,dAltitude;
   double *LongitudeCoordinates,*LatitudeCoordinates;
   double dLon,dLat,lonMin,lonMax,latMin,latMax;

@@ -20,17 +20,17 @@ namespace nucleusGravity {
 
   struct cNASTRANnode {
     double x[3];
-    long int id;
+    int id;
   };
 
   struct cNASTRANtetra {
-    long int node[4];
+    int node[4];
   };
 
   extern cNASTRANnode * nodes;
   extern cNASTRANtetra * tetras;
 
-  extern long int nnodes,ntetras; ///,ncells;
+  extern int nnodes,ntetras; ///,ncells;
 
   extern double density;
     

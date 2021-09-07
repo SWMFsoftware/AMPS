@@ -28,7 +28,7 @@ void Exosphere::ChemicalModel::Init(double rHeliocentric) {
 }
 
 //default function for calculation of the lifetile
-double Exosphere::ChemicalModel::TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double Exosphere::ChemicalModel::TotalLifeTime(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   static bool initflag=false;
   static double ReactionLifeTimeTable[PIC::nTotalSpecies];
   static bool ReactionAllowedTable[PIC::nTotalSpecies];
@@ -56,7 +56,7 @@ double Exosphere::ChemicalModel::TotalLifeTime(double *x,int spec,long int ptr,b
 
 
 //process particle chemical transformation
-void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void Exosphere::ChemicalModel::PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel,spec;
@@ -132,7 +132,7 @@ void Exosphere::ChemicalModel::PhotochemicalModelProcessor(long int ptr,long int
     double ProductTimeStep,ProductParticleWeight;
     double ProductWeightCorrection=1.0;
     int iProduct;
-    long int newParticle;
+    int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 

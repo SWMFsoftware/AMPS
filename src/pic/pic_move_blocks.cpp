@@ -17,8 +17,8 @@
 //estimate the side of the data to be send
 _TARGET_DEVICE_ _TARGET_HOST_
 void PIC::Mesh::MoveBlock::GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength) {
-  long int *FirstCellParticleTable;
-  long int Particle,NextParticle;
+  int *FirstCellParticleTable;
+  int Particle,NextParticle;
   int inode,iCell,jCell,kCell;
 
 #if DIM == 3
@@ -60,8 +60,8 @@ void PIC::Mesh::MoveBlock::GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTa
 //pack the data that need to be send
 _TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::MoveBlock::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer) {
-  long int *FirstCellParticleTable;
-  long int Particle,NextParticle;
+  int *FirstCellParticleTable;
+  int Particle,NextParticle;
   int inode,iCell,jCell,kCell,offset;
   cAMRnodeID nodeid;
 
@@ -109,8 +109,8 @@ int PIC::Mesh::MoveBlock::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
 //unpack data recieved from anothe process
 _TARGET_DEVICE_ _TARGET_HOST_
 int PIC::Mesh::MoveBlock::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
-  long int *FirstCellParticleTable;
-  long int newParticle;
+  int *FirstCellParticleTable;
+  int newParticle;
   int inode,iCell,jCell,kCell,offset,Signal;
   cAMRnodeID nodeid;
 

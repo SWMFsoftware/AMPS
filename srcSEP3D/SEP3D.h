@@ -58,11 +58,11 @@ namespace SEP3D {
   namespace Physics {
     //------------------------------------------------------------------------
     // particle mover
-    int Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, bool FirstBoundaryFlag);
-    int Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+    int Mover_Axisymmetric_SecondOrder(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, bool FirstBoundaryFlag);
+    int Mover_Axisymmetric_SecondOrder(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     //------------------------------------------------------------------------
     // self-explanatory
-    void inline TotalParticleAcceleration(double *accl, int spec, long int ptr,
+    void inline TotalParticleAcceleration(double *accl, int spec, int ptr,
 					  double *x, double *v, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
       //......................................................................
       // local values of position, velocity and acceleration
@@ -129,12 +129,12 @@ namespace SEP3D {
   }
   
   //---------------------------------------------------------------------------
-  inline long int inject_particle_onto_field_line(int spec){
+  inline int inject_particle_onto_field_line(int spec){
     //namespace aliases
     namespace PB = PIC::ParticleBuffer;
     namespace FL = PIC::FieldLine;
     // pointer to the particle to be injected
-    long int ptr;
+    int ptr;
     PB::byte* ptrData;
     ptrData = new PB::byte[PB::GetParticleDataLength()];
     
@@ -231,7 +231,7 @@ namespace SEP3D {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
     node=PIC::Mesh::mesh->findTreeNode(x);
     
-    long int res=PB::InitiateParticle(x,v,NULL,NULL,
+    int res=PB::InitiateParticle(x,v,NULL,NULL,
 				      ptrData,
 				      _PIC_INIT_PARTICLE_MODE__ADD2LIST_,
 				      (void*)node);

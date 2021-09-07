@@ -52,7 +52,7 @@ const double dxMinSphere=DebugRunMultiplier*2.0/100,dxMaxSphere=DebugRunMultipli
 
 //double SodiumRadiationPressureAcceleration_Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance);
 /*
-void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
 
   accl[0]=0.0,accl[1]=0.0,accl[2]=0.0;
@@ -207,7 +207,7 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
 
    //delete all particles that was not reflected on the surface
 //   PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -560,7 +560,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;  
 
   //time step
-  for (long int niter=0;niter<nTotalIterations;niter++) {
+  for (int niter=0;niter<nTotalIterations;niter++) {
      PIC::TimeStep();
 
 //     PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor();

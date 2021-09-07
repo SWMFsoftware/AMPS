@@ -47,14 +47,14 @@ public:
   typedef void (*fPrintTitle)(FILE*);
   fPrintTitle PrintTitle;
 
-  typedef void (*fPrintDataStateVector)(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *Surface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+  typedef void (*fPrintDataStateVector)(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *Surface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
   fPrintDataStateVector PrintDataStateVector;
 
   typedef double (*fLocalResolution)(double *);
   fLocalResolution localResolution;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  long int Temp_ID;
+  int Temp_ID;
   #endif
 
 
@@ -80,7 +80,7 @@ public:
     cleanDataBuffer();
   }
 
-  static void SetGeneralSurfaceMeshParameters(long int nAxisElements,long int nAzimuthalElements) {
+  static void SetGeneralSurfaceMeshParameters(int nAxisElements,int nAzimuthalElements) {
     nAxisSurfaceElements=nAxisElements,nAzimuthalSurfaceElements=nAzimuthalElements;
   }
 
@@ -158,7 +158,7 @@ public:
      xmin=xAxisMin,xmax=xAxisMax;
   }
 
-  inline long int GetLocalSurfaceElementNumber(long int nAxisElement,long int nAzimuthalElement) {
+  inline int GetLocalSurfaceElementNumber(int nAxisElement,int nAzimuthalElement) {
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     if ((nAxisElement<0)||(nAxisElement>=nAxisSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) exit(__LINE__,__FILE__,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range ");
@@ -177,7 +177,7 @@ public:
     nAxisElement=nSurfaceElement-nAxisSurfaceElements*nAzimuthalElement;
   }
 
-  long int GetTotalSurfaceElementsNumber() {return nAxisSurfaceElements*nAzimuthalSurfaceElements;}
+  int GetTotalSurfaceElementsNumber() {return nAxisSurfaceElements*nAzimuthalSurfaceElements;}
 
 
   double GetSurfaceElementArea(int nAxisElement,int nAzimuthalElement) {
@@ -273,7 +273,7 @@ public:
     for (int i=0;i<3;i++) x[i]=OriginPosition[i]+locx[0]*e0[i]+locx[1]*e1[i]+locx[2]*e2[i];
   }
 
-  inline bool GetSurfaceElementProjectionIndex(double *x,long int &nAxisElement,long int &nAzimuthalElement) {
+  inline bool GetSurfaceElementProjectionIndex(double *x,int &nAxisElement,int &nAzimuthalElement) {
     double AzimuthAngle,locx[3]={0.0,0.0,0.0},r;
     int i;
     bool flag;
@@ -298,7 +298,7 @@ public:
     AzimuthAngle=acos(locx[1]/r);
     if (locx[2]<0.0) AzimuthAngle=2.0*Pi-AzimuthAngle;
 
-    nAzimuthalElement=(long int)(AzimuthAngle/dAzimuthalAngle);
+    nAzimuthalElement=(int)(AzimuthAngle/dAzimuthalAngle);
     return true;
   }
 
@@ -361,7 +361,7 @@ public:
   }
 
   void PrintSurfaceData(const char *fname,int nDataSet, bool PrintStateVectorFlag=true) {
-    long int iAxis,iAzimuthal;
+    int iAxis,iAzimuthal;
     FILE *fout=NULL;
     double x[3];
 
@@ -393,7 +393,7 @@ public:
     else pipe.openSend(0);
 
     //interpolate and print the state vector
-    long int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
+    int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
 
     for (iAxis=0;iAxis<nAxisSurfaceElements+1;iAxis++) for (iAzimuthal=0;iAzimuthal<nAzimuthalSurfaceElements;iAzimuthal++) {
       GetSurfaceCoordinate(x,iAxis,iAzimuthal);
@@ -436,8 +436,8 @@ public:
     else pipe.closeSend();
 
     //print the connectivity list
-    long int iAzimuthalMax,iAzimuthalMin;
-    long int nd0,nd1,nd2,nd3;
+    int iAzimuthalMax,iAzimuthalMin;
+    int nd0,nd1,nd2,nd3;
 
     if (ThisThread==0) {
       for (iAxis=0;iAxis<nAxisSurfaceElements;iAxis++) for (iAzimuthal=0;iAzimuthal<nAzimuthalSurfaceElements;iAzimuthal++) {
@@ -449,7 +449,7 @@ public:
         nd2=1+iAzimuthalMax+(iAxis+1)*nAzimuthalSurfaceElements;
         nd3=1+iAzimuthalMin+(iAxis+1)*nAzimuthalSurfaceElements;
 
-        fprintf(fout,"%ld %ld %ld %ld\n",nd0,nd1,nd2,nd3);
+        fprintf(fout,"%i %i %i %i\n",nd0,nd1,nd2,nd3);
       }
 
       fclose(fout);
@@ -831,7 +831,7 @@ public:
 
      //at this point: no intersection between the block and teh surface are determined ==> the block either entirely inside or outside of the body
      //check if point 'xBlockMin' is within the body
-     long int nAxisElement,nAzimuthalElement;
+     int nAxisElement,nAzimuthalElement;
 
      if (GetSurfaceElementProjectionIndex(xBlockMin,nAxisElement,nAzimuthalElement)==true) {
        double c=0.0,r2=0.0;

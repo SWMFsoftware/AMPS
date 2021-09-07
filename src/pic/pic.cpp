@@ -17,9 +17,9 @@
 
 //sampling variables
 
-long int PIC::LastSampleLength=0,PIC::CollectingSampleCounter=0,PIC::DataOutputFileNumber=0;
+int PIC::LastSampleLength=0,PIC::CollectingSampleCounter=0,PIC::DataOutputFileNumber=0;
 int PIC::SamplingMode=_RESTART_SAMPLING_MODE_;
-long int PIC::RequiredSampleLength=100;
+int PIC::RequiredSampleLength=100;
 
 //external sampling procedure
 const int PIC::Sampling::ExternalSamplingLocalVariables::nMaxSamplingRoutines=128;
@@ -91,7 +91,7 @@ int PIC::TimeStep() {
    PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
 
    //Collect and exchange the run's statictic information
-   static long int nTotalIterations=0,nInteractionsAfterRunStatisticExchange=0;
+   static int nTotalIterations=0,nInteractionsAfterRunStatisticExchange=0;
    static int nExchangeStatisticsIterationNumberSteps=10;
 
    nTotalIterations++;
@@ -248,7 +248,7 @@ int PIC::TimeStep() {
   struct cExchangeStatisticData {
     double TotalInterationRunTime;
     double IterationExecutionTime;
-    long int TotalParticlesNumber;
+    int TotalParticlesNumber;
     double ParticleExchangeTime;
     double SamplingTime;
     double ParticleCollisionTime;
@@ -257,8 +257,8 @@ int PIC::TimeStep() {
     double ParticleMovingTime;
     double PhotoChemistryTime;
     double Latency;
-    long int recvParticleCounter,sendParticleCounter;
-    long int nInjectedParticles;
+    int recvParticleCounter,sendParticleCounter;
+    int nInjectedParticles;
     double UserDefinedMPI_RoutineExecutionTime;
     double UserDefinedParticleProcessingTime;
     double FieldSolverTime;
@@ -279,7 +279,7 @@ int PIC::TimeStep() {
     cExchangeStatisticData localRunStatisticData;
     int thread;
     cExchangeStatisticData *ExchangeBuffer=NULL;
-    long int nInjectedParticleExchangeBuffer[PIC::nTotalThreads];
+    int nInjectedParticleExchangeBuffer[PIC::nTotalThreads];
     double ParticleProductionRateExchangeBuffer[PIC::nTotalThreads];
     double ParticleMassProductionRateExchangeBuffer[PIC::nTotalThreads];
 
@@ -310,7 +310,7 @@ int PIC::TimeStep() {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
-      fprintf(PIC::DiagnospticMessageStream,"\n$PREFIX: (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,nTotalIterations,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+      fprintf(PIC::DiagnospticMessageStream,"\n$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%i, %i interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,nTotalIterations,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
 
 
 
@@ -319,7 +319,7 @@ int PIC::TimeStep() {
 
 
       //output the data
-      long int nTotalModelParticles=0;
+      int nTotalModelParticles=0;
       double nTotalInjectedParticels=0.0;
       double MinExecutionTime=localRunStatisticData.IterationExecutionTime,MaxExecutionTime=localRunStatisticData.IterationExecutionTime,MaxLatency=0.0,MeanLatency=0.0;
 
@@ -391,7 +391,7 @@ int PIC::TimeStep() {
       PIC::Parallel::CumulativeLatency+=MeanLatency*nInteractionsAfterRunStatisticExchange;
       if (nExchangeStatisticsIterationNumberSteps!=0) nTotalInjectedParticels/=nExchangeStatisticsIterationNumberSteps;
 
-      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Total number of particles: %ld\n",nTotalModelParticles);
+      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Total number of particles: %i\n",nTotalModelParticles);
 
       //output the number of model particles for each species individually
       for (thread=1;thread<PIC::nTotalThreads;thread++) for (int s=0;s<PIC::nTotalSpecies;s++) ExchangeBuffer[0].SimulatedModelParticleNumber[s]+=ExchangeBuffer[thread].SimulatedModelParticleNumber[s];
@@ -406,7 +406,7 @@ int PIC::TimeStep() {
       for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
         double c=0.0;
 
-        MPI_Gather(PIC::BC::nInjectedParticles+spec,1,MPI_LONG,nInjectedParticleExchangeBuffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(PIC::BC::nInjectedParticles+spec,1,MPI_INT,nInjectedParticleExchangeBuffer,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleProductionRate+spec,1,MPI_DOUBLE,ParticleProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleMassProductionRate+spec,1,MPI_DOUBLE,ParticleMassProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
@@ -429,7 +429,7 @@ int PIC::TimeStep() {
 
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Total number of injected particles: %e\n",nTotalInjectedParticels);
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Iteration Execution Time: min=%e, max=%e\n",MinExecutionTime,MaxExecutionTime);
-      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Latency: max=%e,mean=%e;CumulativeLatency=%e,Iterations after rebalabcing=%ld,Rebalancing Time=%e\n",MaxLatency,MeanLatency,PIC::Parallel::CumulativeLatency,PIC::Parallel::IterationNumberAfterRebalancing,PIC::Parallel::RebalancingTime);
+      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:Latency: max=%e,mean=%e;CumulativeLatency=%e,Iterations after rebalabcing=%i,Rebalancing Time=%e\n",MaxLatency,MeanLatency,PIC::Parallel::CumulativeLatency,PIC::Parallel::IterationNumberAfterRebalancing,PIC::Parallel::RebalancingTime);
 
       //flush the stream
       fflush(PIC::DiagnospticMessageStream);
@@ -471,7 +471,7 @@ int PIC::TimeStep() {
 
       //exchange statistics of the particle production
       for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
-        MPI_Gather(PIC::BC::nInjectedParticles+spec,1,MPI_LONG,nInjectedParticleExchangeBuffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(PIC::BC::nInjectedParticles+spec,1,MPI_INT,nInjectedParticleExchangeBuffer,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleProductionRate+spec,1,MPI_DOUBLE,ParticleProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Gather(PIC::BC::ParticleMassProductionRate+spec,1,MPI_DOUBLE,ParticleMassProductionRateExchangeBuffer,1,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
 
@@ -592,17 +592,17 @@ int PIC::TimeStep() {
 //the general sampling procedure
 void PIC::Sampling::Sampling() {
   int s,i,j,k,idim;
-  long int LocalCellNumber,ptr,ptrNext;
+  int LocalCellNumber,ptr,ptrNext;
   
   if (((_PIC_SAMPLING_MODE_==_PIC_MODE_OFF_)||(RuntimeSamplingSwitch==false))&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_)&&(_PIC_EMERGENCY_LOAD_REBALANCING_MODE_==_PIC_MODE_ON_)) {
     //sample only the particle number for using in the energency load balancing if needed
-    long int nTotalParticleNumber=0;
+    int nTotalParticleNumber=0;
 
     for (int iNode=0;iNode<DomainBlockDecomposition::nLocalBlocks;iNode++) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[iNode];
 
       if (node->block!=NULL) {
-        long int *FirstCellParticleTable=node->block->FirstCellParticleTable;
+        int *FirstCellParticleTable=node->block->FirstCellParticleTable;
 
         for (k=0;k<_BLOCK_CELLS_Z_;k++) {
           for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
@@ -634,7 +634,7 @@ void PIC::Sampling::Sampling() {
     double lParallelTemperatureSampleDirection[3]={0.0,0.0,0.0},l0TangentialTemperatureSampleDirection[3]={0.0,0.0,0.0},l1TangentialTemperatureSampleDirection[3]={0.0,0.0,0.0};
 
     //the total number of the sampled particles to compare with the number of the partticles in the buffer
-    long int nTotalSampledParticles=0;
+    int nTotalSampledParticles=0;
 
     //reset the particle counter
     static int **localSimulatedSpeciesParticleNumber=NULL;
@@ -657,13 +657,13 @@ void PIC::Sampling::Sampling() {
 
     //parallel efficientcy measure
     //#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
-    //  long int TreeNodeTotalParticleNumber;
+    //  int TreeNodeTotalParticleNumber;
     //#elif _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
     //  double TreeNodeProcessingTime;
     //#endif
 
     //the table of cells' particles
-    long int *FirstCellParticleTable;
+    int *FirstCellParticleTable;
 
 
     #if _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__BETWEEN_ITERATIONS_
@@ -1090,7 +1090,7 @@ void PIC::Sampling::Sampling() {
   #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_OFF_
       //do nothing
   #elif _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_
-/*      long int iSphericalSurface,nTotalSphericalSurfaces=PIC::BC::InternalBoundary::Sphere::InternalSpheres.usedElements();
+/*      int iSphericalSurface,nTotalSphericalSurfaces=PIC::BC::InternalBoundary::Sphere::InternalSpheres.usedElements();
 //      PIC::BC::InternalBoundary::Sphere::cSurfaceDataSphere* Sphere;
 
       cInternalSphericalData *Sphere;
@@ -1134,26 +1134,26 @@ void PIC::Sampling::Sampling() {
 
       #if _CUT_CELL__TRIANGULAR_FACE__USER_DATA__MODE_ == _ON_AMR_MESH_
       //output the data sampled on the triangulated cut-cells
-      sprintf(fname,"%s/amps.cut-cell.surface-data.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
+      sprintf(fname,"%s/amps.cut-cell.surface-data.out=%i.dat",OutputDataFileDirectory,DataOutputFileNumber);
       if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) CutCell::PrintSurfaceData(fname);
       #endif
 
       #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
       //print sampled particle trajectories
-      sprintf(fname,"%s/amps.TrajectoryTracking.out=%ld",OutputDataFileDirectory,DataOutputFileNumber);
+      sprintf(fname,"%s/amps.TrajectoryTracking.out=%i",OutputDataFileDirectory,DataOutputFileNumber);
       if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleTracker::OutputTrajectory(fname);
       #endif
 
       #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
       //print sampled data along field lines
-      sprintf(fname,"%s/amps.FieldLines.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
+      sprintf(fname,"%s/amps.FieldLines.out=%i.dat",OutputDataFileDirectory,DataOutputFileNumber);
       if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname, false);
       #endif
 
       //print the macroscopic parameters of the flow
       for (s=0;s<PIC::nTotalSpecies;s++) if (SaveOutputDataFile[s]==true) {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-        sprintf(fname,"%s/pic.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+        sprintf(fname,"%s/pic.%s.s=%i.out=%i.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
 
         if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
@@ -1198,22 +1198,22 @@ void PIC::Sampling::Sampling() {
       //print the sampled distribution function into a file
 #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_ON_
         if (PIC::DistributionFunctionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+          sprintf(fname,"%s/pic.distribution.%s.s=%i.out=%i",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
           if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::DistributionFunctionSample::printDistributionFunction(fname,s);
         }
 
         if (PIC::EnergyDistributionSampleRelativistic::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.energy-distribution.%s.s=%i.out=%ld",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+          sprintf(fname,"%s/pic.energy-distribution.%s.s=%i.out=%i",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
           if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(fname,s);
         }
 
         if (PIC::ParticleFluxDistributionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.flux.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+          sprintf(fname,"%s/pic.flux.%s.s=%i.out=%i.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
           if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleFluxDistributionSample::printMacroscopicParameters(fname,s);
         }
 
         if (PIC::PitchAngleDistributionSample::SamplingInitializedFlag==true) {
-          sprintf(fname,"%s/pic.pitch_angle.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
+          sprintf(fname,"%s/pic.pitch_angle.%s.s=%i.out=%i.dat",OutputDataFileDirectory,ChemSymbol,s,DataOutputFileNumber);
           if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::PitchAngleDistributionSample::printDistributionFunction(fname,s);
         }
 
@@ -1222,7 +1222,7 @@ void PIC::Sampling::Sampling() {
 
       //save the sampling data restart file in case when the macroscopic data are downloaded from remote host for post-processing
       if (_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_==_PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_) {
-        sprintf(fname,"%s/pic.SamplingDataRestart.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
+        sprintf(fname,"%s/pic.SamplingDataRestart.out=%i.dat",OutputDataFileDirectory,DataOutputFileNumber);
         if ((SupressRestartFilesFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::Restart::SamplingData::Save(fname);
       }
 
@@ -1258,11 +1258,11 @@ void PIC::Sampling::Sampling() {
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_OFF_
       //do nothing
 #elif _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_
-      long int iSphericalSurface,nTotalSphericalSurfaces=PIC::BC::InternalBoundary::Sphere::InternalSpheres.usedElements();
+      int iSphericalSurface,nTotalSphericalSurfaces=PIC::BC::InternalBoundary::Sphere::InternalSpheres.usedElements();
 
       for (s=0;s<PIC::nTotalSpecies;s++) for (iSphericalSurface=0;iSphericalSurface<nTotalSphericalSurfaces;iSphericalSurface++) {
         PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-        sprintf(fname,"%s/pic.Sphere=%ld.%s.s=%i.out=%ld.dat",OutputDataFileDirectory,iSphericalSurface,ChemSymbol,s,DataOutputFileNumber);
+        sprintf(fname,"%s/pic.Sphere=%i.%s.s=%i.out=%i.dat",OutputDataFileDirectory,iSphericalSurface,ChemSymbol,s,DataOutputFileNumber);
 
         if (PIC::Mesh::mesh->ThisThread==0) {
           fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
@@ -1301,7 +1301,7 @@ void PIC::Sampling::Sampling() {
 
     //print the statistic information for the run
     CMPI_channel pipe(1000000);
-    long int nTotalSimulatedParticles;
+    int nTotalSimulatedParticles;
 
     nTotalSimulatedParticles=PIC::ParticleBuffer::NAllPart;
 
@@ -1316,11 +1316,11 @@ void PIC::Sampling::Sampling() {
       pipe.openRecvAll();
 
       for (int thread=1;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
-        nTotalSimulatedParticles+=pipe.recv<long int>(thread);
+        nTotalSimulatedParticles+=pipe.recv<int>(thread);
       }
 
       fprintf(PIC::DiagnospticMessageStream,"Model run statistics:\n");
-      fprintf(PIC::DiagnospticMessageStream,"The total number of model particles: %ld\n",nTotalSimulatedParticles);
+      fprintf(PIC::DiagnospticMessageStream,"The total number of model particles: %i\n",nTotalSimulatedParticles);
 
       pipe.closeRecvAll();
     }
@@ -1387,7 +1387,7 @@ void PIC::Sampling::Sampling() {
     //output the data into a file to check the new cells' distribution
     for (s=0;s<PIC::nTotalSpecies;s++) {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-      sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-CompleteSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
+      sprintf(fname,"pic.%s.s=%i.out=%i-redistributed-load-CompleteSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
       if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
@@ -1406,7 +1406,7 @@ void PIC::Sampling::Sampling() {
 
     for (s=0;s<PIC::nTotalSpecies;s++) {
       PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-      sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-TempSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
+      sprintf(fname,"pic.%s.s=%i.out=%i-redistributed-load-TempSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
 
       if (PIC::Mesh::mesh->ThisThread==0) {
         fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
@@ -1872,7 +1872,7 @@ void PIC::Init_BeforeParser() {
 
 void PIC::Init_AfterParser() {
   int i,j,k;
-  long int LocalCellNumber;
+  int LocalCellNumber;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
 
@@ -1908,7 +1908,7 @@ void PIC::Init_AfterParser() {
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) PIC::Sampling::SaveOutputDataFile[spec]=true;
 
   //init the counter of the injected particles and the injection rates
-  PIC::BC::nInjectedParticles=new long int[PIC::nTotalSpecies];
+  PIC::BC::nInjectedParticles=new int[PIC::nTotalSpecies];
   PIC::BC::ParticleProductionRate=new double [PIC::nTotalSpecies];
   PIC::BC::ParticleMassProductionRate=new double [PIC::nTotalSpecies];
 

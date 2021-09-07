@@ -66,7 +66,7 @@ int main(int argc,char **argv) {
     PIC::RequiredSampleLength=95;
   }
 
-  for (long int niter=0;niter<nTotalIterations;niter++) {
+  for (int niter=0;niter<nTotalIterations;niter++) {
     PIC::TimeStep();
 
     if (PIC::Mesh::mesh->ThisThread==0) {

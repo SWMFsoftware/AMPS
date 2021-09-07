@@ -75,7 +75,7 @@ namespace MOP {
       //model of the volatiles injection from Enceladus
       //PIC::ParticleWeightTimeStep::fUserDefinedExtraSourceRate PIC::ParticleWeightTimeStep::UserDefinedExtraSourceRate
       //PIC::BC::UserDefinedParticleInjectionFunction=
-      long int InjectParticles();
+      int InjectParticles();
       double SourceRate(int spec);
     }
 
@@ -108,7 +108,7 @@ namespace MOP {
 
   //interface for MOP
   double SourceRate(int spec);
-  long int InjectParticles();
+  int InjectParticles();
 
   //the requested local mesh resolution accounted for the topology of the planet system
   double GetLocalMeshResolution(double *x);

@@ -45,7 +45,7 @@ double Enceladus::sphereInjectionRate(int spec,int BoundaryElementType, void *Sp
    return TotalMassDustProductionRate/MeanDustGrainMass;
 }
 
-int Enceladus::ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int Enceladus::ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
   /*double r=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   double c=v[0]*x[0]/r+v[1]*x[1]/r+v[2]*x[2]/r;
 
@@ -66,7 +66,7 @@ int Enceladus::ParticleSphereInteraction(int spec,long int ptr,double *x,double 
   //sample the injection flux
   //sample the particle data
   double *SampleData;
-  long int nSurfaceElement,nZenithElement,nAzimuthalElement;
+  int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
   Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
   nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);

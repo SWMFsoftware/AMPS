@@ -14,7 +14,7 @@
 
 #include "pic.h"
 
-long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
+int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
   // the function places a single (for each processor) particle of spec species
   // to a given location with given velocity vector
   // this function is meant for DEBUG purposes
@@ -28,15 +28,15 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
   return 1;  
 }
 
-long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   return PrepopulateDomain(spec,NumberDensity,Velocity,Temperature,NULL,UserInitParticleFunction);
 }
 
-long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
-  long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
+  int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
 
   //local copy of the block's cells
   int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();
@@ -113,7 +113,7 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
     }
   }
 
-  MPI_Allreduce(&nLocalInjectedParticles,&nGlobalInjectedParticles,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Allreduce(&nLocalInjectedParticles,&nGlobalInjectedParticles,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   return nGlobalInjectedParticles;
 }
 

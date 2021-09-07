@@ -10,12 +10,12 @@
 //const int PIC::PitchAngleDistributionSample::_LINEAR_SAMPLING_SCALE_=0,PIC::PitchAngleDistributionSample::_LOGARITHMIC_SAMPLING_SCALE_=1;
 //int PIC::PitchAngleDistributionSample::v2SamplingMode=_LINEAR_SAMPLING_SCALE_,PIC::PitchAngleDistributionSample::speedSamplingMode=_LINEAR_SAMPLING_SCALE_;
 double PIC::PitchAngleDistributionSample::CosPAMin=-1.0,PIC::PitchAngleDistributionSample::CosPAMax=1.0;
-long int PIC::PitchAngleDistributionSample::nSampledFunctionPoints=201;
+int PIC::PitchAngleDistributionSample::nSampledFunctionPoints=201;
 double** PIC::PitchAngleDistributionSample::SamplingBuffer=NULL;
 double PIC::PitchAngleDistributionSample::SamplingLocations[][3]={{0.0,0.0,0.0}};
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** PIC::PitchAngleDistributionSample::SampleNodes=NULL;
 double PIC::PitchAngleDistributionSample::dCosPA=0.01;
-long int *PIC::PitchAngleDistributionSample::SampleLocalCellNumber=NULL;
+int *PIC::PitchAngleDistributionSample::SampleLocalCellNumber=NULL;
 int PIC::PitchAngleDistributionSample::nSampleLocations=0;
 bool PIC::PitchAngleDistributionSample::SamplingInitializedFlag=false;
 
@@ -46,7 +46,7 @@ void PIC::PitchAngleDistributionSample::Init() {//double ProbeLocations[][DIM],i
   SampleDataLength=1;
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new long int [nSampleLocations];
+  SampleLocalCellNumber=new int [nSampleLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nSampleLocations];
 
   SamplingBuffer=new double* [nSampleLocations];
@@ -71,15 +71,15 @@ void PIC::PitchAngleDistributionSample::Init() {//double ProbeLocations[][DIM],i
 //====================================================
 //flush the sampling buffer
 void PIC::PitchAngleDistributionSample::flushSamplingBuffers() {
-  long int i,TotalDataLength=nSampleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
+  int i,TotalDataLength=nSampleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
   double *ptr=SamplingBuffer[0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
 }
 //====================================================
 //return the offset where the sample data for the particular specie, sampling interval and the sampling point are located
-long int PIC::PitchAngleDistributionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
-  long int offset;
+int PIC::PitchAngleDistributionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
+  int offset;
 
   offset=spec*SampleDataLength*(nSampledFunctionPoints-1);
   offset+=SampleVariableOffset*(nSampledFunctionPoints-1);
@@ -90,7 +90,7 @@ long int PIC::PitchAngleDistributionSample::GetSampleDataOffset(int spec,int Sam
 //Sample the distribution function
 void PIC::PitchAngleDistributionSample::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  long int ptr,nProbe,spec,idim,offset;
+  int ptr,nProbe,spec,idim,offset;
   double LocalParticleWeight, speed, CosPA;
 
   for (node=SampleNodes[0],nProbe=0;nProbe<nSampleLocations;node=SampleNodes[++nProbe]) if (node->Thread==PIC::ThisThread) {
@@ -136,7 +136,7 @@ void PIC::PitchAngleDistributionSample::SampleDistributionFnction() {
 //====================================================
 //print the distribution function into a file
 void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,int spec) {
-  long int idim,nProbe,i,nVariable,thread,offset;
+  int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,dInterval=0.0;
@@ -148,7 +148,7 @@ void PIC::PitchAngleDistributionSample::printDistributionFunction(char *fname,in
 
   for (nProbe=0;nProbe<nSampleLocations;nProbe++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
-      sprintf(str,"%s.nSamplePoint=%ld.dat",fname,nProbe);
+      sprintf(str,"%s.nSamplePoint=%i.dat",fname,nProbe);
       fout=fopen(str,"w");
 
       fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",str);

@@ -25,7 +25,7 @@ public:
   double OriginPosition[3],Radius;
 
 protected:
-  static long int nPolarSurfaceElements;
+  static int nPolarSurfaceElements;
   static double dPolarAngle;
 
 public:
@@ -36,14 +36,14 @@ public:
   typedef void (*fPrintTitle)(FILE*);
   fPrintTitle PrintTitle;
 
-  typedef void (*fPrintDataStateVector)(FILE* fout,long int nPolarPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+  typedef void (*fPrintDataStateVector)(FILE* fout,int nPolarPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalCircleData *Circle,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
   fPrintDataStateVector PrintDataStateVector;
 
   typedef double (*fLocalResolution)(double *);
   fLocalResolution localResolution;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  long int Temp_ID;
+  int Temp_ID;
   #endif
 
   void cleanDataBuffer() {
@@ -65,7 +65,7 @@ public:
     cleanDataBuffer();
   }
 
-  void SetGeneralSurfaceMeshParameters(long int nPolarElements) {
+  void SetGeneralSurfaceMeshParameters(int nPolarElements) {
     nPolarSurfaceElements=nPolarElements;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_AXIAL_SYMMETRY_
@@ -87,7 +87,7 @@ public:
      r=Radius;
   }
 
-  long int GetLocalSurfaceElementNumber(long int nPolarElement) {
+  int GetLocalSurfaceElementNumber(int nPolarElement) {
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     if ((nPolarElement<0)||(nPolarElement>=nPolarSurfaceElements)) exit(__LINE__,__FILE__,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range ");
@@ -105,7 +105,7 @@ public:
     nPolarElement=nSurfaceElement;
   }
 
-  long int GetTotalSurfaceElementsNumber() {return nPolarSurfaceElements;}
+  int GetTotalSurfaceElementsNumber() {return nPolarSurfaceElements;}
 
 
   double GetSurfaceElementArea(int nPolarElement) {
@@ -122,7 +122,7 @@ public:
     return res;
   }
 
-  void GetSurfaceElementProjectionIndex(double *x,long int &nPolarElement) {
+  void GetSurfaceElementProjectionIndex(double *x,int &nPolarElement) {
     double r,r2,PolarAngle,xNormalized[2];
     int idim;
 
@@ -135,7 +135,7 @@ public:
     nPolarElement=PolarAngle/dPolarAngle;
   }
 
-  void GetSurfaceCoordinate(double *x,long int iPolarPoint) {
+  void GetSurfaceCoordinate(double *x,int iPolarPoint) {
     double PolarAngle;
 
     PolarAngle=dPolarAngle*iPolarPoint;
@@ -147,7 +147,7 @@ public:
 
 
   void PrintSurfaceData(const char *fname,int nDataSet, bool PrintStateVectorFlag=true) {
-    long int iPolar;
+    int iPolar;
     FILE *fout=NULL;
 
     CMPI_channel pipe(1000000);
@@ -177,7 +177,7 @@ public:
     else pipe.openSend(0);
 
     //interpolate and print the state vector
-    long int InterpolationList[nPolarSurfaceElements],InterpolationListLength=0;
+    int InterpolationList[nPolarSurfaceElements],InterpolationListLength=0;
 
     for (iPolar=0;iPolar<nPolarSurfaceElements+1;iPolar++) {
       if (ThisThread==0) fprintf(fout,"%e ",iPolar*dPolarAngle*180.0/Pi);

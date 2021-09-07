@@ -73,7 +73,7 @@ void Cdsmc::Cidf::SetRotE(double e,ParticlePtr ptr) {
 
 
 //===================================================
-double Cdsmc::Cidf::GetVibE(long int nmode,ParticlePtr ptr) {
+double Cdsmc::Cidf::GetVibE(int nmode,ParticlePtr ptr) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -91,7 +91,7 @@ double Cdsmc::Cidf::GetVibE(long int nmode,ParticlePtr ptr) {
 }
 
 //===================================================
-void Cdsmc::Cidf::RedistEnergy(ParticlePtr ptr0,ParticlePtr ptr1,double& vrel,bool* change_internal_properties_flag,long int ncell,long int nsubcl) {
+void Cdsmc::Cidf::RedistEnergy(ParticlePtr ptr0,ParticlePtr ptr1,double& vrel,bool* change_internal_properties_flag,int ncell,int nsubcl) {
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
   case None_internal_degrees_of_freedom :
@@ -106,7 +106,7 @@ void Cdsmc::Cidf::RedistEnergy(ParticlePtr ptr0,ParticlePtr ptr1,double& vrel,bo
 }
 
 //===================================================
-double Cdsmc::Cidf::GetRotTemp(int s,long int ncell) {
+double Cdsmc::Cidf::GetRotTemp(int s,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -124,7 +124,7 @@ double Cdsmc::Cidf::GetRotTemp(int s,long int ncell) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetRotTemp(int s,long int nsubcl,long int ncell) {
+double Cdsmc::Cidf::GetRotTemp(int s,int nsubcl,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -142,7 +142,7 @@ double Cdsmc::Cidf::GetRotTemp(int s,long int nsubcl,long int ncell) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetVibTemp(int s,long int ncell) {
+double Cdsmc::Cidf::GetVibTemp(int s,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -160,7 +160,7 @@ double Cdsmc::Cidf::GetVibTemp(int s,long int ncell) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetVibTemp(int s,long int nsubcl,long int ncell) {
+double Cdsmc::Cidf::GetVibTemp(int s,int nsubcl,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -208,7 +208,7 @@ void Cdsmc::Cidf::InitVibTemp(double temp,ParticlePtr ptr) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetMeanVibE(long int nmode,int s,long int ncell) {
+double Cdsmc::Cidf::GetMeanVibE(int nmode,int s,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -226,7 +226,7 @@ double Cdsmc::Cidf::GetMeanVibE(long int nmode,int s,long int ncell) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetMeanVibE(long int nmode,int s,long int nsubcl,long int ncell) {
+double Cdsmc::Cidf::GetMeanVibE(int nmode,int s,int nsubcl,int ncell) {
  double res=0.0;  
 
  switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -244,7 +244,7 @@ double Cdsmc::Cidf::GetMeanVibE(long int nmode,int s,long int nsubcl,long int nc
 }
 
 //===================================================
-double Cdsmc::Cidf::GetMeanRotE(int s,long int ncell) {
+double Cdsmc::Cidf::GetMeanRotE(int s,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -262,7 +262,7 @@ double Cdsmc::Cidf::GetMeanRotE(int s,long int ncell) {
 }
 
 //===================================================
-double Cdsmc::Cidf::GetMeanRotE(int s,long int nsubcl,long int ncell) {
+double Cdsmc::Cidf::GetMeanRotE(int s,int nsubcl,int ncell) {
   double res=0.0;
 
   switch (this_dsmc->ModelOfInternalDegreesOfFreedom) {
@@ -320,14 +320,14 @@ void Cdsmc::Cidf::Sampling(bool breakSampling) {
 //===================================================
 void Cdsmc::Cidf::InitEnergyDistributionSampling() {
   double de,e;
-  long int n,dataset,ncell,nsubcl,NSubCells;
+  int n,dataset,ncell,nsubcl,NSubCells;
   ParticlePtr ptr;
   unsigned char s;
 
   if (IDF_EDistrSData.size()<1) return;
 
   if (IDF_EDistrSData[0].data.size()==0) {
-    long int nvibmodes_max;
+    int nvibmodes_max;
  
     nvibmodes_max=0;
     for (s=0;s<NS;s++) if (nvibmodes_max<mol.GetNVibModes(s)) nvibmodes_max=mol.GetNVibModes(s); 
@@ -356,21 +356,21 @@ void Cdsmc::Cidf::InitEnergyDistributionSampling() {
 //energy destribution (energy of internal degrees of freedom)
 //rotational energy destribution
         e=GetRotE(ptr);
-        n=(long int)(e/de);
+        n=(int)(e/de);
         if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,0,s)+=1.0;
 
 //vidrational energy distribution (over all vibational modes)
         if (mol.GetNVibModes(s)>0) {
           e=GetVibE(-1,ptr);
-          n=(long int)(e/de);
+          n=(int)(e/de);
           if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,1,s)+=1.0; 
         }
 
 //vidrational energy distribution (for each vibational modes)
         if (mol.GetNVibModes(s)>0) 
-          for (long int nmode=0;nmode<mol.GetNVibModes(s);nmode++) {
+          for (int nmode=0;nmode<mol.GetNVibModes(s);nmode++) {
             e=GetVibE(nmode,ptr); 
-            n=(long int)(e/de);
+            n=(int)(e/de);
             if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,2+nmode,s)+=1.0;
           }
         
@@ -391,10 +391,10 @@ void Cdsmc::Cidf::InitEnergyDistributionSampling() {
 //===================================================
 void Cdsmc::Cidf::EnergyDistributionSampling(bool breakSampling) {
   double de,e;
-  long int n,dataset,ncell,nsubcl,NSubCells;
+  int n,dataset,ncell,nsubcl,NSubCells;
   ParticlePtr ptr;
   unsigned char s;
-  static long int SampleCounterInt=0;
+  static int SampleCounterInt=0;
 
   if (IDF_EDistrSData.size()<1) return;
 
@@ -413,21 +413,21 @@ void Cdsmc::Cidf::EnergyDistributionSampling(bool breakSampling) {
 //energy destribution (energy of internal degrees of freedom)
 //rotational energy destribution
         e=GetRotE(ptr);
-        n=(long int)(e/de);
+        n=(int)(e/de);
         if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,0,s)+=1.0;
 
 //vidrational energy distribution (over all vibational modes)
         if (mol.GetNVibModes(s)>0) {
           e=GetVibE(-1,ptr);
-          n=(long int)(e/de);
+          n=(int)(e/de);
           if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,1,s)+=1.0;
         }
 
 //vidrational energy distribution (for each vibational modes)
         if (mol.GetNVibModes(s)>0)
-          for (long int nmode=0;nmode<mol.GetNVibModes(s);nmode++) {
+          for (int nmode=0;nmode<mol.GetNVibModes(s);nmode++) {
             e=GetVibE(nmode,ptr);
-            n=(long int)(e/de);
+            n=(int)(e/de);
             if ((n<NI_IDF_EDistrSData)&&(n>=0)) IDF_EDistrSDataInt[dataset].data(n,2+nmode,s)+=1.0;
           }
 
@@ -479,14 +479,14 @@ void Cdsmc::Cidf::OutputEnergyDistibutionDataIntoTECPLOT() {
 
 /*
   double de,norm;
-  long int i,j,dataset,ncell;
+  int i,j,dataset,ncell;
   float x[3];
   unsigned char s;
   char fname[50],str[50];
   ofstream fout;
 */
 
-  long int dataset;
+  int dataset;
 
   for (dataset=0;dataset<IDF_EDistrSData.size();dataset++) {
 
@@ -531,14 +531,14 @@ exit(__LINE__,__FILE__);
       mol.GetChemSymbol(str,s);
       fout << ",componenet="<<str<<", over "<<this_dsmc->SampleCounter<<" itrs.\""<<endl;
       fout << "VARIABLES=\"e\",\"Erot\",\"Evib\"";
-      for (long int nmode=0;(nmode<mol.GetNVibModes(s))&&(mol.GetNVibModes(s)!=1);nmode++)
+      for (int nmode=0;(nmode<mol.GetNVibModes(s))&&(mol.GetNVibModes(s)!=1);nmode++)
         fout << ",\"Evib(mode"<< nmode << ")\"";
       fout << endl;
 
       de=Kbol*Tmax_IDF_EDistrSData/NI_IDF_EDistrSData;
 
       for (i=0;i<NI_IDF_EDistrSData;i++) {
-        long int j_max;
+        int j_max;
         j_max=(mol.GetNVibModes(s)==1) ? 2 : 2+mol.GetNVibModes(s);
  
         fout << de*(i+0.5) << "  ";

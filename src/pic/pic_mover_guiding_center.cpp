@@ -68,7 +68,7 @@ void PIC::Mover::GuidingCenter::Init(){
 }
 
 
-void PIC::Mover::GuidingCenter::InitiateMagneticMoment(int spec,double *x, double *v,long int ptr, void *node) {
+void PIC::Mover::GuidingCenter::InitiateMagneticMoment(int spec,double *x, double *v,int ptr, void *node) {
   PIC::Mover::GuidingCenter::InitiateMagneticMoment(spec,x,v,PIC::ParticleBuffer::GetParticleDataPointer(ptr),node);
 }
 
@@ -122,7 +122,7 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
                                 double *Vguide_perp,    double &ForceParal, 
 				double &BAbsoluteValue, double *BDirection, 
 				double *PParal,
-				int spec,long int ptr,double *x,double *v,
+				int spec,int ptr,double *x,double *v,
 				cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   /* function returns guiding center velocity in the direction perpendicular
    * to the magnetic field and the force parallel to it
@@ -242,7 +242,7 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
 }
 
 
-int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode){
+int PIC::Mover::GuidingCenter::Mover_SecondOrder(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode){
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   double dtTemp;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -255,7 +255,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   double xminBlock[3],xmaxBlock[3];
 //  int idim;
 
-//  long int LocalCellNumber;
+//  int LocalCellNumber;
   int i,j,k,spec;
 
 //  PIC::Mesh::cDataCenterNode *cell;
@@ -272,7 +272,7 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   double m0 = PIC::MolecularData::GetMass(spec);
   double mu = PIC::ParticleBuffer::GetMagneticMoment(ptr);
 
-  static long int nCall=0;
+  static int nCall=0;
 
   nCall++;
 
@@ -523,14 +523,14 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);

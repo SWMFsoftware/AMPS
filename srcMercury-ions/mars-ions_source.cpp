@@ -79,7 +79,7 @@ double MarsIon::SourceProcesses::GetBlockInjectionRate(int spec,cTreeNodeAMR<PIC
 }
 
 //inject model particles
-long int MarsIon::SourceProcesses::InjectParticles() {
+int MarsIon::SourceProcesses::InjectParticles() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
   PIC::Mesh::cDataCenterNode *cell;
@@ -112,7 +112,7 @@ long int MarsIon::SourceProcesses::InjectParticles() {
   //count the number of the blocks and the total source rate of all blocks on the current processor
   static int nThreadBlockNumber=0,nBlock;
   static double maxBlockInjectionRate=-1.0,TotalThreadSourceRate=0.0;
-  static long int LastMeshModificationCounter=-1;
+  static int LastMeshModificationCounter=-1;
 
   class cBlockInjectionTable {
   public:

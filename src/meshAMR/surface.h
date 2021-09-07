@@ -131,7 +131,7 @@ public:
     }
 
     for (int i=0;i<Faces.size();i++) {
-      fprintf(fout,"%ld %ld %ld\n",Faces[i].node[0]+1,Faces[i].node[1]+1,Faces[i].node[2]+1); 
+      fprintf(fout,"%i %i %i\n",Faces[i].node[0]+1,Faces[i].node[1]+1,Faces[i].node[2]+1); 
     }
 
     fclose(fout);

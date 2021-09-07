@@ -341,7 +341,7 @@ void findNeibNodesWithCutCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,
   }
 
 }
-int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundaryFlag) {
+int PIC::Mover::TrajectoryTrackingMover_new(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,bool firstBoundaryFlag) {
   namespace PB = PIC::ParticleBuffer;
   //if firstBoundaryFlag is true, the particle is injected from the boundary
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
@@ -390,8 +390,8 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
     }
   }
 
-  static long int nLoop=0;
-  static long int nCall=0;
+  static int nLoop=0;
+  static int nCall=0;
   nCall++;
 
 
@@ -523,7 +523,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   int code;
 
 
-  static long int meshID = -1;
+  static int meshID = -1;
   
   if (meshID!=PIC::Mesh::mesh->GetMeshID() || meshID==-1){
     //re-do mesh related functions if mesh changes
@@ -879,14 +879,14 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
@@ -919,7 +919,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 }
 
 
-int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace) {
+int PIC::Mover::TrajectoryTrackingMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode,CutCell::cTriangleFace* ExcludeCutTriangleFace) {
   namespace PB = PIC::ParticleBuffer;
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
@@ -968,8 +968,8 @@ int PIC::Mover::TrajectoryTrackingMover(long int ptr,double dtTotal,cTreeNodeAMR
     }
   }
 
-  static long int nLoop=0;
-  static long int nCall=0;
+  static int nLoop=0;
+  static int nCall=0;
   nCall++;
 
 
@@ -1365,14 +1365,14 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
 
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);

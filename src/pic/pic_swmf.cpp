@@ -285,10 +285,10 @@ void PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed i
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
 
     if (strcmp(PIC::OutputDataFileDirectory,".")!=0) {
-      sprintf(PIC::OutputDataFileDirectory,"%s.thread=%ld",PIC::OutputDataFileDirectory,rank);
+      sprintf(PIC::OutputDataFileDirectory,"%s.thread=%i",PIC::OutputDataFileDirectory,rank);
     }
     else {
-      sprintf(PIC::OutputDataFileDirectory,"amps-out.thread=%ld",rank);
+      sprintf(PIC::OutputDataFileDirectory,"amps-out.thread=%i",rank);
 
       if (rank==0) {
         system("rm -rf amps-out.thread=*");

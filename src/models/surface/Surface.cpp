@@ -10,7 +10,7 @@
 #include "Surface.h"
 
 
-int Surface::ParticleInteractionProcessor(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Surface::ParticleInteractionProcessor(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   int res;
 
   //call approptiate particle/surface interation model

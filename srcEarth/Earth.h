@@ -135,7 +135,7 @@ namespace Earth {
     //output sampled data
     void PrintVariableList(FILE*);
     void PrintTitle(FILE*);
-    void PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+    void PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
 
     //the function that will be called to print sampled data
     void PrintManager(int);
@@ -163,7 +163,7 @@ namespace Earth {
   }
 
   //particle mover: call Boris-relativistic, and sample particles that intersects the sampling shells
-  int ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
   //simulate proparatino of the energetic partilces starting from the boundary of the computational domain
   //limiting the fistribution of these particles by those that can reach the point of observations
@@ -205,14 +205,14 @@ namespace Earth {
 
     //offset in the particle state vector pointing to the index describing the index of the origin location of the particles
     namespace ParticleDataOffset {
-      extern long int OriginLocationIndex;
-      extern long int OriginalSpeed;
+      extern int OriginLocationIndex;
+      extern int OriginalSpeed;
     }
 
     namespace OutputDataFile {
       void PrintVariableList(FILE* fout);
-      void PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,
-          long int SurfaceElementsInterpolationListLength,
+      void PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,
+          int SurfaceElementsInterpolationListLength,
           cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
     }
 
@@ -226,7 +226,7 @@ namespace Earth {
     }
 
     //save the location of the particle origin, and the particle rigidity
-    extern long int InitialRigidityOffset,InitialLocationOffset,IntegratedPathLengthOffset;
+    extern int InitialRigidityOffset,InitialLocationOffset,IntegratedPathLengthOffset;
 
     //sample the rigidity mode
     extern bool SampleRigidityMode;
@@ -238,7 +238,7 @@ namespace Earth {
     extern array_2d<double> MaxEnergyInjectedParticles;
 
     //process particles that leaves that computational domain
-    int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+    int ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
    //init the cutoff sampling model
     void AllocateCutoffRigidityTable();
@@ -321,7 +321,7 @@ namespace Earth {
     extern cImpulseSourceData ImpulseSourceData[];
     extern int nTotalSourceLocations;
 
-    long int InjectParticles();
+    int InjectParticles();
     void InitParticleWeight();
   }
 
@@ -392,10 +392,10 @@ namespace Earth {
 
     //general injection functions
     bool InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-    long int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
-    long int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-    long int InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    int InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
     double InjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
 
@@ -403,7 +403,7 @@ namespace Earth {
 
   //interaction of the particles with the surface of the Earth
   namespace BC {
-    int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v, double &dtTotal, void *NodeDataPonter,void *SphereDataPointer);
+    int ParticleSphereInteraction(int spec,int ptr,double *x,double *v, double &dtTotal, void *NodeDataPonter,void *SphereDataPointer);
     double sphereInjectionRate(int spec,void *SphereDataPointer);
   }
 

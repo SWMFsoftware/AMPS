@@ -20,7 +20,7 @@ double OH::DomainDXMin   = 1.8E13;
 double OH::DomainDXMax   = 1.8E13;
 
 // Declaring origin offset variable
-long int OH::OffsetOriginTag = -1;
+int OH::OffsetOriginTag = -1;
 
 // OUTPUT ---------------------------------------------------------------------
 int OH::Output::TotalDataLength = 0; 
@@ -239,7 +239,7 @@ void OH::Output::Init() {
 
 // Loss -----------------------------------------------------------------------
 
-double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
 
   double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
   double PlasmaBulkVelocity[3];
@@ -306,7 +306,7 @@ double OH::Loss::GetFrequencyTable(double *FrequencyTable,double *x, int spec, l
 }
 
 
-double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double OH::Loss::LifeTime(double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   double FrequencyTable[PIC::CPLR::SWMF::nCommunicatedIonFluids];
   double lifetime=0.0;
 
@@ -318,7 +318,7 @@ double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReac
 }
 
 //----------------------------------------------------------------------
-void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+void OH::Loss::ReactionProcessor_Lookup_Table(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   int spec;
   PIC::ParticleBuffer::byte *ParticleData;
   double xParent[3],vParent[3],ParentLifeTime,ParentTimeStep;
@@ -499,7 +499,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
 
 
     if (CreateNewParticle==true) {
-      long int new_ptr;
+      int new_ptr;
       int nNewparticles=nNewparticles_d;
       PIC::ParticleBuffer::byte *NewParticleData;
 
@@ -545,7 +545,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
 
 
 //----------------------------------------------------------------------
-void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+void OH::Loss::ReactionProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //as a result of the reaction only velocity of a particle is changed
   //----------------------------------------------------------------------
 
@@ -747,7 +747,7 @@ auto SimulateReaction = [&] () {
     }
 
     if (CreateNewParticle==true) {
-      long int new_ptr;
+      int new_ptr;
       int nNewparticles=nNewparticles_d;
       PIC::ParticleBuffer::byte *NewParticleData;
 
@@ -843,7 +843,7 @@ void OH::Init_BeforeParser(){
 }
 
 // User defined functions -----------------------------------------------------
-int OH::user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+int OH::user_set_face_boundary(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   //setting User defined function to process particles leaving domain at certain faces
   //useful for 1D runs if just want flows in one direction
 
@@ -925,7 +925,7 @@ double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x_LOCAL_
   return 100.0;
 }
 
-void OH::InitializeParticleWithEnaOriginTag(long int ptr, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode, int iInjectionMode){
+void OH::InitializeParticleWithEnaOriginTag(int ptr, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode, int iInjectionMode){
 
 
   PIC::ParticleBuffer::byte *ParticleData;

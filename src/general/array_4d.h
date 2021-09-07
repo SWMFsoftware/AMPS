@@ -54,7 +54,7 @@ public:
       data=new T[n0*n1*n2*n3];
     }
     catch (bad_alloc) {
-      printf("Memory Error: array_4d() cannot allocate %ld bytes\n", n0*n1*n2*n3*sizeof(T));
+      printf("Memory Error: array_4d() cannot allocate %i bytes\n", n0*n1*n2*n3*sizeof(T));
       exit(__LINE__,__FILE__);
     }
 

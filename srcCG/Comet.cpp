@@ -72,7 +72,7 @@ double DustTotalMassProductionRate=0.0;
 int DustSampleIntervals=10;
 double DustSizeDistribution=0.0;
 
-long int offsetSurfaceElement;
+int offsetSurfaceElement;
 
   //Nucleus activity
 #if _NUCLEUS_SHAPE__MODE_ == _SHAP5_
@@ -353,7 +353,7 @@ void Comet::InitGravityData(){
   PIC::Mesh::cDataCenterNode *cell;
 
   double gravityAccl[3],*position;
-  long int ct=0;
+  int ct=0;
 
   //evaluate the total nucleus mass
   double rTest[3]={10.0E3,0.0,0.0};
@@ -426,7 +426,7 @@ void Comet::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *I
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+GravityFieldOffset,G,3*sizeof(double));
 }
 
-void Comet::GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void Comet::GetGravityAcceleration(double *x,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   if (node->block==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is NULL. Most probably the time step is too large");
   }
@@ -484,19 +484,19 @@ double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_
 #endif
 }
 
-long int Comet::InjectionBoundaryModel_Limited() {
+int Comet::InjectionBoundaryModel_Limited() {
   int spec;
-  long int res=0;
+  int res=0;
   
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=InjectionBoundaryModel_Limited(spec);
 
   return res;
 }
 
-long int Comet::InjectionBoundaryModel_Limited(int spec) {
+int Comet::InjectionBoundaryModel_Limited(int spec) {
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nInjectedParticles=0;
+  int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag=false;
@@ -510,7 +510,7 @@ long int Comet::InjectionBoundaryModel_Limited(int spec) {
   const int nMaxInjectedParticles=10*PIC::ParticleWeightTimeStep::maxReferenceInjectedParticleNumber;
 
   //the number of the injected particles by each OpenMP thread
-  static long int *threadInjectedParticles=NULL;
+  static int *threadInjectedParticles=NULL;
   static double **threadBoundaryTriangleFacesInjectionRate=NULL;
   static double **threadBoundaryTriangleFacesMassInjectionRate=NULL;
   static double *threadCalculatedSourceRate=NULL;
@@ -521,7 +521,7 @@ long int Comet::InjectionBoundaryModel_Limited(int spec) {
 
   if (threadInjectedParticles==NULL) {
     threadCalculatedSourceRate=new double [PIC::nTotalThreadsOpenMP];
-    threadInjectedParticles=new long int [PIC::nTotalThreadsOpenMP];
+    threadInjectedParticles=new int [PIC::nTotalThreadsOpenMP];
     threadCalculatedMassSourceRate=new double [PIC::nTotalThreadsOpenMP];
     threadCalculatedDustEscapedMassSourceRate=new double [PIC::nTotalThreadsOpenMP];
 
@@ -1163,7 +1163,7 @@ void useDustActiveRegion(double * productionRateArray){
 
 #if _COMET_DUST_USE_ACTIVE_REGION_ == _PIC_MODE_ON_
   
-  long int totalSurfaceElementsNumber,i,j;
+  int totalSurfaceElementsNumber,i,j;
   int idim;
   const int numActiveRegion=2;
   // const double locActiveRegion[numActiveRegion][2]={{0.,0.},{150,0}}; // location of active region
@@ -1214,7 +1214,7 @@ void useDustActiveRegion(double * productionRateArray){
 double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
   double c=0.0,X=0.0,totalProductionRate=0.0;
   double x[3],norm[3],xMiddle[3],lattitude,factor=1.0;
-  long int totalSurfaceElementsNumber,i,j;
+  int totalSurfaceElementsNumber,i,j;
   int idim;
   double ProductionRateScaleFactor,TableTotalProductionRate=0.0,BjornTotalProductionRate;
   int angle;
@@ -1565,7 +1565,7 @@ bool Comet::BjornNASTRAN::GenerateParticle(int spec, double *x_SO_OBJECT,double 
   const double NightSideProduction[6]={5.8/100.0,7.0/100.0,9.2/100.0,10.4/100.0,11.6/100.0,12.7/100.0};
   double x[3],n[3],c=0.0,X,total,xmin,xmax,*x0Sphere,norm[3],xMiddle[3],factor=1.0,lattitude;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  long int totalSurfaceElementsNumber,i,j;
+  int totalSurfaceElementsNumber,i,j;
   double rSphere=1980.0;
   double area;
   double totalProdNightSide=0.0,totalProdDaySide=0.0,scalingFactor,scalingFactorDay,totalSurfaceInShadow=0.0,totalSurfaceInDayLight=0.0;
@@ -1829,9 +1829,9 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
   int idim;
   double rate,TableTotalProductionRate,gamma,cosSubSolarAngle;
   double x[3],c=0.0,X,total,xmin,xmax,norm[3],xMiddle[3],factor=1.0,lattitude;
-  long int i,j;
+  int i,j;
 
-  long int totalSurfaceElementsNumber=CutCell::nBoundaryTriangleFaces;
+  int totalSurfaceElementsNumber=CutCell::nBoundaryTriangleFaces;
 
   int nDev=25;
 
@@ -2050,7 +2050,7 @@ void Comet::StepOverTime() {
   double LocalTimeStep,Erot;
   double radiativeCoolingRate=0.0;
   
-  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],FirstCellParticle,ptr;
+  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],FirstCellParticle,ptr;
   
   int thread,i,j,k,idim,offset,cnt=0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
@@ -2063,7 +2063,7 @@ void Comet::StepOverTime() {
 
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL) {
     block=node->block;
-    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
 
     for (i=0;i<_BLOCK_CELLS_X_;i++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++)
@@ -2186,7 +2186,7 @@ void Comet::TrajectoryTracking::Init() {
 
 bool Comet::TrajectoryTracking::TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData) {
   bool res;
-  long int nZenithElement,nAzimuthalElement,el;
+  int nZenithElement,nAzimuthalElement,el;
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
   //only those solar wind ions are traced, which trajectories are close to the surface of Mercury
@@ -2224,8 +2224,8 @@ double Comet::LossProcesses::ElectronImpactRate=0.0;
 double Comet::LossProcesses::ElectronTemperature=0.0;
 
 
-double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-  long int nd;
+double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  int nd;
   int i,j,k;
   double BackgroundPlasmaNumberDensity;
 //  double PlasmaBulkVelocity[3],ElectronDensity;
@@ -2333,7 +2333,7 @@ double Comet::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec
 }
 
 
-int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel;
@@ -2414,7 +2414,7 @@ int Comet::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIni
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0/NumericalLossRateIncrease;
     int iProduct;
-    long int newParticle;
+    int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 
@@ -2535,7 +2535,7 @@ void Comet::DustInitialVelocity::GetInitialVelocity(double *v,double *x,int iInj
 }
 
 //output the dust mass escape rate with the general AMPS' diagnosptic message
-void Comet::Sampling::OutputDiagnosticMessage(CMPI_channel* pipe,long int nExchangeStatisticsIterationNumberSteps) {
+void Comet::Sampling::OutputDiagnosticMessage(CMPI_channel* pipe,int nExchangeStatisticsIterationNumberSteps) {
 
   //collect the escaped dust mass rate from all processores and print
   if (nExchangeStatisticsIterationNumberSteps!=0) {

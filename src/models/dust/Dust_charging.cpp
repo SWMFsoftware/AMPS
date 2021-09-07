@@ -12,11 +12,11 @@
 #include "Dust.h"
 
 //update charge of the dust grain
-int ElectricallyChargedDust::Charging::UpdateGrainCharge__EQUILIBRIUM_POTENTIAL(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+int ElectricallyChargedDust::Charging::UpdateGrainCharge__EQUILIBRIUM_POTENTIAL(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
   return UpdateGrainCharge(xInit,xFinal,v,spec,ptr,ParticleData,dt,initNode,CHARGE_INTEGRATION_MODE__EQUILIBRIUM_POTENTIAL);
 }
 
-int ElectricallyChargedDust::Charging::UpdateGrainCharge__TIME_DEPENDENT(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+int ElectricallyChargedDust::Charging::UpdateGrainCharge__TIME_DEPENDENT(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
   return UpdateGrainCharge(xInit,xFinal,v,spec,ptr,ParticleData,dt,initNode,CHARGE_INTEGRATION_MODE__TIME_DEPENDENT);
 }
 
@@ -247,7 +247,7 @@ void ElectricallyChargedDust::Charging::UpdateGrainCharge(double  dt,double* Par
 
 
 //==========  DEBUG  BEGIN =================
-  static long int nFunctionCalls=0;
+  static int nFunctionCalls=0;
 
   nFunctionCalls++;
 //==========   DEBUG END ===================
@@ -341,7 +341,7 @@ void ElectricallyChargedDust::Charging::UpdateGrainCharge(double  dt,double* Par
 
 
 //the generic procedure of the grain charge update
-int ElectricallyChargedDust::Charging::UpdateGrainCharge(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode,int CHARGE_INTEGRATION_MODE) {
+int ElectricallyChargedDust::Charging::UpdateGrainCharge(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode,int CHARGE_INTEGRATION_MODE) {
   double PlasmaTemperature,PlasmaNumberDensity, pe;
   double GrainElectricCharge;
   int ReturnCode;

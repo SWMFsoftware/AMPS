@@ -60,7 +60,7 @@ double **ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::Samp
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleNodes=NULL;
 double **ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SamplingBuffer=NULL;
 int ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SamplingIntervalDataLength=0;
-long int *ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleLocalCellNumber=NULL;
+int *ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleLocalCellNumber=NULL;
 int ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::NumberDensitySamplingOffset=0;
 int ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::VelocitySamplingOffset=0;
 int ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SpeedSamplingOffset=0;
@@ -244,7 +244,7 @@ bool ElectricallyChargedDust::EvaluateLocalTimeStep(int spec,double &dt,cTreeNod
 
 /*----------------------------------------------  Total Acceleration of Dust Grains ------------------------------------*/
 /*
-void ElectricallyChargedDust::TotalGrainAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void ElectricallyChargedDust::TotalGrainAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   char ParticleData[PIC::ParticleBuffer::ParticleDataLength];
   double GrainCharge,GrainMass,GrainRadius;
 
@@ -268,7 +268,7 @@ void ElectricallyChargedDust::TotalGrainAcceleration(double *accl,int spec,long 
 
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  long int nd;
+  int nd;
 
   if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
     exit(__LINE__,__FILE__,"Error: the cell is not found");
@@ -321,13 +321,13 @@ void ElectricallyChargedDust::TotalGrainAcceleration(double *accl,int spec,long 
 /*----------------------------------------------  Dust Charging ---------------------------------------*/
 
 //charging of the dust grains
-/*int ElectricallyChargedDust::DustChargingProcessorIndicator(double *x,double *v,int spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+/*int ElectricallyChargedDust::DustChargingProcessorIndicator(double *x,double *v,int spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double &dt,bool &TransformationTimeStepLimitFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   return _GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_;
 }
 */
 
 /*
-int ElectricallyChargedDust::DustChargingProcessor(double *xInit,double *xFinal,double *v,int &spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+int ElectricallyChargedDust::DustChargingProcessor(double *xInit,double *xFinal,double *v,int &spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
   double electronCurrent,ionCurrent,plasmaTemperature,plasmaNumberDensity;
   double GrainElectricCharge;
 
@@ -335,7 +335,7 @@ return _GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_;
 
   PIC::Mesh::cDataCenterNode* cell;
   int i,j,k;
-  long int LocalCellNumber;
+  int LocalCellNumber;
 
   if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   cell=initNode->block->GetCenterNode(LocalCellNumber);
@@ -423,12 +423,12 @@ return _GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_;
 */
 
 /*-----------------------------------------   Inject dust grains from a sphere -----------------------------------*/
-long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,void *SphereDataPointer) {
+int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ParticleWeight,LocalTimeStep,x[3],v[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
   PIC::Mesh::cDataBlockAMR *block;
-  long int newParticle,nInjectedParticles=0;
+  int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double GrainRadius,GrainMass,GrainWeightCorrection;
   bool InjectionFlag;
@@ -549,7 +549,7 @@ long int ElectricallyChargedDust::DustInjection__Sphere(int BoundaryElementType,
     //sample the injection flux
     //sample the particle data
     double *SampleData;
-    long int nSurfaceElement,nZenithElement,nAzimuthalElement;
+    int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
     Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
     nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -718,7 +718,7 @@ void ElectricallyChargedDust::PrintData(FILE* fout,int DataSetNumber,CMPI_channe
 
 
 //=======  DEBUG BEGIN  ==============
-static long int nCallCounter=0;
+static int nCallCounter=0;
 
 nCallCounter++;
 
@@ -925,7 +925,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::Init(dou
 
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new long int [nProbeLocations];
+  SampleLocalCellNumber=new int [nProbeLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nProbeLocations];
   SamplingLocations=new double* [nProbeLocations];
   SamplingLocations[0]=new double [DIM*nProbeLocations];
@@ -953,7 +953,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::Init(dou
 }
 
 void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::flushSamplingBuffers() {
-  long int i,TotalDataLength=nSamplingLocations*SamplingIntervalDataLength*nSamplingIntervals;
+  int i,TotalDataLength=nSamplingLocations*SamplingIntervalDataLength*nSamplingIntervals;
   double *ptr=SamplingBuffer[0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
@@ -961,7 +961,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::flushSam
 
 void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  long int ptr,nProbe,spec,idim;
+  int ptr,nProbe,spec,idim;
   double LocalParticleWeight,grainRadius,v[3],speed;
   int ParticleDataLength=PIC::ParticleBuffer::ParticleDataLength,grainRadiusInterval;
   PIC::Mesh::cDataBlockAMR *block;
@@ -1147,7 +1147,7 @@ void ElectricallyChargedDust::Sampling::SampleSizeDistributionFucntion::printDis
 
 
 //dust charing model
-int ElectricallyChargedDust::DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,long int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
+int ElectricallyChargedDust::DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int& spec,int ptr,PIC::ParticleBuffer::byte *ParticleData,double dt,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *initNode) {
   double plasmaTemperature,plasmaNumberDensity;
   double GrainElectricCharge,GrainElectricCharge_NEW;
   int ReturnCode;
@@ -1559,7 +1559,7 @@ void ElectricallyChargedDust::GrainVelocityGroup::AdjustParticleVelocityGroup() 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
-  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
   //sample the processor load
 //#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
@@ -1574,7 +1574,7 @@ void ElectricallyChargedDust::GrainVelocityGroup::AdjustParticleVelocityGroup() 
 #endif
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     int i,j,k,s;
-    long int ptr,ParticleList;
+    int ptr,ParticleList;
 
     node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
 
@@ -1583,7 +1583,7 @@ void ElectricallyChargedDust::GrainVelocityGroup::AdjustParticleVelocityGroup() 
     }
 
     block=node->block;
-    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (j=0;j<_BLOCK_CELLS_Y_;j++) {

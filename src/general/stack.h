@@ -15,26 +15,26 @@ template<class T>
 class cStack {
 public: 
   //data element's stack
-  long int nMaxElements; 
+  int nMaxElements; 
   T*** elementStackList;
-  long int elementStackPointer;
+  int elementStackPointer;
 
   //array pointers on the allocates data blocks
   T** dataBufferList;
-  long int dataBufferListSize,dataBufferListPointer;  
+  int dataBufferListSize,dataBufferListPointer;  
 
 
   //control allocated memory
-  long int MemoryAllocation;   
+  int MemoryAllocation;   
 
   _TARGET_DEVICE_ _TARGET_HOST_
-  long int getAllocatedMemory() {
+  int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
   _TARGET_DEVICE_ _TARGET_HOST_
   void initMemoryBlock() {
-    long int i,j;
+    int i,j;
 
     if (sizeof(T)==0) return;
 
@@ -81,7 +81,7 @@ public:
 
   _TARGET_DEVICE_ _TARGET_HOST_
   void resetStack() {
-    long int databank,offset;
+    int databank,offset;
 
     for (databank=0;databank<dataBufferListPointer;databank++) {
       for (offset=0;offset<_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;offset++) elementStackList[databank][offset]=dataBufferList[databank]+offset;
@@ -94,8 +94,8 @@ public:
 
   //get the entry pointer and counting number
   _TARGET_DEVICE_ _TARGET_HOST_
-  long int GetEntryCountingNumber(T* ptr) {
-    long int nMemoryBank,res=-1;
+  int GetEntryCountingNumber(T* ptr) {
+    int nMemoryBank,res=-1;
 
     if (ptr!=NULL) {
       for (nMemoryBank=0;nMemoryBank<dataBufferListPointer;nMemoryBank++) if ((ptr>=dataBufferList[nMemoryBank])&&(ptr<dataBufferList[nMemoryBank]+_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_)) if ((res=ptr-dataBufferList[nMemoryBank])<_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_) {
@@ -109,8 +109,8 @@ public:
   }
 
   _TARGET_DEVICE_ _TARGET_HOST_
-  T* GetEntryPointer(long int countingNumber) {
-    long int nMemoryBank,offset;
+  T* GetEntryPointer(int countingNumber) {
+    int nMemoryBank,offset;
 
     if ((countingNumber<0.0)||(countingNumber>=nMaxElements)) return NULL;
 
@@ -143,17 +143,17 @@ public:
 
   //save and load the allocation of the stack
   void saveAllocationParameters(FILE *fout) {
-    fwrite(&nMaxElements,sizeof(long int),1,fout);
-    fwrite(&elementStackPointer,sizeof(long int),1,fout);
-    fwrite(&dataBufferListSize,sizeof(long int),1,fout);
-    fwrite(&dataBufferListPointer,sizeof(long int),1,fout);
+    fwrite(&nMaxElements,sizeof(int),1,fout);
+    fwrite(&elementStackPointer,sizeof(int),1,fout);
+    fwrite(&dataBufferListSize,sizeof(int),1,fout);
+    fwrite(&dataBufferListPointer,sizeof(int),1,fout);
 
     //save the elementStack 
-    long int i,j,elementCountingNumber;
+    int i,j,elementCountingNumber;
 
     for (i=0;i<dataBufferListPointer;i++) for (j=0;j<_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) {    
       elementCountingNumber=GetEntryCountingNumber(elementStackList[i][j]);
-      fwrite(&elementCountingNumber,sizeof(long int),1,fout); 
+      fwrite(&elementCountingNumber,sizeof(int),1,fout); 
     }  
   }
 
@@ -161,13 +161,13 @@ public:
   void readAllocationParameters(FILE *fout) {
     clear();
 
-    fread(&nMaxElements,sizeof(long int),1,fout);
-    fread(&elementStackPointer,sizeof(long int),1,fout);
-    fread(&dataBufferListSize,sizeof(long int),1,fout);
-    fread(&dataBufferListPointer,sizeof(long int),1,fout);
+    fread(&nMaxElements,sizeof(int),1,fout);
+    fread(&elementStackPointer,sizeof(int),1,fout);
+    fread(&dataBufferListSize,sizeof(int),1,fout);
+    fread(&dataBufferListPointer,sizeof(int),1,fout);
 
     //allocate the stack's buffers
-    long int i,j,elementCountingNumber;
+    int i,j,elementCountingNumber;
 
     elementStackList=new T** [dataBufferListSize];
     MemoryAllocation+=sizeof(T**)*dataBufferListSize;
@@ -187,7 +187,7 @@ public:
 
     //read the elementStack
     for (i=0;i<dataBufferListPointer;i++) for (j=0;j<_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) {
-      fread(&elementCountingNumber,sizeof(long int),1,fout);
+      fread(&elementCountingNumber,sizeof(int),1,fout);
       elementStackList[i][j]=GetEntryPointer(elementCountingNumber);
     } 
   }
@@ -218,9 +218,9 @@ public:
     clear();
   }
 
-  long int capasity() {return nMaxElements-elementStackPointer;}
-  long int totalSize() {return nMaxElements;}
-  long int usedElements() {return elementStackPointer;}
+  int capasity() {return nMaxElements-elementStackPointer;}
+  int totalSize() {return nMaxElements;}
+  int usedElements() {return elementStackPointer;}
 
 
   _TARGET_DEVICE_ _TARGET_HOST_
@@ -230,7 +230,7 @@ public:
     if (sizeof(T)==0) return NULL;
     if (elementStackPointer==nMaxElements) initMemoryBlock(); 
 
-    long int elementStackBank,offset;
+    int elementStackBank,offset;
 
     elementStackBank=elementStackPointer/_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     offset=elementStackPointer-elementStackBank*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -246,10 +246,10 @@ public:
     if (sizeof(T)==0) return;
 
     if (elementStackPointer==0) {
-      printf("$PREFIX:ERROR: stack pointer is 0 (line=%ld, file= %s)\n",__LINE__,__FILE__);
+      printf("$PREFIX:ERROR: stack pointer is 0 (line=%i, file= %s)\n",__LINE__,__FILE__);
     } 
 
-    long int elementStackBank,offset;
+    int elementStackBank,offset;
     --elementStackPointer;
 
     elementStackBank=elementStackPointer/_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;

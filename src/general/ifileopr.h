@@ -26,7 +26,7 @@ class CiFileOperations {
 public:
   FILE* fd;
   char fname[1000],init_str[init_str_maxlength]; 
-  long int line;
+  int line;
 
   CiFileOperations() {
     line=-1;
@@ -71,13 +71,13 @@ public:
   };
 
 
-  void setfile(FILE* input_fd,long int input_line,char* InputFile) {
+  void setfile(FILE* input_fd,int input_line,char* InputFile) {
     fd=input_fd;
     line=input_line;
     sprintf(fname,"%s",InputFile);
   };
 
-  long int& CurrentLine() {
+  int& CurrentLine() {
     return line;
   }; 
 
@@ -115,7 +115,7 @@ public:
     return (!feof(fd)) ? false : true;
   };
 
-  bool GetInputStr(char* str,long int n, bool ConvertToUpperCase=true){
+  bool GetInputStr(char* str,int n, bool ConvertToUpperCase=true){
     int i,j;
 
     str[0]='\0';

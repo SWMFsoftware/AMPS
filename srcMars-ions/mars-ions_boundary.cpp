@@ -11,7 +11,7 @@
 
 #include "mars-ions.h"
 
-int MarsIon::ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer) {
+int MarsIon::ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer) {
   return _PARTICLE_DELETED_ON_THE_FACE_;
 }
 

@@ -18,7 +18,7 @@ using namespace std;
 nucleusGravity::cNASTRANnode * nucleusGravity::nodes;
 nucleusGravity::cNASTRANtetra * nucleusGravity::tetras;
 
-long int nucleusGravity::nnodes,nucleusGravity::ntetras; ///,ncells;
+int nucleusGravity::nnodes,nucleusGravity::ntetras; ///,ncells;
 
 double nucleusGravity::density;
 
@@ -30,7 +30,7 @@ void nucleusGravity::setDensity(double d) {
 void nucleusGravity::readMesh_longformat(char *fname) {
   CiFileOperations ifile;
   char str[MAXSTR],dat[MAXSTR],*endptr;
-  long int i,j,idim;
+  int i,j,idim;
   
   cNASTRANnode node;
   cNASTRANtetra tetra;
@@ -105,13 +105,13 @@ void nucleusGravity::readMesh_longformat(char *fname) {
         dX=(node.x[idim]-rootBlock_Xmin[idim])/dXmin; 
 
 /*
-        dX=(dX-(long int)dX)*dXmin;
+        dX=(dX-(int)dX)*dXmin;
 
         if (dX<EPS) node.x[idim]+=2.0*EPS; 
         else if (dXmin-dX<EPS) node.x[idim]-=2.0*EPS; 
 
 
-        dX-=(long int)dX;
+        dX-=(int)dX;
         if (dX<0.1) node.x[idim]+=0.1*dXmin;
         else if (dX>0.9) node.x[idim]-=0.1*dXmin;
 
@@ -183,7 +183,7 @@ void nucleusGravity::readMesh_longformat(char *fname) {
       }
       ifile.closefile();
 
-      register long int nd,nfc,id;
+      register int nd,nfc,id;
       
       //renumerate nodes
       for (nfc=0;nfc<ntetras;nfc++) for (idim=0;idim<4;idim++) {
@@ -199,7 +199,7 @@ void nucleusGravity::readMesh_longformat(char *fname) {
 
 void nucleusGravity::readMesh(const char *fname) {
     FILE *fd;
-    long int initPosition,position,nd,i,idim,nfc;
+    int initPosition,position,nd,i,idim,nfc;
     char str[MAXSTR],dat[MAXSTR],*endptr;
 
     //open the file 
@@ -325,7 +325,7 @@ void nucleusGravity::readMesh(const char *fname) {
     }
 
     //renumerate nodes
-    register long int id;
+    register int id;
 
     for (nfc=0;nfc<ntetras;nfc++) for (idim=0;idim<4;idim++) {
       id=tetras[nfc].node[idim];

@@ -96,7 +96,7 @@ void ExosphereUserDefinedOutputData(FILE *fout,int spec) {
 
 
 //photoionization lifetime of sodium
-/*double sodiumPhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag) {
+/*double sodiumPhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag) {
 
   static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
@@ -118,7 +118,7 @@ void ExosphereUserDefinedOutputData(FILE *fout,int spec) {
   return res;
 }
 
-int sodiumPhotoionizationReactionProcessor(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
+int sodiumPhotoionizationReactionProcessor(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
   spec=_NAPLUS_SPEC_22_;
 
   PIC::ParticleBuffer::SetI(spec,ParticleData);
@@ -488,14 +488,14 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 //injection of model particles through the faces of the bounding box
 /*
-long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-//  long int nInjectedParticles;
-  long int newParticle;
+//  int nInjectedParticles;
+  int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
-  long int nInjectedParticles=0;
+  int nInjectedParticles=0;
 
   if (spec!=_NA_SPEC_) return 0; //inject only spec=0
 
@@ -554,8 +554,8 @@ long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *
 }
 */
 
-long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  long int nInjectedParticles=0;
+int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  int nInjectedParticles=0;
 
 
 
@@ -577,13 +577,13 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
    double radiusSphere,*x0Sphere,l[3],r,vNorm,c;
    cInternalSphericalData *Sphere;
    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
    int idim;
 
-//   long int newParticle;
+//   int newParticle;
 //   PIC::ParticleBuffer::byte *newParticleData;
 //   double ParticleStatWeight,WeightCorrection;
 
@@ -603,7 +603,7 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
    //sample the particle data
    double *SampleData;
-   long int nSurfaceElement,nZenithElement,nAzimuthalElement;
+   int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
    Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
    nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -684,10 +684,10 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   static const double tempSW=8.0E4;
   static double swVel[3]={4.0E5,0.0,0.0};
 
-  long int newParticle,nd;
+  int newParticle,nd;
   PIC::ParticleBuffer::byte *newParticleData;
 
-  static long int nTotalGeneratedParticles=0,nTotalProcessorBlocks=0;
+  static int nTotalGeneratedParticles=0,nTotalProcessorBlocks=0;
   static double GlobalParticleWeight=0.0,aNpartTotal=0.0,TotalDomainVolume=0.0;
 
 
@@ -742,8 +742,8 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
-    long int *GeneratedParticle=new long int [PIC::Mesh::mesh->nTotalThreads];
-    long int *GeneratedNodes=new long int [PIC::Mesh::mesh->nTotalThreads];
+    int *GeneratedParticle=new int [PIC::Mesh::mesh->nTotalThreads];
+    int *GeneratedNodes=new int [PIC::Mesh::mesh->nTotalThreads];
     double *anpart=new double [PIC::Mesh::mesh->nTotalThreads];
     double *volume=new double [PIC::Mesh::mesh->nTotalThreads];
 
@@ -782,11 +782,11 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 }*/
 
 /*
-long int sphereParticleInjection(void *SphereDataPointer) {
+int sphereParticleInjection(void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ParticleWeight,LocalTimeStep,x[3],v[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  long int newParticle,nInjectedParticles=0;
+  int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
 //  int idim;
 
@@ -846,7 +846,7 @@ long int sphereParticleInjection(void *SphereDataPointer) {
 //====================  DEBUG ===========================
     {
 static double InjectionRadialVelocity=0.0,InjectionTangentionalSpeed=0.0;
-static long int nTotalInjectedParticles=0;
+static int nTotalInjectedParticles=0;
 
 double l[3],r=0.0,v0=0.0,v1=0.0;
 int idim;
@@ -923,7 +923,7 @@ bool Radius(double &r,double x) {
   return false;
 }
 
-void testPrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *Nucleus,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void testPrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalRotationBodyData *Nucleus,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
  int nInterpolationElement,nSurfaceElement;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 
@@ -1192,7 +1192,7 @@ void amps_init() {
 
 
       //reserve memory for sampling of the surface balance of sticking species
-      long int ReserveSamplingSpace[PIC::nTotalSpecies];
+      int ReserveSamplingSpace[PIC::nTotalSpecies];
 
       for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=_OBJECT_SURFACE_SAMPLING__TOTAL_SAMPLED_VARIABLES_;
 
@@ -1361,7 +1361,7 @@ void amps_init() {
 
 
       //reserve memory for sampling of the surface balance of sticking species
-      long int ReserveSamplingSpace[PIC::nTotalSpecies];
+      int ReserveSamplingSpace[PIC::nTotalSpecies];
 
       for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=_OBJECT_SURFACE_SAMPLING__TOTAL_SAMPLED_VARIABLES_;
 

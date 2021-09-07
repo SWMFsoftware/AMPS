@@ -20,7 +20,7 @@
 #endif
 
 
-void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   /* function finds acceleration and splits into a simple and gyroscopic parts
    * for Lorentz force (considered here)
    * a_{total} = (q/m) * E + (q/m) V\times B = a_{simple} + \Omega\times V
@@ -41,7 +41,7 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
   //......................................................................
   // find the cell based on particles' position x and block startNode
   // input: x, startNode; output: nd, i,j,k
-  long int nd;  // cell's number in the block
+  int nd;  // cell's number in the block
   int i,j,k;    // cell's coordinates in the block
   
   // fail-safe check: if the block doesn't exist => exit
@@ -118,7 +118,7 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
 }
 
 
-int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int PIC::Mover::Boris(int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
   int idim,i,j,k,spec;
@@ -182,7 +182,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
     }
   }
 
-  static long int nCall=0;
+  static int nCall=0;
   nCall++;
 
   memcpy(xminBlock,startNode->xmin,DIM*sizeof(double));
@@ -517,7 +517,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
@@ -525,7 +525,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
 
   
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
@@ -561,7 +561,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
 
 
  //particle mover for the energy conserving scheme (Stefano Markidis et al., 2010, Mathematics and Computers in Simulation 80 (2010) 1509–1519
-int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int PIC::Mover::Markidis2010(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
   double vInit[3],xInit[3]={0.0,0.0,0.0},vFinal[3],xFinal[3],B[3],E[3];
@@ -606,7 +606,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
     }
   }
 
-  static long int nCall=0;
+  static int nCall=0;
   nCall++;
 
   //interpolate the fields acting upon on the particle
@@ -792,14 +792,14 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
 
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
@@ -833,7 +833,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
 
 
 //particle mover that is used in iPIC3D (G. Lapenta/JournalofComputationalPhysics334(2017)349–366)
-int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int PIC::Mover::Lapenta2017(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
 
   int threadId=0;
@@ -872,7 +872,7 @@ int PIC::Mover::Lapenta2017(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   return Lapenta2017(ParticleData,ptr,&data); 
 }
 
-int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr,cLapentaInputData *data) {
+int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,int ptr,cLapentaInputData *data) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=data->node,*newNode=NULL;
   int idim,i,j,k,spec;
   double dtTotal;
@@ -902,7 +902,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
     dtTotal=startNode->block->GetLocalTimeStep(spec);
   }
 
-  static long int nCall=0;
+  static int nCall=0;
   nCall++;
 
 
@@ -1293,9 +1293,9 @@ __syncwarp;
   int tptr=ptr;
   int *source=(int*)(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
 
-  long int tempFirstCellParticle=atomicExch(source,tptr);
+  int tempFirstCellParticle=atomicExch(source,tptr);
 
-  if (sizeof(long int )>sizeof(int)) {
+  if (sizeof(int )>sizeof(int)) {
     *(source+1)=0;
   }
 
@@ -1307,13 +1307,13 @@ __syncwarp;
   #elif _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData); 
 
-  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr); 
+  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr); 
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,_GetParticleDataPointer(tempFirstCellParticle,data->ParticleDataLength,data->ParticleDataBuffer));
 
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);

@@ -10,7 +10,7 @@
 double _CUDA_MANAGED_ _MESH_AMR_XMAX_[3]={0.0,0.0,0.0},_MESH_AMR_XMIN_[3]={0.0,0.0,0.0};
 
  //the static data of spherical internal boundaries
-long int cInternalSphericalData::nAzimuthalSurfaceElements=30,cInternalSphericalData::nZenithSurfaceElements=20;
+int cInternalSphericalData::nAzimuthalSurfaceElements=30,cInternalSphericalData::nZenithSurfaceElements=20;
 double cInternalSphericalData::dAzimuthalAngle=-1.0,cInternalSphericalData::dCosZenithAngle=-1.0,cInternalSphericalData::dZenithAngle=-1.0;  
 
 int cInternalRotationBodyData::nAxisSurfaceElements=50,cInternalRotationBodyData::nAzimuthalSurfaceElements=50;
@@ -30,7 +30,7 @@ double cInternalSphericalData::dZenithAngle=Pi/cInternalSphericalData::nZenithSu
 
 
 //the static data for the circle internal boundaries
-long int cInternalCircleData::nPolarSurfaceElements=30;
+int cInternalCircleData::nPolarSurfaceElements=30;
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_AXIAL_SYMMETRY_
 double cInternalCircleData::dPolarAngle=Pi/nPolarSurfaceElements;
 #else

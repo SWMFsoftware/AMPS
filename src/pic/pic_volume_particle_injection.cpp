@@ -57,7 +57,7 @@ void PIC::VolumeParticleInjection::InitTotalInjectionRate() {
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
   double res[PIC::nTotalSpecies],InjectionRate[PIC::nTotalSpecies];
-  long int nd;
+  int nd;
 
 #if DIM == 3
   const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -108,7 +108,7 @@ double PIC::VolumeParticleInjection::GetBlockInjectionRate(int spec,PIC::Mesh::c
   int iCell,jCell,kCell;
   PIC::Mesh::cDataCenterNode *cell;
   double res=0.0;
-  long int nd;
+  int nd;
 
 #if DIM == 3
   const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
@@ -189,11 +189,11 @@ double PIC::VolumeParticleInjection::GetTotalTimeStepInjection(int spec) {
 }
 
 //inject particles
-long int PIC::VolumeParticleInjection::InjectParticle() {
+int PIC::VolumeParticleInjection::InjectParticle() {
   int iCell,jCell,kCell,nInjectionProcess;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
-  long int nd,nInjectedParticles=0;
+  int nd,nInjectedParticles=0;
 
   //local copy of the block's cells
   int cellListLength=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::ThisThread]->block->GetCenterNodeListLength();

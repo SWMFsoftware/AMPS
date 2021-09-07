@@ -131,8 +131,8 @@ namespace Exosphere {
     extern double TotalSourceRate[PIC::nTotalSpecies],TotalLossRate[PIC::nTotalSpecies];
 
     void Init(double rHeliocentric);
-    double TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-    void PhotochemicalModelProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    double TotalLifeTime(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    void PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   }
 
   //Sampling
@@ -161,8 +161,8 @@ namespace Exosphere {
     extern int CellSamplingDataOffset;
 
     //the field in the particle's data that keeps the id of the source process due to which the particle has beed produced
-    extern long int ParticleData_SourceProcessID_Offset;
-    extern long int ParticleData_OriginSurfaceElementNumber_Offset;
+    extern int ParticleData_SourceProcessID_Offset;
+    extern int ParticleData_OriginSurfaceElementNumber_Offset;
 
     //sample the planet's night side return flux
     extern double **PlanetNightSideReturnFlux;
@@ -182,7 +182,7 @@ namespace Exosphere {
     namespace OutputSurfaceDataFile {
       void PrintVariableList(FILE* fout);
       void PrintTitle(FILE* fout);
-      void PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+      void PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
       void flushCollectingSamplingBuffer(cInternalSphericalData* Sphere);
     }
 
@@ -697,7 +697,7 @@ namespace Exosphere {
 
       //a cartesian grid is introduces on each face. the number of the cells on that grid corresponds to that is cells in the block to improve modeling of the variatino of the injectino rate
       static const int nFaceInjectionIntervals=std::max(_BLOCK_CELLS_X_,std::max(_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_));
-      extern long int nTotalBoundaryInjectionFaces;  //the number of the computationsl mesh faces at the boundary of the domain
+      extern int nTotalBoundaryInjectionFaces;  //the number of the computationsl mesh faces at the boundary of the domain
 
       extern double **BoundaryFaceTotalInjectionRate; //the total production rate that is due to a particular block (BoundaryBlockProductionFraction[spec][nInjectionFace]
       extern double *maxBoundaryFaceTotalInjectionRate; //the maximum value of the boundary face injectino rate
@@ -725,8 +725,8 @@ namespace Exosphere {
       void getMinMaxLimits();
       double GetTotalProductionRate(int spec);
 
-      long int ParticleInjection(int spec);
-      long int ParticleInjection();
+      int ParticleInjection(int spec);
+      int ParticleInjection();
 
     }
 
@@ -866,7 +866,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
             (OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]*norm_IAU_OBJECT[2]);
 
         //get the surface element that is pointer by the vectorm norm_SO_OBJECT
-        long int nZenithElement,nAzimuthalElement,nd;
+        int nZenithElement,nAzimuthalElement,nd;
 
         ((cInternalSphericalData*)SphereDataPointer)->GetSurfaceElementProjectionIndex(norm_SO_OBJECT,nZenithElement,nAzimuthalElement);
         nd=((cInternalSphericalData*)SphereDataPointer)->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -919,11 +919,11 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
 
 
     double totalProductionRate(int spec,int BoundaryElementType,void *BoundaryElement);
-    long int InjectionBoundaryModel(int BoundaryElementType,void *BoundaryElement);
-    long int InjectionBoundaryModel(int spec,int BoundaryElementType,void *BoundaryElement);
+    int InjectionBoundaryModel(int BoundaryElementType,void *BoundaryElement);
+    int InjectionBoundaryModel(int spec,int BoundaryElementType,void *BoundaryElement);
 
-    long int InjectionBoundaryModelLimited(void *SphereDataPointer);
-    long int InjectionBoundaryModelLimited(int spec,void *SphereDataPointer);
+    int InjectionBoundaryModelLimited(void *SphereDataPointer);
+    int InjectionBoundaryModelLimited(int spec,void *SphereDataPointer);
   }
 
 
@@ -951,7 +951,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*4.0E3;
     double StickingProbability(int spec,double& ReemissionParticleFraction,double Temp);
 
     //model of the interaction between particles and the planetary surface
-    int ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
+    int ParticleSphereInteraction_SurfaceAccomodation(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
   }
 
 

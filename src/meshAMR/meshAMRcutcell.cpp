@@ -54,7 +54,7 @@ struct cFaceNodeConnection {
 };*/
 
 //get triangulation signature
-unsigned long int CutCell::GetTriangulationSignature() {
+unsigned int CutCell::GetTriangulationSignature() {
   CRC32 Signature;
 
   Signature.add(nBoundaryTriangleFaces);
@@ -288,7 +288,7 @@ void CutCell::PrintSurfaceTriangulationMesh(const char *fname,const char *path) 
 }
 
 void CutCell::PrintSurfaceTriangulationMesh(const char *fname) {
-  long int nface,nnode,pnode;
+  int nface,nnode,pnode;
 
   int rank;
   MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
@@ -299,7 +299,7 @@ void CutCell::PrintSurfaceTriangulationMesh(const char *fname) {
   class cTempNodeData {
   public:
     int shadow_attribute,faceat;
-    long int nface;
+    int nface;
     double cos_illumination_angle;
     int MeshFileID;
     double ExternalNormal[3];
@@ -329,13 +329,13 @@ void CutCell::PrintSurfaceTriangulationMesh(const char *fname) {
   fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FETRIANGLE\n",nBoundaryTriangleNodes,nBoundaryTriangleFaces);
 
   for (nnode=0;nnode<nBoundaryTriangleNodes;nnode++) {
-    fprintf(fout,"%e %e %e %i %e %i %ld %i %e %e %e\n",BoundaryTriangleNodes[nnode].x[0],BoundaryTriangleNodes[nnode].x[1],BoundaryTriangleNodes[nnode].x[2],
+    fprintf(fout,"%e %e %e %i %e %i %i %i %e %e %e\n",BoundaryTriangleNodes[nnode].x[0],BoundaryTriangleNodes[nnode].x[1],BoundaryTriangleNodes[nnode].x[2],
         TempNodeData[nnode].shadow_attribute,TempNodeData[nnode].cos_illumination_angle,TempNodeData[nnode].faceat,TempNodeData[nnode].nface,TempNodeData[nnode].MeshFileID,
         TempNodeData[nnode].ExternalNormal[0],TempNodeData[nnode].ExternalNormal[1],TempNodeData[nnode].ExternalNormal[2]);
   }
 
   for (nface=0;nface<nBoundaryTriangleFaces;nface++) {
-    fprintf(fout,"%ld %ld %ld\n",1+(long int)(BoundaryTriangleFaces[nface].node[0]-BoundaryTriangleNodes),1+(long int)(BoundaryTriangleFaces[nface].node[1]-BoundaryTriangleNodes),1+(long int)(BoundaryTriangleFaces[nface].node[2]-BoundaryTriangleNodes));
+    fprintf(fout,"%i %i %i\n",1+(int)(BoundaryTriangleFaces[nface].node[0]-BoundaryTriangleNodes),1+(int)(BoundaryTriangleFaces[nface].node[1]-BoundaryTriangleNodes),1+(int)(BoundaryTriangleFaces[nface].node[2]-BoundaryTriangleNodes));
   }
 
   fclose(fout);
@@ -371,8 +371,8 @@ void CutCell::ReadCEASurfaceMeshLongFormat(const char *fname,double UnitConversi
 void CutCell::ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double UnitConversitonFactor) {
   CiFileOperations ifile;
   char str[10000],dat[10000],*endptr;
-  long int idim,nnodes=0,nfaces=0;
-  long int nTriangulationNodes=-1,nTriangulationFaces=-1;
+  int idim,nnodes=0,nfaces=0;
+  int nTriangulationNodes=-1,nTriangulationFaces=-1;
   int faceat,NodeNumberOffset=0;
 
   if (BoundaryTriangleFaces!=NULL) exit(__LINE__,__FILE__,"Error: redifinition of the surface triangulation array");
@@ -446,7 +446,7 @@ void CutCell::ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFil
 
 
   //create the surface triangulation array
-  long int nd,nfc;
+  int nd,nfc;
 
   nBoundaryTriangleFaces=nfaces;
   BoundaryTriangleFaces=new cTriangleFace[nfaces];
@@ -475,7 +475,7 @@ void CutCell::ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFil
 void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double *xSurfaceMin,double *xSurfaceMax,double EPS) {
   CiFileOperations ifile;
   char str[10000],dat[10000],*endptr;
-  long int i,j,idim,nnodes=0,nfaces=0;
+  int i,j,idim,nnodes=0,nfaces=0;
   int MeshFileID=0;
 
   if (BoundaryTriangleFaces!=NULL) exit(__LINE__,__FILE__,"Error: redifinition of the surface triangulation array");
@@ -566,8 +566,8 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
 
 
   //check the distances between nodes
-  long int nNode0,nNode1;
-  long int nd,nfc,id;
+  int nNode0,nNode1;
+  int nd,nfc,id;
   double d,*xNode0,*xNode1;
 
   for (nNode0=0;nNode0<nnodes;nNode0++) {
@@ -645,7 +645,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMes
 
   //calculate external normals to the faces
   double x0[3],e0[3],e1[3],SearchDirection[3],l,l0;
-  long int nface;
+  int nface;
   cNASTRANface *fcptr;
   cNASTRANnode *nd0,*nd1,*nd2;
   double xLocal[2];
@@ -952,7 +952,7 @@ void CutCell::ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> Surface
 //calcualte the size limit of the surface mesh
 void CutCell::GetSurfaceSizeLimits(double* xmin,double *xmax) {
   int idim;
-  long int nnode;
+  int nnode;
 
   for (idim=0;idim<3;idim++) xmin[idim]=BoundaryTriangleNodes->x[idim],xmax[idim]=BoundaryTriangleNodes->x[idim];
 
@@ -1437,7 +1437,7 @@ double CutCell::GetRemainedBlockVolume(double* xCellMin,double* xCellMax,double 
 }
 
 void CutCell::ReconstructConnectivityList(list<CutCell::cConnectivityListTriangleNode>& nodes,list<CutCell::cConnectivityListTriangleEdge>& edges,list<CutCell::cConnectivityListTriangleFace>& faces,list<cConnectivityListTriangleEdgeDescriptor>& RecoveredEdgeDescriptorList) {
-  long int nd,nface;
+  int nd,nface;
   int idim;
   list<cConnectivityListTriangleNode>::iterator *tempNodeIteratorVector=new list<cConnectivityListTriangleNode>::iterator [nBoundaryTriangleNodes];
 
@@ -1458,7 +1458,7 @@ void CutCell::ReconstructConnectivityList(list<CutCell::cConnectivityListTriangl
 
     for (idim=0;idim<3;idim++) {
       t.edge[idim]=edges.end();
-      t.node[idim]=tempNodeIteratorVector[(long int)(BoundaryTriangleFaces[nface].node[idim]-BoundaryTriangleNodes)];
+      t.node[idim]=tempNodeIteratorVector[(int)(BoundaryTriangleFaces[nface].node[idim]-BoundaryTriangleNodes)];
     }
 
     for (int i=0;i<2;i++) t.neib[i]=faces.end();
@@ -1575,7 +1575,7 @@ void CutCell::SmoothRefine(double SmoothingCoefficient) {
   cNASTRANnode *NewEdgeMiddleNode=new cNASTRANnode[OriginalEdges.size()];
   list<cConnectivityListTriangleNode> NewNodes;
   list<cConnectivityListTriangleEdge>::iterator edge;
-  long int cnt;
+  int cnt;
 
   for (cnt=0,edge=OriginalEdges.begin();edge!=OriginalEdges.end();cnt++,edge++) {
     cConnectivityListTriangleNode n;
@@ -1680,7 +1680,7 @@ void CutCell::SmoothRefine(double SmoothingCoefficient) {
   //init the new array of the surface triangualtion
   cTriangleFace *newBoundaryTriangleFaces=new cTriangleFace[NewTriangleFaces.size()];
   cNASTRANnode  *newBoundaryTriangleNodes=new cNASTRANnode[OrigonalNodes.size()+OriginalEdges.size()];
-  long int nnode,nface,i;
+  int nnode,nface,i;
 
   for (nnode=0,i=0;i<2;i++) {
     list<cConnectivityListTriangleNode>::iterator ndBegin,ndEnd;
@@ -1725,9 +1725,9 @@ void CutCell::SmoothRefine(double SmoothingCoefficient) {
 
 
   //calculate the ball averaged normal for the surface nodes
-  for (long int nd=0;nd<nBoundaryTriangleNodes;nd++) for (int idim=0;idim<3;idim++) BoundaryTriangleNodes[nd].BallAveragedExternalNormal[idim]=0.0;
+  for (int nd=0;nd<nBoundaryTriangleNodes;nd++) for (int idim=0;idim<3;idim++) BoundaryTriangleNodes[nd].BallAveragedExternalNormal[idim]=0.0;
 
-  for (long int nfc=0;nfc<nBoundaryTriangleFaces;nfc++) for (int nd=0;nd<3;nd++) for (int idim=0;idim<3;idim++) {
+  for (int nfc=0;nfc<nBoundaryTriangleFaces;nfc++) for (int nd=0;nd<3;nd++) for (int idim=0;idim<3;idim++) {
     BoundaryTriangleFaces[nfc].node[nd]->BallAveragedExternalNormal[idim]+=BoundaryTriangleFaces[nfc].ExternalNormal[idim];
   }
 
@@ -1937,10 +1937,10 @@ cout <<"line=" << __LINE__ << endl;
        if (bl->node[i][j][k]->nodeno==-1) {
                 bl->node[i][j][k]->nodeno=nodenoCounter++;
           elementPosition=nodes.GetEntryCountingNumber(bl->node[i][j][k]);
-                fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+                fwrite(&elementPosition,sizeof(int),1,nodesListFile);
 
                 elementPosition=blocks.GetEntryCountingNumber(bl);
-                fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+                fwrite(&elementPosition,sizeof(int),1,nodesListFile);
        }
 
            }
@@ -1951,28 +1951,28 @@ cout <<"line=" << __LINE__ << endl;
           for (int ii=0;ii<3;ii+=2) for (int jj=0;jj<3;jj+=2) for (int kk=0;kk<3;kk+=2) if (bl->node[ii][jj][kk]->nodeno<0) exit(__LINE__,"Un-numbered node is found");
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[0][0][0]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[2][0][0]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[2][2][0]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[0][2][0]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[0][0][2]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[2][0][2]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[2][2][2]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
           elementPosition=nodes.GetEntryCountingNumber(bl->node[0][2][2]);
-          fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+          fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       return 1;*/
 
@@ -2035,38 +2035,38 @@ cout <<"line=" << __LINE__ << endl;
         if (bl->node[i][j][k]->nodeno==-1) {
            bl->node[i][j][k]->nodeno=nodenoCounter++;
            elementPosition=nodes.GetEntryCountingNumber(bl->node[i][j][k]);
-           fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+           fwrite(&elementPosition,sizeof(int),1,nodesListFile);
 
            elementPosition=blocks.GetEntryCountingNumber(bl);
-           fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+           fwrite(&elementPosition,sizeof(int),1,nodesListFile);
         }
       }
 
       blocknoCounter++;
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[0][0][0]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[2][0][0]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[2][2][0]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[0][2][0]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[0][0][2]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[2][0][2]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[2][2][2]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       elementPosition=nodes.GetEntryCountingNumber(bl->node[0][2][2]);
-      fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+      fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
       return 1;
 
@@ -2167,7 +2167,7 @@ cutBlockFlag=false;
                 if (code!=globalNodeMask[ii][jj][kk]) {
                   code=1;
 
-                  for (long int nSurfaceElement=0;nSurfaceElement<nSurfaceNASTRANelements;nSurfaceElement++) {
+                  for (int nSurfaceElement=0;nSurfaceElement<nSurfaceNASTRANelements;nSurfaceElement++) {
                     code=(surfaceNASTRANmesh[nSurfaceElement].checkPointInsideDomain(x,EPS)==true) ? 1 : -1;
                     if (code==-1) break;
                   }
@@ -2363,10 +2363,10 @@ cout << __LINE__ << endl;
         if (bl->edge[nedge]->cutPoint->nodeno==-1) {
           bl->edge[nedge]->cutPoint->nodeno=nodenoCounter++;
           elementPosition=nodes.GetEntryCountingNumber(bl->edge[nedge]->cutPoint);
-          fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+          fwrite(&elementPosition,sizeof(int),1,nodesListFile);
 
           elementPosition=blocks.GetEntryCountingNumber(bl);
-          fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+          fwrite(&elementPosition,sizeof(int),1,nodesListFile);
         }
       }
     }*/
@@ -2413,7 +2413,7 @@ cout << __LINE__ << endl;
 if (globalNodeMask[i][j][k]==0) {
   globalNodeMask[i][j][k]=1;
 
-  for (long int nSurfaceElement=0;nSurfaceElement<nSurfaceNASTRANelements;nSurfaceElement++) {
+  for (int nSurfaceElement=0;nSurfaceElement<nSurfaceNASTRANelements;nSurfaceElement++) {
     if (surfaceNASTRANmesh[nSurfaceElement].checkPointInsideDomain(bl->node[i][j][k]->x,EPS)==false) {
       globalNodeMask[i][j][k]=-1;
       break;
@@ -2444,10 +2444,10 @@ nodeMesh[i][j][k]->ghostNode=(globalNodeMask[i][j][k]>=0) ? false : true;
       if ( (nodeMesh[i][j][k]->ghostNode==false) || (cutBlockFlag==false) ) if (bl->node[i][j][k]->nodeno==-1) {
         bl->node[i][j][k]->nodeno=nodenoCounter++;
         elementPosition=nodes.GetEntryCountingNumber(bl->node[i][j][k]);
-        fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+        fwrite(&elementPosition,sizeof(int),1,nodesListFile);
 
         elementPosition=blocks.GetEntryCountingNumber(bl);
-        fwrite(&elementPosition,sizeof(long int),1,nodesListFile);
+        fwrite(&elementPosition,sizeof(int),1,nodesListFile);
       }
 
     }
@@ -2742,23 +2742,23 @@ if (  (cutBlockFlag==false) ||  ((nd0->ghostNode==false)&&(nd1->ghostNode==false
 
         if (nd1->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd1->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd2->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd2->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd3->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd3->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd0->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd0->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
 
 
@@ -3065,23 +3065,23 @@ if (  (cutBlockFlag==false) ||  ((nd0->ghostNode==false)&&(nd1->ghostNode==false
 
         if (nd1->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd1->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd2->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd2->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd3->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd3->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
         if (nd0->meshNode->nodeno<0) exit(__LINE__,"Un-numbered node is found");
         elementPosition=nodes.GetEntryCountingNumber(nd0->meshNode);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
-        fwrite(&elementPosition,sizeof(long int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
+        fwrite(&elementPosition,sizeof(int),1,connectivityListFile);
 
 
 

@@ -14,9 +14,9 @@
  */
 
 bool Earth::CutoffRigidity::SampleRigidityMode=false;
-long int Earth::CutoffRigidity::InitialRigidityOffset=-1;
-long int Earth::CutoffRigidity::InitialLocationOffset=-1;
-long int Earth::CutoffRigidity::IntegratedPathLengthOffset=-1;
+int Earth::CutoffRigidity::InitialRigidityOffset=-1;
+int Earth::CutoffRigidity::InitialLocationOffset=-1;
+int Earth::CutoffRigidity::IntegratedPathLengthOffset=-1;
 array_2d<double> Earth::CutoffRigidity::CutoffRigidityTable;
 array_2d<int> Earth::CutoffRigidity::InjectedParticleMap;
 array_2d<double> Earth::CutoffRigidity::MaxEnergyInjectedParticles;
@@ -38,8 +38,8 @@ double Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[]={0.0};
 double CutoffRigidityTestLocationTable[][3]={{0.0,0.0,0.0}};
 int CutoffRigidityTestLocationTableLength=0;
 
-long int Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex=-1;
-long int Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed=-1;
+int Earth::CutoffRigidity::ParticleDataOffset::OriginLocationIndex=-1;
+int Earth::CutoffRigidity::ParticleDataOffset::OriginalSpeed=-1;
 
 
 //the total number of model particles ejected from a test location
@@ -105,9 +105,9 @@ void Earth::CutoffRigidity::AllocateCutoffRigidityTable() {
 
 
 //process model particles that leaves the computational domain
-int Earth::CutoffRigidity::ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+int Earth::CutoffRigidity::ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   double *x,Rigidity;
-  long int iAzimuth,iZenith;
+  int iAzimuth,iZenith;
   int spec;
   PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
@@ -162,7 +162,7 @@ void Earth::CutoffRigidity::OutputDataFile::PrintVariableList(FILE* fout) {
   fprintf(fout,", \"Cutoff Rigidity\", \"Injected Particle Number\"");
 }
 
-void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void Earth::CutoffRigidity::OutputDataFile::PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement,iZenith,iAzimuth;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 

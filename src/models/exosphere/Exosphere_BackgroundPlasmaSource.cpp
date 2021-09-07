@@ -13,7 +13,7 @@
 #include "Exosphere.h"
 #include "constants.h"
 
-long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::nTotalBoundaryInjectionFaces=-1;  //the number of the computationsl mesh blocks at the boundary of the domain
+int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::nTotalBoundaryInjectionFaces=-1;  //the number of the computationsl mesh blocks at the boundary of the domain
 double **Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::BoundaryFaceTotalInjectionRate=NULL; //the fraction of the total production rate that is due to a particular block (BoundaryBlockProductionFraction[spec][block]
 double *Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::maxLocalTimeStep=NULL; //the maximum value of the time step across the boundary of the computational domain (maxLocalTimeStep[spec])
 double *Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::minParticleWeight=NULL; //the minimum value of the particle weight across the computational domain (minParticleWeight[spec])
@@ -90,7 +90,7 @@ void Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::getMinMax
 //calculate of the source rate
 double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTotalProductionRate(int spec) {
   double res=0.0;
-  long int nBoundaryFace;
+  int nBoundaryFace;
   list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* >::iterator end,nodeptr;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
   double PlasmaTemperature,PlasmaBulkVelocity[3],PlasmaNumberDensity,ExternalNormal[3],BlockSurfaceArea,x[3],x0[3],e0[3],e1[3];
@@ -247,8 +247,8 @@ double Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::GetTota
 }
 
 //particle injection
-long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::ParticleInjection(int spec) {
-  long int nInjectedParticles=0;
+int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::ParticleInjection(int spec) {
+  int nInjectedParticles=0;
   double ModelParticlesInjectionRate,TimeCounter=0.0,Ratio,p;
   double FluxIntegrationIncrement=1.0/nFaceInjectionIntervals;
 
@@ -261,13 +261,13 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
   Ratio=minParticleWeight[spec]/maxLocalTimeStep[spec];
   ModelParticlesInjectionRate/=minParticleWeight[spec];
 
-  long int nBoundaryFace;
+  int nBoundaryFace;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
   double PlasmaTemperature,PlasmaBulkVelocity[3],ExternalNormal[3],x[3],x0[3],e0[3],e1[3];
   int nface,idim;
 
   double v[3],c0,c1;
-  long int newParticle;
+  int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
   double LocalTimeStep,LocalParticleWeight;
   const double ParticleWeightCorrection=1.0;
@@ -395,8 +395,8 @@ long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::Parti
   return nInjectedParticles;
 }
 
-long int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::ParticleInjection() {
-  long int nInjectedParticles=0;
+int Exosphere::SourceProcesses::BackgroundPlasmaBoundaryIonInjection::ParticleInjection() {
+  int nInjectedParticles=0;
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) nInjectedParticles+=ParticleInjection(spec);
 

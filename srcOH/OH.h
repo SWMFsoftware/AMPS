@@ -49,7 +49,7 @@ namespace OH {
   void InitPhysicalSpecies();
 
   // creating a variable that holds location designator of where it was created
-  extern long int OffsetOriginTag;
+  extern int OffsetOriginTag;
 
   // gets origin tag from each particle for output
   inline int GetOriginTag(PIC::ParticleBuffer::byte* ParticleData) {
@@ -64,7 +64,7 @@ namespace OH {
 
   // determines what the origin tag for each particle should be based on loacl plasma parameters where it was created
   int GetEnaOrigin(double PlasmaNumberDensity, double PlasmaPressure, double *PlasmaBulkVelocity);
-  void InitializeParticleWithEnaOriginTag(long int ptr, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode, int iInjectionMode);
+  void InitializeParticleWithEnaOriginTag(int ptr, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode, int iInjectionMode);
 
   // functions to select Vp used in charge exchange calculations
   double VpDistribution(double *x, double *vh, double *up, double vth);
@@ -72,7 +72,7 @@ namespace OH {
 
   void Init_BeforeParser();
 
-  int user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+  int user_set_face_boundary(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
   //---------------------------------------------------------------------------
   namespace Sampling {
@@ -98,12 +98,12 @@ namespace OH {
     extern int v2SamplingMode,speedSamplingMode;
     extern double vMin;
     extern double vMax;
-    extern long int nSampledFunctionPoints;
+    extern int nSampledFunctionPoints;
     extern double** SamplingBuffer;
     extern double SamplingLocations[][3];
     extern cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** SampleNodes;
     extern double dV,dV2,dSpeed;
-    extern long int *SampleLocalCellNumber;
+    extern int *SampleLocalCellNumber;
     extern int nSampleLocations;
     extern bool SamplingInitializedFlag;
     extern int Sample_Velocity_Offset,Sample_Speed_Offset;
@@ -182,7 +182,7 @@ namespace OH {
 
     void Init();
     void flushSamplingBuffers();
-    long int GetSampleDataOffset(int spec,int OriginID,int SampleVariableOffset);
+    int GetSampleDataOffset(int spec,int OriginID,int SampleVariableOffset);
     void SampleDistributionFunction();
     void printDistributionFunction(int DataOutputFileNumber);
 
@@ -216,16 +216,16 @@ namespace OH {
 
   //---------------------------------------------------------------------------
   namespace Loss {
-    double LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-    double GetFrequencyTable(double *FrequencyTable, double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    double LifeTime(double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    double GetFrequencyTable(double *FrequencyTable, double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
 
-    void ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-    void ReactionProcessor_Lookup_Table(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    void ReactionProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    void ReactionProcessor_Lookup_Table(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   }
 
   //---------------------------------------------------------------------------
-  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     accl[0]=0.0; accl[1]=0.0;  accl[2]=0.0;
   }
 }

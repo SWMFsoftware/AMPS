@@ -43,7 +43,7 @@ namespace CutCell {
   extern double xLocalMargin;
 
   //get the sugnature of the triangulation
-unsigned long int GetTriangulationSignature();
+unsigned int GetTriangulationSignature();
 
   struct cNodeCoordinates {
     double *x;
@@ -827,7 +827,7 @@ unsigned long int GetTriangulationSignature();
 
     //output the mesh
     fout=fopen(fname,"w");
-    fprintf(fout,"VARIABLES=\"X\",\"Y\",\"Z\"\nZONE N=%ld, E=%ld,DATAPACKING=POINT, ZONETYPE=FETETRAHEDRON\n",idMax,cells.size());
+    fprintf(fout,"VARIABLES=\"X\",\"Y\",\"Z\"\nZONE N=%i, E=%i,DATAPACKING=POINT, ZONETYPE=FETETRAHEDRON\n",idMax,cells.size());
 
     for (nodeitr=nodes.begin();nodeitr!=nodes.end();nodeitr++) fprintf(fout,"%e %e %e\n",nodeitr->node->x[0],nodeitr->node->x[1],nodeitr->node->x[2]);
 

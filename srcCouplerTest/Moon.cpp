@@ -310,7 +310,7 @@ void Moon::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
 
   dZ=dZenithAngleMin;
   rr=(maxZenithAngle+dZenithAngleMax)/(maxZenithAngle+dZenithAngleMin);
-  nZenithPoints=(long int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
+  nZenithPoints=(int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
   rr=pow(dZenithAngleMax/dZenithAngleMin,1.0/(nZenithPoints+2.0));
 
   nZenithPoints=0,ZenithAngle=dZenithAngleMin,dZenithAngle=dZenithAngleMin;
