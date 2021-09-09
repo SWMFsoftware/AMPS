@@ -119,12 +119,6 @@ foreach (@Arguments) {
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
      print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
-
-     print "-no-avx-matmul\t\t\tdisable AVX in the matrix multiplication functions\n";
-     print "-no-avx-mover\t\t\tdisable AVX in the particle movers\n";
-
-     print "-align\t\t\t\talign (64) state vectors and arrays when possible and improve the efficientcy\n";
-
      print "-fexit=[exit,mpi_abort]\t\tselect function that will be used to terminate code in case of an error. In some systems mpi_abort() does not terminate the code, but in other systems exit() does not terminate the code\n"; 
      exit;
    }
@@ -366,21 +360,6 @@ foreach (@Arguments) {
 
   if (/^-no-signals/i) {
     add_line_general_conf("#undef _INTERSEPT_OS_SIGNALS_ \n#define _INTERSEPT_OS_SIGNALS_ _OFF_"); 
-    next;
-  }
-
-  if (/^-no-avx-matmul/i) {
-    add_line_general_conf("#undef _AVX_MATMUL_ \n#define _AVX_MATMUL_ _OFF_");
-    next;
-  } 
-
-  if (/^-no-avx-mover/i) {
-    add_line_general_conf("#undef _AVX_PARTICLE_MOVER_ \n#define _AVX_PARTICLE_MOVER_ _OFF_");
-    next;
-  }
-
-  if (/^-align/i) {
-    add_line_general_conf("#undef _ALIGN_STATE_VECTORS_ \n#define _ALIGN_STATE_VECTORS_ _ON_");
     next;
   }
 

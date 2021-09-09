@@ -2222,14 +2222,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
       Jg_v[ii]=_mm256_setzero_pd();
     }
 
-
-    /*
-    Important!: the actually used size MassMatrix_GGD is [8][8][9]
-    The reason to define the array of size [8][8][12] is to 
-    make sure that MassMatrix_GGD[i][j][:] is align to 32, 
-    whoch is needed to accelerate access to the array with AVX256 */ 
-    alignas(64) double MassMatrix_GGD[8][8][12];  
-
+    double MassMatrix_GGD[8][8][9];
     for (int iCorner=0;iCorner<8;iCorner++){
       for(int jCorner=0;jCorner<8;jCorner++){
 
@@ -2300,7 +2293,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
       ParticleData=ParticleDataNext;
 
       spec=PIC::ParticleBuffer::GetI(ParticleData);
-//      PIC::ParticleBuffer::GetV(vInit,ParticleData);
+      PIC::ParticleBuffer::GetV(vInit,ParticleData);
       PIC::ParticleBuffer::GetX(xInit,ParticleData);
       LocalParticleWeight=block->GetLocalParticleWeight(spec);
       LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
@@ -2349,7 +2342,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         //convert from SI to cgs
         B[3]=0.0;
         B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
-        vInit_v=_mm256_mul_pd(_mm256_loadu_pd(PIC::ParticleBuffer::GetV(ParticleData)),_mm256_set1_pd(length_conv));
+        vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
 
         double QdT_over_m,QdT_over_2m,chargeQ;
         double WeightPG[8];
@@ -2752,23 +2745,11 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
           #endif
 
 
-          __m256d *t;
-          __m256d tWP=_mm256_set1_pd(tempWeightProduct);
-          
-          t=(__m256d*)tmpPtr;
-          *t=_mm256_fmadd_pd(alpha_vl,tWP,*t);
-
-          t=(__m256d*)(tmpPtr+4);
-          *t=_mm256_fmadd_pd(alpha_vu,tWP,*t);
-
-
-/*
           __m256d tmpPtr_vl=_mm256_loadu_pd(tmpPtr);
           __m256d tmpPtr_vu=_mm256_loadu_pd(tmpPtr+4);
 
           _mm256_storeu_pd(tmpPtr,_mm256_fmadd_pd(alpha_vl,_mm256_set1_pd(tempWeightProduct),tmpPtr_vl));
           _mm256_storeu_pd(tmpPtr+4,_mm256_fmadd_pd(alpha_vu,_mm256_set1_pd(tempWeightProduct),tmpPtr_vu));
-*/
 
           tmpPtr[8]+=alpha*tempWeightProduct;  //__256d has only 4 double -> operation for tmpPtr[8] has to be done separatly
         };

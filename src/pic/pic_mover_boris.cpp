@@ -6,20 +6,6 @@
 #include "Exosphere.h"
 
 
-//define whether AVX will be used in Lapenta2017 functions 
-#define _AVX_LAPENTA_MOVER_  _ON_
-
-#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-  #undef _AVX_LAPENTA_MOVER_
-  #define _AVX_LAPENTA_MOVER_  _OFF_
-#else 
-  #if _AVX_PARTICLE_MOVER_ == _OFF_ 
-    #undef _AVX_LAPENTA_MOVER_
-    #define _AVX_LAPENTA_MOVER_  _OFF_
-  #endif
-#endif
-
-
 void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   /* function finds acceleration and splits into a simple and gyroscopic parts
    * for Lorentz force (considered here)
@@ -877,7 +863,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   int idim,i,j,k,spec;
   double dtTotal;
 
-#if _AVX_LAPENTA_MOVER_ == _OFF_ 
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   double vInit[3],xInit[3],vFinal[3],xFinal[3];
 #else
   union {__m256d vInit_v; double vInit[4];};
@@ -912,7 +898,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
   PIC::InterpolationRoutines::CellCentered::cStencil MagneticFieldStencil;
   int threadId=0;
 
-#if _AVX_LAPENTA_MOVER_ == _OFF_
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   double E[4]={0.0,0.0,0.0,0.0},B[4]={0.0,0.0,0.0,0.0};
 #else
   union {__m256d B_v; double B[4];};
@@ -954,7 +940,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
         double *tempB1=data->B_C+3*LocalCellID[iStencil];
         #endif
        
-        #if _AVX_LAPENTA_MOVER_ == _OFF_
+        #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
         for (idim=0;idim<3;idim++) {
           E[idim]+=Weight[iStencil]*tempE1[idim];
@@ -986,7 +972,7 @@ int PIC::Mover::Lapenta2017(PIC::ParticleBuffer::byte *ParticleData,long int ptr
       for (int iStencil=0;iStencil<Length;iStencil++) {
         double *tempB1 = data->B_C+3*LocalCellID[iStencil];
 
-        #if _AVX_LAPENTA_MOVER_ == _OFF_
+        #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
         #pragma ivdep
         for (idim=0;idim<3;idim++) {
           B[idim]+=Weight[iStencil]*tempB1[idim];
@@ -1027,7 +1013,7 @@ __syncwarp;
   QdT_over_2m_squared=QdT_over_2m*QdT_over_2m;
 
 
-  #if _AVX_LAPENTA_MOVER_ == _OFF_
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
   double BB[3][3],P[3];
 
   for (i=0;i<3;i++) {
