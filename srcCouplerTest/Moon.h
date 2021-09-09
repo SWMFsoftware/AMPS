@@ -167,7 +167,7 @@ namespace Moon {
       const double maxAltitude=50.0; //altititude in radii of the object
       const double dAltmin=0.001,dAltmax=0.001*maxAltitude; //the minimum and maximum resolution along the 'altitude' line
       extern double rr;
-      extern int nSampleAltitudeDistributionPoints;
+      extern long int nSampleAltitudeDistributionPoints;
 
       //offsets in the sample for individual parameters of separate species
       extern int _NA_EMISSION_5891_58A_SAMPLE_OFFSET_,_NA_EMISSION_5897_56A_SAMPLE_OFFSET_,_NA_COLUMN_DENSITY_OFFSET_;
@@ -268,7 +268,7 @@ namespace Moon {
 
     //the total acceleration acting on a particle
   //double SodiumRadiationPressureAcceleration_Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance);
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
 
@@ -315,7 +315,7 @@ namespace Moon {
 #endif
     }
     else if (spec==_NA_PLUS_SPEC_) { //the Lorentz force
-      int nd;
+      long int nd;
       char *offset;
       int i,j,k;
       PIC::Mesh::cDataCenterNode *CenterNode;
@@ -415,7 +415,7 @@ namespace Moon {
 
 
 
-  inline double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
     static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
 
@@ -448,7 +448,7 @@ namespace Moon {
     return res;
   }
 
-  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
 
     if (_NA_PLUS_SPEC_>=0) {
       PIC::ParticleBuffer::SetI(_NA_PLUS_SPEC_,ParticleData);

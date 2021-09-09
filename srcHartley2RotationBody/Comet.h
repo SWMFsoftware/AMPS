@@ -43,9 +43,9 @@ namespace Comet {
   double GetTotalProductionRateWaist(int spec,int BoundaryElementType,void *SphereDataPointer);
   bool GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double *x_IAU_OBJECT,double *v_SO_OBJECT,double *v_IAU_OBJECT,double *sphereX0, double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode, cInternalSphericalData* Sphere,char* tempParticleData);
 
-  int InjectionBoundaryModel_Limited();
-  int InjectionBoundaryModel_Limited(void *SphereDataPointer);
-  int InjectionBoundaryModel_Limited(int spec,void *SphereDataPointer);
+  long int InjectionBoundaryModel_Limited();
+  long int InjectionBoundaryModel_Limited(void *SphereDataPointer);
+  long int InjectionBoundaryModel_Limited(int spec,void *SphereDataPointer);
 
 
   //output the column integrals in the anti-solar direction
@@ -65,10 +65,10 @@ namespace Comet {
    //probabilities of the destruction of the primary species
    const double NumericalLossRateIncrease=1000.0;
 
-   double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-   void PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+   double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+   void PhotochemicalModelProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
-   int ExospherePhotoionizationReactionProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+   int ExospherePhotoionizationReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
 
 
@@ -194,7 +194,7 @@ namespace Comet {
       const double maxAltitude=50.0; //altititude in radii of the object
       const double dAltmin=0.001,dAltmax=0.001*maxAltitude; //the minimum and maximum resolution along the 'altitude' line
       extern double rr;
-      extern int nSampleAltitudeDistributionPoints;
+      extern long int nSampleAltitudeDistributionPoints;
 
       //offsets in the sample for individual parameters of separate species
       extern int _NA_EMISSION_5891_58A_SAMPLE_OFFSET_,_NA_EMISSION_5897_56A_SAMPLE_OFFSET_,_NA_COLUMN_DENSITY_OFFSET_;
@@ -294,7 +294,7 @@ namespace Comet {
 
     //the total acceleration acting on a particle
   //double SodiumRadiationPressureAcceleration_Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance);
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
 
@@ -341,7 +341,7 @@ namespace Comet {
 #endif
     }
     else if (spec==_NAPLUS_SPEC_) { //the Lorentz force
-      int nd;
+      long int nd;
       char *offset;
       int i,j,k;
       PIC::Mesh::cDataCenterNode *CenterNode;

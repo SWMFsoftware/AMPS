@@ -203,7 +203,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor() {
   static int ParticleBufferLengthDefaut=50000;
 
   struct cCollidingParticleList {
-    int Particle;
+    long int Particle;
     double CollisionTimeFraction;
   };
 
@@ -211,18 +211,18 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor() {
   PIC::Mesh::cDataCenterNode *cell;
 
   //the buffer of particles that occuping the local cell
-  int modelParticle;
+  long int modelParticle;
   int BackgroundSpecieNumber,spec,idim;
   PIC::ParticleBuffer::byte *modelParticleData;
   double vModelParticle[3],xModelParticle[3],vBackgroundParticle[3],particleCollisionTime,cr2;
   PIC::Mesh::cDataBlockAMR *block;
 
   //the temporary particle that represents the background atmosphere
-  static int *tempBackgroundAtmosphereParticle=NULL;
+  static long int *tempBackgroundAtmosphereParticle=NULL;
   static PIC::ParticleBuffer::byte **BackgroundAtmosphereParticleData=NULL;
 
   if (tempBackgroundAtmosphereParticle==NULL) {
-    tempBackgroundAtmosphereParticle=new int [PIC::nTotalThreadsOpenMP];
+    tempBackgroundAtmosphereParticle=new long int [PIC::nTotalThreadsOpenMP];
     BackgroundAtmosphereParticleData=new PIC::ParticleBuffer::byte *[PIC::nTotalThreadsOpenMP];
   }
 
@@ -290,7 +290,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::CollisionProcessor() {
   for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
     int nLocalNode,ii=CellCounter;
     int kCell,jCell,iCell; //,i,j,k;
-    int nCollidingParticles=0;
+    long int nCollidingParticles=0;
 
     nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
     ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
@@ -531,7 +531,7 @@ _StartParticleCollisionLoop_:
               PIC::ParticleBuffer::SetI(Background2ModelSpeciesConversionTable[BackgroundSpecieNumber],BackgroundAtmosphereParticleData[thread]);
 
               if (KeepConditionModelParticle(BackgroundAtmosphereParticleData[thread])==true) {
-                int newParticle;
+                long int newParticle;
                 PIC::ParticleBuffer::byte *newParticleData;
 
                 newParticle=PIC::ParticleBuffer::GetNewParticle(block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
@@ -588,7 +588,7 @@ _StartParticleCollisionLoop_:
 #if _PIC_BACKGROUND_ATMOSPHERE__MODEL_PARTICLE_REMOVAL_MODE_ == _PIC_MODE_ON_
             if (KeepConditionModelParticle(modelParticleData)==false) {
               //the particle should be removed
-              int next,prev;
+              long int next,prev;
 
               //accout for the termalization of the exospheric particles
               TotalCollisionModelParticleLossRate[spec][thread]+=node->block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(modelParticleData)/localTimeStep;
@@ -641,7 +641,7 @@ _StartParticleCollisionLoop_:
 void PIC::MolecularCollisions::BackgroundAtmosphere::RemoveThermalBackgroundParticles() {
 
   //the table of increments for accessing the cells in the block
-  int next,prev,ptr,LocalCellNumber;
+  long int next,prev,ptr,LocalCellNumber;
   PIC::ParticleBuffer::byte *pdata;
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];

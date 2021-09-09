@@ -4,7 +4,7 @@
 #include "amps2swmf.h"
 
 
-int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine) {
+long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
 
   int iShockFieldLine,npart;
@@ -124,8 +124,8 @@ vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSp
   return nInjectedParticles;
 } 
    
-int SEP::FieldLine::InjectParticles() {
-  int res=0;
+long int SEP::FieldLine::InjectParticles() {
+  long int res=0;
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) for (int iFieldLine=0;iFieldLine<PIC::FieldLine::nFieldLine;iFieldLine++) {
     res+=InjectParticlesSingleFieldLine(spec,iFieldLine);

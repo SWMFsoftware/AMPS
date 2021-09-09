@@ -117,7 +117,7 @@ void ExosphereUserDefinedOutputData(FILE *fout,int spec) {
 
 
 //photoionization lifetime of sodium
-/*double sodiumPhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag) {
+/*double sodiumPhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag) {
 
   static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
@@ -139,7 +139,7 @@ void ExosphereUserDefinedOutputData(FILE *fout,int spec) {
   return res;
 }
 
-int sodiumPhotoionizationReactionProcessor(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
+int sodiumPhotoionizationReactionProcessor(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
   spec=_NAPLUS_SPEC_22_;
 
   PIC::ParticleBuffer::SetI(spec,ParticleData);
@@ -490,14 +490,14 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 //injection of model particles through the faces of the bounding box
 /*
-int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-//  int nInjectedParticles;
-  int newParticle;
+//  long int nInjectedParticles;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
-  int nInjectedParticles=0;
+  long int nInjectedParticles=0;
 
   if (spec!=_NA_SPEC_) return 0; //inject only spec=0
 
@@ -556,8 +556,8 @@ int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
 }
 */
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
 
 
 
@@ -579,13 +579,13 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
    double radiusSphere,*x0Sphere,l[3],r,vNorm,c;
    cInternalSphericalData *Sphere;
    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
    int idim;
 
-//   int newParticle;
+//   long int newParticle;
 //   PIC::ParticleBuffer::byte *newParticleData;
 //   double ParticleStatWeight,WeightCorrection;
 
@@ -605,7 +605,7 @@ int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTot
 
    //sample the particle data
    double *SampleData;
-   int nSurfaceElement,nZenithElement,nAzimuthalElement;
+   long int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
    Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
    nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -686,10 +686,10 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   static const double tempSW=8.0E4;
   static double swVel[3]={4.0E5,0.0,0.0};
 
-  int newParticle,nd;
+  long int newParticle,nd;
   PIC::ParticleBuffer::byte *newParticleData;
 
-  static int nTotalGeneratedParticles=0,nTotalProcessorBlocks=0;
+  static long int nTotalGeneratedParticles=0,nTotalProcessorBlocks=0;
   static double GlobalParticleWeight=0.0,aNpartTotal=0.0,TotalDomainVolume=0.0;
 
 
@@ -744,8 +744,8 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
-    int *GeneratedParticle=new int [PIC::Mesh::mesh->nTotalThreads];
-    int *GeneratedNodes=new int [PIC::Mesh::mesh->nTotalThreads];
+    long int *GeneratedParticle=new long int [PIC::Mesh::mesh->nTotalThreads];
+    long int *GeneratedNodes=new long int [PIC::Mesh::mesh->nTotalThreads];
     double *anpart=new double [PIC::Mesh::mesh->nTotalThreads];
     double *volume=new double [PIC::Mesh::mesh->nTotalThreads];
 
@@ -784,11 +784,11 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 }*/
 
 /*
-int sphereParticleInjection(void *SphereDataPointer) {
+long int sphereParticleInjection(void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ParticleWeight,LocalTimeStep,x[3],v[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
 //  int idim;
 
@@ -848,7 +848,7 @@ int sphereParticleInjection(void *SphereDataPointer) {
 //====================  DEBUG ===========================
     {
 static double InjectionRadialVelocity=0.0,InjectionTangentionalSpeed=0.0;
-static int nTotalInjectedParticles=0;
+static long int nTotalInjectedParticles=0;
 
 double l[3],r=0.0,v0=0.0,v1=0.0;
 int idim;
@@ -972,7 +972,7 @@ void amps_init_mesh() {
 
 
       //reserve memory for sampling of the surface balance of sticking species
-      int ReserveSamplingSpace[PIC::nTotalSpecies];
+      long int ReserveSamplingSpace[PIC::nTotalSpecies];
 
       for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=_OBJECT_SURFACE_SAMPLING__TOTAL_SAMPLED_VARIABLES_;
 
@@ -1472,7 +1472,7 @@ void amps_init() {
 
     for (el=0;el<PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber;el++) {
       int i,j,k;
-      int nd;
+      long int nd;
       double FaceCenterPoint[3],PlasmaVelocity[3],PlasmaNumberDensity,FaceElementNormal[3],c;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
       PIC::Mesh::cDataCenterNode *CenterNode;
@@ -1529,7 +1529,7 @@ void amps_init() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
     while (node!=NULL) {
       int i,j,k,di,dj,dk,idim;
-      int LocalCellNumber;
+      long int LocalCellNumber;
       double r,rmin=0.0,rmax=0.0,rprobe[3]={0.0,0.0,0.0};
       PIC::Mesh::cDataCenterNode *cell;
 

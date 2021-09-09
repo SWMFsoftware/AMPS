@@ -280,7 +280,7 @@ void RosinaSample::Flush() {
 //the sampling routine
 void RosinaSample::SamplingProcessor() {
   int i,j,k,spec,idim;
-  int ptr;
+  long int ptr;
   double ParticleWeight,*v,c,*x;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
@@ -404,7 +404,7 @@ void RosinaSample::SamplingProcessor() {
 
             if (DirectAccessPathFound==false) {
               //remove the particle
-              int t=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+              long int t=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
               PIC::ParticleBuffer::DeleteParticle(ptr,t);
               node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=t;

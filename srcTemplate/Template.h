@@ -126,14 +126,14 @@ namespace Template {
     // Particle reactions, e.g. photoionization, electron impact etc.
     namespace Continuous {
       // effective net life-time    
-      double LifeTime(double *x, int spec, int ptr,
+      double LifeTime(double *x, int spec, long int ptr,
 		      bool &ReactionAllowedFlag,
 		      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       
       //----------------------------------------------------------------------
       // Processor for continuous physical processor:
       int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,
-			    int ptr,int &spec,
+			    long int ptr,int &spec,
 			    PIC::ParticleBuffer::byte *ParticleData, 
 			    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
     }
@@ -142,7 +142,7 @@ namespace Template {
     // Processes at key events, e.g. particle hits a surface of a planet
     namespace Incidential {
       // processes when particle hits a surface
-      int ParticleSphereInteraction(int spec, int ptr, 
+      int ParticleSphereInteraction(int spec, long int ptr, 
 				    double *x, double *v,
 				    double &dtTotal,
 				    void *NodeDataPonter,
@@ -151,7 +151,7 @@ namespace Template {
 
     //------------------------------------------------------------------------
     // self-explanatory
-    void inline TotalParticleAcceleration(double *accl, int spec, int ptr,
+    void inline TotalParticleAcceleration(double *accl, int spec, long int ptr,
 					  double *x, double *v, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
       //......................................................................
       // local values of position, velocity and acceleration
@@ -173,7 +173,7 @@ namespace Template {
       //......................................................................
       // find the cell based on particles' position x_LOCAL and block startNode
       // input: x_LOCAL, startNode; output: nd, i,j,k
-      int nd;  // cell's number in the block
+      long int nd;  // cell's number in the block
       int i,j,k;    // cell's coordinates in the block
 
       // fail-safe check: if the block doesn't exist => exit

@@ -21,7 +21,7 @@
  * 2. Independent namespaces are created for target species in Mars.h
  * 3. In Mars.cpp: Former is a wrapper function for latter (see below):
  * void newMars::ProductionRateCaluclation --> void newMars::SpeciesProductionRateCaluclation
- * int newMars::HotAtomProduction_wrapper --> int newMars::HotOxygen::HotOProduction, int newMars::HotCarbon::HotCProduction
+ * long int newMars::HotAtomProduction_wrapper --> long int newMars::HotOxygen::HotOProduction, long int newMars::HotCarbon::HotCProduction
  * 4. main.cpp will now initialize species assigned by input file
  *
  * Working cases for current verstion: Hot O (Dissociative recombination of O2+), Hot C (Photodissociation of CO)
@@ -448,7 +448,7 @@ void newMars::SpeciesProductionRateCaluclation(int spec,bool &InjectionFlag,doub
 }
 
 //BOUNDARY CONDITIONS
-int newMars::ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) { //(int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+int newMars::ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) { //(long int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int spec;
   double rate;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -482,8 +482,8 @@ int newMars::ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,i
 }
 //HOT OXIGEN BLOCK
 
-int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-       int nInjectedParticles=0;
+long int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+       long int nInjectedParticles=0;
 
 
  //      return 0;
@@ -493,7 +493,7 @@ int newMars::HotOxygen::HotOProduction(int iCellIndex,int jCellIndex,int kCellIn
 //       bool InjectionFlag[PIC::nTotalSpecies];
 //       double Rate[PIC::nTotalSpecies];
        double ModelParticleInjectionRate,TimeCounter=0.0,LocalTimeStep;
-       int newParticle;
+       long int newParticle;
        PIC::ParticleBuffer::byte *newParticleData;
        double LocalParticleWeight=node->block->GetLocalParticleWeight(_O_SPEC_);
 
@@ -762,8 +762,8 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
 
     return nInjectedParticles;
   }
-// int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-//     int nInjectedParticles=0;
+// long int newMars::HotCarbon::HotCProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+//     long int nInjectedParticles=0;
     
     
 //     //      return 0;
@@ -773,7 +773,7 @@ ModelParticleInjectionRate=0.1/LocalTimeStep;
 //     //       bool InjectionFlag[PIC::nTotalSpecies];
 //     //       double Rate[PIC::nTotalSpecies];
 //     double ModelParticleInjectionRate,TimeCounter=0.0,LocalTimeStep;
-//     int newParticle;
+//     long int newParticle;
 //     PIC::ParticleBuffer::byte *newParticleData;
 //     double LocalParticleWeight=node->block->GetLocalParticleWeight(_C_SPEC_);
     
@@ -1228,7 +1228,7 @@ double newMars::IonizationHotO(PIC::ParticleBuffer::byte *modelParticleData) {
 
 
 //default function for calculation of the lifetile
-double newMars::TotalLifeTime(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double newMars::TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
     static bool initflag=false;
     static double ReactionLifeTimeTable[PIC::nTotalSpecies];
     static bool ReactionAllowedTable[PIC::nTotalSpecies];
@@ -1287,7 +1287,7 @@ return TotalIonizationFrequency;
 
 
 //process particle chemical transformation
-void newMars::PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void newMars::PhotochemicalModelProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
     int *ReactionProductsList,nReactionProducts;
     double *ReactionProductVelocity;
     int ReactionChannel,spec;
@@ -1372,7 +1372,7 @@ void newMars::PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNo
         double ProductTimeStep,ProductParticleWeight;
         double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0;
         int iProduct;
-        int newParticle;
+        long int newParticle;
         PIC::ParticleBuffer::byte *newParticleData;
         
         
@@ -1518,7 +1518,7 @@ exit(__LINE__,__FILE__,"Error: HotC source is not defined");
   }
 
 
-   void newMars::TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+   void newMars::TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
 
      accl[0]=0.0,accl[1]=0.0,accl[2]=0.0;
@@ -1549,9 +1549,9 @@ exit(__LINE__,__FILE__,"Error: HotC source is not defined");
    }
 
  //wrapper function
- int newMars::HotAtomProduction_wrapper(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
-     int O_nInjectedParticles=0;
-     int C_nInjectedParticles=0;
+ long int newMars::HotAtomProduction_wrapper(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+     long int O_nInjectedParticles=0;
+     long int C_nInjectedParticles=0;
     
      if (_O_SPEC_>=0) {
         

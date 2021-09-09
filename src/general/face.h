@@ -24,7 +24,7 @@ class Cface{
    
 public:
   unsigned char faceat,surface_group;
-  int faceno,nodeno[3];
+  long int faceno,nodeno[3];
   NodeType* node[3];
 
   Cface() {

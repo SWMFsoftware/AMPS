@@ -81,11 +81,11 @@ double Cvhs::GetTotalCrossSect(double Vrel,ParticlePtr ptr1,ParticlePtr ptr2) {
 
 //===================================================
 double Cvhs::GetTotalCrossSect_Cr_MAX(unsigned char s1, 
-  unsigned char s2, int nsubcl,int ncell,ECSFunc ExternalCrossSectFunc) {
+  unsigned char s2, long int nsubcl,long int ncell,ECSFunc ExternalCrossSectFunc) {
   
   unsigned char s;
   ParticlePtr ptr;
-  int npart_s1,npart_s2;
+  long int npart_s1,npart_s2;
   ParticlePtr *part_buff_s1,*part_buff_s2; 
   ParticlePtr part_pos_s1,part_pos_s2;
 
@@ -125,7 +125,7 @@ double Cvhs::GetTotalCrossSect_Cr_MAX(unsigned char s1,
   int idim;
   float v1[3],v2[3];
   double Vrel[3],Vrc,dot_pr,res,c;
-  int n_try;
+  long int n_try;
 
   res=0.0;
   ncombinations=npart_s1*npart_s2;

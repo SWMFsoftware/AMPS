@@ -202,13 +202,13 @@ using namespace std;
 class cAMRexit {
 public:
   _TARGET_HOST_ _TARGET_DEVICE_
-  void exit(const int nline, const char* fname,const char* msg=NULL) {
+  void exit(const long int nline, const char* fname,const char* msg=NULL) {
     char str[1000];
     int mpiInitFlag,ThisThread;
 
 #ifndef __CUDA_ARCH__
-    if (msg==NULL) sprintf(str," exit: line=%i, file=%s\n",nline,fname);
-    else sprintf(str," exit: line=%i, file=%s, message=%s\n",nline,fname,msg);
+    if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,fname);
+    else sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
 
     FILE* errorlog=fopen("$ERROR","a+");
 
@@ -221,18 +221,18 @@ public:
     else ThisThread=0;
 
     fprintf(errorlog,"Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
-    fprintf(errorlog,"file=%s, line=%i\n",fname,nline);
+    fprintf(errorlog,"file=%s, line=%ld\n",fname,nline);
     fprintf(errorlog,"%s\n\n",msg);
 
     printf("$PREFIX:Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
-    printf("$PREFIX:file=%s, line=%i\n",fname,nline);
+    printf("$PREFIX:file=%s, line=%ld\n",fname,nline);
     printf("$PREFIX:%s\n\n",msg);
 
     fclose(errorlog); 
     ::exit(1);
 #else
-    if (msg==NULL) printf(" exit: line=%i, file=%s\n",nline,fname);
-    else printf(" exit: line=%i, file=%s, message=%s\n",nline,fname,msg);
+    if (msg==NULL) printf(" exit: line=%ld, file=%s\n",nline,fname);
+    else printf(" exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
 
     asm("trap;");
 #endif
@@ -264,31 +264,31 @@ template<class T>
 class cAMRstack : public cAMRexit {
 public: 
   //data element's stack
-  int nMaxElements; 
+  long int nMaxElements; 
   T*** elementStackList;
-  int elementStackPointer;
+  long int elementStackPointer;
 
   //array pointers on the allocates data blocks
   T** dataBufferList;
-  int dataBufferListSize,dataBufferListPointer;  
+  long int dataBufferListSize,dataBufferListPointer;  
 
 
   //the element temporary ID (used only in the debugger mode)
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID_counter;
+  long int Temp_ID_counter;
   #endif
 
   //control allocated memory
-  int MemoryAllocation;   
+  long int MemoryAllocation;   
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int getAllocatedMemory() {
+  long int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
   _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
-    int i,j;
+    long int i,j;
 
     if (sizeof(T)==0) return;
 
@@ -378,21 +378,21 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&size);
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
 
-    int *MemAllocationTable=new int [size];
-    int *dataBufferListPointerTable=new int [size];
-    int *elementStackPointerTable=new int [size];
-    int *TotalCapacityTable=new int [size];
+    long int *MemAllocationTable=new long int [size];
+    long int *dataBufferListPointerTable=new long int [size];
+    long int *elementStackPointerTable=new long int [size];
+    long int *TotalCapacityTable=new long int [size];
 
-    MPI_Gather(&MemoryAllocation,1,MPI_INT,MemAllocationTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&dataBufferListPointer,1,MPI_INT,dataBufferListPointerTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&elementStackPointer,1,MPI_INT,elementStackPointerTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&nMaxElements,1,MPI_INT,TotalCapacityTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&MemoryAllocation,1,MPI_LONG,MemAllocationTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&dataBufferListPointer,1,MPI_LONG,dataBufferListPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&elementStackPointer,1,MPI_LONG,elementStackPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nMaxElements,1,MPI_LONG,TotalCapacityTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (rank==0) {
       printf("%s:\nsizeof(T)=%i\n",msg,sizeof(T));
       printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
-      for (int thread=0;thread<size;thread++) printf("%i\t%i\t%i\t%i\t%i\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
+      for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
     }
 
     delete [] MemAllocationTable;
@@ -404,7 +404,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
 
   _TARGET_HOST_ _TARGET_DEVICE_
   void resetStack() {
-    int databank,offset;
+    long int databank,offset;
 
     for (databank=0;databank<dataBufferListPointer;databank++) for (offset=0;offset<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;offset++) elementStackList[databank][offset]=dataBufferList[databank]+offset; 
 
@@ -413,11 +413,11 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
  
   //get the entry pointer and counting number
   _TARGET_HOST_ _TARGET_DEVICE_
-  int GetEntryCountingNumber(T* ptr) {
+  long int GetEntryCountingNumber(T* ptr) {
     return (ptr!=NULL) ? ptr->stack_element_id : -1;
 
 /*
-    int nMemoryBank,res=-1;
+    long int nMemoryBank,res=-1;
 
     if (ptr!=NULL) {
       for (nMemoryBank=0;nMemoryBank<dataBufferListPointer;nMemoryBank++) if ((ptr>=dataBufferList[nMemoryBank])&&(ptr<dataBufferList[nMemoryBank]+_STACK_DEFAULT_BUFFER_BUNK_SIZE_)) if ((res=ptr-dataBufferList[nMemoryBank])<_STACK_DEFAULT_BUFFER_BUNK_SIZE_) {
@@ -432,8 +432,8 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  T* GetEntryPointer(int countingNumber) {
-    int nMemoryBank,offset;
+  T* GetEntryPointer(long int countingNumber) {
+    long int nMemoryBank,offset;
 
     if ((countingNumber<0.0)||(countingNumber>=nMaxElements)) return NULL;
 
@@ -472,17 +472,17 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
 
   //save and load the allocation of the stack
   void saveAllocationParameters(FILE *fout) {
-    fwrite(&nMaxElements,sizeof(int),1,fout);
-    fwrite(&elementStackPointer,sizeof(int),1,fout);
-    fwrite(&dataBufferListSize,sizeof(int),1,fout);
-    fwrite(&dataBufferListPointer,sizeof(int),1,fout);
+    fwrite(&nMaxElements,sizeof(long int),1,fout);
+    fwrite(&elementStackPointer,sizeof(long int),1,fout);
+    fwrite(&dataBufferListSize,sizeof(long int),1,fout);
+    fwrite(&dataBufferListPointer,sizeof(long int),1,fout);
 
     //save the elementStack 
-    int i,j,elementCountingNumber;
+    long int i,j,elementCountingNumber;
 
     for (i=0;i<dataBufferListPointer;i++) for (j=0;j<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) {    
       elementCountingNumber=GetEntryCountingNumber(elementStackList[i][j]);
-      fwrite(&elementCountingNumber,sizeof(int),1,fout); 
+      fwrite(&elementCountingNumber,sizeof(long int),1,fout); 
     }  
   }
 
@@ -490,13 +490,13 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
   void readAllocationParameters(FILE *fout) {
     clear();
 
-    fread(&nMaxElements,sizeof(int),1,fout);
-    fread(&elementStackPointer,sizeof(int),1,fout);
-    fread(&dataBufferListSize,sizeof(int),1,fout);
-    fread(&dataBufferListPointer,sizeof(int),1,fout);
+    fread(&nMaxElements,sizeof(long int),1,fout);
+    fread(&elementStackPointer,sizeof(long int),1,fout);
+    fread(&dataBufferListSize,sizeof(long int),1,fout);
+    fread(&dataBufferListPointer,sizeof(long int),1,fout);
 
     //allocate the stack's buffers
-    int i,j,elementCountingNumber;
+    long int i,j,elementCountingNumber;
 
    // elementStackList=new T** [dataBufferListSize];
     amps_malloc_managed<T**>(elementStackList,dataBufferListSize);
@@ -520,7 +520,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
 
     //read the elementStack
     for (i=0;i<dataBufferListPointer;i++) for (j=0;j<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) {
-      fread(&elementCountingNumber,sizeof(int),1,fout);
+      fread(&elementCountingNumber,sizeof(long int),1,fout);
       elementStackList[i][j]=GetEntryPointer(elementCountingNumber);
     } 
   }
@@ -552,16 +552,16 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int capasity() {return nMaxElements-elementStackPointer;}
+  long int capasity() {return nMaxElements-elementStackPointer;}
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int totalSize() {return nMaxElements;}
+  long int totalSize() {return nMaxElements;}
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int usedElements() {return elementStackPointer;}
+  long int usedElements() {return elementStackPointer;}
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int GetDataBufferListPointer() {
+  long int GetDataBufferListPointer() {
     return dataBufferListPointer;
   }
 
@@ -577,7 +577,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     if (sizeof(T)==0) return NULL;
     if (elementStackPointer==nMaxElements) initMemoryBlock(); 
 
-    int elementStackBank,offset;
+    long int elementStackBank,offset;
 
     elementStackBank=elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     offset=elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -614,7 +614,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
       printf("$PREFIX:ERROR: stack pointer is 0 (line=%i, file=%s)\n",__LINE__,__FILE__);
     } 
 
-    int elementStackBank,offset;
+    long int elementStackBank,offset;
     --elementStackPointer;
 
     elementStackBank=elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -638,7 +638,7 @@ public:
   cAMRstack<T> BaseElementStack;
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int getAllocatedMemory() {
+  long int getAllocatedMemory() {
     T t;
 
     return BaseElementStack.dataBufferListSize*(sizeof(T)+sizeof(T*)+sizeof(char)*t.AssociatedDataLength());
@@ -652,21 +652,21 @@ public:
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&size);
     MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
 
-    int *MemAllocationTable=new int [size];
-    int *dataBufferListPointerTable=new int [size];
-    int *elementStackPointerTable=new int [size];
-    int *TotalCapacityTable=new int [size];
+    long int *MemAllocationTable=new long int [size];
+    long int *dataBufferListPointerTable=new long int [size];
+    long int *elementStackPointerTable=new long int [size];
+    long int *TotalCapacityTable=new long int [size];
 
-    MPI_Gather(&BaseElementStack.MemoryAllocation,1,MPI_INT,MemAllocationTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&BaseElementStack.dataBufferListPointer,1,MPI_INT,dataBufferListPointerTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&BaseElementStack.elementStackPointer,1,MPI_INT,elementStackPointerTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    MPI_Gather(&BaseElementStack.nMaxElements,1,MPI_INT,TotalCapacityTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.MemoryAllocation,1,MPI_LONG,MemAllocationTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.dataBufferListPointer,1,MPI_LONG,dataBufferListPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.elementStackPointer,1,MPI_LONG,elementStackPointerTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&BaseElementStack.nMaxElements,1,MPI_LONG,TotalCapacityTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (rank==0) {
       printf("%s:\nsizeof(T)=%i\nAssociatedDataLength=%i\n",msg,sizeof(T),t.AssociatedDataLength());
       printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
-      for (int thread=0;thread<size;thread++) printf("%i\t%i\t%i\t%i\t%i\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
+      for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
     }
 
     delete [] MemAllocationTable;
@@ -685,7 +685,7 @@ public:
     T *t=(T*)malloc(sizeof(T)); 
   
     if (t->AssociatedDataLength()!=0) {
-      int i=0,j=0;
+      long int i=0,j=0;
 
       //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList'
       if (BaseElementStack.dataBufferListPointer==BaseElementStack.dataBufferListSize) {
@@ -717,7 +717,7 @@ public:
       }
 
       //allocate a new memory chunk for the element's data and update the stack list
-      int offset=t->AssociatedDataLength();
+      long int offset=t->AssociatedDataLength();
 
      // associatedDataBufferList[BaseElementStack.dataBufferListPointer]=new char[_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset];
 
@@ -775,7 +775,7 @@ public:
     if (sizeof(T)==0) return NULL;
     if (BaseElementStack.elementStackPointer==BaseElementStack.nMaxElements) initMemoryBlock();
 
-    int elementStackBank,offset;
+    long int elementStackBank,offset;
 
     elementStackBank=BaseElementStack.elementStackPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     offset=BaseElementStack.elementStackPointer-elementStackBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -804,7 +804,7 @@ public:
   _TARGET_HOST_ _TARGET_DEVICE_
   void clear() {
     T t;
-    int offset=t.AssociatedDataLength();
+    long int offset=t.AssociatedDataLength();
 
     if (associatedDataBufferList!=NULL) {
       for (int i=0;i<cAMRstack <T>::dataBufferListPointer;i++) {
@@ -832,7 +832,7 @@ public:
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int usedElements() {
+  long int usedElements() {
     return BaseElementStack.usedElements();
   }
 
@@ -869,8 +869,8 @@ public:
    _TARGET_HOST_ _TARGET_DEVICE_
    void deleteElement(T* delElement) {
      if (delElement->AssociatedDataLength()!=0) {
-       int elementStackBank,offset;
-       int localElementStackPointer=BaseElementStack.elementStackPointer-1;
+       long int elementStackBank,offset;
+       long int localElementStackPointer=BaseElementStack.elementStackPointer-1;
 
        if (delElement->AssociatedDataLength()!=0) if (delElement->GetAssociatedDataBufferPointer()==NULL) BaseElementStack.exit(__LINE__,__FILE__,"Error: the pointer to the associated data is not initialized");
 
@@ -902,30 +902,30 @@ template<class T>
 class cAMRheap : public cAMRexit {
 public:
   //data element's stack
-  int nMaxElements;
-  int elementHeapPointer;
+  long int nMaxElements;
+  long int elementHeapPointer;
 
   //array pointers on the allocates data blocks
   T** dataBufferList;
-  int dataBufferListSize,dataBufferListPointer;
+  long int dataBufferListSize,dataBufferListPointer;
 
 
   //the element temporary ID (used only in the debugger mode)
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID_counter;
+  long int Temp_ID_counter;
   #endif
 
   //control allocated memory
-  int MemoryAllocation;
+  long int MemoryAllocation;
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int getAllocatedMemory() {
+  long int getAllocatedMemory() {
     return MemoryAllocation;
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
   void initMemoryBlock() {
-    int i,j;
+    long int i,j;
 
     if (sizeof(T)==0) return;
 
@@ -975,8 +975,8 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
 
   //get the entry pointer and counting number
   _TARGET_HOST_ _TARGET_DEVICE_
-  int GetEntryCountingNumber(T* ptr) {
-    int nMemoryBank,res=-1;
+  long int GetEntryCountingNumber(T* ptr) {
+    long int nMemoryBank,res=-1;
 
     if (ptr!=NULL) {
       for (nMemoryBank=0;nMemoryBank<dataBufferListPointer;nMemoryBank++) if ((ptr>=dataBufferList[nMemoryBank])&&(ptr<dataBufferList[nMemoryBank]+_STACK_DEFAULT_BUFFER_BUNK_SIZE_)) if ((res=ptr-dataBufferList[nMemoryBank])<_STACK_DEFAULT_BUFFER_BUNK_SIZE_) {
@@ -990,8 +990,8 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  T* GetEntryPointer(int countingNumber) {
-    int nMemoryBank,offset;
+  T* GetEntryPointer(long int countingNumber) {
+    long int nMemoryBank,offset;
 
     if ((countingNumber<0.0)||(countingNumber>=nMaxElements)) return NULL;
 
@@ -1026,10 +1026,10 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
 
   //save and load the allocation of the stack
   void saveAllocationParameters(FILE *fout) {
-    fwrite(&nMaxElements,sizeof(int),1,fout);
-    fwrite(&elementHeapPointer,sizeof(int),1,fout);
-    fwrite(&dataBufferListSize,sizeof(int),1,fout);
-    fwrite(&dataBufferListPointer,sizeof(int),1,fout);
+    fwrite(&nMaxElements,sizeof(long int),1,fout);
+    fwrite(&elementHeapPointer,sizeof(long int),1,fout);
+    fwrite(&dataBufferListSize,sizeof(long int),1,fout);
+    fwrite(&dataBufferListPointer,sizeof(long int),1,fout);
 
     exit(__LINE__,__FILE__,"Check the implementetion!");
   }
@@ -1038,13 +1038,13 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   void readAllocationParameters(FILE *fout) {
     clear();
 
-    fread(&nMaxElements,sizeof(int),1,fout);
-    fread(&elementHeapPointer,sizeof(int),1,fout);
-    fread(&dataBufferListSize,sizeof(int),1,fout);
-    fread(&dataBufferListPointer,sizeof(int),1,fout);
+    fread(&nMaxElements,sizeof(long int),1,fout);
+    fread(&elementHeapPointer,sizeof(long int),1,fout);
+    fread(&dataBufferListSize,sizeof(long int),1,fout);
+    fread(&dataBufferListPointer,sizeof(long int),1,fout);
 
     //allocate the stack's buffers
-    int i;
+    long int i;
 
     dataBufferList=new T*[dataBufferListSize];
     MemoryAllocation+=sizeof(T*)*dataBufferListSize;
@@ -1085,13 +1085,13 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int capasity() {return nMaxElements-elementHeapPointer;}
+  long int capasity() {return nMaxElements-elementHeapPointer;}
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int totalSize() {return nMaxElements;}
+  long int totalSize() {return nMaxElements;}
 
   _TARGET_HOST_ _TARGET_DEVICE_
-  int usedElements() {return elementHeapPointer;}
+  long int usedElements() {return elementHeapPointer;}
 
 
   _TARGET_HOST_ _TARGET_DEVICE_
@@ -1101,7 +1101,7 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
     if (sizeof(T)==0) return NULL;
     if (elementHeapPointer==nMaxElements) initMemoryBlock();
 
-    int elementHeapBank,offset;
+    long int elementHeapBank,offset;
 
     elementHeapBank=elementHeapPointer/_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     offset=elementHeapPointer-elementHeapBank*_STACK_DEFAULT_BUFFER_BUNK_SIZE_;

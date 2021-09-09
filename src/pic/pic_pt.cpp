@@ -12,16 +12,16 @@
 
 #include "pic.h"
 
-int PIC::ParticleTracker::ParticleDataRecordOffset=-1;
+long int PIC::ParticleTracker::ParticleDataRecordOffset=-1;
 
-unsigned int PIC::ParticleTracker::cTrajectoryData::Size=500000;
-unsigned int PIC::ParticleTracker::cTrajectoryList::Size=500000;
+unsigned long int PIC::ParticleTracker::cTrajectoryData::Size=500000;
+unsigned long int PIC::ParticleTracker::cTrajectoryList::Size=500000;
 
 int PIC::ParticleTracker::maxSampledTrajectoryNumber=-1;
 int **PIC::ParticleTracker::threadSampledTrajectoryNumber=NULL;
 int *PIC::ParticleTracker::totalSampledTrajectoryNumber=NULL;
-unsigned int *PIC::ParticleTracker::SampledTrajectoryCounter=NULL;
-unsigned int *PIC::ParticleTracker::SampledTrajectoryPointCounter=NULL;
+unsigned long int *PIC::ParticleTracker::SampledTrajectoryCounter=NULL;
+unsigned long int *PIC::ParticleTracker::SampledTrajectoryPointCounter=NULL;
 
 int PIC::ParticleTracker::nMaxSavedSignleTrajectoryPoints=1000;
 bool PIC::ParticleTracker::AllowRecordingParticleTrajectoryPoints[PIC::nTotalSpecies];
@@ -49,8 +49,8 @@ void PIC::ParticleTracker::Init() {
   threadSampledTrajectoryNumber=new int* [PIC::nTotalSpecies];
   totalSampledTrajectoryNumber=new int [PIC::nTotalSpecies];
   threadSampledTrajectoryNumber[0]=new int [PIC::nTotalSpecies*PIC::nTotalThreadsOpenMP];
-  SampledTrajectoryCounter=new unsigned int [PIC::nTotalThreadsOpenMP];
-  SampledTrajectoryPointCounter=new unsigned int [PIC::nTotalThreadsOpenMP];
+  SampledTrajectoryCounter=new unsigned long int [PIC::nTotalThreadsOpenMP];
+  SampledTrajectoryPointCounter=new unsigned long int [PIC::nTotalThreadsOpenMP];
 
   for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) SampledTrajectoryCounter[thread]=0,SampledTrajectoryPointCounter[thread]=0;
 
@@ -121,17 +121,17 @@ void PIC::ParticleTracker::cTrajectoryData::flush() {
     threadOpenMP=omp_get_thread_num();
 #endif
 
-    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%i.TrajectoryData.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
+    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryData.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
     fout=fopen(fname,"w");
 
     if (fout==NULL) {
       char message[_MAX_STRING_LENGTH_PIC_];
-      sprintf(message,"Error: cannot open file %s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%i.TrajectoryData.pt for writting of the temporary trajectory data",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
+      sprintf(message,"Error: cannot open file %s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryData.pt for writting of the temporary trajectory data",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
 
       exit(__LINE__,__FILE__,message);
     }
 
-    fwrite(&CurrentPosition,sizeof(unsigned int),1,fout);
+    fwrite(&CurrentPosition,sizeof(unsigned long int),1,fout);
     fwrite(buffer,sizeof(cTrajectoryDataRecord),CurrentPosition,fout);
     fclose(fout);
 
@@ -151,10 +151,10 @@ void PIC::ParticleTracker::cTrajectoryList::flush() {
     threadOpenMP=omp_get_thread_num();
 #endif
 
-    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%i.TrajectoryList.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
+    sprintf(fname,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.out=%ld.TrajectoryList.pt",PIC::OutputDataFileDirectory,threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread,nfile);
     fout=fopen(fname,"w");
 
-    fwrite(&CurrentPosition,sizeof(unsigned int),1,fout);
+    fwrite(&CurrentPosition,sizeof(unsigned long int),1,fout);
     fwrite(buffer,sizeof(cTrajectoryListRecord),CurrentPosition,fout);
     fclose(fout);
 
@@ -323,19 +323,19 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
 
   //save a temporary file that contains the trajectory information of the particles that are currently in the system
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],ptr;
-  int i,j,k;
+  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],ptr;
+  long int i,j,k;
   PIC::ParticleBuffer::byte *ParticleData;
   cParticleData ParticleTrajectoryRecord;
   FILE *fTemporatyTrajectoryList;
-  unsigned int length=0;
+  unsigned long int length=0;
 
   sprintf(str,"%s/ParticleTrackerTmp/amps.ParticleTracker.thread=%i.TemporaryTrajectoryList.pt",PIC::OutputDataFileDirectory,PIC::ThisThread);
   fTemporatyTrajectoryList=fopen(str,"w");
 
   //calculate the number of the particles that will be placed into the list
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL) {
-    memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
@@ -358,11 +358,11 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
     }
   }
 
-  fwrite(&length,sizeof(unsigned int),1,fTemporatyTrajectoryList);
+  fwrite(&length,sizeof(unsigned long int),1,fTemporatyTrajectoryList);
 
   //save the list
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) if (node->block!=NULL) {
-    memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
@@ -412,24 +412,24 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   //get the number of the trajectory list and data files, and the total number of the sampled trajectories
-  unsigned int nTrajectoryListFiles[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP],nTrajectoryDataFiles[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP],nTotalSampledTrajectories[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP];
-  unsigned int tmpTrajectoryListFiles[PIC::nTotalThreadsOpenMP],tmpTrajectoryDataFiles[PIC::nTotalThreadsOpenMP];
+  unsigned long int nTrajectoryListFiles[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP],nTrajectoryDataFiles[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP],nTotalSampledTrajectories[PIC::nTotalThreads*PIC::nTotalThreadsOpenMP];
+  unsigned long int tmpTrajectoryListFiles[PIC::nTotalThreadsOpenMP],tmpTrajectoryDataFiles[PIC::nTotalThreadsOpenMP];
 
   for (thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
     tmpTrajectoryListFiles[thread]=TrajectoryListTable[thread].nfile;
     tmpTrajectoryDataFiles[thread]=TrajectoryDataTable[thread].nfile;
   }
 
-  MPI_Gather(tmpTrajectoryListFiles,PIC::nTotalThreadsOpenMP,MPI_INT,nTrajectoryListFiles,PIC::nTotalThreadsOpenMP,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Gather(tmpTrajectoryDataFiles,PIC::nTotalThreadsOpenMP,MPI_INT,nTrajectoryDataFiles,PIC::nTotalThreadsOpenMP,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-  MPI_Gather(SampledTrajectoryCounter,PIC::nTotalThreadsOpenMP,MPI_INT,nTotalSampledTrajectories,PIC::nTotalThreadsOpenMP,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Gather(tmpTrajectoryListFiles,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,nTrajectoryListFiles,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Gather(tmpTrajectoryDataFiles,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,nTrajectoryDataFiles,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Gather(SampledTrajectoryCounter,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,nTotalSampledTrajectories,PIC::nTotalThreadsOpenMP,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
   //get the total number of the sampled trajectory points
-  unsigned int threadTrajectoryPointCounter=0,totalTrajectoryPointCounter=0;
+  unsigned long int threadTrajectoryPointCounter=0,totalTrajectoryPointCounter=0;
 
   for (thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) threadTrajectoryPointCounter+=SampledTrajectoryPointCounter[thread];
 
-  MPI_Reduce(&threadTrajectoryPointCounter,&totalTrajectoryPointCounter,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&threadTrajectoryPointCounter,&totalTrajectoryPointCounter,1,MPI_UNSIGNED_LONG,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   //save data needed for unpacking of the trajecotry files in postprocessing
   if (PIC::ThisThread==0) {
@@ -446,9 +446,9 @@ void PIC::ParticleTracker::OutputTrajectory(const char *fname) {
     fwrite(&nthreads,sizeof(int),1,fTrajectoryDataSet);
     fwrite(&nMPIthreads,sizeof(int),1,fTrajectoryDataSet);
 
-    fwrite(nTrajectoryListFiles,sizeof(unsigned int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
-    fwrite(nTrajectoryDataFiles,sizeof(unsigned int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
-    fwrite(nTotalSampledTrajectories,sizeof(unsigned int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
+    fwrite(nTrajectoryListFiles,sizeof(unsigned long int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
+    fwrite(nTrajectoryDataFiles,sizeof(unsigned long int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
+    fwrite(nTotalSampledTrajectories,sizeof(unsigned long int),PIC::nTotalThreads*PIC::nTotalThreadsOpenMP,fTrajectoryDataSet);
 
     //save the species chemical symbols
     for (int spec=0;spec<nTotalSpecies;spec++) {
@@ -487,7 +487,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   int thread;
   char str[_MAX_STRING_LENGTH_PIC_];
   int nTotalThreads,nTotalSpecies,nMPIthread;
-  unsigned int *nTrajectoryListFiles,*nTrajectoryDataFiles,*nTotalSampledTrajectories;
+  unsigned long int *nTrajectoryListFiles,*nTrajectoryDataFiles,*nTotalSampledTrajectories;
 
   //read the trajectory set file
   FILE *fTrajectoryDataSet=NULL;
@@ -501,13 +501,13 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   fread(&nMPIthread,sizeof(int),1,fTrajectoryDataSet);    //the number of the MPI threads used in the simulation
 
 
-  nTrajectoryListFiles=new unsigned int[nTotalThreads];
-  nTrajectoryDataFiles=new unsigned int[nTotalThreads];
-  nTotalSampledTrajectories=new unsigned int[nTotalThreads];
+  nTrajectoryListFiles=new unsigned long int[nTotalThreads];
+  nTrajectoryDataFiles=new unsigned long int[nTotalThreads];
+  nTotalSampledTrajectories=new unsigned long int[nTotalThreads];
 
-  if (fread(nTrajectoryListFiles,sizeof(unsigned int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
-  if (fread(nTrajectoryDataFiles,sizeof(unsigned int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
-  if (fread(nTotalSampledTrajectories,sizeof(unsigned int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
+  if (fread(nTrajectoryListFiles,sizeof(unsigned long int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
+  if (fread(nTrajectoryDataFiles,sizeof(unsigned long int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
+  if (fread(nTotalSampledTrajectories,sizeof(unsigned long int),nTotalThreads,fTrajectoryDataSet)!=nTotalThreads) exit(__LINE__,__FILE__,"Error: file reading error");
 
 
 
@@ -550,8 +550,8 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   }
 
   //Create the array of sampled trajectory points for all trajectories (used also as a flag to determine trajectories that was already processed)
-  int nTotalTracedTrajectories=0;
-  int TrajectoryCounterOffset[nTotalThreads]; //the "global" trajectory number is TrajectoryCounterOffset[TrajectoryStartingThread]+ trajectory counting number at partuculat processor
+  long int nTotalTracedTrajectories=0;
+  long int TrajectoryCounterOffset[nTotalThreads]; //the "global" trajectory number is TrajectoryCounterOffset[TrajectoryStartingThread]+ trajectory counting number at partuculat processor
 
   for (thread=0;thread<nTotalThreads;thread++) {
     TrajectoryCounterOffset[thread]=nTotalTracedTrajectories;
@@ -562,7 +562,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   int nfile;
   FILE *fTrajectoryList;
 //  PIC::ParticleTracker::cTrajectoryID Trajectory;
-  unsigned int i,length,nReadTrajectoryNumber=0;
+  unsigned long int i,length,nReadTrajectoryNumber=0;
 
   int *nSampledTrajectoryPoints=new int [nTotalTracedTrajectories];
   int *SampledTrajectoryDataOffset=new int [nTotalTracedTrajectories];
@@ -580,7 +580,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     }
 
     if ((fTrajectoryList=fopen(str,"r"))==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
-    fread(&length,sizeof(unsigned int),1,fTrajectoryList);
+    fread(&length,sizeof(unsigned long int),1,fTrajectoryList);
 
     for (i=0;i<length;i++) {
       cTrajectoryListRecord Record;
@@ -637,7 +637,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
         fTrajectoryData=fopen(str,"r");
         if (fTrajectoryData==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
 
-        if (fread(&length,sizeof(unsigned int),1,fTrajectoryData)!=1) exit(__LINE__,__FILE__,"Error: file reading error");
+        if (fread(&length,sizeof(unsigned long int),1,fTrajectoryData)!=1) exit(__LINE__,__FILE__,"Error: file reading error");
 
         for (i=0;i<length;i++) {
           if (fread(&TrajectoryRecord,TrajectoryRecordLength,1,fTrajectoryData)!=1) exit(__LINE__,__FILE__,"Error: file reading error");
@@ -678,7 +678,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     }
 
     //save the found trajectories
-    int tr,offset;
+    long int tr,offset;
     int StartTrajectorySpec;
     cTrajectoryPhysicalData *TrajectoryData;
     FILE *trOut;
@@ -766,7 +766,7 @@ void PIC::ParticleTracker::SetDefaultParticleTrackingFlag(void* StartNodeVoid) {
   int i,j,k;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode,*StartNode;
   cParticleData *DataRecord;
-  int ptr;
+  long int ptr;
 
   StartNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) StartNodeVoid;
   if (StartNode==NULL) StartNode=PIC::Mesh::mesh->rootTree;
@@ -776,9 +776,9 @@ void PIC::ParticleTracker::SetDefaultParticleTrackingFlag(void* StartNodeVoid) {
 
   //reset the particles
   if (StartNode->block!=NULL) {
-    int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+    long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
-    memcpy(FirstCellParticleTable,StartNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    memcpy(FirstCellParticleTable,StartNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++)  {
       ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
@@ -869,7 +869,7 @@ void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(double *x,double *v,
 void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(void* StartNodeVoid) {
   int i,j,k;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode,*StartNode;
-  int ptr;
+  long int ptr;
 
   double x[3],v[3];
   int spec;
@@ -883,9 +883,9 @@ void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(void* StartNodeVoid)
 
   //reset the particles
   if (StartNode->block!=NULL) {
-    int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+    long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
-    memcpy(FirstCellParticleTable,StartNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    memcpy(FirstCellParticleTable,StartNode->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++)  {
       ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];

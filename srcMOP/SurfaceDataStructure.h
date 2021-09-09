@@ -108,11 +108,11 @@ public :
   fInjectionRate InjectionRate;
 
   //injection of particles from the sphere
-  typedef int (*fInjectionBoundaryCondition)(int BoundaryElementType,void *BoundaryElement);
+  typedef long int (*fInjectionBoundaryCondition)(int BoundaryElementType,void *BoundaryElement);
   fInjectionBoundaryCondition InjectionBoundaryCondition;
 
   //interaction of aprticles with the sphere
-  typedef int (*fParticleSphereInteraction)(int spec,int ptr,double *x,double *v,double &dtTotal,void *startNode,void *InternalSphere);
+  typedef int (*fParticleSphereInteraction)(int spec,long int ptr,double *x,double *v,double &dtTotal,void *startNode,void *InternalSphere);
   fParticleSphereInteraction ParticleSphereInteraction;
 
   //the flag indicating that the boundary prosidure associated with the sphere is already executed

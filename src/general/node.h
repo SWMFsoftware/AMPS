@@ -16,8 +16,8 @@ class Cnode{
   T node_coordinate[3];
 public:
   T* InterpolationWeight;
-  int* InterpolationMask;
-  int nodeno;
+  long int* InterpolationMask;
+  long int nodeno;
 
   Cnode() {
     InterpolationWeight=NULL;

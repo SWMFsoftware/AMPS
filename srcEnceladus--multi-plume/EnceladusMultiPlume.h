@@ -117,11 +117,11 @@ namespace EnceladusMultiPlume {
 
 
   //Acceleration of the particles
-  void TotalAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+  void TotalAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
   //the boundary conditions on the sphere
   double sphereInjectionRate(int spec,int BoundaryElementType,void *SphereDataPointer);
-  int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
+  int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
 
 
   //generate internal properties and inject particles

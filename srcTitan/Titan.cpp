@@ -125,7 +125,7 @@ double Exosphere::OrbitalMotion::GetTAA(SpiceDouble EphemerisTime) {
 }
 
 //extract "hot" particles from the "thermal" population
-void Titan::SpeciesEnergySeparation::Process(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void Titan::SpeciesEnergySeparation::Process(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int spec;
 
   spec=PIC::ParticleBuffer::GetI(ptr);
@@ -180,7 +180,7 @@ void Titan::SpeciesEnergySeparation::Process(int ptr,int& FirstParticleCell,cTre
       } else {
         //generate new "hot" paritlces and remove the original "thernal" particle
         int nGeneratedParticles,np;
-        int newptr;
+        long int newptr;
 
         nGeneratedParticles=(int)nHotParticles;
         if (rnd()<nHotParticles-nGeneratedParticles) nGeneratedParticles++;

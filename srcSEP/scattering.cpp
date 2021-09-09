@@ -19,7 +19,7 @@ double SEP::Scattering::AIAA2005::MeanFreePath(PIC::ParticleBuffer::byte *Partic
   return lamda_0;
 } 
 
-void SEP::Scattering::AIAA2005::Process(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void SEP::Scattering::AIAA2005::Process(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
 

@@ -278,12 +278,12 @@ double Comet::CometData::GetNeutralsMassDensity(int s,PIC::Mesh::cDataCenterNode
   return res;
 }
 
-double Comet::CometData::GetNeutralsMassDensity(int s,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double Comet::CometData::GetNeutralsMassDensity(int s,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   return GetNeutralsMassDensity(s,node->block->GetCenterNode(nd));
 }
 
 
-void  Comet::CometData::GetNeutralsVelocity(double *x, int s,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void  Comet::CometData::GetNeutralsVelocity(double *x, int s,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int idim;
   double *offset=(double*)(4*s*sizeof(double)+sizeof(double)+NeutralsFromBinaryOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
   

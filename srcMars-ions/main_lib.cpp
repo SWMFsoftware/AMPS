@@ -80,7 +80,7 @@ void amps_init_mesh() {
 
 
     //reserve memory for sampling of the surface balance of sticking species
-    int ReserveSamplingSpace[PIC::nTotalSpecies];
+    long int ReserveSamplingSpace[PIC::nTotalSpecies];
 
     for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=0;
 
@@ -206,7 +206,7 @@ void amps_init_mesh() {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];

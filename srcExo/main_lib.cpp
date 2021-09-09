@@ -30,7 +30,7 @@
 #include "Mars.h"
 #include "MTGCM.h"
 
-int Exoplanet::LossProcesses::ThermalParticleReleasingProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+int Exoplanet::LossProcesses::ThermalParticleReleasingProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel;
@@ -95,7 +95,7 @@ int Exoplanet::LossProcesses::ThermalParticleReleasingProcessor(double *xInit,do
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0/NumericalLossRateIncrease;
     int iProduct;
-    int newParticle;
+    long int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 

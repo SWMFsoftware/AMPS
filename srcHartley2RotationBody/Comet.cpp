@@ -480,7 +480,7 @@ bool Comet::GenerateParticlePropertiesHartley2(int spec, double *x_SO_OBJECT,dou
   static double positionSun[3];
   double HeliocentricDistance=1.064*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double l[3]={1.0,0.0,0.0};
   double x0[3]={0.0,0.0,0.0};
   double rSphere=1980.0;
@@ -1248,9 +1248,9 @@ bool Comet::GenerateParticlePropertiesWaist(int spec, double *x_SO_OBJECT,double
 }
 */
 
-int Comet::InjectionBoundaryModel_Limited(void *SphereDataPointer) {
+long int Comet::InjectionBoundaryModel_Limited(void *SphereDataPointer) {
   int spec;
-  int res=0;
+  long int res=0;
 
   //  printf("PIC::nTotalSpecies=%i \n",PIC::nTotalSpecies);
 
@@ -1261,9 +1261,9 @@ int Comet::InjectionBoundaryModel_Limited(void *SphereDataPointer) {
   return res;
 }
 
-int Comet::InjectionBoundaryModel_Limited() {
+long int Comet::InjectionBoundaryModel_Limited() {
   int spec;
-  int res=0;
+  long int res=0;
   void *SphereDataPointer;
 
   //  printf("PIC::nTotalSpecies=%i \n",PIC::nTotalSpecies);
@@ -1275,11 +1275,11 @@ int Comet::InjectionBoundaryModel_Limited() {
   return res;
 }
 
-int Comet::InjectionBoundaryModel_Limited(int spec,void *SphereDataPointer) {
+long int Comet::InjectionBoundaryModel_Limited(int spec,void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag=false;
@@ -1419,11 +1419,11 @@ double Comet::ElectronImpactRate=0.0;
 double Comet::ElectronTemperature=0.0;
 
 
-double Comet::ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double Comet::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   return -1.0;
 
   /*
-  int nd;
+  long int nd;
   int i,j,k;
   double BackgroundPlasmaNumberDensity;
 //  double PlasmaBulkVelocity[3],ElectronDensity;
@@ -1485,7 +1485,7 @@ double Comet::ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &
 }
 
 
-int ExospherePhotoionizationReactionProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+int ExospherePhotoionizationReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   Exosphere::ChemicalModel::PhotochemicalModelProcessor(ptr,FirstParticleCell,node);
     return 1;
 }

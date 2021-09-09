@@ -12,7 +12,7 @@
 
 #include "pic.h"
 
-void TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 bool TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData);
 
 #endif /* PARTICLETRACKER_H_ */

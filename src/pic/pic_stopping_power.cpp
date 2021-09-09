@@ -173,7 +173,7 @@ void PIC::MolecularCollisions::StoppingPowerModel::ModelProcessor() {
   PIC::Mesh::cDataCenterNode *cell;
 
   //the buffer of particles that occuping the local cell
-  int modelParticle;
+  long int modelParticle;
   PIC::ParticleBuffer::byte *modelParticleData;
   PIC::Mesh::cDataBlockAMR *block;
 

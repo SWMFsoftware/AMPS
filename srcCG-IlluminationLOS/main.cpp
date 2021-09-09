@@ -54,7 +54,7 @@ double BulletLocalResolution(double *x) {
   return 300*pow(r/1600.0,2.0)*12.0;
  }
 
-int SurfaceBoundaryCondition(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
   int spec=PIC::ParticleBuffer::GetI(ptr);
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -118,14 +118,14 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 }
 
 //injection of model particles through the faces of the bounding box
-int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
 
   return nInjectedParticles;
 }
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-    int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+    long int nInjectedParticles=0;
 
   return nInjectedParticles;
 }
@@ -174,7 +174,7 @@ double Comet::GetTotalProduction(int spec,int BoundaryElementType,void *Boundary
 }
 
 
-int readDATAlength(int& Data_length, int File_Header, FILE *fH){
+int readDATAlength(long int& Data_length, long int File_Header, FILE *fH){
   char str[10000];
   Data_length=0;
   rewind(fH);
@@ -196,8 +196,8 @@ int main(int argc,char **argv) {
  
   string TimeTable[40000];
 
-  int timeFileLength=0;
-  int timeFileHeader=0;
+  long int timeFileLength=0;
+  long int timeFileHeader=0;
 
   readDATAlength(timeFileLength, timeFileHeader, fTime);
 
@@ -302,7 +302,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin                                                             
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -454,7 +454,7 @@ int main(int argc,char **argv) {
     }
   } //end of the time loop will have to be at the very end if we want to allow several times, remember to change iteration variable
   
-  int iTriangle;
+  long int iTriangle;
   
   double origin[3]={0.0,0.0,0.0};  
   double lMax=1e6,rNucleus=0.0;

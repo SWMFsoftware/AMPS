@@ -25,7 +25,7 @@ void PIC::ChemicalReactions::PhotolyticReactions::Init() {
 }
 
 
-double PIC::ChemicalReactions::PhotolyticReactions::TotalLifeTime_default(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double PIC::ChemicalReactions::PhotolyticReactions::TotalLifeTime_default(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   ReactionAllowedFlag=(ConstantTotalLifeTime[spec]>0.0) ? true : false;
   return ConstantTotalLifeTime[spec];
 }
@@ -45,7 +45,7 @@ void PIC::ChemicalReactions::PhotolyticReactions::SetSpeciesTotalPhotolyticLifeT
 }
 */
 
-int PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(double *x,int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+int PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(double *x,long int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int code=_PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
   double p,lifetime,c;
   bool flag;
@@ -120,7 +120,7 @@ void PIC::ChemicalReactions::PhotolyticReactions::InitProductStatWeight() {
 //=======================================================================================================
 //default photolytic reaction processor
 //by default particle will stay in the system
-void PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReactionProcessor_default(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReactionProcessor_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr);
   PIC::ParticleBuffer::SetPrev(-1,ptr);
 
@@ -133,7 +133,7 @@ void PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReactionProcessor_de
 void PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int i,j,k;
-  int oldFirstCellParticle,newFirstCellParticle,p,pnext;
+  long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
 
 

@@ -32,12 +32,12 @@ double MOP::SaturninanSystem::Enceladus::SourceRate(int spec) {
 }
 
 
-int MOP::SaturninanSystem::Enceladus::InjectParticles() {
+long int MOP::SaturninanSystem::Enceladus::InjectParticles() {
   int nTotalInjectedParticles=0;
   int idim,spec;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
   double mass,a,v[3],TimeCounter,TimeIncrement,ModelParticleInjectionRate,LocalTimeStep,ExternalNormal[3],InjectedFlowBulkVelocity[3]={0.0,0.0,0.0};
-  int newParticle;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
   //determine location of Enceladus

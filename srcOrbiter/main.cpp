@@ -47,7 +47,7 @@ return  ((fabs(x[0])<100.0)||(x[1]*x[1]+x[2]*x[2]<40.0*40.0)) ? 5.0 : 100.0;
 
 
 namespace ParticleSurfaceInterationModel {
-  int COPS(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  int COPS(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     double BulkFlowVelocity[3]={0.0,0.0,0.0},Twall=293.0;
     int spec;
 
@@ -62,7 +62,7 @@ namespace ParticleSurfaceInterationModel {
     return _PARTICLE_REJECTED_ON_THE_FACE_; 
   }
 
-  int ParticleSurfaceInteraction_CYCNSS(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  int ParticleSurfaceInteraction_CYCNSS(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     double BulkFlowVelocity[3]={0.0,0.0,0.0},Twall=50.0+273.0;
     int spec;
 
@@ -94,7 +94,7 @@ namespace DragCoefficientTest {
 
   const int nTotalTestCodes=6;
 
-  int ParticleSurfaceInteractionProcessor_TEST(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  int ParticleSurfaceInteractionProcessor_TEST(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     int res=_PARTICLE_REJECTED_ON_THE_FACE_;
 
     switch (iTestCode) {
@@ -167,7 +167,7 @@ namespace DragCoefficientTest {
     PIC::DataOutputFileNumber=0;
 
     //time step
-    for (int niter=0;;niter++) {
+    for (long int niter=0;;niter++) {
       static int LastDataOutputFileNumber=-1;
 
       PIC::TimeStep();
@@ -288,7 +288,7 @@ namespace DragCoefficientTest {
 
 
 
-int SurfaceBoundaryCondition(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double dt,c,vInitUnchanged[3],ParticleWeight,RateFactor,mass;
   int code,spec;
 
@@ -663,7 +663,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -724,7 +724,7 @@ int main(int argc,char **argv) {
   } 
 
   //time step
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
     static int LastDataOutputFileNumber=-1;
 
     PIC::TimeStep();

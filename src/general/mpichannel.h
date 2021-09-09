@@ -18,12 +18,12 @@ using namespace std;
 
 class CMPI_channel {
 private:
-  int max_MPIbuffer_size;
+  long int max_MPIbuffer_size;
 
   char *sendBuffer,**recvBuffer;
-  int sendptr,*recvptr;
+  long int sendptr,*recvptr;
   
-  int *RecvDataLength;
+  long int *RecvDataLength;
   int TotalThreadsNumber,BcastThread;
 
   int ChannelMode;
@@ -32,15 +32,15 @@ public:
   int ThisThread,sendThread;
 
 
-  void exit(int nline,const char* msg=NULL) {
+  void exit(long int nline,const char* msg=NULL) {
     char str[2000];
     FILE* errorlog=fopen("$ERRORLOG","a+");
 
     time_t TimeValue=time(0);
     tm *ct=localtime(&TimeValue);
 
-    if (msg==NULL) sprintf(str," exit: line=%i, file=%s\n",nline,__FILE__);
-    sprintf(str," exit: line=%i, file=%s, message=%s\n",nline,__FILE__,msg);
+    if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,__FILE__);
+    sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,__FILE__,msg);
 
     fprintf(errorlog,"Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
     fprintf(errorlog,"%s\n\n",msg);
@@ -83,7 +83,7 @@ public:
     recvBuffer[oldRecvThread]=NULL,recvptr[oldRecvThread]=0,RecvDataLength[oldRecvThread]=0;
   }
 
-  void init(int buffersize) {
+  void init(long int buffersize) {
     max_MPIbuffer_size=buffersize;
     sendBuffer=NULL,sendptr=0,recvptr=NULL;
     sendThread=-1;
@@ -97,15 +97,15 @@ public:
 
     try {
       recvBuffer=new char* [TotalThreadsNumber];
-      recvptr=new int[TotalThreadsNumber];
-      RecvDataLength=new int[TotalThreadsNumber];
+      recvptr=new long int[TotalThreadsNumber];
+      RecvDataLength=new long int[TotalThreadsNumber];
     }
     catch (bad_alloc &ba) {exit(__LINE__,"Error: CMPI_channel::CMPI_channel(long) cannot allocate buffer");}
  
     for (int thread=0;thread<TotalThreadsNumber;thread++) recvBuffer[thread]=NULL,recvptr[thread]=0,RecvDataLength[thread]=0; 
   };
 
-  CMPI_channel(int buffersize) {
+  CMPI_channel(long int buffersize) {
     ChannelMode=_MPI_CHANNEL_MODE_SENDRECV_,BcastThread=-1;
 
     init(buffersize);
@@ -159,7 +159,7 @@ public:
     catch (bad_alloc &ba) {
       char msg[200]; 
 
-      sprintf(msg,"Error: CMPI_channel::openSend cannot allocate send buffer, need %i bytes\n", max_MPIbuffer_size);
+      sprintf(msg,"Error: CMPI_channel::openSend cannot allocate send buffer, need %ld bytes\n", max_MPIbuffer_size);
       exit(__LINE__,msg);
     }
 
@@ -172,11 +172,11 @@ public:
 
 #ifdef MPI_ON
       if (ChannelMode==_MPI_CHANNEL_MODE_SENDRECV_) {
-        MPI_Send(&sendptr,1,MPI_INT,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Send(&sendptr,1,MPI_LONG,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Send(sendBuffer,sendptr,MPI_CHAR,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
       }
       else {
-        MPI_Bcast(&sendptr,1,MPI_INT,sendThread,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Bcast(&sendptr,1,MPI_LONG,sendThread,MPI_GLOBAL_COMMUNICATOR);
         MPI_Bcast(sendBuffer,sendptr,MPI_CHAR,sendThread,MPI_GLOBAL_COMMUNICATOR);
       }
 #endif
@@ -210,11 +210,11 @@ public:
 
 #ifdef MPI_ON
       if (ChannelMode==_MPI_CHANNEL_MODE_SENDRECV_) {
-        MPI_Send(&sendptr,1,MPI_INT,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Send(&sendptr,1,MPI_LONG,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
         MPI_Send(sendBuffer,sendptr,MPI_CHAR,sendThread,0,MPI_GLOBAL_COMMUNICATOR);
       }
       else {
-        MPI_Bcast(&sendptr,1,MPI_INT,sendThread,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Bcast(&sendptr,1,MPI_LONG,sendThread,MPI_GLOBAL_COMMUNICATOR);
         MPI_Bcast(sendBuffer,sendptr,MPI_CHAR,sendThread,MPI_GLOBAL_COMMUNICATOR);
       }
 #endif
@@ -242,7 +242,7 @@ public:
     catch (bad_alloc &ba) {
       char msg[200];
 
-      sprintf(msg,"Error: CMPI_channel::openRecv cannot allocate recv buffer, need %i bytes\n", max_MPIbuffer_size);
+      sprintf(msg,"Error: CMPI_channel::openRecv cannot allocate recv buffer, need %ld bytes\n", max_MPIbuffer_size);
       exit(__LINE__,msg);
     }
 
@@ -286,11 +286,11 @@ public:
       if (ChannelMode==_MPI_CHANNEL_MODE_SENDRECV_) {
         MPI_Status status;
 
-        MPI_Recv(RecvDataLength+thread,1,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        MPI_Recv(RecvDataLength+thread,1,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
         MPI_Recv(recvBuffer[thread],RecvDataLength[thread],MPI_CHAR,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
       }
       else {
-        MPI_Bcast(RecvDataLength+thread,1,MPI_INT,thread,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Bcast(RecvDataLength+thread,1,MPI_LONG,thread,MPI_GLOBAL_COMMUNICATOR);
         MPI_Bcast(recvBuffer[thread],RecvDataLength[thread],MPI_CHAR,thread,MPI_GLOBAL_COMMUNICATOR);
       }
 #endif

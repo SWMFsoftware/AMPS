@@ -204,7 +204,7 @@ void Rosetta::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double 
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+GravityFieldOffset,G,3*sizeof(double));
 }
 
-void Rosetta::GetGravityAcceleration(double *x,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void Rosetta::GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   register int idim;
   register double *offset=(double*)(GravityFieldOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
 
@@ -453,20 +453,20 @@ double Exosphere::OrbitalMotion::GetTAA(SpiceDouble EphemerisTime) {
 }
 
 
-int Rosetta::InjectionBoundaryModel_Limited() {
+long int Rosetta::InjectionBoundaryModel_Limited() {
   int spec;
-  int res=0;
+  long int res=0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=InjectionBoundaryModel_Limited(spec);
 
   return res;
 }
 
-int Rosetta::InjectionBoundaryModel_Limited(int spec) {
+long int Rosetta::InjectionBoundaryModel_Limited(int spec) {
   cInternalSphericalData *Sphere;
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag=false;
@@ -673,7 +673,7 @@ bool Rosetta::GenerateParticlePropertiesBjornNASTRAN(int spec, double *x_SO_OBJE
   static double positionSun[3];
   double HeliocentricDistance=3.3*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double rSphere=1980.0;
   double area = 0.0;
   double totalArea = 0.0;
@@ -827,7 +827,7 @@ void Rosetta::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
 
   dZ=dZenithAngleMin;
   rr=(maxZenithAngle+dZenithAngleMax)/(maxZenithAngle+dZenithAngleMin);
-  nZenithPoints=(int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
+  nZenithPoints=(long int)(log(dZenithAngleMax/dZenithAngleMin)/log(rr)-2.0);
   rr=pow(dZenithAngleMax/dZenithAngleMin,1.0/(nZenithPoints+2.0));
 
   nZenithPoints=0,ZenithAngle=dZenithAngleMin,dZenithAngle=dZenithAngleMin;

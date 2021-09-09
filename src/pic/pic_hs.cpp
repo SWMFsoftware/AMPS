@@ -105,7 +105,7 @@ void Chs::GetPCVel(double* Vrel,unsigned char s1,unsigned char s2) {
 
 //===================================================
 double Chs::GetTotalCrossSect_Cr_MAX(unsigned char s1, 
-  unsigned char s2, int nsubcl,int ncell,double CrossSection) {
+  unsigned char s2, long int nsubcl,long int ncell,double CrossSection) {
   double res;
   
   ParticlePtr ptr;

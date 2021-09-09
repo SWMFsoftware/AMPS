@@ -72,17 +72,17 @@ void CleanParticles(){
 
   for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
    
-     int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
+     long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
 	 for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-	   int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+	   long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
 	   while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
 
 //////
 /*
-int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
+long int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
 
 while (ptr!=-1) {
 
@@ -104,11 +104,11 @@ FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]=-1;
 }
 
 
-int PrepopulateDomain() {
+long int PrepopulateDomain() {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
-  int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
+  long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
   double Velocity[3];
   /*
   //local copy of the block's cells
@@ -490,7 +490,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];

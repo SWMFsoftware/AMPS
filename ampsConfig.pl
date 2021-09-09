@@ -1478,7 +1478,7 @@ sub ReadGeneralBlock {
       $InputLine=~s/[=();]/ /g;
 
       ($s0,$s1,$s2)=split(' ',$InputLine,3);
-      ampsConfigLib::ChangeValueOfVariable("int PIC::RequiredSampleLength",$s1,"pic/pic.cpp");
+      ampsConfigLib::ChangeValueOfVariable("long int PIC::RequiredSampleLength",$s1,"pic/pic.cpp");
     }
 
     ###the number of the std::threads used in the multithread mode
@@ -1938,7 +1938,7 @@ sub Sampling {
             ($InputLine,$InputComment)=split(' ',$InputComment,2);
             
             if (defined $InputLine) {
-              ampsConfigLib::ChangeValueOfVariable("int PIC::DistributionFunctionSample::nSampledFunctionPoints",$InputLine,"pic/pic_sample_distribution_function.cpp");
+              ampsConfigLib::ChangeValueOfVariable("long int PIC::DistributionFunctionSample::nSampledFunctionPoints",$InputLine,"pic/pic_sample_distribution_function.cpp");
             }
             else {
               warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
@@ -2048,7 +2048,7 @@ sub Sampling {
             ($InputLine,$InputComment)=split(' ',$InputComment,2);
             
             if (defined $InputLine) {
-              ampsConfigLib::ChangeValueOfVariable("int PIC::EnergyDistributionSampleRelativistic::nSampledFunctionPoints",$InputLine,"pic/pic_sample_energy_distribution_relativistic.cpp");
+              ampsConfigLib::ChangeValueOfVariable("long int PIC::EnergyDistributionSampleRelativistic::nSampledFunctionPoints",$InputLine,"pic/pic_sample_energy_distribution_relativistic.cpp");
             }
             else {
               warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
@@ -2148,7 +2148,7 @@ sub Sampling {
             ($InputLine,$InputComment)=split(' ',$InputComment,2);
             
             if (defined $InputLine) {
-              ampsConfigLib::ChangeValueOfVariable("int PIC::PitchAngleDistributionSample::nSampledFunctionPoints",$InputLine,"pic/pic_sample_pitch_angle_distribution.cpp");
+              ampsConfigLib::ChangeValueOfVariable("long int PIC::PitchAngleDistributionSample::nSampledFunctionPoints",$InputLine,"pic/pic_sample_pitch_angle_distribution.cpp");
             }
             else {
               warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");

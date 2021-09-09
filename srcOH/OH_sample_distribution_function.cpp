@@ -8,12 +8,12 @@ const bool OH::Sampling::DistributionFunctionSample::Use = false;
 int OH::Sampling::DistributionFunctionSample::v2SamplingMode=_LINEAR_SAMPLING_SCALE_,OH::Sampling::DistributionFunctionSample::speedSamplingMode=_LINEAR_SAMPLING_SCALE_;
 double OH::Sampling::DistributionFunctionSample::vMin=-1000.0;
 double OH::Sampling::DistributionFunctionSample::vMax=1000.0;
-int OH::Sampling::DistributionFunctionSample::nSampledFunctionPoints=100;
+long int OH::Sampling::DistributionFunctionSample::nSampledFunctionPoints=100;
 double** OH::Sampling::DistributionFunctionSample::SamplingBuffer=NULL;
 double OH::Sampling::DistributionFunctionSample::SamplingLocations[][3]={{0.0,0.0,0.0}};
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** OH::Sampling::DistributionFunctionSample::SampleNodes=NULL;
 double OH::Sampling::DistributionFunctionSample::dV=0.0,OH::Sampling::DistributionFunctionSample::dV2=0.0,OH::Sampling::DistributionFunctionSample::dSpeed=0.0;
-int *OH::Sampling::DistributionFunctionSample::SampleLocalCellNumber=NULL;
+long int *OH::Sampling::DistributionFunctionSample::SampleLocalCellNumber=NULL;
 int OH::Sampling::DistributionFunctionSample::nSampleLocations=0;
 bool OH::Sampling::DistributionFunctionSample::SamplingInitializedFlag=false;
 
@@ -58,7 +58,7 @@ void OH::Sampling::DistributionFunctionSample::Init() {
   SampleDataLength++;
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new int [nSampleLocations];
+  SampleLocalCellNumber=new long int [nSampleLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nSampleLocations];
 //  SamplingLocations=new double* [nProbeLocations];
 //  SamplingLocations[0]=new double [DIM*nProbeLocations];
@@ -164,15 +164,15 @@ void OH::Sampling::DistributionFunctionSample::Init() {
 //====================================================
 //flush the sampling buffer
 void OH::Sampling::DistributionFunctionSample::flushSamplingBuffers() {
-  int i,TotalDataLength=nSampleLocations*(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::nPhysSpec*SampleDataLength*(nSampledFunctionPoints-1);
+  long int i,TotalDataLength=nSampleLocations*(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::nPhysSpec*SampleDataLength*(nSampledFunctionPoints-1);
   double *ptr=SamplingBuffer[0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
 }
 //====================================================
 //return the offset where the sample data for the particular species, sampling interval and the sampling point are located
-int OH::Sampling::DistributionFunctionSample::GetSampleDataOffset(int spec,int OriginID,int SampleVariableOffset) {
-  int offset;
+long int OH::Sampling::DistributionFunctionSample::GetSampleDataOffset(int spec,int OriginID,int SampleVariableOffset) {
+  long int offset;
 
   offset=(OriginID+(OH::Sampling::OriginLocation::nSampledOriginLocations+1)*OH::PhysSpec[spec])*SampleDataLength*(nSampledFunctionPoints-1);
   offset+=SampleVariableOffset*(nSampledFunctionPoints-1);
@@ -183,7 +183,7 @@ int OH::Sampling::DistributionFunctionSample::GetSampleDataOffset(int spec,int O
 //Sample the distribution function
 void OH::Sampling::DistributionFunctionSample::SampleDistributionFunction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  int ptr,nProbe,spec,idim,offset,offsetTotal;
+  long int ptr,nProbe,spec,idim,offset,offsetTotal;
   double LocalParticleWeight,v2;
 
 /*
@@ -255,7 +255,7 @@ void OH::Sampling::DistributionFunctionSample::SampleDistributionFunction() {
 //====================================================
 //print the distribution function into a file
 void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int DataOutputFileNumber) {
-  int idim,nProbe,i,nVariable,thread,offset;
+  long int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,dInterval=0.0;
@@ -390,7 +390,7 @@ void OH::Sampling::DistributionFunctionSample::printDistributionFunction(int Dat
 //====================================================
 // the print function for the calss used to sample 2D distribution functions
 void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int DataOutputFileNumber, const char* printCharIN){
-  int idim,thread;
+  long int idim,thread;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0;
@@ -468,7 +468,7 @@ void OH::Sampling::DistributionFunctionSample::cSampled2DFunction::Print(int Dat
 //Sample the 2D distribution function
 void OH::Sampling::DistributionFunctionSample::Sample2dDistributionFunction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  int ptr,nProbe,spec,idim,offset,offsetTotal;
+  long int ptr,nProbe,spec,idim,offset,offsetTotal;
   double LocalParticleWeight;
 
   // only do this for 3D
@@ -512,7 +512,7 @@ void OH::Sampling::DistributionFunctionSample::Sample2dDistributionFunction() {
 //====================================================
 //print the distribution function into a file
 void OH::Sampling::DistributionFunctionSample::print2dDistributionFunction(int DataOutputFileNumber) {
-  int offset;
+  long int offset;
 
   if (DIM != 3) return;
 

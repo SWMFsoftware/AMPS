@@ -10,13 +10,13 @@
 const int PIC::ParticleFluxDistributionSample::_LINEAR_SAMPLING_SCALE_=0,PIC::ParticleFluxDistributionSample::_LOGARITHMIC_SAMPLING_SCALE_=1;
 int PIC::ParticleFluxDistributionSample::v2SamplingMode=_LINEAR_SAMPLING_SCALE_,PIC::ParticleFluxDistributionSample::speedSamplingMode=_LINEAR_SAMPLING_SCALE_;
 double PIC::ParticleFluxDistributionSample::vMin=-1000.0,PIC::ParticleFluxDistributionSample::vMax=1000.0;
-int PIC::ParticleFluxDistributionSample::nSampledFunctionPoints=100;
+long int PIC::ParticleFluxDistributionSample::nSampledFunctionPoints=100;
 double** PIC::ParticleFluxDistributionSample::SamplingBuffer=NULL;
 double **PIC::ParticleFluxDistributionSample::SamplingLocations=NULL,**PIC::ParticleFluxDistributionSample::SamplingPointingDirections=NULL;
 double** PIC::ParticleFluxDistributionSample::SamplingFlux=NULL;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** PIC::ParticleFluxDistributionSample::SampleNodes=NULL;
 double PIC::ParticleFluxDistributionSample::dV2=0.0,PIC::ParticleFluxDistributionSample::dSpeed=0.0;
-int *PIC::ParticleFluxDistributionSample::SampleLocalCellNumber=NULL;
+long int *PIC::ParticleFluxDistributionSample::SampleLocalCellNumber=NULL;
 int PIC::ParticleFluxDistributionSample::nSamleLocations=0;
 bool PIC::ParticleFluxDistributionSample::SamplingInitializedFlag=false;
 double PIC::ParticleFluxDistributionSample::maxSamplingConeAngle=Pi,PIC::ParticleFluxDistributionSample::cosMaxSamplingConeAngle=-1.0;
@@ -53,7 +53,7 @@ void PIC::ParticleFluxDistributionSample::Init(double ProbeLocations[][DIM],doub
   SampleDataLength++;
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new int [nProbeLocations];
+  SampleLocalCellNumber=new long int [nProbeLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nProbeLocations];
 
   SamplingPointingDirections=new double* [nProbeLocations];
@@ -94,7 +94,7 @@ void PIC::ParticleFluxDistributionSample::Init(double ProbeLocations[][DIM],doub
 //====================================================
 //flush the sampling buffer
 void PIC::ParticleFluxDistributionSample::flushSamplingBuffers() {
-  int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
+  long int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
   double *ptr=SamplingBuffer[0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
@@ -102,8 +102,8 @@ void PIC::ParticleFluxDistributionSample::flushSamplingBuffers() {
 }
 //====================================================
 //return the offset where the sample data for the particular specie, sampling interval and the sampling point are located
-int PIC::ParticleFluxDistributionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
-  int offset;
+long int PIC::ParticleFluxDistributionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
+  long int offset;
 
   offset=spec*SampleDataLength*(nSampledFunctionPoints-1);
   offset+=SampleVariableOffset*(nSampledFunctionPoints-1);
@@ -114,7 +114,7 @@ int PIC::ParticleFluxDistributionSample::GetSampleDataOffset(int spec,int Sample
 //Sample the distribution function
 void PIC::ParticleFluxDistributionSample::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  int ptr,nProbe,spec,offset;
+  long int ptr,nProbe,spec,offset;
 
   for (node=SampleNodes[0],nProbe=0;nProbe<nSamleLocations;node=SampleNodes[++nProbe]) if (node->Thread==PIC::ThisThread) {
       double *v,speed,v2,cosPitchAngle,LocalParticleWeight;
@@ -329,7 +329,7 @@ void PIC::ParticleFluxDistributionSample::printDistributionFunction(char *fname,
 
   /*
 
-  int idim,nProbe,i,nVariable,thread,offset;
+  long int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,dInterval=0.0;
@@ -341,7 +341,7 @@ void PIC::ParticleFluxDistributionSample::printDistributionFunction(char *fname,
 
   for (nProbe=0;nProbe<nSamleLocations;nProbe++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
-      sprintf(str,"%s.nSamplePoint=%i.dat",fname,nProbe);
+      sprintf(str,"%s.nSamplePoint=%ld.dat",fname,nProbe);
       fout=fopen(str,"w");
 
       fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",str);
@@ -397,7 +397,7 @@ void PIC::ParticleFluxDistributionSample::printDistributionFunction(char *fname,
         }
         else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
-        fprintf(fout,"%i  %e ",i,v);
+        fprintf(fout,"%ld  %e ",i,v);
 
         for (idim=0;idim<DIM;idim++) {
           offset=GetSampleDataOffset(spec,idim);

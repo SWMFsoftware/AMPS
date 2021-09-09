@@ -239,7 +239,7 @@ inline void ReadMTGCM() {
 }
 	
   //the total acceleration of the particles in the exosphere
-  void TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+  void TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
 	//print on the screen sampled total escape rate
 	void SampleModelData();
@@ -247,7 +247,7 @@ inline void ReadMTGCM() {
   void OutputSampledModelData(int DataOutputFileNumber);
 
 	//process particles that leaves the boundary of the computational domain: calcualte the escape rate
-	int ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode); //(int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+	int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode); //(long int ptr,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
 	//init the model
   inline void Init_AfterParser() {
@@ -738,8 +738,8 @@ inline double ProductionRateCaluclation_HotC(double *x) {
     double ChargeExchangeHotOFrequency(PIC::ParticleBuffer::byte *modelParticleData);
     double ElectronImpactHotOFrequency(PIC::ParticleBuffer::byte *modelParticleData);
     double IonizationHotO(PIC::ParticleBuffer::byte *modelParticleData);
-    double TotalLifeTime(double *x,int spec,int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-    void PhotochemicalModelProcessor(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    double TotalLifeTime(double *x,int spec,long int ptr,bool &ReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    void PhotochemicalModelProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
     
     
     
@@ -867,7 +867,7 @@ namespace HotOxygen {
         const float KineticEnergy=KineticEnergy4;
 
 
-		 int HotOProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+		 long int HotOProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
 
 }
@@ -890,13 +890,13 @@ namespace HotCarbon {
     exit(__LINE__,__FILE__,"Error: HotC source is not defined");
 #endif
     
-    int HotCProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    long int HotCProduction(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
 }
     
     double LocalTimeStep(int spec,bool& TimeStepLimitationImposed, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
     //wrapper function
-    int HotAtomProduction_wrapper(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    long int HotAtomProduction_wrapper(int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
     
     
     

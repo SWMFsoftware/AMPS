@@ -26,16 +26,16 @@ public:
 
   struct cNASTRANnode {
     double x[3];
-    int id;
+    long int id;
   };
 
   struct cNASTRANface {
-    int node[3];
-    int faceat;
+    long int node[3];
+    long int faceat;
     double externalNormal[3];
   };
 
-  int nnodes,nfaces; ///,ncells;
+  long int nnodes,nfaces; ///,ncells;
   vector<cNASTRANnode> nodes;
   vector<cNASTRANface> faces;
 
@@ -58,7 +58,7 @@ public:
   void readMesh_longFormat(const char *fname,double *xGlobalMin,double *dxGlobal,int maxLevel,double EPS,double* rootBlock_Xmin,double* rootBlock_dX) {
     CiFileOperations ifile;
     char str[MAXSTR],dat[MAXSTR],*endptr;
-    int i,j,idim;
+    long int i,j,idim;
  
     cNASTRANnode node;
     cNASTRANface face;
@@ -98,13 +98,13 @@ public:
         dX=(node.x[idim]-rootBlock_Xmin[idim])/dXmin; 
 
 /*
-        dX=(dX-(int)dX)*dXmin;
+        dX=(dX-(long int)dX)*dXmin;
 
         if (dX<EPS) node.x[idim]+=2.0*EPS; 
         else if (dXmin-dX<EPS) node.x[idim]-=2.0*EPS; 
 */
 
-        dX-=(int)dX;
+        dX-=(long int)dX;
         if (dX<0.1) node.x[idim]+=0.1*dXmin;
         else if (dX>0.9) node.x[idim]-=0.1*dXmin;
 
@@ -146,8 +146,8 @@ public:
       
 
     //check the distances between nodes
-    int nNode0,nNode1;
-    int nd,nfc,id;
+    long int nNode0,nNode1;
+    long int nd,nfc,id;
     double d,*xNode0,*xNode1;
 
     for (nNode0=0;nNode0<nnodes;nNode0++) {
@@ -172,7 +172,7 @@ public:
     } 
 
     //remove faces that have at least two identical node 
-    int *nlist;
+    long int *nlist;
     bool removeface;
 
     for (nfc=0;nfc<nfaces;nfc++) {
@@ -205,7 +205,7 @@ public:
     //calculate external normals to the faces
     bool faceIntersectionFlag;
     double x[3],x0[3],angle,e0[3],e1[3],norm[3],searchDirection[3],l;
-    int nface,nIntersectionsForward,nIntersectionsBackward;
+    long int nface,nIntersectionsForward,nIntersectionsBackward;
     cNASTRANface *fcptr,*fc;
     cNASTRANnode *nd0,*nd1,*nd2;
     double t,c,c0,c1,c00,c11,c01,xLocal[2];
@@ -328,7 +328,7 @@ public:
 //--------------- read NASTAN mesh (sort format) 
   void readMesh(const char *fname,double *xGlobalMin,double *dxGlobal,int maxLevel) {
     FILE *fd;
-    int initPosition,position,nd,i,idim,nfc;
+    long int initPosition,position,nd,i,idim,nfc;
     char str[MAXSTR],dat[MAXSTR],*endptr;
 
     //open the file 
@@ -452,7 +452,7 @@ public:
 
 
     //renumerate nodes
-    int id;
+    long int id;
 
 
     for (nfc=0;nfc<nfaces;nfc++) for (idim=0;idim<3;idim++) {
@@ -467,7 +467,7 @@ public:
     //calculate external normals to the faces 
     bool faceIntersectionFlag;
     double x[3],x0[3],angle,e0[3],e1[3],norm[3],searchDirection[3],l;
-    int nface,nIntersectionsForward,nIntersectionsBackward;
+    long int nface,nIntersectionsForward,nIntersectionsBackward;
     cNASTRANface *fcptr,*fc;
     cNASTRANmesh::cNASTRANnode *nd0,*nd1,*nd2;
     double t,c,c0,c1,c00,c11,c01,xLocal[2];
@@ -705,7 +705,7 @@ cout << __LINE__ << endl;
   //if the number if interasections of the ray (x=x0+l*t) is even than the point is within the domain; otherwise the point is outsede the domain
   //l -> is a random ray (intersection search) direction
   bool checkPointInsideDomain(double *x,double EPS) {
-    int nface,iIntersections=0;
+    long int nface,iIntersections=0;
     double searchDirection[3],l;
     int idim,returnCode;
 

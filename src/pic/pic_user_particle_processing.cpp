@@ -11,7 +11,7 @@
 #include "pic.h"
 
 //the default function for the particle processing (the default --> do nothing)
-void PIC::UserParticleProcessing::Processing_default(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void PIC::UserParticleProcessing::Processing_default(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr);
   PIC::ParticleBuffer::SetPrev(-1,ptr);
 
@@ -23,7 +23,7 @@ void PIC::UserParticleProcessing::Processing_default(int ptr,int& FirstParticleC
 void PIC::UserParticleProcessing::Processing() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   int i,j,k;
-  int oldFirstCellParticle,newFirstCellParticle,p,pnext;
+  long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel default(none)  shared(PIC::Mesh::mesh) \

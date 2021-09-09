@@ -38,7 +38,7 @@ int main(int argc,char **argv) {
 
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
 
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);

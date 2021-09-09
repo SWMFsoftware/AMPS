@@ -63,13 +63,13 @@ void FlushElementSampling(double *sample) {
 void SampleSurfaceElement(double *x,double *sample) {
   //find cell of interest
   int i,j,k;
-  int LocalCellNumber,nface;
+  long int LocalCellNumber,nface;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL;  
   startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
   if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
     LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
-    int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
+    long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;
     
@@ -85,7 +85,7 @@ void SampleSurfaceElement(double *x,double *sample) {
 
 void PrintSampledSurfaceElementSurfaceTriangulationMesh(const char *fname,double * x,double * sample) {
 #if _TRACKING_SURFACE_ELEMENT_MODE_ == _TRACKING_SURFACE_ELEMENT_MODE_ON_
-  int nface,nnode,pnode;
+  long int nface,nnode,pnode;
   class cTempNodeData {
   public:
     double Probability;
@@ -97,14 +97,14 @@ void PrintSampledSurfaceElementSurfaceTriangulationMesh(const char *fname,double
   for (nnode=0;nnode<CutCell::nBoundaryTriangleNodes;nnode++) TempNodeData[nnode].Probability=0.0;
   
   int i,j,k;
-  int LocalCellNumber;
+  long int LocalCellNumber;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode=NULL;  
   startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
 
   if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
     LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
-    int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
+    long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;
 
@@ -130,7 +130,7 @@ void PrintSampledSurfaceElementSurfaceTriangulationMesh(const char *fname,double
     }
     
     for (nface=0;nface<CutCell::nBoundaryTriangleFaces;nface++) {
-      fprintf(fout,"%ld %ld %ld\n",1+(int)(CutCell::BoundaryTriangleFaces[nface].node[0]-CutCell::BoundaryTriangleNodes),1+(int)(CutCell::BoundaryTriangleFaces[nface].node[1]-CutCell::BoundaryTriangleNodes),1+(int)(CutCell::BoundaryTriangleFaces[nface].node[2]-CutCell::BoundaryTriangleNodes));
+      fprintf(fout,"%ld %ld %ld\n",1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[0]-CutCell::BoundaryTriangleNodes),1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[1]-CutCell::BoundaryTriangleNodes),1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[2]-CutCell::BoundaryTriangleNodes));
     }
     
     fclose(fout);
@@ -148,7 +148,7 @@ void FlushBackfluxSampling() {
 
 
 void PrintBackFluxSurfaceTriangulationMesh(const char *fname) {
-  int nface,nnode,pnode;
+  long int nface,nnode,pnode;
 
   int rank;
   MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
@@ -182,7 +182,7 @@ void PrintBackFluxSurfaceTriangulationMesh(const char *fname) {
   }
 
   for (nface=0;nface<CutCell::nBoundaryTriangleFaces;nface++) {
-    fprintf(fout,"%ld %ld %ld\n",1+(int)(CutCell::BoundaryTriangleFaces[nface].node[0]-CutCell::BoundaryTriangleNodes),1+(int)(CutCell::BoundaryTriangleFaces[nface].node[1]-CutCell::BoundaryTriangleNodes),1+(int)(CutCell::BoundaryTriangleFaces[nface].node[2]-CutCell::BoundaryTriangleNodes));
+    fprintf(fout,"%ld %ld %ld\n",1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[0]-CutCell::BoundaryTriangleNodes),1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[1]-CutCell::BoundaryTriangleNodes),1+(long int)(CutCell::BoundaryTriangleFaces[nface].node[2]-CutCell::BoundaryTriangleNodes));
   }
 
   fclose(fout);
@@ -225,7 +225,7 @@ double BulletLocalResolution(double *x) {
 //  return 200.0;
 }
 
-int SurfaceBoundaryCondition(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   int spec=PIC::ParticleBuffer::GetI(ptr);
 
 #if _SAMPLE_BACKFLUX_MODE_ == _SAMPLE_BACKFLUX_MODE__OFF_
@@ -402,12 +402,12 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 }
 
 //injection of model particles through the faces of the bounding box
-int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
   /*  bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-  int newParticle;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
   if (spec!=_O2_SPEC_) return 0; //inject only spec=0
@@ -464,8 +464,8 @@ int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startN
   return nInjectedParticles;
 }
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-    int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+    long int nInjectedParticles=0;
 
     //for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
 
@@ -753,7 +753,7 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -927,7 +927,7 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
       //determine projection of the nucleus
       double r,rmin,rmax,*x,*e1,*e2,phi,t,lmax,rProjection[3],ZenithAngle,AzimuthalAngle,r1,r2;
       double rNimb,xNimb[3];
-      int nZenithElement,nAzimuthalElement;
+      long int nZenithElement,nAzimuthalElement;
       int i,idim,np,nRmaxFacePoint;
       FILE *fout;
       char fname[400];
@@ -1121,7 +1121,7 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,tetra_fname);
   }
 
 
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
     
   
 

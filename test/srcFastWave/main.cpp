@@ -71,19 +71,18 @@ void CleanParticles(){
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
   for (node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) if (node->block!=NULL) {
-     int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
-
+   
+     long int *  FirstCellParticleTable=node->block->FirstCellParticleTable;
      if (FirstCellParticleTable==NULL) continue;
      for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
        for (int j=0;j<_BLOCK_CELLS_Y_;j++)  {
 	 for (int i=0;i<_BLOCK_CELLS_X_;i++) {
-	   int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
-
+	   long int * ptr=FirstCellParticleTable+(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
 	   while ((*ptr)!=-1) PIC::ParticleBuffer::DeleteParticle(*ptr,*ptr);
 
 //////
 /*
-int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
+long int next,ptr=FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]; 
 
 while (ptr!=-1) {
 
@@ -105,12 +104,12 @@ FirstCellParticleTable[(i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k))]=-1;
 }
 
 
-int PrepopulateDomain() {
+long int PrepopulateDomain() {
   using namespace PIC::FieldSolver::Electromagnetic::ECSIM;
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
-  int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
+  long int nd,nGlobalInjectedParticles,nLocalInjectedParticles=0;
   double Velocity[3];
   /*
   //local copy of the block's cells
@@ -532,7 +531,7 @@ int main(int argc,char **argv) {
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int  MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];
@@ -672,7 +671,7 @@ if (_CUDA_MODE_ == 12384) { ////_ON_
         for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
           int nLocalNode,ii=icell;
           int i,j,k;
-          int ptr;
+          long int ptr;
 
           if (icell<TableLength) {
             nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
@@ -706,7 +705,7 @@ if (_CUDA_MODE_ == 12384) { ////_ON_
      }; 
 
 
-      auto CreateParticlePopulationTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (int *ParticlePopulationTable,int *ParticleOffsetTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) {
+      auto CreateParticlePopulationTable = [=] _TARGET_HOST_ _TARGET_DEVICE_ (long int *ParticlePopulationTable,int *ParticleOffsetTable,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> **BlockTable) {
         int TableLength=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
         #ifdef __CUDA_ARCH__ 
@@ -722,7 +721,7 @@ if (_CUDA_MODE_ == 12384) { ////_ON_
         for (int icell=id;icell<SearchIndexLimit;icell+=increment) {
           int nLocalNode,ii=icell;
           int i,j,k,offset;
-          int ptr;
+          long int ptr;
 
           if (icell<TableLength) {
             nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
@@ -765,10 +764,10 @@ if (_CUDA_MODE_ == 12384) { ////_ON_
      if (total_number!=PIC::ParticleBuffer::NAllPart) exit(__LINE__,__FILE__,"Error: the particle number is not consistent");
 
 
-      int *ParticlePopulationTable=NULL;
+      long int *ParticlePopulationTable=NULL;
       int *ParticleOffsetNumber;
 
-      amps_malloc_managed<int>(ParticlePopulationTable,PIC::ParticleBuffer::NAllPart);
+      amps_malloc_managed<long int>(ParticlePopulationTable,PIC::ParticleBuffer::NAllPart);
       amps_malloc_managed<int>(ParticleOffsetNumber,PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
     
 

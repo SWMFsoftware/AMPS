@@ -13,8 +13,8 @@
 #include <omp.h>
 #endif //_PIC_COMPILATION_MODE_ == _PIC_COMPILATION_MODE__HYBRID_
 
-unsigned int RandomNumberGenerator::rndLastSeed=0;
-unsigned int *RandomNumberGenerator::rndLastSeedArray=NULL;
+unsigned long int RandomNumberGenerator::rndLastSeed=0;
+unsigned long int *RandomNumberGenerator::rndLastSeedArray=NULL;
 
 void rnd_seed(int seed) {
   int thread;
@@ -34,7 +34,7 @@ void rnd_seed(int seed) {
       {
         nThreadsOpenMP=omp_get_num_threads();
 
-        if (RandomNumberGenerator::rndLastSeedArray==NULL) RandomNumberGenerator::rndLastSeedArray=new unsigned int[nThreadsOpenMP];
+        if (RandomNumberGenerator::rndLastSeedArray==NULL) RandomNumberGenerator::rndLastSeedArray=new unsigned long int[nThreadsOpenMP];
         for (i=0;i<nThreadsOpenMP;i++) RandomNumberGenerator::rndLastSeedArray[i]=abs(seed)+i+thread*nThreadsOpenMP;
 
         RandomNumberGenerator::rndLastSeedArray[0]=seed;

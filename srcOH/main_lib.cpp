@@ -109,13 +109,13 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
  }
 
 //injection of model particles through the faces of the bounding box
-int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
    bool ExternalFaces[6];
    double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
    int nface,idim;
-   int newParticle;
+   long int newParticle;
    PIC::ParticleBuffer::byte *newParticleData;
-   int nInjectedParticles=0;
+   long int nInjectedParticles=0;
 
    if (spec!=_H_SPEC_) return 0; //inject only spec=0
 
@@ -181,8 +181,8 @@ int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startN
    return nInjectedParticles;
  }
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
   
   for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
   

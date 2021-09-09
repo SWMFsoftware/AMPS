@@ -94,7 +94,7 @@ void Europa::Sampling::PrintOutputFile(int nfile) {
 }
 
 //process praticles when they cross boundary of the computational domain
-int Europa::ParticleDomainBoundaryIntersection(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+int Europa::ParticleDomainBoundaryIntersection(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   //sample the total particle escape rate
   int spec;
   double ParticleWeight;
@@ -376,11 +376,11 @@ double Europa::SourceProcesses::totalProductionRate(int spec,void *SphereDataPoi
 */
 
 
-/*int Europa::SourceProcesses::InjectionBoundaryModel(void *SphereDataPointer) {
+/*long int Europa::SourceProcesses::InjectionBoundaryModel(void *SphereDataPointer) {
   cInternalSphericalData *Sphere;
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_GALL_EPHIOD_EUROPA[3],x_IAU_EUROPA[3],v_GALL_EPHIOD_EUROPA[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag;
@@ -492,7 +492,7 @@ double Europa::SourceProcesses::totalProductionRate(int spec,void *SphereDataPoi
    Europa::Sampling::SetParticleSourceID(_EXOSPHERE_SOURCE__ID__EXTERNAL_BOUNDARY_INJECTION_,tempParticleData);
 
    //save the information od the particle origin: the particle origin will be sampled in GALL_EPHIOD coordinate frame
-   int nZenithElement,nAzimuthalElement;
+   long int nZenithElement,nAzimuthalElement;
    int el;
 
    Sphere->GetSurfaceElementProjectionIndex(x_GALL_EPHIOD_EUROPA,nZenithElement,nAzimuthalElement);
@@ -544,7 +544,7 @@ double Europa::SourceProcesses::totalProductionRate(int spec,void *SphereDataPoi
 
 
 /*=============================== INTERACTION WITH THE SURFACE: BEGIN  ===========================================*/
-int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(int spec,int ptr,double *x_SO,double *v_SO,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x_SO,double *v_SO,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
   double radiusSphere,*x0Sphere,lNorm[3],rNorm,lVel[3],rVel,c;
   cInternalSphericalData *Sphere;
 //  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
@@ -557,7 +557,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
   {
 
      {
-       int nZenithElement,nAzimuthalElement,el;
+       long int nZenithElement,nAzimuthalElement,el;
        double ParticleWeight;
        //the particle is abserbed by the surface
 
@@ -650,7 +650,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
 
   vi=sqrt(v_LOCAL_IAU_EUROPA[0]*v_LOCAL_IAU_EUROPA[0]+v_LOCAL_IAU_EUROPA[1]*v_LOCAL_IAU_EUROPA[1]+v_LOCAL_IAU_EUROPA[2]*v_LOCAL_IAU_EUROPA[2]);
 
-  int nZenithElement,nAzimuthalElement;
+  long int nZenithElement,nAzimuthalElement;
   int el;
   double ParticleWeight;
 
@@ -690,7 +690,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
   int ReturnCode=-1;
   double Yield,WeightCorrectionFactor,SputteringSpeed,SputteringVelocity[3],phi,theta,vSputtered_IAU[3];
   double e0[3],e1[3],e2[3],l;
-  int newParticle;
+  long int newParticle;
 
   switch (spec) {
 
@@ -1023,7 +1023,7 @@ void Europa::Sampling::OutputSurfaceDataFile::PrintVariableList(FILE* fout) {
 #endif
 }
 
-void Europa::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void Europa::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 
@@ -1254,9 +1254,9 @@ double Europa::InjectEuropaMagnetosphericEPDIons::BoundingBoxInjectionRate(int s
   return res;
 }
 
-int Europa::InjectEuropaMagnetosphericEPDIons::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int Europa::InjectEuropaMagnetosphericEPDIons::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   int s;
-  int nInjectedParticles=0;
+  long int nInjectedParticles=0;
 
   for (s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
 
@@ -1442,7 +1442,7 @@ double Europa::LossProcesses::PhotolyticReactionRate=0.0;
 double Europa::LossProcesses::ElectronImpactRate=0.0;
 double Europa::LossProcesses::ElectronTemperature=0.0;
 
-double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   double BackgroundPlasmaNumberDensity;
 //  double PlasmaBulkVelocity[3],ElectronDensity;
 
@@ -1602,7 +1602,7 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
 }
 
 
-int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel;
@@ -1674,7 +1674,7 @@ int Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(double *xIn
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0/NumericalLossRateIncrease;
     int iProduct;
-    int newParticle;
+    long int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 

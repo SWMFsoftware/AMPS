@@ -11,12 +11,12 @@ const int PIC::DistributionFunctionSample::_LINEAR_SAMPLING_SCALE_=0,PIC::Distri
 int PIC::DistributionFunctionSample::v2SamplingMode=_LINEAR_SAMPLING_SCALE_,PIC::DistributionFunctionSample::speedSamplingMode=_LINEAR_SAMPLING_SCALE_;
 double PIC::DistributionFunctionSample::vMin=-1000.0;
 double PIC::DistributionFunctionSample::vMax=1000.0;
-int PIC::DistributionFunctionSample::nSampledFunctionPoints=100;
+long int PIC::DistributionFunctionSample::nSampledFunctionPoints=100;
 double** PIC::DistributionFunctionSample::SamplingBuffer=NULL;
 double PIC::DistributionFunctionSample::SamplingLocations[][3]={{0.0,0.0,0.0}};
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** PIC::DistributionFunctionSample::SampleNodes=NULL;
 double PIC::DistributionFunctionSample::dV=0.0,PIC::DistributionFunctionSample::dV2=0.0,PIC::DistributionFunctionSample::dSpeed=0.0;
-int *PIC::DistributionFunctionSample::SampleLocalCellNumber=NULL;
+long int *PIC::DistributionFunctionSample::SampleLocalCellNumber=NULL;
 int PIC::DistributionFunctionSample::nSamleLocations=0;
 bool PIC::DistributionFunctionSample::SamplingInitializedFlag=false;
 
@@ -57,7 +57,7 @@ void PIC::DistributionFunctionSample::Init() {
   SampleDataLength++;
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new int [nSamleLocations];
+  SampleLocalCellNumber=new long int [nSamleLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nSamleLocations];
 //  SamplingLocations=new double* [nProbeLocations];
 //  SamplingLocations[0]=new double [DIM*nProbeLocations];
@@ -87,15 +87,15 @@ void PIC::DistributionFunctionSample::Init() {
 //====================================================
 //flush the sampling buffer
 void PIC::DistributionFunctionSample::flushSamplingBuffers() {
-  int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
+  long int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*SampleDataLength*(nSampledFunctionPoints-1);
   double *ptr=SamplingBuffer[0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
 }
 //====================================================
 //return the offset where the sample data for the particular specie, sampling interval and the sampling point are located
-int PIC::DistributionFunctionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
-  int offset;
+long int PIC::DistributionFunctionSample::GetSampleDataOffset(int spec,int SampleVariableOffset) {
+  long int offset;
 
   offset=spec*SampleDataLength*(nSampledFunctionPoints-1);
   offset+=SampleVariableOffset*(nSampledFunctionPoints-1);
@@ -106,7 +106,7 @@ int PIC::DistributionFunctionSample::GetSampleDataOffset(int spec,int SampleVari
 //Sample the distribution function
 void PIC::DistributionFunctionSample::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  int ptr,nProbe,spec,idim,offset;
+  long int ptr,nProbe,spec,idim,offset;
   double LocalParticleWeight,v2;
 
 /*
@@ -179,7 +179,7 @@ void PIC::DistributionFunctionSample::SampleDistributionFnction() {
 //====================================================
 //print the distribution function into a file
 void PIC::DistributionFunctionSample::printDistributionFunction(char *fname,int spec) {
-  int idim,nProbe,i,nVariable,thread,offset;
+  long int idim,nProbe,i,nVariable,thread,offset;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,dInterval=0.0;
@@ -191,7 +191,7 @@ void PIC::DistributionFunctionSample::printDistributionFunction(char *fname,int 
 
   for (nProbe=0;nProbe<nSamleLocations;nProbe++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
-      sprintf(str,"%s.nSamplePoint=%i.dat",fname,nProbe);
+      sprintf(str,"%s.nSamplePoint=%ld.dat",fname,nProbe);
       fout=fopen(str,"w");
 
       fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",str);
@@ -247,7 +247,7 @@ void PIC::DistributionFunctionSample::printDistributionFunction(char *fname,int 
         }
         else exit(__LINE__,__FILE__,"Error: the option is unknown");
 
-        fprintf(fout,"%i  %e ",i,v);
+        fprintf(fout,"%ld  %e ",i,v);
 
         for (idim=0;idim<DIM;idim++) {
           offset=GetSampleDataOffset(spec,idim);

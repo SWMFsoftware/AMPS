@@ -209,7 +209,7 @@ void Comet::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *I
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+GravityFieldOffset,G,3*sizeof(double));
 }
 
-void Comet::GetGravityAcceleration(double *x,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void Comet::GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   register int idim;
   register double *offset=(double*)(GravityFieldOffset+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
 
@@ -246,19 +246,19 @@ double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_
 #endif
 }
 
-int Comet::InjectionBoundaryModel_Limited() {
+long int Comet::InjectionBoundaryModel_Limited() {
   int spec;
-  int res=0;
+  long int res=0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=InjectionBoundaryModel_Limited(spec);
 
   return res;
 }
 
-int Comet::InjectionBoundaryModel_Limited(int spec) {
+long int Comet::InjectionBoundaryModel_Limited(int spec) {
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3],*sphereX0,sphereRadius;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag=false;
@@ -505,7 +505,7 @@ ot defined");
 double Comet::GetTotalProductionRateBjornNASTRAN(int spec){
   double rSphere=1980,c=0.0,X=0.0,totalProductionRate=0.0;
   double positionSun[3],x[3],norm[3];
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double percentageActive=0.05;
   const double NightSideProduction[6]={5.8/100.0,7.0/100.0,9.2/100.0,10.4/100.0,11.6/100.0,12.7/100.0};
   const double DistanceFromTheSun[6]={1.3,2.0,2.7,3.0,3.25,3.5};
@@ -594,7 +594,7 @@ bool Comet::GenerateParticlePropertiesBjornNASTRAN(int spec, double *x_SO_OBJECT
   static double positionSun[3];
   double HeliocentricDistance=3.5*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double rSphere=1980.0;
   double area;
   double totalProdNightSide=0.0,totalProdDaySide=0.0,scalingFactor,scalingFactorDay,totalSurfaceInShadow=0.0,totalSurfaceInDayLight=0.0;
@@ -905,7 +905,7 @@ bool Comet::GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJE
   static double positionSun[3];
   double HeliocentricDistance=3.3*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double rSphere=1980.0;
   double area;
 
@@ -1071,7 +1071,7 @@ bool Comet::GenerateParticlePropertiesJetNASTRAN(int spec, double *x_SO_OBJECT,d
   static double positionSun[3];
   double HeliocentricDistance=3.3*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
   double rSphere=1980.0;
   double totalArea;
 
@@ -1281,7 +1281,7 @@ void Comet::StepOverTime() {
   double LocalTimeStep,Erot;
   double radiativeCoolingRate=0.0;
   
-  int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],FirstCellParticle,ptr;
+  long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_],FirstCellParticle,ptr;
   
   int thread,i,j,k,idim,offset,cnt=0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
@@ -1293,7 +1293,7 @@ void Comet::StepOverTime() {
 
   for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
     block=node->block;
-    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
     for (i=0;i<_BLOCK_CELLS_X_;i++) {
       for (j=0;j<_BLOCK_CELLS_Y_;j++)

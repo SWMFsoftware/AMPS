@@ -36,7 +36,7 @@ double BulletLocalResolution(double *x) {
   return 50.0;
 }
 
-int SurfaceBoundaryCondition(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
+int SurfaceBoundaryCondition(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace) {
   double c=vInit[0]*TriangleCutFace->ExternalNormal[0]+vInit[1]*TriangleCutFace->ExternalNormal[1]+vInit[2]*TriangleCutFace->ExternalNormal[2];
 
   vInit[0]-=2.0*c*TriangleCutFace->ExternalNormal[0];
@@ -104,13 +104,13 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 }
 
 //injection of model particles through the faces of the bounding box
-int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-  int newParticle;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
-  int nInjectedParticles=0;
+  long int nInjectedParticles=0;
 
   if (spec!=_O2_SPEC_) return 0; //inject only spec=0
 
@@ -166,8 +166,8 @@ int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startN
   return nInjectedParticles;
 }
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
 
   for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
 
@@ -267,7 +267,7 @@ int main(int argc,char **argv) {
   PIC::Mesh::mesh->outputMeshTECPLOT(fname);
 
 
-  for (int niter=0;niter<100000001;niter++) {
+  for (long int niter=0;niter<100000001;niter++) {
     PIC::TimeStep();
   }
 

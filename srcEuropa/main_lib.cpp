@@ -338,14 +338,14 @@ bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 
 //injection of model particles through the faces of the bounding box
-int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   bool ExternalFaces[6];
   double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
   int nface,idim;
-  //  int nInjectedParticles;
-  int newParticle;
+  //  long int nInjectedParticles;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
-  int nInjectedParticles=0;
+  long int nInjectedParticles=0;
   
   if ((spec!=_O_PLUS_HIGH_SPEC_)&&(spec!=_O_PLUS_THERMAL_SPEC_)) return 0; //inject only spec=0
   
@@ -403,8 +403,8 @@ int  BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *start
   return nInjectedParticles;
 }
 
-int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-	int nInjectedParticles=0;
+long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+	long int nInjectedParticles=0;
 
 	for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
 
@@ -425,7 +425,7 @@ bool GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJECT,doub
   static double positionSun[3];
   double HeliocentricDistance=3.3*_AU_;
   int nAzimuthalSurfaceElements,nAxisSurfaceElements,nAxisElement,nAzimuthalElement, nZenithElement;
-  int totalSurfaceElementsNumber,i;
+  long int totalSurfaceElementsNumber,i;
 //  double rSphere=1980.0;
   double area;
   static double productionDistributionUniformNASTRAN[200000];
@@ -535,10 +535,10 @@ bool GenerateParticlePropertiesUniformNASTRAN(int spec, double *x_SO_OBJECT,doub
 
 
 
-int DustInjection(int spec) {
+long int DustInjection(int spec) {
   double ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,TimeCounter=0.0,x_SO_OBJECT[3],x_IAU_OBJECT[3],v_SO_OBJECT[3],v_IAU_OBJECT[3],sphereX0[3]={0.0},sphereRadius=_EUROPA__RADIUS_;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
-  int newParticle,nInjectedParticles=0;
+  long int newParticle,nInjectedParticles=0;
   PIC::ParticleBuffer::byte *newParticleData;
   double ParticleWeightCorrection=1.0;
   bool flag=false;
@@ -687,9 +687,9 @@ ot defined");
   return nInjectedParticles;
 }
 
-int DustInjection(){
+long int DustInjection(){
   int spec;
-  int res=0;
+  long int res=0;
 
   for (spec=0;spec<PIC::nTotalSpecies;spec++) res+=DustInjection(spec);
 
@@ -708,13 +708,13 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 	return res;
 }
 
-int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
 	double radiusSphere,*x0Sphere,l[3],r,vNorm,c;
 	cInternalSphericalData *Sphere;
 	cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
 	int idim;
 
-	//   int newParticle;
+	//   long int newParticle;
 	//   PIC::ParticleBuffer::byte *newParticleData;
 	//   double ParticleStatWeight,WeightCorrection;
 
@@ -734,7 +734,7 @@ int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTot
 
 	//sample the particle data
 	double *SampleData;
-	int nSurfaceElement,nZenithElement,nAzimuthalElement;
+	long int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
 	Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
 	nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -940,7 +940,7 @@ PIC::InitMPI();
 
 
 		//reserve memory for sampling of the surface balance of sticking species
-		int ReserveSamplingSpace[PIC::nTotalSpecies];
+		long int ReserveSamplingSpace[PIC::nTotalSpecies];
 
 		for (int s=0;s<PIC::nTotalSpecies;s++) ReserveSamplingSpace[s]=_EUROPA_SURFACE_SAMPLING__TOTAL_SAMPLED_VARIABLES_;
 
@@ -1111,7 +1111,7 @@ PIC::InitMPI();
 
   //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
   if (NewMeshGeneratedFlag==true) {
-    unsigned int MeshSignature=PIC::Mesh::mesh->getMeshSignature();
+    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
 
     if (PIC::Mesh::mesh->ThisThread==0) {
       char command[300];

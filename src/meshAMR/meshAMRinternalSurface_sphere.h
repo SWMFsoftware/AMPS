@@ -29,7 +29,7 @@ class cInternalSphericalData : public cAMRexit
 public:
   double OriginPosition[3],Radius;
 
-  static int nZenithSurfaceElements,nAzimuthalSurfaceElements;
+  static long int nZenithSurfaceElements,nAzimuthalSurfaceElements;
   static double dAzimuthalAngle;
 
   static double dCosZenithAngle;
@@ -41,14 +41,14 @@ public:
   typedef void (*fPrintTitle)(FILE*);
   fPrintTitle PrintTitle;
 
-  typedef void (*fPrintDataStateVector)(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
+  typedef void (*fPrintDataStateVector)(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
   fPrintDataStateVector PrintDataStateVector;
 
   typedef double (*fLocalResolution)(double *);
   fLocalResolution localResolution;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
 
@@ -72,7 +72,7 @@ public:
     SetGeneralSurfaceMeshParameters(nZenithSurfaceElements,nAzimuthalSurfaceElements);
   }
 
-  static void SetGeneralSurfaceMeshParameters(int nZenithElements,int nAzimuthalElements) {
+  static void SetGeneralSurfaceMeshParameters(long int nZenithElements,long int nAzimuthalElements) {
     nZenithSurfaceElements=nZenithElements,nAzimuthalSurfaceElements=nAzimuthalElements;
 
     dAzimuthalAngle=2.0*Pi/nAzimuthalSurfaceElements;
@@ -99,7 +99,7 @@ public:
      r=Radius;
   }
 
-  inline int GetLocalSurfaceElementNumber(int nZenithElement,int nAzimuthalElement) {
+  inline long int GetLocalSurfaceElementNumber(long int nZenithElement,long int nAzimuthalElement) {
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) {
       char msg[1000];
@@ -121,7 +121,7 @@ public:
     nZenithElement=nSurfaceElement-nZenithSurfaceElements*nAzimuthalElement; 
   }
 
-  int GetTotalSurfaceElementsNumber() {return nZenithSurfaceElements*nAzimuthalSurfaceElements;}
+  long int GetTotalSurfaceElementsNumber() {return nZenithSurfaceElements*nAzimuthalSurfaceElements;}
 
 
   double GetSurfaceElementArea(int nZenithElement,int nAzimuthalElement) {
@@ -235,7 +235,7 @@ public:
     x[2]=Radius*x[2]+OriginPosition[2];
   }
 
-  inline void GetSurfaceElementProjectionIndex(double *x,double &ZenithAngle,int &nZenithElement,double &AzimuthalAngle,int &nAzimuthalElement) {
+  inline void GetSurfaceElementProjectionIndex(double *x,double &ZenithAngle,long int &nZenithElement,double &AzimuthalAngle,long int &nAzimuthalElement) {
     double r,r2,xNormalized[3];
     int idim;
 
@@ -252,26 +252,26 @@ public:
 
     switch (_INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_) {
     case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_COSINE_DISTRIBUTION_: 
-      nZenithElement=(int)((1.0-xNormalized[2])/dCosZenithAngle);
+      nZenithElement=(long int)((1.0-xNormalized[2])/dCosZenithAngle);
       break;
     case _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
-      nZenithElement=(int)(ZenithAngle/dZenithAngle);
+      nZenithElement=(long int)(ZenithAngle/dZenithAngle);
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not defined");
     }
 
-    nAzimuthalElement=(int)(AzimuthalAngle/dAzimuthalAngle);
+    nAzimuthalElement=(long int)(AzimuthalAngle/dAzimuthalAngle);
 
     if (nZenithElement==nZenithSurfaceElements) --nZenithElement;
     if (nAzimuthalElement==nAzimuthalSurfaceElements) --nAzimuthalElement;
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    static unsigned int FunctionCallCounter=0;
+    static unsigned long int FunctionCallCounter=0;
 
     if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) {
-      printf("$PREFIX:Error: out of range\n nZenithElement=%i, nAzimuthalElement=%i (%s@%i)\n",nZenithElement,nAzimuthalElement,__FILE__,__LINE__);
-      printf("$PREFIX:x=%e, %e, %e\nCallCounter=%i\n",x[0],x[1],x[2],FunctionCallCounter);
+      printf("$PREFIX:Error: out of range\n nZenithElement=%ld, nAzimuthalElement=%ld (%s@%i)\n",nZenithElement,nAzimuthalElement,__FILE__,__LINE__);
+      printf("$PREFIX:x=%e, %e, %e\nCallCounter=%ld\n",x[0],x[1],x[2],FunctionCallCounter);
       exit(__LINE__,__FILE__,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range ");
     }
 
@@ -279,13 +279,13 @@ public:
     #endif
   }
 
-  inline void GetSurfaceElementProjectionIndex(double *x,int &nZenithElement,int &nAzimuthalElement) {
+  inline void GetSurfaceElementProjectionIndex(double *x,long int &nZenithElement,long int &nAzimuthalElement) {
     double ZenithAngle,AzimuthalAngle;
     GetSurfaceElementProjectionIndex(x,ZenithAngle,nZenithElement,AzimuthalAngle,nAzimuthalElement);
   }
 
   inline void etSurfaceElementProjectionAngle(double *x,double &ZenithAngle,double &AzimuthalAngle) {
-    int nZenithElement,nAzimuthalElement;
+    long int nZenithElement,nAzimuthalElement;
     GetSurfaceElementProjectionIndex(x,ZenithAngle,nZenithElement,AzimuthalAngle,nAzimuthalElement);
   }
 
@@ -353,7 +353,7 @@ public:
   }
 
   void PrintSurfaceData(const char *fname,int nDataSet, bool PrintStateVectorFlag=true) {
-    int iZenith,iAzimuthal;
+    long int iZenith,iAzimuthal;
     FILE *fout=NULL,*fout2d=NULL;
     double x[3];
 
@@ -389,13 +389,13 @@ public:
       }
 
       //print the number of variables and blocks
-      fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",(nZenithSurfaceElements+1)*nAzimuthalSurfaceElements,nZenithSurfaceElements*nAzimuthalSurfaceElements);
-      fprintf(fout2d,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalSurfaceElements,nZenithSurfaceElements+1);
+      fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",(nZenithSurfaceElements+1)*nAzimuthalSurfaceElements,nZenithSurfaceElements*nAzimuthalSurfaceElements);
+      fprintf(fout2d,"\nZONE I=%ld, J=%ld, DATAPACKING=POINT\n",nAzimuthalSurfaceElements,nZenithSurfaceElements+1);
     }
     else pipe.openSend(0);
 
     //interpolate and print the state vector
-    int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
+    long int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
 
     for (iZenith=0;iZenith<nZenithSurfaceElements+1;iZenith++) for (iAzimuthal=0;iAzimuthal<nAzimuthalSurfaceElements;iAzimuthal++) {
       GetSurfaceCoordinate(x,iZenith,iAzimuthal);
@@ -449,8 +449,8 @@ public:
     else pipe.closeSend();
 
     //print the connectivity list
-    int iAzimuthalMax,iAzimuthalMin;
-    int nd0,nd1,nd2,nd3;
+    long int iAzimuthalMax,iAzimuthalMin;
+    long int nd0,nd1,nd2,nd3;
 
     if (ThisThread==0) {
       for (iZenith=0;iZenith<nZenithSurfaceElements;iZenith++) for (iAzimuthal=0;iAzimuthal<nAzimuthalSurfaceElements;iAzimuthal++) {
@@ -462,7 +462,7 @@ public:
         nd2=1+iAzimuthalMax+(iZenith+1)*nAzimuthalSurfaceElements;
         nd3=1+iAzimuthalMin+(iZenith+1)*nAzimuthalSurfaceElements;
 
-        fprintf(fout,"%i %i %i %i\n",nd0,nd1,nd2,nd3);
+        fprintf(fout,"%ld %ld %ld %ld\n",nd0,nd1,nd2,nd3);
       }
 
       fclose(fout);
@@ -857,7 +857,7 @@ LevelProcessingDone:
 };
 
 //set up the surface parameters of the sphere
-void inline SetGeneralSphereSurfaceMeshParameters(int nZenithElements,int nAzimuthalElements) {
+void inline SetGeneralSphereSurfaceMeshParameters(long int nZenithElements,long int nAzimuthalElements) {
   cInternalSphericalData::nAzimuthalSurfaceElements=nAzimuthalElements,cInternalSphericalData::nZenithSurfaceElements=nZenithElements;
   cInternalSphericalData::dAzimuthalAngle=2.0*Pi/cInternalSphericalData::nAzimuthalSurfaceElements;
 

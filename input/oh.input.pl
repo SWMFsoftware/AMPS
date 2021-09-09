@@ -175,7 +175,7 @@ while ($line=<InputFile>) {
             ($InputLine,$InputComment)=split(' ',$InputComment,2);
             
             if (defined $InputLine) {
-              ampsConfigLib::ChangeValueOfVariable("int OH::Sampling::DistributionFunctionSample::nSampledFunctionPoints",$InputLine,"main/OH_sample_distribution_function.cpp");
+              ampsConfigLib::ChangeValueOfVariable("long int OH::Sampling::DistributionFunctionSample::nSampledFunctionPoints",$InputLine,"main/OH_sample_distribution_function.cpp");
             }
             else {
               warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");

@@ -40,7 +40,7 @@ public:
   fLocalResolution localResolution;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
   void cleanDataBuffer() {
@@ -74,7 +74,7 @@ public:
   }
 
   void GetSurfaceElementIndex() {}
-  int GetTotalSurfaceElementsNumber() {return 1;}
+  long int GetTotalSurfaceElementsNumber() {return 1;}
   double GetSurfaceElementArea(int nPolarElement) { return 4.0*Pi*pow(Radius,2);}
 
   void PrintSurfaceData(const char *fname,int nDataSet, bool PrintStateVectorFlag=true) {

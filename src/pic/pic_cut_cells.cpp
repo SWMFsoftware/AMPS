@@ -8,7 +8,7 @@ int PIC::Mesh::IrregularSurface::nCutFaceInformationCopyAttempts=0;
 void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   //calculate external normals to the faces
   double xStart[3],xFinish[3],l,l0,*norm;
-  int nface;
+  long int nface;
   cTriangleFace *fcptr;
   int idim,iIntersections;
 
@@ -20,7 +20,7 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   PIC::RayTracing::Init();
 
   //check whether external normal vectors are already have been determined for the surface trianguletion
-  unsigned int TriangulationSignature;
+  unsigned long int TriangulationSignature;
   char fname[_MAX_STRING_LENGTH_PIC_];
   FILE *fExternalVectorFile=NULL;
 

@@ -34,13 +34,13 @@ bool Orbiter::UpstreamBC::BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC
  }
 
 //injection of model particles through the faces of the bounding box
-int Orbiter::UpstreamBC::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+long int Orbiter::UpstreamBC::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
    bool ExternalFaces[6];
    double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
    int nface,idim;
-   int newParticle;
+   long int newParticle;
    PIC::ParticleBuffer::byte *newParticleData;
-   int nInjectedParticles=0;
+   long int nInjectedParticles=0;
    double v[3];
    double ModelParticlesInjectionRate;
 
@@ -131,8 +131,8 @@ int Orbiter::UpstreamBC::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::c
    return nInjectedParticles;
  }
 
-int Orbiter::UpstreamBC::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int Orbiter::UpstreamBC::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
 
   if (UpstreamSourceMode==true) for (int s=0;s<PIC::nTotalSpecies;s++) nInjectedParticles+=BoundingBoxInjection(s,startNode);
 

@@ -76,8 +76,8 @@ namespace SEP {
 
   //functions related to tracing SEPs along field lines 
   namespace FieldLine {
-    int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
-    int InjectParticles();
+    long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
+    long int InjectParticles();
   }
 
   //the namespace contains the diffution models
@@ -162,7 +162,7 @@ namespace SEP {
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
         int i,j,k;
         double xBegin[3],xEnd[3],xMiddle[3];
-        int ptr;
+        long int ptr;
 
         Segment->GetBegin()->GetX(xBegin);
         Segment->GetEnd()->GetX(xEnd);
@@ -373,15 +373,15 @@ namespace SEP {
   void InitDriftVelData();
 
 
-  int ParticleMover_HE_2019_AJL(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover_BOROVIKOV_2019_ARXIV(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover_default(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
-  int ParticleMover__He_2019_AJL(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  int ParticleMover_Kartavykh_2016_AJ(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
-  int ParticleMover_Droge_2009_AJ(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
+  int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   //particle mover
-  int inline ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     int res;
 
 
@@ -436,17 +436,17 @@ namespace SEP {
 
     namespace OuterBoundary {
       bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-      int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-      int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+      long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+      long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
       double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
     }
 
     namespace InnerBoundary {
       double sphereInjectionRate(int spec,int BoundaryElementType,void *BoundaryElement);
-      int sphereParticleInjection(int spec,int BoundaryElementType,void *SphereDataPointer);
-      int sphereParticleInjection(int BoundaryElementType,void *BoundaryElement);
-      int sphereParticleInjection(void *SphereDataPointer);
+      long int sphereParticleInjection(int spec,int BoundaryElementType,void *SphereDataPointer);
+      long int sphereParticleInjection(int BoundaryElementType,void *BoundaryElement);
+      long int sphereParticleInjection(void *SphereDataPointer);
     }
   }
 
@@ -489,7 +489,7 @@ namespace SEP {
     namespace Scattering {
       namespace AIAA2005 {
         double MeanFreePath(PIC::ParticleBuffer::byte *ParticleData);
-        void Process(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+        void Process(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
       }
     }
 
@@ -599,7 +599,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 #define _FORCE_LORENTZ_MODE_ _PIC_MODE_OFF_
 #define _FORCE_FRAMEROTATION_MODE_ _PIC_MODE_OFF_
 
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
     memcpy(x_LOCAL,x,3*sizeof(double));
@@ -614,7 +614,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     //********************************************************
     // the following code is copied from srcEuropa/Europa.h
     //********************************************************
-    int nd;
+    long int nd;
     char *offset;
     int i,j,k;
     PIC::Mesh::cDataCenterNode *CenterNode;
@@ -689,7 +689,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
   }
 
 
-  inline double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag) {
+  inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag) {
     static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
     // no photoionization for now
@@ -698,7 +698,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 
   }
 
-  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
+  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
 
     // no photoionization for now
     return _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;

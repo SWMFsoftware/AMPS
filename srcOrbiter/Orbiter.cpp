@@ -115,7 +115,7 @@ void Orbiter::Sampling::DragCoefficient::ResetUpstreamFlowDirection::RemoveAllPa
 
 //=======================================================================================
 //particle/surface interaction model
-int Orbiter::ParticleSurfaceInteractionProcessor_default(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Orbiter::ParticleSurfaceInteractionProcessor_default(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double c;
 
   c=vInit[0]*TriangleCutFace->ExternalNormal[0]+vInit[1]*TriangleCutFace->ExternalNormal[1]+vInit[2]*TriangleCutFace->ExternalNormal[2];

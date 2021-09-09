@@ -9,7 +9,7 @@ int SEP::Offset::p_norm=-1;
 cInternalSphericalData* SEP::InnerBoundary=NULL;
 
 void SEP::RequestParticleData() {
-  int offset;
+  long int offset;
 
   switch (_SEP_MOVER_) {
   case _SEP_MOVER_HE_2019_AJL_:

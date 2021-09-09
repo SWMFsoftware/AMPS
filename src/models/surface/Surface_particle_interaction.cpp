@@ -14,7 +14,7 @@ double Surface::MaxwellReflection::AccommodationCoefficient[PIC::nTotalSpecies];
 
 
 //particle reflection in the model of the specular reflection
-int Surface::SpecularReflection::Processor(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Surface::SpecularReflection::Processor(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double c;
 
   c=vInit[0]*TriangleCutFace->ExternalNormal[0]+vInit[1]*TriangleCutFace->ExternalNormal[1]+vInit[2]*TriangleCutFace->ExternalNormal[2];
@@ -26,7 +26,7 @@ int Surface::SpecularReflection::Processor(int ptr,double* xInit,double* vInit,C
 }
 
 //diffuse reflection
-int Surface::DiffuseReflection::Processor(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Surface::DiffuseReflection::Processor(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double temp,*e0,*e1,*e2,ksi_n_r,ksi_t1_r,ksi_t2_r,beta,phi,c;
   int spec;
 
@@ -56,7 +56,7 @@ int Surface::DiffuseReflection::Processor(int ptr,double* xInit,double* vInit,Cu
 }
 
 //Maxwell model
-int Surface::MaxwellReflection::Processor(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Surface::MaxwellReflection::Processor(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   int res,spec;
 
   spec=PIC::ParticleBuffer::GetI(ptr);
@@ -68,7 +68,7 @@ int Surface::MaxwellReflection::Processor(int ptr,double* xInit,double* vInit,Cu
 }
 
 //CLL model. Implements from Padilla-2009-JTHT, Padilla-2008-PHD (as in MONACO)
-int Surface::CLL::Processor(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int Surface::CLL::Processor(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double *e0,*e1,*e2;
   int idim,spec;
   double ksi_n_i=0.0,ksi_t1_i=0.0;

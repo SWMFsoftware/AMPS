@@ -15,7 +15,7 @@ int PIC::FieldLine::ParticleDataOffset=-1;
 
       void PIC::FieldLine::cFieldLineSegment::DeleteAttachedParticles() {
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
-          int ptr_next,ptr=FirstParticleIndex;
+          long int ptr_next,ptr=FirstParticleIndex;
 
           while (ptr!=-1) {
             ptr_next=PIC::ParticleBuffer::GetNext(ptr);
@@ -66,7 +66,7 @@ namespace PIC {
     cAssociatedDataAMRstack<cFieldLineSegment> SegmentsAll;
     cFieldLine *FieldLinesAll = NULL;
     
-    int nFieldLine=0;
+    long int nFieldLine=0;
 
     double TimeLastUpdate = -1;
 
@@ -380,7 +380,7 @@ namespace PIC {
     }
     
     //=========================================================================
-    int InjectParticle(int spec) {
+    long int InjectParticle(int spec) {
       // this is a wrapper that can call either the default injection procedure
       // or a user-defined procedure
       //      return InjectParticle_default(spec);
@@ -388,7 +388,7 @@ namespace PIC {
     }
     
     //=========================================================================
- int InjectParticle_default(int spec) {
+ long int InjectParticle_default(int spec) {
    double WeightCorrection,p[3],v[3];
    int iFieldLine,iSegment;
 
@@ -419,7 +419,7 @@ namespace PIC {
 
 
 
-    int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn) {
+    long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn) {
       //namespace alias
       namespace PB = PIC::ParticleBuffer;
 
@@ -556,7 +556,7 @@ namespace PIC {
 //      node=PIC::Mesh::mesh->findTreeNode(x);
       
       //generate a new particles
-      int NewParticle;
+      long int NewParticle;
       PB::byte* NewParticleData;
 
       switch (_PIC_PARTICLE_LIST_ATTACHING_) {
@@ -639,7 +639,7 @@ namespace PIC {
           nSegmentParticles[iSegment]=0; 
           ModelParticleSpeedTable[iSegment]=0.0;
      
-          int ptr=Segment->FirstParticleIndex;
+          long int ptr=Segment->FirstParticleIndex;
 
           while (ptr!=-1) {
             nSegmentParticles[iSegment]++;
@@ -680,15 +680,15 @@ namespace PIC {
 
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
           if (iVertex==0) {
-            fprintf(fout, "%e  %e  %e  %e  %i  ",(double)nSegmentParticles[0],
+            fprintf(fout, "%e  %e  %e  %e  %ld  ",(double)nSegmentParticles[0],
               (double)nSegmentParticles_mu_positive[0],(double)nSegmentParticles_mu_negative[0],ModelParticleSpeedTable[0],iVertex);
           }
           else if (iVertex==nVertex-1) {
-            fprintf(fout, "%e  %e  %e  %e %i  ",(double)nSegmentParticles[iVertex-1],
+            fprintf(fout, "%e  %e  %e  %e %ld  ",(double)nSegmentParticles[iVertex-1],
               (double)nSegmentParticles_mu_positive[iVertex-1],(double)nSegmentParticles_mu_negative[iVertex-1],ModelParticleSpeedTable[iVertex-1],iVertex); 
           }
           else {
-            fprintf(fout, "%e  %e  %e  %e  %i  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 
+            fprintf(fout, "%e  %e  %e  %e  %ld  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 
               0.5*(nSegmentParticles_mu_positive[iVertex-1]+nSegmentParticles_mu_positive[iVertex]),
               0.5*(nSegmentParticles_mu_negative[iVertex-1]+nSegmentParticles_mu_negative[iVertex]),
               0.5*(ModelParticleSpeedTable[iVertex-1]+ModelParticleSpeedTable[iVertex]),iVertex);
@@ -745,7 +745,7 @@ namespace PIC {
       FieldLinesAll = new cFieldLine [nFieldLineMax];
 
       // activate data storage
-      int Offset = 0;
+      long int Offset = 0;
 
       // activate data that are stored but NOT sampled
       if (VertexAllocationManager.MagneticField==true)        DatumAtVertexMagneticField.       activate(Offset, &DataStoredAtVertex);
@@ -766,7 +766,7 @@ namespace PIC {
       if (VertexAllocationManager.PreviousVertexData.PlasmaWaves==true)          DatumAtVertexPrevious::DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
 
       // activate data that is sampled
-      int SamplingOffset = Offset;
+      long int SamplingOffset = Offset;
       Offset = 0;
 
       DatumAtVertexParticleWeight.  activate(Offset, &DataSampledAtVertex);
@@ -780,7 +780,7 @@ namespace PIC {
       PIC::IndividualModelSampling::DataSampledList.push_back(&DatumAtGridParticleEnergy);
 
       //request data in the particle state vector to keep the field line-related data
-      int offset;
+      long int offset;
       int DataLength;
 
       DataLength=sizeof(cParticleFieldLineData);
@@ -833,7 +833,7 @@ namespace PIC {
     }
 
     //=========================================================================
-    void Sampling(int ptr, double Weight, char* CellSamplingBuffer){
+    void Sampling(long int ptr, double Weight, char* CellSamplingBuffer){
       // namespace alias
       namespace PB = PIC::ParticleBuffer;
 
@@ -1339,7 +1339,7 @@ namespace FieldLine{
 
     auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-      int ptr,ptr_next;
+      long int ptr,ptr_next;
       double *x,LocalTimeStep;
       int spec;
       PB::byte* ParticleData;
@@ -1385,7 +1385,7 @@ namespace FieldLine{
   }
 
   // procedure that returns parameters of the guiding center motion
-  void GuidingCenterMotion(double& ForceParal, double& AbsB,int spec,int ptr,int   iFieldLine,double FieldLineCoord) {
+  void GuidingCenterMotion(double& ForceParal, double& AbsB,int spec,long int ptr,int   iFieldLine,double FieldLineCoord) {
     /* function returns guiding center velocity in direction perpendicular
      * to the magnetic field and the force parallel to it
      * for Lorentz force (considered here)
@@ -1432,7 +1432,7 @@ namespace FieldLine{
   }
   
   // mover itself
-  int Mover_SecondOrder(int ptr, double dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  int Mover_SecondOrder(long int ptr, double dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
     //aliases
     namespace FL = PIC::FieldLine;
     namespace PB = PIC::ParticleBuffer;
@@ -1471,7 +1471,7 @@ namespace FieldLine{
     iFieldLine = PIC::ParticleBuffer::GetFieldLineId(ptr);
     FieldLineCoordInit = PIC::ParticleBuffer::GetFieldLineCoord(ptr);
 
-    static int nCall=0;
+    static long int nCall=0;
     nCall++;
     
     // predictor step
@@ -1628,7 +1628,7 @@ namespace FieldLine{
       #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_ 
         { 
         PIC::Mesh::cDataBlockAMR *block=startNode->block;
-        int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
     
         PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
         PIC::ParticleBuffer::SetPrev(-1,ParticleData);
@@ -1672,7 +1672,7 @@ void PIC::FieldLine::CheckParticleList() {
   }
 
   auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
-    int ptr;
+    long int ptr;
     int cnt=0;
 
     ptr=Segment->FirstParticleIndex;
@@ -1688,7 +1688,7 @@ void PIC::FieldLine::CheckParticleList() {
   //loop through the field lines 
   int iFieldLine;
   FL::cFieldLineSegment *Segment;
-  int nTotalParticles=0;
+  long int nTotalParticles=0;
 
   for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
     for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {

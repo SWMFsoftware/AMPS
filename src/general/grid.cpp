@@ -45,7 +45,7 @@ void cutstr(char* dest, char* src)
 }
 
 //==================================================
-void error(int line) {
+void error(long int line) {
   printf("Error in reading of grid's file (line=%i)\n",line);
   exit(__LINE__,__FILE__);
 }
@@ -54,7 +54,7 @@ void error(int line) {
 void Cgrid::OutputInFile(char *fname) {
   FILE* fout;
   int idim;
-  int n,f,c;
+  long int n,f,c;
 
   fout=fopen(fname,"w");
 
@@ -88,13 +88,13 @@ void Cgrid::OutputInFile(char *fname) {
   
     fprintf(fout,"neighbours:  ");
     for (idim=0;idim<DIM+1;idim++) 
-       fprintf(fout,"%i  ",(int)cell[c].neighbour_cellno[idim]);
+       fprintf(fout,"%i  ",(long int)cell[c].neighbour_cellno[idim]);
 
     fprintf(fout,"\n"); 
   } 
 
 
-  int b; 
+  long int b; 
   int e1,e2;
   fprintf(fout","\n");
   fprintf(fout,"============ connection data ===========\n");
@@ -124,10 +124,10 @@ void Cgrid::LoadFromFile(char* file_name)
 {
   FILE* fd;
   char str1[200],str[200];
-  int i;
+  long int i;
   int idim;
   float x[3];
-  int line;
+  long int line;
 
   if (DIM==0) {
     cell=new Ccell[1];
@@ -204,7 +204,7 @@ void Cgrid::LoadFromFile(char* file_name)
 double Cgrid::Measure()
 {
   double measure;
-  int ncell;
+  long int ncell;
 
   measure=0.0;
   for (ncell=0;ncell<ncells;ncell++) 
@@ -223,7 +223,7 @@ void Cgrid::InitGridData() {
     return;
   }
 
-  for (int ncell=0;ncell<ncells;ncell++) {
+  for (long int ncell=0;ncell<ncells;ncell++) {
     cell[ncell].first_ptr=-1;
     cell[ncell].thread=0;
     cell[ncell].sbdm=0;
@@ -252,8 +252,8 @@ void Cgrid::InitGridData() {
 
 //==================================================
 void Cgrid::InitInterpolationData() {
-  int k,ncell,nnode;
-  int* nnn=new int[nnodes];
+  long int k,ncell,nnode;
+  long int* nnn=new long int[nnodes];
   float* sum=new float[nnodes];
   float measure;
   int idim;
@@ -274,7 +274,7 @@ void Cgrid::InitInterpolationData() {
 
   for (nnode=0;nnode<nnodes;nnode++) {    
     node[nnode].InterpolationWeight=new float[nnn[nnode]+1];
-    node[nnode].InterpolationMask=new int [nnn[nnode]+1];
+    node[nnode].InterpolationMask=new long int [nnn[nnode]+1];
     nnn[nnode]=0;
   } 
 
@@ -294,9 +294,9 @@ void Cgrid::InitInterpolationData() {
        
 //==================================================
 //Get "global" number of cell, which contains point x 
-int Cgrid::GetNCell(float* x) {
+long int Cgrid::GetNCell(float* x) {
   int idim,i;
-  int nnode,ncell;
+  long int nnode,ncell;
   float xmin[3],xmax[3],locx[3],summ;
   array_1d<float> x_node(DIM);
   bool flag;
@@ -359,7 +359,7 @@ void Cgrid::GetTMatrix2D() {
 
   TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-  for(int ncell=0;ncell<ncells;ncell++) 
+  for(long int ncell=0;ncell<ncells;ncell++) 
     for (int nbasis=0;nbasis<DIM+1;nbasis++) {  
       for (i=0;i<DIM;i++) {
         n[i]=nbasis+i+1;
@@ -386,7 +386,7 @@ void Cgrid::GetTMatrix2D() {
 
 //==================================================
 void Cgrid::InitCellConnectionData() {
-  int ncell,nbr_ncell; 
+  long int ncell,nbr_ncell; 
   int i,nface,nbasis,nbr_nbasis;
 
   cells_connection_data=new cells_connection_data_type[ncells]; 
@@ -533,7 +533,7 @@ void Cgrid::GetTMatrix1D() {
 
   TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-  for(int ncell=0;ncell<ncells;ncell++) 
+  for(long int ncell=0;ncell<ncells;ncell++) 
     for (int nbasis=0;nbasis<DIM+1;nbasis++) {
       n=nbasis+1;
       if (n>=DIM+1) n-=(DIM+1);
@@ -574,7 +574,7 @@ void Cgrid::ChangeLocalPositionVector1D(float* a,char nb1,char nb2) {
 
 //==================================================
 void Cgrid::SaveImageFile(int fd) {
-  int ncell;
+  long int ncell;
 
   for (ncell=0;ncell<ncells;ncell++) {
     write(fd,&cell[ncell].first_ptr,sizeof(cell[ncell].first_ptr));
@@ -585,7 +585,7 @@ void Cgrid::SaveImageFile(int fd) {
   
 //==================================================
 void Cgrid::LoadImageFile(int fd) {
-  int ncell;
+  long int ncell;
 
   for (ncell=0;ncell<ncells;ncell++) {
     read(fd,&cell[ncell].first_ptr,sizeof(cell[ncell].first_ptr));
@@ -602,7 +602,7 @@ void Cgrid::GetTMatrix3D() {
 
   TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-  for(int ncell=0;ncell<ncells;ncell++)
+  for(long int ncell=0;ncell<ncells;ncell++)
     for (int nbasis=0;nbasis<DIM+1;nbasis++) {
       for (i=0;i<DIM;i++) {
         n[i]=nbasis+i+1;
@@ -708,13 +708,13 @@ void Cgrid::ChangeLocalPositionVector3D(float* a,char nb1,char nb2) {
 }
 
 //==================================================
-void Cgrid::InitSurfaceInterpolationData(vector< vector<int> >&SurfaceSDataGroups) {
-  int ngroup;
-  int nnode,nface,face_type,faceat;
+void Cgrid::InitSurfaceInterpolationData(vector< vector<long int> >&SurfaceSDataGroups) {
+  long int ngroup;
+  long int nnode,nface,face_type,faceat;
   int idim;
   bool* use_flag;
   double measure, *sum;
-  int n,faces_in_the_group; 
+  long int n,faces_in_the_group; 
 
   if (SurfaceSDataGroups.size()==0) return;
   surface_interpolation_data.resize(SurfaceSDataGroups.size()); 
@@ -741,7 +741,7 @@ void Cgrid::InitSurfaceInterpolationData(vector< vector<int> >&SurfaceSDataGroup
       }
     }
 
-    int nodes_in_the_group=0,current_node=0;
+    long int nodes_in_the_group=0,current_node=0;
 
     for (nnode=0;nnode<nnodes;nnode++) 
       if (use_flag[nnode]==true) nodes_in_the_group++;

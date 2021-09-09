@@ -33,7 +33,7 @@ namespace Titan {
 
   //separatethermal and "hot" neutral species
   namespace SpeciesEnergySeparation {
-    void Process(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+    void Process(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   }
 
   //the mesh parameters
@@ -288,7 +288,7 @@ namespace Titan {
 	double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode, int BoundaryElementType,void *BoundaryElement) {
 		
 		unsigned int idim;
-		int nZenithElement,nAzimuthalElement;
+		long int nZenithElement,nAzimuthalElement;
 		int el;
 		double r,vbulk[3]={0.0,0.0,0.0},ExternalNormal[3];
 		//'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
@@ -488,7 +488,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 
   }
 
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
     memcpy(x_LOCAL,x,3*sizeof(double));
@@ -564,7 +564,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
   }
 
 
-  inline double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag) {
+  inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag) {
     static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
 
@@ -594,7 +594,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     return res;
   }
 
-  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
+  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
     spec=_NA_PLUS_SPEC_;
 
     PIC::ParticleBuffer::SetI(spec,ParticleData);

@@ -175,7 +175,7 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   return res;
 }
 
-int ParticleSphereInteraction(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
+int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer)  {
 
    //delete all particles that was not reflected on the surface
 //   PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -221,15 +221,15 @@ double localParticleInjectionRatetemp(int spec){//,cTreeNodeAMR<PIC::Mesh::cData
 }
 
 
-int ThermalParticleReleasingProcessortemp(){//int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int nInjectedParticles=0;
+long int ThermalParticleReleasingProcessortemp(){//int iCellIndex,int jCellIndex,int kCellIndex,PIC::Mesh::cDataCenterNode *cell, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int nInjectedParticles=0;
     double vbulkspeed = 0.0;//sqrt(2*Kbol*5280/_H__MASS_);//2000;
 
   for (int specProduct=0;specProduct<PIC::nTotalSpecies;specProduct++) {
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0;///NumericalLossRateIncrease;
     int iProduct;
-    int newParticle;
+    long int newParticle;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL;
     PIC::Mesh::cDataCenterNode *cell;
     PIC::ParticleBuffer::byte *newParticleData;
@@ -622,7 +622,7 @@ MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;  
 
   //time step
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
   
      ThermalParticleReleasingProcessortemp();
      PIC::TimeStep();

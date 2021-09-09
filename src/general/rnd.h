@@ -31,21 +31,21 @@
 
 
 namespace RandomNumberGenerator {
-  extern unsigned int rndLastSeed;
-  extern unsigned int *rndLastSeedArray;
+  extern unsigned long int rndLastSeed;
+  extern unsigned long int *rndLastSeedArray;
 
 }
 
 
 struct cRndSeedContainer {
-  unsigned int Seed;
+  unsigned long int Seed;
 };
 
 void rnd_seed(int seed=-1);
 
 inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
-  unsigned int Seed=SeedIn->Seed;
+  unsigned long int Seed=SeedIn->Seed;
 
 start:
 

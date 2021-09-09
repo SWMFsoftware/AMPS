@@ -1464,12 +1464,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
 // update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber,ptr,ptrNext;
+  long int LocalCellNumber,ptr,ptrNext;
   int iBlk = -1;
 
   double xTest[3]={31,8,4};
@@ -1496,7 +1496,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
     
     block=node->block;
     
-    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
@@ -1543,7 +1543,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
 	  
           if (ptr!=-1) {
 
-	    // printf("particle, i,j,k,ptr:%d,%d,%d,%i\n",i,j,k,ptr);	   
+	    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);	   
 	    //iPar=i;jPar=j;kPar=k;
 	    //ParticleNode = node;
 
@@ -1568,7 +1568,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::testValueAtGivenPoint(){
               LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
               
               ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
-              printf("particleId:%i, x:%e,%e,%e, v:%e,%e,%e, spec:%d, weight:%e\n",ptr,xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],spec,LocalParticleWeight);
+              printf("particleId:%ld, x:%e,%e,%e, v:%e,%e,%e, spec:%d, weight:%e\n",ptr,xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],spec,LocalParticleWeight);
 
               if (ptrNext!=-1) {
                 ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptrNext);
@@ -1751,7 +1751,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 
   PIC::Mesh::cDataBlockAMR *block=node->block;
 
-  int *FirstCellParticleTable=block->FirstCellParticleTable;
+  long int *FirstCellParticleTable=block->FirstCellParticleTable;
   double CellVolume=1;
   double dx[3];
 
@@ -1762,7 +1762,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
 
   for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
 
-  int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
+  long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
   double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
 
 
@@ -1771,7 +1771,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
   if (ptr!=-1) {
     res=true;
 
-    // printf("particle, i,j,k,ptr:%d,%d,%d,%i\n",i,j,k,ptr);
+    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
     double vInit[3]={0.0,0.0,0.0},xInit[3]={0.0,0.0,0.0};
     int spec;
     double Jg[8][3];
@@ -1806,7 +1806,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
       }
     }
 
-    int ptrNext=ptr;
+    long int ptrNext=ptr;
     PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
     ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
 
@@ -2188,7 +2188,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
   PIC::Mesh::cDataBlockAMR *block=node->block;
 
-  int *FirstCellParticleTable=block->FirstCellParticleTable;
+  long int *FirstCellParticleTable=block->FirstCellParticleTable;
   double CellVolume=1;
   double dx[3];
 
@@ -2197,7 +2197,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
   for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
 
-  int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
+  long int ptr=FirstCellParticleTable[iCellIn+_BLOCK_CELLS_X_*(jCellIn+_BLOCK_CELLS_Y_*kCellIn)];
   double ParticleEnergyCell=0, vmean_cell[PIC::nTotalSpecies];
 
   auto GlobalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
@@ -2208,7 +2208,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   if (ptr!=-1) {
     res=true;
 
-    // printf("particle, i,j,k,ptr:%d,%d,%d,%i\n",i,j,k,ptr);
+    // printf("particle, i,j,k,ptr:%d,%d,%d,%ld\n",i,j,k,ptr);
     union {__m256d vInit_v; double vInit[4];};
     union {__m256d xInit_v; double xInit[4];};
     union {__m256d B_v; double B[4];};
@@ -2251,7 +2251,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
       }
     }
 
-    int ptrNext=ptr;
+    long int ptrNext=ptr;
     PIC::ParticleBuffer::byte *ParticleData, *ParticleDataNext;
     ParticleDataNext=_GetParticleDataPointer(ptr,particle_data_length,particle_data_buffer);
 
@@ -2881,12 +2881,12 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrix(){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   //PIC::ParticleBuffer::byte *ParticleData;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber;
+  long int LocalCellNumber;
 
 
   if (_CUDA_MODE_ == _ON_ ) {
@@ -3621,12 +3621,12 @@ barrier.Sync();
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrixGPU(){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   //PIC::ParticleBuffer::byte *ParticleData;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber;
+  long int LocalCellNumber;
 
   CumulativeTiming::UpdateJMassMatrixTime.Start();
   CumulativeTiming::UpdateJMassMatrixTime_MPI.Start();
@@ -3992,7 +3992,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::divECorrection(){
 
 void exchangeParticleLocal(){
   
-   int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+   long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
   /*
   for (k=0;k<_BLOCK_CELLS_Z_;k++) {
     for (j=0;j<_BLOCK_CELLS_Y_;j++) {
@@ -4019,15 +4019,15 @@ void exchangeParticleLocal(){
       PIC::Mesh::cDataBlockAMR *block=node->block;
       if (!block) continue;
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-      memcpy(block->FirstCellParticleTable,block->tempParticleMovingListTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
-      memcpy(block->tempParticleMovingListTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+      memcpy(block->FirstCellParticleTable,block->tempParticleMovingListTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      memcpy(block->tempParticleMovingListTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
       int thread_OpenMP;
 
-      memcpy(block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+      memcpy(block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
       //link the lists created by each OpenMP threads
-      int FirstParticle,LastParticle=-1;
+      long int FirstParticle,LastParticle=-1;
       PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData;
 
       for (thread_OpenMP=0;thread_OpenMP<PIC::nTotalThreadsOpenMP;thread_OpenMP++) {
@@ -4039,7 +4039,7 @@ void exchangeParticleLocal(){
             FirstParticle=ThreadTempParticleMovingData->first;
 
             //link patricle list
-            int *FirstCellParticlePtr=block->FirstCellParticleTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+            long int *FirstCellParticlePtr=block->FirstCellParticleTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
 
             PIC::ParticleBuffer::SetNext(*FirstCellParticlePtr,LastParticle);
             if (*FirstCellParticlePtr!=-1) PIC::ParticleBuffer::SetPrev(LastParticle,*FirstCellParticlePtr);
@@ -4066,12 +4066,12 @@ void exchangeParticleLocal(){
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber,ptr,ptrNext;    
+  long int LocalCellNumber,ptr,ptrNext;    
 
   double qom[PIC::nTotalSpecies];
   for (int iSp=0;iSp<PIC::nTotalSpecies;iSp++) 
@@ -4101,7 +4101,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
     
     block=node->block;
     
-    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
@@ -4241,7 +4241,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
               }
               //bool isTest=false;
               //if (fabs(xInit[0]-15.5)<0.5 && fabs(xInit[1]-7.5)<0.5 && fabs(xInit[2]-3.5)<0.5) isTest=true; 
-              int tempFirstCellParticle,*tempFirstCellParticlePtr;
+              long int tempFirstCellParticle,*tempFirstCellParticlePtr;
               int ip, jp, kp;
               
               /*
@@ -4266,7 +4266,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
                  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-                 int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+ip+_BLOCK_CELLS_X_*(jp+_BLOCK_CELLS_Y_*kp),ptr);
+                 long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+ip+_BLOCK_CELLS_X_*(jp+_BLOCK_CELLS_Y_*kp),ptr);
                  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
                  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
@@ -4316,12 +4316,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
 // update J and MassMatrix
 void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber,ptr,ptrNext;    
+  long int LocalCellNumber,ptr,ptrNext;    
 
   double q_I[PIC::nTotalSpecies];
   if (doUpdateOld)
@@ -4354,7 +4354,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
     
     block=node->block;
     
-    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int));
+    //memcpy(FirstCellParticleTable,block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
@@ -4456,12 +4456,12 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeNetCharge(bool doUpdateOld
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
   //the table of cells' particles
-  //int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
-  int *FirstCellParticleTable;
+  //long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+  long int *FirstCellParticleTable;
   PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
   PIC::Mesh::cDataCenterNode *cell;
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber,ptr,ptrNext;    
+  long int LocalCellNumber,ptr,ptrNext;    
 
   
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
@@ -4507,7 +4507,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateOldNetCharge(){
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber;    
+  long int LocalCellNumber;    
 
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node=PIC::DomainBlockDecomposition::BlockTable[nLocalNode];
@@ -4586,7 +4586,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryPHI(){
 
 void PIC::FieldSolver::Electromagnetic::ECSIM::SetBoundaryChargeDivE(){
   PIC::Mesh::cDataBlockAMR *block;
-  int LocalCellNumber;    
+  long int LocalCellNumber;    
 
   
   for (int nLocalNode=0;nLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
@@ -5220,7 +5220,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep() {
       {// Output
         double timeNow = PIC::CPLR::FLUID::iCycle*PIC::ParticleWeightTimeStep::GlobalTimeStep[0];  
 
-        if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%i\n",timeNow,PIC::CPLR::FLUID::iCycle);
+        if (PIC::ThisThread==0) printf("pic_field_solver.cpp timeNow:%e,iCycle:%ld\n",timeNow,PIC::CPLR::FLUID::iCycle);
         PIC::CPLR::FLUID::write_output(timeNow);
       }    
 

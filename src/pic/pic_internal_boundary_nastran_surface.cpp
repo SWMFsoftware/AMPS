@@ -42,7 +42,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::NastranSurface:
   return NastranSurfaceDescriptor;
 }
 
-void PIC::BC::InternalBoundary::NastranSurface::PrintDefaultDataStateVector(FILE* fout,int nElement,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalNastranSurfaceData *NastranSurface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void PIC::BC::InternalBoundary::NastranSurface::PrintDefaultDataStateVector(FILE* fout,long int nElement,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalNastranSurfaceData *NastranSurface,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
 
 }
 

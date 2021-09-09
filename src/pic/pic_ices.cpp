@@ -245,7 +245,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveDSMCdata(const char *Case,const char *Dat
 void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   cDataNodeSWMF dataSWMF;
   static CiFileOperations ices;
-  int nd;
+  long int nd;
   int status,idim,i,j,k;
   char *offset;
 
@@ -376,7 +376,7 @@ void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeA
 void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   cDataNodeDSMC dataDSMC;
   static CiFileOperations ices;
-  int nd;
+  long int nd;
   int status,idim,i,j,k;
   char *offset;
 
@@ -481,8 +481,8 @@ void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockA
 
 //====================================================
 //the total number of cells on the mesh
-int PIC::CPLR::DATAFILE::ICES::getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-  int res=0;
+long int PIC::CPLR::DATAFILE::ICES::getTotalCellNumber(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  long int res=0;
   int nDownNode;
   bool flag=false;
 
@@ -503,7 +503,7 @@ void PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList(cTreeNodeAMR<PIC:
   double x[3]={0.0,0.0,0.0},*xNodeMin,*xNodeMax;
   int idim,i,j,k;
 
-  static int nTotalCellNumber,startCellNumber,stopCellNumber,CellCounter;
+  static long int nTotalCellNumber,startCellNumber,stopCellNumber,CellCounter;
 
 #if DIM == 3
   const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
@@ -528,7 +528,7 @@ void PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList(cTreeNodeAMR<PIC:
     fprintf(fout,"#START\n");
 
     //determine the limits of the cells that are printed
-    int nCellPerProcessor;
+    long int nCellPerProcessor;
 
     nTotalCellNumber=getTotalCellNumber(PIC::Mesh::mesh->rootTree);
     nCellPerProcessor=nTotalCellNumber/PIC::Mesh::mesh->nTotalThreads;

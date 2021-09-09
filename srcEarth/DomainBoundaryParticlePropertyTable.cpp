@@ -711,7 +711,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
     if (GenerateParticleProperty(x,v,WeightCorrectionFactor,startNode,spec,iface,iTable,jTable)==true) {
       //a new particle should be generated
       int iCell,jCell,kCell;
-      int newParticle;
+      long int newParticle;
 
       PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode);
 

@@ -672,7 +672,7 @@ namespace Europa {
             (OrbitalMotion::IAU_to_GALL_EPHIOD_TransformationMartix[2][2]*norm_IAU_EUROPA[2]);
 
         //get the surface element that is pointer by the vectorm norm_GALL_EPHIOD_EUROPA
-        int nZenithElement,nAzimuthalElement,nd;
+        long int nZenithElement,nAzimuthalElement,nd;
 
         ((cInternalSphericalData*)SphereDataPointer)->GetSurfaceElementProjectionIndex(norm_GALL_EPHIOD_EUROPA,nZenithElement,nAzimuthalElement);
         nd=((cInternalSphericalData*)SphereDataPointer)->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -695,7 +695,7 @@ namespace Europa {
 
 
     double totalProductionRate(int spec,void *SphereDataPointer);
-    int InjectionBoundaryModel(void *SphereDataPointer);
+    long int InjectionBoundaryModel(void *SphereDataPointer);
   }
 */
 
@@ -741,7 +741,7 @@ namespace Europa {
             (OrbitalMotion::IAU_to_SO_TransformationMartix[2][2]*norm_IAU_EUROPA[2]);
 
         //get the surface element that is pointer by the vectorm norm_GALL_EPHIOD_EUROPA
-        int nZenithElement,nAzimuthalElement,nd;
+        long int nZenithElement,nAzimuthalElement,nd;
 
         ((cInternalSphericalData*)SphereDataPointer)->GetSurfaceElementProjectionIndex(norm_SO,nZenithElement,nAzimuthalElement);
         nd=((cInternalSphericalData*)SphereDataPointer)->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -963,7 +963,7 @@ namespace Europa {
     }
 
   double totalProductionRate(int spec,void *SphereDataPointer);
-  int InjectionBoundaryModel(void *SphereDataPointer);
+  long int InjectionBoundaryModel(void *SphereDataPointer);
 }
 
   namespace InjectEuropaMagnetosphericEPDIons {
@@ -1022,14 +1022,14 @@ namespace Europa {
 
 
     //injection of model particles through the faces of the bounding box
-    inline int  BoundingBoxInjection(int Spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+    inline long int  BoundingBoxInjection(int Spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
       bool ExternalFaces[6];
       double ParticleWeight,LocalTimeStep,TimeCounter,ExternalNormal[3],x[3],x0[3],e0[3],e1[3],c0,c1;
       int nface,idim;
-    //  int nInjectedParticles;
-      int newParticle;
+    //  long int nInjectedParticles;
+      long int newParticle;
       PIC::ParticleBuffer::byte *newParticleData;
-      int nInjectedParticles=0;
+      long int nInjectedParticles=0;
 
       if (Spec!=_O_PLUS_HIGH_SPEC_) return 0; //inject only O ions
 
@@ -1226,7 +1226,7 @@ v[0]=Speed,v[1]=0.0,v[2]=0.0;
       return nInjectedParticles;
     }
 
-    int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
 
 
    //Europa addition
@@ -1335,7 +1335,7 @@ v[0]=Speed,v[1]=0.0,v[2]=0.0;
 
 
   double totalProductionRate(int spec,void *SphereDataPointer);
-  int InjectionBoundaryModel(void *SphereDataPointer);
+  long int InjectionBoundaryModel(void *SphereDataPointer);
 }
 
 
@@ -1344,7 +1344,7 @@ v[0]=Speed,v[1]=0.0,v[2]=0.0;
 
 
   //process particles when they cross the boubdary of the computational domain
-  int ParticleDomainBoundaryIntersection(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
+  int ParticleDomainBoundaryIntersection(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
   //Interaction of the particles with the surface
   namespace SurfaceInteraction {
@@ -1371,7 +1371,7 @@ v[0]=Speed,v[1]=0.0,v[2]=0.0;
 
 
     //model of the interaction between particles and the planetary surface
-    int ParticleSphereInteraction_SurfaceAccomodation(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
+    int ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
   }
 
 
@@ -1390,7 +1390,7 @@ v[0]=Speed,v[1]=0.0,v[2]=0.0;
 #define _FORCE_LORENTZ_MODE_ _PIC_MODE_OFF_
 #define _FORCE_FRAMEROTATION_MODE_ _PIC_MODE_OFF_
 
-void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
 
@@ -1441,7 +1441,7 @@ if (v[0]*x[0]+v[1]*x[1]+v[2]*x[2]<0) {
 
 
 #if _FORCE_LORENTZ_MODE_ == _PIC_MODE_ON_
-    int nd;
+    long int nd;
     char *offset;
     int i,j,k;
     PIC::Mesh::cDataCenterNode *CenterNode;
@@ -1588,13 +1588,13 @@ if (v[0]*x[0]+v[1]*x[1]+v[2]*x[2]<0) {
    //probabilities of the destruction of the primary species
    const double NumericalLossRateIncrease=1000.0;
 
-   double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-   int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+   double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+   int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   };
 
 
 //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
-inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,double *vFinal, int &spec, int ptr,PIC::ParticleBuffer::byte *ParticleData, double TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,double *vFinal, int &spec, long int ptr,PIC::ParticleBuffer::byte *ParticleData, double TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   double ParentSpeciesLifeTime;
   bool PhotolyticReactionAllowedFlag;
   int ResCode=_GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
@@ -1622,7 +1622,7 @@ inline int GenericUnimolecularReactionProcessor(double *xInit,double *xFinal,dou
   if (_O2_PLUS_SPEC_!=-1) {
     double TimeIntervalProduct;
     PIC::Mesh::cDataBlockAMR *block=node->block;
-    int newParticle,nDaugherParticles;
+    long int newParticle,nDaugherParticles;
 
     TimeIntervalProduct=TimeInterval*block->GetLocalTimeStep(_O2_PLUS_SPEC_)/block->GetLocalTimeStep(_O2_SPEC_);
     c=(1.0-exp(-TimeIntervalProduct/ParentSpeciesLifeTime))*block->GetLocalParticleWeight(_O2_SPEC_)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)/block->GetLocalParticleWeight(_O2_PLUS_SPEC_); //the number of model O2+ particles generated during time interval 'TimeIntervalProduct'

@@ -39,7 +39,7 @@ int main(int argc,char **argv) {
   amps_init();
 
 
-  for (int niter=0;niter<100000001 /*000001*/;niter++) {
+  for (long int niter=0;niter<100000001 /*000001*/;niter++) {
 
     amps_time_step();
   }

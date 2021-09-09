@@ -12,13 +12,13 @@ double PIC::EnergyDistributionSampleRelativistic::eMin=0.0;
 double PIC::EnergyDistributionSampleRelativistic::eMax=1000.0;
 double PIC::EnergyDistributionSampleRelativistic::log10eMin=0.0;
 double PIC::EnergyDistributionSampleRelativistic::log10eMax=0.0;
-int PIC::EnergyDistributionSampleRelativistic::nSampledFunctionPoints=100;
+long int PIC::EnergyDistributionSampleRelativistic::nSampledFunctionPoints=100;
 double*** PIC::EnergyDistributionSampleRelativistic::SamplingBuffer=NULL;
 double PIC::EnergyDistributionSampleRelativistic::SamplingLocations[][3]={{0.0,0.0,0.0}};
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** PIC::EnergyDistributionSampleRelativistic::SampleNodes=NULL;
 double PIC::EnergyDistributionSampleRelativistic::dE=0.0;
 double PIC::EnergyDistributionSampleRelativistic::log10dE=0.0;
-int *PIC::EnergyDistributionSampleRelativistic::SampleLocalCellNumber=NULL;
+long int *PIC::EnergyDistributionSampleRelativistic::SampleLocalCellNumber=NULL;
 int PIC::EnergyDistributionSampleRelativistic::nSamleLocations=0;
 bool PIC::EnergyDistributionSampleRelativistic::SamplingInitializedFlag=false;
 
@@ -70,7 +70,7 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
 
 
   //allocate the sampling buffers
-  SampleLocalCellNumber=new int [nSamleLocations];
+  SampleLocalCellNumber=new long int [nSamleLocations];
   SampleNodes=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nSamleLocations];
 
 
@@ -106,7 +106,7 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
 //====================================================
 //flush the sampling buffer
 void PIC::EnergyDistributionSampleRelativistic::flushSamplingBuffers() {
-  int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*nSampledFunctionPoints;
+  long int i,TotalDataLength=nSamleLocations*PIC::nTotalSpecies*nSampledFunctionPoints;
   double *ptr=SamplingBuffer[0][0];
 
   for (i=0;i<TotalDataLength;i++,ptr++) *ptr=0.0;
@@ -116,7 +116,7 @@ void PIC::EnergyDistributionSampleRelativistic::flushSamplingBuffers() {
 //Sample the distribution function
 void PIC::EnergyDistributionSampleRelativistic::SampleDistributionFnction() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
-  int ptr,iProbe,spec;
+  long int ptr,iProbe,spec;
   double LocalParticleWeight,e,mass,speed,CellMeasure;
 
   for (node=SampleNodes[0],iProbe=0;iProbe<nSamleLocations;node=SampleNodes[++iProbe]) if (node->Thread==PIC::ThisThread) {
@@ -172,7 +172,7 @@ void PIC::EnergyDistributionSampleRelativistic::SampleDistributionFnction() {
 //====================================================
 //print the distribution function into a file
 void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *fname,int spec) {
-  int iProbe,idim,i,j,thread,s;
+  long int iProbe,idim,i,j,thread,s;
   FILE *fout=NULL;
   CMPI_channel pipe(1000000);
   double norm=0.0,e;
@@ -202,7 +202,7 @@ void PIC::EnergyDistributionSampleRelativistic::printDistributionFunction(char *
   //output the distribution function
   for (iProbe=0;iProbe<nSamleLocations;iProbe++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
-      sprintf(str,"%s.nSamplePoint=%i.dat",fname,iProbe);
+      sprintf(str,"%s.nSamplePoint=%ld.dat",fname,iProbe);
       fout=fopen(str,"w");
 
       fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........         ",str);

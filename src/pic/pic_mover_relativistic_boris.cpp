@@ -13,7 +13,7 @@
 #include "Exosphere.h"
 
 //advance particle location
-int PIC::Mover::Relativistic::Boris(int ptr,double dtTotalIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
   double gamma,*xminBlock,*xmaxBlock;
@@ -76,7 +76,7 @@ int PIC::Mover::Relativistic::Boris(int ptr,double dtTotalIn,cTreeNodeAMR<PIC::M
     }
   }
 
-  static int nCall=0;
+  static long int nCall=0;
   nCall++;
 
   #if _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
@@ -519,14 +519,14 @@ int PIC::Mover::Relativistic::Boris(int ptr,double dtTotalIn,cTreeNodeAMR<PIC::M
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-  int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
 
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  int tempFirstCellParticle,*tempFirstCellParticlePtr;
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
     
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);

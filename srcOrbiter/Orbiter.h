@@ -68,7 +68,7 @@ using namespace Exosphere;
       void Init();
 
       //inject model particles
-      int InjectParticles();
+      long int InjectParticles();
     }
 
     //point source of the model particles
@@ -87,7 +87,7 @@ using namespace Exosphere;
       extern int InjectionDataTableLength;
 
       //inject particles functions
-      int  InjectParticles();
+      long int  InjectParticles();
     }
 
     //particle injection from a ring
@@ -100,25 +100,25 @@ using namespace Exosphere;
       extern double e0[3],e1[3],e2[3],x0[3],Radius;
 
       //inject model particles
-      int  InjectParticles();
+      long int  InjectParticles();
     }
 
     //particle desorption
     namespace Desorption {
 
       //inject model particles
-      int  InjectParticles();
+      long int  InjectParticles();
     }
 
     //diffusion of particles from the surface
     namespace Diffusion {
 
       //inject model particles
-      int InjectParticles();
+      long int InjectParticles();
     }
 
     //the function controls injecting of the model particles from all sources
-    int  InjectParticles();
+    long int  InjectParticles();
     double GetTotalInjectionRate(int spec);
   }
 
@@ -136,8 +136,8 @@ using namespace Exosphere;
     extern bool UpstreamSourceMode;
 
     bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-    int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
-    int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    long int BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    long int BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
     double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
   }
 
@@ -156,7 +156,7 @@ using namespace Exosphere;
   double CalculateProjectionArea();
 
   //particle/surface interaction model
-  int ParticleSurfaceInteractionProcessor_default(int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  int ParticleSurfaceInteractionProcessor_default(long int ptr,double* xInit,double* vInit,CutCell::cTriangleFace *TriangleCutFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
 
   //the name of the surace mesh file
   namespace SurfaceModel {

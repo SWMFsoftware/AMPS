@@ -16,7 +16,7 @@ void PIC::TimeStepInternal::PrintTimeStep() {
     tm *ct=localtime(&TimeValue);
 
     if (SamplingMode!=_DISABLED_SAMPLING_MODE_) {
-      printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%i, %i interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter,RequiredSampleLength,RequiredSampleLength-CollectingSampleCounter);
+      printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter,RequiredSampleLength,RequiredSampleLength-CollectingSampleCounter);
     }
     else {
       printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (sampling is disabled)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter);
@@ -107,7 +107,7 @@ void PIC::TimeStepInternal::ReadParticleDataRestartFile() {
 //===============================================================================================
 //save the particle data restart file
 void PIC::TimeStepInternal::SaveParticleRestartFile() {
-  static int IterationCounter=0;
+  static long int IterationCounter=0;
   static int saveRestartFileCounter=0;
   
   using namespace PIC;
@@ -197,7 +197,7 @@ void PIC::TimeStepInternal::Init() {
     exit(__LINE__,__FILE__,"Error: the global time step is negative");
   }
   else {
-    PIC::RequiredSampleLength=(int)(PIC::Sampling::SampleTimeInterval/PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)+0.5);
+    PIC::RequiredSampleLength=(long int)(PIC::Sampling::SampleTimeInterval/PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0)+0.5);
 
     if (PIC::RequiredSampleLength==0) {
       char msg[600];
@@ -205,7 +205,7 @@ void PIC::TimeStepInternal::Init() {
       exit(__LINE__,__FILE__,msg);
     }
 
-    if (PIC::ThisThread==0) printf("PIC::RequiredSampleLength is set to %i \n", PIC::RequiredSampleLength);
+    if (PIC::ThisThread==0) printf("PIC::RequiredSampleLength is set to %ld \n", PIC::RequiredSampleLength);
   } 
 }
 

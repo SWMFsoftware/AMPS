@@ -17,10 +17,10 @@ int PIC::BC::InternalBoundary::Sphere::sampledMeanVelocityDownRelativeOffset=0,P
 int PIC::BC::InternalBoundary::Sphere::sampledMeanEnergyDownRelativeOffset=0,PIC::BC::InternalBoundary::Sphere::sampledMeanEnergyUpRelativeOffset=0;
 int PIC::BC::InternalBoundary::Sphere::sampledSurfaceNumberDensityRelativeOffset=0;
 
-int PIC::BC::InternalBoundary::Sphere::TotalSampleSetLength=0;
-int *PIC::BC::InternalBoundary::Sphere::SpeciesSampleDataOffset=NULL;
-int *PIC::BC::InternalBoundary::Sphere::SpeciesSampleUserDefinedDataOffset=NULL;
-int PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber=0;
+long int PIC::BC::InternalBoundary::Sphere::TotalSampleSetLength=0;
+long int *PIC::BC::InternalBoundary::Sphere::SpeciesSampleDataOffset=NULL;
+long int *PIC::BC::InternalBoundary::Sphere::SpeciesSampleUserDefinedDataOffset=NULL;
+long int PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber=0;
 
 bool PIC::BC::InternalBoundary::Sphere::UserDefinedSamplingProcedureFlag=false;
 cAMRheap<cInternalSphericalData> PIC::BC::InternalBoundary::Sphere::InternalSpheres;
@@ -33,15 +33,15 @@ PIC::BC::InternalBoundary::Sphere::fSampleParticleData PIC::BC::InternalBoundary
 
 //====================================================
 //init the data for the spherical body installed into the mesh:
-void PIC::BC::InternalBoundary::Sphere::Init(int* RequestedSamplingSetDataLength,int* UserDefinedSampleDataRelativeOffset) {
+void PIC::BC::InternalBoundary::Sphere::Init(long int* RequestedSamplingSetDataLength,long int* UserDefinedSampleDataRelativeOffset) {
 
   if (TotalSampleSetLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of PIC::BC::InternalBoundary::Sphere:");
 
   //init the sampling offsets
   int DefaultDataLength=0;
 
-  SpeciesSampleDataOffset=new int[PIC::nTotalSpecies];
-  SpeciesSampleUserDefinedDataOffset=new int[PIC::nTotalSpecies];
+  SpeciesSampleDataOffset=new long int[PIC::nTotalSpecies];
+  SpeciesSampleUserDefinedDataOffset=new long int[PIC::nTotalSpecies];
 
 
   //set the offsets to the default sampled data
@@ -108,7 +108,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Sphere::Registe
 
   //init the internal parameters of the new sphere
   double *sBuffer;
-  int i,sBufferTotalLength;
+  long int i,sBufferTotalLength;
 
   TotalSurfaceElementNumber=newSphere->GetTotalSurfaceElementsNumber();
   sBufferTotalLength=2*TotalSurfaceElementNumber*TotalSampleSetLength;
@@ -134,7 +134,7 @@ cInternalBoundaryConditionsDescriptor PIC::BC::InternalBoundary::Sphere::Registe
 //====================================================
 //clear sampling buffer
 void PIC::BC::InternalBoundary::Sphere::flushCollectingSamplingBuffer(cInternalSphericalData* Sphere) {
-  int offset,i,nSurfaceElement,nSurfaceElementsMax;
+  long int offset,i,nSurfaceElement,nSurfaceElementsMax;
   double *SamplingBuffer;
 
   //flush sampling data from Sphere->SamplingBuffer
@@ -179,11 +179,11 @@ double* PIC::BC::InternalBoundary::Sphere::GetCollectingSamplingBuffer(cInternal
 
 //====================================================
 //the offset of sampling data for a particular specie
-int PIC::BC::InternalBoundary::Sphere::completeSpecieSamplingDataOffset(int spec,int SurfaceElement) {
+int PIC::BC::InternalBoundary::Sphere::completeSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
   return 2*SurfaceElement*TotalSampleSetLength+completedCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
 }
 
-int PIC::BC::InternalBoundary::Sphere::collectingSpecieSamplingDataOffset(int spec,int SurfaceElement) {
+int PIC::BC::InternalBoundary::Sphere::collectingSpecieSamplingDataOffset(int spec,long int SurfaceElement) {
   return 2*SurfaceElement*TotalSampleSetLength+collectingCellSampleDataPointerOffset+SpeciesSampleDataOffset[spec];
 }
 
@@ -195,7 +195,7 @@ int PIC::BC::InternalBoundary::Sphere::SurfaceElementSamplingSetLength() {
 }
 
 void PIC::BC::InternalBoundary::Sphere::switchSamplingBuffers() {
-  int tempSamplingOffset;
+  long int tempSamplingOffset;
 
   tempSamplingOffset=completedCellSampleDataPointerOffset;
   completedCellSampleDataPointerOffset=collectingCellSampleDataPointerOffset;
@@ -205,7 +205,7 @@ void PIC::BC::InternalBoundary::Sphere::switchSamplingBuffers() {
 //====================================================
 //particle-spherical surface interaction
 //specular reflection of the particle velocity vector on the surface of the sphere
-int PIC::BC::InternalBoundary::Sphere::ParticleSphereInteraction_SpecularReflection(int spec,int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void* SphereDataPointer)  {
+int PIC::BC::InternalBoundary::Sphere::ParticleSphereInteraction_SpecularReflection(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPointer,void* SphereDataPointer)  {
    double radiusSphere,*x0Sphere,l[3],r,vNorm,c;
    cInternalSphericalData *Sphere;
    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*startNode;
@@ -234,7 +234,7 @@ int PIC::BC::InternalBoundary::Sphere::ParticleSphereInteraction_SpecularReflect
 
    //sample the particle data
    double *SampleData;
-   int nSurfaceElement,nZenithElement,nAzimuthalElement;
+   long int nSurfaceElement,nZenithElement,nAzimuthalElement;
 
    Sphere->GetSurfaceElementProjectionIndex(x,nZenithElement,nAzimuthalElement);
    nSurfaceElement=Sphere->GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement);
@@ -275,7 +275,7 @@ void PIC::BC::InternalBoundary::Sphere::PrintDefaultTitle(FILE* fout) {
   fprintf(fout,"TITPLE=\"SurfaceData\"");
 }
 
-void PIC::BC::InternalBoundary::Sphere::PrintDefaultDataStateVector(FILE* fout,int nZenithPoint,int nAzimuthalPoint,int *SurfaceElementsInterpolationList,int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+void PIC::BC::InternalBoundary::Sphere::PrintDefaultDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement;
   double InterpolationNormalization=0.0,InterpolationCoefficient;
 //  cSurfaceDataSphere *SurfaceData;
@@ -340,6 +340,6 @@ if (nSurfaceElement==311) {
 /*
 //Sampling of the particles data
 
-void SampleDefaultParticleData(int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
+void SampleDefaultParticleData(long int ptr,double *x,double *v,double &dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode,cInternalBoundaryConditionsDescriptor* sphereDescriptor);
 
 */

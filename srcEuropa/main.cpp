@@ -62,7 +62,7 @@ PIC::RequiredSampleLength=600;
 //time step
 int nTotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_OFF_) ? 100000001 : 150;
 
-	for (int niter=0;niter<nTotalIterations;niter++) {
+	for (long int niter=0;niter<nTotalIterations;niter++) {
 
 	  amps_time_step();
 

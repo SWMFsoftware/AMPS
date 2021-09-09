@@ -19,12 +19,12 @@ int Earth::ImpulseSource::EnergySpectrum::Mode=Earth::ImpulseSource::EnergySpect
 bool Earth::ImpulseSource::Mode=false;
 
 //inject the energetic particles
-int Earth::ImpulseSource::InjectParticles() {
+long int Earth::ImpulseSource::InjectParticles() {
   int nTotalInjectedParticles=0;
   int idim,spec,iSource;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode;
   double mass,ElectricCharge,a;
-  int newParticle;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
 

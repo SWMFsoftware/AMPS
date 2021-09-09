@@ -50,7 +50,7 @@ void PIC::CPLR::DATAFILE::KAMELEON::GetDomainLimits(double *xmin,double *xmax,co
   char DataFileFullName[_MAX_STRING_LENGTH_PIC_];
 
   sprintf(DataFileFullName,"%s/%s",PIC::CPLR::DATAFILE::path,fname);
-  int status = kameleon.open(DataFileFullName);
+  long status = kameleon.open(DataFileFullName);
 
   if(status == ccmc::FileReader::OK){
     //proceed and get domain limits
@@ -90,7 +90,7 @@ void PIC::CPLR::DATAFILE::KAMELEON::LoadDataFile(const char *fname,cTreeNodeAMR<
     char DataFileFullName[_MAX_STRING_LENGTH_PIC_];
 
     sprintf(DataFileFullName,"%s/%s",PIC::CPLR::DATAFILE::path,fname);
-    int status = kameleon.open(DataFileFullName);
+    long status = kameleon.open(DataFileFullName);
 
     if (PIC::ThisThread==0) printf("$PREFIX: Loading file: %s\n",DataFileFullName);
 

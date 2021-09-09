@@ -88,11 +88,11 @@ protected:
 
 public:
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
   struct cNodeDescriptor {
-    unsigned int nodeno : _MESH_ELEMENTS_NUMBERING_BITS_;
+    unsigned long int nodeno : _MESH_ELEMENTS_NUMBERING_BITS_;
     unsigned nodeProcessedFlag : 1;
     unsigned maxRefinmentLevel : _MAX_REFINMENT_LEVEL_BITS_;
     unsigned internalMeshNode : 1;
@@ -405,7 +405,7 @@ public:
 
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
 //  bool ActiveFlag; //used to prevent repeatable de-allocation of the block from the stack
@@ -982,7 +982,7 @@ public:
     #endif
   }
 
-  inline cCenterNode *GetCenterNode(int nd) {
+  inline cCenterNode *GetCenterNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCenterNodes=_TOTAL_BLOCK_CELLS_X_;
@@ -993,7 +993,7 @@ public:
     #endif
 
     if ((nd<0)||(nd>=nMaxCenterNodes)) {
-      printf("$PREFIX:nd=%i\n",nd);
+      printf("$PREFIX:nd=%ld\n",nd);
       exit(__LINE__,__FILE__,"The value is outside of the limit");
     }
 
@@ -1010,7 +1010,7 @@ public:
   }
 
 
-  inline void SetCenterNode(cCenterNode* nodeptr,int nd) {
+  inline void SetCenterNode(cCenterNode* nodeptr,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCenterNodes=_TOTAL_BLOCK_CELLS_X_;
@@ -1044,7 +1044,7 @@ public:
 	 return cornerNodes;
   }
 
-  inline cCornerNode *GetCornerNode(int nd) {
+  inline cCornerNode *GetCornerNode(long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCornerNodes=1+_TOTAL_BLOCK_CELLS_X_;
@@ -1063,7 +1063,7 @@ public:
     return GetCornerNode(_getCornerNodeLocalNumber(i,j,k));
   }
 
-  inline void SetCornerNode(cCornerNode* nodeptr,int nd) {
+  inline void SetCornerNode(cCornerNode* nodeptr,long int nd) {
     #if _MESH_DIMENSION_ == 1
     static const int nMaxCornerNodes=1+_TOTAL_BLOCK_CELLS_X_;
     #elif _MESH_DIMENSION_ == 2
@@ -1093,11 +1093,11 @@ public:
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
-  inline static int getCenterNodeLocalNumber(int i,int j,int k) {
+  inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
-  inline void getCenterNodeCoordinate(int& i,int& j,int& k,int nd) {
+  inline void getCenterNodeCoordinate(int& i,int& j,int& k,long int nd) {
 
     #if _MESH_DIMENSION_ == 1
     exit(__LINE__,__FILE__,"not implemented");
@@ -1115,7 +1115,7 @@ public:
   }
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
 //  void *nextBlock; //the next block in the list of allocated blocks of the mesh
@@ -1238,7 +1238,7 @@ public:
   void SetAcceptBlockFunction(cAcceptBlockFunc t) {accepltTreeNodeFunction=t;}
 
   //the counter of any mesh modifications or rebalancing 
-  unsigned int nMeshModificationCounter; 
+  unsigned long int nMeshModificationCounter; 
 
   //process the newly created 'ParallelNodesDistributionList' to correct the domain decomposition if needed
   void (*UserProcessParallelNodeDistributionList)(cTreeNodeAMR<cBlockAMR>** nodeList );
@@ -1248,7 +1248,7 @@ public:
 
   //the name and fignature of the mesh: the name contains the data when the mesh has been created; all files associated with the mesh will starts with the mesh name
   char MeshName[STRING_LENGTH];
-  unsigned int MeshSignature;
+  unsigned long int MeshSignature;
 
   //the total number of processores and the current processor
   #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
@@ -1287,7 +1287,7 @@ public:
   bool AllowBlockAllocation;
 
   //the total number of mesh nodes and blocks 
-  int meshNodesNumber,meshBlocksNumber;
+  long int meshNodesNumber,meshBlocksNumber;
 
   //the upper (maximum) refinement level used on the mesh
   int meshMaximumRefinmentLevel;
@@ -1364,8 +1364,8 @@ public:
     }
 
   public:
-    unsigned int Get(cTreeNodeAMR<cBlockAMR>* StartNode,char const *msg,bool printflag) {
-      unsigned int res;
+    unsigned long Get(cTreeNodeAMR<cBlockAMR>* StartNode,char const *msg,bool printflag) {
+      unsigned long res;
       char message[STRING_LENGTH];
       int rank;
 
@@ -1375,8 +1375,8 @@ public:
       MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
 
       if (printflag==true) {
-        if (msg!=NULL) sprintf(message,", %s[rank=%i,l=%i,f=%s]",msg,rank,__LINE__,__FILE__);
-        else sprintf(message,"rank=%i,l=%i,f=%s",rank,__LINE__,__FILE__);
+        if (msg!=NULL) sprintf(message,", %s[rank=%i,l=%ld,f=%s]",msg,rank,__LINE__,__FILE__);
+        else sprintf(message,"rank=%i,l=%ld,f=%s",rank,__LINE__,__FILE__);
 
         printf("AMR tree checksum:\n%s\nckecksum=0x%lx\n",message,checksum.checksum());
       }
@@ -1407,8 +1407,8 @@ public:
       string O, itrealvalue, starttime;
 
       // Two values we want
-      unsigned int vsize;
-      unsigned int rss;
+      unsigned long vsize;
+      unsigned long rss;
 
       stat_stream >> pid >> comm >> state >> ppid >> pgrp >> session >> tty_nr >>
         tpgid >> flags >> minflt >> cminflt >> majflt >> cmajflt >> utime >>
@@ -1433,7 +1433,7 @@ public:
       cout << "$PREFIX: " << tag << " Maximum memory usage = " << memLocal << "Mb(MB?) on rank = " << ThisThread << endl;
   }
 
-  void GetMemoryUsageStatus(int nline,const char *fname,bool ShowUsagePerProcessFlag,int Thread=-1) {
+  void GetMemoryUsageStatus(long int nline,const char *fname,bool ShowUsagePerProcessFlag,int Thread=-1) {
     double LocalMemoryUsage,GlobalMemoryUsage;
     double *MemoryUsageTable=NULL;
 
@@ -1627,11 +1627,11 @@ public:
     #endif
 
     //distribute the signature between all processors
-    MPI_Bcast(&MeshSignature,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Bcast(&MeshSignature,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
 
-  unsigned int getMeshSignature() {
+  unsigned long getMeshSignature() {
     if (meshModifiedFlag==true) generateMeshSignature();
 
     return MeshSignature;
@@ -1660,11 +1660,11 @@ public:
     setMeshName(mname);
   }
 
-  inline int getCornerNodeLocalNumber(int i,int j,int k) {
+  inline long int getCornerNodeLocalNumber(int i,int j,int k) {
     return _getCornerNodeLocalNumber(i,j,k);
   }
 
-  inline static int getCenterNodeLocalNumber(int i,int j,int k) {
+  inline static long int getCenterNodeLocalNumber(int i,int j,int k) {
     return _getCenterNodeLocalNumber(i,j,k);
   }
 
@@ -1680,7 +1680,7 @@ public:
     k-=_GHOST_CELLS_Z_;
   }
 
-  int findCornerNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) { 
+  long int findCornerNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) { 
     double dx;
     
     //if ((x[0]<startNode->xmin[0])||(startNode->xmax[0]<x[0])) return -1;
@@ -1720,7 +1720,7 @@ public:
   }  
 
 
-  int findCenterNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) {
+  long int findCenterNodeIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode) {
     double dx,dx2;
   
     //if ((x[0]<startNode->xmin[0])||(startNode->xmax[0]<x[0])) return -1;
@@ -1763,7 +1763,7 @@ public:
   }
 
   //find the index of the cell where the point 'x' is located
-  int fingCellIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode,bool ExitFlag=true) {
+  long int fingCellIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode,bool ExitFlag=true) {
     double dx;
 
     if ((x[0]<startNode->xmin[0])||(startNode->xmax[0]<x[0])) {
@@ -2592,12 +2592,12 @@ exit(__LINE__,__FILE__,"update as in 3D collect");
 
 
 void GetMeshTreeStatistics(cTreeNodeAMR<cBlockAMR> *startNode=NULL) {
-  static int nAllocatedBlocks=0,nAllocatedBoundaryLayerBlocks=0,*nBlocksPerProcessor=NULL,nAllocatedBlocksUpperTreeBranches=0;
+  static long int nAllocatedBlocks=0,nAllocatedBoundaryLayerBlocks=0,*nBlocksPerProcessor=NULL,nAllocatedBlocksUpperTreeBranches=0;
   int thread;
 
   if (startNode==NULL) {
     startNode=rootTree;
-    nBlocksPerProcessor=new int [nTotalThreads];
+    nBlocksPerProcessor=new long int [nTotalThreads];
 
     for (thread=0;thread<nTotalThreads;thread++) nAllocatedBlocks=0,nBlocksPerProcessor[thread]=0;
     nAllocatedBlocks=0,nAllocatedBlocksUpperTreeBranches=0,nAllocatedBoundaryLayerBlocks=0;
@@ -2629,19 +2629,19 @@ void GetMeshTreeStatistics(cTreeNodeAMR<cBlockAMR> *startNode=NULL) {
 
   if (startNode==rootTree) {
 #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-    int buffer[nTotalThreads];
+    long int buffer[nTotalThreads];
     int i;
     MPI_Status status;
 
     //compare the blocks distribution over the processors
     if (ThisThread==0) {
       for (thread=1;thread<nTotalThreads;thread++) {
-        MPI_Recv(buffer,nTotalThreads,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        MPI_Recv(buffer,nTotalThreads,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
         for (i=0;i<nTotalThreads;i++) if (buffer[i]!=nBlocksPerProcessor[i]) exit(__LINE__,__FILE__,"Error: The blocks distribution on different processors is not the same");
        }
     }
-    else MPI_Send(nBlocksPerProcessor,nTotalThreads,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
+    else MPI_Send(nBlocksPerProcessor,nTotalThreads,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
 
 
 
@@ -2653,20 +2653,20 @@ void GetMeshTreeStatistics(cTreeNodeAMR<cBlockAMR> *startNode=NULL) {
     for (thread=0;thread<nTotalThreads;thread++) {
       if (ThisThread!=0) {
         if (ThisThread==thread) {
-          MPI_Send(&nAllocatedBlocks,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
-          MPI_Send(&nAllocatedBoundaryLayerBlocks,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
-          MPI_Send(&nAllocatedBlocksUpperTreeBranches,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Send(&nAllocatedBlocks,1,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Send(&nAllocatedBoundaryLayerBlocks,1,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Send(&nAllocatedBlocksUpperTreeBranches,1,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
         }
       }
       else {
         if (thread!=0) {
-          MPI_Recv(&nAllocatedBlocks,1,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
-          MPI_Recv(&nAllocatedBoundaryLayerBlocks,1,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
-          MPI_Recv(&nAllocatedBlocksUpperTreeBranches,1,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+          MPI_Recv(&nAllocatedBlocks,1,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+          MPI_Recv(&nAllocatedBoundaryLayerBlocks,1,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+          MPI_Recv(&nAllocatedBlocksUpperTreeBranches,1,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
         }
 
 //        *DiagnospticMessageStream << "$PREFIX:" << thread << "\t" << nAllocatedBlocks << "\t\t\t\t\t" << nAllocatedBlocksUpperTreeBranches << "\t\t\t\t\t" << nAllocatedBoundaryLayerBlocks << "\t\t\t\t\t" << nBlocksPerProcessor[thread] <<  std::endl;
-        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%i\t\t\t\t\t%i\t\t\t\t\t%i\t\t\t\t\t%i\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
+        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
 
 
       }
@@ -2868,10 +2868,10 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
        }  
 
        if (flag==false) {
-         int nd,ii,jj,kk,idim;
+         long int nd,ii,jj,kk,idim;
 
          fprintf(DiagnospticMessageStream,"$PREFIX:ERROR: Two neiubouring blocks doesn't share nodes\n");
-         fprintf(DiagnospticMessageStream,"$PREFIX:Block 1: ID=%i\nCorner Nodes:\n",startNode->Temp_ID);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block 1: ID=%ld\nCorner Nodes:\n",startNode->Temp_ID);
 
          for (ii=0;ii<iMax;ii++) for (jj=0;jj<jMax;jj++) for (kk=0;kk<kMax;kk++) {
            nd=getCornerNodeLocalNumber(ii*_BLOCK_CELLS_X_,jj*_BLOCK_CELLS_Y_,kk*_BLOCK_CELLS_Z_);
@@ -2880,13 +2880,13 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
            for (idim=0;idim<_MESH_DIMENSION_;idim++) *DiagnospticMessageStream << startNode->block->GetCornerNode(nd)->GetX()[idim] << " ";
            *DiagnospticMessageStream << std::endl;*/
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%i,%i,%i (nd=%i), Temp_ID=%i x=",ii,jj,kk,nd,startNode->block->GetCornerNode(nd)->Temp_ID);
+           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%ld,%ld,%ld (nd=%ld), Temp_ID=%ld x=",ii,jj,kk,nd,startNode->block->GetCornerNode(nd)->Temp_ID);
            for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",startNode->block->GetCornerNode(nd)->GetX()[idim]);
            fprintf(DiagnospticMessageStream,"\n");
 
          }
 
-         fprintf(DiagnospticMessageStream,"$PREFIX:Block 2: ID=%i\nCorner Nodes:",neibNode->Temp_ID );
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block 2: ID=%ld\nCorner Nodes:",neibNode->Temp_ID );
          fprintf(DiagnospticMessageStream,"neib coordinates=%i, %i, %i\n",i,j,k);
 
          for (ii=0;ii<iMax;ii++) for (jj=0;jj<jMax;jj++) for (kk=0;kk<kMax;kk++) {
@@ -2897,7 +2897,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
            *DiagnospticMessageStream << std::endl;*/
 
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%i,%i,%i (nd=%i), Temp_ID=%i x=",ii,jj,kk,nd,neibNode->block->GetCornerNode(nd)->Temp_ID);
+           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%ld,%ld,%ld (nd=%ld), Temp_ID=%ld x=",ii,jj,kk,nd,neibNode->block->GetCornerNode(nd)->Temp_ID);
            for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",neibNode->block->GetCornerNode(nd)->GetX()[idim]);
            fprintf(DiagnospticMessageStream,"\n");
          }
@@ -2909,7 +2909,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
 
      //check the value of the corner nodes in the block
      int ii,jj,kk;
-     int nd;
+     long int nd;
      double *xmin,*xmax,dx[3]={0.0,0.0,0.0},*xnode;
 
      #if _MESH_DIMENSION_ == 1
@@ -2960,7 +2960,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
      int ioffset,joffset,koffset/*,iNeibNode*/,jNeibNode,kNeibNode,iDownNode,jDownNode,kDownNode;
      cTreeNodeAMR<cBlockAMR> *upNode; //,*downNode;
      double *xStartNode,*xNeibNode; 
-     int ndStartNode,ndNeibNode;
+     long int ndStartNode,ndNeibNode;
      int iiDownCornerNode=0,jjDownCornerNode=0,kkDownCornerNode=0;
 
      #if _MESH_DIMENSION_ == 1
@@ -3121,7 +3121,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
               else if ((neibCenterNode==NULL)||(startCenterNode==NULL)) exit(__LINE__,__FILE__,"Error: one of the nodes is not defined");
               else {
                 if (startCenterNode!=neibCenterNode) {
-//                	int nd;
+//                	long int nd;
                 	int iii[3]={0,0,0},idim;
 
                 	//recalculate the position of the neibBlock
@@ -3133,9 +3133,9 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e  ",startCenterNode->GetX()[idim]);
                 	fprintf(DiagnospticMessageStream,"; (i,j,k,nd)=");
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%i  ",iii[idim]);
-                	fprintf(DiagnospticMessageStream," Local node number=%i",nd);
-                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%i",startCenterNode->Temp_ID);
-                	fprintf(DiagnospticMessageStream," Block Temp_ID=%i",startNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Local node number=%ld",nd);
+                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%ld",startCenterNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Block Temp_ID=%ld",startNode->Temp_ID);
                 	fprintf(DiagnospticMessageStream,"\n");
 
                 	//recalculate the indexes of the 'center nodes'
@@ -3144,9 +3144,9 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e  ",neibCenterNode->GetX()[idim]);
                 	fprintf(DiagnospticMessageStream,"; (i,j,k,nd)=");
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%i  ",iii[idim]);
-                	fprintf(DiagnospticMessageStream," Local node number=%i",nd);
-                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%i",neibCenterNode->Temp_ID);
-                	fprintf(DiagnospticMessageStream," Block Temp_ID=%i",neibNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Local node number=%ld",nd);
+                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%ld",neibCenterNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Block Temp_ID=%ld",neibNode->Temp_ID);
                 	fprintf(DiagnospticMessageStream,"\n");
 
 
@@ -3186,7 +3186,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
 void collectneibCornerNodes_1D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCornerNode *newCornerNodeMap[1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_)][1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_)][1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_)]) {
   int nface,ii,nDownNode;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode; 
-  int nd;
+  long int nd;
 
   //collect the nodes from the all upNode->downNodes[:]  
   static const int iiOffset[2]={0,_TOTAL_BLOCK_CELLS_X_}; 
@@ -3232,7 +3232,7 @@ void collectneibCornerNodes_1D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 void collectNeibCornerNodes_2D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCornerNode *newCornerNodeMap[1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_)][1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_)][1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_)]) {
   int nface,ii,jj,iDownNode,jDownNode,ioffset,joffset;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode,*neibNode;
-  int nd;
+  long int nd;
 
   //collect the nodes from the all upNode->downNodes[:]
   static const int iiOffset[2]={0,_BLOCK_CELLS_X_};
@@ -3315,7 +3315,7 @@ void collectNeibCornerNodes_2D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 void collectNeibCornerNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCornerNode *newCornerNodeMap[1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_)][1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_)][1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_)]) {
   int ii,jj,kk,iDownNode,jDownNode,kDownNode,ioffset,joffset,koffset;
   cTreeNodeAMR<cBlockAMR> *upNode,*downNode,*neibNode;
-  int nd;
+  long int nd;
 
   for (ii=0;ii<1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_);ii++) for (jj=0;jj<1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_);jj++) for (kk=0;kk<1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_);kk++) newCornerNodeMap[ii][jj][kk]=NULL;
 
@@ -3387,7 +3387,7 @@ void collectNeibCornerNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 void collectNeibCenterNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode,cCenterNode *newCenterNodeMap[_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_][_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_][_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_]) {
   int ii,jj,kk,ioffset,joffset,koffset,iNeibNode,jNeibNode,kNeibNode;
   cTreeNodeAMR<cBlockAMR> *upNode,*neibNode;
-  int nd;
+  long int nd;
 
   for (ii=0;ii<_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_;ii++) for (jj=0;jj<_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_;jj++) for (kk=0;kk<_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_;kk++) newCenterNodeMap[ii][jj][kk]=NULL; 
 
@@ -3416,7 +3416,7 @@ void collectNeibCenterNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 
 class cFraction {
 public:
-  int Nominator,Denominator;
+  long int Nominator,Denominator;
 
   cFraction () {
     Nominator=0.0,Denominator=1.0;
@@ -3664,7 +3664,7 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 //#####################  DEBUG #################
 
 
-static int nCallCounter=0;
+static long int nCallCounter=0;
 
 ++nCallCounter;
 
@@ -3996,7 +3996,7 @@ if (startNode->Temp_ID==77) {
   static const int kCornerMin=0,kCornerMax=0;
 #endif
 
-  int nd;
+  long int nd;
   cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
 
   for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
@@ -4279,7 +4279,7 @@ if (startNode->Temp_ID==1169) {
 
   //create a new block for the upNode
   cCornerNode *newCornerNodeMap[1+2*(_BLOCK_CELLS_X_+2*_GHOST_CELLS_X_)][1+2*(_BLOCK_CELLS_Y_+2*_GHOST_CELLS_Y_)][1+2*(_BLOCK_CELLS_Z_+2*_GHOST_CELLS_Z_)];
-  int ii,iiMin,iiMax,jj,jjMin,jjMax,kk,kkMin,kkMax,nd;
+  long int ii,iiMin,iiMax,jj,jjMin,jjMax,kk,kkMin,kkMax,nd;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_ 
   upNode->block=blocks.newElement();
@@ -4356,7 +4356,7 @@ if (startNode->Temp_ID==1169) {
           }
    
           //the position of the missed node in the 'xMissingNode' 
-          int ndMissingNode;
+          long int ndMissingNode;
           int iMissingNode=0,jMissingNode=0,kMissingNode=0;
 
           ndMissingNode=findCornerNodeIndex(xMissing,iMissingNode,jMissingNode,kMissingNode,xMissingNode); 
@@ -4490,7 +4490,7 @@ if (newCenterNode->Temp_ID==88861) {
           }
   
           //the position of the missed node in the 'xMissingNode'
-          int ndMissingNode;
+          long int ndMissingNode;
           int iMissingNode=0,jMissingNode=0,kMissingNode=0;
 
           ndMissingNode=findCenterNodeIndex(xMissing,iMissingNode,jMissingNode,kMissingNode,xMissingNode);
@@ -4588,7 +4588,7 @@ if (newCenterNode->Temp_ID==88861) {
 /*
  bool splitTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
    int idim,i,j,k;
-   int nd,rLevel,nDownNode;
+   long int nd,rLevel,nDownNode;
    double dxBlock[3];
 
 
@@ -5698,7 +5698,7 @@ if (startNode->Temp_ID==15) {
 
   //reset the node's 'nodeProcessedFlag' 
   void resetNodeProcessedFlag(bool resetMaxRefinmentLevel=true) {
-    int nMemoryBank,nTotalMemoryBanks,nnode;
+    long int nMemoryBank,nTotalMemoryBanks,nnode;
 
 
     //reset the flag for the 'corner nodes'
@@ -5751,12 +5751,12 @@ if (startNode->Temp_ID==15) {
 	  
 	CompereDownTree(rootTree,&cs);
 	
-	unsigned int checksum;
-	unsigned int *CheckSumTable=new unsigned int [nTotalThreads];
+	unsigned long checksum;
+	unsigned long *CheckSumTable=new unsigned long [nTotalThreads];
 	
 	checksum=cs.checksum();
 	
-	MPI_Gather(&checksum,1,MPI_INT,CheckSumTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+	MPI_Gather(&checksum,1,MPI_UNSIGNED_LONG,CheckSumTable,1,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 	
 	if (ThisThread==0) {
 		for (int thread=1;thread<nTotalThreads;thread++) if (CheckSumTable[thread]!=CheckSumTable[0]) {
@@ -5790,7 +5790,7 @@ if (startNode->Temp_ID==15) {
 
     if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
       int i,j,k,thread;
-      int nodeno,t,nd;
+      long int nodeno,t,nd;
       cCornerNode *node;
 
 
@@ -5859,17 +5859,17 @@ if (startNode->Temp_ID==15) {
 
 
   void countMeshElements(cTreeNodeAMR<cBlockAMR> *startNode,int level) {
-    static int nDownNodes,nd;
+    static long int nDownNodes,nd;
     int i,j,k;
     cBlockAMR *block=NULL;
     cCornerNode *ndptr=NULL;
     
     static int SendRequest,*SendRequestVector=NULL;
-    static int *BlockNodeGlabalNumber=NULL;
+    static long int *BlockNodeGlabalNumber=NULL;
 
 //======================  DEBUG =======================
 //cCornerNode *foundNodePtr;
-static int CallsCounter=0;
+static long int CallsCounter=0;
 
 CallsCounter++;
 /*
@@ -5901,7 +5901,7 @@ if (CallsCounter==83) {
       CompareTreeStructure();
 
       SendRequestVector=new int [nTotalThreads];
-      BlockNodeGlabalNumber=new int [nBlockCornerNodes];
+      BlockNodeGlabalNumber=new long int [nBlockCornerNodes];
 
 
       //the procedure is developed only for the case where the domain is covered by the layer of boundary blocks
@@ -5936,7 +5936,7 @@ if (CallsCounter==83) {
       SendRequest=false;
 
 #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-      MPI_Bcast(&meshNodesNumber,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Bcast(&meshNodesNumber,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 #endif
 
 
@@ -6016,7 +6016,7 @@ if (CallsCounter==83) {
         #endif
 
 
-//        int nd;
+//        long int nd;
         int ksubBlock,jsubBlock,isubBlock,iNode,jNode,kNode,nnode;
 
         for (ksubBlock=0;ksubBlock<ksubBlockMax;ksubBlock++) for (jsubBlock=0;jsubBlock<jsubBlockMax;jsubBlock++) for (isubBlock=0;isubBlock<isubBlockMax;isubBlock++) {
@@ -6109,10 +6109,10 @@ if (CallsCounter==83) {
           MPI_Status status;
 
           //update the total node's number
-          MPI_Recv(&meshNodesNumber,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+          MPI_Recv(&meshNodesNumber,1,MPI_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
         }
         else if (ThisThread==startNode->Thread) {
-          MPI_Send(&meshNodesNumber,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR);
+          MPI_Send(&meshNodesNumber,1,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR);
         }
       }
 
@@ -6138,7 +6138,7 @@ if (CallsCounter==83) {
 
           //send the node's global number's vector
           for (thread=0;thread<nTotalThreads;thread++) if (SendRequestVector[thread]==true) {
-            MPI_Send(BlockNodeGlabalNumber,nBlockCornerNodes,MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR);
+            MPI_Send(BlockNodeGlabalNumber,nBlockCornerNodes,MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR);
           }
         }
       }
@@ -6147,7 +6147,7 @@ if (CallsCounter==83) {
         bool TempBlockAllocationFlag;
 
         //recieve the vector of node's numbers
-        MPI_Recv(BlockNodeGlabalNumber,nBlockCornerNodes,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        MPI_Recv(BlockNodeGlabalNumber,nBlockCornerNodes,MPI_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
         //allocate the block
         TempBlockAllocationFlag=(startNode->block==NULL) ? true : false;
@@ -6196,12 +6196,12 @@ if (CallsCounter==83) {
 
       meshModifiedFlag_CountMeshElements=false;
 
-      MPI_Bcast(&meshNodesNumber,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Bcast(&meshNodesNumber,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
     }
   } 
 
 
-  int getMeshNodesNumber() {
+  long int getMeshNodesNumber() {
     if (meshModifiedFlag_CountMeshElements==true) countMeshElements(rootTree,0);
 
     return meshNodesNumber;
@@ -6498,7 +6498,7 @@ if (CallsCounter==83) {
 
     //determine the offset of the interpolating stencil related to the origin of the block
     int counter,i,j,k,iProbeIndex,jProbeIndex,kProbeIndex;
-    int nd;
+    long int nd;
     cCenterNode *cell;
     double InterpolationWeight,WeightNorm=0.0;
     cTreeNodeAMR<cBlockAMR>* cellNode;
@@ -6594,7 +6594,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
     //determine the offset of the interpolating stencil related to the origin of the block
     int counter,i,j,iProbeIndex,jProbeIndex;
-    int nd;
+    long int nd;
     cCenterNode *cell;
     double InterpolationWeight,WeightNorm=0.0;
     cTreeNodeAMR<cBlockAMR>* cellNode;
@@ -6666,7 +6666,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
     //determine the offset of the interpolating stencil related to the origin of the block
     int counter,i,iProbeIndex;
-    int nd;
+    long int nd;
     cCenterNode *cell;
     double InterpolationWeight,WeightNorm=0.0;
     cTreeNodeAMR<cBlockAMR>* cellNode;
@@ -6737,7 +6737,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
     //determine the offset of the interpolating stencil related to the origin of the block
     int i,j,k,ioffset,joffset,koffset,counter;
-    int nd;
+    long int nd;
     cCenterNode *ptr;
 
     ioffset=int(xLocal+0.5)-1;
@@ -6800,7 +6800,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
     bool flag=true;
 
     static CMPI_channel pipe(1000000);
-    static int nGlobalNodeNumber=0;
+    static long int nGlobalNodeNumber=0;
 
 
     if (startNode==rootTree) {
@@ -6864,7 +6864,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
         cBlockAMR *block=startNode->block;
         cCornerNode *cornerNode;
-        int nd;
+        long int nd;
 
         for (ksubBlock=0;ksubBlock<ksubBlockMax;ksubBlock++) for (jsubBlock=0;jsubBlock<jsubBlockMax;jsubBlock++) for (isubBlock=0;isubBlock<isubBlockMax;isubBlock++) {
           for (nnode=0;nnode<nBasicBlockNodes;nnode++) {
@@ -6920,7 +6920,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
               if (PrintMeshData==true) { //print the data stored on the mesh
                 //print basic parameters
-                int MaxRefinmentLevel,NodeTempID;
+                long int MaxRefinmentLevel,NodeTempID;
 
 
 //=========================   DEBUG ==============================
@@ -6944,7 +6944,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
                     pipe.recv(NodeTempID,startNode->Thread);
                   }
 
-                  fprintf(fout,"%i  %i %i  ",MaxRefinmentLevel,NodeTempID,startNode->Thread);
+                  fprintf(fout,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,startNode->Thread);
                 }
 
 
@@ -7038,13 +7038,13 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
               if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_INTERNAL_BLOCK_) {
                 if (ThisThread==0) {
-                  fprintf(fout,"%i ",nGlobalNodeNumber);
+                  fprintf(fout,"%ld ",nGlobalNodeNumber);
                   ++nGlobalNodeNumber;
                   if (nnode==nBasicBlockNodes-1) fprintf(fout,"\n");
                 }
               }
               else if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_GLOBAL_NODE_NUMBER_) {
-                int nodeno=0;
+                long int nodeno=0;
 
                 if (cornerNode!=NULL) nodeno=cornerNode->nodeDescriptor.nodeno;
 
@@ -7054,12 +7054,12 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
                 }
 
                 if (ThisThread==0) {
-                  fprintf(fout,"%i ",nodeno);
+                  fprintf(fout,"%ld ",nodeno);
 
 
 
 //###################  DEBUG #################
-static int cnttemp=0;
+static long int cnttemp=0;
 
 cnttemp++;
 //###################  END DEBUG #################
@@ -7108,7 +7108,7 @@ cnttemp=0;
     int iNode=0,jNode=0,kNode=0,nd,idim,nnode,nBasicBlockNodes;
 
     static CMPI_channel pipe(1000000);
-    static int nGlobalNodeNumber=0;
+    static long int nGlobalNodeNumber=0;
 
 
     if (startNode==rootTree) {
@@ -7120,7 +7120,7 @@ cnttemp=0;
 
 
 //##########################   DEBUG #######################
-    static int nMPIops=0;
+    static long int nMPIops=0;
 //##########################  END DEBUG ####################
 
 
@@ -7133,11 +7133,11 @@ cnttemp=0;
         cCornerNode *cornerNode;
 
         if (startNode->Thread!=0) {
-          if (ThisThread==0) MPI_Send(&nGlobalNodeNumber,1,MPI_INT,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
+          if (ThisThread==0) MPI_Send(&nGlobalNodeNumber,1,MPI_LONG,startNode->Thread,0,MPI_GLOBAL_COMMUNICATOR);
           else if (ThisThread==startNode->Thread) {
             MPI_Status status;
 
-            MPI_Recv(&nGlobalNodeNumber,1,MPI_INT,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
+            MPI_Recv(&nGlobalNodeNumber,1,MPI_LONG,0,0,MPI_GLOBAL_COMMUNICATOR,&status);
           }
         }
 
@@ -7189,7 +7189,7 @@ cnttemp=0;
             if (printCoordinateVector==true) {
               bool printflag=false;
               double xNode[3];
-              int MaxRefinmentLevel=0,NodeTempID=0;
+              long int MaxRefinmentLevel=0,NodeTempID=0;
 
               if (cornerNode!=NULL) if ((cornerNode->nodeDescriptor.nodeProcessedFlag==_AMR_FALSE_)&&(cornerNode->nodeDescriptor.maxRefinmentLevel==startNode->RefinmentLevel)) printflag=true;
 
@@ -7239,12 +7239,12 @@ nMPIops++;
 
                     }
 
-                    fprintf(fout,"%i  %i %i  ",MaxRefinmentLevel,NodeTempID,startNode->Thread);
+                    fprintf(fout,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,startNode->Thread);
                   }
                 }
 #else
                 for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(fout,"%e  ",((fabs(cornerNode->GetX()[idim])>EPS) ? cornerNode->GetX()[idim] : 0.0));
-                fprintf(fout,"%i  %i  %i ",cornerNode->nodeDescriptor.maxRefinmentLevel, ((startNode->block->GetGhostFlag()==_GHOST_BLOCK_) ? 1 : 0),cornerNode->Temp_ID);
+                fprintf(fout,"%i  %i  %ld ",cornerNode->nodeDescriptor.maxRefinmentLevel, ((startNode->block->GetGhostFlag()==_GHOST_BLOCK_) ? 1 : 0),cornerNode->Temp_ID);
 #endif
 
 
@@ -7343,7 +7343,7 @@ nMPIops++;
               }
             }
             else {
-              int nodeno=-1;
+              long int nodeno=-1;
 
               if (startNode->Thread==ThisThread) nodeno=cornerNode->nodeDescriptor.nodeno;
 
@@ -7354,7 +7354,7 @@ nMPIops++;
               }
 
 
-              if (ThisThread==0) fprintf(fout,"%i ",nodeno);
+              if (ThisThread==0) fprintf(fout,"%ld ",nodeno);
             }
           }
 
@@ -7461,10 +7461,10 @@ nMPIops++;
       }
 
       if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_GLOBAL_NODE_NUMBER_) {
-        fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",meshNodesNumber,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
+        fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",meshNodesNumber,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
       }
       else if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_INTERNAL_BLOCK_) {
-        fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",4*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
+        fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",4*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
       }
       else exit(__LINE__,__FILE__,"Error: unknown value");
 
@@ -7490,10 +7490,10 @@ nMPIops++;
       }
 
       if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_GLOBAL_NODE_NUMBER_) {
-        fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",meshNodesNumber,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+        fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",meshNodesNumber,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
       }
       else if (ConnectivityListMode==_AMR_CONNECTIVITY_LIST_MODE_INTERNAL_BLOCK_) {
-        fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+        fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
       }
       else exit(__LINE__,__FILE__,"Error: unknown value");
 #endif
@@ -7521,7 +7521,7 @@ nMPIops++;
     int iNode,jNode,kNode,idim,nnode; //,nBasicBlockNodes;
     double  xNode[3];
 
-    static int nGlobalNodeNumber=-1;
+    static long int nGlobalNodeNumber=-1;
 
     if (startNode==rootTree) nGlobalNodeNumber=1;
 
@@ -7566,7 +7566,7 @@ nMPIops++;
             for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(fout,"%e  ",xNode[idim]);
             fprintf(fout,"\n");
           } else if (PrintConnectivityList) {
-            fprintf(fout,"%i ",nGlobalNodeNumber);
+            fprintf(fout,"%ld ",nGlobalNodeNumber);
             ++nGlobalNodeNumber;
             if (nnode==nBasicBlockNodes-1) fprintf(fout,"\n");
           }
@@ -7607,10 +7607,10 @@ nMPIops++;
 
     #elif _MESH_DIMENSION_ == 2
     fprintf(fout,"VARIABLES=\"X\", \"Y\"");
-    fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",4*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
+    fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",4*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
     #else
     fprintf(fout,"VARIABLES=\"X\", \"Y\", \"Z\"");
-    fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
+    fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,meshBlocksNumber*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
     #endif
 
 
@@ -7666,8 +7666,8 @@ nMPIops++;
   //==============================================================================
   //save and read the mesh from a binary file 
   void saveCornerBlockNodes(cTreeNodeAMR<cBlockAMR> *startNode,FILE *fout) { 
-    static int countingNumber;
-    int nnode,nBlockNodes,nDownNode; 
+    static long int countingNumber;
+    long nnode,nBlockNodes,nDownNode; 
     cCornerNode **blockNode;
 
     if (startNode==rootTree) countingNumber=0; 
@@ -7693,7 +7693,7 @@ nMPIops++;
 
 
   void readCornerBlockNodes(cTreeNodeAMR<cBlockAMR> *startNode,FILE *fout) {
-    int nnode;
+    long nnode;
     cCornerNode *blockNode;
 
     //clean the 'nodes' stack
@@ -7708,10 +7708,10 @@ nMPIops++;
   }
     
   void saveTreeStructure(cTreeNodeAMR<cBlockAMR> *startNode,FILE *fout) {
-    //int nnode,nBlockNodes,nDownNode,countingNumber,i;
+    //long int nnode,nBlockNodes,nDownNode,countingNumber,i;
     //cCornerNode **blockNode;
 
-    int nDownNode,countingNumber,i;
+    long int nDownNode,countingNumber,i;
 
     /*
     #if _MESH_DIMENSION_ == 1
@@ -7725,12 +7725,12 @@ nMPIops++;
 
     //save the tree node's pointers 
     countingNumber=treeNodes.GetEntryCountingNumber(startNode->upNode);
-    fwrite(&countingNumber,sizeof(int),1,fout);
+    fwrite(&countingNumber,sizeof(long int),1,fout);
 
     //save downNode[:]
     for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->downNode[nDownNode]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
     //save the node ID
@@ -7742,47 +7742,47 @@ nMPIops++;
 //    cTreeNodeAMR *neibNodeFace[2];
     for (i=0;i<2;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeFace[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 #elif _MESH_DIMENSION_ == 2
     for (i=0;i<4*2;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeFace[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
     for (i=0;i<4;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeCorner[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
     for (i=0;i<6*4;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeFace[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
     for (i=0;i<8;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeCorner[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 
     for (i=0;i<12*2;i++) {
       countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNodeEdge[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
     }
 #endif
 
 /*
     for (i=0;i<2*_MESH_DIMENSION_;i++) {
 //      countingNumber=treeNodes.GetEntryCountingNumber(startNode->neibNode[i]);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
 
       exit(__LINE__,__FILE__,"writing of neibNodes is node implemeted");
    }
    */
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    fwrite(&startNode->Temp_ID,sizeof(int),1,fout);
+    fwrite(&startNode->Temp_ID,sizeof(long int),1,fout);
     #endif    
 
     //save other tree nodes' parameters: xmin,xmax,RefinmentLevel,nodeDescriptor,Thread;
@@ -7799,10 +7799,10 @@ nMPIops++;
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     //save the list of nodes that intersect surfaces of the computational domain
     countingNumber=treeNodes.GetEntryCountingNumber(startNode->DomainSurfaceBoundaryList_Next);
-    fwrite(&countingNumber,sizeof(int),1,fout);
+    fwrite(&countingNumber,sizeof(long int),1,fout);
 
     countingNumber=treeNodes.GetEntryCountingNumber(startNode->DomainSurfaceBoundaryList_Prev);
-    fwrite(&countingNumber,sizeof(int),1,fout);
+    fwrite(&countingNumber,sizeof(long int),1,fout);
 
     //save the list of the boundary surface's descriptors
     int InternalSurfaceBoundaryPresentFlag=(startNode->InternalBoundaryDescriptorList==NULL) ? false : true;
@@ -7826,7 +7826,7 @@ nMPIops++;
           if (ptrDescriptorList->BoundaryElement==SurfaceDescriptor->BoundaryElement) {
             found=true;
             fwrite(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout);
-            fwrite(&countingNumber,sizeof(int),1,fout);
+            fwrite(&countingNumber,sizeof(long int),1,fout);
             break;
           }
         }
@@ -7853,14 +7853,14 @@ nMPIops++;
       cBlockAMR *block=startNode->block;
 
       #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-      fwrite(&block->Temp_ID,sizeof(int),1,fout);
+      fwrite(&block->Temp_ID,sizeof(long int),1,fout);
       #endif 
 
       fwrite(&block->blockDescriptor,sizeof(typename cBlockAMR::cBlockDescriptor),1,fout);
 
       for (nnode=0,blockNode=startNode->block->cornerNodes;nnode<nBlockNodes;nnode++,blockNode++) {
         countingNumber=(*blockNode)->nodeDescriptor.nodeno;
-        fwrite(&countingNumber,sizeof(int),1,fout);
+        fwrite(&countingNumber,sizeof(long int),1,fout);
       }
     }
     */
@@ -7870,8 +7870,8 @@ nMPIops++;
   }    
 
   void readTreeStructure(cTreeNodeAMR<cBlockAMR> *startNode,FILE *fout) {
-    //int nnode,nBlockNodes,nDownNode,countingNumber,i;
-    int nDownNode,countingNumber,i;
+    //long int nnode,nBlockNodes,nDownNode,countingNumber,i;
+    long int nDownNode,countingNumber,i;
 
     /*
     #if _MESH_DIMENSION_ == 1
@@ -7886,12 +7886,12 @@ nMPIops++;
     startNode->cleanDataBuffer();
 
     //read the tree node's pointers
-    fread(&countingNumber,sizeof(int),1,fout);
+    fread(&countingNumber,sizeof(long int),1,fout);
     startNode->upNode=treeNodes.GetEntryPointer(countingNumber);
 
     //read downNode[:]
     for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->downNode[nDownNode]=treeNodes.GetEntryPointer(countingNumber);      
 
       if (startNode->downNode[nDownNode]!=NULL) startNode->downNode[nDownNode]->upNode=startNode;
@@ -7904,33 +7904,33 @@ nMPIops++;
 #if _MESH_DIMENSION_ == 1
 //    cTreeNodeAMR *neibNodeFace[2];
     for (i=0;i<2;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 #elif _MESH_DIMENSION_ == 2
     for (i=0;i<4*2;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
     for (i=0;i<4;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 #elif _MESH_DIMENSION_ == 3
 //    cTreeNodeAMR *neibNodeFace[6*4],*neibNodeCorner[8],*neibNodeEdge[12*2];
     for (i=0;i<6*4;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
     for (i=0;i<8;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
     for (i=0;i<12*2;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       startNode->neibNodeEdge[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
@@ -7938,14 +7938,14 @@ nMPIops++;
 
     /*
     for (i=0;i<2*_MESH_DIMENSION_;i++) {
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
 //      startNode->neibNode[i]=treeNodes.GetEntryPointer(countingNumber);
       exit(__LINE__,__FILE__,"reading of neibNodes is not implemented");
     }
     */
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    fread(&startNode->Temp_ID,sizeof(int),1,fout);
+    fread(&startNode->Temp_ID,sizeof(long int),1,fout);
     #endif
 
     //read other tree nodes' parameters: xmin,xmax,RefinmentLevel,nodeDescriptor,Thread;
@@ -7960,10 +7960,10 @@ nMPIops++;
 
     //save the list of nodes that intersect surfaces of the computational domain
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-    fread(&countingNumber,sizeof(int),1,fout);
+    fread(&countingNumber,sizeof(long int),1,fout);
     startNode->DomainSurfaceBoundaryList_Next=treeNodes.GetEntryPointer(countingNumber);
 
-    fread(&countingNumber,sizeof(int),1,fout);
+    fread(&countingNumber,sizeof(long int),1,fout);
     startNode->DomainSurfaceBoundaryList_Prev=treeNodes.GetEntryPointer(countingNumber);
 
     //read the list of the boundary surface's descriptors
@@ -7983,7 +7983,7 @@ nMPIops++;
         SurfaceDescriptor=InternalBoundaryDescriptors.newElement();
 
         fread(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout);
-        fread(&countingNumber,sizeof(int),1,fout);
+        fread(&countingNumber,sizeof(long int),1,fout);
 
         for (i=0,SurfaceDescriptor->BoundaryElement=NULL,ptrDescriptorList=InternalBoundaryList.begin();ptrDescriptorList!=ptrDescriptorListEnd;i++,ptrDescriptorList++) {
           if (i==countingNumber) {
@@ -8015,13 +8015,13 @@ nMPIops++;
       block=startNode->block; 
 
       #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-      fread(&block->Temp_ID,sizeof(int),1,fout);
+      fread(&block->Temp_ID,sizeof(long int),1,fout);
       #endif
 
       fread(&block->blockDescriptor,sizeof(typename cBlockAMR::cBlockDescriptor),1,fout);
 
       for (nnode=0;nnode<nBlockNodes;nnode++) {
-        fread(&countingNumber,sizeof(int),1,fout);
+        fread(&countingNumber,sizeof(long int),1,fout);
         startNode->block->cornerNodes[nnode]=CornerNodes.GetEntryPointer(countingNumber);  
       }
     }
@@ -8036,7 +8036,7 @@ nMPIops++;
 
   void saveMeshFile(const char *MeshFileName=NULL) {
     FILE *fout=NULL;
-    int countingNumber,ThisThread=0;
+    long int countingNumber,ThisThread=0;
     char fname[STRING_LENGTH];
  
     //get the name of the mesh file 
@@ -8065,8 +8065,8 @@ nMPIops++;
       fwrite(&EPS,sizeof(double),1,fout);
 //      fwrite(&meshModifiedFlag,sizeof(bool),1,fout);
 
-      fwrite(&meshNodesNumber,sizeof(int),1,fout);
-      fwrite(&meshBlocksNumber,sizeof(int),1,fout);
+      fwrite(&meshNodesNumber,sizeof(long int),1,fout);
+      fwrite(&meshBlocksNumber,sizeof(long int),1,fout);
       fwrite(&meshMaximumRefinmentLevel,sizeof(int),1,fout);
 
       fwrite(&xGlobalMin,sizeof(double),_MESH_DIMENSION_,fout);
@@ -8083,7 +8083,7 @@ nMPIops++;
 
       //save the pointer to the rootTree
       countingNumber=treeNodes.GetEntryCountingNumber(rootTree);
-      fwrite(&countingNumber,sizeof(int),1,fout); 
+      fwrite(&countingNumber,sizeof(long int),1,fout); 
 
 
       //save the tree structure
@@ -8095,7 +8095,7 @@ nMPIops++;
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
       fwrite("AMR-MESH-FILE-MARKER:BOUNDARY_NODES",sizeof(char),STRING_LENGTH,fout);
       countingNumber=treeNodes.GetEntryCountingNumber(DomainSurfaceBoundaryList);
-      fwrite(&countingNumber,sizeof(int),1,fout);
+      fwrite(&countingNumber,sizeof(long int),1,fout);
 
       //save the distribution of the cut faces
       if (CutCell::nBoundaryTriangleFaces!=0) {
@@ -8148,7 +8148,7 @@ nMPIops++;
    
   void readMeshFile(const char *MeshFileName) {
     FILE *fout=NULL;
-    int countingNumber;
+    long int countingNumber;
     char marker[STRING_LENGTH];
 
     //the 'global' parameters of the mesh is saved in the file by the root processor only
@@ -8168,8 +8168,8 @@ nMPIops++;
       fread(&EPS,sizeof(double),1,fout);
 //      fread(&meshModifiedFlag,sizeof(bool),1,fout);
 
-      fread(&meshNodesNumber,sizeof(int),1,fout);
-      fread(&meshBlocksNumber,sizeof(int),1,fout);
+      fread(&meshNodesNumber,sizeof(long int),1,fout);
+      fread(&meshBlocksNumber,sizeof(long int),1,fout);
       fread(&meshMaximumRefinmentLevel,sizeof(int),1,fout);
 
       fread(&xGlobalMin,sizeof(double),_MESH_DIMENSION_,fout);
@@ -8186,7 +8186,7 @@ nMPIops++;
       treeNodes.readAllocationParameters(fout);
 
       //read the pointer to the rootTree
-      fread(&countingNumber,sizeof(int),1,fout);
+      fread(&countingNumber,sizeof(long int),1,fout);
       rootTree=treeNodes.GetEntryPointer(countingNumber);
 //    }
 
@@ -8200,7 +8200,7 @@ nMPIops++;
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     fread(marker,sizeof(char),STRING_LENGTH,fout);
     if (strcmp("AMR-MESH-FILE-MARKER:BOUNDARY_NODES",marker)!=0) exit(__LINE__,__FILE__,"SectionMarker in the mesh file is wrong");
-    fread(&countingNumber,sizeof(int),1,fout);
+    fread(&countingNumber,sizeof(long int),1,fout);
     DomainSurfaceBoundaryList=treeNodes.GetEntryPointer(countingNumber);
 
 
@@ -8259,7 +8259,7 @@ nMPIops++;
   }
 
   //create the memory allocation report
-  void countTreeNodes(cTreeNodeAMR<cBlockAMR> *startNode,int *Counter,int level) {
+  void countTreeNodes(cTreeNodeAMR<cBlockAMR> *startNode,long int *Counter,int level) {
     int nDownNode;
 
     if (level>_MAX_REFINMENT_LEVEL_) exit(__LINE__,__FILE__,"The level of refinment exeeds the value of _MAX_REFINMENT_LEVEL_");
@@ -8497,7 +8497,7 @@ nMPIops++;
 
   //determine the memory allocated by the mesh
   void memoryAllocationReport() {
-    int Counter[1+_MAX_REFINMENT_LEVEL_];
+    long int Counter[1+_MAX_REFINMENT_LEVEL_];
     int level,thread;
 
     for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) Counter[level]=0;
@@ -8613,14 +8613,14 @@ nMPIops++;
 
     if (ThisThread==0) {
       fprintf(DiagnospticMessageStream,"$PREFIX:Mesh blocks report:\n");
-      for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) fprintf(DiagnospticMessageStream,"$PREFIX:refinment level=%i, blocks=%i\n",level,Counter[level]);
+      for (level=0;level<=_MAX_REFINMENT_LEVEL_;level++) fprintf(DiagnospticMessageStream,"$PREFIX:refinment level=%i, blocks=%ld\n",level,Counter[level]);
 
       fprintf(DiagnospticMessageStream,"$PREFIX:Memory usage:\n");
       fprintf(DiagnospticMessageStream,"$PREFIX:Thread \t Tree \t Blocks \t Nodes\n");
     }
 
 
-    int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;
+    long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;
 
     TreeNodesAllocation=treeNodes.getAllocatedMemory();
     BlocksAllocation=blocks.getAllocatedMemory();
@@ -8630,7 +8630,7 @@ nMPIops++;
     for (thread=0;thread<nTotalThreads;thread++) {
     	
       struct cAllocationData {
-    	 int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;	  
+    	 long int TreeNodesAllocation,BlocksAllocation,CornerNodesAllocation,CenterNodesAllocation;	  
       } data;
     	
       if (thread==ThisThread) {
@@ -8658,7 +8658,7 @@ nMPIops++;
 
     rusage ResourceUsage;
     if (getrusage(RUSAGE_SELF,&ResourceUsage)!=-1)  {
-      int ru_maxrss,ru_ixrss,ru_idrss;
+      long int ru_maxrss,ru_ixrss,ru_idrss;
 
       ru_maxrss=ResourceUsage.ru_maxrss;
       ru_ixrss=ResourceUsage.ru_ixrss;
@@ -8669,7 +8669,7 @@ nMPIops++;
       for (thread=0;thread<nTotalThreads;thread++) {
     	  
     	struct cAllocationData {
-    	  int ru_maxrss,ru_ixrss,ru_idrss;
+    	  long int ru_maxrss,ru_ixrss,ru_idrss;
     	} data;
     	  
     	if (ThisThread==thread) {
@@ -8789,7 +8789,7 @@ nMPIops++;
 
   //collect into a list all nodes that "belongs" to this processor
   void InitDomainBoundaryLayer(cTreeNodeAMR<cBlockAMR>* startNode) {
-    int i,neibThread,nCounter=0;
+    long int i,neibThread,nCounter=0;
     cTreeNodeAMR<cBlockAMR> *node,*prev,*next,*neibNode,*tNode;
     bool found;
 
@@ -8917,26 +8917,26 @@ nMPIops++;
     }
 
 
-    int *buffer=new int [nTotalThreads];
+    long int *buffer=new long int [nTotalThreads];
     int thread;
 
     buffer[0]=nCounter;
 
-    int bufferRecv[nTotalThreads];
-    MPI_Gather(buffer,1,MPI_INT,bufferRecv,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-    memcpy(buffer,bufferRecv,nTotalThreads*sizeof(int));
+    long int bufferRecv[nTotalThreads];
+    MPI_Gather(buffer,1,MPI_LONG,bufferRecv,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+    memcpy(buffer,bufferRecv,nTotalThreads*sizeof(long int));
 
     if (ThisThread==0) {
       fprintf(DiagnospticMessageStream,"$PREFIX:The length of the domain's boundary nodes list:\n$PREFIX:Thread\tThe number of the domain's boundary nodes\n");
 
-      for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%i\n",thread,buffer[thread]);
+      for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%ld\n",thread,buffer[thread]);
     }
 
     delete [] buffer;
 
 
     //test the real length of the list (check the consisntency of the lists)
-    int nTest;
+    long int nTest;
 
     for (thread=0;thread<nTotalThreads;thread++) {
       nTest=0;
@@ -8954,7 +8954,7 @@ nMPIops++;
 
             while (node!=NULL) {
               if (node==startSearch) {
-                fprintf(DiagnospticMessageStream,"$PREFIX:Error: have found a repearting node in the list. nodeid=%i\n",node->Temp_ID);
+                fprintf(DiagnospticMessageStream,"$PREFIX:Error: have found a repearting node in the list. nodeid=%ld\n",node->Temp_ID);
               }
 
               node=node->nextNodeThisThread;
@@ -9009,7 +9009,7 @@ nMPIops++;
   void InitCellMeasure_ResetToZero(cTreeNodeAMR<cBlockAMR>* startNode) {
 #if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
     int i,j,k;
-    int nd;
+    long int nd;
     cCenterNode *centerNode;
 
     if (startNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
@@ -9047,7 +9047,7 @@ nMPIops++;
     CMPI_channel pipe(10000);
     FILE* fout=NULL;
 
-    unsigned int Signature=getMeshSignature();
+    unsigned long Signature=getMeshSignature();
 
     if (ThisThread==0) {
       pipe.openRecvAll();
@@ -9201,7 +9201,7 @@ nMPIops++;
     CMPI_channel pipe;
     FILE *fout=NULL;
 
-    unsigned int Signature;
+    unsigned long Signature;
 
     Signature=getMeshSignature();
     node=rootTree;
@@ -9459,7 +9459,7 @@ nMPIops++;
   double GetTotalDomainMeasure(cTreeNodeAMR<cBlockAMR>* startNode=NULL) {
 #if _AMR_CENTER_NODE_ == _ON_AMR_MESH_
     int i,j,k;
-    int nd;
+    long int nd;
     cCenterNode *centerNode;
     double res=0.0;
 
@@ -9507,7 +9507,7 @@ nMPIops++;
 
   void InitCellMeasureBlock(cTreeNodeAMR<cBlockAMR>* startNode) {
        double *xNodeMin,*xNodeMax,Measure,xCellMin[3],xCellMax[3],dx=0.0,dy=0.0,dz=0.0,xTotalMin[3]={0.0,0.0,0.0},xTotalMax[3]={0.0,0.0,0.0};
-       int i,j,k,nd;
+       long int i,j,k,nd;
        cCenterNode *centerNode;
        int IntersectionCode=_AMR_BLOCK_INSIDE_DOMAIN_;
 
@@ -9716,7 +9716,7 @@ nMPIops++;
       for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) InitCellMeasure(startNode->downNode[nDownNode]);
     }
     else if (startNode->block!=NULL) { //set up the cell's volume
-      static int nProcessedBlocks=0;
+      static long int nProcessedBlocks=0;
       static  time_t LastTimeValue=time(NULL);
       time_t TimeValue=time(NULL);
 
@@ -9990,8 +9990,8 @@ nMPIops++;
   }
 
   //normalize the load, calculate the total number of blocks, and the number of blocks on each resolution level
-  int  NormalizeParallelLoadMeasure(double Norm,int *nResolutionLevelBlocks,cTreeNodeAMR<cBlockAMR>* startNode) {
-    int res=0;
+  long int  NormalizeParallelLoadMeasure(double Norm,long int *nResolutionLevelBlocks,cTreeNodeAMR<cBlockAMR>* startNode) {
+    long int res=0;
 
     if (startNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) {
       for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) res+=NormalizeParallelLoadMeasure(Norm,nResolutionLevelBlocks,startNode->downNode[nDownNode]);
@@ -10054,7 +10054,7 @@ nMPIops++;
   }
   */
   void ResetAMRnodeProcessingFlag() {
-    int nMemoryBank,nTotalMemoryBanks,nnode;
+    long int nMemoryBank,nTotalMemoryBanks,nnode;
     cTreeNodeAMR<cBlockAMR>* TreeNode;
 
     nTotalMemoryBanks=treeNodes.GetDataBufferListPointer();
@@ -10069,7 +10069,7 @@ nMPIops++;
   }
 
   void ResetParallelLoadMeasure() {
-    int nMemoryBank,nTotalMemoryBanks,nnode;
+    long int nMemoryBank,nTotalMemoryBanks,nnode;
     cTreeNodeAMR<cBlockAMR>* TreeNode;
 
     nTotalMemoryBanks=treeNodes.GetDataBufferListPointer();
@@ -10134,7 +10134,7 @@ nMPIops++;
 
   void AllocateTreeBlocks(cTreeNodeAMR<cBlockAMR>* startNode,int DomainIntersectionFlag) {
     static bool ThisThreadBlockFound;
-    static int nAllocatedBlocks,nAllBlocks;
+    static long int nAllocatedBlocks,nAllBlocks;
 
     if (startNode==rootTree) {
       ThisThreadBlockFound=false,nAllocatedBlocks=0,nAllBlocks=0;
@@ -10215,7 +10215,7 @@ nMPIops++;
 
 //====================== DEBUG =======================
 
-static int TmpAllocationCounter=0;
+static long int TmpAllocationCounter=0;
 
 TmpAllocationCounter++;
 
@@ -10255,17 +10255,17 @@ if (TmpAllocationCounter==2437) {
       MPI_Initialized(&mpiInitFlag);
 
       if (mpiInitFlag==true) {
-        int thread=0,*buffer=NULL;
-        int AllBlockCounterTable[nTotalThreads];
-        int AllocatedBlockCounterTable[nTotalThreads];
+        long int thread=0,*buffer=NULL;
+        long int AllBlockCounterTable[nTotalThreads];
+        long int AllocatedBlockCounterTable[nTotalThreads];
 
-        MPI_Gather(&nAllocatedBlocks,1,MPI_INT,AllocatedBlockCounterTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-        MPI_Gather(&nAllBlocks,1,MPI_INT,AllBlockCounterTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,AllocatedBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllBlocks,1,MPI_LONG,AllBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
         if (ThisThread==0) {
           fprintf(DiagnospticMessageStream,"$PREFIX:Blocks Allocation Report:\n$PREFIX: Thread\tAllocatedBlocks\n");
 
-          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%i(%i)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
+          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld(%ld)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
 
           fflush(DiagnospticMessageStream);
         }
@@ -10290,13 +10290,13 @@ if (TmpAllocationCounter==2437) {
           }
         }
 
-        MPI_Gather(&nAllocatedBlocks,1,MPI_INT,AllocatedBlockCounterTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
-        MPI_Gather(&nAllBlocks,1,MPI_INT,AllBlockCounterTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllocatedBlocks,1,MPI_LONG,AllocatedBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
+        MPI_Gather(&nAllBlocks,1,MPI_LONG,AllBlockCounterTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
         if (ThisThread==0) {
           fprintf(DiagnospticMessageStream,"$PREFIX:Blocks Allocation Report:\n$PREFIX: Thread\tAllocated Domain's Boundary Blocks\n");
 
-          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%i(%i)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
+          for (thread=0;thread<nTotalThreads;thread++) fprintf(DiagnospticMessageStream,"$PREFIX:%ld\t%ld(%ld)\n",thread,AllocatedBlockCounterTable[thread],AllBlockCounterTable[thread]);
 
           fflush(DiagnospticMessageStream);
         }
@@ -10451,12 +10451,12 @@ if (TmpAllocationCounter==2437) {
 
     //compare the checksums of the domain decompositions
     int GlobalTotalBlocksTable[nTotalThreads];
-    unsigned int CheckSumVector[nTotalThreads];
-    unsigned int GlobalCheckSumTable[nTotalThreads*nTotalThreads];
+    unsigned long CheckSumVector[nTotalThreads];
+    unsigned long GlobalCheckSumTable[nTotalThreads*nTotalThreads];
 
     for (thread=0;thread<nTotalThreads;thread++) CheckSumVector[thread]=checksum[thread].checksum();
 
-    MPI_Gather(&CheckSumVector,nTotalThreads,MPI_INT,GlobalCheckSumTable,nTotalThreads,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&CheckSumVector,nTotalThreads,MPI_UNSIGNED_LONG,GlobalCheckSumTable,nTotalThreads,MPI_UNSIGNED_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (ThisThread==0) {
       if (msg!=NULL) {
@@ -10499,21 +10499,21 @@ if (TmpAllocationCounter==2437) {
     }
   }
 
-  void GetDomainDecompositionSignature(int nline,const char* fname) {
+  void GetDomainDecompositionSignature(long int nline,const char* fname) {
     char message[1000];
 
-    sprintf(message," line=%i, file=%s",nline,fname);
+    sprintf(message," line=%ld, file=%s",nline,fname);
     GetDomainDecompositionSignature(message);
   }
 
 
 
 
-  int nParallelListRedistributions;
+  long int nParallelListRedistributions;
 
   void CreateNewParallelDistributionLists(int userDefinedCodeForSendingBlockData=-1) {
     double LoadMeasureNormal;
-    int nTotalBlocks,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
+    long int nTotalBlocks,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
     int i,nLevel;
 
     static cTreeNodeAMR<cBlockAMR> *startNodeFillingCurve=NULL;
@@ -10538,7 +10538,7 @@ if (TmpAllocationCounter==2437) {
 
       //calcualte the number of blocks per thread
       cTreeNodeAMR<cBlockAMR> *ptr;
-      int GlobalTotalBlockNumberTable[nTotalThreads];
+      long int GlobalTotalBlockNumberTable[nTotalThreads];
       int nTotalUsedInSimulationNodes=0,GlobalTotalTotalUsedInSimulationNodeTable[nTotalThreads];
 
       std::function<void(cTreeNodeAMR<cBlockAMR>*)> CountThreadNumber;
@@ -10564,7 +10564,7 @@ if (TmpAllocationCounter==2437) {
       nTotalBlocks=0,nTotalUsedInSimulationNodes=0;
       CountThreadNumber(rootTree);
 
-      MPI_Gather(&nTotalBlocks,1,MPI_INT,GlobalTotalBlockNumberTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Gather(&nTotalBlocks,1,MPI_LONG,GlobalTotalBlockNumberTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
       MPI_Gather(&nTotalUsedInSimulationNodes,1,MPI_INT,GlobalTotalTotalUsedInSimulationNodeTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
       if (ThisThread==0) {
@@ -10573,7 +10573,7 @@ if (TmpAllocationCounter==2437) {
 
         for (int thread=0;thread<nTotalThreads;thread++) nGlobalBlockNumber+=GlobalTotalBlockNumberTable[thread],nGlobalUsedInCalculationBlocks+=GlobalTotalTotalUsedInSimulationNodeTable[thread];
 
-        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%i, Total Number of blocks: %i\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
+        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%ld, Total Number of blocks: %ld\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
 
         if (nGlobalUsedInCalculationBlocks==0) {
           //there are not blocks used in the calcualtion -> terminate the execution
@@ -10586,7 +10586,7 @@ if (TmpAllocationCounter==2437) {
         fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
         for (int t=0;t<nTotalThreads;t++) {
-          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%i(%i)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
+          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
         }
 
         fflush(DiagnospticMessageStream);
@@ -10863,7 +10863,7 @@ if (TmpAllocationCounter==2437) {
          cTreeNodeAMR<cBlockAMR> *maxLoadBlock=NULL;
 
          for (t=0;t<nTotalThreads;t++) {
-           int nblocks=0,used_nblocks=0;
+           long int nblocks=0,used_nblocks=0;
 
            for (ptr=ParallelNodesDistributionList[t];ptr!=NULL;ptr=ptr->nextNodeThisThread) {
              nblocks++;
@@ -10873,7 +10873,7 @@ if (TmpAllocationCounter==2437) {
              if ((maxBlockLoad<0.0)||(maxBlockLoad<ptr->ParallelLoadMeasure)) maxBlockLoad=ptr->ParallelLoadMeasure,maxLoadBlock=ptr;
            }
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%i(%i)\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,used_nblocks,nblocks);
+           fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,LoadMeasureNormal*newCumulativeParallelLoadMeasure[t],nTotalThreads*newCumulativeParallelLoadMeasure[t]/TotalParallelLoadMeasure,used_nblocks,nblocks);
 
            if ((minThreadBlockNumber==-1)||(minThreadBlockNumber>nblocks)) minThreadBlockNumber=nblocks;
            if ((maxThreadBlockNumber==-1)||(maxThreadBlockNumber<nblocks)) maxThreadBlockNumber=nblocks;
@@ -10895,7 +10895,7 @@ if (TmpAllocationCounter==2437) {
          fprintf(DiagnospticMessageStream,"$PREFIX:Individual block load: min=%e, max=%e\n",minBlockLoad,maxBlockLoad);
 
          fprintf(DiagnospticMessageStream,"$PREFIX:Parameters of the block with the maximum load\n");
-         fprintf(DiagnospticMessageStream,"$PREFIX:Block->Temp_ID=%i\n",maxLoadBlock->Temp_ID);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block->Temp_ID=%ld\n",maxLoadBlock->Temp_ID);
 
          //the position of the block's nodes
          double middleX[3]={0.0,0.0,0.0},xnode[3];
@@ -11064,7 +11064,7 @@ if (TmpAllocationCounter==2437) {
     ThreadStartNode=NULL;
 
     //check that all blocks are presented in the new blocks' distribution lists
-    int nDistributedNodes=0;
+    long int nDistributedNodes=0;
 
     ResetAMRnodeProcessingFlag();
 
@@ -12783,10 +12783,10 @@ if (TmpAllocationCounter==2437) {
   }
   
     
-  int SyncMeshID() {
-    int buffer[nTotalThreads];
+  long int SyncMeshID() {
+    long int buffer[nTotalThreads];
 
-    MPI_Gather(&nMeshModificationCounter,1,MPI_INT,buffer,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Gather(&nMeshModificationCounter,1,MPI_LONG,buffer,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
     
     if (ThisThread==0) {
       //check whether all elements in the buffer are already syncronized
@@ -12798,12 +12798,12 @@ if (TmpAllocationCounter==2437) {
         }
     }
     
-    MPI_Bcast(&nMeshModificationCounter,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
+    MPI_Bcast(&nMeshModificationCounter,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     return nMeshModificationCounter;
   }
   
-  int GetMeshID() {
+  long int GetMeshID() {
     return nMeshModificationCounter;
   }
   
@@ -13249,7 +13249,7 @@ if (TmpAllocationCounter==2437) {
 
     FILE *f=fopen(fname,"w");
     fprintf(f,"VARIABLES=\"X\", \"Y\", \"Z\", \"code\"");
-    fprintf(f,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*nTotalNodes,nTotalNodes);
+    fprintf(f,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*nTotalNodes,nTotalNodes);
 
     OutputMeshPoints(rootTree,f);
     OutputConnectivyList(rootTree,f);

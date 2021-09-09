@@ -37,19 +37,19 @@ struct cells_connection_data_type {
 };
 
 struct surface_interpolation_element_data_type {
-  int nnode;
-  vector <int> face;
+  long int nnode;
+  vector <long int> face;
   vector <double> weight;
 };
 
 struct surface_interpolation_data_type {
-  int nfaces,nnodes;
+  long int nfaces,nnodes;
   vector<surface_interpolation_element_data_type> node;
 };
 
 template<class DataType=double,class NodeType=Cnode<DataType>,class FaceType=Cface<DataType,NodeType>,class CellType=Ccell<DataType,NodeType,FaceType> > class Cgrid{
 public:
-  int nnodes,nfaces,ncells;
+  long int nnodes,nfaces,ncells;
 
   NodeType* node;
   FaceType* face;
@@ -60,9 +60,9 @@ public:
   vector<surface_interpolation_data_type> surface_interpolation_data;
 
   DataType* InterpolationWeight;
-  int* InterpolationMask;
+  long int* InterpolationMask;
 
-  typedef void (*InitGasModelDistributionType)(CellType*,int);
+  typedef void (*InitGasModelDistributionType)(CellType*,long int);
   InitGasModelDistributionType InitGasModelDistribution;
 
   void SetInitGasModelDistribution(InitGasModelDistributionType func) {
@@ -126,8 +126,8 @@ public:
   };
 
 //==================================================
-  void error(int line) {
-    printf("Error in reading of grid's file (line=%i)\n",line);
+  void error(long int line) {
+    printf("Error in reading of grid's file (line=%ld)\n",line);
     exit(__LINE__,__FILE__);
   };
 
@@ -135,7 +135,7 @@ public:
   void OutputInFile(char *fname) {
     FILE* fout;
     int idim;
-    int n,f,c;
+    long int n,f,c;
 
     fout=fopen(fname,"w");
 
@@ -175,7 +175,7 @@ public:
     } 
 
 
-    int b; 
+    long int b; 
     int e1,e2;
     fprintf(fout,"\n============ connection data ===========\n");
     for (c=0;c<ncells;c++)   
@@ -202,10 +202,10 @@ public:
   {
     FILE* fd;
     char str1[200],str[200];
-    int i;
+    long int i;
     int idim;
     DataType x[3];
-    int line;
+    long int line;
 
     errno=0;
 
@@ -297,7 +297,7 @@ public:
   double Measure()
   {
     double measure;
-    int ncell;
+    long int ncell;
 
     measure=0.0;
     for (ncell=0;ncell<ncells;ncell++) 
@@ -333,8 +333,8 @@ public:
 
 //==================================================
   void InitInterpolationData() {
-    int k,ncell,nnode;
-    int* nnn=new int[nnodes];
+    long int k,ncell,nnode;
+    long int* nnn=new long int[nnodes];
     DataType* sum=new DataType[nnodes];
     DataType measure;
     int idim;
@@ -353,11 +353,11 @@ public:
       }
     }
 
-    int offset=0;
+    long int offset=0;
     for (nnode=0;nnode<nnodes;nnode++) offset+=nnn[nnode]+1;
 
     InterpolationWeight=new DataType[offset];
-    InterpolationMask=new int[offset];
+    InterpolationMask=new long int[offset];
 
     for (nnode=0,offset=0;nnode<nnodes;nnode++) {    
       node[nnode].InterpolationWeight=InterpolationWeight+offset;  
@@ -387,34 +387,34 @@ public:
 //Get "global" number of cell, which contains point x 
 //breakflag == true:   in the case when a cell is not found, the execution of the code is interupted
 //breakflag == false : in the case when a cell is not found, the function returns value == -1  
-  int GetNCell(DataType* x,bool breakflag=true) {
-    int idim,i,j,k;
-    int nnode,ncell;
+  long int GetNCell(DataType* x,bool breakflag=true) {
+    long int idim,i,j,k;
+    long int nnode,ncell;
     DataType xmin[3],xmax[3],locx[3],summ;
     array_1d<DataType> x_node(DIM);
     bool CellFoundFlag=false;
 
     //init the search tree
-    static int SearchMaskLength=(int)(pow(1.0E6,1.0/(double)DIM)); 
+    static long int SearchMaskLength=(long int)(pow(1.0E6,1.0/(double)DIM)); 
 
     static bool initflag=false;
     static double Xmin[3]={0.0,0.0,0.0},Xmax[3]={0.0,0.0,0.0},dX[3]={0.0,0.0,0.0};
-    static list<int> ***SearchMask,*SearchMaskElement;
+    static list<long int> ***SearchMask,*SearchMaskElement;
 
     if (initflag==false) {
       double xnode[3];
       initflag=true;
 
       //init the Search Mask
-      int i,j,k,Xelements,Yelements,Zelements;
+      long int i,j,k,Xelements,Yelements,Zelements;
 
       Xelements=SearchMaskLength;
       Yelements=(DIM>=2) ? SearchMaskLength : 1; 
       Zelements=(DIM>=3) ? SearchMaskLength : 1; 
 
-      SearchMask=new list<int>** [Xelements];
-      SearchMask[0]=new list<int>* [Xelements*Yelements];
-      SearchMask[0][0]=new list<int> [Xelements*Yelements*Zelements]; 
+      SearchMask=new list<long int>** [Xelements];
+      SearchMask[0]=new list<long int>* [Xelements*Yelements];
+      SearchMask[0][0]=new list<long int> [Xelements*Yelements*Zelements]; 
 
       for (i=0;i<Xelements;i++) SearchMask[i]=SearchMask[0]+Yelements*i; 
       for (j=0;j<Xelements*Yelements;j++) SearchMask[0][j]=SearchMask[0][0]+Zelements*j; 
@@ -442,9 +442,9 @@ public:
       for (ncell=0;ncell<ncells;ncell++) {
         node[cell[ncell].nodeno[0]].GetX(xnode);
 
-        i=(int)((xnode[0]-Xmin[0])/dX[0]); 
-        j=(DIM>=2) ? (int)((xnode[1]-Xmin[1])/dX[1]) : 0;
-        k=(DIM>=3) ? (int)((xnode[2]-Xmin[2])/dX[2]) : 0;
+        i=(long int)((xnode[0]-Xmin[0])/dX[0]); 
+        j=(DIM>=2) ? (long int)((xnode[1]-Xmin[1])/dX[1]) : 0;
+        k=(DIM>=3) ? (long int)((xnode[2]-Xmin[2])/dX[2]) : 0;
  
         SearchMask[i][j][k].push_back(ncell); 
       } 
@@ -452,16 +452,16 @@ public:
 
 
     //perform the search
-    int i0,j0,k0,SearchLevel;
-    int imin,imax,jmin,jmax,kmin,kmax,ii;
-    int iLevel,jLevel,kLevel;
-    list<int>::iterator cellptr;
+    long int i0,j0,k0,SearchLevel;
+    long int imin,imax,jmin,jmax,kmin,kmax,ii;
+    long int iLevel,jLevel,kLevel;
+    list<long int>::iterator cellptr;
 
-    i0=(int)((x[0]-Xmin[0])/dX[0]);
-    j0=(DIM>=2) ? (int)((x[1]-Xmin[1])/dX[1]) : 0;
-    k0=(DIM>=3) ? (int)((x[2]-Xmin[2])/dX[2]) : 0;
+    i0=(long int)((x[0]-Xmin[0])/dX[0]);
+    j0=(DIM>=2) ? (long int)((x[1]-Xmin[1])/dX[1]) : 0;
+    k0=(DIM>=3) ? (long int)((x[2]-Xmin[2])/dX[2]) : 0;
 
-    for (SearchLevel=0;SearchLevel<=(int)(SearchMaskLength/10.0);SearchLevel++) {
+    for (SearchLevel=0;SearchLevel<=(long int)(SearchMaskLength/10.0);SearchLevel++) {
 
       //get the range of the variation of the indexes
       imin=(i0-SearchLevel>0) ? i0-SearchLevel : 0;
@@ -544,7 +544,7 @@ double a0vect[3],a1vect[3],bvect[3],t[3];
 
     TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-    for(int ncell=0;ncell<ncells;ncell++) 
+    for(long int ncell=0;ncell<ncells;ncell++) 
       for (int nbasis=0;nbasis<DIM+1;nbasis++) {  
         for (i=0;i<2;i++) {
           n[i]=nbasis+i+1;
@@ -593,7 +593,7 @@ double a0vect[3],a1vect[3],bvect[3],t[3];
 
 //==================================================
   void InitCellConnectionData() {
-    int ncell,nbr_ncell; 
+    long int ncell,nbr_ncell; 
     int i,nface,nbasis,nbr_nbasis;
 
     cells_connection_data=new cells_connection_data_type[ncells]; 
@@ -752,7 +752,7 @@ double e[3],t[3];
 
     TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-    for(int ncell=0;ncell<ncells;ncell++) 
+    for(long int ncell=0;ncell<ncells;ncell++) 
       for (int nbasis=0;nbasis<DIM+1;nbasis++) {
         n=nbasis+1;
         if (n>=DIM+1) n-=(DIM+1);
@@ -799,7 +799,7 @@ double e[3],t[3];
 
     TMatrix.init(DIM,DIM,DIM+1,ncells);
 
-    for(int ncell=0;ncell<ncells;ncell++)
+    for(long int ncell=0;ncell<ncells;ncell++)
       for (int nbasis=0;nbasis<DIM+1;nbasis++) {
         for (i=0;i<DIM;i++) {
           n[i]=nbasis+i+1;
@@ -909,13 +909,13 @@ double e[3],t[3];
   };
 
 //==================================================
-  void InitSurfaceInterpolationData(vector< vector<int> >&SurfaceSDataGroups) {
-    int ngroup;
-    int nnode,nface,faceat;
+  void InitSurfaceInterpolationData(vector< vector<long int> >&SurfaceSDataGroups) {
+    long int ngroup;
+    long int nnode,nface,faceat;
     int idim;
     bool* use_flag;
     double measure, *sum;
-    int n,faces_in_the_group; 
+    long int n,faces_in_the_group; 
 
     if (SurfaceSDataGroups.size()==0) return;
     surface_interpolation_data.resize(SurfaceSDataGroups.size()); 
@@ -941,7 +941,7 @@ double e[3],t[3];
         }
       }
 
-      int nodes_in_the_group=0,current_node=0;
+      long int nodes_in_the_group=0,current_node=0;
 
       for (nnode=0;nnode<nnodes;nnode++) 
         if (use_flag[nnode]==true) nodes_in_the_group++;
@@ -978,7 +978,7 @@ double e[3],t[3];
 //==================================================
 
 bool CheckGridConsistensy() {
-  int nnode,nface,ncell,neib;
+  long int nnode,nface,ncell,neib;
   int pface,pfaceneib,i;
   vector <int> faceball(nfaces);
   bool foundflag; 

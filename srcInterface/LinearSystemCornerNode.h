@@ -232,7 +232,7 @@ public:
   }
 
   //calculate signature of the matrix
-  void GetSignature(int nline,const char* fname) {
+  void GetSignature(long int nline,const char* fname) {
     CRC32 Signature,SignatureRhs;
     cMatrixRow* row;
     int cnt,iElementMax,iElement;

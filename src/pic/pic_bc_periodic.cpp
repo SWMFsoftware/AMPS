@@ -73,7 +73,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
 
 void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cBlockPairTable& BlockPair) {
   int i,j,k,idim;
-  int ptr,NextPtr;
+  long int ptr,NextPtr;
   double *x;
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPair.GhostBlock;
@@ -128,7 +128,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cBlockPairTable
 
 void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& BlockPair) {
   int i,j,k;
-  int ptr,NewParticle,NextPtr;
+  long int ptr,NewParticle,NextPtr;
 
   int GhostBlockThread=BlockPair.GhostBlock->Thread;
   int RealBlockThread=BlockPair.RealBlock->Thread;
@@ -164,7 +164,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
         }
         
         while (ptr!=-1) {
-          int t;
+          long int t;
           
           pipe.send(NewParticelDataSignal);
           pipe.send((char*)PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);

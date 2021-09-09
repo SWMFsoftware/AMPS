@@ -67,7 +67,7 @@ int main(int argc,char **argv) {
   int nTotalIterations=60;
 
 
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
     if (PIC::Mesh::mesh->ThisThread==0) {
        TimeValue=time(NULL);
        ct=localtime(&TimeValue);

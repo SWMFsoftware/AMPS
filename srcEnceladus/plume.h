@@ -336,9 +336,9 @@ public:
 
   double CalculateTotalProductionRate() {
     double theta,v,cosTheta,sinTheta,beta,res;
-    int ntest;
+    long int ntest;
 
-    const int nTotTests=1000000;
+    const long int nTotTests=1000000;
     const double vmax=2.0E3;
 
     res=0.0;

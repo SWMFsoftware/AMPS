@@ -125,7 +125,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 #define _FORCE_LORENTZ_MODE_ _PIC_MODE_OFF_
 #define _FORCE_FRAMEROTATION_MODE_ _PIC_MODE_OFF_
 
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
 
     memcpy(x_LOCAL,x,3*sizeof(double));
@@ -140,7 +140,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     //********************************************************
     // the following code is copied from srcEuropa/Europa.h
     //********************************************************
-    int nd;
+    long int nd;
     char *offset;
     int i,j,k;
     PIC::Mesh::cDataCenterNode *CenterNode;
@@ -215,7 +215,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
   }
 
 
-  inline double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag) {
+  inline double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag) {
     static const double LifeTime=3600.0*5.8/pow(0.4,2);
 
     // no photoionization for now
@@ -224,7 +224,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
 
   }
 
-  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
+  inline int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData) {
 
     // no photoionization for now
     return _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;

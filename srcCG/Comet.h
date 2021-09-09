@@ -108,8 +108,8 @@ namespace Comet {
   double GetTotalProductionRateJetNASTRAN(int spec);
   bool GenerateParticlePropertiesJetNASTRAN(int spec, double *x_SO_OBJECT,double *x_IAU_OBJECT,double *v_SO_OBJECT,double *v_IAU_OBJECT,double *sphereX0, double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode,char* tempParticleData,int &iInjectionFaceNASTRAN);
 
-  int InjectionBoundaryModel_Limited();
-  int InjectionBoundaryModel_Limited(int spec);
+  long int InjectionBoundaryModel_Limited();
+  long int InjectionBoundaryModel_Limited(int spec);
 
   double radiativeCoolingRate_Crovisier(PIC::Mesh::cDataCenterNode *CenterNode);
   void StepOverTime();
@@ -121,7 +121,7 @@ namespace Comet {
   void PrintCutCellData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CornerNodeThread,PIC::Mesh::cDataCornerNode *CornerNode);
   void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
 
-  void GetGravityAcceleration(double *x,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+  void GetGravityAcceleration(double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
   //initial velocity of the duts grains
   namespace DustInitialVelocity {
@@ -144,8 +144,8 @@ namespace Comet {
    //probabilities of the destruction of the primary species
    const double NumericalLossRateIncrease=1000.0; //1000.0
 
-   double ExospherePhotoionizationLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-   int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+   double ExospherePhotoionizationLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+   int ExospherePhotoionizationReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   }
 
   //the condition for begining of the dust trajectory tracking
@@ -185,8 +185,8 @@ namespace Comet {
     void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
 
     double GetNeutralsMassDensity(int s,PIC::Mesh::cDataCenterNode *cell);
-    double GetNeutralsMassDensity(int s,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-    void GetNeutralsVelocity(double *x, int s,int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    double GetNeutralsMassDensity(int s,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+    void GetNeutralsVelocity(double *x, int s,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
 
     void PrintCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
 
@@ -203,7 +203,7 @@ namespace Comet {
      extern double DustMassEscapeRate;
 
      //output the dust mass escape rate with the diagnostic message
-     void OutputDiagnosticMessage(CMPI_channel*,int);
+     void OutputDiagnosticMessage(CMPI_channel*,long int);
 
      //sample particle data
      void SampleParticleData(char *ParticleData,double LocalParticleWeight,char  *SamplingBuffer,int spec);
@@ -230,7 +230,7 @@ namespace Comet {
 }
     //the total acceleration acting on a particle
   //double SodiumRadiationPressureAcceleration_Combi_1997_icarus(double HeliocentricVelocity,double HeliocentricDistance);
-  void inline TotalParticleAcceleration(double *accl,int spec,int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+  void inline TotalParticleAcceleration(double *accl,int spec,long int ptr,double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
     double x_LOCAL[3],v_LOCAL[3],accl_LOCAL[3]={0.0,0.0,0.0};
     int idim;
 

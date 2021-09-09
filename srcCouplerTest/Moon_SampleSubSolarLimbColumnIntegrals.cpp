@@ -18,7 +18,7 @@ int Moon::Sampling::SubsolarLimbColumnIntegrals::firstPhaseRadialVelocityDirecti
 int Moon::Sampling::SubsolarLimbColumnIntegrals::nOutputFile;
 
 double Moon::Sampling::SubsolarLimbColumnIntegrals::rr=0.0;
-int Moon::Sampling::SubsolarLimbColumnIntegrals::nSampleAltitudeDistributionPoints=0;
+long int Moon::Sampling::SubsolarLimbColumnIntegrals::nSampleAltitudeDistributionPoints=0;
 //Moon::Sampling::SubsolarLimbColumnIntegrals::cSampleAltitudeDistrubutionBufferElement *Moon::Sampling::SubsolarLimbColumnIntegrals::SampleAltitudeDistrubutionBuffer=NULL;
 
 Moon::Sampling::SubsolarLimbColumnIntegrals::cSampleBufferElement Moon::Sampling::SubsolarLimbColumnIntegrals::SampleBuffer_AntiSunwardMotion[nPhaseAngleIntervals];
@@ -39,10 +39,10 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::init() {
 
   //init the altitude distribution sampling buffer
   double R,dAlt;
-  int t;
+  long int t;
 
   rr=(maxAltitude+dAltmax)/(maxAltitude+dAltmin);
-  t=(int)(log(dAltmax/dAltmin)/log(rr)-2.0);
+  t=(long int)(log(dAltmax/dAltmin)/log(rr)-2.0);
   rr=pow(dAltmax/dAltmin,1.0/(t+2.0));
 
   R=dAltmin,dAlt=dAltmin;
@@ -232,7 +232,7 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::PrintDataFile() {
       fprintf(fNA_Intensity_5897_56A,"\n");
 
       double R=dAltmin,dAlt=dAltmin;
-      int nAltitudeSamplePoint=0;
+      long int nAltitudeSamplePoint=0;
 
       while (R<maxAltitude+1.0) {
         fprintf(fNA_ColumnDensity,"%e ",R*_RADIUS_(_TARGET_));
@@ -421,7 +421,7 @@ void Moon::Sampling::SubsolarLimbColumnIntegrals::CollectSample(int DataOutputFi
 
   //sample the altitude distribution of the column integrals
   double R=dAltmin,dAlt=dAltmin;
-  int nAltitudeSamplePoint=0;
+  long int nAltitudeSamplePoint=0;
   double l[3],rEarth_SO[3],c=0.0;
 
   while (R<maxAltitude+1.0) {

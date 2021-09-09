@@ -218,7 +218,7 @@ void MarsIon::InitBackgroundData() {
 
 
 //particle mover: call relativistic Boris, ans sample particle flux
-int MarsIon::ParticleMover(int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double xInit[3],xFinal[3];
   int res,iShell;
 
@@ -276,7 +276,7 @@ double MarsIon::GetBackgroundAtmosphereDensity(double *x,int spec) {
 /*
 // Loss -------------------------------------------------------------------------------------
 
-double OH::Loss::LifeTime(double *x, int spec, int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
+double OH::Loss::LifeTime(double *x, int spec, long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node){
 
   double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
   double PlasmaBulkVelocity[3];
@@ -314,7 +314,7 @@ double OH::Loss::LifeTime(double *x, int spec, int ptr,bool &PhotolyticReactionA
 
 }
 
-int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
+int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node){
   //for one lost particle one new particle is generated
   //----------------------------------------------------------------------
   //inject the products of the reaction
@@ -388,7 +388,7 @@ int OH::Loss::ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int 
 #endif
 
   //get and injection into the system the new model particle
-  int newParticle;
+  long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
   newParticle=PIC::ParticleBuffer::GetNewParticle();
   newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);

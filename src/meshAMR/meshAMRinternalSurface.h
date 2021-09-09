@@ -43,7 +43,7 @@ public:
   cInternalBoundaryConditionsDescriptor *nextInternalBCelement;
 
   #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-  int Temp_ID;
+  long int Temp_ID;
   #endif
 
 //  bool ActiveFlag; //used to prevent multiple de-allocation/re-allocation of the descriptior from the stack

@@ -93,7 +93,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::SetLocation(do
 
   
   //determine lon and lat of the secondary direction
-  int nZenithElement,nAzimuthalElement;
+  long int nZenithElement,nAzimuthalElement;
   double t[3];
 
   for (idim=0;idim<3;idim++) t[idim]=xSecondary[idim]-xLocation[idim];
@@ -142,7 +142,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::Sampling() {
 
 void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Sampling() {
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_ //execute the body of the sampling procedure only when the dust is ON
-  int ptr;
+  long int ptr;
   PIC::Mesh::cDataBlockAMR *block=NULL;
   double v[3],ParticleWeight,GrainRadius,Measure;
   PIC::ParticleBuffer::byte *ParticleData;
@@ -150,7 +150,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Sampling() {
   
   // if the sample point is outside the computional domain and warning is not issued   
   if ((node==NULL)&&(WarningIssuedFlag==false)) {
-    fprintf(PIC::DiagnospticMessageStream,"WARNING:the sample point %f,%f,%f is outside the domain (file=%s, line=%i)\n",x[0],x[1],x[2],__FILE__,__LINE__);
+    fprintf(PIC::DiagnospticMessageStream,"WARNING:the sample point %f,%f,%f is outside the domain (file=%s, line=%ld)\n",x[0],x[1],x[2],__FILE__,__LINE__);
     WarningIssuedFlag=true;
     return;
   }
@@ -179,7 +179,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Sampling() {
       GrainRadius=GetGrainRadius(ParticleData);
 
       //determine the element for sampling of the particle
-      int nZenithElement,nAzimuthalElement,el;
+      long int nZenithElement,nAzimuthalElement,el;
       double Speed,ZenithAngle,AzimuthalAngle;
 
       SizeGroup=(int)(log(GrainRadius/ElectricallyChargedDust::minDustRadius)/ElectricallyChargedDust::Sampling::dLogDustSamplingIntervals);
@@ -208,7 +208,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::PrintSurfaceData(int nDataSet, 
 }
 
 void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::PrintSurfaceData(const char *fname, bool PrintStateVectorFlag) {
-  int iZenith,iAzimuthal;
+  long int iZenith,iAzimuthal;
   int SizeGroup;
   FILE *fout=NULL;
   double x[3];
@@ -253,10 +253,10 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::PrintSurfaceDa
     fprintf(fout,", \"Total Flux [s^{-1}m^{-2}]\", \"Total number Density [m^{-3}]\"");
 
     //print the number of variables and blocks
-    fprintf(fout,"\nZONE N=%i, E=%i, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",(nZenithSurfaceElements+1)*nAzimuthalSurfaceElements,nZenithSurfaceElements*nAzimuthalSurfaceElements);
+    fprintf(fout,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEQUADRILATERAL\n",(nZenithSurfaceElements+1)*nAzimuthalSurfaceElements,nZenithSurfaceElements*nAzimuthalSurfaceElements);
 
     //interpolate and print the state vector
-    int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
+    long int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
 
     for (iZenith=0;iZenith<nZenithSurfaceElements+1;iZenith++) {
       for (iAzimuthal=0;iAzimuthal<nAzimuthalSurfaceElements;iAzimuthal++) {
@@ -361,7 +361,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::PrintSurfaceDa
 }
 
 void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Print2dMap(const char *fname, bool PrintStateVectorFlag) {
-  int iZenith,iAzimuthal;
+  long int iZenith,iAzimuthal;
   int SizeGroup;
   FILE *fout2d=NULL;
 
@@ -392,10 +392,10 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Print2dMap(con
     }
 
     fprintf(fout2d,", \"Total Flux [s^{-1}m^{-2}]\", \"Total number Density [m^{-3}]\"");
-    fprintf(fout2d,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",nAzimuthalSurfaceElements+2,nZenithSurfaceElements+1);
+    fprintf(fout2d,"\nZONE I=%ld, J=%ld, DATAPACKING=POINT\n",nAzimuthalSurfaceElements+2,nZenithSurfaceElements+1);
 
     //interpolate and print the state vector
-    int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
+    long int InterpolationList[nAzimuthalSurfaceElements],InterpolationListLength=0;
     double lon,lat;
     int iAzimuthalBreak=-1;
 
@@ -495,7 +495,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::Print2dMap(con
   }
 }
 
-double ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::GetSpeed(double *v,double &ZenithAngle,int &nZenithElement, double &AzimuthalAngle,int &nAzimuthalElement) {
+double ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::GetSpeed(double *v,double &ZenithAngle,long int &nZenithElement, double &AzimuthalAngle,long int &nAzimuthalElement) {
   int idim;
 
   //Normalize the velocity vector and determine its coordinates in the frame related for the observation point

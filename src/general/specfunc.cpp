@@ -30,10 +30,10 @@ int ThisThread;
 int TotalThreadsNumber;
 unsigned int ExitErrorCode=0;
 
-int nint(double a)
+long int nint(double a)
 {
-   int n;
-   n=(int) a;
+   long int n;
+   n=(long int) a;
    if (a-n>0.5) n++;
    return n;
 }
@@ -94,19 +94,19 @@ void PrintErrorLog(const char* message) {
 }
 
 //use: PrintErrorLog(__LINE__,__FILE__, "mesage")
-void PrintErrorLog(int nline, const char* fname, const char* message) {
+void PrintErrorLog(long int nline, const char* fname, const char* message) {
   FILE* errorlog=fopen("$ERRORLOG","a+");
 
   time_t TimeValue=time(0);
   tm *ct=localtime(&TimeValue);
 
   fprintf(errorlog,"Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
-  fprintf(errorlog,"file=%s, line=%i\n",fname,nline);
+  fprintf(errorlog,"file=%s, line=%ld\n",fname,nline);
   fprintf(errorlog,"%s\n\n",message);
 
 #if _STDOUT_ERRORLOG_MODE_ == _STDOUT_ERRORLOG_MODE__ON_
   printf("$PREFIX:Thread=%i: (%i/%i %i:%i:%i)\n",ThisThread,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
-  printf("$PREFIX:file=%s, line=%i\n",fname,nline);
+  printf("$PREFIX:file=%s, line=%ld\n",fname,nline);
   printf("$PREFIX:%s\n\n",message);
 #endif
 
@@ -116,17 +116,17 @@ void PrintErrorLog(int nline, const char* fname, const char* message) {
 //===================================================
 //use: exit(__LINE__,__FILE__, "mesage")
 _TARGET_HOST_ _TARGET_DEVICE_
-void exit(int nline, const char* fname, const char* msg) {
+void exit(long int nline, const char* fname, const char* msg) {
   char str[1000];
   int t1,t2;
 
   UnpackExitErrorCode(t1,t2); 
 
   if (msg==NULL) {
-    printf("$PREFIX: exit: line=%i, file=%s (error code=%i.%i)\n",nline,fname,t1,t2);
+    printf("$PREFIX: exit: line=%ld, file=%s (error code=%i.%i)\n",nline,fname,t1,t2);
   }
   else {
-    printf("$PREFIX: exit: line=%i, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
+    printf("$PREFIX: exit: line=%ld, file=%s, message=%s (error code=%i.%i)\n",nline,fname,msg,t1,t2);
   }
 
   #ifndef __CUDA_ARCH__  
@@ -144,14 +144,14 @@ void exit(int nline, const char* fname, const char* msg) {
   exit(0);
 }
 
-void PrintLineMark(int nline ,char* fname ,char* msg) {
+void PrintLineMark(long int nline ,char* fname ,char* msg) {
 #ifdef MPI_ON
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 #endif
 
   if (ThisThread==0) {
-    if (msg==NULL) printf("$PREFIX:linemark: line=%i, file=%s\n",nline,fname);
-    else printf("$PREFIX:linemark: line=%i, file=%s, message=%s\n",nline,fname,msg);
+    if (msg==NULL) printf("$PREFIX:linemark: line=%ld, file=%s\n",nline,fname);
+    else printf("$PREFIX:linemark: line=%ld, file=%s, message=%s\n",nline,fname,msg);
   }
 }
 
@@ -161,7 +161,7 @@ void Debugger::SaveDataIntoStream(void* data,int length,const char* msg) {
 
   struct cStreamBuffer {
     int CollCounter;
-    unsigned int CheckSum;
+    unsigned long CheckSum;
     char CallPoint[200];
   };
 
