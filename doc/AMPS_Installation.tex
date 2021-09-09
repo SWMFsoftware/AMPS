@@ -177,13 +177,13 @@ Below is one example of applying the functions.
 void saveRestartData(FILE* fname){
 // Only the root processor can write.
   if (PIC::Mesh::mesh->ThisThread==0) {
-    fwrite(&iterNumber, sizeof(int),1, fname);
+    fwrite(&iterNumber, sizeof(long int),1, fname);
     std::cout<<"save iter number="<<iterNumber<<std::endl;
   }
 }
 
 void readRestartData(FILE* fname){
-  fread(&iterNumber, sizeof(int),1, fname);
+  fread(&iterNumber, sizeof(long int),1, fname);
   std::cout<<"read iter number="<<iterNumber<<std::endl;
 }
 
@@ -194,7 +194,7 @@ int main(){
  PIC::Restart::SetUserAdditionalRestartData(&readRestartData,&saveRestartData);         
 // should be put before the iteration loop.
 ...
-  for (int niter=0;niter<nTotalIterations;niter++) {
+  for (long int niter=0;niter<nTotalIterations;niter++) {
 
 ...
   }
