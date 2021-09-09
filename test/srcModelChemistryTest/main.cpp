@@ -207,7 +207,7 @@ void CountParticles(double *ParticleCouter,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
   int i,j,k,FirstCellParticle;
   double v0[3],v1[3],cr;
   double static v[3]={0.0,0.0,0.0};
-  int p;
+  long int p;
 
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
@@ -243,7 +243,7 @@ void CountParticles(double *ParticleCouter,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 
 //================================================================================================
 //reflection of a particle from the boundaries of the compukrational domain
-int ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
+int ProcessOutsideDomainParticles(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
   int idim;
   double c=0.0,e[3]={0.0,0.0,0.0};
 
@@ -273,7 +273,7 @@ int ProcessOutsideDomainParticles(int ptr,double* xInit,double* vInit,int nInter
 double h2oTheoreticalLifeTime=0.0;
 double ProductionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies];
 
-double TheoreticalLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+double TheoreticalLifeTime(double *x,int spec,long int ptr,bool &PhotolyticReactionAllowedFlag,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   double res=0.0;
 
   PhotolyticReactionAllowedFlag=(spec==_H2O_SPEC_) ? true : false;
@@ -288,7 +288,7 @@ double TheoreticalLifeTime(double *x,int spec,int ptr,bool &PhotolyticReactionAl
   return res;
 }
 
-int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, double ReactionTimeInterval,double ReactionTimeIntervalLeft,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,long int ptr,int &spec,PIC::ParticleBuffer::byte *ParticleData, double ReactionTimeInterval,double ReactionTimeIntervalLeft,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel;
@@ -365,7 +365,7 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &s
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0;
     int iProduct;
-    int newParticle;
+    long int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 
@@ -465,7 +465,7 @@ int ReactionProcessor(double *xInit,double *xFinal,double *vFinal,int ptr,int &s
 }
 
 
-void PhotochemicalModel(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+void PhotochemicalModel(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel,spec;
@@ -571,7 +571,7 @@ void PhotochemicalModel(int ptr,int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::c
     double ProductTimeStep,ProductParticleWeight;
     double ModelParticleInjectionRate,TimeCounter=0.0,TimeIncrement,ProductWeightCorrection=1.0;
     int iProduct;
-    int newParticle;
+    long int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
 
@@ -691,7 +691,7 @@ void PhotochemicalModelWrapper(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode
   int i,j,k;
   double v0[3],v1[3],cr;
   double static v[3]={0.0,0.0,0.0};
-  int p,pnext,oldFirstCellParticle,newFirstCellParticle;
+  long int p,pnext,oldFirstCellParticle,newFirstCellParticle;
 
 
   if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
@@ -721,7 +721,7 @@ void PhotochemicalModelWrapper(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode
                   p=pnext;
 
 
-                  for (int pp=newFirstCellParticle;pp!=-1;pp=PIC::ParticleBuffer::GetNext(pp)) {
+                  for (long int pp=newFirstCellParticle;pp!=-1;pp=PIC::ParticleBuffer::GetNext(pp)) {
                     if (PIC::ParticleBuffer::IsParticleAllocated(pp)==false) exit(__LINE__,__FILE__,"Error: the particle is re-deleted");
 
 

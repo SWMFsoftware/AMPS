@@ -53,7 +53,6 @@ void PIC::ParticleBuffer::Init(int BufrerLength) {
   MaxNPart=BufrerLength;
 //  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
 
-  #if defined(__linux__)
   if ( _CUDA_MODE_ == _ON_) {
     amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   }
@@ -68,9 +67,6 @@ void PIC::ParticleBuffer::Init(int BufrerLength) {
       amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
     }
   }
-  #else 
-  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
-  #endif
 
   char *p=(char*)ParticleDataBuffer;
   for (int i=0;i<ParticleDataLength*MaxNPart;i++) p[i]=0;
