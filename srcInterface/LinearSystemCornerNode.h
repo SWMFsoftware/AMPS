@@ -46,19 +46,14 @@ public:
   double *SubdomainPartialRHS,*SubdomainPartialUnknownsVector;
   int SubdomainPartialUnknownsVectorLength;
 
-  //counter of the matrix modifications 
-  int nMartixModifications;
-
   class cStencilElementData {
   public: 
     int UnknownVectorIndex,iVar,Thread;
     double MatrixElementValue;
-    double *rhs;
   
     cStencilElementData() {
       UnknownVectorIndex=-1,iVar=-1,Thread=-1;
       MatrixElementValue=0.0;
-      rhs=NULL;
     }
   };
 
@@ -200,9 +195,6 @@ public:
   cLinearSystemCornerNode() {
     MatrixRowListFirst=NULL,MatrixRowListLast=NULL;
     MatrixRowTable=NULL,MatrixRowTableLength=0;
-
-    //counter of the matrix modifications
-    nMartixModifications=0;
 
     //exchange buffers
     RecvExchangeBufferLength=NULL;
@@ -553,9 +545,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 //  int Debug=0;
 
   nRealBlocks=0;
-
-  //increment the matrix modification counter 
-  nMartixModifications++;
 
   //reset indexing of the nodes
   Reset();
@@ -912,13 +901,10 @@ int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::ExchangeIntermediateUnknownsData(double *x,double** &LocalRecvExchangeBufferTable) {
   int To,From;
 
-//  LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads];
+  LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads];
   
   MPI_Datatype *unknown_vector_type_table=new MPI_Datatype[PIC::nTotalThreads];
   
-  if (LocalRecvExchangeBufferTable==NULL) {
-    LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads]; 
-
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
     if (NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]>0) {
       LocalRecvExchangeBufferTable[thread]=new double [NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]];
@@ -927,7 +913,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       LocalRecvExchangeBufferTable[thread]=NULL;
     }  
   } 
-}
 
 
   MPI_Request RecvRequestTable[PIC::nTotalThreads],SendRequestTable[PIC::nTotalThreads];
@@ -1274,57 +1259,10 @@ _TARGET_HOST_
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
 
 
-  static double **RecvExchangeBufferTable=NULL;
-  static int nMartixModificationsLocal=-1;  
-
-  static double *x_local=NULL;
-  static int length_local=-1;
-
-  if (x_local==NULL) {
-    x_local=new double [length];
-    length_local=length;
-  }
-  else if (length_local!=length) {
-    delete [] x_local;
-
-    x_local=new double [length];
-    length_local=length;
-  } 
-
-  memcpy(x_local,x,length*sizeof(double));
-  
-
-  if ((nMartixModificationsLocal!=nMartixModifications)&&(RecvExchangeBufferTable!=NULL)) {
-    RecvExchangeBufferTable[PIC::ThisThread]=NULL;
-
-    for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
-      delete [] RecvExchangeBufferTable[thread];
-    }
-
-    delete [] RecvExchangeBufferTable;
-    RecvExchangeBufferTable=NULL;
-  }
+  double **RecvExchangeBufferTable;
 
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
-  RecvExchangeBufferTable[PIC::ThisThread]=x_local;
-
-  if (nMartixModificationsLocal!=nMartixModifications) {
-    for (int irow=0;irow<MatrixRowTableLength;irow++) {
-      int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
-      cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
-
-      for (int iElement=0;iElement<iElementMax;iElement++) {
-        cStencilElementData *data=ElementDataTable+iElement;
-
-        data->rhs=&RecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]; 
-      }
-    }
-
-    nMartixModificationsLocal=nMartixModifications;
-  }
-
-
-
+  RecvExchangeBufferTable[PIC::ThisThread]=x;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel default(none) shared (RecvExchangeBufferTable,PIC::ThisThread,PIC::nTotalThreads,p) firstprivate(length)
@@ -1443,7 +1381,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     //add the rest of the vector
     for (;iElement<iElementMax;iElement++) {
       data=ElementDataTable+iElement;
-      res+=data->MatrixElementValue*(*data->rhs);
+      res+=data->MatrixElementValue*LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
     }
 
      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -1457,6 +1395,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 }
 
+  RecvExchangeBufferTable[PIC::ThisThread]=NULL;
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) { 
+    delete [] RecvExchangeBufferTable[thread]; 
+  }
+
+  delete [] RecvExchangeBufferTable;
 }
 #endif //_PIC_MATMUL_MPI_MULTITHREAD_
 
