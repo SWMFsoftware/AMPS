@@ -27,6 +27,24 @@
 #define _PIC_MATMUL_MPI_MULTITHREAD_ _PIC_MODE_OFF_
 #endif
 
+
+
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
+  #ifndef _AVX_MATMUL_ 
+  #define _AVX_MATMUL_ _ON_
+  #endif
+#elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
+  #ifndef _AVX_MATMUL_ 
+  #define _AVX_MATMUL_ _ON_
+  #endif
+#else 
+  #ifdef _AVX_MATMUL_
+  #undef _AVX_MATMUL_
+  #endif
+
+  #define  _AVX_MATMUL_  _OFF_
+#endif
+
 class cLinearSystemCornerNodeDataRequestListElement {
 public:
   int CornerNodeID;
@@ -801,11 +819,13 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
         el_data->UnknownVectorIndex=el->CornerNode->LinearSolverUnknownVectorIndex;
         el_data->Thread=el->node->Thread;
+nMartixModifications++;
       }
       else {
         //the point is within the 'virtual' block
         el_data->UnknownVectorIndex=DataExchangeTableCounter[el->node->Thread]++;
         el_data->Thread=el->node->Thread;
+nMartixModifications++;
       }
     }
   }
@@ -1145,8 +1165,8 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
         int iElement=0;
         cStencilElementData *data,*data_next,*data_next_next=NULL;
         double *u_vect,*u_vect_next;
-
-#if (_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_)&&(_AVX_MATMUL_==_ON_)) 
+#if _AVX_MATMUL_ == _ON_
+#if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_ 
         //add most of the vector
         for (;iElement+3<iElementMax;iElement+=4) {
           alignas(32) double a[4],b[4],*r;
@@ -1170,7 +1190,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
           res+=r[1]+r[2];
         }
 
-#elif (_AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_)&&(_AVX_MATMUL_==_ON_)) 
+#elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
         //add most of the vector
         for (;iElement+7<iElementMax;iElement+=8) {
           __m512d av,bv,cv;
@@ -1220,7 +1240,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
           res+=r[1]+r[2];
         }
 #endif
-
+#endif
         //add the rest of the vector
         for (;iElement<iElementMax;iElement++) {
           data=ElementDataTable+iElement;
@@ -1282,13 +1302,11 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
   if (x_local==NULL) {
     x_local=new double [length];
-    length_local=length;
   }
   else if (length_local!=length) {
     delete [] x_local;
 
     x_local=new double [length];
-    length_local=length;
   } 
 
   memcpy(x_local,x,length*sizeof(double));
@@ -1308,7 +1326,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
   RecvExchangeBufferTable[PIC::ThisThread]=x_local;
 
-  if (nMartixModificationsLocal!=nMartixModifications) {
+  if ((nMartixModificationsLocal!=nMartixModifications)||(length_local!=length)) {
     for (int irow=0;irow<MatrixRowTableLength;irow++) {
       int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
       cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
@@ -1321,19 +1339,22 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     }
 
     nMartixModificationsLocal=nMartixModifications;
+    length_local=length; 
   }
-
-
 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel default(none) shared (RecvExchangeBufferTable,PIC::ThisThread,PIC::nTotalThreads,p) firstprivate(length)
 #endif
 {
+
+/*
   double **LocalRecvExchangeBufferTable;
+
  
   LocalRecvExchangeBufferTable=new double*[PIC::nTotalThreads];
   for (int thread=0;thread<PIC::nTotalThreads;thread++) LocalRecvExchangeBufferTable[thread]=RecvExchangeBufferTable[thread];
+*/
 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -1349,44 +1370,21 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     cStencilElementData *data,*data_next,*data_next_next=NULL;
     double *u_vect,*u_vect_next;
 
+    #if _AVX_MATMUL_ == _ON_
     #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__256_
     //add most of the vector
     for (;iElement+3<iElementMax;iElement+=4) {
-      alignas(32) double a[4],b[4],*r;
-      __m256d av,bv,cv,rv;
+      __m256d cv,rv;
 
       data=ElementDataTable+iElement;
-      /*
-      a[0]=data->MatrixElementValue,b[0]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
 
-      data=ElementDataTable+iElement+1;
-      a[1]=data->MatrixElementValue,b[1]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+      cv=_mm256_mul_pd(
+        _mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue),         
+        _mm256_set_pd(*((data+3)->rhs),*((data+2)->rhs),*((data+1)->rhs),*data->rhs)); 
 
-      data=ElementDataTable+iElement+2;
-      a[2]=data->MatrixElementValue,b[2]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
-
-      data=ElementDataTable+iElement+3;
-      a[3]=data->MatrixElementValue,b[3]=LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
-      */
-
-
-      av=_mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
-
-      bv=_mm256_set_pd(
-		      LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex], 
-		      LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex], 
-		      LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex], 
-		      LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
-		      );
-
-
-   //   av=_mm256_load_pd(a);
-   //   bv=_mm256_load_pd(b);
-      cv=_mm256_mul_pd(av,bv);
       rv=_mm256_hadd_pd(cv,cv);
 
-      r=(double*)&rv;
-      res+=r[1]+r[2];
+      res+=rv[1]+rv[2];
     }
 
     #elif _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__512_
@@ -1401,15 +1399,15 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 		      (data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);  
 
       bv=_mm512_set_pd(
-		      LocalRecvExchangeBufferTable[(data+7)->Thread][(data+7)->iVar+NodeUnknownVariableVectorLength*(data+7)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+6)->Thread][(data+6)->iVar+NodeUnknownVariableVectorLength*(data+6)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+5)->Thread][(data+5)->iVar+NodeUnknownVariableVectorLength*(data+5)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+4)->Thread][(data+4)->iVar+NodeUnknownVariableVectorLength*(data+4)->UnknownVectorIndex], 
+		      RecvExchangeBufferTable[(data+7)->Thread][(data+7)->iVar+NodeUnknownVariableVectorLength*(data+7)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+6)->Thread][(data+6)->iVar+NodeUnknownVariableVectorLength*(data+6)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+5)->Thread][(data+5)->iVar+NodeUnknownVariableVectorLength*(data+5)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+4)->Thread][(data+4)->iVar+NodeUnknownVariableVectorLength*(data+4)->UnknownVectorIndex], 
 
-                      LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+                      RecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
                       );
 
       cv=_mm512_mul_pd(av,bv);
@@ -1426,10 +1424,10 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       av=_mm256_set_pd((data+3)->MatrixElementValue,(data+2)->MatrixElementValue,(data+1)->MatrixElementValue,data->MatrixElementValue);
 
       bv=_mm256_set_pd(
-                      LocalRecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
-                      LocalRecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
+                      RecvExchangeBufferTable[(data+3)->Thread][(data+3)->iVar+NodeUnknownVariableVectorLength*(data+3)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+2)->Thread][(data+2)->iVar+NodeUnknownVariableVectorLength*(data+2)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[(data+1)->Thread][(data+1)->iVar+NodeUnknownVariableVectorLength*(data+1)->UnknownVectorIndex],
+                      RecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex]
                       );
 
       cv=_mm256_mul_pd(av,bv);
@@ -1438,6 +1436,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
       r=(double*)&rv;
       res+=r[1]+r[2];
     }  
+    #endif
     #endif
 
     //add the rest of the vector
@@ -1452,9 +1451,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
      p[irow]=res;
   }
-
-  delete [] LocalRecvExchangeBufferTable;
-
 }
 
 }
