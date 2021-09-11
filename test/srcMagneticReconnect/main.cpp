@@ -236,11 +236,11 @@ long int PrepopulateDomain() {
       // (rho/m)T=P
       //plasmaTemp = P/Rho = kT/m
 
-      std::cout<<"MassDensity: "<<MassDensity<<"cell volume: "<<CellVolume<<"anpart: "<<anpart<<std::endl;
+      if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) std::cout<<"MassDensity: "<<MassDensity<<"cell volume: "<<CellVolume<<"anpart: "<<anpart<<std::endl;
       npart=(int)(anpart);
       //if (rnd()<anpart-npart) npart++;
       nLocalInjectedParticles+=npart*2;
-      std::cout<<"need to inject npart: "<<npart<<std::endl;
+      if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) std::cout<<"need to inject npart: "<<npart<<std::endl;
 
       double uth_e=sqrt(Pe/(MassDensity/ionMass*electronMass));
       double uth_i=sqrt(P/MassDensity);
@@ -655,7 +655,7 @@ int main(int argc,char **argv) {
       int GlobalParticleNumber;
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
       printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-      std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+      if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
 
       //    CleanParticles();
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
@@ -667,7 +667,7 @@ int main(int argc,char **argv) {
       LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
       MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
       printf("After prepopulating, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-      std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+      if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
 
 
     switch (_PIC_BC__PERIODIC_MODE_) {
@@ -679,9 +679,12 @@ int main(int argc,char **argv) {
       PIC::Parallel::UpdateGhostBlockData();
       break;
     }
-    PIC::Sampling::Sampling();
-    PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
-    PIC::RequiredSampleLength = 100;
+    
+    if (PIC::SamplingMode!=_DISABLED_SAMPLING_MODE_) {
+      PIC::Sampling::Sampling();
+      PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
+      PIC::RequiredSampleLength = 100;
+    }
 
     PIC::Debugger::cTimer Timer(_PIC_TIMER_MODE_HRES_);
 
