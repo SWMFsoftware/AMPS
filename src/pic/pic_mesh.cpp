@@ -462,11 +462,16 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   }
 
   PIC::Mesh::sampleSetDataLength=offset;
-
   PIC::Mesh::completedCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
-  PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
 
-  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
+  if (PIC::SamplingMode!=_DISABLED_SAMPLING_MODE_) {
+    PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
+  }
+  else {
+    PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::completedCellSampleDataPointerOffset;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=PIC::Mesh::sampleSetDataLength;
+  }
 
 
   //the volume partilce injection: save the volume particle injection rate
