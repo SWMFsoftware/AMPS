@@ -2636,18 +2636,59 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       //verify that the node is not a ghost
       if (startNode->TestFlag(periodic_bc_pair_ghost_block)==true) return;
 
+
+//check that the neib nodes either owned by different MPI processes or has a 'ghost' block
+
+              bool found=false;
+
+              for (int iTest=0;(iTest<3)&&(found==false);iTest++) {
+              int iNeib;
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neib;
+              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[6*4];
+              int NeibTableLength;
+
+
+                switch(iTest) {
+                case 0:
+                  startNode->GetFaceNeibTable(NeibTable,PIC::Mesh::mesh);
+
+                  NeibTableLength=6*4;
+                  break;
+                case 1:
+                  startNode->GetCornerNeibTable(NeibTable,PIC::Mesh::mesh);
+
+                  NeibTableLength=8;
+                  break;
+                case 2:
+                  startNode->GetEdgeNeibTable(NeibTable,PIC::Mesh::mesh);
+
+                  NeibTableLength=12*2;
+                  break;
+                }
+
+                for (int iii=0;iii<NeibTableLength;iii++) if ((neib=NeibTable[iii])!=NULL) if ((neib->Thread!=startNode->Thread)||(neib->TestFlag(periodic_bc_pair_ghost_block)==true)) {
+                  found=true;
+                  break;
+                }
+              }
+
+              if (found==false) return; 
+
+
+
+
       //verify that the block is allocated at least by one MPI process
       BlockAllocated=((block=startNode->block)!=NULL) ? true : false;
 
       flag=BlockAllocated;
-      MPI_Bcast(&flag,1,MPI_INT,startNode->Thread,MPI_GLOBAL_COMMUNICATOR);
+//      MPI_Bcast(&flag,1,MPI_INT,startNode->Thread,MPI_GLOBAL_COMMUNICATOR);
 
-      if (flag==false) return;
+//      if (flag==false) return;
 
       //loop through all faces of the block
       for (iface=0;iface<6;iface++) {
 
-        MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+ //       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
         //loop through all nodes at the faces
         for (i=iFaceMin[iface];i<=iFaceMax[iface];i++) for (j=jFaceMin[iface];j<=jFaceMax[iface];j++) for (k=kFaceMin[iface];k<=kFaceMax[iface];k++) {
