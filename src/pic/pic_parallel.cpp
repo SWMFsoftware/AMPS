@@ -2607,6 +2607,9 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
   
   char **LocalCornerNodeAssociatedDataPointerTable=NULL;
   int *LocalContributingThreadTable=NULL;
+
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[6*4];
+
   
   BuildStencilTable = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,bool AllocateStencilFlag) -> void {
     cStencilData StencilData;
@@ -2644,7 +2647,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
               for (int iTest=0;(iTest<3)&&(found==false);iTest++) {
               int iNeib;
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *neib;
-              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[6*4];
+//              cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibTable[6*4];
               int NeibTableLength;
 
 
