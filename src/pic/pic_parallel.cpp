@@ -2548,7 +2548,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
           neibNode=PIC::Mesh::mesh->findTreeNode(xSearch,Node);
 
-          if (neibNode!=NULL) if (neibNode->TestFlag(periodic_bc_pair_ghost_block)==false) {
+          if (neibNode!=NULL) if ((neibNode->TestFlag(periodic_bc_pair_ghost_block)==false)&&(neibNode->IsUsedInCalculationFlag==true)) {
             //a MPI process can contribute only ones 
             bool flag=true;
 
@@ -2595,7 +2595,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
       
       //verify that the node is not a ghost
       if (Node->Thread!=PIC::ThisThread) return;
-      if (Node->TestFlag(periodic_bc_pair_ghost_block)==true) return;
+      if ((Node->TestFlag(periodic_bc_pair_ghost_block)==true)||(Node->IsUsedInCalculationFlag==false)) return;
       if ((block=Node->block)==NULL) return;
       
       double dx[3],xSearch[3],xCorner[3],L[3];
