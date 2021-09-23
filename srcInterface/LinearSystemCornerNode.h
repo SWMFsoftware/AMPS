@@ -1125,10 +1125,55 @@ int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
 _TARGET_DEVICE_
 void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
-  double **RecvExchangeBufferTable;
+
+  static double **RecvExchangeBufferTable=NULL;
+  static int nMartixModificationsLocal=-1;
+
+  static double *x_local=NULL;
+  static int length_local=-1;
+
+  if (x_local==NULL) {
+    x_local=new double [length];
+  }
+  else if (length_local!=length) {
+    delete [] x_local;
+
+    x_local=new double [length];
+  }
+
+  memcpy(x_local,x,length*sizeof(double));
+
+
+  if ((nMartixModificationsLocal!=nMartixModifications)&&(RecvExchangeBufferTable!=NULL)) {
+    RecvExchangeBufferTable[PIC::ThisThread]=NULL;
+
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
+      delete [] RecvExchangeBufferTable[thread];
+    }
+
+    delete [] RecvExchangeBufferTable;
+    RecvExchangeBufferTable=NULL;
+  }
 
   ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
-  RecvExchangeBufferTable[PIC::ThisThread]=x;
+  RecvExchangeBufferTable[PIC::ThisThread]=x_local;
+
+  if ((nMartixModificationsLocal!=nMartixModifications)||(length_local!=length)) {
+    for (int irow=0;irow<MatrixRowTableLength;irow++) {
+      int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
+      cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
+
+      for (int iElement=0;iElement<iElementMax;iElement++) {
+        cStencilElementData *data=ElementDataTable+iElement;
+
+        data->rhs=&RecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+      }
+    }
+
+    nMartixModificationsLocal=nMartixModifications;
+    length_local=length;
+  }
+
 
   auto ProcessRow = [this,length,RecvExchangeBufferTable,p]  (int thread_id_table_size) {
     static Thread::Sync::cBarrier barrier(thread_id_table_size);
@@ -1275,14 +1320,6 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
     tTable[i].join();
   }
 
-
-  RecvExchangeBufferTable[PIC::ThisThread]=NULL;
-
-  for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
-    delete [] RecvExchangeBufferTable[thread];
-  }
-
-  delete [] RecvExchangeBufferTable;
 }
 
 
