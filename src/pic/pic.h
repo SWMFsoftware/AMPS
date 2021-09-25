@@ -6957,10 +6957,10 @@ void DeleteAttachedParticles();
       extern char RestartFileName[_MAX_STRING_LENGTH_PIC_]; //<- SAVE INTO THIS FILE: the name of the sampled restart file that will be used in the 'read' procedures to recoved the sampled data. The name is set in AMPS' input file
 
       void Save(const char*);
-      void SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,CMPI_channel*,FILE*);
+      void SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
 
       void Read(const char*);
-      void ReadBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
+      void ReadBlock(FILE*);
 
       //Read Sampling data range
       //the new function and variables are placed into the namespace. Old variables are
@@ -6990,10 +6990,10 @@ void DeleteAttachedParticles();
     void SetUserAdditionalRestartData(fUserAdditionalRestartData fRead,fUserAdditionalRestartData fSave);
 
     void SaveParticleData(const char*);
-    void SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,CMPI_channel*,FILE*);
+    void SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
 
     void ReadParticleData(const char*);
-    void ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
+    void ReadParticleDataBlock(FILE*);
     long int GetRestartFileParticleNumber(const char *fname);
 
     //calcualte the check sum of the save/read particle data

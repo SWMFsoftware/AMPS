@@ -42,43 +42,51 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   mpiBufferSize=max((int)10.0*BlockDataSize,(int)10000000);
 
   //init the MPI channel and open the restart file
-  CMPI_channel pipe(mpiBufferSize);
+  char fname_full[500];  
+  
+  sprintf(fname_full,"%s.thread=%i.tmp",fname);
+  fRestart=fopen(fname_full,"w");
 
-  if (PIC::Mesh::mesh->ThisThread==0) {
-    pipe.openRecvAll();
+  if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
 
-    fRestart=fopen(fname,"w");
-
-    if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
-
+  if (PIC::ThisThread==0) {
     fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
     fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
   }
-  else {
-    pipe.openSend(0);
-  }
   
   //save the restart information
-  SaveBlock(PIC::Mesh::mesh->rootTree,&pipe,fRestart);
+  SaveBlock(PIC::Mesh::mesh->rootTree,fRestart);
 
-  //close the MPI channel and the restart file
-  if (PIC::Mesh::mesh->ThisThread==0) {
-    pipe.closeRecvAll();
-    fclose(fRestart);
-  }
-  else {
-    pipe.closeSend();
+
+  fclose (fRestart);
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  //combine separated restart files in a single files 
+  if (ThisThread==0) {
+    std::ofstream  dst(fname,   std::ios::binary);
+  
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+      sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
+
+      std::ifstream  src(fname_full, std::ios::binary);
+      dst<<src.rdbuf();
+
+      src.close();
+      remove(fname_full); 
+    }
+
+    dst.close();
   }
   
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
 
-void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,CMPI_channel* pipe,FILE* fRestart) {
+void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
   int nAllocatedCells,nAllocatedCorners,i,j,k;
 
   //save the data
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if ((node->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
+    if (node->Thread==PIC::ThisThread) {
       int LocalCellNumber, LocalCornerNumber;
       PIC::Mesh::cDataCenterNode *cell;
       PIC::Mesh::cDataCornerNode *corner;
@@ -88,90 +96,50 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
       nAllocatedCells=0;
       nAllocatedCorners=0;
       
-      if (node->Thread==PIC::ThisThread) {
-        
-        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-              LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-              cell=node->block->GetCenterNode(LocalCellNumber);              
-              if (cell!=NULL) nAllocatedCells++;
-            }
-        
-        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
-              LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
-              corner=node->block->GetCornerNode(LocalCornerNumber);              
-              if (corner!=NULL) nAllocatedCorners++;
-            }
-        
-        
+      if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+        cell=node->block->GetCenterNode(LocalCellNumber);              
 
-        if (node->Thread!=0) pipe->send(nAllocatedCells);
-        if (node->Thread!=0) pipe->send(nAllocatedCorners);
+        if (cell!=NULL) nAllocatedCells++;
       }
-      else if (PIC::ThisThread==0) {
-        pipe->recv(&nAllocatedCells,1,node->Thread);
-        pipe->recv(&nAllocatedCorners,1,node->Thread);
+        
+      if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+        LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
+        corner=node->block->GetCornerNode(LocalCornerNumber);              
+
+        if (corner!=NULL) nAllocatedCorners++;
       }
       
-      if (PIC::ThisThread==0) {
-        fwrite(&nAllocatedCells,sizeof(int),1,fRestart);
-        fwrite(&nAllocatedCorners,sizeof(int),1,fRestart);     
-      }
+
+      fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart);
+      fwrite(&nAllocatedCells,sizeof(int),1,fRestart);
+      fwrite(&nAllocatedCorners,sizeof(int),1,fRestart);     
+
       //save the sampling data
-      if (node->Thread==PIC::ThisThread) {
-        
-        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-          LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-          cell=node->block->GetCenterNode(LocalCellNumber);
+      if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+        cell=node->block->GetCenterNode(LocalCellNumber);
 
-          if (cell==NULL) continue;
+        if (cell==NULL) continue;
 
-          SamplingData=cell->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-
-          if (PIC::ThisThread==0) {
-            fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
-          }
-          else {
-            //send the sampling information to the root processor
-            pipe->send(SamplingData,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength);
-          }
-            }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
-        
-        
-        if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
-              LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
-              corner=node->block->GetCornerNode(LocalCornerNumber);
-              
-              if (corner==NULL) continue;
-              
-              SamplingData=corner->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-              
-              if (PIC::ThisThread==0) {
-                fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
-              }
-              else {
-                //send the sampling information to the root processor
-                pipe->send(SamplingData,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength);
-              }
-            }//for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++)
+        SamplingData=cell->GetAssociatedDataBufferPointer();
+        fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
       }
-      else if (PIC::ThisThread==0) {
-        //recieve the sampling information from other processor and save it into a file
-        for (i=0;i<nAllocatedCells;i++) {
-          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,node->Thread);
-          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
-        }
-        for (i=0;i<nAllocatedCorners;i++) {
-          SamplingData=pipe->recvPointer<char>(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,node->Thread);
-          fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
-        }
+        
+      if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+        LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
+        corner=node->block->GetCornerNode(LocalCornerNumber);
+              
+        if (corner==NULL) continue;
+             
+        SamplingData=corner->GetAssociatedDataBufferPointer();
+        fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
       }
-      
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SamplingData::SaveBlock(node->downNode[nDownNode],pipe,fRestart);
+    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SamplingData::SaveBlock(node->downNode[nDownNode],fRestart);
   }
-  
 }
 
 void PIC::Restart::SamplingData::Read(const char* fname) {
@@ -189,57 +157,57 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
   fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
   fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
 
-  SamplingData::ReadBlock(PIC::Mesh::mesh->rootTree,fRestart);
+  SamplingData::ReadBlock(fRestart);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
 
-void PIC::Restart::SamplingData::ReadBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
+void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
   int nAllocatedCells, nAllocatedCorners;
+  cAMRnodeID NodeId;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
-  //read the data
-  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+
+  while (feof(fRestart)==0) {
+    fread(&NodeId,sizeof(cAMRnodeID),1,fRestart);
     fread(&nAllocatedCells,sizeof(int),1,fRestart);
     fread(&nAllocatedCorners,sizeof(int),1,fRestart);
-    
-    if (node->block!=NULL) {
-      //read the data for this block
 
-      int i,j,k,LocalCellNumber, LocalCornerNumber;
-      PIC::Mesh::cDataCenterNode *cell;
-      PIC::Mesh::cDataCornerNode *corner;
-      char* SamplingData;
+    Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
 
-      //block is allocated -> march through the cells and save them into the restart file
-      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-            LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-            cell=node->block->GetCenterNode(LocalCellNumber);
-            
-            if (cell!=NULL) {
-              SamplingData=cell->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
-            }
-          }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
-      
-      for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
-            LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
-            corner=node->block->GetCornerNode(LocalCornerNumber);
-            
-            if (corner!=NULL) {
-              SamplingData=corner->GetAssociatedDataBufferPointer();//+PIC::Mesh::completedCellSampleDataPointerOffset;
-              fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
-            }
-          }//for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++)
-    }
-    else {
-      //skip the data for this block
+    if (Node->Thread!=PIC::ThisThread) {
       fseek(fRestart,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength*nAllocatedCells,SEEK_CUR);
       fseek(fRestart,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength*nAllocatedCorners,SEEK_CUR);
+ 
+      continue;
     }
-  }
-  else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) ReadBlock(node->downNode[nDownNode],fRestart);
+
+    //read the data for this block
+    int i,j,k,LocalCellNumber, LocalCornerNumber;
+    PIC::Mesh::cDataCenterNode *cell;
+    PIC::Mesh::cDataCornerNode *corner;
+    char* SamplingData;
+
+    for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+      LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+      cell=Node->block->GetCenterNode(LocalCellNumber);
+            
+      if (cell!=NULL) {
+        SamplingData=cell->GetAssociatedDataBufferPointer();
+        fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
+      }
+    }
+      
+    for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
+      LocalCornerNumber=_getCornerNodeLocalNumber(i,j,k);
+      corner=Node->block->GetCornerNode(LocalCornerNumber);
+            
+      if (corner!=NULL) {
+        SamplingData=corner->GetAssociatedDataBufferPointer();
+        fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
+      }
+    }
   }
 }
 
@@ -247,42 +215,53 @@ void PIC::Restart::SamplingData::ReadBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
 void PIC::Restart::SaveParticleData(const char* fname) {
   FILE *fRestart=NULL;
 
-  //init the MPI channel and open the restart file
-  CMPI_channel pipe(10000000);
 
   //open the restart file
-  if (PIC::Mesh::mesh->ThisThread==0) fRestart=fopen(fname,"w");
+  char fname_full[300];
+
+  sprintf(fname_full,"%s.thread=%i.tmp",fname,PIC::ThisThread);
+  fRestart=fopen(fname_full,"w");
 
   //call the user-defined function for saving additional data into the restart file
-  if (UserAdditionalRestartDataSave!=NULL) UserAdditionalRestartDataSave(fRestart);
+  if (PIC::ThisThread==0) {
+    if (UserAdditionalRestartDataSave!=NULL)  UserAdditionalRestartDataSave(fRestart);
 
-  //open the pipe
-  if (PIC::Mesh::mesh->ThisThread==0) {
-    //save the end-of-the-user-data-marker
     fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
-
-    pipe.openRecvAll();
   }
-  else pipe.openSend(0);
 
   //save the restart information
-  SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,&pipe,fRestart);
+  SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
+  fclose(fRestart);
 
-  //close the MPI channel and the restart file
-  if (PIC::Mesh::mesh->ThisThread==0) {
-    pipe.closeRecvAll();
-    fclose(fRestart);
+  //combine the multiple files in a single restart file
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  if (ThisThread==0) {
+    std::ofstream  dst(fname,   std::ios::binary);
+
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+      sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
+
+      std::ifstream  src(fname_full, std::ios::binary);
+      dst<<src.rdbuf();
+
+      src.close();
+      remove(fname_full);
+    }
+
+    dst.close();
   }
-  else pipe.closeSend();
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread==0) printf("$PREFIX: Saving particle restart file: %s\n",fname);
   GetParticleDataCheckSum();
 }
 
-void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,CMPI_channel* pipe,FILE* fRestart) {
+void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
   //save the data
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-    if ((node->Thread==PIC::ThisThread)||(PIC::ThisThread==0)) {
+    if (node->Thread==PIC::ThisThread) {
       int i,j,k;
       long int ptr;
 
@@ -291,68 +270,50 @@ void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
       int ParticleNumberTable[_BLOCK_CELLS_X_][_BLOCK_CELLS_Y_][_BLOCK_CELLS_Z_];
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
-      if (node->Thread==PIC::ThisThread) {
-        if (node->block!=NULL) {
-          memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+      if (node->block!=NULL) {
+        memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
+        for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          ParticleNumberTable[i][j][k]=0;
+          ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+          while (ptr!=-1) {
+            ParticleNumberTable[i][j][k]++;
+            nTotalParticleNumber++;
+            ptr=PIC::ParticleBuffer::GetNext(ptr);
+          }
+        }
+
+        //save the particle number into the restart file
+        if (nTotalParticleNumber!=0) {
+          fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart);
+          fwrite(&nTotalParticleNumber,sizeof(int),1,fRestart);
+          fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart);
+
+          //save the particle data into the restart file
+          //IMPORTANT: save the partilce data in the reverse order so, when thay are read back from the restart file they are in the seme order as
+          //in the memory before saving --> the checksum of the particle data is the same
           for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-            ParticleNumberTable[i][j][k]=0;
-            ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+            char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
+            int n;
 
-            while (ptr!=-1) {
-              ParticleNumberTable[i][j][k]++;
-              nTotalParticleNumber++;
-              ptr=PIC::ParticleBuffer::GetNext(ptr);
+            for (n=0;n<ParticleNumberTable[i][j][k];n++) {
+              if (n==0) {
+                ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+                for (int t=0;t<ParticleNumberTable[i][j][k]-1;t++) ptr=PIC::ParticleBuffer::GetNext(ptr);
+              }
+              else ptr=PIC::ParticleBuffer::GetPrev(ptr);
+
+              memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
+              fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart);
             }
           }
-        }
-
-        if (node->Thread!=0) {
-          pipe->send(nTotalParticleNumber);
-          if (nTotalParticleNumber!=0) pipe->send(&ParticleNumberTable[0][0][0],_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
-        }
-      }
-      else if (PIC::ThisThread==0) {
-        pipe->recv(&nTotalParticleNumber,1,node->Thread);
-        if (nTotalParticleNumber!=0) pipe->recv(&ParticleNumberTable[0][0][0],_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,node->Thread);
-      }
-
-      //save the particle number into the restart file
-      if (PIC::ThisThread==0) {
-        fwrite(&nTotalParticleNumber,sizeof(int),1,fRestart);
-        if (nTotalParticleNumber!=0) fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart);
-      }
-
-      //save the particle data into the restart file
-      //IMPORTANT: save the partilce data in the reverse order so, when thay are read back from the restart file they are in the seme order as
-      //in the memory before saving --> the checksum of the particle data is the same
-      if (nTotalParticleNumber!=0) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-        char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
-        int n;
-
-        for (n=0;n<ParticleNumberTable[i][j][k];n++) {
-          if (node->Thread==PIC::ThisThread) {
-            if (n==0) {
-              ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-              for (int t=0;t<ParticleNumberTable[i][j][k]-1;t++) ptr=PIC::ParticleBuffer::GetNext(ptr);
-            }
-            else ptr=PIC::ParticleBuffer::GetPrev(ptr);
-
-           memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
-
-           if (node->Thread!=0) pipe->send(tempParticleData,PIC::ParticleBuffer::ParticleDataLength);
-          }
-          else {
-            pipe->recv(tempParticleData,PIC::ParticleBuffer::ParticleDataLength,node->Thread);
-          }
-
-          if (PIC::ThisThread==0) fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart);
         }
       }
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SaveParticleDataBlock(node->downNode[nDownNode],pipe,fRestart);
+    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SaveParticleDataBlock(node->downNode[nDownNode],fRestart);
   }
 }
 
@@ -361,60 +322,54 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   long int res=0;
   FILE* fRestart;
 
-  std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> SearchBlock;
-
-
-  SearchBlock = [&] (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) -> void {
-    //read the data
-    if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
-      int nTotalParticleNumber=0;
-
-      fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
-      res+=nTotalParticleNumber;
-
-      if (nTotalParticleNumber!=0) {
-        //skip the data for this block
-        fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
-      }
-    }
-    else {
-      for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SearchBlock(node->downNode[nDownNode]);
-    }
-  };
-
   fRestart=fopen(fname,"r");
 
   if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
 
-  //read the end-of-the-user-data-marker
-  char msg[UserAdditionalRestartDataCompletedMarkerLength];
-  fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+  while (feof(fRestart)==0) {
+    int nTotalParticleNumber=0;
 
-  if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
-    exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
+    fseek(fRestart,sizeof(cAMRnodeID),SEEK_CUR);
+    fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
+
+    res+=nTotalParticleNumber;
+
+    if (nTotalParticleNumber!=0) {
+      //skip the data for this block
+      fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+        nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+    }
   }
 
-  SearchBlock(PIC::Mesh::mesh->rootTree);
   fclose(fRestart);
 
   return res;
 }
 
-void PIC::Restart::ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
+void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
   //read the data
-  if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+  while (feof(fRestart)==0) {
     int nTotalParticleNumber=0;
     int ParticleNumberTable[_BLOCK_CELLS_X_][_BLOCK_CELLS_Y_][_BLOCK_CELLS_Z_];
     long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+    cAMRnodeID NodeId;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
+    fread(&NodeId,sizeof(cAMRnodeID),1,fRestart);
     fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
 
     if (nTotalParticleNumber!=0) {
-      if (node->Thread==PIC::ThisThread) { ///(node->block!=NULL) {
+      Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
+
+      if (Node->Thread!=PIC::ThisThread) {
+        //skip the data for this block
+        fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+      }
+      else {
         //read the data for this block
         fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart);
-        memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+        memcpy(FirstCellParticleTable,Node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
         int i,j,k,np;
         char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
@@ -447,24 +402,16 @@ void PIC::Restart::ReadParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
                 PIC::ParticleBuffer::GetV(v,ParticleData);
                 spec=PIC::ParticleBuffer::GetI(ParticleData);
 
-                PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,(void *)ParticleData,(void*)node);
+                PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,(void *)ParticleData,(void*)Node);
               }
 
             }
           }
         }
 
-        memcpy(node->block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
-      }
-      else {
-        //skip the data for this block
-        fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-            nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+        memcpy(Node->block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
       }
     }
-  }
-  else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) ReadParticleDataBlock(node->downNode[nDownNode],fRestart);
   }
 }
 
@@ -492,10 +439,12 @@ void PIC::Restart::ReadParticleData(const char* fname) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
   }
 
-  ReadParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
+  ReadParticleDataBlock(fRestart);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread==0) printf("$PREFIX: Reading particle restart file: %s\n",fname);
   GetParticleDataCheckSum();
 }
 
@@ -558,8 +507,10 @@ void PIC::Restart::GetParticleDataBlockCheckSum(cTreeNodeAMR<PIC::Mesh::cDataBlo
           while (ptr!=-1) {
             memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
 
-            CheckSum->add(tempParticleData,sizeof(unsigned char));
-            CheckSum->add(tempParticleData+sizeof(unsigned char)+2*sizeof(long int),PIC::ParticleBuffer::ParticleDataLength-sizeof(unsigned char)-2*sizeof(long int)); 
+            PIC::ParticleBuffer::GetParticleSignature(ptr,CheckSum,false);
+
+     //       CheckSum->add(tempParticleData,sizeof(unsigned char));
+     //       CheckSum->add(tempParticleData+sizeof(unsigned char)+2*sizeof(long int),PIC::ParticleBuffer::ParticleDataLength-sizeof(unsigned char)-2*sizeof(long int)); 
 
             ptr=PIC::ParticleBuffer::GetNext(ptr);
           }
