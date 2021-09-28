@@ -578,7 +578,7 @@ int main(int argc,char **argv) {
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   if (PIC::ThisThread==0) printf("test1\n");
-  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
+//  PIC::Mesh::mesh->outputMeshTECPLOT("mesh_test.dat");
   
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
@@ -682,7 +682,24 @@ int main(int argc,char **argv) {
     
     if (PIC::SamplingMode!=_DISABLED_SAMPLING_MODE_) {
       PIC::Sampling::Sampling();
-      PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
+//      PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
+
+
+      switch (_PIC_OUTPUT_MODE_) {
+      case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:
+        PIC::Mesh::mesh->OutputDistributedDataTECPLOT("ic.dat",true,0);
+        break;
+      case _PIC_OUTPUT_MODE_SINGLE_FILE_:
+        PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
+        break;
+      case _PIC_OUTPUT_MODE_OFF_:
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
+
+
+
       PIC::RequiredSampleLength = 100;
     }
 
@@ -719,7 +736,24 @@ int main(int argc,char **argv) {
    
       // if (niter%10==0) PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
   
-      if (niter%100==0) PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
+      if (niter%100==0) {
+       //PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
+       
+        switch (_PIC_OUTPUT_MODE_) {
+        case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:
+          PIC::Mesh::mesh->OutputDistributedDataTECPLOT(fname,true,0);
+          break;
+        case _PIC_OUTPUT_MODE_SINGLE_FILE_:
+          PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,0);
+          break;
+        case _PIC_OUTPUT_MODE_OFF_:
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: the option is unknown");
+        }
+      }
+
+      
     }
  
   Timer.PrintMeanMPI("The total execution time of the reconnection test");

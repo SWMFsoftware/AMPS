@@ -5345,13 +5345,19 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCenterNodeData(FILE*
   int idim;
   double * t;
 
-  if (pipe->ThisThread==CenterNodeThread) {
+  bool gather_print_data=false;
+
+  if (pipe==NULL) gather_print_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
+
+
+  if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     t= (double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+CurrentBOffset);
     // t= (double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
   }
   
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) t=pipe->recvPointer<double>(3,CenterNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) { // (pipe->ThisThread==0) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) t=pipe->recvPointer<double>(3,CenterNodeThread);
     fprintf(fout,"%e %e %e ",t[0],t[1],t[2]);
   }
   else pipe->send(t,3);
@@ -5366,12 +5372,18 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::output::PrintCornerNodeData(FILE*
   int idim;
   double * t;
 
-  if (pipe->ThisThread==CornerNodeThread) {
+  bool gather_print_data=false;
+
+  if (pipe==NULL) gather_print_data=true;
+  else if (pipe->ThisThread==CornerNodeThread) gather_print_data=true;
+
+
+  if (gather_print_data==true) { // (pipe->ThisThread==CornerNodeThread) {
     t= ((double*)(CornerNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+CurrentEOffset));
   }
 
-  if (pipe->ThisThread==0) {
-    if (CornerNodeThread!=0) t=pipe->recvPointer<double>(3,CornerNodeThread);
+  if ((PIC::ThisThread==0)||(pipe==NULL)) {// (pipe->ThisThread==0) {
+    if ((CornerNodeThread!=0)&&(pipe!=NULL)) t=pipe->recvPointer<double>(3,CornerNodeThread);
     fprintf(fout,"%e %e %e ",t[0],t[1],t[2]);
   }
   else pipe->send(t,3);
