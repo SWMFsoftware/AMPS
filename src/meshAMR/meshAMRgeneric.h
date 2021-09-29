@@ -7512,9 +7512,15 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
       cCenterNode *tempCenterNode,*CenterNodeInterpolationStencil[nMaxCenterInterpolationCoefficients];
       double CenterNodeInterpolationCoefficients[nMaxCenterInterpolationCoefficients];
       int centerNodeInterpolationStencilLength;
+      cCornerNode *CornerNode;
 
       
       Node->GetCornerNodePosition(xNode,iNode,jNode,kNode);
+
+      if (Node->block!=NULL) {
+        CornerNode=Node->block->GetCornerNode(getCornerNodeLocalNumber(iNode,jNode,kNode));
+        if (CornerNode!=NULL) CornerNode->PrintData(fData,DataSetNumber,NULL,Node->Thread);
+      }
 
       tempCenterNode=CenterNodes.newElement();
       tempCenterNode->SetX(xNode);
