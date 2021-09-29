@@ -44,7 +44,7 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   //init the MPI channel and open the restart file
   char fname_full[500];  
   
-  sprintf(fname_full,"%s.thread=%i.tmp",fname);
+  sprintf(fname_full,"%s.thread=%i.tmp",fname,PIC::ThisThread);
   fRestart=fopen(fname_full,"w");
 
   if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
@@ -170,15 +170,15 @@ void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
 
 
   while (feof(fRestart)==0) {
-    fread(&NodeId,sizeof(cAMRnodeID),1,fRestart);
-    fread(&nAllocatedCells,sizeof(int),1,fRestart);
-    fread(&nAllocatedCorners,sizeof(int),1,fRestart);
+    if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)==0) return;
+    if (fread(&nAllocatedCells,sizeof(int),1,fRestart)==0) return;
+    if (fread(&nAllocatedCorners,sizeof(int),1,fRestart)==0) return;
 
     Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
 
     if (Node->Thread!=PIC::ThisThread) {
-      fseek(fRestart,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength*nAllocatedCells,SEEK_CUR);
-      fseek(fRestart,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength*nAllocatedCorners,SEEK_CUR);
+      if (fseek(fRestart,PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength*nAllocatedCells,SEEK_CUR)!=0) return;
+      if (fseek(fRestart,PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength*nAllocatedCorners,SEEK_CUR)!=0) return;
  
       continue;
     }
@@ -363,12 +363,12 @@ void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
 
       if (Node->Thread!=PIC::ThisThread) {
         //skip the data for this block
-        fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR);
+        if (fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR)!=0) return;
       }
       else {
         //read the data for this block
-        fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart);
+        if (fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: file reading error");
         memcpy(FirstCellParticleTable,Node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
         int i,j,k,np;
