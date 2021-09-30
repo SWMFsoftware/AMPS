@@ -1973,6 +1973,9 @@ void PIC::Init_AfterParser() {
 
   //when cut-cells are used init the cut-cell access coutner
   if (_AMR__CUT_CELL__MODE_==_AMR__CUT_CELL__MODE__ON_) PIC::Mesh::IrregularSurface::CutFaceAccessCounter::Init();
+
+  //init the gyrokinetic model
+  if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) PIC::GYROKINETIC::Init(); 
 }
 
 //====================================================

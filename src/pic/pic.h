@@ -2644,7 +2644,6 @@ void DeleteAttachedParticles();
   }
 
 
-
   namespace Mesh {
     class cDataCenterNode;
     class cDataCornerNode;
@@ -3781,6 +3780,28 @@ void DeleteAttachedParticles();
     void SetCenterNodeAssociatedDataValue(double NewValue,int ResetElementNumber,int DataBufferOffset);
   } 
   // namespace Mesh ===========================================================
+
+
+  //gyrokinetic approaxumation
+  namespace GYROKINETIC {
+    extern int DriftVelocityOffset;
+    void Init();
+
+    inline double* GetV_drift(ParticleBuffer::byte* p) {
+      return (double*)(p+DriftVelocityOffset);
+    }
+
+    inline void SetV_drift(double *v_drift,ParticleBuffer::byte* p) {
+      memcpy(p+DriftVelocityOffset,v_drift,3*sizeof(double));
+    }
+
+    //particle mover 
+    int Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+  }
+    
+
+
+
 
   //volume injection of model particles
 #if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_

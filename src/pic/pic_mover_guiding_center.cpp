@@ -405,6 +405,12 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
   // advance momentum full-step
   pFinal   =pInit + dtTotal * ForceParalMiddle; 
 
+
+  //save the particle drift velocity in the state vector so it can be used in the field solver 
+  if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
+    PIC::GYROKINETIC::SetV_drift(Vguide_perpMiddle,ParticleData);
+  }
+
 #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
   // estimate parallel velocity
   exit(__LINE__,__FILE__,"not implemetned");

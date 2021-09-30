@@ -427,5 +427,8 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_NODE_  
 
 
+//using the gyrokinetic model for electrons
+#define _PIC_GYROKINETIC_MODEL_MODE_ _PIC_MODE_OFF_
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

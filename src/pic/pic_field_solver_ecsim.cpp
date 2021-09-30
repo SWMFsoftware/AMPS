@@ -1859,6 +1859,15 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
       LocalParticleWeight=block->GetLocalParticleWeight(spec);
       LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
+      //in case if gyrokinetic model for electrons is used => add the drift velocity to vInit
+      if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
+        if (spec==_ELECTRON_SPEC_) {
+          double *v_drift=PIC::GYROKINETIC::GetV_drift(ParticleData); 
+
+          for (int idim=0;idim<3;idim++) vInit[idim]+=v_drift[idim];
+        }
+      }
+
       ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
       if (ptrNext!=-1) {
@@ -2350,8 +2359,16 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
         B[3]=0.0;
         B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(B_conv));
 
-        vInit_v=_mm256_mul_pd(_mm256_loadu_pd(PIC::ParticleBuffer::GetV(ParticleData)),_mm256_set1_pd(length_conv));
-        //vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
+        //in case if gyrokinetic model is used for the electrons => add drift velocity of vInit_v
+        vInit_v=_mm256_loadu_pd(PIC::ParticleBuffer::GetV(ParticleData));
+
+        if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
+          if (spec==_ELECTRON_SPEC_) {
+            vInit_v=_mm256_add_pd(vInit_v,_mm256_loadu_pd(PIC::GYROKINETIC::GetV_drift(ParticleData)));
+          }
+        }
+
+        vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(length_conv));
 
         double QdT_over_m,QdT_over_2m,chargeQ;
         double WeightPG[8];
