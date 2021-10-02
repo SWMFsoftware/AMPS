@@ -430,5 +430,8 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 //using the gyrokinetic model for electrons
 #define _PIC_GYROKINETIC_MODEL_MODE_ _PIC_MODE_OFF_
 
+//supress keeping a second copy of the sampled data (was reserved for calcularing the macroscopic parameters obtained in the previous sampling cycle)
+#define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_ON_ 
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

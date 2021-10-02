@@ -52,6 +52,9 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   if (PIC::ThisThread==0) {
     fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
     fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+
+    fwrite(&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength),1,fRestart);
+    fwrite(&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength),1,fRestart);
   }
   
   //save the restart information
@@ -156,6 +159,14 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
 
   fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
   fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+
+  int t;
+
+  fread(&t,sizeof(int),1, fRestart);
+  if (t!=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength has changed");
+
+  fread(&t,sizeof(int),1,fRestart);
+  if (t!=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength has changed");
 
   SamplingData::ReadBlock(fRestart);
   fclose(fRestart);

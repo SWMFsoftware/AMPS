@@ -58,6 +58,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
+ 
+  define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_
 
   SamplingMode=disabled
   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_

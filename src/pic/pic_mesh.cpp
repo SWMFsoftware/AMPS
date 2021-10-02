@@ -464,7 +464,7 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   PIC::Mesh::sampleSetDataLength=offset;
   PIC::Mesh::completedCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
 
-  if (PIC::SamplingMode!=_DISABLED_SAMPLING_MODE_) {
+  if ((PIC::SamplingMode!=_DISABLED_SAMPLING_MODE_)&&(_PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_==_PIC_MODE_ON_)) {
     PIC::Mesh::collectingCellSampleDataPointerOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+PIC::Mesh::sampleSetDataLength;
     PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=2*PIC::Mesh::sampleSetDataLength;
   }
