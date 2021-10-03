@@ -60,6 +60,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   InitialSampleLength=1
 
   RequestedParticleBufferLength=2000000
+ 
+  define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_
 
   BlockCells=6,6,6
   GhostCells=2,2,2
