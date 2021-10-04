@@ -418,8 +418,6 @@ contains
 
     character(len=*), parameter:: NameSub = 'PT_put_from_oh'
     !--------------------------------------------------------------------------
-    nRecvFromOH=nRecvFromOH+1
-
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
@@ -453,9 +451,13 @@ contains
 
        call amps_recieve_batsrus2amps_center_point_data(&
             NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
+
+       call amps_recv_oh_checksum(Data_VI,nVar*nPoint,nRecvFromOH)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
+
+   nRecvFromOH=nRecvFromOH+1
 
   end subroutine PT_put_from_oh
   !============================================================================
@@ -579,10 +581,11 @@ contains
 
     character(len=*), parameter:: NameSub = 'PT_get_for_oh'
     !--------------------------------------------------------------------------
-    nSentToOH=nSentToOH+1
-
     call amps_send_batsrus2amps_center_point_data( &
          NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, Data_VI)
+
+    call amps_send_oh_checksum(Data_VI,nVarIn*nPoint,nSentToOH) 
+    nSentToOH=nSentToOH+1
 
     do i = 1,nVarIn
        do j=1,nPoint
