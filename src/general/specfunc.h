@@ -263,11 +263,11 @@ public:
 #endif
 
     if (ThisThread==0) {
-      CRC32 cumulativeSignature;
-      cumulativeSignature.add(buffer,TotalThreadsNumber);
+      CRC32 CumulativeSignature;
+      CumulativeSignature.add(buffer,TotalThreadsNumber);
 
-      if (message!=NULL) printf("$PREFIX:CRC32 checksum, cumulativeSignature=0x%lx, message=%s:\n",cumulativeSignature.checksum(),message);
-      else printf("$PREFIX:CRC32 checksum, cumulativeSignature=0x%lx:\n",cumulativeSignature.checksum());
+      if (message!=NULL) printf("$PREFIX:CRC32 checksum, Signature=0x%lx, message=%s:\n",CumulativeSignature.checksum(),message);
+      else printf("$PREFIX:CRC32 checksum, Signature=0x%lx:\n",CumulativeSignature.checksum());
 
       for (thread=0;thread<TotalThreadsNumber;thread++) printf("$PREFIX:thread=%ld, sum=0x%lx\n",thread,buffer[thread]);
     }
