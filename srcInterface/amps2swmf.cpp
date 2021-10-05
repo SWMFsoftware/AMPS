@@ -893,20 +893,24 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     CRC32 c;
     char msg[200];
 
-    c.add(data,*size);
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      c.add(data,*size);
     
-    sprintf(msg,"send to OH (%i)",*counter); 
-    c.PrintChecksum(msg);
+      sprintf(msg,"send to OH (%i)",*counter); 
+      c.PrintChecksum(msg);
+    }
   }
 
   void amps_recv_oh_checksum_(double *data,int *size,int *counter) {
     CRC32 c;
     char msg[200];
 
-    c.add(data,*size);
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      c.add(data,*size);
 
-    sprintf(msg,"recv from OH (%i)",*counter);
-    c.PrintChecksum(msg);
+      sprintf(msg,"recv from OH (%i)",*counter);
+      c.PrintChecksum(msg);
+    }
   }
 }
 
