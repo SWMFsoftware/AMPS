@@ -412,12 +412,16 @@ contains
     real,    intent(in), optional:: Data_VI(:,:)    ! Recv data array
     integer, intent(in), optional:: iPoint_I(nPoint)! Order of data
     integer::i,j,jj
+    integer::DataBufferSize=0 
 
     real, intent(out), optional, allocatable:: Pos_DI(:,:) ! Position vectors
     real::PTTime
 
     character(len=*), parameter:: NameSub = 'PT_put_from_oh'
     !--------------------------------------------------------------------------
+
+    DataBufferSize=0
+
     if(present(Pos_DI))then
        ! set number of grid points on this processor
        call amps_get_center_point_number(nPoint)
@@ -435,6 +439,8 @@ contains
              jj=iPoint_I(j)
 
              if (jj>0) then
+                DataBufferSize=DataBufferSize+1
+
                 if (ieee_is_nan(Data_VI(i,jj))) then
                    call CON_stop(NameSub//': nan')
                 end if
@@ -452,7 +458,7 @@ contains
        call amps_recieve_batsrus2amps_center_point_data(&
             NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
 
-       call amps_recv_oh_checksum(Data_VI,nVar*nPoint,nRecvFromOH)
+       call amps_recv_oh_checksum(Data_VI,DataBufferSize,nRecvFromOH)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
@@ -584,7 +590,6 @@ contains
     call amps_send_batsrus2amps_center_point_data( &
          NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, Data_VI)
 
-    call amps_send_oh_checksum(Data_VI,nVarIn*nPoint,nSentToOH) 
     nSentToOH=nSentToOH+1
 
     do i = 1,nVarIn
