@@ -6364,5 +6364,114 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::InitDiscritizationStencil() {
   GradDivE[2].Ez.ExportStencil(&GradDivStencil375[2][2]); 
 }
 
+/////////////////////////////////////////////////////////////////////////////////
+//get electric and magnetic fields
+void PIC::FieldSolver::Electromagnetic::ECSIM::GetElectricField(double *E,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
+  PIC::InterpolationRoutines::CornerBased::cStencil Stencil;
+  int iCornerNode,idim;
+  double *t,w;
+
+  for (idim=0;idim<3;idim++) E[idim]=0.0;
+  PIC::InterpolationRoutines::CornerBased::InitStencil(x,node,Stencil);
+
+  for (iCornerNode=0;iCornerNode<Stencil.Length;iCornerNode++) {
+    t=(double*)(Stencil.cell[iCornerNode]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+
+    for (idim=0,w=Stencil.Weight[iCornerNode];idim<3;idim++) E[idim]+=w*t[idim];
+  }
+}
+
+
+void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(double *B,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
+  PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+  int iCenterNode,idim;
+  double *t,w;
+
+  for (idim=0;idim<3;idim++) B[idim]=0.0;
+  PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,node,Stencil);
+
+  for (iCenterNode=0;iCenterNode<Stencil.Length;iCenterNode++) {
+    t=(double*)(Stencil.cell[iCenterNode]->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+
+    for (idim=0,w=Stencil.Weight[iCenterNode];idim<3;idim++) B[idim]+=w*t[idim];
+  }
+}
+
+//===============================================
+//get magnetic filed gradient
+void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *gradB,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
+  double x_prob[3],dx,B_plus[3],B_minus[3],l,t;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node_prob;
+
+  dx=0.5*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
+
+  t=0.5*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_; 
+  if (dx>t) dx=t;
+
+  t=0.5*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
+  if (dx>t) dx=t;
+
+  // structure of gradB is the following
+  //   gradB[0:2] = {d/dx, d/dy, d/dz} B_x
+  //   gradB[3:5] = {d/dx, d/dy, d/dz} B_y
+  //   gradB[6:8] = {d/dx, d/dy, d/dz} B_z
+       
+  //d/dx
+  memcpy(x_prob,x,3*sizeof(double));
+  l=2.0*dx;
+  
+  x_prob[0]+=dx;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node); 
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+
+  x_prob[0]-=l;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
+  
+  gradB[0]=(B_plus[0]-B_minus[0])/l;
+  gradB[3]=(B_plus[1]-B_minus[1])/l;
+  gradB[6]=(B_plus[2]-B_minus[2])/l; 
+   
+
+  //d/dy
+  memcpy(x_prob,x,3*sizeof(double));
+  l=2.0*dx;
+
+  x_prob[1]+=dx;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+
+  x_prob[1]-=l;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
+
+  gradB[0+1]=(B_plus[0]-B_minus[0])/l;
+  gradB[3+1]=(B_plus[1]-B_minus[1])/l;
+  gradB[6+1]=(B_plus[2]-B_minus[2])/l;
+
+  //d/dz
+  memcpy(x_prob,x,3*sizeof(double));
+  l=2.0*dx;
+
+  x_prob[2]+=dx;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_plus,x_prob,node_prob);
+
+  x_prob[2]-=l;
+  node_prob=PIC::Mesh::mesh->findTreeNode(x_prob,node);
+  PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B_minus,x_prob,node_prob);
+
+  gradB[0+2]=(B_plus[0]-B_minus[0])/l;
+  gradB[3+2]=(B_plus[1]-B_minus[1])/l;
+  gradB[6+2]=(B_plus[2]-B_minus[2])/l;
+}
+
+
+
+
+
+
+
+
 
 

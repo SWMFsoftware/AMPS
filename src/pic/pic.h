@@ -7605,6 +7605,9 @@ namespace FieldSolver {
         //Energy conserving field solver (same as used in the IPIC3D)
         namespace ECSIM {
 
+          void GetElectricField(double *E,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+          void GetMagneticField(double *B,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
+          void GetMagneticFieldGradient(double *gradB,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node);
 
 class cCellData {
 public:
