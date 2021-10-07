@@ -1889,12 +1889,22 @@ void DeleteAttachedParticles();
     // has been allocated
     _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(byte* ParticleDataStart) {
-      return ((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
+      unsigned char res;
+
+      res=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      res&=0b0011'1111;
+
+      return res;
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline unsigned int GetI(long int ptr) {
-      return ((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
+      unsigned char res;
+
+      res=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      res&=0b0011'1111;
+
+      return res;
     }
     //.........................................................................
     inline void SetI(int spec,byte* ParticleDataStart) {
@@ -1904,7 +1914,9 @@ void DeleteAttachedParticles();
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
       #endif
 
-      flag=((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x80);
+      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      flag&=0b1100'0000;
+
       t|=flag;
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
@@ -1916,7 +1928,9 @@ void DeleteAttachedParticles();
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
       #endif
 
-      flag=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x80);
+      flag=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      flag&=0b1100'0000;
+
       t|=flag;
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
@@ -2539,41 +2553,78 @@ void DeleteAttachedParticles();
       *(double*)(ParticleDataStart +_PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_)= FieldLineCoord;
     }
 
+    //------------------------------------------------------------------------
+    //define the 'init flag'. the flag is stored in the 7th bit of the firt byte of the partcle 
+
+    inline bool TestInitFlag(byte* ParticleDataStart) {
+      unsigned char flag;
+
+      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      flag&=0b0100'0000;
+
+      return (flag==0) ? false : true;
+    } 
+
+    inline void SetInitFlag(bool t,byte* ParticleDataStart) {
+      unsigned char flag;
+
+      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+
+      if (t==true) {
+        flag|=0b0100'0000;
+      }
+      else {
+        flag&=0b1011'1111; 
+      }
+ 
+      *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=flag;
+    }
+
     //-------------------------------------------------------------------------
 
     inline bool IsParticleAllocated(byte* ParticleDataStart) {
       unsigned char flag;
 
-      flag=((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x80);
+      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      flag&=0b1000'0000;
+
       return (flag==0) ? false : true;
     }
 
     inline bool IsParticleAllocated(long int ptr) {
       unsigned char flag;
 
-      flag=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x80);
+      flag=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      flag&=0b1000'0000;
+
       return (flag==0) ? false : true;
     }
 
     inline void SetParticleDeleted(byte* ParticleDataStart) {
       unsigned char t;
 
-      t=((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
+      t=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      t&=0b0111'1111;
+
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
+      SetInitFlag(false,ParticleDataStart);
     }
 
     inline void SetParticleDeleted(long int ptr) {
       unsigned char t;
 
-      t=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
+      t=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      t&=0b0111'1111;
+
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
+      SetInitFlag(false,(byte*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_)); 
     }
 
     inline void SetParticleAllocated(byte* ParticleDataStart) {
       unsigned char t;
 
-      t=((*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
-      t|=0x80;
+      t=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      t|=0b1000'0000;
 
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
@@ -2581,8 +2632,8 @@ void DeleteAttachedParticles();
     inline void SetParticleAllocated(long int ptr) {
       unsigned char t;
 
-      t=((*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))) & 0x7f);
-      t|=0x80;
+      t=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      t|=0b1000'0000;
 
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
