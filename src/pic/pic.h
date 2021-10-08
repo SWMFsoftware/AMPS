@@ -4587,6 +4587,7 @@ void DeleteAttachedParticles();
       //mover
       void GuidingCenterMotion_default(double *Vguide, double &ForceParal, double &BAbsValue, double *BDirection, double *PParal,int spec,long int ptr,double *x, double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
       int Mover_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+      int Mover_FirstOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
     }
 
 

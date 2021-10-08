@@ -40,8 +40,14 @@ void PIC::Mover::GuidingCenter::Sampling::SampleParticleData(char* ParticleData,
     PIC::ParticleBuffer::GetX(x,(PIC::ParticleBuffer::byte*)ParticleData);
     node=PIC::Mesh::Search::FindBlock(x);
 
-    PIC::CPLR::InitInterpolationStencil(x,node);
-    PIC::CPLR::GetBackgroundMagneticField(B);
+    if (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+      PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B,x,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
+    }
+    else {
+      PIC::CPLR::InitInterpolationStencil(x,node);
+      PIC::CPLR::GetBackgroundMagneticField(B);
+    }
+
     AbsB=pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2],0.5) + 1E-15;
 
     #if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
@@ -85,15 +91,23 @@ void PIC::Mover::GuidingCenter::InitiateMagneticMoment(int spec,double *x, doubl
   //the function can be executed only the the offset for the particle magnetic moment is defined
   if (_PIC_PARTICLE_DATA__MAGNETIC_MOMENT_OFFSET_!=-1) {
     // get the magnetic field
-    switch (_PIC_COUPLER_MODE_) {
-    case _PIC_COUPLER_MODE__OFF_ :
-      exit(__LINE__,__FILE__,"not implemented");
-
-    default:
-      PIC::CPLR::InitInterpolationStencil(x,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
-      PIC::CPLR::GetBackgroundMagneticField(B);
-      AbsB=Vector3D::Length(B)+1E-15;
+    
+    if (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+      PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B,x,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
     }
+    else { 
+      switch (_PIC_COUPLER_MODE_) {
+      case _PIC_COUPLER_MODE__OFF_ :
+        exit(__LINE__,__FILE__,"not implemented");
+  
+      default:
+        PIC::CPLR::InitInterpolationStencil(x,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
+        PIC::CPLR::GetBackgroundMagneticField(B);
+      }
+    }    
+    
+    AbsB=Vector3D::Length(B)+1E-15;
+    
   
     // compute magnetic moment
     double v_par, v2, gamma2, m0, mu=0.0;
@@ -147,20 +161,32 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
   // find electro-magnetic field
     double E[3]={0.0,0.0,0.0},gradB[9]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0}, gradAbsB[3]={0.0,0.0,0.0}, AbsB=0.0;
     double b[3]={0.0,0.0,0.0};
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__OFF_ 
-  exit(__LINE__,__FILE__,"not implemented");
-#else 
     double B[3]={0.0,0.0,0.0};
     
-    
-  // if coupler is used -> get values from it
-  PIC::CPLR::InitInterpolationStencil(x,startNode);
+  if (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+    PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(B,x,startNode);
+    PIC::FieldSolver::Electromagnetic::ECSIM::GetElectricField(E,x,startNode);
+
+    PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(gradB,x,startNode);
+  }
+  else {
+   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__OFF_ 
+   exit(__LINE__,__FILE__,"not implemented");
+   #endif 
+
+    // if coupler is used -> get values from it
+    PIC::CPLR::InitInterpolationStencil(x,startNode);
   
-  PIC::CPLR::GetBackgroundElectricField(E);
-  PIC::CPLR::GetBackgroundMagneticField(B);
+    PIC::CPLR::GetBackgroundElectricField(E);
+    PIC::CPLR::GetBackgroundMagneticField(B);
+
+    PIC::CPLR::GetBackgroundMagneticFieldGradient(gradB);
+  }
+
   AbsB=pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2],0.5) + 1E-15;
   b[0] = B[0]/AbsB; b[1] = B[1]/AbsB; b[2] = B[2]/AbsB;
-  PIC::CPLR::GetBackgroundMagneticFieldGradient(gradB);
+
+
   // structure of gradB is the following
   //   gradB[0:2] = {d/dx, d/dy, d/dz} B_x
   //   gradB[3:5] = {d/dx, d/dy, d/dz} B_y
@@ -170,7 +196,6 @@ void PIC::Mover::GuidingCenter::GuidingCenterMotion_default(
   gradAbsB[2]= b[0] * gradB[2] + b[1] * gradB[5] + b[2] * gradB[8];
   //  PIC::CPLR::GetBackgroundMagneticFieldMagnitudeGradient(gradAbsB);
   //  PIC::CPLR::GetBackgroundMagneticFieldMagnitude(AbsB);
-#endif//_PIC_COUPLER_MODE_
   
   //......................................................................
   // calculate guiding center motion
@@ -565,3 +590,228 @@ int PIC::Mover::GuidingCenter::Mover_SecondOrder(long int ptr, double dtTotal,cT
 
   return _PARTICLE_MOTION_FINISHED_;
 }
+
+
+//===================================================================================================
+//first order particle mover
+int PIC::Mover::GuidingCenter::Mover_FirstOrder(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode){
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
+  PIC::ParticleBuffer::byte *ParticleData;
+  double AbsBInit=0.0, bInit[3]={0.0,0.0,0.0};
+  double *v=NULL, p=0.0,*x=NULL;
+  double AbsBMiddle=0.0, bMiddle[3]={0.0,0.0,0.0};
+  double *xminBlock,*xmaxBlock;
+  int idim,i,j,k,spec;
+  double misc,mu;
+
+  ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  v=PIC::ParticleBuffer::GetV(ParticleData);
+  x=PIC::ParticleBuffer::GetX(ParticleData);
+  spec=PIC::ParticleBuffer::GetI(ParticleData);
+  double m0 = PIC::MolecularData::GetMass(spec);
+
+  static long int nCall=0;
+
+  nCall++;
+
+  
+  if (PIC::ParticleBuffer::TestInitFlag(ParticleData)==false) {
+    //init the particle magnetic moment
+    PIC::ParticleBuffer::SetInitFlag(true,ParticleData);
+    
+    PIC::Mover::GuidingCenter::InitiateMagneticMoment(spec,x,v,ParticleData,(void *)startNode);
+  }
+  
+  mu=PIC::ParticleBuffer::GetMagneticMoment(ptr);
+  
+  xminBlock=startNode->xmin;
+  xmaxBlock=startNode->xmax;
+  
+  double Vguide_perpInit[3]={0.0,0.0,0.0}, ForceParalInit=0.0;
+
+  // Integrate the equations of motion
+  // use predictor-corrector scheme
+  /***** Guiding center motion: ******
+   * dx/dt     = Vguide_perp + Vparal*                   
+   * dPparal/dt= ForceParal          *
+   * Pparal    = gamma * m0 * Vparal *
+   ***********************************/
+  
+  if (_PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_) {
+    _PIC_PARTICLE_MOVER__GUIDING_CENTER_MOTION_(Vguide_perpInit,ForceParalInit,AbsBInit,bInit,NULL,spec,ptr,x,v,startNode);
+  }
+
+  
+  misc=Vector3D::Length(v);
+  if (Vector3D::DotProduct(v,bInit)<0.0) misc*=-1.0; 
+
+  for (idim=0;idim<3;idim++) v[idim]=misc*bInit[idim];      
+
+  switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+  case  _PIC_MODE_ON_:
+    p=pow(1-(misc*misc+2*mu*AbsBInit/m0)/(SpeedOfLight*SpeedOfLight),-0.5)*
+      m0*(v[0]*bInit[0]+v[1]*bInit[1]+v[2]*bInit[2]);
+    
+    break;
+  default:
+    p=m0*(v[0]*bInit[0]+v[1]*bInit[1]+v[2]*bInit[2]);
+  }
+
+  
+
+  // advance coordinates 
+  for (idim=0;idim<3;idim++) {
+    x[idim]+=dtTotal*(Vguide_perpInit[idim]+v[idim]);
+  }
+    
+  // advance momentum half-step
+  p+=dtTotal*ForceParalInit; 
+
+  #if _PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_
+  exit(__LINE__,__FILE__,"Error: not implemented");
+  #endif //_PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_ 
+
+
+  // check if a particle has left the domain
+  newNode=PIC::Mesh::Search::FindBlock(x);
+  
+  if (newNode==NULL) { 
+    //the particle left the computational domain
+    int code=_PARTICLE_DELETED_ON_THE_FACE_;
+    
+    //call the function to processes particles that left the domain
+    switch(code){
+    case _PARTICLE_DELETED_ON_THE_FACE_:
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }    
+  }
+
+  //update the value of the magnetic field
+  double bFinal[3];
+  
+  if (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
+    PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(bFinal,x,newNode);
+  }
+  else {    
+    // if coupler is used -> get values from it
+    PIC::CPLR::InitInterpolationStencil(x,startNode);
+    PIC::CPLR::GetBackgroundMagneticField(bFinal);
+  }
+
+  Vector3D::Normalize(bFinal);
+  
+  // estimate parallel velocity
+ switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+ case _PIC_MODE_ON_:
+   exit(__LINE__,__FILE__,"not implemetned");
+ default:
+   misc=p/m0;
+   for (idim=0;idim<3;idim++) {
+     v[idim]=misc*bFinal[idim];
+   }
+ }
+
+  //save the particle drift velocity in the state vector so it can be used in the field solver 
+  if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
+    PIC::GYROKINETIC::SetV_drift(Vguide_perpInit,ParticleData);
+  }
+
+
+  //interaction with the faces of the block and internal surfaces
+  //check whether the particle trajectory is intersected the spherical body
+  if  ((_TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_) && (_INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_)) { 
+    double rFinal2;
+
+    //if the particle is inside the sphere -> apply the boundary condition procedure
+    if ((rFinal2=Vector3D::DotProduct(x,x))<_RADIUS_(_TARGET_)*_RADIUS_(_TARGET_)) {
+      double r=sqrt(rFinal2);
+      int code=_PARTICLE_DELETED_ON_THE_FACE_;
+
+/*      static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
+          ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+      static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
+
+      //move the particle location at the surface of the sphere
+      for (int idim=0;idim<DIM;idim++) xFinal[idim]*=_RADIUS_(_TARGET_)/r;
+
+      //determine the block of the particle location
+      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
+
+      //apply the boundary condition
+      code=ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,BoundaryElement);*/
+
+      if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+    }
+    else {
+      newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+    }
+  }
+  else { 
+    newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+  }
+    
+  //update the value of 'startNode'
+  startNode=newNode;
+   
+  //save the trajectory point
+  if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+    PIC::ParticleTracker::RecordTrajectoryPoint(x,v,spec,ParticleData,(void*)startNode);
+
+    if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+       PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,ParticleData,(void*)startNode);
+    }
+  }
+    
+
+  //finish the trajectory integration procedure
+  PIC::Mesh::cDataBlockAMR *block;
+
+  if (PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+  if ((block=newNode->block)==NULL) {
+    exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
+  }
+
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+    
+  tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+

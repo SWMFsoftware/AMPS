@@ -24,7 +24,7 @@ int PIC::GYROKINETIC::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::
   switch (spec) {
   case _ELECTRON_SPEC_: 
     //use the gyrokinetic approximation
-    res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode); 
+    res=PIC::Mover::GuidingCenter::Mover_FirstOrder(ptr,dtTotal,startNode); 
     break;
 
   default: 

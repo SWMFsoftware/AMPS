@@ -6400,16 +6400,8 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticField(double *B,double
 //===============================================
 //get magnetic filed gradient
 void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *gradB,double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node) {
-  double x_prob[3],dx,B_plus[3],B_minus[3],l,t;
+  double x_prob[3],dx,B_plus[3],B_minus[3],l;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node_prob;
-
-  dx=0.5*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
-
-  t=0.5*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_; 
-  if (dx>t) dx=t;
-
-  t=0.5*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
-  if (dx>t) dx=t;
 
   // structure of gradB is the following
   //   gradB[0:2] = {d/dx, d/dy, d/dz} B_x
@@ -6418,6 +6410,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *
        
   //d/dx
   memcpy(x_prob,x,3*sizeof(double));
+  dx=0.5*(node->xmax[0]-node->xmin[0])/_BLOCK_CELLS_X_;
   l=2.0*dx;
   
   x_prob[0]+=dx;
@@ -6435,6 +6428,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *
 
   //d/dy
   memcpy(x_prob,x,3*sizeof(double));
+  dx=0.5*(node->xmax[1]-node->xmin[1])/_BLOCK_CELLS_Y_;
   l=2.0*dx;
 
   x_prob[1]+=dx;
@@ -6451,6 +6445,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetMagneticFieldGradient(double *
 
   //d/dz
   memcpy(x_prob,x,3*sizeof(double));
+  dx=0.5*(node->xmax[2]-node->xmin[2])/_BLOCK_CELLS_Z_;
   l=2.0*dx;
 
   x_prob[2]+=dx;

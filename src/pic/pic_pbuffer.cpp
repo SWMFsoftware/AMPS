@@ -718,6 +718,13 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
   //call the user-defined function to initiate the partcles
   if (UserInitParticleFunction!=NULL) UserInitParticleFunction(ptrData); 
 
+  //set the default drift particle velocity
+  if (_PIC_GYROKINETIC_MODEL_MODE_==_PIC_MODE_ON_) {
+    double v[3]={0.0,0.0,0.0};
+  
+    PIC::GYROKINETIC::SetV_drift(v,ptrData);
+  }
+
   //determine the species number
   ptrSpec=(spec!=NULL) ? *spec : GetI(ptrData);
 
