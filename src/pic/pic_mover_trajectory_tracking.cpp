@@ -276,6 +276,9 @@ short PIC::Mover::CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node
 
 void findNeibNodesWithCutCell(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*> & neibNodeArr, bool & IntersectWithCutCell){
   neibNodeArr.clear();
+  
+  //add the current node itself
+  neibNodeArr.push_back(startNode);
 
   //loop through face neibor
   for (int iFace=0; iFace<6; iFace++){
@@ -348,6 +351,11 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   PIC::ParticleBuffer::byte *ParticleData;
   double vInit[3],xInit[3]={0.0,0.0,0.0};
   int idim,i,j,k,spec;
+
+  static int nDeleteBlock=0;
+  static int nDeleteNormal=0;
+  static int nDeleteGhost=0;
+  static int nDeleteExternal=0;
 
   double vFinal[3] , xFinal[3];
 
@@ -555,14 +563,16 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 
   
   bool isTest=false;
-  //if (ptr==33752) isTest=true;
+  //if (ptr==60572 && PIC::ThisThread==0) isTest=true;
 
   //printf("mover called, x:%e,%e,%e, v:%e,%e,%e\n", xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2]);
 
   while (dtTotal>0.0){
     CutTriangleFlightTime=GetCutSurfaceIntersectionTime(CutTriangleFace,ExcludeCutTriangleFace,xInit,vInit,startNode);
-    //printf("test1 xInit:%e,%e,%e, vInit:%e,%e,%e,startNode:%p\n",xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],startNode);     
-
+    if (isTest) {
+      printf("test1 xInit:%e,%e,%e, vInit:%e,%e,%e,startNode:%p, xmin:%e,%e,%e, xmax:%e,%e,%e,startNode->Thread:%d, startNode->block:%s,dtTotal:%e \n",xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2],startNode,
+	     startNode->xmin[0],startNode->xmin[1],startNode->xmin[2],startNode->xmax[0], startNode->xmax[1],startNode->xmax[2], startNode->Thread, startNode->block?"T":"F",dtTotal);     
+    }
     if (CutTriangleFlightTime>0.0){
       //printf("flighttime:%e, xInit:%e,%e,%e, vInit:%e,%e,%e,normal:%e,%e,%e,x0:%e,%e,%e  \n",CutTriangleFlightTime, xInit[0],xInit[1],xInit[2],vInit[0],vInit[1],vInit[2], CutTriangleFace->ExternalNormal[0],CutTriangleFace->ExternalNormal[1],CutTriangleFace->ExternalNormal[2],CutTriangleFace->x0Face[0],CutTriangleFace->x0Face[1],CutTriangleFace->x0Face[2]);
     }
@@ -570,7 +580,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
     if (isTest) {
       printf("CutTriangleFlightTime:%e\n", CutTriangleFlightTime);
     }
-    if (intersectCutCell){
+    if (!intersectCutCell){
       if (CutTriangleFlightTime>dtTotal || CutTriangleFlightTime<0.0 ){
 
 	IntersectionMode=_normal;
@@ -618,10 +628,11 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	}
       double x_test[3];
       for (int i=0;i<3;i++) {
-	xInit[i]+=FaceIntersectionFlightTime*vInit[i];
+	xInit[i]+=FaceIntersectionFlightTime*vInit[i]*1.01;
 	x_test[i]=xInit[i];
       }
-      dtTotal -=FaceIntersectionFlightTime;
+      dtTotal -=FaceIntersectionFlightTime*1.01;
+      
       switch (iIntersectedFace) {
       case 0:
 	x_test[0]-=1e-4*(startNode->xmax[0]-startNode->xmin[0]);
@@ -633,7 +644,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	break;
       case 2:
 	x_test[1]-=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
-	xInit[1]+=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
+        xInit[1]+=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
 	break;
       case 3:
 	x_test[1]+=1e-4*(startNode->xmax[1]-startNode->xmin[1]);
@@ -648,7 +659,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	xInit[2]-=1e-4*(startNode->xmax[2]-startNode->xmin[2]);
 	break;
       }
-
+      
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* testNode=PIC::Mesh::mesh->findTreeNode(x_test,startNode);
       if (isTest){
 	printf("testNode:%p\n",testNode);
@@ -668,6 +679,8 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 #if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
 	//printf("delete test1\n");
 	PIC::ParticleBuffer::DeleteParticle(ptr);
+	//printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, x_test[0],x_test[1],x_test[2]);
+	nDeleteExternal++;
 	return _PARTICLE_LEFT_THE_DOMAIN_;
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
     //code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,startNode);
@@ -716,6 +729,16 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	 
 	  //printf("block particle removed\n");
 	  //remove particle if it goes outside neib blocks
+	  /*
+	  printf("nDeleteBlock:%d, x_test:%e,%e,%e,ptr:%d,threadid:%d\n", nDeleteBlock, x_test[0],x_test[1],x_test[2],ptr,PIC::ThisThread);
+	  for (int i=0; i<neibNodeArr.size(); i++) {
+	    //if (neibNodeArr[i]==testNode) isNeib=true;
+	    printf("neib block:%d,neibNodeArr:%p, xmin:%e,%e,%e, xmax:%e,%e,%e\n", i,neibNodeArr[i], neibNodeArr[i]->xmin[0], neibNodeArr[i]->xmin[1],neibNodeArr[i]->xmin[2],
+		   neibNodeArr[i]->xmax[0],neibNodeArr[i]->xmax[1],neibNodeArr[i]->xmax[2]);
+	  }
+	  nDeleteBlock++;
+	  */
+
 	  PIC::ParticleBuffer::DeleteParticle(ptr);
 	  return _PARTICLE_LEFT_THE_DOMAIN_;
 	}else{
@@ -772,6 +795,9 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	//intersects with outer bounary
 #if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
 	  //printf("delete test2 out\n");
+	  //printf("nDeleteExternal:%d, x_test:%e,%e,%e\n", nDeleteExternal, xInit[0],xInit[1],xInit[2]);
+	  nDeleteExternal++;
+	  
 	PIC::ParticleBuffer::DeleteParticle(ptr);
 	return _PARTICLE_LEFT_THE_DOMAIN_;
 #elif _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
@@ -815,6 +841,9 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 	 
 	  //printf("normal particle removed\n");
 	  //remove particle if it goes outside neib blocks
+	  //printf("nDeleteBlock:%d, x_test:%e,%e,%e,ptr:%d, threadid:%d\n", nDeleteBlock, xInit[0],xInit[1],xInit[2],ptr, PIC::ThisThread);
+	  nDeleteBlock++;
+
 	  PIC::ParticleBuffer::DeleteParticle(ptr);
 	  return _PARTICLE_LEFT_THE_DOMAIN_;
 	}else{
@@ -831,7 +860,13 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
 
     //check if the particle enters into cells inside the body
     if (nodeIndexInArr(startNode)==-1){
-      printf("not in ghost block\n");
+      /*
+      printf("not in ghost block, ptr:%d\n", ptr);
+      printf("threadid:%d,not in ghost block ptr:%d,startNode->xmin:%e,%e,%e, startNode->xmax:%e,%e,%e, startNode->Thread:%d, startNode->block:%s\n",PIC::ThisThread,ptr,startNode->xmin[0], startNode->xmin[1],startNode->xmin[2],
+	     startNode->xmax[0], startNode->xmax[1],startNode->xmax[2],startNode->Thread,startNode->block?"T":"F");
+      */
+      printf("nDeleteGhost:%d, x_test:%e,%e,%e\n", nDeleteGhost, xInit[0],xInit[1],xInit[2]);
+      nDeleteGhost++;
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;   
     }else if (PIC::Mover::CellIntersectType(startNode,xInit)==1){
