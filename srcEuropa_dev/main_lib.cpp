@@ -1657,8 +1657,14 @@ void amps_time_step () {
   PIC::TimeStep();
   
   //     cell=(node->block!=NULL) ? node->block->GetCenterNode(nd) : NULL;
+  int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
+  int GlobalParticleNumber;
+
+  MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   
-  
+  if (PIC::ThisThread==0)
+    std::cout<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
+
   if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
     //PIC::RequiredSampleLength*=2;
     if (PIC::RequiredSampleLength>8000) PIC::RequiredSampleLength=8000;

@@ -26,7 +26,6 @@ makefile  MPIRUN=mpirun -np 4
 makefile ExternalModules=models/exosphere
 
 ProjectSourceDirectory=srcEuropa_dev
-
 TrajectoryIntersectionWithBlockFaces=off !on, off
 
 WorkingSourceDirectory=srcTemp   !. !srcTemp !the location of the code that will be compiled (current directory == ".")
@@ -64,6 +63,12 @@ ParticleWeightCorrectionMode=on
   Mesh=on ! on, off
 #endUserDefinitions
 
+
+
+#Mesh
+  define _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_MODE_  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_
+#endMesh
+
 #General
   ReferenceInjectionParticleNumber=20000 
   MaxMeshRefinmentLevel=12
@@ -96,7 +101,8 @@ ParticleWeightCorrectionMode=on
 !   define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__SAMPLING_DATA_RESTART_FILE_
 
 
-  define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+!  define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+  define  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
   define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
   define _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(t0,t1,t2) Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(t0,t1,t2)
   define _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(t0,t1,t2,t3,t4) Europa::LossProcesses::ExospherePhotoionizationLifeTime(t0,t1,t2,t3,t4)
@@ -133,6 +139,10 @@ ParticleWeightCorrectionMode=on
 
   !OutputMode=SingleFile !!SingleFile !SingleFile,DistributedFiles
   !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::TrajectoryTrackingMover(ptr,LocalTimeStep,node)
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node)  PIC::Mover::TrajectoryTrackingMover_new(ptr,LocalTimeStep,node) 
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(ptr,LocalTimeStep,node,FirstBoundaryFlag)  PIC::Mover::TrajectoryTrackingMover_new(ptr,LocalTimeStep,node,FirstBoundaryFlag)  
+
+
 #endGeneral
 
 #ParticleCollisions
