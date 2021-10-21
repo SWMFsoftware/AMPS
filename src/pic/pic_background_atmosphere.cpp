@@ -99,7 +99,7 @@ int PIC::MolecularCollisions::BackgroundAtmosphere::RequestSamplingData(int offs
 }
 
 void PIC::MolecularCollisions::BackgroundAtmosphere::PrintVariableList(FILE* fout,int DataSetNumber) {
-  fprintf(fout,", \"Total Background Atmosphere Collison Freq [per a real particle,per sec]\", \"Energy Exchange Rate [J/m^3/s]\"");
+  fprintf(fout,", \"Total Background Atmosphere Collison Freq [per m^{-3},per sec]\", \"Energy Exchange Rate [J/m^3/s]\"");
 }
 
 void PIC::MolecularCollisions::BackgroundAtmosphere::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -454,9 +454,9 @@ _StartParticleCollisionLoop_:
 
             //DEBUG
 
-            if (spec!=0) {
-              printf(";duxfhvpsodixughpisuhopdij\n");
-            }
+            //if (spec!=0) {
+            //  printf(";duxfhvpsodixughpisuhopdij\n");
+            //}
 
             //END DEBUG
 
@@ -615,7 +615,7 @@ _StartParticleCollisionLoop_:
       for (spec=0;spec<PIC::nTotalSpecies;spec++) {
         if (TotalProspectiveCollisionParticleWeight[thread][spec]>0.0) {
           *(spec+(double*)(LocalTotalCollisionFreqSamplingOffset+PIC::Mesh::collectingCellSampleDataPointerOffset+cell->GetAssociatedDataBufferPointer()))+=
-            TotalOccurringCollisionParticleWeight[thread][spec]/TotalProspectiveCollisionParticleWeight[thread][spec]/node->block->GetLocalTimeStep(spec);
+            TotalOccurringCollisionParticleWeight[thread][spec]/node->block->GetLocalTimeStep(spec)/cell->Measure;
         }
 
         *(spec+(double*)(LocalEnergyTransferRateSamplingOffset+PIC::Mesh::collectingCellSampleDataPointerOffset+cell->GetAssociatedDataBufferPointer()))+=
