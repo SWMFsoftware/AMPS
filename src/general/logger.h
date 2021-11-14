@@ -332,9 +332,9 @@ public:
      fout=fopen(fname,"w");
 
      for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
-       fprintf(fout,"%i: function=%s\n",i,data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].fname);
+       fprintf(fout,"%i: function=%s\n",i,data_ptr->FunctionCallTable[i].fname);
 
-       data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].PrintLog(fout);  
+       data_ptr->FunctionCallTable[i].PrintLog(fout);  
      }
 
      fclose(fout);
