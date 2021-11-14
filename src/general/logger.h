@@ -22,7 +22,8 @@
 template <class T>
 class cLogger {
 public:
-   static const int InFunctionDataTableLength=10;
+   static const int InFunctionDataTableLength=20;
+   int thread_mpi_rank;
 
    //in-function location
    class cInFunctionDataEl {
@@ -37,6 +38,9 @@ public:
    const static int fname_length=15;
    char fname[fname_length];
  
+   cLogger() {
+     thread_mpi_rank=0;
+   }
 
    class cInFunctionData {
    public:
@@ -97,11 +101,11 @@ public:
        DataTableIndex++;
      }
 
-     void PrintLog() {
+     void PrintLog(FILE* fout) {
        for (int i=0;i<DataTableIndex;i++) {
-         printf("line=%d\n",DataTable[i].nline); 
+         fprintf(fout,"line=%d\n",DataTable[i].nline); 
 
-         DataTable[i].data.PrintLog(PrintParameter);
+         DataTable[i].data.PrintLog(PrintParameter,fout);
        }
      } 
    };   
@@ -150,7 +154,9 @@ public:
      data_ptr->FunctionCallTableIndex--;
    }
 
-   void InitLogger() {
+   void InitLogger(int InMpiRank) {
+
+     thread_mpi_rank=InMpiRank; 
 
     //generate unique file name
 //    const int fname_length=15;
@@ -244,7 +250,7 @@ public:
         return;
       }
 
-int size=sizeof(cLoggerData);
+      int size=sizeof(cLoggerData);
 
       //get the shared memory 
       ShmKey=ftok(fname,'a');
@@ -266,6 +272,10 @@ int size=sizeof(cLoggerData);
 
     }
  
+  }
+
+  void InitLogger() {
+   InitLogger(0);
   }
 
    void Server() {
@@ -298,20 +308,25 @@ int size=sizeof(cLoggerData);
          exit(0);
        }
 
-printf("exist %i : %i\n",data_ptr->parent_pid,getpid());
-
-
        sleep(0.1);
      }  
    }
 
 
    void PrintLog() {
-     for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
-       printf("%i: function=%s\n",i,data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].fname);
+     char fname[200];
+     FILE *fout;
 
-       data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].PrintLog();  
+     sprintf(fname,"logger.rank=%i.log",thread_mpi_rank); 
+     fout=fopen(fname,"w");
+
+     for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
+       fprintf(fout,"%i: function=%s\n",i,data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].fname);
+
+       data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].PrintLog(fout);  
      }
+
+     fclose(fout);
    } 
 };
 
