@@ -42,14 +42,28 @@ t.Start("main",__LINE__);
 
 t.SwitchTimeSegment(__LINE__,"first switch"); 
 
+//  PIC::Debugger::logger.InitLogger(PIC::ThisThread); 
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    PIC::Debugger::LoggerData.erase();
+    PIC::Debugger::logger.func_enter(__LINE__,"main()",&PIC::Debugger::LoggerData,0,5);
+  }
+
   int niter,nTotalIterations=100000001;
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
 
   //time step
   static int LastDataOutputFileNumber=0;
 
+  
+
   for (niter=0;niter<nTotalIterations;niter++) {
 
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+      PIC::Debugger::LoggerData.erase();
+      sprintf(PIC::Debugger::LoggerData.msg,"line=%ld,iter=%i",__LINE__,niter);
+      PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
 
 t.SwitchTimeSegment(__LINE__);
     amps_time_step();
