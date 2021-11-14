@@ -13,6 +13,9 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h> 
+#include <iostream>
+#include <ctime>
 
 #include "rnd.h"
 
@@ -31,6 +34,7 @@ public:
      int nline;
      clock_t time;
      T data;
+     time_t CallTimeValue;
    }; 
 
 
@@ -59,6 +63,7 @@ public:
        InFunctionDataTable[DataTableIndex].data=*InData;
        InFunctionDataTable[DataTableIndex].nline=nline;
        InFunctionDataTable[DataTableIndex].time=clock()/CLOCKS_PER_SEC;    
+       InFunctionDataTable[DataTableIndex].CallTimeValue=time(NULL);
      }
 
      void ResetIndex() {DataTableIndex=0;}
@@ -78,6 +83,7 @@ public:
 
      bool TimedFunctionExecution;
      clock_t start_time,last_access_time,time_limit;
+     time_t CallTimeValue;
 
      void ResetIndex() {DataTableIndex=0;}
 
@@ -97,13 +103,16 @@ public:
        DataTable[DataTableIndex].data=*InData;
        DataTable[DataTableIndex].nline=nline;
        DataTable[DataTableIndex].time=clock()/CLOCKS_PER_SEC;
+       DataTable[DataTableIndex].CallTimeValue=time(NULL);
 
        DataTableIndex++;
      }
 
      void PrintLog(FILE* fout) {
        for (int i=0;i<DataTableIndex;i++) {
-         fprintf(fout,"line=%d\n",DataTable[i].nline); 
+         tm *ct=localtime(&DataTable[i].CallTimeValue);
+
+         fprintf(fout,"line=%d: %i/%i %i:%i:%i\n",DataTable[i].nline,ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec); 
 
          DataTable[i].data.PrintLog(PrintParameter,fout);
        }
@@ -127,6 +136,7 @@ public:
    void add_data_point(int nline,T* InData) {
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].NewEntry(nline,InData); 
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].last_access_time=clock()/CLOCKS_PER_SEC;
+     data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].CallTimeValue=time(NULL);
    }
 
    void func_enter(int nline,const char* fname,T* InData,int iPrintParameter,double time=-1.0){
@@ -144,6 +154,7 @@ public:
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time=clock()/CLOCKS_PER_SEC;
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution=(time>0.0) ? true : false;
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit=time;
+     std::time(&data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].CallTimeValue);
 
      sprintf(data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].fname,"%s",fname);
 
