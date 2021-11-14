@@ -10,6 +10,9 @@
 #include "pic.h"
 
 
+PIC::Debugger::cLoggerData PIC::Debugger::LoggerData;
+cLogger<PIC::Debugger::cLoggerData>  PIC::Debugger::logger;
+
 //Save particle data into a debugger data stream
 void PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(void* data,int length,int nline,const char* fname) {
   char msg[_MAX_STRING_LENGTH_PIC_];

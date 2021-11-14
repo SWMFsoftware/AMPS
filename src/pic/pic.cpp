@@ -43,6 +43,11 @@ int PIC::TimeStep() {
    double ParticleCollisionTime=0.0,BackgroundAtmosphereCollisionTime=0.0;
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
+
+   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+     Debugger::LoggerData.erase();
+     Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&Debugger::LoggerData,0,60);
+   }
    
    PIC::Debugger::Timer.Start("PIC::TimeStep",__LINE__,__FILE__);
 
@@ -580,6 +585,11 @@ int PIC::TimeStep() {
     if (strcmp(PIC::DiagnospticMessageStreamName,"stdout")!=0) {
       fflush(PIC::DiagnospticMessageStream);
     }
+  }
+
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    Debugger::logger.func_exit();  
   }
 
   PIC::Debugger::Timer.Stop(__LINE__);
@@ -1878,6 +1888,11 @@ void PIC::Init_AfterParser() {
   long int LocalCellNumber;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataBlockAMR *block;
+
+  //init the logger 
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    Debugger::logger.InitLogger(ThisThread);
+  }  
 
   //Interpolation routines
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {

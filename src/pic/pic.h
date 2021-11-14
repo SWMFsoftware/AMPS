@@ -23,6 +23,8 @@
 #include <fstream>
 #include <signal.h>
 
+#include "logger.h"
+
 #if defined(__linux__)
 #include <malloc.h>
 #endif
@@ -1294,6 +1296,27 @@ void DeleteAttachedParticles();
 
   //the first part of the namespace Debugger difinition
   namespace Debugger {
+    //declare the logger 
+    class cLoggerData {
+    public:
+      char msg[200];
+
+      void erase() {
+        sprintf(msg,"");
+      } 
+
+      cLoggerData() {
+        erase();
+      }
+
+      void PrintLog(int PintIndex,FILE* fout) {
+        fprintf(fout,"%s\n",msg);
+      }
+    };
+
+    extern cLoggerData LoggerData;
+    extern cLogger<cLoggerData>  logger; 
+
     //save a sequence of the particle data checksums into a file
     void SaveParticleDataIntoDebuggerDataStream(void*,int,int,const char*);
     void SaveParticleDataIntoDebuggerDataStream(void*,int,const char*);

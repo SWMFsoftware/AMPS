@@ -132,6 +132,11 @@ void PIC::TimeStepInternal::SaveParticleRestartFile() {
 void PIC::TimeStepInternal::ParticleCollisions(double &ParticleCollisionTime) {
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleCollisionTime=MPI_Wtime();
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    PIC::Debugger::LoggerData.erase();
+    PIC::Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&PIC::Debugger::LoggerData,0,60);
+  }
   
   switch (_PIC__PARTICLE_COLLISION_MODEL_) {
   case _PIC__PARTICLE_COLLISION_MODEL__NTC_:
@@ -149,7 +154,11 @@ void PIC::TimeStepInternal::ParticleCollisions(double &ParticleCollisionTime) {
   default:  
     exit(__LINE__,__FILE__,"Error: the option is not implemented");
   }
-  
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    PIC::Debugger::logger.func_exit();
+  }
+
   ParticleCollisionTime=MPI_Wtime()-ParticleCollisionTime;
 }
 
