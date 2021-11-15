@@ -245,6 +245,8 @@ public:
         exit(0);
       }
 
+      setsid();
+
       data_ptr=(cLoggerData*)shmat(ShmID,NULL,0);
       Server();
 
@@ -295,7 +297,15 @@ public:
        for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
          if (data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution==true) {
            if (clock()/CLOCKS_PER_SEC-data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time>data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit) {
-             PrintLog();
+             char msg[200];
+
+             sprintf(msg,"The parent process (%i) was terminated: function (FunctionCallTableIndex=%i) run out of time",data_ptr->parent_pid,i);
+             printf("%s\n",msg);
+
+             PrintLog(msg);
+             kill(data_ptr->parent_pid,9); ////SIGINT);
+
+//kill(getppid(), SIGKILL);
 
              exit(0);
            }
@@ -324,12 +334,14 @@ public:
    }
 
 
-   void PrintLog() {
+   void PrintLog(const char* msg=NULL) {
      char fname[200];
      FILE *fout;
 
      sprintf(fname,"logger.rank=%i.log",thread_mpi_rank); 
      fout=fopen(fname,"w");
+
+     if (msg!=NULL) fprintf(fout,"%s\n",msg);
 
      for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
        fprintf(fout,"%i: function=%s\n",i,data_ptr->FunctionCallTable[i].fname);
