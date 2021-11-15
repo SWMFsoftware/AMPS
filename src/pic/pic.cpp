@@ -109,6 +109,12 @@ int PIC::TimeStep() {
    }
 
    //sampling of the particle data
+   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+     PIC::Debugger::LoggerData.erase();
+     sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call Sampling()");
+     PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+   }
+
    TimeStepInternal::Sampling(SamplingTime); 
    RunTimeSystemState::CumulativeTiming::SamplingTime+=SamplingTime;
 
@@ -119,12 +125,24 @@ int PIC::TimeStep() {
 
   //simulate particle collisions
   if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) {
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call particle collision model");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
     TimeStepInternal::ParticleCollisions(ParticleCollisionTime);
     RunTimeSystemState::CumulativeTiming::ParticleCollisionTime+=ParticleCollisionTime;
   }  
 
   //simulate collisions with the background atmosphere
   if (_PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_) {
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call background atmosphere");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
     TimeStepInternal::BackgroundAtmosphereModel(BackgroundAtmosphereCollisionTime);
 
     BackgroundAtmosphereCollisionTime=MPI_Wtime()-BackgroundAtmosphereCollisionTime;
@@ -135,6 +153,12 @@ int PIC::TimeStep() {
 
   //particle photochemistry model
   if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call photolytic reaction model");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
     TimeStepInternal::PhtolyticReactions(PhotoChemistryTime);
     RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   }
@@ -154,6 +178,12 @@ int PIC::TimeStep() {
   
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call TimeStepInternal::ExecutionTrackFieldSolverECSIM()");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
     TimeStepInternal::ExecutionTrackFieldSolverECSIM(ParticleMovingTime,ParticleExchangeTime,FieldSolverTime);
     
     RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
@@ -162,6 +192,12 @@ int PIC::TimeStep() {
     break;
     
   case _PIC_FIELD_SOLVER_MODE__OFF_:
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call TimeStepInternal::ExecutionTrackDefault()");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
     TimeStepInternal::ExecutionTrackDefault(ParticleMovingTime,ParticleExchangeTime);
     
     RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
@@ -530,6 +566,12 @@ int PIC::TimeStep() {
 
       if (EmergencyLoadRebalancingFlag==true || testRebalancing) {
         if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Load Rebalancing.....  begins\n");
+
+        if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+          PIC::Debugger::LoggerData.erase();
+          sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call dynamic load rebalancing");
+          PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+        }
 
         //correct the node's load balancing measure
         if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) { 

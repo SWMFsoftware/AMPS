@@ -313,8 +313,25 @@ void PIC::TimeStepInternal::CheckParticleLists() {
 //===============================================================================================
 //execution track specific to the default model setting
 void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,double& ParticleExchangeTime) {
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    Debugger::LoggerData.erase();
+    Debugger::logger.func_enter(__LINE__,"PIC::TimeStepInternal::ExecutionTrackDefault()",&Debugger::LoggerData,0,60);
+  }
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    PIC::Debugger::LoggerData.erase();
+    sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStepInternal::ExecutionTrackDefault)): call particle mover");
+    PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+  }
+
   ParticleMovingTime=MPI_Wtime();
   PIC::Mover::MoveParticles();
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    PIC::Debugger::LoggerData.erase();
+    sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStepInternal::ExecutionTrackDefault)): call exange particle procedure");
+    PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+  }
 
   if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) {
     PIC::BC::ExternalBoundary::Periodic::ExchangeParticles();
@@ -332,6 +349,10 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
   ParticleExchangeTime=MPI_Wtime();
   PIC::Parallel::ExchangeParticleData();
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
+
+  if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+    Debugger::logger.func_exit();
+  }
 }
 
   
