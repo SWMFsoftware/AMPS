@@ -28,6 +28,9 @@ public:
    static const int InFunctionDataTableLength=20;
    int thread_mpi_rank;
 
+   //semaphore to sync Server and the process that forked the logger
+   sem_t *sem_id;
+
    //in-function location
    class cInFunctionDataEl {
    public:
@@ -42,8 +45,30 @@ public:
    const static int fname_length=15;
    char fname[fname_length];
  
+   //remove the semaphore
+   void remove_semaphore() {
+     if (sem_close(sem_id)!=0) {
+       perror("Child: [sem_close] failed\n");
+       return;
+     }
+      
+     if (sem_unlink(fname)<0) {
+       perror("Child: [sem_unlink] failed\n");
+       return;
+     }
+   }
+
+   //remove key file
+   void remove_key_file() {
+     char cmd[1000];
+
+     sprintf(cmd,"rm -f %s", fname);
+     system(cmd);
+   }
+      
    cLogger() {
      thread_mpi_rank=0;
+     sem_id=NULL;
    }
 
    class cInFunctionData {
@@ -140,6 +165,10 @@ public:
    }
 
    void func_enter(int nline,const char* fname,T* InData,int iPrintParameter,double time=-1.0){
+     //wait semaphore
+     sem_wait(sem_id);
+
+     //update the function table
      data_ptr->FunctionCallTableIndex++;
 
      //if InFunctionDataTableIndex reached ith max value -> move all 
@@ -159,20 +188,23 @@ public:
      sprintf(data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].fname,"%s",fname);
 
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].NewEntry(nline,InData);  
+
+     //post the semaphore
+     sem_post(sem_id); 
    }
 
    void func_exit() {
+     sem_wait(sem_id);
+
      data_ptr->FunctionCallTableIndex--;
+
+     sem_post(sem_id);
    }
 
    void InitLogger(int InMpiRank) {
-
      thread_mpi_rank=InMpiRank; 
 
     //generate unique file name
-//    const int fname_length=15;
-//    char fname[fname_length];
-
     do {
       for (int i=0;i<fname_length-1;i++) {
         int c_min,c_max;
@@ -214,7 +246,7 @@ public:
       int ShmID;
 
       //set the semaphore and wait for the parent to finish initialization of the data
-      sem_t *sem_id=sem_open(fname,O_CREAT,0600,0);
+      sem_id=sem_open(fname,O_CREAT,0600,0);
 
       if (sem_id==SEM_FAILED) {
         perror("Child: [sem_open] failed\n");
@@ -226,6 +258,7 @@ public:
         perror("Child: [sem_wait] fail\n");
       }
 
+/*
       //remove the semaphore
       if (sem_close(sem_id)!=0) {
         perror("Child: [sem_close] failed\n");
@@ -236,6 +269,7 @@ public:
         perror("Child: [sem_unlink] failed\n");
         return;
       }
+*/
 
       //allocated shared memory
       ShmKey=ftok(fname,'a');
@@ -246,6 +280,7 @@ public:
       }
 
       setsid();
+      sem_post(sem_id);
 
       data_ptr=(cLoggerData*)shmat(ShmID,NULL,0);
       Server();
@@ -256,7 +291,7 @@ public:
       key_t ShmKey;
       int ShmID;
 
-      sem_t *sem_id=sem_open(fname,O_CREAT,0600,0);
+      sem_id=sem_open(fname,O_CREAT,0600,0);
 
       if (sem_id==SEM_FAILED) {
         perror("Parent: [sem_open] failed\n");
@@ -294,24 +329,30 @@ public:
    void Server() {
      while (true) {
        //scan through all functins to check timing
+       sem_wait(sem_id); 
+       
        for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
          if (data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution==true) {
            if (clock()/CLOCKS_PER_SEC-data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time>data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit) {
              char msg[200];
 
-             sprintf(msg,"The parent process (%i) was terminated: function (FunctionCallTableIndex=%i) run out of time",data_ptr->parent_pid,i);
+             sprintf(msg,"The parent process (%i) was terminated: function %s [FunctionCallTableIndex=%i, mpi rank=%i] ran out of time",
+                data_ptr->parent_pid,data_ptr->FunctionCallTable[i].fname,i,thread_mpi_rank);
+
              printf("%s\n",msg);
 
              PrintLog(msg);
              kill(data_ptr->parent_pid,9); ////SIGINT);
 
-//kill(getppid(), SIGKILL);
+             remove_semaphore();
+             remove_key_file(); 
 
              exit(0);
            }
          }
        }           
 
+       sem_post(sem_id);
 
        //verify that the parent process is still alive
        if (0!=kill(data_ptr->parent_pid,0)) {
@@ -319,13 +360,9 @@ public:
          printf("The parent process (%i) was terminated: output the log\n",data_ptr->parent_pid);
          PrintLog();
 
+         remove_semaphore();
+         remove_key_file();
 
-         //remove the key file and exit
-        char cmd[1000];
-
-        sprintf(cmd,"rm -f %s", fname);
-        system(cmd);
-         
          exit(0);
        }
 
