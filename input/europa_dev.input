@@ -70,7 +70,7 @@ ParticleWeightCorrectionMode=on
 #endMesh
 
 #General
-  ReferenceInjectionParticleNumber=20000 
+  ReferenceInjectionParticleNumber=10000 
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
   OutputMode=SingleFile !!SingleFile !SingleFile,DistributedFiles
@@ -92,6 +92,7 @@ ParticleWeightCorrectionMode=on
   define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
   define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
   define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
+  define _PIC_LOGGER_MODE_ _PIC_MODE_ON_ 
 !  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Europa::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
 
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__NONE_
@@ -141,6 +142,7 @@ ParticleWeightCorrectionMode=on
   !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::TrajectoryTrackingMover(ptr,LocalTimeStep,node)
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node)  PIC::Mover::TrajectoryTrackingMover_new(ptr,LocalTimeStep,node) 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(ptr,LocalTimeStep,node,FirstBoundaryFlag)  PIC::Mover::TrajectoryTrackingMover_new(ptr,LocalTimeStep,node,FirstBoundaryFlag)  
+  define _PIC_RUNTIME_STAT_OUTPUT__MAX_ITERATION_NUMBER_ 1
 
 
 #endGeneral

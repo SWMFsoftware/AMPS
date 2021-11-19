@@ -1243,17 +1243,17 @@ void amps_init() {
    PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_O_SPEC_);
    PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_OH_SPEC_);
    */
-    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O2_SPEC_, _H2O_SPEC_, 1.0);
+    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O2_SPEC_, _H2O_SPEC_, 2.0);
     /*
     PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H_SPEC_, _H2O_SPEC_, 1.48/25.4*0.1);
     PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H2_SPEC_, _H2O_SPEC_,1.48/25.4*0.01);
     PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_SPEC_, _H2O_SPEC_,  1.48/25.4);
     PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_OH_SPEC_, _H2O_SPEC_, 1.48/25.4);
     */
-    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H_SPEC_, _H2O_SPEC_, 1e-4);
-    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H2_SPEC_, _H2O_SPEC_,1e-4);
-    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_SPEC_, _H2O_SPEC_, 1e-4);
-    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_OH_SPEC_, _H2O_SPEC_,1e-4);
+    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H_SPEC_, _H2O_SPEC_, 2*1e-4);
+    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_H2_SPEC_, _H2O_SPEC_,0.5*1e-4);
+    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_O_SPEC_, _H2O_SPEC_, 5*1e-3);
+    PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_OH_SPEC_, _H2O_SPEC_,1e-3);
 
 
    for (int spec=0;spec<PIC::nTotalSpecies;spec++){
