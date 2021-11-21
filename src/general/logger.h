@@ -245,6 +245,34 @@ public:
       key_t ShmKey;
       int ShmID;
 
+      //cleate second fork
+      pid=fork();
+
+      if (pid<0) {
+        perror("Unable to second fork\n");
+      }
+      else if (pid>0) {
+        exit(0);
+      } 
+
+      int i, fd;
+
+      /* child continues here */
+      /* now close all extra fds */
+//      for (i=getdtablesize()-1; i>=0; --i) close(i);
+
+      /* change tty */
+//      fd = open("/dev/tty", O_RDWR);
+//      ioctl(fd, TIOCNOTTY, 0);
+//      close(fd);
+//      chdir("/");
+      umask(022); /* set a default for dumb programs */
+
+      setpgid(0,0);  /* set the process group */
+//      fd=open("/dev/null", O_RDWR); /* stdin */
+//      dup(fd); /* stdout */
+//      dup(fd); /* stderr */
+
       //set the semaphore and wait for the parent to finish initialization of the data
       sem_id=sem_open(fname,O_CREAT,0600,0);
 
@@ -258,19 +286,6 @@ public:
         perror("Child: [sem_wait] fail\n");
       }
 
-/*
-      //remove the semaphore
-      if (sem_close(sem_id)!=0) {
-        perror("Child: [sem_close] failed\n");
-        return;
-      }
-
-      if (sem_unlink(fname)<0) {
-        perror("Child: [sem_unlink] failed\n");
-        return;
-      }
-*/
-
       //allocated shared memory
       ShmKey=ftok(fname,'a');
       ShmID=shmget(ShmKey,sizeof(cLoggerData),IPC_CREAT);
@@ -279,12 +294,13 @@ public:
         exit(0);
       }
 
+      remove_key_file();
+
       setsid();
       sem_post(sem_id);
 
       data_ptr=(cLoggerData*)shmat(ShmID,NULL,0);
       Server();
-
     }
     else {
       //this the the parent process
@@ -345,8 +361,6 @@ public:
              kill(data_ptr->parent_pid,9); ////SIGINT);
 
              remove_semaphore();
-             remove_key_file(); 
-
              exit(0);
            }
          }
@@ -361,8 +375,6 @@ public:
          PrintLog();
 
          remove_semaphore();
-         remove_key_file();
-
          exit(0);
        }
 
