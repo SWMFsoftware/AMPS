@@ -204,6 +204,9 @@ public:
    void InitLogger(int InMpiRank) {
      thread_mpi_rank=InMpiRank; 
 
+     //remove the terminate signal file 
+     remove("AMPS_LOGGER_TERMINATE");
+
     //generate unique file name
     do {
       for (int i=0;i<fname_length-1;i++) {
@@ -358,6 +361,15 @@ public:
              printf("%s\n",msg);
 
              PrintLog(msg);
+
+
+             //output the termination code file and waite a bit before killing the parent process 
+             FILE *fsignal=fopen("AMPS_LOGGER_TERMINATE","w");
+             fprintf(fsignal,"Oops....");
+             fclose(fsignal);
+
+             sleep(10);
+
              kill(data_ptr->parent_pid,9); ////SIGINT);
 
              remove_semaphore();
@@ -368,11 +380,30 @@ public:
 
        sem_post(sem_id);
 
+       //verify that the terminate signal file is present
+       struct stat buffer;
+
+       if (stat("AMPS_LOGGER_TERMINATE",&buffer)==0) {
+         //the file does not exist
+         
+         printf("The parent process (%i) was terminated: output the log\n",data_ptr->parent_pid);
+         PrintLog();
+         remove_semaphore();
+         exit(0);         
+       } 
+
        //verify that the parent process is still alive
        if (0!=kill(data_ptr->parent_pid,0)) {
          //the parent process was exited 
          printf("The parent process (%i) was terminated: output the log\n",data_ptr->parent_pid);
          PrintLog();
+
+         //output the termination code file and waite a bit before killing the parent process 
+         FILE *fsignal=fopen("AMPS_LOGGER_TERMINATE","w");
+         fprintf(fsignal,"Oops....");
+         fclose(fsignal);
+         
+         sleep(10);
 
          remove_semaphore();
          exit(0);
