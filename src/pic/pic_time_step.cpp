@@ -135,7 +135,7 @@ void PIC::TimeStepInternal::ParticleCollisions(double &ParticleCollisionTime) {
 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
     PIC::Debugger::LoggerData.erase();
-    PIC::Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&PIC::Debugger::LoggerData,0,60);
+    PIC::Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&PIC::Debugger::LoggerData,0,_PIC_LOGGER_TIME_LIMIT_);
   }
   
   switch (_PIC__PARTICLE_COLLISION_MODEL_) {
@@ -315,7 +315,7 @@ void PIC::TimeStepInternal::CheckParticleLists() {
 void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,double& ParticleExchangeTime) {
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
     Debugger::LoggerData.erase();
-    Debugger::logger.func_enter(__LINE__,"PIC::TimeStepInternal::ExecutionTrackDefault()",&Debugger::LoggerData,0,60);
+    Debugger::logger.func_enter(__LINE__,"PIC::TimeStepInternal::ExecutionTrackDefault()",&Debugger::LoggerData,0,_PIC_LOGGER_TIME_LIMIT_);
   }
 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {

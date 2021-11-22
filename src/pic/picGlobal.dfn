@@ -435,6 +435,7 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 
 //use the logger to get information about the run
 #define _PIC_LOGGER_MODE_ _PIC_MODE_OFF_
+#define _PIC_LOGGER_TIME_LIMIT_ 60
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

@@ -46,7 +46,7 @@ int PIC::TimeStep() {
 
    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
      Debugger::LoggerData.erase();
-     Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&Debugger::LoggerData,0,60);
+     Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&Debugger::LoggerData,0,_PIC_LOGGER_TIME_LIMIT_);
    }
    
    PIC::Debugger::Timer.Start("PIC::TimeStep",__LINE__,__FILE__);
