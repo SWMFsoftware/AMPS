@@ -1933,7 +1933,7 @@ void PIC::Init_AfterParser() {
 
   //init the logger 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
-    Debugger::logger.InitLogger(ThisThread);
+    Debugger::logger.InitLogger(ThisThread,false);
   }  
 
   //Interpolation routines

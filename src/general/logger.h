@@ -107,7 +107,7 @@ public:
      char fname[200];
 
      bool TimedFunctionExecution;
-     clock_t start_time,last_access_time,time_limit;
+     double start_time,time_limit;
      time_t CallTimeValue;
 
      void ResetIndex() {DataTableIndex=0;}
@@ -160,7 +160,6 @@ public:
 
    void add_data_point(int nline,T* InData) {
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].NewEntry(nline,InData); 
-     data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].last_access_time=clock()/CLOCKS_PER_SEC;
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].CallTimeValue=time(NULL);
    }
 
@@ -180,7 +179,11 @@ public:
        data_ptr->FunctionCallTableIndex=InFunctionDataTableLength-1;
      }
 
-     data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time=clock()/CLOCKS_PER_SEC;
+
+     timespec begin; 
+     clock_gettime(CLOCK_REALTIME, &begin);
+
+     data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time=begin.tv_sec+1e-9*begin.tv_nsec;
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution=(time>0.0) ? true : false;
      data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit=time;
      std::time(&data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].CallTimeValue);
@@ -201,7 +204,7 @@ public:
      sem_post(sem_id);
    }
 
-   void InitLogger(int InMpiRank) {
+   void InitLogger(int InMpiRank,bool fork_daemon=false) {
      thread_mpi_rank=InMpiRank; 
 
      //remove the terminate signal file 
@@ -241,7 +244,9 @@ public:
     while (true);
 
     //fork process
-    pid_t pid=fork();
+    pid_t pid=-1;
+
+    if (fork_daemon==true) fork();
 
     if (pid==0) {
       //this is the child. The child will be the logger 
@@ -304,6 +309,7 @@ public:
 
       data_ptr=(cLoggerData*)shmat(ShmID,NULL,0);
       Server();
+      exit(0);
     }
     else {
       //this the the parent process
@@ -338,7 +344,16 @@ public:
       }
 
     }
- 
+
+    //in case when logger is not forked, start the logger with system()
+    if (fork_daemon==false) {
+      char cmd[200];
+
+      sprintf(cmd,"logger -name %s &",fname);
+      system(cmd);
+
+      printf("Logger started [mpi rank=%i]\n",thread_mpi_rank);   
+    }
   }
 
   void InitLogger() {
@@ -352,7 +367,13 @@ public:
        
        for (int i=0;i<=data_ptr->FunctionCallTableIndex;i++) {
          if (data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].TimedFunctionExecution==true) {
-           if (clock()/CLOCKS_PER_SEC-data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time>data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit) {
+           double t_now;
+           timespec now;     
+
+           clock_gettime(CLOCK_REALTIME, &now);
+           t_now=now.tv_sec+1e-9*now.tv_nsec;
+
+           if (t_now-data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].start_time>data_ptr->FunctionCallTable[data_ptr->FunctionCallTableIndex].time_limit) {
              char msg[200];
 
              sprintf(msg,"The parent process (%i) was terminated: function %s [FunctionCallTableIndex=%i, mpi rank=%i] ran out of time",
@@ -373,7 +394,7 @@ public:
              kill(data_ptr->parent_pid,9); ////SIGINT);
 
              remove_semaphore();
-             exit(0);
+             return;
            }
          }
        }           
@@ -389,7 +410,7 @@ public:
          printf("The parent process (%i) was terminated: output the log\n",data_ptr->parent_pid);
          PrintLog();
          remove_semaphore();
-         exit(0);         
+         return;         
        } 
 
        //verify that the parent process is still alive
@@ -406,7 +427,7 @@ public:
          sleep(10);
 
          remove_semaphore();
-         exit(0);
+         return;
        }
 
        sleep(0.1);

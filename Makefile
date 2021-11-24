@@ -277,6 +277,8 @@ LIB_AMPS = ${WSD}/libAMPS.a
 PDF:
 	cd doc; make PDF
 
+logger:
+	${CC} -g ${SEARCH_C} utility/logger.cpp -o logger 
 clean:
 	rm -rf ${LIB_AMPS} ${WSD}
 	@(if [ -d srcInterface ]; then cd srcInterface; $(MAKE) clean; fi);
