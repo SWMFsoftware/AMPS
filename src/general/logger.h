@@ -349,11 +349,54 @@ public:
     if (fork_daemon==false) {
       char cmd[200];
 
-      sprintf(cmd,"logger -name %s &",fname);
-      system(cmd);
 
-      printf("Logger started [mpi rank=%i]\n",thread_mpi_rank);   
+        setsid();
+
+      pid_t pid=fork();
+
+    signal(SIGCHLD, SIG_IGN);
+    signal(SIGHUP, SIG_IGN);
+
+
+      if (pid==0) {
+        setsid();
+        remove(fname);
+
+       pid=fork();
+
+       if (pid>0) exit(EXIT_SUCCESS);
+
+        if (pid==0) {
+
+setsid();
+    signal(SIGCHLD, SIG_IGN);
+    signal(SIGHUP, SIG_IGN);
+
+      umask(0); /* set a default for dumb programs */
+      setpgid(0,0);  /* set the process group */
+
+    /* Close all open file descriptors */
+    int x;
+    for (x = sysconf(_SC_OPEN_MAX); x>=0; x--)
+    {
+ //       close (x);
     }
+
+//
+        printf("Logger started [mpi rank=%i], pid=%i,parent pid=%i\n",thread_mpi_rank,getpid(),getppid());
+
+//        sprintf(cmd,"nohup logger -name %s &",fname);
+//        system(cmd);
+
+
+        Server();
+}
+
+//sleep(1);
+        exit(EXIT_SUCCESS);
+      }
+    }
+
   }
 
   void InitLogger() {
