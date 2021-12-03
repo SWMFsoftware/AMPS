@@ -38,6 +38,7 @@ PICOBJ = pic.o \
 	pic_lb.o \
 	pic_qlb.o \
 	pic_debugger.o \
+	pic_debugger_concurrent.o \
 	pic_internal_boundary_rotation_body.o \
 	pic_internal_boundary_nastran_surface.o \
 	pic_fluid.o \

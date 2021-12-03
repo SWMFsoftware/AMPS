@@ -23,6 +23,10 @@
 #include <fstream>
 #include <signal.h>
 #include <semaphore.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+
 
 #include "logger.h"
 
@@ -1317,12 +1321,17 @@ void DeleteAttachedParticles();
       void GenerateKey();
       void RemoveKeyFile();
       void InitSharedMomery();
+      void InitSemaphore();
 
       class cData {
+      public:
         char msg[200];
         int i[3];
         double d[3];
         unsigned long int c;
+
+        int nline;
+        char fname[200];
 
         void clear() {
           c=0;
@@ -1334,6 +1343,8 @@ void DeleteAttachedParticles();
           clear();
         }
       };
+
+      extern cData *data_ptr;
 
       void Trap();
       void NewEntry(cData* d,int nline,char const *fname);

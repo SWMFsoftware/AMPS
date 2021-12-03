@@ -437,5 +437,8 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _PIC_LOGGER_MODE_ _PIC_MODE_OFF_
 #define _PIC_LOGGER_TIME_LIMIT_ 60
 
+//run two AMPS runs concurrently and compare the execution path using another process
+#define _PIC__DEBUD_CONCURRENT_RUNS_ _PIC_MODE_OFF_
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 
