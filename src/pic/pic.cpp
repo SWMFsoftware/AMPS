@@ -1120,7 +1120,7 @@ void PIC::Sampling::Sampling() {
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
 
-      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+/*      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
         PIC::Mesh::cDataBlockAMR *block=node->block;
 
         if (!block) continue;
@@ -1136,7 +1136,7 @@ void PIC::Sampling::Sampling() {
 
           if ((DIM==1)||(DIM==2)) break;
         }
-      }
+      }*/
 
       //flush sampling buffers in the internal surfaces installed into the mesh
   #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_OFF_
@@ -1239,6 +1239,26 @@ void PIC::Sampling::Sampling() {
           
           if (SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_) {
             SamplingMode=_DISABLED_SAMPLING_MODE_;
+          }
+        }
+
+        if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_DISABLED_SAMPLING_MODE_)) {
+          for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+            PIC::Mesh::cDataBlockAMR *block=node->block;
+
+            if (!block) continue;
+            for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+              for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+                for (i=0;i<_BLOCK_CELLS_X_;i++) {
+                  LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+                  PIC::Mesh::flushCollectingSamplingBuffer(block->GetCenterNode(LocalCellNumber));
+                }
+
+                if (DIM==1) break;
+              }
+
+              if ((DIM==1)||(DIM==2)) break;
+            }
           }
         }
 
