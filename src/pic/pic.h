@@ -22,6 +22,7 @@
 #include <iostream>
 #include <fstream>
 #include <signal.h>
+#include <semaphore.h>
 
 #include "logger.h"
 
@@ -1296,6 +1297,49 @@ void DeleteAttachedParticles();
 
   //the first part of the namespace Debugger difinition
   namespace Debugger {
+    //debug concurrently executed AMPS applications
+    //The point: some test gives inconsistent result that changes from one run to another (something is not initialized)  
+    //So: two copies of the same run will be started independently. Each of them will be gives a uniqie base-name key 
+    //to create a shared memory and initiate a semaphore. 
+    //In addition to that, another process would be started that will know the base-name-keys of each process of these two MPI runs.
+    //That process will check what get in the shared memory by each of process of the MPI runs, compare that, and in case content of the shared
+    //memory is the same, it will unlock the semaphore so the run continues. Otherwise, it prints the log and keeps the semaphre locked.
+    //That can be observed in the debugger to determine where the execution of the MPI runs diverged. 
+    //
+    //Maybe: MPI process will not wait for the semaphore but will check it in the buisy waiting loop, and if the process waits for too long (5 sec?) 
+    //for the semaphore to be posted, the MPI processes will call a trap function, where it can be interseptred in the debugger     
+
+    
+    namespace ConcurrentDebug {
+      extern char Key[200];
+      extern sem_t *sem_id;
+     
+      void GenerateKey();
+      void RemoveKeyFile();
+      void InitSharedMomery();
+
+      class cData {
+        char msg[200];
+        int i[3];
+        double d[3];
+        unsigned long int c;
+
+        void clear() {
+          c=0;
+          for (int i=0;i<200;i++) msg[i]=0;
+          for (int i=0;i<3;i++) i=0,d[i]=0.0;
+        }
+
+        cData() {
+          clear();
+        }
+      };
+
+      void Trap();
+      void NewEntry(cData* d,int nline,char const *fname);
+    }      
+
+
     //declare the logger 
     class cLoggerData {
     public:
