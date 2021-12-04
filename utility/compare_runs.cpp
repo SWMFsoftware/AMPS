@@ -140,7 +140,7 @@ void InitSemaphore(int thread) {
 }
 
 int main () {
-  pid_t pid;
+  pid_t pid=-1 ;
 
   ReadBase();
 
@@ -171,7 +171,7 @@ int main () {
     double diff;
     int ii;
 
-    cout << "test " << cnt << endl;
+    cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
     cnt++; 
           
     for (ii=0;ii<3;ii++) {
