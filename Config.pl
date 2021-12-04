@@ -125,6 +125,8 @@ foreach (@Arguments) {
 
      print "-align\t\t\t\talign (64) state vectors and arrays when possible and improve the efficientcy\n";
 
+     print "-concurrent_debug\n"; 
+
      print "-fexit=[exit,mpi_abort]\t\tselect function that will be used to terminate code in case of an error. In some systems mpi_abort() does not terminate the code, but in other systems exit() does not terminate the code\n"; 
      exit;
    }
@@ -217,6 +219,31 @@ foreach (@Arguments) {
 
       next};
       
+
+  if (/^-concurrent_debug/i) {
+    `g++ -g utility/compare_runs.cpp -o compare_runs -lpthread -lrt`; 
+
+    my $fh;
+    open($fh,'<',"Makefile");
+    my @lines = <$fh>;
+    close($fh);
+
+    open($fh,'>',"Makefile");
+
+    foreach my $line (@lines) {
+      if($line =~ m/^EXTRALINKEROPTIONS_CPP=/) {
+        $line = "EXTRALINKEROPTIONS_CPP=-lrt\n";
+      }
+
+      print $fh $line;
+    }
+
+    close($fh);
+
+    add_line_general_conf("#undef _PIC__DEBUG_CONCURRENT_RUNS_ \n#define _PIC__DEBUG_CONCURRENT_RUNS_ _PIC_MODE_ON_\n");
+    next;
+  }
+
   if (/^-mp=(.*)$/i) {
     my $t;
     $t=uc($1);
