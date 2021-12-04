@@ -30,14 +30,13 @@ int my_rank=0;
 char Base0[200],Base1[200];
 
 
-
-
 class cData {
 public:
   char msg[200];
   int i[3];
   double d[3];
   unsigned long int c;
+  int cnt;
 
   int nline;
   char fname[200];
@@ -220,13 +219,10 @@ cout << diff << "  " << run0_data_ptr->d[ii] << "   " << run1_data_ptr->d[ii] <<
       for (int ii=0;ii<3;ii++) cout << ii <<": " << run0_data_ptr->d[ii] << "   " << run1_data_ptr->d[ii] << ": diff=" << run0_data_ptr->d[ii]-run1_data_ptr->d[ii] << endl;
 
       exit(0);
-     }
+    }
 
-     sem_post(run0_sem_data);
-     sem_post(run1_sem_data);
-
-     sem_post(run0_sem_exit);
-     sem_post(run1_sem_exit);
+    sem_post(run0_sem_exit);
+    sem_post(run1_sem_exit);
   }  
 
 

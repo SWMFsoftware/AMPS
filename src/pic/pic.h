@@ -1329,6 +1329,7 @@ void DeleteAttachedParticles();
         int i[3];
         double d[3];
         unsigned long int c;
+        int cnt;
 
         int nline;
         char fname[200];

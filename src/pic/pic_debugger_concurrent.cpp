@@ -74,8 +74,6 @@ void PIC::Debugger::ConcurrentDebug::InitSemaphore() {
     exit(0);
   }
 
-  sem_post(sem_data_id);
-
   sprintf(sname,"%s_exit",Key);
   sem_exit_id=sem_open(sname,O_CREAT,0600,0);
 
@@ -97,7 +95,7 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
 
   //save data
 
-  sem_wait(sem_data_id);
+//  sem_wait(sem_data_id);
 
   *data_ptr=*d;
   data_ptr->nline=nline;
