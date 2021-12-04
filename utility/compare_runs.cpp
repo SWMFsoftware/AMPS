@@ -168,7 +168,6 @@ int main () {
     sem_wait(run1_sem_data);
 
     bool flag=false;
-    double diff;
     int ii;
 
     cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
@@ -176,34 +175,13 @@ int main () {
           
     for (ii=0;ii<3;ii++) {
       if (run0_data_ptr->i[ii]!=run1_data_ptr->i[ii]) {
-
-
-std::this_thread::sleep_for(std::chrono::milliseconds(10)); // sleep for 0.01 second
-
-        diff=run0_data_ptr->i[ii]-run1_data_ptr->i[ii]; //used to look in the debugger
-
-cout << diff << "  " << run0_data_ptr->i[ii] << "   " << run1_data_ptr->i[ii] << endl;
-
-
-        if (diff!=0) {
-          flag=true; 
-          break;
-        }
+        flag=true; 
+        break;
       }
 
       if (run0_data_ptr->d[ii]!=run1_data_ptr->d[ii]) {
-
-std::this_thread::sleep_for(std::chrono::milliseconds(10)); // sleep for 0.01 second
-
-        diff=run0_data_ptr->d[ii]-run1_data_ptr->d[ii]; //used to look in the debugger
-
-cout << diff << "  " << run0_data_ptr->d[ii] << "   " << run1_data_ptr->d[ii] << endl;
-
-
-        if (diff!=0) {
-          flag=true;
-          break;
-        }
+        flag=true;
+        break;
       }
     }
             
