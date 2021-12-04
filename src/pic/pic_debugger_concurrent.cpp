@@ -100,7 +100,7 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
   *data_ptr=*d;
   data_ptr->nline=nline;
   sprintf(data_ptr->fname,"fname=%s",fname); 
-
+  sleep(1);
   sem_post(sem_data_id);
 
   //post semaphore
