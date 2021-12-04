@@ -1316,7 +1316,7 @@ void DeleteAttachedParticles();
     
     namespace ConcurrentDebug {
       extern char Key[200];
-      extern sem_t *sem_id;
+      extern sem_t *sem_data_id,*sem_exit_id;
      
       void GenerateKey();
       void RemoveKeyFile();
@@ -1335,8 +1335,9 @@ void DeleteAttachedParticles();
 
         void clear() {
           c=0;
-          for (int i=0;i<200;i++) msg[i]=0;
-          for (int i=0;i<3;i++) i=0,d[i]=0.0;
+
+          for (int ii=0;ii<200;ii++) msg[ii]=0;
+          for (int ii=0;ii<3;ii++) i[ii]=0,d[ii]=0.0;
         }
 
         cData() {
@@ -2311,6 +2312,13 @@ void DeleteAttachedParticles();
         exit(__LINE__,__FILE__,"the velocity is too large");
       }*/
 
+      #if _PIC__DEBUG_CONCURRENT_RUNS_ == _PIC_MODE_ON_
+      PIC::Debugger::ConcurrentDebug::cData d;
+ 
+      for (int ii=0;ii<3;ii++) d.d[ii]=v[ii];
+      PIC::Debugger::ConcurrentDebug::NewEntry(&d,__LINE__,__FILE__);
+      #endif
+
 
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
@@ -2346,6 +2354,14 @@ void DeleteAttachedParticles();
     #endif
     #endif
 
+      #if _PIC__DEBUG_CONCURRENT_RUNS_ == _PIC_MODE_ON_
+      PIC::Debugger::ConcurrentDebug::cData d;
+
+      for (int ii=0;ii<3;ii++) d.d[ii]=v[ii];
+      PIC::Debugger::ConcurrentDebug::NewEntry(&d,__LINE__,__FILE__);
+      #endif
+
+
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(v,3*sizeof(double),__LINE__,__FILE__);
       #endif
@@ -2371,11 +2387,28 @@ void DeleteAttachedParticles();
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetX(double* x,byte *ParticleDataStart) {
+
+      #if _PIC__DEBUG_CONCURRENT_RUNS_ == _PIC_MODE_ON_
+      PIC::Debugger::ConcurrentDebug::cData d;
+
+      for (int ii=0;ii<3;ii++) d.d[ii]=x[ii];
+      PIC::Debugger::ConcurrentDebug::NewEntry(&d,__LINE__,__FILE__);
+      #endif
+
+
       memcpy(x,ParticleDataStart+_PIC_PARTICLE_DATA__POSITION_OFFSET_,DIM*sizeof(double));
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetX(double* x,long int ptr) {
+
+      #if _PIC__DEBUG_CONCURRENT_RUNS_ == _PIC_MODE_ON_
+      PIC::Debugger::ConcurrentDebug::cData d;
+
+      for (int ii=0;ii<3;ii++) d.d[ii]=x[ii];
+      PIC::Debugger::ConcurrentDebug::NewEntry(&d,__LINE__,__FILE__);
+      #endif
+
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(x,3*sizeof(double),__LINE__,__FILE__);

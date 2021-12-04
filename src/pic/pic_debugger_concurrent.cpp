@@ -10,15 +10,21 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/shm.h>
 #include <time.h>
 #include <iostream>
 #include <ctime>
+#include <fcntl.h>
+#include <sys/shm.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 
 
 #include "pic.h" 
 
 char PIC::Debugger::ConcurrentDebug::Key[200];
-sem_t *PIC::Debugger::ConcurrentDebug::sem_id; 
+sem_t *PIC::Debugger::ConcurrentDebug::sem_data_id; 
+sem_t *PIC::Debugger::ConcurrentDebug::sem_exit_id;
 PIC::Debugger::ConcurrentDebug::cData *PIC::Debugger::ConcurrentDebug::data_ptr;
 
 
@@ -33,9 +39,6 @@ void PIC::Debugger::ConcurrentDebug::GenerateKey() {
   MPI_Bcast(base,200,MPI_CHAR,0,MPI_GLOBAL_COMMUNICATOR); 
 
   sprintf(Key,"%s.amps_rank=%i",base,PIC::ThisThread);
-
-  FILE *fkey=fopen(Key,"w");
-  fclose(fkey);
 }
 
 void PIC::Debugger::ConcurrentDebug::RemoveKeyFile() {
@@ -43,36 +46,42 @@ void PIC::Debugger::ConcurrentDebug::RemoveKeyFile() {
 }
 
 void PIC::Debugger::ConcurrentDebug::InitSharedMomery() {
-  key_t ShmKey;
-  int ShmID;
+  int shm_fd;
   int size=sizeof(cData);
 
-  ShmKey=ftok(Key,'a');
-  ShmID=shmget(ShmKey,size,IPC_CREAT);
-
-  if (ShmID<0) {
-    exit(__LINE__,__FILE__,"Error: cannot allocate shared memory");
-  }
-
-  data_ptr=(cData*)shmat(ShmID,NULL,0);
-
+  /* create the shared memory object */
+  shm_fd = shm_open(Key, O_CREAT | O_RDWR, 0666);
+ 
+  /* configure the size of the shared memory object */
+  ftruncate(shm_fd,size);
+ 
+  /* memory map the shared memory object */
+  data_ptr=(cData*)mmap(0, size, PROT_WRITE, MAP_SHARED, shm_fd, 0);
 
   data_ptr->clear();
-
-
-//  if (sem_wait(sem_id)<0) {
-//    exit(__LINE__,__FILE__,"Error: sem_wait fail");
-//  }
-
 }
 
 void PIC::Debugger::ConcurrentDebug::InitSemaphore() {
-  sem_id=sem_open(Key,O_CREAT,0600,0);
+  char sname[200];
 
-  if (sem_id==SEM_FAILED) {
+  sprintf(sname,"%s_data",Key);
+  sem_data_id=sem_open(sname,O_CREAT,0600,0);
+
+  if (sem_data_id==SEM_FAILED) {
     perror("Child: [sem_open] failed\n");
     exit(0);
   }
+
+  sem_post(sem_data_id);
+
+  sprintf(sname,"%s_exit",Key);
+  sem_exit_id=sem_open(sname,O_CREAT,0600,0);
+
+  if (sem_exit_id==SEM_FAILED) {
+    perror("Child: [sem_open] failed\n");
+    exit(0);
+  }
+
 }
 
 void PIC::Debugger::ConcurrentDebug::Trap() {
@@ -82,15 +91,20 @@ void PIC::Debugger::ConcurrentDebug::Trap() {
 void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fname) {
 
   //wait semaphore
-  sem_wait(sem_id);
+//  sem_wait(sem_id);
 
   //save data
+
+  sem_wait(sem_data_id);
+
   *data_ptr=*d;
   data_ptr->nline=nline;
   sprintf(data_ptr->fname,"fname=%s",fname); 
 
+  sem_post(sem_data_id);
+
   //post semaphore
-  sem_post(sem_id);
+  sem_wait(sem_exit_id);
 }
   
   

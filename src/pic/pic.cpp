@@ -1956,6 +1956,13 @@ void PIC::Init_AfterParser() {
     Debugger::logger.InitLogger(ThisThread,false);
   }  
 
+  //init the concurrent runs if needed
+  if (_PIC__DEBUG_CONCURRENT_RUNS_==_PIC_MODE_ON_) {
+    PIC::Debugger::ConcurrentDebug::GenerateKey();
+    PIC::Debugger::ConcurrentDebug::InitSharedMomery();
+    PIC::Debugger::ConcurrentDebug::InitSemaphore();
+  }  
+
   //Interpolation routines
   if (_PIC_COUPLER__INTERPOLATION_MODE_ == _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
     //set the interpolation retine for constructing of the stencil when output the model data file
