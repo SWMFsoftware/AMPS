@@ -22,6 +22,8 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <chrono>
+#include <thread>
 
 
 char PIC::Debugger::ConcurrentDebug::Key[200];
@@ -100,7 +102,8 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
   *data_ptr=*d;
   data_ptr->nline=nline;
   sprintf(data_ptr->fname,"fname=%s",fname); 
-  sleep(1);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(1)); // sleep for 0.001 second
   sem_post(sem_data_id);
 
   //post semaphore
