@@ -1,5 +1,9 @@
 //functions to run mutiple AMPS simulations and compare the resuilts runtime
 
+#include "pic.h"
+
+#if _PIC__DEBUG_CONCURRENT_RUNS_  == _PIC_MODE_ON_
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -19,8 +23,6 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-
-#include "pic.h" 
 
 char PIC::Debugger::ConcurrentDebug::Key[200];
 sem_t *PIC::Debugger::ConcurrentDebug::sem_data_id; 
@@ -108,5 +110,5 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
 }
   
   
-
+#endif
 
