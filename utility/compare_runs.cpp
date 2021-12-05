@@ -170,7 +170,7 @@ int main () {
     bool flag=false;
     int ii;
 
-    cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
+    if (cnt%100==0) cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
     cnt++; 
           
     for (ii=0;ii<3;ii++) {

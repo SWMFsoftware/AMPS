@@ -103,7 +103,7 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
   data_ptr->nline=nline;
   sprintf(data_ptr->fname,"fname=%s",fname); 
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1)); // sleep for 0.001 second
+  std::this_thread::sleep_for(std::chrono::nanoseconds(100)); // sleep for 0.001 second
   sem_post(sem_data_id);
 
   //post semaphore
