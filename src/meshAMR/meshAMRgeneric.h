@@ -7645,7 +7645,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
          int MaxRefinmentLevel=CornerNode->nodeDescriptor.maxRefinmentLevel;
          int NodeTempID=CornerNode->Temp_ID;
 
-         fprintf(fData,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
+         fprintf(fData,"%i  %i %i  ",MaxRefinmentLevel,NodeTempID,Node->Thread);
 
          PrintCellCornerData(i+CellCornerPrintOrder[icorner][0],j+CellCornerPrintOrder[icorner][1],k+CellCornerPrintOrder[icorner][2],Node); 
          Node->block->PrintData(fData,DataSetNumber,NULL,Node->Thread);
