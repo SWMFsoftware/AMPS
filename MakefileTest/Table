@@ -4433,7 +4433,17 @@ Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--GC_check..." >> test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=179.dat output/test_SEP3D/SC-IH--FL--PT/exported-field-lines.thread=0.cnt=179.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.diff)
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.field-line=2.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.field-line=2.r=2.000000e-01__GC__.dat  >> test_SEP-SC-IH--FL--FL-attachment--GC.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.density.field-line=2.r=2.000000e-01__GC__.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.density.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.flux.field-line=2.r=2.000000e-01__GC__.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.flux.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/sample.return_flux.field-line=2.r=2.000000e-01__GC__.dat  > test_SEP-SC-IH--FL--FL-attachment--GC.return_flux.diff)
+
+
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.density.diff
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.flux.diff
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.return_flux.diff
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--GC.diff
 
