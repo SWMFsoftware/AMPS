@@ -792,12 +792,13 @@ Compile=
 >>>cp -r ~/HELIOSPHERE-RESTART-LULU-1AU run_test
 >>>cd run_test; ./Restart.pl -i HELIOSPHERE-RESTART-LULU-1AU
 
-./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,OH/BATSRUS,SP/MFLAMPA,PT/AMPS
-./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
-./Config.pl -o=IH:u=Awsom,e=Awsom,g=8,8,8,ng=3
-./Config.pl -o=SP:g=2000
-./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mover_he_2019_ajl_drift,amps-test=on
-./Config.pl -o=SC:u=Awsom,e=Awsom,g=6,8,8,ng=3
+>>>./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,OH/BATSRUS,SP/MFLAMPA,PT/AMPS
+>>>./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
+>>>./Config.pl -o=IH:u=Awsom,e=Awsom,g=8,8,8,ng=3
+>>>./Config.pl -o=SP:g=2000
+>>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-mover_he_2019_ajl_drift,amps-test=on
+>>>./Config.pl -o=SC:u=Awsom,e=Awsom,g=6,8,8,ng=3
+>>>./Config.pl -O0
 
 >>>make -j
 >>>@echo "test_SEP-CME--focused_transport--3D_compile... done" > test_SEP-CME--focused_transport--3D${TESTSEP-CME--focused_transport--3D-REF}.diff
