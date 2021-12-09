@@ -505,6 +505,10 @@ int main(int argc, char** argv) {
     Host="amps-gpu";
   } 
 
+  if (Host == "pfe24") {
+    Host="pleiades";
+  }
+
   //determine the number of the execution blocks 
   int test_execution_blocks=2;
 
