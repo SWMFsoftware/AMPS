@@ -779,7 +779,7 @@ Run=
 Check=
 >>>@echo "test_SEP-CME--focused_transport--mflampa-fl_check..." >> test_SEP-CME--focused_transport--mflampa-fl.diff
 >>>cd run_test;cat amps-out.thread=?/exported-field-lines.thread=0.cnt=9.dat > exported-field-lines.all.dat
->>>share/Scripts/DiffNum.pl run_test/exported-field-lines.all.dat ~/AMPS_TEST_HELIOSPHERE/FL/exported-field-lines.all.dat > test_SEP-CME--focused_transport--mflampa-fl.diff
+>>>-share/Scripts/DiffNum.pl run_test/exported-field-lines.all.dat ~/AMPS_TEST_HELIOSPHERE/FL/exported-field-lines.all.dat > test_SEP-CME--focused_transport--mflampa-fl.diff
 
 >>>ls -l test_SEP-CME--focused_transport--mflampa-fl.diff
 >>>@echo Test SEP-CME--focused_transport--mflampa-fl has finished: `date`
