@@ -1674,7 +1674,7 @@ double Europa::LossProcesses::CalcElectronImpactRate(int spec, double electronTe
     break;
   }
   
-  
+  return ElectronImpactRate;  
 }
 
 void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
