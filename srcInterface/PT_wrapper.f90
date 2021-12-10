@@ -424,13 +424,13 @@ contains
 
     if(present(Pos_DI))then
        ! set number of grid points on this processor
-       call amps_get_center_point_number(nPoint)
+       call amps_get_center_point_number_oh(nPoint)
 
        ! allocate position array
        allocate(Pos_DI(3,nPoint))
 
        ! get point positions from AMPS
-       call amps_get_center_point_coordinates(Pos_DI)
+       call amps_get_center_point_coordinates_oh(Pos_DI)
 
     elseif(present(Data_VI))then
 
@@ -455,7 +455,7 @@ contains
 
        call get_time(tSimulationOut = PTTime)
 
-       call amps_recieve_batsrus2amps_center_point_data(&
+       call amps_recieve_batsrus2amps_center_point_data_oh(&
             NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
 
        call amps_recv_oh_checksum(Data_VI,DataBufferSize,nRecvFromOH)

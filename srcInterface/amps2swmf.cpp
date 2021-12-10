@@ -133,7 +133,24 @@ extern "C" {
   }
 
 
-  bool IsDomainIH(double *x) {return x[0]*x[0]+x[1]*x[1]+x[2]*x[2]>=23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_;} 
+  bool IsDomainIH(double *x) {
+    double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
+    bool res=false;
+
+    if ((r2>=23.0*23.0*_SUN__RADIUS_*_SUN__RADIUS_)&&(r2<_AU_*_AU_)) res=true;
+
+    return res;
+  }
+
+  bool IsDomainOH(double *x) {
+    double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
+    bool res=false;
+
+    if (r2>=_AU_*_AU_) res=true;
+
+    return res;
+  }
+
 
   //set the location of the Earth. The function is caled by the coupler 
   void set_earth_locaton_hgi_(double *x) {for (int idim=0;idim<3;idim++) AMPS2SWMF::xEarthHgi[idim]=x[idim];}
@@ -224,6 +241,10 @@ extern "C" {
     PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainIH);
   }
 
+  void amps_get_center_point_number_oh_(int *nCenterPoints) {
+    PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainOH);
+  }
+
   void amps_get_center_point_coordinates_(double *x) {
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -242,6 +263,10 @@ extern "C" {
     PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainIH);
   }
 
+  void amps_get_center_point_coordinates_oh_(double *x) {
+    PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainOH);
+  }
+
 
   void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     
@@ -254,6 +279,10 @@ extern "C" {
 
   void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainSC);
+  }
+
+  void amps_recieve_batsrus2amps_center_point_data_oh_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainOH);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
