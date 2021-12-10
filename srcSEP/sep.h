@@ -24,6 +24,18 @@
 #define _SEP_MOVER_DRIFT_ _PIC_MODE_OFF_
 #endif
 
+#define _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 0
+#define _DOMAIN_GEOMETRY_BOX_    1
+
+#ifndef _DOMAIN_GEOMENTRY_
+#define _DOMAIN_GEOMENTRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 
+#endif 
+
+#ifndef _DOMAIN_SIZE_
+#define _DOMAIN_SIZE_ 250.0*_RADIUS_(_SUN_)/_AU_; 
+#endif
+
+
 #include "pic.h"
 #include "specfunc.h"
 

@@ -40,7 +40,7 @@ const double DebugRunMultiplier=4.0;
 double rSphere=_RADIUS_(_TARGET_);
 
 
-const double xMaxDomain=250;
+const double xMaxDomain=_DOMAIN_SIZE_*_AU_/_RADIUS_(_SUN_);
 
 const double dxMinGlobal=DebugRunMultiplier*2.0,dxMaxGlobal=DebugRunMultiplier*10.0;
 const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRunMultiplier*2.0/10.0;
@@ -391,9 +391,13 @@ void amps_init_mesh() {
   }; 
 
   GetMaxBlockRefinmentLevel(PIC::Mesh::mesh->rootTree);
-  MarkNotUsed(PIC::Mesh::mesh->rootTree,&not_used_list);
 
-  PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
+  if (_DOMAIN_GEOMENTRY_!= _DOMAIN_GEOMETRY_BOX_)  {
+    MarkNotUsed(PIC::Mesh::mesh->rootTree,&not_used_list);
+
+    PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
+  }
+
   PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
   PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 

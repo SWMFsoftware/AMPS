@@ -31,12 +31,17 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
 }
 
 double SEP::Mesh::localResolution(double *x) {
+  double res=20.0*_RADIUS_(_SUN_); 
 
   if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_OFF_) {
     if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
   }
 
-  return 20.0*_RADIUS_(_SUN_);
+  if (_DOMAIN_GEOMENTRY_==_DOMAIN_GEOMETRY_BOX_) {
+    res=max(20.0*_RADIUS_(_SUN_),0.1*Vector3D::Length(x));
+  } 
+  
+  return res;
 }
 
 
