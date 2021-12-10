@@ -746,12 +746,6 @@ Type=swmf
 Compile=
 >>>@echo "test_SEP-CME--focused_transport--mflampa-fl_compile..." > test_SEP-CME--focused_transport--mflampa-fl${TESTSEP-CME--focused_transport--mflampa-fl-REF}.diff
 
->>>make test19_compile
->>>make test19_rundir 
-
->>>cp -r ~/HELIOSPHERE-RESTART-LULU-1AU run_test 
->>>cd run_test; ./Restart.pl -i HELIOSPHERE-RESTART-LULU-1AU 
-
 >>>./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,OH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>./Config.pl -o=IH:u=Awsom,e=Awsom,g=8,8,8,ng=3
@@ -759,7 +753,13 @@ Compile=
 >>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge,amps-test=on
 >>>./Config.pl -o=SC:u=Awsom,e=Awsom,g=6,8,8,ng=3
 
->>>make -j 
+>>>-make test19_rundir
+
+>>>-cp -r ~/HELIOSPHERE-RESTART-LULU-1AU run_test
+>>>-cd run_test; ./Restart.pl -i HELIOSPHERE-RESTART-LULU-1AU
+
+
+>>>make SWMF 
 >>>@echo "test_SEP-CME--focused_transport--mflampa-fl_compile... done" > test_SEP-CME--focused_transport--mflampa-fl${TESTSEP-CME--focused_transport--mflampa-fl-REF}.diff
 
 
@@ -767,6 +767,7 @@ Run=
 >>>@echo "test_SEP-CME--focused_transport--mflampa-fl_run..." >> test_SEP-CME--focused_transport--mflampa-fl.diff
 >>>@echo Test test_SEP-CME--focused_transport--mflampa-fl has started: `date`
 
+>>>cd run_test; rm -rf PT
 >>>cd run_test; mkdir PT
 >>>cd run_test; mkdir PT/plots
 
@@ -823,7 +824,7 @@ Run=
 >>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/PARAM.in.3d.test run_test/PARAM.in
 >>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/RESTART.in.3d run_test/RESTART.in
 
->>>cd run_test; mpiexec ./SWMF.exe
+>>>cd run_test; mpiexec -n 120 ./SWMF.exe
 >>>@echo "test_SEP-CME--focused_transport--3D_run... done" >> test_SEP-CME--focused_transport--3D.diff
 
 Check=
