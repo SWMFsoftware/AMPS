@@ -27,20 +27,19 @@
 #define _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 0
 #define _DOMAIN_GEOMETRY_BOX_    1
 
-#ifndef _DOMAIN_GEOMENTRY_
-#define _DOMAIN_GEOMENTRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_ 
-#endif 
-
-#ifndef _DOMAIN_SIZE_
-#define _DOMAIN_SIZE_ 250.0*_RADIUS_(_SUN_)/_AU_; 
-#endif
-
-
 #include "pic.h"
 #include "specfunc.h"
 
 #include "Exosphere.h"
 #include "constants.h"
+
+#ifndef _DOMAIN_GEOMETRY_
+#define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
+#endif
+
+#ifndef _DOMAIN_SIZE_
+#define _DOMAIN_SIZE_ 250.0*_RADIUS_(_SUN_)/_AU_
+#endif
 
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_

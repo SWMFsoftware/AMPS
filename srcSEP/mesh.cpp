@@ -37,7 +37,7 @@ double SEP::Mesh::localResolution(double *x) {
     if (Vector3D::Length(x)<4.0*_RADIUS_(_SUN_)) return 0.2*_RADIUS_(_SUN_);
   }
 
-  if (_DOMAIN_GEOMENTRY_==_DOMAIN_GEOMETRY_BOX_) {
+  if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_) {
     res=max(20.0*_RADIUS_(_SUN_),0.1*Vector3D::Length(x));
   } 
   

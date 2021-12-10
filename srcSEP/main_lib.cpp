@@ -392,7 +392,7 @@ void amps_init_mesh() {
 
   GetMaxBlockRefinmentLevel(PIC::Mesh::mesh->rootTree);
 
-  if (_DOMAIN_GEOMENTRY_!= _DOMAIN_GEOMETRY_BOX_)  {
+  if (_DOMAIN_GEOMETRY_!= _DOMAIN_GEOMETRY_BOX_)  {
     MarkNotUsed(PIC::Mesh::mesh->rootTree,&not_used_list);
 
     PIC::Mesh::mesh->SetTreeNodeActiveUseFlag(&not_used_list,NULL,false,NULL);
