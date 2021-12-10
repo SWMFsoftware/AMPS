@@ -913,9 +913,9 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
     if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat\n",cnt);
     sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
-    cnt++;  
 
     if (cnt%10==0) Output(fname,true);
+    cnt++;
   } 
 
   void amps_send_oh_checksum_(double *data,int *size,int *counter) {
