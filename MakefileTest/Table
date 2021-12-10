@@ -820,7 +820,7 @@ Run=
 >>>cd run_test; mkdir -p PT/plots
 
 >>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/harmonics_adapt.dat run_test/SC
->>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/PARAM.in.3d run_test/PARAM.in
+>>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/PARAM.in.3d.test run_test/PARAM.in
 >>>cp SWMF_data/PT/AMPS/data/input/SEP_CME/RESTART.in.3d run_test/RESTART.in
 
 >>>cd run_test; mpiexec ./SWMF.exe
