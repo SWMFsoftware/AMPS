@@ -99,10 +99,14 @@ public:
   void PrintFileDescriptior(FILE* fout,int DataSetNumber) {}
 
 protected:
+  #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
   double x[_MESH_DIMENSION_];
+  #endif
 
 public:
+  #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
   long int Temp_ID;
+  #endif
 
   struct cNodeDescriptor {
     unsigned long int nodeno : _MESH_ELEMENTS_NUMBERING_BITS_;
@@ -116,16 +120,38 @@ public:
   //get and set the nodes' positions
   _TARGET_HOST_ _TARGET_DEVICE_
   inline double *GetX() {
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
+    exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
+    #endif
+
     return x;
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetX(double *l) {
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
+    exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
+    #endif
+
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) l[idim]=x[idim];
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
   inline void SetX(double *l) {
+
+
+//########  DEBUG ##########
+/*	  if (Temp_ID==88861) {
+		  *DiagnospticMessageStream << __LINE__ << std::endl;
+	  }
+*/
+//######## END DEBUG #######
+
+
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
+    exit(__LINE__,__FILE__,"The operation is allowed only in the debugger mode");
+    #endif
+
     for (int idim=0;idim<_MESH_DIMENSION_;idim++) x[idim]=l[idim];
   }
 
@@ -139,7 +165,9 @@ public:
     nodeDescriptor.internalMeshNode=_AMR_TRUE_;
     nodeDescriptor.nNodeConnections=0;
 
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
+    #endif
   }
 
   //increment and decrement the node conenction's counter
@@ -147,20 +175,29 @@ public:
   void incrementConnectionCounter() {
     if (nodeDescriptor.nNodeConnections==_MAX_CORNER_NODE_CONNECTION_) exit(__LINE__,__FILE__,"the node's connections exeeds _MAX_CORNER_NODE_CONNECTION_");
 
+//    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     if (nodeDescriptor.nNodeConnections+1==(1<<_MAX_CORNER_NODE_CONNECTION_BITS_)) exit(__LINE__,__FILE__,"Error: the number of connections exeeds the limit. Increase '_MAX_CORNER_NODE_CONNECTION_BITS__MAX_CORNER_NODE_CONNECTION_BITS_'"); 
     nodeDescriptor.nNodeConnections++;
+//    #endif
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
   int getNodeConnectionNumber() {
+
+//    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     return nodeDescriptor.nNodeConnections;
+//    #else
+//    return 1;
+//    #endif
   }
 
   _TARGET_HOST_ _TARGET_DEVICE_
   int decrementConnectionCounter() {
 
+//    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_OFF_
     if (nodeDescriptor.nNodeConnections==0) exit(__LINE__,__FILE__,"the node's connections becomes negative");
     nodeDescriptor.nNodeConnections--;
+//    #endif
 
     return getNodeConnectionNumber();
   }
@@ -673,7 +710,9 @@ public:
 #endif
 
 
+  #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
   long int Temp_ID;
+  #endif
 
 //  bool ActiveFlag; //used to prevent repeatable de-allocation of the block from the stack
 
@@ -930,7 +969,9 @@ public:
     FillingCurveNextNode=NULL;
     #endif
 
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
+    #endif
 
     #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
     InternalBoundaryDescriptorList=NULL;
@@ -1017,6 +1058,20 @@ public:
 
   _TARGET_HOST_ _TARGET_DEVICE_
   void SetNeibCorner(cTreeNodeAMR* neibNode,int nCornerNode) {
+
+
+
+//################## DEBUG #####################
+/*    if ((this->Temp_ID==222)||(this->Temp_ID==107)) {
+      *DiagnospticMessageStream << __LINE__ << std::endl;
+
+
+    }
+*/
+//################## END DEBUG #####################
+
+
+
 #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     //check if the neibNode is an upper branch
     if (neibNode!=NULL) if (neibNode->lastBranchFlag()!=_BOTTOM_BRANCH_TREE_) exit(__LINE__,__FILE__,"Error: neibNode is not a bottom tree node");
@@ -1450,7 +1505,9 @@ public:
     #endif
   }
 
+  #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
   long int Temp_ID;
+  #endif
 
 //  void *nextBlock; //the next block in the list of allocated blocks of the mesh
 
@@ -1520,7 +1577,9 @@ public:
   #endif
 #endif
 
+    #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
     Temp_ID=0;
+    #endif
   } 
 
   _TARGET_DEVICE_ _TARGET_HOST_
