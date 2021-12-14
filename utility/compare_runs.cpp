@@ -26,6 +26,7 @@ using namespace std;
 
 int nTotalThreads=0;
 int my_rank=0;
+int OutputStep=1;
 
 char Base0[200],Base1[200];
 
@@ -74,6 +75,11 @@ void ReadBase() {
 
   cout << "Enter base name for AMPS' run 2:";
   cin.getline(Base1,200);
+
+  cout << "Enter output step:";
+  cin.getline(buf,200);
+  OutputStep=atoi(buf);
+
 }
 
 
@@ -170,9 +176,11 @@ int main () {
     bool flag=false;
     int ii;
 
-    if (cnt%100==0) cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
+    if (cnt%OutputStep==0) cout << "test [my_rank  " << my_rank << "]: " << cnt << endl;
     cnt++; 
           
+    if (run0_data_ptr->cnt!=run1_data_ptr->cnt) flag=true;
+
     for (ii=0;ii<3;ii++) {
       if (run0_data_ptr->i[ii]!=run1_data_ptr->i[ii]) {
         flag=true; 
@@ -192,9 +200,10 @@ int main () {
             
       cout << "A difference is found in rank" << my_rank << "\nPrintout:" << endl;
 
-      cout << run0_data_ptr->c << "   " << run1_data_ptr->c << endl;
-      for (int ii=0;ii<3;ii++) cout << ii <<": " << run0_data_ptr->i[ii] << "   " << run1_data_ptr->i[ii] << ": diff=" << run0_data_ptr->i[ii]-run1_data_ptr->i[ii] << endl;  
-      for (int ii=0;ii<3;ii++) cout << ii <<": " << run0_data_ptr->d[ii] << "   " << run1_data_ptr->d[ii] << ": diff=" << run0_data_ptr->d[ii]-run1_data_ptr->d[ii] << endl;
+      cout << "cnt:" << run0_data_ptr->cnt << "   " << run1_data_ptr->cnt << endl;
+      cout << "c: " << run0_data_ptr->c << "   " << run1_data_ptr->c << endl;
+      for (int ii=0;ii<3;ii++) cout << "i[" << ii << "]: " << run0_data_ptr->i[ii] << "   " << run1_data_ptr->i[ii] << ": diff=" << run0_data_ptr->i[ii]-run1_data_ptr->i[ii] << endl;  
+      for (int ii=0;ii<3;ii++) cout << "d[" << ii <<"]: " << run0_data_ptr->d[ii] << "   " << run1_data_ptr->d[ii] << ": diff=" << run0_data_ptr->d[ii]-run1_data_ptr->d[ii] << endl;
 
       exit(0);
     }
