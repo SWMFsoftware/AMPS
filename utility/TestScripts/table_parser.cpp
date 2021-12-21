@@ -505,7 +505,7 @@ int main(int argc, char** argv) {
     Host="amps-gpu";
   } 
 
-  if (Host == "pfe24") {
+  if ((Host == "pfe24")||(Host == "pfe24.nas.nasa.gov")) {
     Host="pleiades";
   }
 
