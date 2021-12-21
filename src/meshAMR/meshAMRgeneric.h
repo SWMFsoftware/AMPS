@@ -12160,7 +12160,7 @@ if (TmpAllocationCounter==2437) {
       LastRecvMessageSize[From]=Size;
 
       if (Size>0) {
-        if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
+        if (false) if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
           int t;
           MPI_Status status;
 
@@ -12209,7 +12209,7 @@ if (TmpAllocationCounter==2437) {
       }
 
       if (Size>0) {
-        if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
+        if (false) if (_AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_) {
           //send actual size of the message to check consistensy of the procedure
           MPI_Send(&Size,1,MPI_INT,To,2*SendOperationCounterTable[To],MPI_GLOBAL_COMMUNICATOR);
         }
