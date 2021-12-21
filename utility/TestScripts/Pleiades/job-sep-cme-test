@@ -10,6 +10,7 @@ cd /nobackupp17/vtenishe/Tmp_AMPS_Test/SWMF
 rm -rf out 
 rm -f test_amps.log
 module unload comp-intel
+module load mpi-hpe/mpt
 
 make -f PT/AMPS/Makefile.test test_SEP-CME--focused_transport--mflampa-fl_compile >>& test_amps.log  
 make -f PT/AMPS/Makefile.test test_SEP-CME--focused_transport--mflampa-fl_run >>& test_amps.log 
