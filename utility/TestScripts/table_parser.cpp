@@ -501,8 +501,15 @@ int main(int argc, char** argv) {
   gethostname(hostname, 1024);
   Host=hostname;
 
+  printf("Hostname: %s\n",hostname); 
+
   if (Host == "csrwks2019-0243.engin.umich.edu") {
     Host="amps-gpu";
+  } 
+
+
+  if (Host == "csrwks2018-0093.engin.umich.edu") {
+    Host="valeriy";
   } 
 
   if ((Host == "pfe24")||(Host == "pfe24.nas.nasa.gov")) {
