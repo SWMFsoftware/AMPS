@@ -10,8 +10,8 @@
 
 #include "pic.h"
 
-PIC::InterpolationRoutines::CellCentered::cStencil _TARGET_DEVICE_*PIC::InterpolationRoutines::CellCentered::StencilTable=NULL;
-PIC::InterpolationRoutines::CornerBased::cStencil _TARGET_DEVICE_ *PIC::InterpolationRoutines::CornerBased::StencilTable=NULL;
+PIC::InterpolationRoutines::CellCentered::cStencil _TARGET_DEVICE_ _CUDA_MANAGED_ *PIC::InterpolationRoutines::CellCentered::StencilTable=NULL;
+PIC::InterpolationRoutines::CornerBased::cStencil _TARGET_DEVICE_ _CUDA_MANAGED_ *PIC::InterpolationRoutines::CornerBased::StencilTable=NULL;
 
 int PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::iBlockFoundCurrent=0;
 cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::BlockFound[PIC::InterpolationRoutines::CellCentered::Linear::INTERFACE::nBlockFoundMax];
@@ -35,8 +35,13 @@ _TARGET_HOST_ _TARGET_DEVICE_
 void PIC::InterpolationRoutines::Init() {
 
   //init the stencil table
-  CellCentered::StencilTable=new CellCentered::cStencil[PIC::nTotalThreadsOpenMP];
-  CornerBased::StencilTable=new CornerBased::cStencil[PIC::nTotalThreadsOpenMP];
+//  CellCentered::StencilTable=new CellCentered::cStencil[PIC::nTotalThreadsOpenMP];
+//  CornerBased::StencilTable=new CornerBased::cStencil[PIC::nTotalThreadsOpenMP];
+
+  #ifndef __CUDA_ARCH__
+  amps_new_managed(CellCentered::StencilTable,PIC::nTotalThreadsOpenMP); 
+  amps_new_managed(CornerBased::StencilTable,PIC::nTotalThreadsOpenMP);
+  #endif
 }
 
 //determine stencil for the cell centered piecewise constant interpolation

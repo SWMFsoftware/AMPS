@@ -203,10 +203,10 @@ class cAMRexit {
 public:
   _TARGET_HOST_ _TARGET_DEVICE_
   void exit(const long int nline, const char* fname,const char* msg=NULL) {
+#ifndef __CUDA_ARCH__
     char str[1000];
     int mpiInitFlag,ThisThread;
 
-#ifndef __CUDA_ARCH__
     if (msg==NULL) sprintf(str," exit: line=%ld, file=%s\n",nline,fname);
     else sprintf(str," exit: line=%ld, file=%s, message=%s\n",nline,fname,msg);
 
@@ -286,7 +286,7 @@ public:
     return MemoryAllocation;
   }
   
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void initMemoryBlock() {
     long int i,j;
 
@@ -526,7 +526,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
   }
    
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void init() {
     clear();
     initMemoryBlock();
@@ -601,7 +601,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     return res;
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void deleteElement(T* delElement) {
     if (sizeof(T)==0) return;
 
@@ -676,7 +676,7 @@ public:
   }
 
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void initMemoryBlock() {
 //    T *t=new T[1];
 //    
@@ -768,7 +768,7 @@ public:
   }
 
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   T* newElement() {
     T* res;
 
@@ -866,7 +866,7 @@ public:
      return BaseElementStack.dataBufferList[iMemoryBank];
    }
 
-   _TARGET_HOST_ _TARGET_DEVICE_
+   _TARGET_HOST_ 
    void deleteElement(T* delElement) {
      if (delElement->AssociatedDataLength()!=0) {
        long int elementStackBank,offset;
@@ -923,7 +923,7 @@ public:
     return MemoryAllocation;
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void initMemoryBlock() {
     long int i,j;
 
@@ -1059,7 +1059,7 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   }
 
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void init() {
     clear();
     initMemoryBlock();

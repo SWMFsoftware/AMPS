@@ -2908,9 +2908,9 @@ void DeleteAttachedParticles();
     
     //the class defining the 'central node' that contains the sampling data
     namespace cDataCenterNode_static_data {
-      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector;
-      extern _TARGET_DEVICE_ int totalAssociatedDataLength;
-      extern _TARGET_DEVICE_ int LocalParticleVolumeInjectionRateOffset; 
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned char FlagTableStatusVector;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int totalAssociatedDataLength;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int LocalParticleVolumeInjectionRateOffset; 
     }
 
 
@@ -3280,8 +3280,8 @@ void DeleteAttachedParticles();
   
     //the class that contains the run information for the cell's corners
     namespace cDataCornerNode_static_data {
-      extern _TARGET_DEVICE_ int totalAssociatedDataLength;
-      extern _TARGET_DEVICE_ unsigned char FlagTableStatusVector;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int totalAssociatedDataLength;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned char FlagTableStatusVector;
     }
 
     class cDataCornerNode : public cBasicCornerNode {
@@ -3432,18 +3432,18 @@ void DeleteAttachedParticles();
     class cDataBlockAMR;
 
     namespace cDataBlockAMR_static_data {
-      extern int _TARGET_DEVICE_ LocalTimeStepOffset,LocalParticleWeightOffset;
-      extern int _TARGET_DEVICE_ totalAssociatedDataLength; 
+      extern int _TARGET_DEVICE_ _CUDA_MANAGED_ LocalTimeStepOffset,LocalParticleWeightOffset;
+      extern int _TARGET_DEVICE_ _CUDA_MANAGED_ totalAssociatedDataLength; 
 
       typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
       extern _TARGET_DEVICE_ fPackBlockData PackBlockData,UnpackBlockData;
 
-      extern _TARGET_DEVICE_  int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
+      extern _TARGET_DEVICE_  _CUDA_MANAGED_ int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
     
-      extern _TARGET_DEVICE_ int LoadBalancingMeasureOffset;
-      extern _TARGET_DEVICE_ int UserAssociatedDataOffset;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int LoadBalancingMeasureOffset;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int UserAssociatedDataOffset;
 
-      extern _TARGET_DEVICE_ bool InternalDataInitFlag;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ bool InternalDataInitFlag;
     }
 
     class cDataBlockAMR : public cBasicBlockAMR<cDataCornerNode,cDataCenterNode> {
@@ -5880,7 +5880,7 @@ void DeleteAttachedParticles();
     //corner based interpolation routines
     namespace CornerBased {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCornerNode> cStencil;
-      extern _TARGET_DEVICE_ cStencil* StencilTable;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ cStencil* StencilTable;
 
       //The table contains weight for each node and the order of local is enforced.
       extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
@@ -5911,7 +5911,7 @@ void DeleteAttachedParticles();
     //cell center interpolation routines
     namespace CellCentered {
       typedef PIC::InterpolationRoutines::cStencilGeneric<PIC::Mesh::cDataCenterNode> cStencil;
-      extern _TARGET_DEVICE_ cStencil* StencilTable;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ cStencil* StencilTable;
 
       //types of the cell ceneterd interpolating rourines implemented in AMPS
       namespace Constant {

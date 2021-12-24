@@ -50,8 +50,8 @@ int PIC::ModelTestRun::nTotalIteraction=-1;
 char PIC::UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_]="/Users/dborovik/AMPS_dev/new_sampling_generic/AMPS/data/input/SEP3D";
 
 //the default value of the status vector
-unsigned char PIC::Mesh::cDataCornerNode_static_data::FlagTableStatusVector=7; ///0b111;
-unsigned char PIC::Mesh::cDataCenterNode_static_data::FlagTableStatusVector=3; ///0b011;
+_TARGET_DEVICE_ _CUDA_MANAGED_ unsigned char PIC::Mesh::cDataCornerNode_static_data::FlagTableStatusVector=7; ///0b111;
+_TARGET_DEVICE_ _CUDA_MANAGED_ unsigned char PIC::Mesh::cDataCenterNode_static_data::FlagTableStatusVector=3; ///0b011;
 
 //timing of the code execution
 double PIC::RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::ParticleMovingTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::FieldSolverTime=0.0;

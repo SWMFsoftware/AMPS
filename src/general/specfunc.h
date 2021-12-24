@@ -200,6 +200,7 @@ public:
 
   //update the CRC on the data block one byte at a time
   template <class T> 
+  _TARGET_HOST_ _TARGET_DEVICE_
   void add(T* buffer, long int size) {
     char *data_blk_ptr=(char*)buffer;
     long int data_blk_size=size*sizeof(T); 

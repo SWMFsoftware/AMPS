@@ -148,15 +148,13 @@ public:
   }
 
   void SetSize(int NewFlagTableElementSize) {
-    int iBit,iByte,iThreadOpenMP=0;
-    unsigned char mask;
+    int iByte,iThreadOpenMP=0;
 
     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     iThreadOpenMP=omp_get_thread_num();
     #endif
 
     iByte=NewFlagTableElementSize/8;
-    iBit=NewFlagTableElementSize%8;
 
     if (iByte>=FlagTableLength[iThreadOpenMP]) {
       //re-allocate the table
