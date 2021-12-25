@@ -39,8 +39,10 @@ void PIC::InterpolationRoutines::Init() {
 //  CornerBased::StencilTable=new CornerBased::cStencil[PIC::nTotalThreadsOpenMP];
 
   #ifndef __CUDA_ARCH__
-  amps_new_managed(CellCentered::StencilTable,PIC::nTotalThreadsOpenMP); 
-  amps_new_managed(CornerBased::StencilTable,PIC::nTotalThreadsOpenMP);
+  if (CellCentered::StencilTable==NULL) {
+    amps_new_managed(CellCentered::StencilTable,PIC::nTotalThreadsOpenMP); 
+    amps_new_managed(CornerBased::StencilTable,PIC::nTotalThreadsOpenMP);
+  }
   #endif
 }
 
