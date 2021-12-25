@@ -1387,9 +1387,9 @@ Compile=
 Name=Earth
 Time=2
 
-Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
-Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
-Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
+Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
@@ -1413,7 +1413,7 @@ Compile=
 
 >>>cd BATL;make READAMRLIB
 
->>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarthKEYS}
+>>>./Config.pl -application=test/Earth-test  -batl-path=${PTDIR}/BATL -amps-test=on ${TESTEarthKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_
@@ -1446,7 +1446,7 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
@@ -1577,7 +1577,7 @@ Check=
 Name=test/Earth-T96
 Time=3
 
-Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
@@ -1613,7 +1613,7 @@ Time=6
 
 Outs=test_Earth
 
-Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
 Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2  -cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
