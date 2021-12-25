@@ -1957,7 +1957,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
-Ref=5{gcc}@@(0+amps-gpu)
+Ref=6{gcc}@@(0+amps-gpu)
 Ref=9{icc}@@(0+amps-gpu)
 Ref=1{pgcc}@@(0+amps-gpu)
 
