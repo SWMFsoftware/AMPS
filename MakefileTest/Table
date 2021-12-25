@@ -1953,14 +1953,16 @@ Check=
 Name=test/magnetic-reconnection_avx256
 Time=10
 
-Ref=21{icc}@@(0+valeriy)
-Ref=11{gcc}@@(0+valeriy)
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
+
 Ref=5{gcc}@@(0+amps-gpu)
-Ref=91{icc}@@(0+amps-gpu)
-Ref=11{pgcc}@@(0+amps-gpu)
-Ref=61{icc}@@(0+pleiades)
-Ref=41{gcc}@@(0+pleiades)
+Ref=9{icc}@@(0+amps-gpu)
+Ref=1{pgcc}@@(0+amps-gpu)
+
+Ref=6{icc}@@(0+pleiades)
+Ref=4{gcc}@@(0+pleiades)
 
 Outs=
 
