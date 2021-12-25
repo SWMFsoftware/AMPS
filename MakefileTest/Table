@@ -1446,9 +1446,9 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
-Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity_compile..." > test_Earth-cutoff-rigidity$(TESTEarth-cutoff-rigidity-REF).diff
@@ -1472,7 +1472,7 @@ Compile=
 
 >>>cd BATL;make READAMRLIB
 
->>>./Config.pl -application=test/earth-cutoff-rigidity -spice-path=nospice -batl-path=${PTDIR}/BATL -amps-test=on -cplr-data-path=${TESTEarth-cutoff-rigidityKEYS}
+>>>./Config.pl -application=test/earth-cutoff-rigidity -batl-path=${PTDIR}/BATL -amps-test=on ${TESTEarth-cutoff-rigidityKEYS}
 
 >>>cp Makefile.local Makefile.local.bak
 >>>./Config.pl -compiler-option=-D_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_
