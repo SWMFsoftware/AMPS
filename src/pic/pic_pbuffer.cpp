@@ -205,6 +205,7 @@ long int PIC::ParticleBuffer::GetTotalParticleNumber() {
 long int PIC::ParticleBuffer::GetParticleDataLength() {return ParticleDataLength;}
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+_TARGET_DEVICE_ _TARGET_HOST_
 long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   long int newptr;
   byte *pdataptr;
@@ -272,6 +273,7 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
 }
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+_TARGET_DEVICE_ _TARGET_HOST_
 long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool RandomThreadOpenMP) {
   long int newptr;
   byte *pdataptr;
@@ -390,6 +392,7 @@ void PIC::ParticleBuffer::ExcludeParticleFromList(long int ptr,long int& ListFir
 }
 
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::DeleteParticle(long int ptr) {
   //terminate the particle trajectory sampling
   #if _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_ON_
@@ -402,6 +405,7 @@ void PIC::ParticleBuffer::DeleteParticle(long int ptr) {
 
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(long int ptr,bool RandomThreadOpenMP) {
 
 //#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -425,7 +429,7 @@ void PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(long int p
 #endif //_COMPILATION_MODE_
 }
 
-
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::DeleteParticle(long int ptr,long int& ListFirstParticle) {
   ExcludeParticleFromList(ptr,ListFirstParticle);
   DeleteParticle(ptr);
@@ -469,6 +473,7 @@ void PIC::ParticleBuffer::LoadImageFile(int fd) {
 //==========================================================
 //pack the particle data
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::PackParticleData(char* buffer,long int ptr,CRC32* checksum) {
   byte *SourceData=GetParticleDataPointer(ptr);
 //  long int i;
@@ -481,6 +486,7 @@ void PIC::ParticleBuffer::PackParticleData(char* buffer,long int ptr,CRC32* chec
 }
 
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::UnPackParticleData(char* buffer,long int ptr,CRC32* checksum) {
   byte *pdata;
   long int next,prev;

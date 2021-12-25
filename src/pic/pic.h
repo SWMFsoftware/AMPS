@@ -2776,15 +2776,23 @@ void DeleteAttachedParticles();
     long int GetTotalParticleNumber();
     long int GetParticleDataLength();
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     long int GetNewParticle(bool RandomThreadOpenMP=false);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     long int GetNewParticle(long int&,bool RandomThreadOpenMP=false);
 
     /*DeleteParticle_withoutTrajectoryTermination() acts as  DeleteParticle() when _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_OFF_;
      if _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_ON_ DeleteParticle_withoutTrajectoryTermination() does not terminate sampling of the particle trajectory; the function should be used only
      from PIC::Parallel::ExchangeParticleData() when particles are moved between processors
     */
+    _TARGET_DEVICE_ _TARGET_HOST_
     void DeleteParticle(long int);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     void DeleteParticle(long int,long int&);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     void DeleteParticle_withoutTrajectoryTermination(long int,bool RandomThreadOpenMP=false);
 
     void DeleteAllParticles();
@@ -2797,7 +2805,10 @@ void DeleteAttachedParticles();
     void SaveImageFile(int);
     void LoadImageFile(int);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     void PackParticleData(char*,long int,CRC32* t=NULL);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     void UnPackParticleData(char*,long int,CRC32* t=NULL);
 
     unsigned long GetChecksum();

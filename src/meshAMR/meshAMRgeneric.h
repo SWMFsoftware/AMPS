@@ -2215,8 +2215,13 @@ public:
       int idim=0;
       dx=0.0; //add the place for break point for debbuger purposes
 
+      #ifndef __CUDA_ARCH__
       fprintf(DiagnospticMessageStream,"$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
       for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+      #else 
+      printf("$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
+      for (idim=0;idim<_MESH_DIMENSION_;idim++) printf("$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+      #endif
 
       if (ExitFlag==true) exit(__LINE__,__FILE__,"x is outside of the block");
       else return -1;
@@ -2229,8 +2234,13 @@ public:
     if (_MESH_DIMENSION_>=2) {
       if ((x[1]<startNode->xmin[1])||(startNode->xmax[1]<x[1])) {
 
+        #ifndef __CUDA_ARCH__
         fprintf(DiagnospticMessageStream,"$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
         for (int idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+        #else 
+        printf("$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
+        for (int idim=0;idim<_MESH_DIMENSION_;idim++) printf("$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+        #endif
 
 
         if (ExitFlag==true) exit(__LINE__,__FILE__,"x is outside of the block");
@@ -2245,8 +2255,14 @@ public:
 
     if (_MESH_DIMENSION_==3) {
       if ((x[2]<startNode->xmin[2])||(startNode->xmax[2]<x[2])) {
+
+        #ifndef __CUDA_ARCH__
         fprintf(DiagnospticMessageStream,"$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
         for (int idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+        #else 
+        printf("$PREFIX:Error: a point is out pf the box (file=%s, line=%i)!!!!!!\n",__FILE__,__LINE__);
+        for (int idim=0;idim<_MESH_DIMENSION_;idim++) printf("$PREFIX:idim=%i, x[idim]=%e, xmin[idim]=%e, xmax[idim]=%e\n",idim,x[idim],startNode->xmin[idim],startNode->xmax[idim]);
+        #endif
 
         if (ExitFlag==true) exit(__LINE__,__FILE__,"x is outside of the block");
         else return -1;
@@ -2263,7 +2279,7 @@ public:
  
 
   //the constructor
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void init(double *xMin,double *xMax,double (*localResolutionFunction)(double*)) {
     int i,idim;
 
@@ -4301,7 +4317,7 @@ void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *Neib
 }
 
 
-_TARGET_HOST_ _TARGET_DEVICE_
+_TARGET_HOST_ 
 void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
   int ioffset,joffset,koffset;
@@ -4815,7 +4831,7 @@ CornerNodeMap=NULL;
 #endif
 }
 
-_TARGET_HOST_ _TARGET_DEVICE_
+_TARGET_HOST_ 
 void DeallocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k;
   cCornerNode *ptrCornerNode;
@@ -5520,7 +5536,7 @@ if (newCenterNode->Temp_ID==88861) {
 
 */
 
-_TARGET_HOST_ _TARGET_DEVICE_
+_TARGET_HOST_ 
 bool splitTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k;
 

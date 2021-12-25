@@ -443,7 +443,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     return dataBufferList[nMemoryBank]+offset;
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
      // delete [] dataBufferList[i];
@@ -570,7 +570,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     return dataBufferList[iMemoryBank];
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_HOST_ 
   T* newElement(bool ForceElementNumberLimit=true) {
     T* res;
 
