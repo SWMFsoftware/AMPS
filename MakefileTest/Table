@@ -1577,9 +1577,9 @@ Check=
 Name=test/Earth-T96
 Time=3
 
-Keys=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
-Keys=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
 >>>@echo "test_Earth-T96_compile..." > test_Earth-T96$(TESTEarth-T96-REF).diff
@@ -1614,7 +1614,7 @@ Time=6
 Outs=test_Earth
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+valeriy)
-Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2  -cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
