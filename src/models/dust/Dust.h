@@ -425,7 +425,7 @@ namespace ElectricallyChargedDust {
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     int i,j,k;
 
-    if (PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false)==-1) {
+    if (PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
 
@@ -466,7 +466,7 @@ inline int DustChargingProcessor(double *xInit,double *xFinal,double *v,int& spe
   int i,j,k;
   long int LocalCellNumber;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   cell=initNode->block->GetCenterNode(LocalCellNumber);
 
   //ICES plasma data
@@ -704,7 +704,7 @@ if (fabs(newGrainElectricCharge)>1.0E-3) {
   //the procesure is applied only to dust
   if ((spec<_DUST_SPEC_) || (spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) return _GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
 
-  if ((/*LocalCellNumber=*/PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+  if ((/*LocalCellNumber=*/PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,initNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
 //  cell=initNode->block->GetCenterNode(LocalCellNumber);
 
   //ICES plasma data
@@ -1048,7 +1048,7 @@ int DustChargingProcessor_SteadyState(double *xInit,double *xFinal,double *v,int
     //the procesure is applied only to dust
     if ((spec<_DUST_SPEC_) || (spec>=_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) return _GENERIC_PARTICLE_TRANSFORMATION_CODE__NO_TRANSFORMATION_;
 
-    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,finalNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,finalNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
     cell=finalNode->block->GetCenterNode(LocalCellNumber);
 
     //get the grain electric potential

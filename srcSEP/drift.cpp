@@ -542,7 +542,7 @@ if (trajectory_teminated==true) {
   PIC::Mesh::cDataBlockAMR *block;
   int i,j,k;
 
-  if (PIC::Mesh::mesh->fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -823,7 +823,7 @@ int SEP::ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNod
   PIC::Mesh::cDataBlockAMR *block;
   int i,j,k;
 
-  if (PIC::Mesh::mesh->fingCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(x_final,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");

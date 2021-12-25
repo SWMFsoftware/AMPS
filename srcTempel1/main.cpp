@@ -58,7 +58,7 @@ void SampleSurfaceElement(double *x,double *sample) {
   startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
   if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
-    LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
+    LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false);
     long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;
@@ -93,7 +93,7 @@ void PrintSampledSurfaceElementSurfaceTriangulationMesh(const char *fname,double
 
   if (startNode->Thread==PIC::Mesh::mesh->ThisThread) {
     PIC::Mesh::cDataBlockAMR *block=startNode->block;
-    LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
+    LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false);
     long int FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr;
     PIC::ParticleBuffer::byte *ParticleData;
     double normalization=0.0;

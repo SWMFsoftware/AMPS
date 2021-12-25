@@ -616,7 +616,7 @@ PIC::BC::ExternalBoundary::UpdateData();
     newNode=PIC::Mesh::mesh->findTreeNode(xparticle[iPar]);
     
     if (newNode->Thread==PIC::ThisThread) {
-      PIC::Mesh::mesh->fingCellIndex(xparticle[iPar],i,j,k,newNode);
+      PIC::Mesh::mesh->FindCellIndex(xparticle[iPar],i,j,k,newNode);
       
       newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
       

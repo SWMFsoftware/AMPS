@@ -747,7 +747,7 @@ void PIC::CPLR::DATAFILE::PrintSphereSurfaceIonFlux(char const* fname,double Sph
       x[2]=SphereRadius*sin(ZenithAngle);
 
       node=PIC::Mesh::mesh->findTreeNode(x,node);
-      if (PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find cell");
+      if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find cell");
 
       if (node->Thread==PIC::ThisThread) {
         PIC::CPLR::InitInterpolationStencil(x,node);
@@ -812,7 +812,7 @@ void PIC::CPLR::DATAFILE::EvaluateSurfaceIonFlux(double ShiftFactor) {
         x[0]+=max(ShiftFactor-1.0,0.0)*l*norm[0],x[1]+=max(ShiftFactor-1.0,0.0)*l*norm[1],x[2]+=max(ShiftFactor-1.0,0.0)*l*norm[2];
 
         node=PIC::Mesh::mesh->findTreeNode(x,node);
-        if (PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find cell");
+        if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find cell");
 
         if (node->Thread==PIC::ThisThread) {
           PIC::CPLR::InitInterpolationStencil(x,node);

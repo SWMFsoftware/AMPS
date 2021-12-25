@@ -721,7 +721,7 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
         nTotalGeneratedParticles++;
 
-        PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode);
+        PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode);
         nd=startNode->block->getCenterNodeLocalNumber(i,j,k);
 
         newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->GetCenterNode(nd)->FirstCellParticle);
@@ -1485,7 +1485,7 @@ void amps_init() {
 
       node=PIC::Mesh::mesh->findTreeNode(FaceCenterPoint);
 
-      if ((nd=PIC::Mesh::mesh->fingCellIndex(FaceCenterPoint,i,j,k,node,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->FindCellIndex(FaceCenterPoint,i,j,k,node,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
 

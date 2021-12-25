@@ -923,7 +923,7 @@ void PIC::Debugger::ParticleDebugData::AddParticleDebugData(long int ptr,cTreeNo
     p.initCheckSum=PIC::ParticleBuffer::GetParticleSignature(ptr);
 
     x=PIC::ParticleBuffer::GetX(ptr);
-    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
+    PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false);
 
     p.i=i;
     p.j=j;

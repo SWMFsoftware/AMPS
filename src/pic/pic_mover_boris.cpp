@@ -47,14 +47,14 @@ void PIC::Mover::BorisSplitAcceleration_default(double *accl, double *rotation, 
   if (startNode->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not initialized");
 
   // flag: true - exit if a point is not found in the block / false: don't
-  nd = PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
+  nd = PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false);
 
   // fail-safe check: if a point isn't found, try seacrhing in other blocks
   if (nd==-1) {
     // try to found the block the point is in;
     // starting point for search is block startNode
     startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-    nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false);
+    nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false);
     // if still not found => exit
 
     if (nd==-1) exit(__LINE__,__FILE__,"Error: the cell is not found");
@@ -507,7 +507,7 @@ int PIC::Mover::Boris(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cData
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -782,7 +782,7 @@ int PIC::Mover::Markidis2010(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh:
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -1264,7 +1264,7 @@ __syncwarp;
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (data->mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (data->mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
 

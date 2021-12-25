@@ -97,7 +97,7 @@ void SampleIndividualLocations(int nMaxIterations) {
 
             mass=PIC::MolecularData::GetMass(spec);
 
-            if (PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+            if (PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
             for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
               energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
@@ -506,7 +506,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
           if (startNode->Thread!=PIC::ThisThread) continue;
 
-          if ((nd=PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+          if ((nd=PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
           PIC::Mesh::cDataCenterNode *cell;

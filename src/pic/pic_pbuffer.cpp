@@ -749,7 +749,7 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
 
   switch (InitMode) {
   case _PIC_INIT_PARTICLE_MODE__ADD2LIST_:
-    PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
+    PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node);
     FirstCellParticle=((cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)node)->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
 
     SetNext(FirstCellParticle,ptr);

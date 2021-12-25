@@ -119,7 +119,7 @@ void Moon::Sampling::VelocityDistribution::Sampling() {
         int spec;
         double *v,*x,LocalParticleWeight,VelocityLineOfSight,HeliocentricRadialVelocity,c,cellMeasure,rHeliocentric,Speed;
 
-        ncell=PIC::Mesh::mesh->fingCellIndex(xLSO,i,j,k,xNode);
+        ncell=PIC::Mesh::mesh->FindCellIndex(xLSO,i,j,k,xNode);
         cellMeasure=xNode->block->GetCenterNode(ncell)->Measure;
 //        dl=IntegrationStep2CellSizeRatio*xNode->GetCharacteristicCellSize();
 

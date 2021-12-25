@@ -190,7 +190,7 @@ namespace SEP {
 
         switch (_PIC_PARTICLE_LIST_ATTACHING_) {
         case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-          PIC::Mesh::mesh->fingCellIndex(xMiddle,i,j,k,node);
+          PIC::Mesh::mesh->FindCellIndex(xMiddle,i,j,k,node);
           ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
           vol=(node->xmax[0]-node->xmin[0])*(node->xmax[1]-node->xmin[1])*(node->xmax[2]-node->xmin[2])/(_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_);
@@ -631,10 +631,10 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
     PIC::Mesh::cDataCenterNode *CenterNode;
     double E[3],B[3];
 
-    if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+    if ((nd=PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
       startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
 
-      if ((nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
+      if ((nd=PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode,false))==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }

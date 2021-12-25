@@ -1763,7 +1763,7 @@ public:
   }
 
   //find the index of the cell where the point 'x' is located
-  long int fingCellIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode,bool ExitFlag=true) {
+  long int FindCellIndex(double *x,int &i,int &j,int &k,cTreeNodeAMR<cBlockAMR>* startNode,bool ExitFlag=true) {
     double dx;
 
     if ((x[0]<startNode->xmin[0])||(startNode->xmax[0]<x[0])) {

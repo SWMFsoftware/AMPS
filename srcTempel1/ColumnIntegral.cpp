@@ -64,7 +64,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   //init the return values
   for (i=0;i<resLength;i++) res[i]=0.0;
 
-  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node);
 
   if (node->block==NULL) return;
   if ((cell=node->block->GetCenterNode(nd))==NULL) return;

@@ -107,7 +107,7 @@ void ElectricallyChargedDust::Sampling::FluxMap::cSampleLocation::SetLocation(do
     node = NULL;
     return;
   }else{ 
-    PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,node);
+    PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,node);
   }
 
 }

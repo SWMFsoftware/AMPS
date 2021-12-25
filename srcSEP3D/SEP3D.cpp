@@ -159,7 +159,7 @@ int SEP3D::Physics::Mover_Axisymmetric_SecondOrder(long int ptr, double dtTotal,
 
 
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
 
 

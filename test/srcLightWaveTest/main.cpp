@@ -647,7 +647,7 @@ int main(int argc,char **argv) {
 	  newNode=PIC::Mesh::mesh->findTreeNode(xLocation);
 	  for (int iPar=0;iPar<14;iPar++){
 	    if (newNode->Thread==PIC::ThisThread) {
-	      PIC::Mesh::mesh->fingCellIndex(xLocation,i,j,k,newNode);
+	      PIC::Mesh::mesh->FindCellIndex(xLocation,i,j,k,newNode);
 	    
 	      newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
 	     

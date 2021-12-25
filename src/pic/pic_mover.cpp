@@ -1082,14 +1082,14 @@ if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
 
   {
     double r[3]={0.0,0.0,0.0};
 
     r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   }
 
 #else
@@ -1135,7 +1135,7 @@ int iTemp,jTemp,kTemp;
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
 
 
-    if (PIC::Mesh::mesh->fingCellIndex(x,iTemp,jTemp,kTemp,startNode,false)==-1) {
+    if (PIC::Mesh::mesh->FindCellIndex(x,iTemp,jTemp,kTemp,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
@@ -1144,7 +1144,7 @@ int iTemp,jTemp,kTemp;
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      if (PIC::Mesh::mesh->fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
+      if (PIC::Mesh::mesh->FindCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -1620,7 +1620,7 @@ int iTemp,jTemp,kTemp;
 
 /*
   =====
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 //  cell=startNode->block->GetCenterNode(LocalCellNumber);
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -1644,7 +1644,7 @@ int iTemp,jTemp,kTemp;
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -1785,7 +1785,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
   //=====================  DEBUG =========================
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
   if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
@@ -2018,7 +2018,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
 
  /* //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   //cell=newNode->block->GetCenterNode(LocalCellNumber);
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -2038,7 +2038,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
   
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -2137,7 +2137,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
   PIC::ParticleBuffer::GetX(xInit,ParticleData);
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
   if ((cell->Measure<=0.0)&&(startNode->Thread==PIC::Mesh::mesh->ThisThread)) {
@@ -2293,7 +2293,7 @@ exit(__LINE__,__FILE__,"not implemented");
   }
 
 /*  //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
 
   PIC::Mesh::cDataBlockAMR *block=startNode->block;
@@ -2311,7 +2311,7 @@ exit(__LINE__,__FILE__,"not implemented");
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=startNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
@@ -2466,14 +2466,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   }
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
 
   {
     double r[3]={0.0,0.0,0.0};
 
     r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   }
 
 #else
@@ -2623,7 +2623,7 @@ if (nLoopCycle>100) {
    int iTemp,jTemp,kTemp;
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    if (PIC::Mesh::mesh->fingCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
+    if (PIC::Mesh::mesh->FindCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
 #elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
@@ -2632,7 +2632,7 @@ if (nLoopCycle>100) {
       double r[3]={0.0,0.0,0.0};
 
       r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      if (PIC::Mesh::mesh->fingCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
+      if (PIC::Mesh::mesh->FindCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
@@ -4003,7 +4003,7 @@ ProcessPhotoChemistry:
 #endif
 
 
-  if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
 
   //check if the block is allocated
@@ -4121,7 +4121,7 @@ ProcessPhotoChemistry:
 
      double  vol=-1.0,xmin[3],xmax[3];
 
-     if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+     if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
      xmin[0]=startNode->xmin[0]+i*(startNode->xmax[0]-startNode->xmin[0])/_BLOCK_CELLS_X_;
      xmin[1]=startNode->xmin[1]+j*(startNode->xmax[1]-startNode->xmin[1])/_BLOCK_CELLS_Y_;
@@ -4191,7 +4191,7 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");

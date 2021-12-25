@@ -723,7 +723,7 @@ FluxSourceProcess[_EXOSPHERE_SOURCE__ID__USER_DEFINED__2_Jet_]=Comet::GetTotalPr
     TotalParticleAcceleration(accl,spec,newParticle,x_SO_OBJECT,v_SO_OBJECT,startNode);
 
 /*
-    nd=PIC::Mesh::mesh->fingCellIndex(x_SO_OBJECT,i,j,k,startNode);
+    nd=PIC::Mesh::mesh->FindCellIndex(x_SO_OBJECT,i,j,k,startNode);
     Comet::GetGravityAcceleration(Gravity,nd,startNode);
 
     for (int idim=0;idim<3;idim++) {
@@ -1344,7 +1344,7 @@ void Comet::BjornNASTRAN::Init() {
 
               cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode;
               startNode=PIC::Mesh::mesh->findTreeNode(x);
-              nd=PIC::Mesh::mesh->fingCellIndex(x,ii,jj,kk,startNode);
+              nd=PIC::Mesh::mesh->FindCellIndex(x,ii,jj,kk,startNode);
 
               if (startNode->block!=NULL) {
                 Comet::GetGravityAcceleration(accl,nd,startNode);

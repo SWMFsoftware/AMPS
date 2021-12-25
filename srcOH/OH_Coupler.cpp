@@ -39,7 +39,7 @@ void OH::Coupling::Send(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, do
     PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,node,CenterBasedStencil);
 
     //find the cell
-    if ((LocalCellNumber=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
 
     cell=node->block->GetCenterNode(LocalCellNumber);
     AssociatedDataPointer=cell->GetAssociatedDataBufferPointer();

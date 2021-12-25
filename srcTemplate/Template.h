@@ -181,14 +181,14 @@ namespace Template {
 	exit(__LINE__,__FILE__,"Error: the block is not initialized");
 
       // flag: true - exit if a point is not found in the block / false: don't
-      nd = PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false);
+      nd = PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode,false);
 
       // fail-safe check: if a point isn't found, try seacrhing in other blocks
       if (nd==-1) {
 	// try to found the block the point is in;
 	// starting point for search is block startNode
 	startNode=PIC::Mesh::mesh->findTreeNode(x_LOCAL,startNode);
-	nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode,false);
+	nd=PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode,false);
 	// if still not found => exit
 	if (nd==-1) 
 	  exit(__LINE__,__FILE__,"Error: the cell is not found");

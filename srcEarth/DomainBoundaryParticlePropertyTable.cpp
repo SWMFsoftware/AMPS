@@ -713,7 +713,7 @@ void Earth::CutoffRigidity::DomainBoundaryParticleProperty::InjectParticlesDomai
       int iCell,jCell,kCell;
       long int newParticle;
 
-      PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,startNode);
+      PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,startNode);
 
       newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
       PIC::ParticleBuffer::byte *newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);

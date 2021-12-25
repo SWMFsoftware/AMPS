@@ -96,7 +96,7 @@ void PIC::EnergyDistributionSampleRelativistic::Init() {
     SampleNodes[iProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[iProbe]);
     if (SampleNodes[iProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[iProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[iProbe],i,j,k,SampleNodes[iProbe],false);
+    SampleLocalCellNumber[iProbe]=PIC::Mesh::mesh->FindCellIndex(SamplingLocations[iProbe],i,j,k,SampleNodes[iProbe],false);
     if (SampleLocalCellNumber[iProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 

@@ -154,7 +154,7 @@ void OH::Sampling::DistributionFunctionSample::Init() {
     SampleNodes[nProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[nProbe]);
     if (SampleNodes[nProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
+    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->FindCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
     if (SampleLocalCellNumber[nProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 
@@ -203,7 +203,7 @@ void OH::Sampling::DistributionFunctionSample::SampleDistributionFunction() {
       PIC::Mesh::mesh->convertCenterNodeLocalNumber2LocalCoordinates(SampleLocalCellNumber[nProbe],i,j,k);
       ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-//      if (PIC::Mesh::mesh->fingCellIndex(SampleLocalCellNumber[nProbe],i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+//      if (PIC::Mesh::mesh->FindCellIndex(SampleLocalCellNumber[nProbe],i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 //      ptr=node->block->GetCenterNode(SampleLocalCellNumber[nProbe])->FirstCellParticle;
 
       // loop through all particles in the cell

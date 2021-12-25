@@ -257,7 +257,7 @@ short PIC::Mover::CellIntersectType(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node
     if (iBlock==NodeArr_type2.size()) 
       exit(__LINE__,__FILE__,"Error: the node is not in the type 2 array processed by  SetBlockCellIntersectTypes()");
 
-    if (PIC::Mesh::mesh->fingCellIndex(x,iCell,jCell,kCell,node,false)==-1) {
+    if (PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,node,false)==-1) {
       printf("x:%e,%e,%e, Node->xmin:%e,%e,%e, Node->xmax:%e,%e,%e\n",x[0],x[1],x[2],node->xmin[0],node->xmin[1],
 	     node->xmin[2], node->xmax[0],node->xmax[1],node->xmax[2]);
       exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
@@ -902,7 +902,7 @@ int PIC::Mover::TrajectoryTrackingMover_new(long int ptr,double dtTotal,cTreeNod
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) {
+  if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) {
     printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%d\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
 	   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
     exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
@@ -1391,7 +1391,7 @@ double vInit_debug[3]={vInit[0],vInit[1],vInit[2]};
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-  if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");

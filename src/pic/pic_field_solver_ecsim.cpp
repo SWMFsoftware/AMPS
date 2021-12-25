@@ -4258,7 +4258,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
                 PIC::ParticleBuffer::DeleteParticle(ptr);
               }
               else{
-                  if (PIC::Mesh::mesh->fingCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+                  if (PIC::Mesh::mesh->FindCellIndex(xFinal,ip,jp,kp,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
                   
                   PIC::Mesh::cDataBlockAMR * block=newNode->block;
 

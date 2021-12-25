@@ -2564,7 +2564,7 @@ void PIC::Parallel::ProcessCornerBlockBoundaryNodes() {
 
             if (flag==false) continue;
 
-            PIC::Mesh::mesh->fingCellIndex(xSearch,iCell,jCell,kCell,neibNode,false);
+            PIC::Mesh::mesh->FindCellIndex(xSearch,iCell,jCell,kCell,neibNode,false);
 
             Request=RequestTable+RequestTableLength;
             RequestTableLength++;

@@ -288,7 +288,7 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   //determine the cell where the particle is located
   int i,j,k;
 
-  PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
+  PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false);
 
   //update particle lists
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
@@ -626,7 +626,7 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   //determine the cell where the particle is located
   int i,j,k;
 
-  PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
+  PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false);
 
   //update particle lists
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_

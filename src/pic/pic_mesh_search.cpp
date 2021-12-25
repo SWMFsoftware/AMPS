@@ -110,7 +110,7 @@ PIC::Mesh::cDataCenterNode *PIC::Mesh::Search::FindCell(double *x) {
   int i,j,k,nd;
 
   node=FindBlock(x);
-  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node);
 
   if (node->block==NULL) return NULL;
   return node->block->GetCenterNode(nd);
@@ -119,7 +119,7 @@ PIC::Mesh::cDataCenterNode *PIC::Mesh::Search::FindCell(double *x) {
 PIC::Mesh::cDataCenterNode *PIC::Mesh::Search::FindCell(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int i,j,k,nd;
 
-  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node);
 
   if (node->block==NULL) return NULL;
   return node->block->GetCenterNode(nd);

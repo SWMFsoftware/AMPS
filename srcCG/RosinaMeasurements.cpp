@@ -116,7 +116,7 @@ void RosinaSample::Init(double etMin,double etMax) {
     node=PIC::Mesh::mesh->findTreeNode(RosettaState,NULL);
 
     if (node!=NULL) {
-      nd=PIC::Mesh::mesh->fingCellIndex(RosettaState,iCell,jCell,kCell,node);
+      nd=PIC::Mesh::mesh->FindCellIndex(RosettaState,iCell,jCell,kCell,node);
     }
     else nd=-1,iCell=-1,jCell=-1,kCell-1;
 

@@ -210,7 +210,7 @@ void countNumbers(){
     newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode);
     printf("i,j,k:%d,%d,%d\n",i,j,k);
     int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");
@@ -233,7 +233,7 @@ void countNumbers(){
     newNode=PIC::Mesh::mesh->findTreeNode(x);
     
     int i,j,k;
-    PIC::Mesh::mesh->fingCellIndex(x,i,j,k,newNode);
+    PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode);
 
     int nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
     if ((CenterNode=newNode->block->GetCenterNode(nd))==NULL) exit(__LINE__,__FILE__,"Error: not in the domain");

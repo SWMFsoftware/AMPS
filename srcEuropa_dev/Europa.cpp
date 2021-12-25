@@ -222,7 +222,7 @@ void Europa::SodiumCoulumnDensityIntegrant(double *res,int resLength,double* x,c
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   //get the local density number
-  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node);
   NumberDensity=node->block->GetCenterNode(nd)->GetNumberDensity(_O2_SPEC_);
   res[0]=NumberDensity;
 
@@ -1306,7 +1306,7 @@ void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLengt
   double NumberDensity;
 
 
-  nd=PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node);
+  nd=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node);
   for (i=0;i<resLength;i++) res[i]=0.0;
 
   //integrate density

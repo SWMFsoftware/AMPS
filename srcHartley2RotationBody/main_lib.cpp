@@ -719,7 +719,7 @@ void prePopulateSWprotons(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
 
         nTotalGeneratedParticles++;
 
-        PIC::Mesh::mesh->fingCellIndex(x,i,j,k,startNode);
+        PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode);
         nd=startNode->block->getCenterNodeLocalNumber(i,j,k);
 
         newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->GetCenterNode(nd)->FirstCellParticle);

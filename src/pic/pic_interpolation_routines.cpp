@@ -90,7 +90,7 @@ void PIC::InterpolationRoutines::CellCentered::Constant::InitStencil(double *x,c
   }
 
   //find cell
-  nd = PIC::Mesh::mesh->fingCellIndex(x,i,j,k,node,false);
+  nd = PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false);
   cell=node->block->GetCenterNode(nd);//getCenterNodeLocalNumber(i,j,k));
 
   //add the cell to the stencil

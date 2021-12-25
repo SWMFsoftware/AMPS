@@ -245,7 +245,7 @@ namespace Comet {
       memcpy(x_LOCAL,x,3*sizeof(double));
       memcpy(v_LOCAL,v,3*sizeof(double));
    
-      nd=PIC::Mesh::mesh->fingCellIndex(x_LOCAL,i,j,k,startNode);
+      nd=PIC::Mesh::mesh->FindCellIndex(x_LOCAL,i,j,k,startNode);
       
       //the gravity force
       if (_CG_DUST_FORCE_MODE__GRAVITY_ == _PIC_MODE_ON_) {

@@ -61,7 +61,7 @@ void PIC::PitchAngleDistributionSample::Init() {//double ProbeLocations[][DIM],i
     SampleNodes[nProbe]=PIC::Mesh::mesh->findTreeNode(SamplingLocations[nProbe]);
     if (SampleNodes[nProbe]==NULL) exit(__LINE__,__FILE__,"Error: the point is outside of the domain");
 
-    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->fingCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
+    SampleLocalCellNumber[nProbe]=PIC::Mesh::mesh->FindCellIndex(SamplingLocations[nProbe],i,j,k,SampleNodes[nProbe],false);
     if (SampleLocalCellNumber[nProbe]==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell");
   }
 

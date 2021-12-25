@@ -1621,7 +1621,7 @@ namespace FieldLine{
 #endif
 
 
-    if (PIC::Mesh::mesh->fingCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
+    if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
     
     switch (_PIC_PARTICLE_LIST_ATTACHING_) {
     case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:   

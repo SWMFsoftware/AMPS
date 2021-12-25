@@ -23,7 +23,7 @@ vector<PIC::IndividualModelSampling::fInterpolateCenterNodeData> PIC::Individual
 vector<PIC::IndividualModelSampling::fPrintSampledData> PIC::IndividualModelSampling::PrintSampledData;
 
 vector<PIC::IndividualModelSampling::fRequestStaticCellData> PIC::IndividualModelSampling::RequestStaticCellData;
-amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> _TARGET_DEVICE_ *PIC::IndividualModelSampling::RequestStaticCellCornerData;
+amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData> *PIC::IndividualModelSampling::RequestStaticCellCornerData;
 vector<PIC::Datum::cDatumSampled*>PIC::IndividualModelSampling::DataSampledList;
 
 //generic particle transformation
