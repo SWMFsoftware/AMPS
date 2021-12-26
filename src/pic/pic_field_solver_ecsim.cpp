@@ -1688,7 +1688,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
   bool res=false;
 
 
-  int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,21,18,19},
+  const int IndexMatrix[8][8]={{0,2,8,6,18,20,26,24},{1,0,6,7,19,18,24,25},{4,3,0,1,22,21,18,19},
           {3,5,2,0,21,23,20,18},{9,11,17,15,0,2,8,6},{10,9,15,16,1,0,6,7},
           {13,12,9,10,4,3,0,1},{12,14,11,9,3,5,2,0}};
 
@@ -3740,15 +3740,6 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::UpdateJMassMatrixGPU(){
 
       cCellData CellData_TH;
 
-
-      double MassTable[_TOTAL_SPECIES_NUMBER_],ChargeTable[_TOTAL_SPECIES_NUMBER_];
-      for (int s=0;s<_TOTAL_SPECIES_NUMBER_;s++) MassTable[s]=PIC::MolecularData::MolMass[s],ChargeTable[s]=PIC::MolecularData::ElectricChargeTable[s];
-
-
-
-
-
-
     for (int CellCounter=this_thread_id;CellCounter<nTotalCells;CellCounter+=increment) {
       int nLocalNode,ii=CellCounter;
       int i,j,k,t;
@@ -3813,7 +3804,7 @@ __syncwarp;
 
         CellData_TH.clean();
 
-        CellProcessingFlagTable=ProcessCell(i,j,k,node,&CellData_TH,0,1,MassTable,ChargeTable,
+        CellProcessingFlagTable=ProcessCell(i,j,k,node,&CellData_TH,0,1,PIC::MolecularData::MolMass,PIC::MolecularData::ElectricChargeTable,
           PIC::ParticleBuffer::ParticleDataLength,PIC::ParticleBuffer::ParticleDataBuffer,ProcessCellData);
       }
 
@@ -3877,26 +3868,24 @@ __syncwarp;
     };
 
 
-    for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
-#if _CUDA_MODE_ == _OFF_
-      PrcessCellSubset(di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
 
-#else
-      ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
-      ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
-
-      kernel_6<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+    ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
+    ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
 
-
-//      kernel_6<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
-      cudaDeviceSynchronize();
-#endif
-
-    }
-
+    auto PrcessCellSubsetAll = [=] _TARGET_HOST_ _TARGET_DEVICE_ (double **cflTable,double *ParticleEnergyTable,cProcessCellData ProcessCellData) {
+      for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
+        PrcessCellSubset(di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+      }
+    }; 
 
 
+    #ifndef __CUDA_ARCH__
+    PrcessCellSubsetAll(cflTable,ParticleEnergyTable,ProcessCellData);
+    #else
+    kernel_3<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubsetAll,cflTable,ParticleEnergyTable,ProcessCellData);
+    cudaDeviceSynchronize();
+    #endif
 
 
   //reduce the particle energy table
