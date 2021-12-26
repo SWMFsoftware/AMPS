@@ -3885,7 +3885,7 @@ __syncwarp;
       ProcessCellData.MagneticField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
       ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
-      kernel_6<<<40,200>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+      kernel_6<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubset,di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
 
 
 

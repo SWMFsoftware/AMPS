@@ -440,10 +440,7 @@ void LapentaMultiThreadedMoverGPU() {
   };
 
 
-  int nblocks=10;
-  int nthreads=320;
-
-  int data_table_length=nblocks*nthreads;
+  int data_table_length=_CUDA_BLOCKS_*_CUDA_THREADS_;
   PIC::Mover::cLapentaInputData *data_table=NULL;
 
   amps_malloc_managed<PIC::Mover::cLapentaInputData> (data_table,data_table_length);
@@ -468,7 +465,7 @@ void LapentaMultiThreadedMoverGPU() {
   #if _CUDA_MODE_ == _OFF_
   ProcessParticleList(data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   #else
-  kernel_3<<<nblocks,nthreads>>>(ProcessParticleList,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset); 
+  kernel_3<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(ProcessParticleList,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset); 
   cudaDeviceSynchronize();
   #endif
 
