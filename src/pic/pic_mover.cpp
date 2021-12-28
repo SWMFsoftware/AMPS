@@ -335,11 +335,11 @@ void LapentaMultiThreadedMoverGPU() {
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,**BlockTable=PIC::DomainBlockDecomposition::BlockTable;
   int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
 
-
   int this_thread_id=0,thread_id_table_size=1;
 
+  #ifndef __CUDA_ARCH__
   PIC::ParticleBuffer::CreateParticleTable();
-
+  #endif
 
 
   static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
@@ -389,6 +389,91 @@ void LapentaMultiThreadedMoverGPU() {
   if (increment==0) increment=nlocal_blocks/thread_id_table_size;
   if (increment==0) increment=1;
 
+
+  auto ProcessParticleListGPU = [=] _TARGET_DEVICE_ (PIC::Mover::cLapentaInputData* data_table,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset,int ThisThread) {
+     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int i,j,k,icell,iblock,iblock_last=-1;
+    long int ParticleList;
+    PIC::ParticleBuffer::byte *ParticleData;
+
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    PIC::Mover::cLapentaInputData* data=data_table+id;
+
+    long int _CUDA_SHARED_ ParticleProcessTable[_CUDA_THREADS_MOVER_];
+    long int  ptr;
+
+    int icell_max=PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    int inode,inode_last=-1;
+ 
+   for (inode=blockIdx.x;inode<PIC::DomainBlockDecomposition::nLocalBlocks;inode+=gridDim.x) {
+     int i,j,k,icell,ii;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[inode];
+
+      if ((node->block==NULL)||(node->Thread!=ThisThread)) continue;
+
+       #if  _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
+       PIC::Mover::SetBlock_E(data->E_Corner,node,ElectricField_RelativeOffset);
+       PIC::Mover::SetBlock_B(data->B_C,node,MagneticField_RelativeOffset,ElectricField_RelativeOffset);
+       #endif
+
+     for (icell=0;icell<_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;icell++) {
+       ii=icell;
+
+       k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+       ii=ii%(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+
+       j=ii/_BLOCK_CELLS_X_;
+       i=ii%_BLOCK_CELLS_X_;
+
+
+      ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+      #ifdef __CUDA_ARCH__
+      __syncthreads();
+      #endif
+
+
+      if (ptr>=0) while(true) {
+       if (threadIdx.x==0) {
+          for (int ip=0;ip<blockDim.x;ip++) {
+            ParticleProcessTable[ip]=ptr;
+
+            if (ptr!=-1) {
+              ptr=PIC::ParticleBuffer::GetNext(ptr);
+            }
+            else {
+              for (ip++;ip<blockDim.x;ip++) ParticleProcessTable[ip]=-1;
+              break;
+            }
+          }
+        }
+
+        #ifdef __CUDA_ARCH__
+        __syncthreads();
+        #endif
+
+        if (ParticleProcessTable[0]==-1) break;
+
+        if (ParticleProcessTable[threadIdx.x]!=-1) {
+          data->node=node;
+
+          ParticleData=_GetParticleDataPointer(ParticleProcessTable[threadIdx.x],ParticleDataLength,ParticleDataBuffer);
+          PIC::Mover::Lapenta2017(ParticleData,ParticleProcessTable[threadIdx.x],data);
+        }
+
+        #ifdef __CUDA_ARCH__
+        __syncthreads();
+        #endif
+        }      
+      }
+    }
+  };
 
 
   auto ProcessParticleList = [=] _TARGET_HOST_ _TARGET_DEVICE_ (PIC::Mover::cLapentaInputData* data_table,int MagneticField_RelativeOffset,int ElectricField_RelativeOffset) {
@@ -465,7 +550,7 @@ void LapentaMultiThreadedMoverGPU() {
   #if _CUDA_MODE_ == _OFF_
   ProcessParticleList(data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
   #else
-  kernel_3<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(ProcessParticleList,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset); 
+  kernel_4<<<_CUDA_BLOCKS_MOVER_,_CUDA_THREADS_MOVER_>>>(ProcessParticleListGPU,data_table,PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset,PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset,PIC::ThisThread); 
   cudaDeviceSynchronize();
   #endif
 
