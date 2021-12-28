@@ -387,6 +387,7 @@ foreach (@Arguments) {
     add_line_general_conf("#undef _TARGET_DEVICE_ \n#define _TARGET_DEVICE_ __device__");
     add_line_general_conf("#undef _CUDA_MODE_ \n#define _CUDA_MODE_ _ON_");
     add_line_general_conf("#undef _CUDA_MANAGED_\n#define _CUDA_MANAGED_ __managed__"); 
+    add_line_general_conf("#undef _CUDA_SHARED_\n#define _CUDA_SHARED_ __shared__");
 
     #add stuff in Makefile.conf
     open (MAKEFILE,">>Makefile.conf") || die "Cannot open Makefile.local\n";
