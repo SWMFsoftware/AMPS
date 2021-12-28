@@ -96,6 +96,7 @@ $MARKER:SPECIES-MACRO-DEFINIETION-USED-IN-SIMULATION$
 #include "constants.h"
 #include "rnd.h"
 #include "stack.h"
+#include "stack_managed.h"
 #include "stencil.h"
 
 //include the appropriate mesh header

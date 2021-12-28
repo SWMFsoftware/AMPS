@@ -1119,6 +1119,118 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
 
+//CUDA version of the vector multiplication function 
+#ifdef __CUDA_ARCH__
+template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
+int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
+int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
+_TARGET_HOST_
+void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxStencilLength,MaxRhsSupportLength_CornerNodes,MaxRhsSupportLength_CenterNodes,MaxMatrixElementParameterTableLength,MaxMatrixElementSupportTableLength>::MultiplyVector(double *p,double *x,int length) {
+
+
+  static double **RecvExchangeBufferTable=NULL;
+  static int nMartixModificationsLocal=-1;  
+
+  static double *x_local=NULL;
+  static int length_local=-1;
+
+  if (x_local==NULL) {
+    //x_local=new double [length];
+    amps_new_managed(x_local,length);
+  }
+  else if (length_local!=length) {
+    //delete [] x_local;
+    //x_local=new double [length];
+    
+    amps_free_managed(x_local);
+    amps_new_managed(x_local,length); 
+  } 
+
+  memcpy(x_local,x,length*sizeof(double));
+  
+
+  if ((nMartixModificationsLocal!=nMartixModifications)&&(RecvExchangeBufferTable!=NULL)) {
+    RecvExchangeBufferTable[PIC::ThisThread]=NULL;
+
+    for (int thread=0;thread<PIC::nTotalThreads;thread++) if (RecvExchangeBufferTable[thread]!=NULL) {
+     // delete [] RecvExchangeBufferTable[thread];
+     amps_free_managed(RecvExchangeBufferTable[thread]);
+    }
+
+    //delete [] RecvExchangeBufferTable;
+    amps_free_managed(RecvExchangeBufferTable); 
+
+    RecvExchangeBufferTable=NULL;
+  }
+
+  ExchangeIntermediateUnknownsData(x,RecvExchangeBufferTable);
+  RecvExchangeBufferTable[PIC::ThisThread]=x_local;
+
+
+  auto UpdateRhsPtr = [] _TARGET_DEVICE_ (int MatrixRowTableLength, cMatrixRow** MatrixRowTable,double** RecvExchangeBufferTable) {
+    for (int irow=0;irow<MatrixRowTableLength;irow++) {
+      int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
+      cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
+
+      for (int iElement=0;iElement<iElementMax;iElement++) {
+        cStencilElementData *data=ElementDataTable+iElement;
+
+        data->rhs=&RecvExchangeBufferTable[data->Thread][data->iVar+NodeUnknownVariableVectorLength*data->UnknownVectorIndex];
+      }
+    }
+  }; 
+
+
+  if ((nMartixModificationsLocal!=nMartixModifications)||(length_local!=length)) {
+    //UpdateRhsPtr(MatrixRowTableLength,MatrixRowTable,RecvExchangeBufferTable);
+    kernel_3<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(UpdateRhsPtr,MatrixRowTableLength,MatrixRowTable,RecvExchangeBufferTable);
+    cudaDeviceSynchronize();
+
+    nMartixModificationsLocal=nMartixModifications;
+    length_local=length; 
+  }
+
+
+  auto ProcessAllRows = [] _TARGET_DEVICE_ (double* p,int MatrixRowTableLength,cMatrixRow** MatrixRowTable,int length) { 
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+
+    for (int irow=id;irow<MatrixRowTableLength;irow+=increment) {
+      int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
+      cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
+    
+      double res=0.0;
+      int iElement=0;
+      cStencilElementData *data,*data_next,*data_next_next=NULL;
+      double *u_vect,*u_vect_next;
+
+      for (iElement=0;iElement<iElementMax;iElement++) {
+        data=ElementDataTable+iElement;
+        res+=data->MatrixElementValue*(*data->rhs);
+      }
+
+       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+       if (irow>=length) exit(__LINE__,__FILE__,"Error: out of bound");
+       #endif
+
+       p[irow]=res;
+      __syncthreads();
+    } 
+  }; 
+
+  double *p_gpu=NULL;
+
+  cudaMalloc(&p_gpu,MatrixRowTableLength*sizeof(double)); 
+
+  kernel_4<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(ProcessAllRows,p_gpu,MatrixRowTableLength,MatrixRowTable,length); 
+  cudaDeviceSynchronize();
+
+  cudaMemcpy(p,p_gpu,MatrixRowTableLength*sizeof(double),cudaMemcpyDeviceToHost);
+  cudaFree(p_gpu);
+}
+
+//CPU version of the vector multipllication function
+#else //__CUDA_ARCH__
 #if _PIC_MATMUL_MPI_MULTITHREAD_ == _PIC_MODE_ON_
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
@@ -1468,6 +1580,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 }
 #endif //_PIC_MATMUL_MPI_MULTITHREAD_
+#endif //__CUDA_ARCH__
 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,

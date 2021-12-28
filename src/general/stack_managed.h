@@ -2,8 +2,8 @@
 
 //declaration of general purpose stack class
 
-#ifndef STACK
-#define STACK
+#ifndef STACK_MANAGED_  
+#define STACK_MANAGED_ 
 
 #include "specfunc.h"
 
@@ -17,7 +17,7 @@
 
 //the stack class
 template<class T>
-class cStack {
+class cStackManaged {
 public: 
   //data element's stack
   long int nMaxElements; 
@@ -45,10 +45,14 @@ public:
 
     //check available space in the dataBufferList list: if needed increment the size of 'elementStackList' and 'dataBufferList' 
     if (dataBufferListPointer==dataBufferListSize) {
-      T** tmpDataList=new T*[dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T** tmpDataList=NULL; //new T*[dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_new_managed(tmpDataList,dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_);
+
       MemoryAllocation+=sizeof(T*)*(dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_);
 
-      T*** tmpStackList=new T**[dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      T*** tmpStackList=NULL; //new T**[dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_];
+      amps_new_managed(tmpStackList,dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
+
       MemoryAllocation+=sizeof(T**)*(dataBufferListSize+_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_); 
 
       i=0;
@@ -58,10 +62,16 @@ public:
       for (j=0;j<_GENERAL_STACK_DEFAULT_BUFFER_LIST_SIZE_;j++,i++) tmpDataList[i]=NULL,tmpStackList[i]=NULL;
 
       if (dataBufferList!=NULL) {
-        delete [] dataBufferList;
+        //delete [] dataBufferList;
+        amps_free_managed(dataBufferList); 
+        dataBufferList=NULL;
+
         MemoryAllocation-=sizeof(T*)*dataBufferListSize;
 
-        delete [] elementStackList;
+        //delete [] elementStackList;
+        amps_free_managed(elementStackList); 
+        elementStackList=NULL;
+
         MemoryAllocation-=sizeof(T**)*dataBufferListSize;
       }
 
@@ -71,8 +81,11 @@ public:
     }
 
     //allocate a new memory chunk for the element's data and update the stack list
-    dataBufferList[dataBufferListPointer]=new T[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
-    elementStackList[dataBufferListPointer]=new T*[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+    //dataBufferList[dataBufferListPointer]=new T[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+    //elementStackList[dataBufferListPointer]=new T*[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+
+    amps_new_managed(dataBufferList[dataBufferListPointer],_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
+    amps_new_managed(elementStackList[dataBufferListPointer],_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
     MemoryAllocation+=sizeof(T)*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     MemoryAllocation+=sizeof(T*)*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
@@ -128,15 +141,23 @@ public:
   _TARGET_DEVICE_ _TARGET_HOST_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
-      delete [] dataBufferList[i];
-      delete [] elementStackList[i];
+      //delete [] dataBufferList[i];
+      amps_free_managed(dataBufferList[i]);
+
+      //delete [] elementStackList[i];
+      amps_free_managed(elementStackList[i]);
 
       MemoryAllocation-=(sizeof(T)+sizeof(T*))*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
     if (dataBufferList!=NULL) {
-      delete [] dataBufferList;
-      delete [] elementStackList; 
+      //delete [] dataBufferList;
+      amps_free_managed(dataBufferList);
+      dataBufferList=NULL;
+
+      //delete [] elementStackList; 
+      amps_free_managed(elementStackList);
+      elementStackList=NULL;
 
       MemoryAllocation-=(sizeof(T*)+sizeof(T**))*dataBufferListSize;
     }
@@ -174,19 +195,25 @@ public:
     //allocate the stack's buffers
     long int i,j,elementCountingNumber;
 
-    elementStackList=new T** [dataBufferListSize];
+   // elementStackList=new T** [dataBufferListSize];
+    amps_new_managed(elementStackList,dataBufferListSize);
+
     MemoryAllocation+=sizeof(T**)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) elementStackList[i]=NULL;
 
-    dataBufferList=new T*[dataBufferListSize];
+    //dataBufferList=new T*[dataBufferListSize];
+    amps_new_managed(dataBufferList,dataBufferListSize);
+
     MemoryAllocation+=sizeof(T*)*dataBufferListSize;
     for (i=0;i<dataBufferListSize;i++) dataBufferList[i]=NULL;
 
     for (i=0;i<dataBufferListPointer;i++) {
-      dataBufferList[i]=new T[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      //dataBufferList[i]=new T[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_];
+      amps_new_managed(dataBufferList[i],_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T)*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
 
-      elementStackList[i]=new T*[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+     //elementStackList[i]=new T*[_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_]; 
+      amps_new_managed(elementStackList[i],_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
       MemoryAllocation+=sizeof(T*)*_GENERAL_STACK_DEFAULT_BUFFER_BUNK_SIZE_;
     }
 
@@ -214,12 +241,12 @@ public:
   }
 
   _TARGET_DEVICE_ _TARGET_HOST_
-  cStack() {
+  cStackManaged() {
     explicitConstructor();
   }
 
   _TARGET_DEVICE_ _TARGET_HOST_
-  ~cStack() {
+  ~cStackManaged() {
     clear();
   }
 
