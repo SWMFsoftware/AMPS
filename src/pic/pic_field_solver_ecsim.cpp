@@ -3873,20 +3873,23 @@ __syncwarp;
     ProcessCellData.ElectricField_RelativeOffset=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
 
 
-    auto PrcessCellSubsetAll = [=] _TARGET_HOST_ _TARGET_DEVICE_ (double **cflTable,double *ParticleEnergyTable,cProcessCellData ProcessCellData) {
+    auto PrcessCellSubsetAll = [=] _TARGET_DEVICE_ (double **cflTable,double *ParticleEnergyTable,cProcessCellData ProcessCellData) {
       for (int di=0;di<2;di++) for (int dj=0;dj<2;dj++) for (int dk=0;dk<2;dk++) {
         PrcessCellSubset(di,dj,dk,cflTable,ParticleEnergyTable,ProcessCellData);
+
+        #ifdef __CUDA_ARCH__
+        __syncthreads();
+        #endif
       }
     }; 
 
 
-    #ifndef __CUDA_ARCH__
-    PrcessCellSubsetAll(cflTable,ParticleEnergyTable,ProcessCellData);
-    #else
+    #if _CUDA_MODE_ == _ON_ 
     kernel_3<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(PrcessCellSubsetAll,cflTable,ParticleEnergyTable,ProcessCellData);
     cudaDeviceSynchronize();
+    #else 
+    PrcessCellSubsetAll(cflTable,ParticleEnergyTable,ProcessCellData);
     #endif
-
 
   //reduce the particle energy table
   for (int i=0;i<thread_id_table_size /*PIC::nTotalThreadsOpenMP*/;i++) ParticleEnergy+=ParticleEnergyTable[i];
