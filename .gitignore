@@ -32,6 +32,7 @@ srcTemp
 *.input*
 test_*
 run*
+table_parser
 Makefile.test
 AMPS.pdf
 doc/AMPS.log
