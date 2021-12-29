@@ -32,12 +32,12 @@ public:
   //control allocated memory
   long int MemoryAllocation;   
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   long int getAllocatedMemory() {
     return MemoryAllocation;
   }
   
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   void initMemoryBlock() {
     long int i,j;
 
@@ -138,7 +138,7 @@ public:
     return dataBufferList[nMemoryBank]+offset;
   }
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   void clear() {
     for (int i=0;i<dataBufferListPointer;i++) {
       //delete [] dataBufferList[i];
@@ -225,14 +225,14 @@ public:
   }
    
 
-  _TARGET_DEVICE_ _TARGET_HOST_ 
+  _TARGET_HOST_ 
   void init() {
     clear();
     initMemoryBlock();
   }
     
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   void explicitConstructor() {
     MemoryAllocation=0;
 
@@ -240,12 +240,12 @@ public:
     dataBufferList=0,dataBufferList=NULL,dataBufferListSize=0,dataBufferListPointer=0;
   }
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   cStackManaged() {
     explicitConstructor();
   }
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   ~cStackManaged() {
     clear();
   }
@@ -255,7 +255,7 @@ public:
   long int usedElements() {return elementStackPointer;}
 
 
-  _TARGET_DEVICE_ _TARGET_HOST_
+  _TARGET_HOST_
   T* newElement() {
     T* res;
 
@@ -273,7 +273,7 @@ public:
     return res;
   }
 
-  _TARGET_HOST_ _TARGET_DEVICE_
+  _TARGET_DEVICE_
   void deleteElement(T* delElement) {
     if (sizeof(T)==0) return;
 

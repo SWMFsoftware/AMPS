@@ -138,7 +138,7 @@ public:
     }
   };
 
-  cStack<cMatrixRow> MatrixRowStack;
+  cStackManaged<cMatrixRow> MatrixRowStack;
 
   //Table of the rows local to the current MPI process
   cMatrixRow *MatrixRowListFirst,*MatrixRowListLast;
@@ -920,8 +920,14 @@ nMartixModifications++;
   //cleate a RowTable;
   for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) MatrixRowTableLength++;
 
-  if (MatrixRowTable!=NULL) delete [] MatrixRowTable;
-  MatrixRowTable=new cMatrixRow *[MatrixRowTableLength];
+  if (MatrixRowTable!=NULL) {
+    //delete [] MatrixRowTable;
+    amps_free_managed(MatrixRowTable);
+    MatrixRowTable=NULL;
+  }
+
+  //MatrixRowTable=new cMatrixRow *[MatrixRowTableLength];
+  amps_new_managed(MatrixRowTable,MatrixRowTableLength);
 
   for (MatrixRowTableLength=0,Row=MatrixRowListFirst;Row!=NULL;Row=Row->next) MatrixRowTable[MatrixRowTableLength++]=Row;
 }
@@ -937,15 +943,15 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
   MPI_Datatype *unknown_vector_type_table=new MPI_Datatype[PIC::nTotalThreads];
   
   if (LocalRecvExchangeBufferTable==NULL) {
-    LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads]; 
+    //LocalRecvExchangeBufferTable=new double *[PIC::nTotalThreads]; 
+    amps_new_managed(LocalRecvExchangeBufferTable,PIC::nTotalThreads);
 
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+   LocalRecvExchangeBufferTable[thread]=NULL;
+
     if (NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]>0) {
       LocalRecvExchangeBufferTable[thread]=new double [NodeUnknownVariableVectorLength*RecvExchangeBufferLength[thread]];
     }
-    else {
-      LocalRecvExchangeBufferTable[thread]=NULL;
-    }  
   } 
 }
 
@@ -1120,7 +1126,7 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
 //CUDA version of the vector multiplication function 
-#ifdef __CUDA_ARCH__
+#if _CUDA_MODE_ == _ON_ 
 template <class cCornerNode, int NodeUnknownVariableVectorLength,int MaxStencilLength,
 int MaxRhsSupportLength_CornerNodes,int MaxRhsSupportLength_CenterNodes,
 int MaxMatrixElementParameterTableLength,int MaxMatrixElementSupportTableLength>
@@ -1168,7 +1174,10 @@ void cLinearSystemCornerNode<cCornerNode, NodeUnknownVariableVectorLength,MaxSte
 
 
   auto UpdateRhsPtr = [] _TARGET_DEVICE_ (int MatrixRowTableLength, cMatrixRow** MatrixRowTable,double** RecvExchangeBufferTable) {
-    for (int irow=0;irow<MatrixRowTableLength;irow++) {
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+
+    for (int irow=id;irow<MatrixRowTableLength;irow+=increment) {
       int iElementMax=MatrixRowTable[irow]->nNonZeroElements;
       cStencilElementData *ElementDataTable=MatrixRowTable[irow]->ElementDataTable;
 
