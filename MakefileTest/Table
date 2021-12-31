@@ -1391,6 +1391,9 @@ Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Use
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
 
+
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
+
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
 
@@ -1430,7 +1433,7 @@ Check=
 >>>@echo "test_Earth_check..." >> test_Earth.diff
 >>>@${TESTEarthDIR}/../utility/ReduceFile.pl ${TESTEarthDIR}/loaded.SavedCellData.dat 1000
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarthDIR}/loaded.SavedCellData.dat.Reduced.Step=1000         \
->>>${TESTEarthKEYS}/output-sig=0x103010036592e5d/test_Earth_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarthDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth--Background_Magnetosphere.diff
+>>>${TESTEarthCUSTOMREFSOLUTIONPATHS}/test_Earth_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarthDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth--Background_Magnetosphere.diff
 >>>@ls -l test_Earth--Background_Magnetosphere.diff
 
 >>>@cat test_Earth--Background_Magnetosphere.diff > test_Earth.diff
@@ -1548,6 +1551,7 @@ Ref=1{gcc}@@(0+valeriy)
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 
+
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity_t96_compile..." > test_Earth-cutoff-rigidity_t96$(TESTEarth-cutoff-rigidity_t96-REF).diff
 
@@ -1577,6 +1581,8 @@ Check=
 Name=test/Earth-T96
 Time=3
 
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
+
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
@@ -1597,8 +1603,8 @@ Compile=
 Check=
 >>>@echo "test_Earth-T96_check..." >> test_Earth-T96.diff
 >>>@${TESTEarth-T96DIR}/../utility/ReduceFile.pl ${TESTEarth-T96DIR}/loaded.SavedCellData.dat 1000
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-T96DIR}/loaded.SavedCellData.dat.Reduced.Step=1000         \
->>>${TESTEarth-T96KEYS}/output-sig=0x103010036592e5d/test_Earth-T96_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-T96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-T96--Background_Magnetosphere.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarthCUSTOMREFSOLUTIONPATHS-T96}/loaded.SavedCellData.dat.Reduced.Step=1000         \
+>>>${TESTEarthCUSTOMREFSOLUTIONPATHS-T96}/test_Earth-T96_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-T96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-T96--Background_Magnetosphere.diff
 >>>@ls -l test_Earth-T96--Background_Magnetosphere.diff
 
 >>>@cat test_Earth-T96--Background_Magnetosphere.diff > test_Earth-T96.diff
