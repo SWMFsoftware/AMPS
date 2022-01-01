@@ -222,7 +222,11 @@ MoverIntegratorMode=Boris-relativistic
 #endBlock
 
 #block ../exosphere.pl
-  SPICE=off
+  SPICE=on !!!!off!, off
+  SpiceKernels="NAIF/NAIF0011.TLS", "NAIF/pck00010.tpc", \\
+               "NAIF/DE405.BSP", \\
+               "OTHER/GSE.tf", "OTHER/GSM.tf"
+
 
   SurfaceDataStructure=SurfaceDataStructure.h
 

@@ -1449,8 +1449,8 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2  @@(0+valeriy)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2  @@(0+amps-gpu)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
