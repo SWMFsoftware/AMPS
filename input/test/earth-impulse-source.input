@@ -42,7 +42,7 @@ ForceRepeatableSimulationPath=off ! on,off
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
 
-CouplerMode=file(tecplot) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
+CouplerMode=T96 !!!!file(tecplot) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
 
 TimeStepMode=SpeciesGlobalTimeStep
 ParticleWeightMode=SpeciesGlobalParticleWeight
@@ -167,6 +167,13 @@ define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Ear
   GCR=on
   SEP=off
 
+  T96=on \\
+   solar_wind_pressure=10.0*_NANO_  \\ !nPa
+   DST=-200.0*_NANO_ \\ !nT
+   By=-7.0*_NANO_ \\ !nT
+   Bz=-10.0*_NANO_ !nT
+
+
 ! ParticleDataSamplingMode=on
 
   ImpulseSource=on \\
@@ -177,7 +184,14 @@ define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Ear
 #endBlock
 
 #block ../exosphere.pl
-  SPICE=off
+! SPICE=off
+
+  SPICE=on !!!!off!, off
+  SpiceKernels="NAIF/NAIF0011.TLS", "NAIF/pck00010.tpc", \\
+               "NAIF/DE405.BSP", \\
+               "OTHER/GSE.tf", "OTHER/GSM.tf"
+
+
 
   SurfaceDataStructure=SurfaceDataStructure.h
 
