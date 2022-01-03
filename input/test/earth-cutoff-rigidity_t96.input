@@ -1,7 +1,7 @@
 
 #main
 
-SpeciesList=H_PLUS1, Electron 
+SpeciesList=H_PLUS1 !, Electron 
 
 ErrorLog=error.log
 Prefix=AMPS
@@ -91,8 +91,9 @@ MoverIntegratorMode=Boris-relativistic
 ! define _PIC_DEBUGGER_MODE_ _PIC_DEBUGGER_MODE_ON_
 ! define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ _PIC_DEBUGGER_MODE_ON_
 
-  define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_OFF_
-!  define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_(x,v,spec,ParticleData) Europa::ParticleTracker::TrajectoryTrackingCondition(x,v,spec,ParticleData)
+  !trajecgtory tracing
+  TrajectoryTracing=on
+  MaxSampledTrajectoryNumber=100
 
 !define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
 !define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -161,7 +162,7 @@ MoverIntegratorMode=Boris-relativistic
     nSampleIntervals=200
 
 
- EnergyDistributionSamplingRelativistic=on \\ !on, off
+ EnergyDistributionSamplingRelativistic=off \\ !on, off
    x=(1.8E8,0.0,0.0), (1.3E8,0.0,0.0), (9.4E7,0.0,0.0), (5.7E7,0.0,0.0), (3.6E7,0.0,0.0), (2.3E7,0.0,0.0), (7.3E6,0.0,0.0) \\ 
    nSampleIntervals=100 \\
    samplingScale=LOGARITHMIC \\
@@ -179,20 +180,30 @@ MoverIntegratorMode=Boris-relativistic
    By=-7.0*_NANO_ \\ !nT
    Bz=-10.0*_NANO_ !nT
 
-  nZenithElements=5
-  nAzimuthalElements=5
+  nZenithElements=20 
+  nAzimuthalElements=20 
 
-  CoordinateSystem=GSE !GSE,GSM 
+  CoordinateSystem=GSM !GSE !!GSM !GSE !GSE,GSM 
 
-  CutOffTestLocations=on \\
-    emin=10.0*Mev2J \\
-    emax=20000.0*Mev2J \\
+  !InjectionParticleVelocityDirection=Vertical !Uniform !Uniform,Vertical
+
+  CutOffTestLocations=off \\
+    emin=1000.0*Mev2J \\
+    emax=2000.0*Mev2J \\
     nTotalParticles=5000 \\
     nInjectionIterations=100 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
     x=500.0E3+_RADIUS_(_TARGET_),0,0 \\
     x=500.0E3+_RADIUS_(_TARGET_),0,500.0E3+_RADIUS_(_TARGET_) \\ 
     x=1000.0E3+_RADIUS_(_TARGET_),0,1000.0E3+_RADIUS_(_TARGET_)   
+
+  CutoffTestSphericalShells=on \\
+    x=3.0*_RADIUS_(_TARGET_) \\
+    emin=1.0*MeV2J \\
+    emax=50.0*MeV2J \\
+    nTotalParticles=5000 \\
+    nInjectionIterations=100
+
 
   ImpulseSource=off \\
     Spectrum=constant(1.0E1*MeV2J) \\ 
@@ -201,13 +212,11 @@ MoverIntegratorMode=Boris-relativistic
     New: x=2.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6 \\
     New: x=4.0*_RADIUS_(_TARGET_),0,0; spec=H_PLUS1,time=0,Source=1.0E11,npart=2.0E6
 
-  SphericalShells=off \\
-    x=125.0E3+_RADIUS_(_TARGET_),400.0E3+_RADIUS_(_TARGET_), \\
-       1.5*_RADIUS_(_TARGET_),2.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
-       10.0*_RADIUS_(_TARGET_),15.0*_RADIUS_(_TARGET_) \\
+  SamplingSphericalShells=off \\
+    x=3.0*_RADIUS_(_TARGET_),5.0*_RADIUS_(_TARGET_), \\
     emin=1.0*MeV2J \\
     emax=50.0*MeV2J \\
-    nLevels=10
+    nLevels=10  
 
 
   ParticleDataSamplingMode=on \\
@@ -256,7 +265,7 @@ MoverIntegratorMode=Boris-relativistic
 ! IcesLocationPath=/left/ices/ICES  !location of ICES is set using Config.pl -ices-path  
 !  IcesModelCase=Europa09
 
-! SimulationStartTime=2013-04-01T12:59:30 !!!2009-01-24T00:00:00
+  SimulationStartTime=2003-10-10T02:00:00 !2013-04-01T12:59:30 !!!2009-01-24T00:00:00
 
   addPhysicalModelHeader=Earth.h
 
