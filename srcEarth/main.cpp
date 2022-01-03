@@ -1072,7 +1072,7 @@ int main(int argc,char **argv) {
       }
 
       for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
-        CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],5000);
+        CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],Earth::CutoffRigidity::nMaxIteractions);
       }
 
       break;
@@ -1095,7 +1095,7 @@ int main(int argc,char **argv) {
     }
    
     for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
-      CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],10000);
+      CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],Earth::CutoffRigidity::nMaxIteractions);
     }
   }
 

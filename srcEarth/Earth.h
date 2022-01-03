@@ -181,6 +181,8 @@ namespace Earth {
     const int ParticleVelocityDirectionUniform=0;
     const int ParticleVelocityDirectionVertical=1;
     
+    //the maximum number of iteractions
+    extern int MaxIteractions;
 
     //calculation of the cutoff rigidity in discrete locations
     namespace IndividualLocations {

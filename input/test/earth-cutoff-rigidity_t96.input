@@ -93,7 +93,7 @@ MoverIntegratorMode=Boris-relativistic
 
   !trajecgtory tracing
   TrajectoryTracing=on
-  MaxSampledTrajectoryNumber=100
+  MaxSampledTrajectoryNumber=1000
 
 !define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
 !define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
@@ -190,7 +190,7 @@ MoverIntegratorMode=Boris-relativistic
   CutOffTestLocations=off \\
     emin=1000.0*Mev2J \\
     emax=2000.0*Mev2J \\
-    nTotalParticles=5000 \\
+    nTotalParticles=500 \\
     nInjectionIterations=100 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
     x=500.0E3+_RADIUS_(_TARGET_),0,0 \\
@@ -201,9 +201,10 @@ MoverIntegratorMode=Boris-relativistic
     x=3.0*_RADIUS_(_TARGET_) \\
     emin=1.0*MeV2J \\
     emax=50.0*MeV2J \\
-    nTotalParticles=5000 \\
+    nTotalParticles=500 \\
     nInjectionIterations=100
 
+  nMaxIterations=1000
 
   ImpulseSource=off \\
     Spectrum=constant(1.0E1*MeV2J) \\ 

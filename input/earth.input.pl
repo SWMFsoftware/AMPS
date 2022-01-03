@@ -364,7 +364,11 @@ while ($line=<InputFile>) {
   }
   
   
-  
+  #the maximum number of iteration used in calculating the rigidity cutoff 
+  elsif ($InputLine eq "NMAXITERATIONS") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+    ampsConfigLib::ChangeValueOfVariable("int Earth::CutoffRigidity::nMaxIteractions",$s0,"main/CutoffRigidity.cpp");
+  }
   
     #the number, locations, energy range, and the number of the energy intervals used in the spherical sampling surfaces 
   elsif ($InputLine eq "CUTOFFTESTSPHERICALSHELLS") {

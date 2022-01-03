@@ -21,6 +21,9 @@ array_2d<double> Earth::CutoffRigidity::CutoffRigidityTable;
 array_2d<int> Earth::CutoffRigidity::InjectedParticleMap;
 array_2d<double> Earth::CutoffRigidity::MaxEnergyInjectedParticles;
 
+//the maximum number of iteractions 
+int Earth::CutoffRigidity::nMaxIteractions=1000;
+
 //enable/disable the particle injection procedure
 bool Earth::CutoffRigidity::ParticleInjector::ParticleInjectionMode=true;
 
