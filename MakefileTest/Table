@@ -1583,6 +1583,7 @@ Name=test/Earth-T96
 Time=3
 
 CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
+CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+valeriy) 
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=nospice @@(0+valeriy)
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=nospice @@(0+amps-gpu)
@@ -1604,8 +1605,8 @@ Compile=
 Check=
 >>>@echo "test_Earth-T96_check..." >> test_Earth-T96.diff
 >>>@${TESTEarth-T96DIR}/../utility/ReduceFile.pl ${TESTEarth-T96DIR}/loaded.SavedCellData.dat 1000
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarthCUSTOMREFSOLUTIONPATHS-T96}/loaded.SavedCellData.dat.Reduced.Step=1000         \
->>>${TESTEarthCUSTOMREFSOLUTIONPATHS-T96}/test_Earth-T96_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-T96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-T96--Background_Magnetosphere.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-T96DIR}/loaded.SavedCellData.dat.Reduced.Step=1000         \
+>>>${TESTEarth-T96CUSTOMREFSOLUTIONPATHS}/test_Earth-T96_loaded.SavedCellData.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-T96DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-T96--Background_Magnetosphere.diff
 >>>@ls -l test_Earth-T96--Background_Magnetosphere.diff
 
 >>>@cat test_Earth-T96--Background_Magnetosphere.diff > test_Earth-T96.diff
