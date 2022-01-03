@@ -1528,15 +1528,22 @@ Compile=
 Check=
 >>>@echo "test_Earth-cutoff-rigidity_t05_check..." >> test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/CutoffRigidityMap\[R=6.871000e+06\].dat \
->>>output/test_Earth-cutoff-rigidity_t05/CutoffRigidityMap\[R=6.871000e+06\]$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/CutoffRigidityMap\[R=1.911300e+07\].dat \
+>>>output/test_Earth-cutoff-rigidity_t05/CutoffRigidityMap\[R=1.911300e+07\]$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d.dat \
->>>output/test_Earth-cutoff-rigidity_t05/pic.Sphere=0.H_PLUS1.s=0.out=5.dat.2d$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t05-REF).diff
->>>@ls -l test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
->>>@cat test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity_t05-REF).diff  > test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/TotalFluxMap\[R=1.911300e+07\].dat \
+>>>output/test_Earth-cutoff-rigidity_t05/TotalFluxMap\[R=1.911300e+07\]$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity_t05--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
+>>>@ls -l test_Earth-cutoff-rigidity_t05--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
+
+>>>-@${TESTEarth-cutoff-rigidity_t05DIR}/../utility/ReduceFile.pl ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/amps.TrajectoryTracking.out=4.s=0.H_PLUS1.dat 1000
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidity_t05DIR}/PT/plots/amps.TrajectoryTracking.out=4.s=0.H_PLUS1.dat.Reduced.Step=1000 output/test_Earth-cutoff-rigidity_t05/TrajectoryTracking.ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-cutoff-rigidity_t05--Trajectories$(TESTEarth-cutoff-rigidity_t05-REF).diff 
+>>>@ls -l test_Earth-cutoff-rigidity_t05--Trajectories$(TESTEarth-cutoff-rigidity_t05-REF).diff
+
+
+
+>>>@cat test_Earth-cutoff-rigidity_t05--CutoffRigidityMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff test_Earth-cutoff-rigidity_t05--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff test_Earth-cutoff-rigidity_t05--Trajectories$(TESTEarth-cutoff-rigidity_t05-REF).diff  > test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 >>>@echo Test test_Earth-cutoff-rigidity_t05 has finished: `date`
 <#
