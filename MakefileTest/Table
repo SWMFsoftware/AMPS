@@ -1558,6 +1558,7 @@ Ref=1{gcc}@@(0+valeriy)
 
 Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels @@(0+pleiades)
 
 
 Compile=
