@@ -524,7 +524,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     sprintf(str,"%s.s=%i.%s.dat",fname,spec,ChemSymbol);
 
     fout[spec]=fopen(str,"w");
-    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\"");
+    fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
 
     #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
     fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
@@ -714,6 +714,17 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
 
         fprintf(trOut,"%e  %e  %e  %i  %e   %e  %e  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],
           TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
+
+        double KineticEnergy;
+
+        if (Relativistic::GetGamma(TrajectoryData->v)<0.5) {
+          KineticEnergy=PIC::MolecularData::GetMass(TrajectoryData->spec)*Vector3D::DotProduct(TrajectoryData->v,TrajectoryData->v)/2.0;
+        }
+        else {
+          KineticEnergy=Relativistic::Vel2E(TrajectoryData->v,PIC::MolecularData::GetMass(TrajectoryData->spec)); 
+        }
+
+        fprintf(trOut," %e",KineticEnergy/ElectronCharge);
 
         #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
         fprintf(trOut," %e  %e ",TrajectoryData->ElectricCharge,TrajectoryData->ParticleSize);
