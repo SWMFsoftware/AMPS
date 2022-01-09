@@ -95,6 +95,11 @@ MoverIntegratorMode=Boris-relativistic
 !define _PIC_DEBUGGER_MODE_  _PIC_DEBUGGER_MODE_ON_ 
 !define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
 
+  !trajecgtory tracing
+  TrajectoryTracing=on
+  MaxSampledTrajectoryNumber=10000
+
+
   define _PIC_SYMMETRY_MODE_ _PIC_SYMMETRY_MODE__NONE_
 
    define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
@@ -190,15 +195,25 @@ MoverIntegratorMode=Boris-relativistic
   nZenithElements=5
   nAzimuthalElements=5
 
-  CutOffTestLocations=on \\
+  CutOffTestLocations=off \\
     emin=100.0*Mev2J \\
     emax=20000.0*Mev2J \\
-    nTotalParticles=5000000 \\
-    nInjectionIterations=1000 \\
+    nTotalParticles=500000 \\
+    nInjectionIterations=100 \\
     x=300.0E3+_RADIUS_(_TARGET_),0,0 \\ 
     x=500.0E3+_RADIUS_(_TARGET_),0,0 \\
     x=500.0E3+_RADIUS_(_TARGET_),0,500.0E3+_RADIUS_(_TARGET_) \\ 
     x=1000.0E3+_RADIUS_(_TARGET_),0,1000.0E3+_RADIUS_(_TARGET_)   
+
+  CutoffTestSphericalShells=on \\
+    x=3.0*_RADIUS_(_TARGET_) \\
+    emin=1.0*MeV2J \\
+    emax=5000.0*MeV2J \\
+    nTotalParticles=500 \\
+    nInjectionIterations=100
+
+
+  nMaxIterations=1000
 
   ImpulseSource=off \\
     Spectrum=constant(1.0E1*MeV2J) \\ 
