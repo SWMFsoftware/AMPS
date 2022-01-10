@@ -91,6 +91,9 @@ void PIC::Debugger::ConcurrentDebug::Trap() {
 } 
 
 void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fname) {
+  static int CallCounter=0;
+
+  CallCounter++;
 
   //wait semaphore
 //  sem_wait(sem_id);
@@ -101,6 +104,7 @@ void PIC::Debugger::ConcurrentDebug::NewEntry(cData* d,int nline,char const *fna
 
   *data_ptr=*d;
   data_ptr->nline=nline;
+  data_ptr->cnt=CallCounter;
   sprintf(data_ptr->fname,"fname=%s",fname); 
 
   std::this_thread::sleep_for(std::chrono::nanoseconds(100)); // sleep for 0.001 second
