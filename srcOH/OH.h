@@ -22,12 +22,16 @@
 namespace OH {
   using namespace Exosphere;
 
+  void Init_AfterParser();
+  
+  
   //timer
   extern PIC::Debugger::cTimer ReactionProcessorTimer;
 
   //print the result of timing
   void FinalizeSimulation();
 
+  
   // user defined global time step
   extern double UserGlobalTimeStep;
 
@@ -92,6 +96,44 @@ namespace OH {
     void SampleParticleData(char *ParticleData,double LocalParticleWeight,char  *SamplingBuffer,int spec);
   }
 
+  
+   
+
+    //sample the velocity distribution in the anti-sunward direction
+    namespace LymanAlpha {
+      static const int nVelocitySamplePoints=500;
+      static const double maxVelocityLimit=20.0E3;
+      static const double VelocityBinWidth=2.0*maxVelocityLimit/nVelocitySamplePoints;
+      static const int nAzimuthPoints=150;
+      static const double maxZenithAngle=Pi/4.0;
+      static const double dZenithAngleMin=0.001*maxZenithAngle,dZenithAngleMax=0.02*maxZenithAngle;
+
+      extern int nZenithPoints;
+
+      class cVelocitySampleBuffer {
+      public:
+        double VelocityLineOfSight[PIC::nTotalSpecies][nVelocitySamplePoints];
+
+        SpiceDouble lGSE[6];
+
+        cVelocitySampleBuffer() {
+          for (int s=0;s<PIC::nTotalSpecies;s++) {     
+            for (int n=0;n<nVelocitySamplePoints;n++) VelocityLineOfSight[s][n]=0.0;
+          }
+
+          for (int i=0;i<6;i++) lGSE[i]=0.0;
+        }
+      };
+
+      extern cVelocitySampleBuffer *SampleBuffer;
+      extern int nTotalSampleDirections;
+
+      void Init();
+      void Sampling();
+      void OutputSampledData(int DataOutputFileNumber);
+    
+  }
+    
   namespace DistributionFunctionSample {
     extern const int _LINEAR_SAMPLING_SCALE_,_LOGARITHMIC_SAMPLING_SCALE_;
     extern const bool Use;

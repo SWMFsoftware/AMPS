@@ -840,7 +840,16 @@ void OH::Init_BeforeParser(){
 
   //request sampling data
   PIC::IndividualModelSampling::RequestSamplingData.push_back(Sampling::OriginLocation::RequestSamplingData);
+
 }
+
+void OH::Init_AfterParser(){
+
+  OH::Sampling::LymanAlpha::Init();
+  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(OH::Sampling::LymanAlpha::Sampling,OH::Sampling::LymanAlpha::OutputSampledData);
+
+}
+
 
 // User defined functions -----------------------------------------------------
 int OH::user_set_face_boundary(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode) {
