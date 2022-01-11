@@ -1501,10 +1501,10 @@ Check=
 >>>@ls -l test_Earth-cutoff-rigidity--CutoffRigidityMap--3D$(TESTEarth-cutoff-rigidity-REF).diff
 
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/TotalFluxMap\[R=1.911300e+07\].dat \
->>>output/test_Earth-cutoff-rigidity/TotalFluxMap\[R=1.911300e+07\]$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
+>>>output/test_Earth-cutoff-rigidity/TotalFluxMap\[R=1.911300e+07\]$(TESTEarth-cutoff-rigidity_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity_t05-REF).diff
 >>>@ls -l test_Earth-cutoff-rigidity--TotalFluxMap--2D$(TESTEarth-cutoff-rigidity-REF).diff
 
->>>-@${TESTSaturn-MOPDIR}/../utility/ReduceFile.pl  ${TESTEarth-cutoff-rigidityDIR}/PT/plots/amps.TrajectoryTracking.out=2.s=0.H_PLUS1.dat 1000  
+>>>-@${TESTEarth-cutoff-rigidityDIR}/../utility/ReduceFile.pl  ${TESTEarth-cutoff-rigidityDIR}/PT/plots/amps.TrajectoryTracking.out=2.s=0.H_PLUS1.dat 1000  
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTEarth-cutoff-rigidityDIR}/PT/plots/amps.TrajectoryTracking.out=2.s=0.H_PLUS1.dat.Reduced.Step=1000 \
 >>>output/test_Earth-cutoff-rigidity/Trajectory.ref_np`ls $(TESTEarth-cutoff-rigidityDIR)/PT/thread* |wc -l |tr -d ' '`  > test_Earth-cutoff-rigidity--Trajectory$(TESTEarth-cutoff-rigidity-REF).diff 
 

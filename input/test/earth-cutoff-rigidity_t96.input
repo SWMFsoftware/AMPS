@@ -34,7 +34,7 @@ OutputDirectory=PT/plots
 
 
 DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=off ! on,off
+ForceRepeatableSimulationPath=on ! on,off
 
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
@@ -70,7 +70,7 @@ MoverIntegratorMode=Boris-relativistic
   RequestedParticleBufferLength=15000000
 
   define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
-  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+! define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
 
   define _PIC__OPENMP_THREAD_SPLIT_MODE_ _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
 
