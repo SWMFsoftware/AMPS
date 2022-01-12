@@ -37,11 +37,11 @@ void OH::Sampling::LymanAlpha::Init() {
   int nSampleDirections=1;  
   SampleBuffer=new cVelocitySampleBuffer[nSampleDirections];
 
-  SampleBuffer[nTotalSampleDirections].lGSE[0]=1;
-  SampleBuffer[nTotalSampleDirections].lGSE[1]=1;
-  SampleBuffer[nTotalSampleDirections].lGSE[2]=1;
+  SampleBuffer[0].lGSE[0]=1;
+  SampleBuffer[0].lGSE[1]=1;
+  SampleBuffer[0].lGSE[2]=1;
 
-  Vector3D::Normalize(SampleBuffer[nTotalSampleDirections].lGSE);
+  Vector3D::Normalize(SampleBuffer[0].lGSE);
 
   nTotalSampleDirections++;
  
