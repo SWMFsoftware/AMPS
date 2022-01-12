@@ -102,7 +102,7 @@ namespace OH {
     //sample the velocity distribution in the anti-sunward direction
     namespace LymanAlpha {
       static const int nVelocitySamplePoints=500;
-      static const double maxVelocityLimit=20.0E3;
+      static const double maxVelocityLimit=60.0E3;
       static const double VelocityBinWidth=2.0*maxVelocityLimit/nVelocitySamplePoints;
       static const int nAzimuthPoints=150;
       static const double maxZenithAngle=Pi/4.0;
