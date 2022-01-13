@@ -844,10 +844,10 @@ void OH::Init_BeforeParser(){
 }
 
 void OH::Init_AfterParser(){
-
-  OH::Sampling::LymanAlpha::Init();
-  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(OH::Sampling::LymanAlpha::Sampling,OH::Sampling::LymanAlpha::OutputSampledData);
-
+  if (OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTableLength!=0) {
+    OH::Sampling::LymanAlpha::Init();
+    PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(OH::Sampling::LymanAlpha::Sampling,OH::Sampling::LymanAlpha::OutputSampledData);
+  }
 }
 
 

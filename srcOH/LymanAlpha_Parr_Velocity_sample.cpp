@@ -60,10 +60,8 @@ void OH::Sampling::LymanAlpha::Sampling() {
   //initalizing the coordinates needed in the loop
   double startCoord[3]={0,0,0};
   //Adjust this for the coordinate that you need it to be
-  double l[3]={1,1,1};
+  double *l;
   
-  Vector3D::Normalize(l);
-
   //Leaving this as a for loop because I would like to implement multiple directions 
   for (Direction_i=0;Direction_i<LymanAlphaSampleDirectionTableLength;Direction_i++) {
 
@@ -75,6 +73,7 @@ void OH::Sampling::LymanAlpha::Sampling() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* xNode;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *xFinishNode;
     
+    l=tempSamplingBuffer->lGSE;
     PIC::ColumnIntegration::FindIntegrationLimits(startCoord,l,IntegrationPathLength,xStart,xNode,xFinish,xFinishNode);
     memcpy(startCoord,xStart,3*sizeof(double));
 
