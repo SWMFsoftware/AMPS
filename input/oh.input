@@ -112,6 +112,13 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
 #block ../input/oh.input.pl !process the settings of the Outer Heliosphere model
 
+
+  ParallelVelocityDistributionSample=off \\ !on, off 
+    l=1,1,1 \\
+    l=0,1,1 \\
+    l=1,0,0
+
+
   SourceRegionNumber=4
 
   ChargeExchange::InitWeightQuantum=0.001

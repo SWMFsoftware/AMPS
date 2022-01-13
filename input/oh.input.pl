@@ -42,6 +42,7 @@ my $InputComment;
 my $s0;
 my $s1;
 my $s2;
+my $s3;
 
 
 #get the list of the speces 
@@ -83,7 +84,30 @@ while ($line=<InputFile>) {
   $InputLine=~s/ //g;
   
 
-  if ($InputLine eq "INJECTIONVELOCITY") {
+  if ($InputLine eq "PARALLELVELOCITYDISTRIBUTIONSAMPLE") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+
+    if ($s0 eq "ON") {
+      my @Table;
+      my $TableLength=0;
+
+
+      while (defined $InputComment) {
+        ($s0,$s1,$s2,$s3,$InputComment)=split(' ',$InputComment,5);
+
+        push(@Table,$s1);
+        push(@Table,$s2);
+        push(@Table,$s3); 
+        
+        $TableLength++;
+      }
+
+      ampsConfigLib::ChangeValueOfVariable("const int LymanAlphaSampleDirectionTableLength",$TableLength,"main/OH.h");
+      ampsConfigLib::ChangeValueOfArray("double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable\\[\\]",\@Table,"main/LymanAlpha_Parr_Velocity_sample.cpp");
+    }
+  }
+
+  elsif ($InputLine eq "INJECTIONVELOCITY") {
       ($InputLine,$InputComment)=split('!',$line,2);
       chomp($InputLine);
       $InputLine=~s/[=();,]/ /g;

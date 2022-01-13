@@ -26,26 +26,25 @@ Plan for improvements:
 
 
 OH::Sampling::LymanAlpha::cVelocitySampleBuffer *OH::Sampling::LymanAlpha::SampleBuffer=NULL;
-int OH::Sampling::LymanAlpha::nTotalSampleDirections=0.0;
 int OH::Sampling::LymanAlpha::nZenithPoints=0;
+//double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable[3*OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTableLength];
+
+double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable[]={0.0};
 
 
 void OH::Sampling::LymanAlpha::Init() {
 
 
   //This is written for a single direction  (X,Y,Z) = (1,1,1)
-  int nSampleDirections=1;  
-  SampleBuffer=new cVelocitySampleBuffer[nSampleDirections];
+  SampleBuffer=new cVelocitySampleBuffer[LymanAlphaSampleDirectionTableLength];
 
-  SampleBuffer[0].lGSE[0]=1;
-  SampleBuffer[0].lGSE[1]=1;
-  SampleBuffer[0].lGSE[2]=1;
+  for (int i=0;i<LymanAlphaSampleDirectionTableLength;i++) {
+    SampleBuffer[i].lGSE[0]=LymanAlphaSampleDirectionTable[0+3*i];
+    SampleBuffer[i].lGSE[1]=LymanAlphaSampleDirectionTable[1+3*i];
+    SampleBuffer[i].lGSE[2]=LymanAlphaSampleDirectionTable[2+3*i];
 
-  Vector3D::Normalize(SampleBuffer[0].lGSE);
-
-  nTotalSampleDirections++;
- 
-  
+    Vector3D::Normalize(SampleBuffer[i].lGSE);
+  }
 }
 
 void OH::Sampling::LymanAlpha::Sampling() {
@@ -66,7 +65,7 @@ void OH::Sampling::LymanAlpha::Sampling() {
   Vector3D::Normalize(l);
 
   //Leaving this as a for loop because I would like to implement multiple directions 
-  for (Direction_i=0;Direction_i<nTotalSampleDirections;Direction_i++) {
+  for (Direction_i=0;Direction_i<LymanAlphaSampleDirectionTableLength;Direction_i++) {
 
     //temporary sampling buffer and the buffer for the particle data
     cVelocitySampleBuffer *tempSamplingBuffer=SampleBuffer+Direction_i;
@@ -152,7 +151,7 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
 
 
 
-  for (iZone=0;iZone<nTotalSampleDirections;iZone++) {
+  for (iZone=0;iZone<LymanAlphaSampleDirectionTableLength;iZone++) {
     double *XYZ; 
    
     XYZ= SampleBuffer[iZone].lGSE;
