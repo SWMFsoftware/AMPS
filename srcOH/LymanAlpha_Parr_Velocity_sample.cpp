@@ -30,6 +30,7 @@ int OH::Sampling::LymanAlpha::nZenithPoints=0;
 //double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable[3*OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTableLength];
 
 double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable[]={0.0};
+double OH::Sampling::LymanAlpha::LymanAlphaSampleStartLocation[3]={0.0};
 
 
 void OH::Sampling::LymanAlpha::Init() {
@@ -59,6 +60,7 @@ void OH::Sampling::LymanAlpha::Sampling() {
 
   //initalizing the coordinates needed in the loop
   double startCoord[3]={0,0,0};
+
   //Adjust this for the coordinate that you need it to be
   double *l;
   
@@ -69,18 +71,17 @@ void OH::Sampling::LymanAlpha::Sampling() {
     cVelocitySampleBuffer *tempSamplingBuffer=SampleBuffer+Direction_i;
 
     //determine the limits of integration and initalize the nodes
-    double IntegrationPathLength,xStart[3],xFinish[3];
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* xNode;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *xFinishNode;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NULL;
     
     l=tempSamplingBuffer->lGSE;
-    PIC::ColumnIntegration::FindIntegrationLimits(startCoord,l,IntegrationPathLength,xStart,xNode,xFinish,xFinishNode);
-    memcpy(startCoord,xStart,3*sizeof(double));
+    memcpy(startCoord,LymanAlphaSampleStartLocation,3*sizeof(double));
 
-    while (xNode!=NULL) {
-      dl=IntegrationStep2CellSizeRatio*xNode->GetCharacteristicCellSize();
+    Node=PIC::Mesh::mesh->findTreeNode(startCoord); 
 
-      if (xNode->Thread==PIC::ThisThread) {
+    while (Node!=NULL) {
+      dl=IntegrationStep2CellSizeRatio*Node->GetCharacteristicCellSize();
+
+      if (Node->Thread==PIC::ThisThread) {
         //find the cell for sampling
         int i,j,k;
         long int ncell,ptr;
@@ -88,11 +89,11 @@ void OH::Sampling::LymanAlpha::Sampling() {
         int spec;
         double *v,*x,LocalParticleWeight,VelocityLineOfSight,HeliocentricRadialVelocity,c,cellMeasure,rHeliocentric,Speed;
 
-        ncell=PIC::Mesh::mesh->FindCellIndex(startCoord,i,j,k,xNode);
-        cellMeasure=xNode->block->GetCenterNode(ncell)->Measure;
+        ncell=PIC::Mesh::mesh->FindCellIndex(startCoord,i,j,k,Node);
+        cellMeasure=Node->block->GetCenterNode(ncell)->Measure;
 
         //sample particles
-        ptr=xNode->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+        ptr=Node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
 	//cycle through the particles
         while (ptr!=-1) {
@@ -103,7 +104,7 @@ void OH::Sampling::LymanAlpha::Sampling() {
           v=PIC::ParticleBuffer::GetV(ParticleData);
           x=PIC::ParticleBuffer::GetX(ParticleData);
 
-          LocalParticleWeight=xNode->block->GetLocalParticleWeight(spec)/cellMeasure;
+          LocalParticleWeight=Node->block->GetLocalParticleWeight(spec)/cellMeasure;
           LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
           //calculate velocity component in the direction of the line of sight
@@ -121,9 +122,7 @@ void OH::Sampling::LymanAlpha::Sampling() {
       //next position along the line of sight
       for (idim=0;idim<3;idim++) startCoord[idim]+=dl*l[idim];
 
-      xNode=PIC::Mesh::mesh->findTreeNode(startCoord,xNode);
-
-      if (xNode==NULL) break;
+      Node=PIC::Mesh::mesh->findTreeNode(startCoord,Node);
     } 
   }
 }

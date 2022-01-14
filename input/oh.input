@@ -113,10 +113,10 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 #block ../input/oh.input.pl !process the settings of the Outer Heliosphere model
 
 
-  ParallelVelocityDistributionSample=off \\ !on, off 
-    l=1,1,1 \\
-    l=0,1,1 \\
-    l=1,0,0
+  ParallelVelocityDistributionSample=on \\ !on, off 
+    x=3,2,1 \\
+    l=1,1,1 \\ 
+    l=0,1,1 
 
 
   SourceRegionNumber=4

@@ -88,22 +88,32 @@ while ($line=<InputFile>) {
     ($s0,$InputComment)=split(' ',$InputComment,2);
 
     if ($s0 eq "ON") {
-      my @Table;
-      my $TableLength=0;
-
+      my @DirectionTable;
+      my $DirectionTableLength=0;
 
       while (defined $InputComment) {
         ($s0,$s1,$s2,$s3,$InputComment)=split(' ',$InputComment,5);
 
-        push(@Table,$s1);
-        push(@Table,$s2);
-        push(@Table,$s3); 
+        if ($s0 eq "L") {
+          push(@DirectionTable,$s1);
+          push(@DirectionTable,$s2);
+          push(@DirectionTable,$s3); 
         
-        $TableLength++;
+          $DirectionTableLength++;
+        }
+        elsif ($s0 eq "X") {
+          my @StartLocationTable;
+
+          push(@StartLocationTable,$s1);
+          push(@StartLocationTable,$s2);
+          push(@StartLocationTable,$s3);
+
+          ampsConfigLib::ChangeValueOfArray("double OH::Sampling::LymanAlpha::LymanAlphaSampleStartLocation\\[3\]",\@StartLocationTable,"main/LymanAlpha_Parr_Velocity_sample.cpp");
+        }
       }
 
-      ampsConfigLib::ChangeValueOfVariable("const int LymanAlphaSampleDirectionTableLength",$TableLength,"main/OH.h");
-      ampsConfigLib::ChangeValueOfArray("double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable\\[\\]",\@Table,"main/LymanAlpha_Parr_Velocity_sample.cpp");
+      ampsConfigLib::ChangeValueOfVariable("const int LymanAlphaSampleDirectionTableLength",$DirectionTableLength,"main/OH.h");
+      ampsConfigLib::ChangeValueOfArray("double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable\\[\\]",\@DirectionTable,"main/LymanAlpha_Parr_Velocity_sample.cpp");
     }
   }
 
