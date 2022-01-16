@@ -65,11 +65,13 @@ MoverIntegratorMode=Boris-relativistic
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
 
-SamplingMode=disabled
+  SamplingMode=disabled
 
   FirstPrintedOutputFile=100 
 
   RequestedParticleBufferLength=15000000
+
+  define _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_  _PIC_MODE_ON_
 
   define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_

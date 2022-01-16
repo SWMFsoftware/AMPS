@@ -30,6 +30,10 @@ using namespace std;
 
 #include "GCR_Badavi2011ASR.h"
 
+#ifndef _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_
+#define _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_  _PIC_MODE_OFF_
+#endif
+
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
 public:

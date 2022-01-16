@@ -193,7 +193,6 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
   PIC::ParticleBuffer::GetX(xInit,ptr);
 
 
-
   switch (PIC::ParticleBuffer::GetI(ptr)) {
   case _ELECTRON_SPEC_:
    // res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
@@ -203,7 +202,15 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
   default:
    // res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
-   res=PIC::Mover::Boris(ptr,dtTotal,startNode);
+   if (_EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_ == _PIC_MODE_ON_) {
+     double dx,*v;
+
+     v=PIC::ParticleBuffer::GetV(ptr);
+     dx=startNode->GetCharacteristicCellSize(); 
+
+     res=PIC::Mover::Boris(ptr,dx/Vector3D::Length(v),startNode);
+   }
+   else res=PIC::Mover::Boris(ptr,dtTotal,startNode);
 
   }
 
