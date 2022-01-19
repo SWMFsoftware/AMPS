@@ -674,7 +674,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   namespace FL = PIC::FieldLine;
 
   PIC::ParticleBuffer::byte *ParticleData;
-  double mu,AbsB,L,vParallel,vNormal,v,DivAbsB;
+  double mu,AbsB,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
   double FieldLineCoord;
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment; 
@@ -687,13 +687,11 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   vParallel=PB::GetVParallel(ParticleData);
   vNormal=PB::GetVNormal(ParticleData);
-  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+
+  vParallelInit=vParallel,vNormalInit=vNormal;
 
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
-
-  //calcualte mu of the particle
-  mu=vParallel/v;
 
   //calculate B and L
   double B[3],B0[3],B1[3], AbsBDeriv;
@@ -708,6 +706,12 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   L=-Vector3D::Length(B)/AbsBDeriv;
 
+  //calculate solarwind velocity,particle velocity and mu in the frame moving with solar wind
+  double vSolarWind[3],vSolarWindParallel;
+
+  FL::FieldLinesAll[iFieldLine].GetPlasmaVelocity(vSolarWind,FieldLineCoord);
+  vSolarWindParallel=Vector3D::DotProduct(vSolarWind,B)/AbsB; 
+  
   //move the particle along the magnetic field line 
   double FieldLineCoord_init=FieldLineCoord;
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
@@ -719,11 +723,16 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   double time_counter=0.0;
   double dt=dtTotal;
   double dmu=0.0;
+  double delta;
 
   while (time_counter<dtTotal) { 
    if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
    dmu=0.0;
+
+   vParallel-=vSolarWindParallel;
+   v=sqrt(vParallel*vParallel+vNormal*vNormal);
+   mu=vParallel/v;
 
   switch (_SEP_DIFFUSION_MODEL_) {
   case _DIFFUSION_NONE_:
@@ -733,21 +742,27 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   case _DIFFUSION_ROUX2004AJ_:
     SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
 
-    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    delta=sqrt(4.0*D*dt)/erf(rnd());
+    dmu+=(rnd()>0.5) ? delta : -delta;
+
     dmu+=dD_dmu*dt;
     break;
    
   case _DIFFUSION_BOROVIKOV_2019_ARXIV_:
     SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
 
-    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    delta=sqrt(4.0*D*dt)/erf(rnd());
+    dmu+=(rnd()>0.5) ? delta : -delta;
+
     dmu+=dD_dmu*dt;
     break;
 
   case _DIFFUSION_JOKIPII1966AJ_:
     SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
 
-    dmu=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+    delta=sqrt(4.0*D*dt)/erf(rnd());
+    dmu+=(rnd()>0.5) ? delta : -delta;
+
     dmu+=dD_dmu*dt;
     break;
 
@@ -756,11 +771,36 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
+  //move the particle in the original frame of reference
+  if (false) { //(fabs(dmu)>0.2) {
+    dt/=2.0;
+    time_counter=0.0;
+    vParallel=vParallelInit,vNormal=vNormalInit;
+    mu=mu_init;
+    continue;
+  }
+  
+  mu+=dmu;
+  dmu=0.0; 
+  
+  if (mu<-1.0) mu=-1.0;
+  if (mu>1.0) mu=1.0;
+ 
+  
+  vParallel=mu*v;
+  vNormal=sqrt(1.0-mu*mu)*v;
+  vParallel+=vSolarWindParallel;
+
+  //calculate mu in the frame of the simulation
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/v;
+
   dmu+=(1.0-mu*mu)/(2.0*L)*v*dt;
 
   if (fabs(dmu)>0.1) {
     dt/=2.0;
     time_counter=0.0;
+    vParallel=vParallelInit,vNormal=vNormalInit;
     mu=mu_init;
     continue;
   }
@@ -769,7 +809,10 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   time_counter+=dt;
 
   if (mu<-1.0) mu=-1.0;
-  if (mu>1.0) mu=1.0;
+  if (mu>1.0) mu=1.0; 
+
+  vParallel=mu*v;
+  vNormal=sqrt(1.0-mu*mu)*v;
 }
 
 
@@ -789,10 +832,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     }
   }
 
-  //set the newvalues of the normal and parallel particle velocities 
-  vParallel=mu*v;
-  vNormal=sqrt(1.0-mu*mu)*v;
-
+  //set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel,ParticleData);
   PB::SetVNormal(vNormal,ParticleData);
 
