@@ -1249,6 +1249,10 @@ void DeleteAttachedParticles();
       void   GetMagneticField(double* BOut, double S);
       // get directional derivative of magnetic field
       //-----------------------------------------------------------------------
+      
+      //get plasma velocity      
+      void GetPlasmaVelocity(double* VelOut, double S);
+ 
 
       // print data stored on the field line
       void Output(FILE* fout, bool GeometryOnly);

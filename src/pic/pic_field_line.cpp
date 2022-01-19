@@ -615,6 +615,23 @@ namespace PIC {
     }    
 
     //=========================================================================
+    void cFieldLine::GetPlasmaVelocity(double* VelOut, double S) {
+      // check correctness
+      if ((S < 0.0) || (S > nSegment))exit(__LINE__,__FILE__,"ERROR: trying to get magnetic field at an invalid location");
+    
+      // interpolate the magnetic field at the location S:
+      //  floor(S) is the number of the segment,
+      //  S - floor(S) is the location along segment (between 0 & 1)
+      //-----------------------------------------------------------------------
+   
+      // number of the begin vertex
+      int iSegment = (int) S;
+
+      cFieldLineSegment* Segment = GetSegment(iSegment);
+      Segment->GetPlasmaVelocity(S - iSegment, VelOut);
+    }
+
+    //=========================================================================
     void cFieldLine::Output(FILE* fout, bool GeometryOnly=false) {
       namespace PB = PIC::ParticleBuffer;
       
