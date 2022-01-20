@@ -54,6 +54,7 @@
 #define _DIFFUSION_ROUX2004AJ_           1 
 #define _DIFFUSION_BOROVIKOV_2019_ARXIV_ 2
 #define _DIFFUSION_JOKIPII1966AJ_        3
+#define _DIFFUSION_FLORINSKIY_           4
 
 
 #ifndef _SEP_DIFFUSION_MODEL_
@@ -105,6 +106,34 @@ namespace SEP {
 
     namespace Jokopii1966AJ {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+    }
+
+    namespace Florinskiy {
+      //fixed model parameters
+      const double gamma=5.0/3.0;
+      const double gamma_div_two=gamma/2.0;
+
+
+      const double delta_B_2D=0.8; //the value can change in the range 0.8-0.9
+      const double sigma_c_2D=0.0;
+      const double r_A_2D=1.0; //the range is 0.5-1
+      const double r_s=0.1; //the range is 0.1-0.2
+  
+      const double l_parallel=0.03*_AU_;
+      const double l_normal=0.01*_AU_; 
+
+      const double k_0_s=sqrtPi*tgamma(gamma_div_two)/tgamma(gamma_div_two-0.5)/l_parallel;
+      const double k_0_2D=sqrtPi*(gamma-1.0)*tgamma(gamma_div_two)/tgamma(gamma_div_two+0.5)/l_normal;
+
+
+
+      
+      void GetB(double *B,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
+      double P_s_plus(double k,double delta_B_s_2);
+      double P_s_minus(double k,double delta_B_s_2);
+
+      double GetD_mu_mu(double *x,double *v,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node); 
+      double GetDxx(double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node);
     }
  
   }
