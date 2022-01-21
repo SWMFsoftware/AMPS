@@ -59,7 +59,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   
   BlockCells=8,8,8
   GhostCells=2,2,2
-  CommunicationDepth=1,2
+  CommunicationDepth=2,2
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
