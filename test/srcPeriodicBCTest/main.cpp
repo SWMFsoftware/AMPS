@@ -128,7 +128,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     CellSize=startNode->GetCharacteristicCellSize();
     //return 0.3*CellSize/CharacteristicSpeed;
 
-    return 1.0E-2;
+    return 5*1.0E-2;
 }
 
 
