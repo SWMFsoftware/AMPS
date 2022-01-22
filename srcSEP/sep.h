@@ -106,6 +106,7 @@ namespace SEP {
 
     namespace Jokopii1966AJ {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW);
     }
 
     namespace Florinskiy {
@@ -453,6 +454,97 @@ namespace SEP {
     default:
       exit(__LINE__,__FILE__,"Error: the option is not found");
     }
+
+
+    if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {
+      //simulate scattering of the particles
+      //get interplabetary magnetic field, and plasma velocity
+      double B[3]={0.0,0.0,0.0},Vsw[3]={0.0,0.0,0.0},absVsw,vParallel,vNormal=0.0,vNormalVect[3],l[3];
+      PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+      double AbsB,*x,*v,omega_minus,omega_plus,mu,dmu;
+      PIC::ParticleBuffer::byte *ParticleData;
+      int idim,spec;
+
+      ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
+      x=PIC::ParticleBuffer::GetX(ParticleData);
+      v=PIC::ParticleBuffer::GetV(ParticleData);
+      spec=PIC::ParticleBuffer::GetI(ParticleData);
+
+      PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,startNode,Stencil);      
+
+      for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
+         double *ptr_b=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+         double *ptr_v=(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::BulkVelocityOffset);
+
+         for (idim=0;idim<3;idim++) {
+           B[idim]+=Stencil.Weight[iStencil]*ptr_b[idim];
+           Vsw[idim]+=Stencil.Weight[iStencil]*ptr_v[idim];
+         }
+
+         omega_minus+=(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
+         omega_plus+=(*(1+(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
+      }
+
+
+      memcpy(l,B,3*sizeof(double));
+      AbsB=Vector3D::Normalize(l);
+
+      //get the parallel and normal component of the velocity
+      vParallel=Vector3D::DotProduct(x,l);
+      absVsw=Vector3D::Length(Vsw);
+
+      for (idim=0;idim<3;idim++) {
+        vNormalVect[idim]=v[idim]-vParallel*l[idim];
+        vNormal+=vNormalVect[idim]*vNormalVect[idim];
+      }
+
+      vNormal=sqrt(vNormal);  
+
+      if (vNormal<1.0E-10) {
+        //the velocity of the particle is alighed with the direction of the magnetic filed->
+        //generate a random diration that will be used as the direction of the normal component of  
+        //velocity later 
+        double e1[3];
+      
+        Vector3D::GetNormFrame(vNormalVect,e1,l);
+      }
+
+      //move the particle to the frame moving with solar wind plasma
+      vParallel-=absVsw;
+
+      //simulate scattering 
+      double D,dD_dmu,delta;
+
+      switch (_SEP_DIFFUSION_MODEL_) {
+      case _DIFFUSION_JOKIPII1966AJ_: 
+        SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,AbsB*AbsB,Vector3D::DotProduct(x,x),spec,omega_plus+omega_minus);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: not implemeneted");
+      }
+
+      delta=sqrt(4.0*D*dtTotal)/erf(rnd());
+      mu+=(rnd()>0.5) ? delta : -delta;
+
+      mu+=dD_dmu*dtTotal;
+
+      if (mu<-1.0) mu=-1.0;
+      if (mu>1.0) mu=1.0;
+
+      //determine the new value of the parallel and normal components of the particle velocity
+      double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+
+      vParallel=speed*mu;
+      vNormal=speed*sqrt(1.0-mu*mu);
+
+      //move the particle velocity in the simulation frame and get the total particle velocity vector
+      vParallel+=absVsw;
+
+      for (idim=0;idim<3;idim++) {
+        v[idim]=vParallel*l[idim]+vNormal*vNormalVect[idim];
+      }    
+    }
+
 
     return res;
   }

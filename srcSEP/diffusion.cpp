@@ -91,13 +91,6 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   double *x0,*x1;
   double w0,w1;
 
-  //reference values of k_max and k_min at 1 AU
-  //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
-  const double k_ref_min=1.0E-10;
-  const double k_ref_max=1.0E-7;
-
-   
-
   //get the magnetic field and the plasma waves at the corners of the segment
   B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
   B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
@@ -125,19 +118,31 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
     r2+=t*t;
   }
   
+  double SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
+
+  GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,absB2,r2,spec,SummW); 
+}
+
+void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW) {
+  namespace MD = PIC::MolecularData;
+
+  //reference values of k_max and k_min at 1 AU
+  //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
+  const double k_ref_min=1.0E-10;
+  const double k_ref_max=1.0E-7;
+
   double k_min,k_max;
 
   double t=_AU_*_AU_/r2;
 
   k_min=t*k_ref_min;
   k_max=t*k_ref_max;
-  
-  double SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
+
+
   double omega,k,P;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
 
-  double kmin=omega/Relativistic::E2Speed(400.0*MeV2J,MD::GetMass(spec));
   double C;
 
 //  C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
