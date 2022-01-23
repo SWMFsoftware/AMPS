@@ -58,6 +58,7 @@ double PIC::CPLR::SWMF::CouplingTime=-1.0;
 double PIC::CPLR::SWMF::CouplingTime_last=-1.0; 
 
 //set the interpolation stencil that is used for interpolation in the coupler
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::CPLR::InitInterpolationStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   switch( _PIC_COUPLER__INTERPOLATION_MODE_) {
   case _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_CONSTANT_:

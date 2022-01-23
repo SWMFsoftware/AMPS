@@ -28,7 +28,7 @@ bool PIC::CPLR::DATAFILE::MULTIFILE::BreakAtLastFile  = true;
 bool PIC::CPLR::DATAFILE::MULTIFILE::ReachedLastFile  = false;
 
 //offset to the current datafiles relative to beginning of data buffer
-int PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset = -1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset = -1;
 int PIC::CPLR::DATAFILE::MULTIFILE::NextDataFileOffset = -1;
 
 // next file to load
@@ -38,7 +38,7 @@ int PIC::CPLR::DATAFILE::MULTIFILE::iFileLoadNext = -1;
 char PIC::CPLR::DATAFILE::path[_MAX_STRING_LENGTH_PIC_]=".";
 
 //the offset from the cell->AssociatedData()
-int PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin=-1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin=-1;
 int PIC::CPLR::DATAFILE::nTotalBackgroundVariables=0;
 bool PIC::CPLR::DATAFILE::Offset::InitFlag=false;
 
@@ -48,8 +48,8 @@ PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaBulkVeloc
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaTemperature={false,false,1,"\"Plasma temperature\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure={false,false,1,"\"Plasma pressure\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure={false,false,1,"\"Plasma electron pressure\"",-1};
-PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::MagneticField={false,false,3,"\"Bx\", \"By\", \"Bz\"",-1};
-PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::ElectricField={false,false,3,"\"Ex\", \"Ey\", \"Ez\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::MagneticField={false,false,3,"\"Bx\", \"By\", \"Bz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::ElectricField={false,false,3,"\"Ex\", \"Ey\", \"Ez\"",-1};
 
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient={false,false,9,"\"dBx/dx\", \"dBx/dy\", \"dBx/dz\", \"dBy/dx\", \"dBy/dy\", \"dBy/dz\", \"dBz/dx\", \"dBz/dy\", \"dBz/dz\"",-1};
 

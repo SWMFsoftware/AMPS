@@ -1919,6 +1919,7 @@ void DeleteAttachedParticles();
     void RequestDataStorage(long int &offset,int TotalDataLength);
 
     //the basic data access functions for a particle
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     byte *GetParticleDataPointer(long int);
 
     //get particle data offset (pass next ans prev)
@@ -4684,6 +4685,7 @@ void DeleteAttachedParticles();
 
         void Init();
         void PrintData();
+
         void AddRemovedParticleData(double Rate, int spec, int line,const char *fname);
         void AddRemovedParticleData(double Rate, int nRemovedParticles, int spec, std::string &FullLineID);
         void AddRemovedParticleData(double Rate, int spec, std::string &ErrorID);
@@ -6021,6 +6023,7 @@ void DeleteAttachedParticles();
   namespace CPLR {
 
     //Set the interpolation stencil that is used for the interpolation in the coupler
+    _TARGET_HOST_ _TARGET_DEVICE_
    void InitInterpolationStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL);
 
     //coupling with SWMF
@@ -6114,6 +6117,7 @@ void DeleteAttachedParticles();
         return *((double*)(PlasmaTemperatureOffset+cell->GetAssociatedDataBufferPointer()));
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundElectricField(double *E,PIC::Mesh::cDataCenterNode *cell) {
         double B[3],v[3];
 
@@ -6221,7 +6225,7 @@ void DeleteAttachedParticles();
         //offsets to the data at next/current datafile
         //used for time interpolation
         extern int NextDataFileOffset;
-        extern int CurrDataFileOffset;
+        extern int _TARGET_DEVICE_ _CUDA_MANAGED_ CurrDataFileOffset;
 
         //COPY dataset 'CurrDataFileOffset' to the 'NextDataFileOffset'
         void CopyCurrDataFile2NextDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=NULL);
@@ -6267,7 +6271,7 @@ void DeleteAttachedParticles();
       extern char path[_MAX_STRING_LENGTH_PIC_];
 
       //the offset from the cell->AssociatedData()
-      extern int CenterNodeAssociatedDataOffsetBegin;
+      extern int _TARGET_DEVICE_ _CUDA_MANAGED_ CenterNodeAssociatedDataOffsetBegin;
       extern int nTotalBackgroundVariables;
 
       //Physical quantaties offsets that could be read and stored
@@ -6288,8 +6292,8 @@ void DeleteAttachedParticles();
         extern cOffsetElement PlasmaTemperature;
         extern cOffsetElement PlasmaIonPressure;
         extern cOffsetElement PlasmaElectronPressure;
-        extern cOffsetElement MagneticField;
-        extern cOffsetElement ElectricField;
+        extern _TARGET_DEVICE_ _CUDA_MANAGED_ cOffsetElement MagneticField;
+        extern _TARGET_DEVICE_ _CUDA_MANAGED_ cOffsetElement ElectricField;
         extern cOffsetElement MagneticFieldGradient;
         extern cOffsetElement MagneticFluxFunction;
 
@@ -6374,6 +6378,7 @@ void DeleteAttachedParticles();
       void EvaluateSurfaceIonFlux(double ShiftFactor);
 
       //calculate the values of the located parameters
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundValue(double *DataVector,int DataVectorLength,int DataOffsetBegin,PIC::Mesh::cDataCenterNode *cell, double Time) {
         double *offset = (double*)(DataOffsetBegin + MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin + cell->GetAssociatedDataBufferPointer());
 
@@ -6405,10 +6410,12 @@ void DeleteAttachedParticles();
         #endif
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundElectricField(double *E,PIC::Mesh::cDataCenterNode *cell, double Time) {
       	GetBackgroundValue(E, Offset::ElectricField.nVars,Offset::ElectricField.RelativeOffset, cell, Time);
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundMagneticField(double *B,PIC::Mesh::cDataCenterNode *cell, double Time) {
       	GetBackgroundValue(B,Offset::MagneticField.nVars,Offset::MagneticField.RelativeOffset, cell, Time);
       }

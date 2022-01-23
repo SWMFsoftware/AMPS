@@ -160,6 +160,7 @@ void PIC::ParticleBuffer::RequestDataStorage(long int &offset,int TotalDataLengt
 
 //==========================================================
 //the basic data access functions for a particle
+_TARGET_HOST_ _TARGET_DEVICE_
 PIC::ParticleBuffer::byte *PIC::ParticleBuffer::GetParticleDataPointer(long int ptr) {
   return ParticleDataBuffer+ptr*ParticleDataLength;
 }
