@@ -2674,6 +2674,7 @@ void DeleteAttachedParticles();
     //------------------------------------------------------------------------
     //define the 'init flag'. the flag is stored in the 7th bit of the firt byte of the partcle 
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline bool TestInitFlag(byte* ParticleDataStart) {
       unsigned char flag;
 
@@ -2683,6 +2684,7 @@ void DeleteAttachedParticles();
       return (flag==0) ? false : true;
     } 
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetInitFlag(bool t,byte* ParticleDataStart) {
       unsigned char flag;
 
@@ -2700,6 +2702,7 @@ void DeleteAttachedParticles();
 
     //-------------------------------------------------------------------------
 
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline bool IsParticleAllocated(byte* ParticleDataStart) {
       unsigned char flag;
 
@@ -2709,6 +2712,7 @@ void DeleteAttachedParticles();
       return (flag==0) ? false : true;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline bool IsParticleAllocated(long int ptr) {
       unsigned char flag;
 
@@ -2718,6 +2722,7 @@ void DeleteAttachedParticles();
       return (flag==0) ? false : true;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetParticleDeleted(byte* ParticleDataStart) {
       unsigned char t;
 
@@ -2728,6 +2733,7 @@ void DeleteAttachedParticles();
       SetInitFlag(false,ParticleDataStart);
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetParticleDeleted(long int ptr) {
       unsigned char t;
 
@@ -2738,6 +2744,7 @@ void DeleteAttachedParticles();
       SetInitFlag(false,(byte*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_)); 
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetParticleAllocated(byte* ParticleDataStart) {
       unsigned char t;
 
@@ -2747,6 +2754,7 @@ void DeleteAttachedParticles();
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetParticleAllocated(long int ptr) {
       unsigned char t;
 
@@ -6030,7 +6038,7 @@ void DeleteAttachedParticles();
 
     //coupling with SWMF
     namespace SWMF {
-      extern int MagneticFieldOffset,TotalDataLength,BulkVelocityOffset,PlasmaPressureOffset;
+      extern int _TARGET_DEVICE_ _CUDA_MANAGED_ MagneticFieldOffset,TotalDataLength,BulkVelocityOffset,PlasmaPressureOffset;
       extern int PlasmaNumberDensityOffset,PlasmaTemperatureOffset;
       extern int AlfvenWaveI01Offset;
 
@@ -6081,20 +6089,33 @@ void DeleteAttachedParticles();
 
 
       //calcualte physical parameters
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundMagneticField(double *B,PIC::Mesh::cDataCenterNode *cell) {
+        /*
         int idim;
         double *offset=(double*)(MagneticFieldOffset+cell->GetAssociatedDataBufferPointer());
 
         for (idim=0;idim<3;idim++) B[idim]=offset[idim];
+        */
+
+        char *offset=(MagneticFieldOffset+cell->GetAssociatedDataBufferPointer());
+        memcpy(B,offset,3*sizeof(double));
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_ 
       inline void GetBackgroundPlasmaVelocity(int iBackgroundPlasmaSpec,double *v,PIC::Mesh::cDataCenterNode *cell) {
+        /*
         int idim;
         double *offset=3*iBackgroundPlasmaSpec+(double*)(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
 
         for (idim=0;idim<3;idim++) v[idim]=offset[idim];
+        */
+
+        char *offset=3*iBackgroundPlasmaSpec*sizeof(double*)+(BulkVelocityOffset+cell->GetAssociatedDataBufferPointer());
+        memcpy(v,offset,3*sizeof(double));
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundPlasmaVelocity(double *v,PIC::Mesh::cDataCenterNode *cell) {
         GetBackgroundPlasmaVelocity(0,v,cell);
       }

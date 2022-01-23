@@ -3920,8 +3920,8 @@ sub ReadSpeciesBlock {
   }
   
   ampsConfigLib::ChangeValueOfArray("static const char ChemTable\\[\\]\\[_MAX_STRING_LENGTH_PIC_\\]",\@t,"pic/pic.h");
-  ampsConfigLib::ChangeValueOfArray("double PIC::MolecularData::MolMass\\[_TOTAL_SPECIES_NUMBER_\\]",\@MassArray,"pic/pic_mol.cpp");
-  ampsConfigLib::ChangeValueOfArray("double PIC::MolecularData::ElectricChargeTable\\[_TOTAL_SPECIES_NUMBER_\\]",\@ElectricChargeArray,"pic/pic_mol.cpp");
+  ampsConfigLib::ChangeValueOfArray("double _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::MolecularData::MolMass\\[_TOTAL_SPECIES_NUMBER_\\]",\@MassArray,"pic/pic_mol.cpp");
+  ampsConfigLib::ChangeValueOfArray("double _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::MolecularData::ElectricChargeTable\\[_TOTAL_SPECIES_NUMBER_\\]",\@ElectricChargeArray,"pic/pic_mol.cpp");
   ampsConfigLib::ChangeValueOfArray("static const int SpcecieTypeTable\\[\\]",\@SpeciesTypeTable,"pic/pic.h");
   
 

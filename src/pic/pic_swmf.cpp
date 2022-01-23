@@ -27,9 +27,9 @@
 
 //using namespace std;
 
-int PIC::CPLR::SWMF::MagneticFieldOffset=-1;
-int PIC::CPLR::SWMF::PlasmaNumberDensityOffset=-1;
-int PIC::CPLR::SWMF::BulkVelocityOffset=-1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::MagneticFieldOffset=-1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::PlasmaNumberDensityOffset=-1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::BulkVelocityOffset=-1;
 int PIC::CPLR::SWMF::PlasmaPressureOffset=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
@@ -46,7 +46,7 @@ bool PIC::CPLR::SWMF::OhCouplingFlag=false;
 bool PIC::CPLR::SWMF::IhCouplingFlag=false;
 bool PIC::CPLR::SWMF::BlCouplingFlag=false;
 
-int PIC::CPLR::SWMF::TotalDataLength=0;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::TotalDataLength=0;
 double PIC::CPLR::SWMF::MeanPlasmaAtomicMass=1.0*_AMU_;
 bool PIC::CPLR::SWMF::FirstCouplingOccured=false;
 list<PIC::CPLR::SWMF::fSendCenterPointData> PIC::CPLR::SWMF::SendCenterPointData;
