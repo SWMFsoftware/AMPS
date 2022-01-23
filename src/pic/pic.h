@@ -3975,6 +3975,7 @@ void DeleteAttachedParticles();
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ int DriftVelocityOffset;
     void Init();
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double* GetV_drift(ParticleBuffer::byte* p) {
       return (double*)(p+DriftVelocityOffset);
     }
@@ -5880,8 +5881,10 @@ void DeleteAttachedParticles();
       _TARGET_DEVICE_ _TARGET_HOST_  
       cStencilGeneric(bool InitFlag) {if (InitFlag==true) flush();}
 
+      _TARGET_DEVICE_ _TARGET_HOST_
       void MultiplyScalar(double a) {for (int i=0;i<Length;i++) Weight[i]*=a;}
 
+      _TARGET_DEVICE_ _TARGET_HOST_
       void Add(cStencilGeneric *t) {
         int i,j;
         bool flag;
@@ -5922,6 +5925,7 @@ void DeleteAttachedParticles();
         InitStencil(x,node,cStencil,InterpolationCoefficientTable);
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline cStencil *InitStencil(double *x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL) {
         #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
         int ThreadOpenMP=omp_get_thread_num();
@@ -6365,18 +6369,18 @@ void DeleteAttachedParticles();
       void GenerateMagneticFieldGradient(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
       //return the interpolated value of the background data
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundData(double *DataVector,int DataVectorLength,int BackgroundDataOffset,PIC::Mesh::cDataCenterNode *CenterNode) {
-        int i;
-        double *offset=(double*)(BackgroundDataOffset+MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin+CenterNode->GetAssociatedDataBufferPointer());
+        char *offset=(BackgroundDataOffset+MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin+CenterNode->GetAssociatedDataBufferPointer());
 
-        for (i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
+        memcpy(DataVector,offset,DataVectorLength*sizeof(double));
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundData(double *DataVector,int DataVectorLength,int BackgroundDataOffset,double *x,long int nd,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
-        int i;
-        double *offset=(double*)(BackgroundDataOffset+MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
+        char *offset=(BackgroundDataOffset+MULTIFILE::CurrDataFileOffset + CenterNodeAssociatedDataOffsetBegin+node->block->GetCenterNode(nd)->GetAssociatedDataBufferPointer());
 
-        for (i=0;i<DataVectorLength;i++) DataVector[i]=offset[i];
+        memcpy(DataVector,offset,DataVectorLength*sizeof(double));
       }
 
       //save/read the background data binary file
@@ -6685,6 +6689,7 @@ void DeleteAttachedParticles();
     void SaveCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
     void LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree);
 
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void GetBackgroundElectricField(double *E, double Time = NAN) {
       double t[3];
       int idim,iStencil,Length;
@@ -6732,6 +6737,7 @@ void DeleteAttachedParticles();
        }
      }
 
+     _TARGET_HOST_ _TARGET_DEVICE_
      inline void GetBackgroundMagneticField(double *B, double Time = NAN) {
        double t[3];
        int idim,iStencil,Length;
