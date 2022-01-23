@@ -2,7 +2,7 @@
 
 #include "pic.h"
 
-int PIC::GYROKINETIC::DriftVelocityOffset=-1;
+int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::GYROKINETIC::DriftVelocityOffset=-1;
 
 //===================================================================
 //Init the model/reserve the space in the particle state vector to stor ethe drift velocity so it is no neer to recalcualte it

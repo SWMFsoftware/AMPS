@@ -3964,7 +3964,7 @@ void DeleteAttachedParticles();
 
   //gyrokinetic approaxumation
   namespace GYROKINETIC {
-    extern int DriftVelocityOffset;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int DriftVelocityOffset;
     void Init();
 
     inline double* GetV_drift(ParticleBuffer::byte* p) {
@@ -5901,7 +5901,7 @@ void DeleteAttachedParticles();
       extern _TARGET_DEVICE_ _CUDA_MANAGED_ cStencil* StencilTable;
 
       //The table contains weight for each node and the order of local is enforced.
-      extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
+      //extern thread_local double InterpolationCoefficientTable_LocalNodeOrder[8];
 
       //interpolation functions
       _TARGET_HOST_ _TARGET_DEVICE_
@@ -5920,6 +5920,8 @@ void DeleteAttachedParticles();
         #else
         int ThreadOpenMP=0;
         #endif 
+
+        double InterpolationCoefficientTable_LocalNodeOrder[8];
 
         InitStencil(x,node,PIC::InterpolationRoutines::CornerBased::StencilTable[ThreadOpenMP],InterpolationCoefficientTable_LocalNodeOrder);
         return PIC::InterpolationRoutines::CornerBased::StencilTable+ThreadOpenMP;
