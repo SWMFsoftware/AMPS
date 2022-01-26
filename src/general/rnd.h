@@ -47,8 +47,6 @@ inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
   unsigned long int Seed=SeedIn->Seed;
 
-start:
-
   Seed*=48828125;
   Seed&=2147483647; // pow(2,31) - 1
   if (Seed==0) Seed=1;
@@ -58,7 +56,6 @@ start:
   res-=fmod(res,_RND_LIMIT_PRECISION_);
   if (res<=0.0) goto start;
   #endif
-
 
   SeedIn->Seed=Seed;
 

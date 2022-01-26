@@ -681,7 +681,6 @@ void PIC::Sampling::Sampling() {
     PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
     PIC::Mesh::cDataCenterNode *cell;
     PIC::Mesh::cDataBlockAMR *block;
-    char *SamplingData;
     double v[3],LocalParticleWeight,Speed2,v2;
     double lParallelTemperatureSampleDirection[3]={0.0,0.0,0.0},l0TangentialTemperatureSampleDirection[3]={0.0,0.0,0.0},l1TangentialTemperatureSampleDirection[3]={0.0,0.0,0.0};
 
@@ -767,13 +766,6 @@ void PIC::Sampling::Sampling() {
             if (ptr!=-1) {
               LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
               cell=block->GetCenterNode(LocalCellNumber);
-              SamplingData=cell->GetAssociatedDataBufferPointer() + PIC::Mesh::collectingCellSampleDataPointerOffset;
-
-              #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-              #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-              for (s=0;s<PIC::nTotalSpecies;s++) PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingData+PIC::Mesh::sampledParticleWeghtRelativeOffset)),1,__LINE__,__FILE__);
-              #endif
-              #endif
 
               //determine the direction of the parallel temeprature sampling
               if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!=_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {

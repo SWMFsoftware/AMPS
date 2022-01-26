@@ -84,7 +84,7 @@ public:
     case  _INTERNAL_BOUNDARY_SPHERE_ZENITH_ANGLE_UNIFORM_DISTRIBUTION_: 
       dZenithAngle=Pi/nZenithSurfaceElements;
       break;
-    defaut:
+    default:
       ::exit(__LINE__,__FILE__,"Error: the option is not defiend");
     }
   }

@@ -263,7 +263,7 @@ public:
         exit(0);
       } 
 
-      int i, fd;
+      //int i, fd;
 
       /* child continues here */
       /* now close all extra fds */
@@ -347,7 +347,7 @@ public:
 
     //in case when logger is not forked, start the logger with system()
     if (fork_daemon==false) {
-      char cmd[200];
+    //  char cmd[200];
 
 
         setsid();

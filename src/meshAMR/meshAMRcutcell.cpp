@@ -972,7 +972,7 @@ void CutCell::InitRayTracingModule_default() {
 //if the number if interasections of the ray (x=x0+l*t) is even than the point is within the domain; otherwise the point is outsede the domain
 //l -> is a random ray (intersection search) direction
 bool CutCell::CheckPointInsideDomain_default(double *x,CutCell::cTriangleFace* SurfaceTriangulation,int nSurfaceTriangulation,bool ParallelCheck,double EPS) {
-  int nface,nfaceStart,nfaceFinish,iIntersections;
+  int iIntersections;
   double SearchDirection[3],l;
   int idim;
   bool flag=true;
@@ -987,13 +987,6 @@ bool CutCell::CheckPointInsideDomain_default(double *x,CutCell::cTriangleFace* S
     MPI_Comm_size(MPI_GLOBAL_COMMUNICATOR,&nTotalThreads);
     initflag=true;
   }
-
-  if (ParallelCheck==true) {
-    nfaceStart=ThisThread*(nSurfaceTriangulation/nTotalThreads);
-    nfaceFinish=(ThisThread+1)*(nSurfaceTriangulation/nTotalThreads);
-    if (ThisThread==nTotalThreads-1) nfaceFinish=nSurfaceTriangulation;
-  }
-  else nfaceStart=0,nfaceFinish=nSurfaceTriangulation;
 
   bool flagbuffer[nTotalThreads];
 
@@ -1011,20 +1004,6 @@ bool CutCell::CheckPointInsideDomain_default(double *x,CutCell::cTriangleFace* S
     flag=true;
 
     //find intersections with the faces on the mesh
-/*
-    for (nface=nfaceStart;nface<nfaceFinish;nface++) {
-      if (SurfaceTriangulation[nface].RayIntersection(x,SearchDirection,EPS)==true) iIntersections++;
-
-      for (l=0.0,idim=0;idim<3;idim++) l+=pow(SurfaceTriangulation[nface].ExternalNormal[idim]*SearchDirection[idim],2);
-      if (l<1.0E-10) {
-        flag=false;
-        break;
-      }
-
-    }
-*/
-
-
    double xLength,xTarget[3];
 
    xLength=max(sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]),1.0); 

@@ -61,35 +61,8 @@ void PIC::Parallel::CopyCenterNodeAssociatedData_default(char *TargetBlockAssoci
 //Exchange particles between Processors
 void PIC::Parallel::ExchangeParticleData() {
   int From,To,i,iFrom,flag;
-  long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
-
-  int RecvMessageSizeRequestTableLength=0;
-  int SendMessageSizeRequestTableLength=0;
-
-  MPI_Request RecvPaticleDataRequestTable[PIC::nTotalThreads];
-  int RecvPaticleDataRequestTableLength=0;
-  int RecvPaticleDataProcessTable[PIC::nTotalThreads];
-
-  int SendParticleDataRequestTableLength=0;
-
-  MPI_Request SendParticleDataRequestTable[PIC::nTotalThreads];
-
-  MPI_Request SendMessageSizeRequestTable[PIC::nTotalThreads];
-  MPI_Request RecvMessageSizeRequestTable[PIC::nTotalThreads];
-
-  int SendMessageLengthTable[PIC::nTotalThreads];
-  int RecvMessageLengthTable[PIC::nTotalThreads];
-
-  int SendMessageLengthProcessTable[PIC::nTotalThreads];
-  int RecvMessageLengthProcessTable[PIC::nTotalThreads];
-
-  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
-    SendMessageLengthTable[thread]=0,RecvMessageLengthTable[thread]=0;
-  }
-
-  //set the default value inthe counters
-  for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
+  long int Particle;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL;
 
   #if DIM == 3
   //  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
@@ -127,9 +100,8 @@ void PIC::Parallel::ExchangeParticleData() {
   
 
   auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<MPI_Aint> *SendParticleList,int& nTotalSendParticles,int To) {
-    int npart,SendSellNumber=0;
+    int SendSellNumber=0;
     long int *FirstCellParticleTable;
-    bool block_header_saved,cell_header_saved; 
 
     cMessageDescriptorList p;
     MPI_Aint particle_data;
@@ -203,7 +175,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
   auto RemoveSentParticles = [&] (cMessageDescriptorList *SendMessageDescriptor,int nSendCells) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-    int ptr,iCell,jCell,kCell,next,cnt;
+    int ptr,next,cnt;
     cAMRnodeID node_id;
     cMessageDescriptorList *it;
 
@@ -229,12 +201,11 @@ void PIC::Parallel::ExchangeParticleData() {
   };
 
   auto InitNewParticles = [&] (int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable,list<MPI_Aint> *RecvParticleList) {
-    int icell,i,j,k;
+    int icell;
     int ptr_cnt,new_particle;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
     cAMRnodeID node_id;
     cMessageDescriptorList *p;
-    int particle_data_buffer_offset=0;
 
     MPI_Aint particle_data;
 

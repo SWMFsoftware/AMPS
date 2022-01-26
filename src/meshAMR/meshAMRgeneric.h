@@ -2741,10 +2741,8 @@ Start:
 */
   _TARGET_HOST_ _TARGET_DEVICE_
   inline cTreeNodeAMR<cBlockAMR>* findTreeNode(int *ix,cTreeNodeAMR<cBlockAMR>  *startNode=NULL) {
-    cTreeNodeAMR<cBlockAMR> *res=NULL,*t=NULL;
-    int iState=0,jState=0,kState=0,i,j,k;
-   // double xmin[3],xmax[3];
-
+    cTreeNodeAMR<cBlockAMR> *res=NULL;
+    int i=0,j=0,k=0;
 
     if (startNode==NULL) startNode=rootTree;
 
@@ -7506,7 +7504,6 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 //==============================================================
   void OutputDistributedDataTECPLOT(const char* fname,bool PrintMeshData,int DataSetNumber) {
     //the number of cells and nodes
-    int nnodes=0,ncells=0;
     FILE *fData;
 
     const static int CellCornerPrintOrder[8][3]={{0,0,0},{1,0,0},{1,1,0},{0,1,0}, {0,0,1},{1,0,1},{1,1,1},{0,1,1}}; 
@@ -7818,7 +7815,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
    MPI_Gather(&TetraMeshLength,1,MPI_INT,TetraMeshLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
    //combibe all files together 
-   char fname_full[200],cmd[500];
+   char fname_full[200];
    int ConnectivityListLengthTable[nTotalThreads];
  
    MPI_Gather(&nSubDomainTotalCells,1,MPI_INT,ConnectivityListLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
@@ -11087,11 +11084,9 @@ nMPIops++;
     
     auto GetBlockNumber = [&] (int thread) {
       int res=0;
-      cTreeNodeAMR<cBlockAMR>* node;
-      
       
       for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    	  if ((node->Thread==thread)&&(node->IsUsedInCalculationFlag==true)) res++; 
+        if ((node->Thread==thread)&&(node->IsUsedInCalculationFlag==true)) res++; 
       }
       
       return res;
@@ -11099,26 +11094,14 @@ nMPIops++;
     
     auto PopulateBlockWeightTable = [&] (double *WeightTable) {
     	int cnt=0;
-    	cTreeNodeAMR<cBlockAMR>* node;
     	
         for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
       	  if ((node->Thread==ThisThread)&&(node->IsUsedInCalculationFlag==true)) { 
-      		WeightTable[cnt++]=node->ParallelLoadMeasure;
+            WeightTable[cnt++]=node->ParallelLoadMeasure;
       	  }
         }
     };
 
-    auto UnPackBlockWeightTable = [&] (double *WeightTable, int thread) {
-    	int cnt=0;
-    	cTreeNodeAMR<cBlockAMR>* node;
-
-    	for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-    		if ((node->Thread==thread)&&(node->IsUsedInCalculationFlag==true)) { 
-    			node->ParallelLoadMeasure=WeightTable[cnt++];
-    		}
-    	}
-    };
-    
     auto GetTotalLoad = [&] () {
     	double res=0.0;
     	
@@ -11173,7 +11156,6 @@ nMPIops++;
       
       int * cntThreads=new int [nTotalThreads-1];
       for (int ii=0;ii<nTotalThreads-1;ii++) cntThreads[ii]=0;
-      cTreeNodeAMR<cBlockAMR>* node;
 
       for (cTreeNodeAMR<cBlockAMR>*  node=BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
         if ((node->Thread!=0)&&(node->IsUsedInCalculationFlag==true)) {
@@ -11638,7 +11620,6 @@ if (TmpAllocationCounter==2437) {
 
   void GetDomainDecompositionSignature(const char* msg=NULL) {
     int thread;
-    cTreeNodeAMR<cBlockAMR> *node;
     CRC32 checksum[nTotalThreads],Signature;
     int nTotalBlocks[nTotalThreads];
 
@@ -11759,7 +11740,6 @@ if (TmpAllocationCounter==2437) {
       }
 
       //calcualte the number of blocks per thread
-      cTreeNodeAMR<cBlockAMR> *ptr;
       long int GlobalTotalBlockNumberTable[nTotalThreads];
       int nTotalUsedInSimulationNodes=0,GlobalTotalTotalUsedInSimulationNodeTable[nTotalThreads];
 

@@ -117,7 +117,6 @@ void PrintErrorLog(long int nline, const char* fname, const char* message) {
 //use: exit(__LINE__,__FILE__, "mesage")
 _TARGET_HOST_ _TARGET_DEVICE_
 void exit(long int nline, const char* fname, const char* msg) {
-  char str[1000];
   int t1,t2;
 
   UnpackExitErrorCode(t1,t2); 
@@ -130,6 +129,7 @@ void exit(long int nline, const char* fname, const char* msg) {
   }
 
   #ifndef __CUDA_ARCH__  
+  char str[1000];
   PrintErrorLog(str);
 
   switch (_GENERIC_EXIT_FUNCTION_MODE_) {

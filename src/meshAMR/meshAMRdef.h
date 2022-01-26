@@ -343,7 +343,7 @@ public:
 //amps_new<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_); 
 
 
-  int size=_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T);
+//  int size=_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T);
 //  dataBufferList[dataBufferListPointer]=(T*)malloc(size);
   amps_malloc_managed<T>(dataBufferList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);  
 
