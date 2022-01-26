@@ -365,8 +365,8 @@ Check=
 Name=test-1853-shape
 Time=5
 
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE 
-
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu) 
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+valeriy)
 
 Compile=
 >>>@echo "test_test-1853-shape_compile..." > test_test-1853-shape$(TESTtest-1853-shape).diff
