@@ -459,7 +459,7 @@ namespace SEP {
     if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {
       //simulate scattering of the particles
       //get interplabetary magnetic field, and plasma velocity
-      double B[3]={0.0,0.0,0.0},Vsw[3]={0.0,0.0,0.0},absVsw,vParallel,vNormal=0.0,vNormalVect[3],l[3];
+      double B[3]={0.0,0.0,0.0},Vsw[3]={0.0,0.0,0.0},absVsw,vParallel,speed,vNormal,vNormal2=0.0,vNormalVect[3],l[3];
       PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
       double AbsB,*x,*v,omega_minus,omega_plus,mu,dmu;
       PIC::ParticleBuffer::byte *ParticleData;
@@ -470,6 +470,7 @@ namespace SEP {
       v=PIC::ParticleBuffer::GetV(ParticleData);
       spec=PIC::ParticleBuffer::GetI(ParticleData);
 
+      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
       PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,startNode,Stencil);      
 
       for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
@@ -490,15 +491,20 @@ namespace SEP {
       AbsB=Vector3D::Normalize(l);
 
       //get the parallel and normal component of the velocity
-      vParallel=Vector3D::DotProduct(x,l);
+      vParallel=Vector3D::DotProduct(v,l);
       absVsw=Vector3D::Length(Vsw);
+
+      if (absVsw<1.0E-5) return res;
 
       for (idim=0;idim<3;idim++) {
         vNormalVect[idim]=v[idim]-vParallel*l[idim];
-        vNormal+=vNormalVect[idim]*vNormalVect[idim];
+        vNormal2+=vNormalVect[idim]*vNormalVect[idim];
       }
 
-      vNormal=sqrt(vNormal);  
+      vNormal=sqrt(vNormal2);  
+      speed=sqrt(vNormal2+vParallel*vParallel);
+
+      mu=vParallel/speed;
 
       if (vNormal<1.0E-10) {
         //the velocity of the particle is alighed with the direction of the magnetic filed->
@@ -508,32 +514,49 @@ namespace SEP {
       
         Vector3D::GetNormFrame(vNormalVect,e1,l);
       }
+      else Vector3D::Normalize(vNormalVect);
 
       //move the particle to the frame moving with solar wind plasma
       vParallel-=absVsw;
 
       //simulate scattering 
       double D,dD_dmu,delta;
+      double muInit=mu,dtIncrement=dtTotal,time_counter=0.0;
 
-      switch (_SEP_DIFFUSION_MODEL_) {
-      case _DIFFUSION_JOKIPII1966AJ_: 
-        SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,AbsB*AbsB,Vector3D::DotProduct(x,x),spec,omega_plus+omega_minus);
-        break;
-      default:
-        exit(__LINE__,__FILE__,"Error: not implemeneted");
+      while (time_counter<dtTotal) {
+        if (dtIncrement+time_counter>dtTotal) dtIncrement=dtTotal-time_counter;
+     
+        switch (_SEP_DIFFUSION_MODEL_) {
+        case _DIFFUSION_JOKIPII1966AJ_: 
+          SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,AbsB*AbsB,Vector3D::DotProduct(x,x),spec,omega_plus+omega_minus);
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: not implemeneted");
+        }
+
+       // delta=sqrt(4.0*D*dtIncrement)/erf(rnd());
+
+        delta=sqrt(2.0*D*dtIncrement)*Vector3D::Distribution::Normal();
+
+        dmu=(rnd()>0.5) ? delta : -delta;
+
+        dmu+=dD_dmu*dtIncrement;
+
+        if (fabs(dmu)>0.2) {
+          mu=muInit,time_counter=0.0;
+          dtIncrement/=2.0;
+          continue;
+        }
+        else time_counter+=dtIncrement;
+
+        mu+=dmu;
+        if (mu<-1.0) mu=-1.0;
+        if (mu>1.0) mu=1.0;
+
+        vParallel=speed*mu;
       }
 
-      delta=sqrt(4.0*D*dtTotal)/erf(rnd());
-      mu+=(rnd()>0.5) ? delta : -delta;
-
-      mu+=dD_dmu*dtTotal;
-
-      if (mu<-1.0) mu=-1.0;
-      if (mu>1.0) mu=1.0;
-
       //determine the new value of the parallel and normal components of the particle velocity
-      double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
-
       vParallel=speed*mu;
       vNormal=speed*sqrt(1.0-mu*mu);
 
