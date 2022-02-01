@@ -4,6 +4,32 @@
 #include "amps2swmf.h"
 
 
+long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
+  namespace FL = PIC::FieldLine;
+
+  long int newParticle;
+  PIC::ParticleBuffer::byte *newParticleData;
+  int nInjectedParticles=0;
+  int npart;
+  double l[3],pAbs,p[3],ParticleWeightCorrectionFactor=1.0;
+
+  npart=100;
+  pAbs=Relativistic::Energy2Momentum(100.0*MeV2J,PIC::MolecularData::GetMass(spec));
+
+  FL::FieldLinesAll[iFieldLine].GetSegment(0)->GetDir(l); 
+
+  for (int i=0;i<npart;i++) {
+    //generate a particle
+    Vector3D::Distribution::Uniform(p,pAbs);
+
+    if (Vector3D::DotProduct(p,l)<0.0) for (int idim=0;idim<3;idim++) p[idim]=-p[idim];
+    
+    if (PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0)!=-1) nInjectedParticles++;
+  }
+   
+  return nInjectedParticles;
+}
+
 long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
 
@@ -128,7 +154,16 @@ long int SEP::FieldLine::InjectParticles() {
   long int res=0;
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) for (int iFieldLine=0;iFieldLine<PIC::FieldLine::nFieldLine;iFieldLine++) {
-    res+=InjectParticlesSingleFieldLine(spec,iFieldLine);
+    switch (_SEP_FIELD_LINE_INJECTION_) {
+    case _SEP_FIELD_LINE_INJECTION__SHOCK_:
+      res+=InjectParticlesSingleFieldLine(spec,iFieldLine);
+      break;
+    case _SEP_FIELD_LINE_INJECTION__BEGINNIG_:
+      res+=InjectParticleFieldLineBeginning(spec,iFieldLine);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
   }
 
   return res;

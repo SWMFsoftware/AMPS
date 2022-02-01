@@ -41,6 +41,13 @@
 #define _DOMAIN_SIZE_ 250.0*_RADIUS_(_SUN_)/_AU_
 #endif
 
+#define _SEP_FIELD_LINE_INJECTION__BEGINNIG_ 0
+#define _SEP_FIELD_LINE_INJECTION__SHOCK_    1
+
+#ifndef _SEP_FIELD_LINE_INJECTION_
+#define _SEP_FIELD_LINE_INJECTION_ _SEP_FIELD_LINE_INJECTION__SHOCK_
+#endif
+
 
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
 #include "SpiceUsr.h"
@@ -88,6 +95,7 @@ namespace SEP {
 
   //functions related to tracing SEPs along field lines 
   namespace FieldLine {
+    long int InjectParticleFieldLineBeginning(int spec,int iFieldLine);    
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
   }
