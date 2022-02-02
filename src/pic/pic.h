@@ -175,6 +175,7 @@ namespace PIC {
   #define _ACCUMULATE_SAMPLING_MODE_        1
   #define _DISABLED_SAMPLING_MODE_          2
   #define _SINGLE_OUTPUT_FILE_SAMPING_MODE_ 3
+  #define _TEMP_DISABLED_SAMPLING_MODE_     4
 
   extern long int LastSampleLength,CollectingSampleCounter,RequiredSampleLength,DataOutputFileNumber;
   extern int SamplingMode;
@@ -4826,6 +4827,7 @@ void DeleteAttachedParticles();
 
     //when the global particle weight/time step are used, the following are the buffers where these parameters are stored
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ double GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_],GlobalTimeStep[_TOTAL_SPECIES_NUMBER_];
+    extern bool GlobalTimeStepInitialized;
 
 
 //    extern double *GlobalParticleWeight,*GlobalTimeStep;
