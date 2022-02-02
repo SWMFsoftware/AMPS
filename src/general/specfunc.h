@@ -928,11 +928,7 @@ _TARGET_HOST_ _TARGET_DEVICE_
 void amps_new(T* &buff,int length) {
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
 
-  #ifndef __CUDA_ARCH__
   buff=(T*)malloc(length*sizeof(T));
-  #else 
-  cudaMalloc(&buff,length*sizeof(T));  
-  #endif
 
   for (int i=0;i<length;i++) new(buff+i)T();
  }
@@ -945,10 +941,13 @@ void amps_new_device(T* &buff,int length) {
   if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
 
   #if _CUDA_MODE_ == _ON_
-  cudaMalloc(&t,length*sizeof(T));      
+  cudaMalloc(&t,length*sizeof(T));
   #else
   buff=new T[length];
+  return;
   #endif
+
+  buff=t;
 
   for (int i=0;i<length;i++) new(buff+i)T();
  }
@@ -963,30 +962,14 @@ void amps_new_managed(T* &buff,int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T)); 
   #else 
-  t=new T[length];
+  buff=new T[length];
   return;
   #endif
+
 
   buff=t;
 
   for (int i=0;i<length;i++) new(buff+i)T();
-}
-
-template<class T>
-_TARGET_HOST_ _TARGET_DEVICE_
-void amps_malloc_device(T* &buff,long int length) {
-  T* t;
-
-  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
-
-  #if _CUDA_MODE_ == _ON_
-  cudaMalloc(&t,length*sizeof(T));
-  #else
-  t=new T[length];
-  return;
-  #endif
-
-  buff=t;
 }
 
 template<class T>
@@ -998,7 +981,9 @@ void amps_malloc_managed(T* &buff,long int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T));
   #else
-  t=new T[length];
+//  t=(T*)malloc(length*sizeof(T));
+
+  buff=new T[length];
   return;
   #endif
 
