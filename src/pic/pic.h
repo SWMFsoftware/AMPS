@@ -1965,6 +1965,8 @@ void DeleteAttachedParticles();
     #define _PIC_INIT_PARTICLE_MODE__MOVE_      1
 
     typedef void (*fUserInitParticle)(byte*);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     int InitiateParticle(double *x,double *v,double* WeightCorrectionFactor,int *spec,byte* ParticleData,int InitMode,void *node,fUserInitParticle=NULL);
 
 

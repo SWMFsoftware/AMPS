@@ -57,7 +57,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   #if defined(__linux__)
   if ( _CUDA_MODE_ == _ON_) {
-    amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+    amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   }
   else {
     switch (_ALIGN_STATE_VECTORS_) {
@@ -67,15 +67,33 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
       break;
 
     default:
-      amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+      amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
     }
   }
   #else
-  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+  amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   #endif
 
-  char *p=(char*)ParticleDataBuffer;
-  for (long int i=0;i<ParticleDataLength*MaxNPart;i++) p[i]=0;
+  auto ClearParticleBuffer = [=] _TARGET_HOST_ _TARGET_DEVICE_  () {
+    char *p=(char*)ParticleDataBuffer;
+    long int i;
+
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    for (i=id;i<ParticleDataLength*MaxNPart;i+=increment) p[i]=0;
+  };
+
+  #if _CUDA_MODE_ == _ON_
+  kernel<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(ClearParticleBuffer);
+  cudaDeviceSynchronize();
+  #else
+  ClearParticleBuffer();
+  #endif
 
   if (ParticleDataBuffer==NULL) {
     char msg[500];
@@ -87,13 +105,33 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   if (PIC::ThisThread==0) printf("$PREFIX: The total particle buffer length=%li\n",BufrerLength);
 
   //init the list of particles in the buffer
-  for (long int ptr=0;ptr<MaxNPart-1;ptr++) {
-    SetNext(ptr+1,ptr);
-    SetParticleDeleted(ptr);
-  }
+  auto InitParticles = [=] _TARGET_HOST_ _TARGET_DEVICE_  () {
+    long int ptr;
 
-  SetNext(-1,MaxNPart-1);
-  SetParticleDeleted(MaxNPart-1);
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    for (ptr=id;ptr<MaxNPart-1;ptr+=increment) {
+      SetNext(ptr+1,ptr);
+      SetParticleDeleted(ptr);
+    }
+
+    if (id==0) {
+      SetNext(-1,MaxNPart-1);
+      SetParticleDeleted(MaxNPart-1);
+    }
+  };
+
+  #if _CUDA_MODE_ == _ON_
+  kernel<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(InitParticles);
+  cudaDeviceSynchronize();
+  #else
+  ClearParticleBuffer();
+  #endif
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   FirstPBufferParticle=0;
@@ -699,6 +737,7 @@ void PIC::ParticleBuffer::CheckParticleList() {
 
 //==========================================================
 //initiate the new particle
+_TARGET_HOST_ _TARGET_DEVICE_
 int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorrectionFactor,int *spec,PIC::ParticleBuffer::byte* ParticleData,int InitMode,void *node,fUserInitParticle UserInitParticleFunction) {
   int ptr,ptrSpec;
   byte* ptrData;
