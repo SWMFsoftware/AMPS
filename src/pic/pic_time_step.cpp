@@ -15,7 +15,7 @@ void PIC::TimeStepInternal::PrintTimeStep() {
     time_t TimeValue=time(NULL);
     tm *ct=localtime(&TimeValue);
 
-    if ((SamplingMode!=_DISABLED_SAMPLING_MODE_)&&(SamplingMode!=_TEMP_DISABLED_SAMPLING_MODE_)) {
+    if (SamplingMode!=_DISABLED_SAMPLING_MODE_) {
       printf("$PREFIX: (%i/%i %i:%i:%i), Iteration: %i  (current sample length:%ld, %ld iterations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,InteractionCouinter,RequiredSampleLength,RequiredSampleLength-CollectingSampleCounter);
     }
     else {
@@ -224,7 +224,7 @@ void PIC::TimeStepInternal::Sampling(double &SamplingTime) {
 
   using namespace PIC;
 
-  if ((SamplingMode==_DISABLED_SAMPLING_MODE_)||(SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)) {
+  if (SamplingMode==_DISABLED_SAMPLING_MODE_) {
     SamplingTime=0.0;
 
     return;

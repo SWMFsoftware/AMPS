@@ -20,7 +20,6 @@ PIC::ParticleWeightTimeStep::fExosphereModelExtraSourceRate PIC::ParticleWeightT
 //double *PIC::ParticleWeightTimeStep::GlobalParticleWeight=NULL,*PIC::ParticleWeightTimeStep::GlobalTimeStep=NULL;
 
 _TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalParticleWeight[_TOTAL_SPECIES_NUMBER_]={-1.0};
-bool  PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized=false;
 _TARGET_DEVICE_ _CUDA_MANAGED_ double PIC::ParticleWeightTimeStep::GlobalTimeStep[_TOTAL_SPECIES_NUMBER_]={-1.0}; 
 
 

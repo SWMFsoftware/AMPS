@@ -350,7 +350,7 @@ extern "C" {
 
      ncalls++;
 
-     if ((PIC::SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)&&(ncalls%SamplingOutputCadence==0)) {
+     if ((PIC::SamplingMode==_DISABLED_SAMPLING_MODE_)&&(ncalls%SamplingOutputCadence==0)) {
        PIC::SamplingMode=_SINGLE_OUTPUT_FILE_SAMPING_MODE_;
      } 
 

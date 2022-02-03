@@ -1238,11 +1238,11 @@ void PIC::Sampling::Sampling() {
           }
           
           if (SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_) {
-            SamplingMode=_TEMP_DISABLED_SAMPLING_MODE_;
+            SamplingMode=_DISABLED_SAMPLING_MODE_;
           }
         }
 
-        if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)) {
+        if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_DISABLED_SAMPLING_MODE_)) {
           for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
             PIC::Mesh::cDataBlockAMR *block=node->block;
 
@@ -1350,7 +1350,7 @@ void PIC::Sampling::Sampling() {
       }
 
       //flush sampled surface data
-      if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_TEMP_DISABLED_SAMPLING_MODE_)) {
+      if ((SamplingMode==_RESTART_SAMPLING_MODE_)||(SamplingMode==_SINGLE_OUTPUT_FILE_SAMPING_MODE_)||(SamplingMode==_DISABLED_SAMPLING_MODE_)) {
         for (iSphericalSurface=0;iSphericalSurface<nTotalSphericalSurfaces;iSphericalSurface++) {
           cInternalSphericalData *Sphere=PIC::BC::InternalBoundary::Sphere::InternalSpheres.GetEntryPointer(iSphericalSurface);
           PIC::BC::InternalBoundary::Sphere::flushCollectingSamplingBuffer(Sphere);
@@ -1635,17 +1635,10 @@ void PIC::Init_BeforeParser() {
     //Init the random number generator
     if (_PIC_CELL_RELATED_RND__MODE_==_PIC_MODE_ON_) PIC::Rnd::CenterNode::Init();
 
-    //Time step/particle weight tables
+  //Time step/particle weight tables
     for (int s=0;s<PIC::nTotalSpecies;s++) {
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-    } 
-    
-    if (PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized==false) {
-      for (int s=0;s<PIC::nTotalSpecies;s++) {
-        PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
-      }
-
-      PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized=true;
+      PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
     }
 //  };
 
