@@ -14,8 +14,8 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::MaxNPart=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::NAllPart=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ long int PIC::ParticleBuffer::FirstPBufferParticle=-1;
 
-int PIC::ParticleBuffer::Thread::NTotalThreads=0;
-long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::ParticleBuffer::Thread::FirstPBufferParticle=NULL;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::ParticleBuffer::Thread::NTotalThreads=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ long int *PIC::ParticleBuffer::Thread::AvailableParticleListLength=NULL,*PIC::ParticleBuffer::Thread::FirstPBufferParticle=NULL;
 
 PIC::ParticleBuffer::cOptionalParticleFieldAllocationManager PIC::ParticleBuffer::OptionalParticleFieldAllocationManager;
 int PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_NORMAL_=-1,PIC::ParticleBuffer::_PIC_PARTICLE_DATA__MOMENTUM_PARALLEL_=-1;
@@ -95,6 +95,34 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   SetNext(-1,MaxNPart-1);
   SetParticleDeleted(MaxNPart-1);
 
+
+  if (_CUDA_MODE_ == _ON_) {
+    long int thread,nParticlePerThread;
+
+    Thread::NTotalThreads=_CUDA_BLOCKS_*_CUDA_THREADS_;
+
+    amps_new_managed<long int>(Thread::AvailableParticleListLength,Thread::NTotalThreads);
+    amps_new_managed<long int>(Thread::FirstPBufferParticle,Thread::NTotalThreads);
+
+    nParticlePerThread=MaxNPart/Thread::NTotalThreads;
+
+    for (thread=0;thread<Thread::NTotalThreads;thread++) {
+      long int nStartPart,ListLength;
+
+      nStartPart=nParticlePerThread*thread;
+      ListLength=(thread!=Thread::NTotalThreads-1) ? nParticlePerThread : MaxNPart-nParticlePerThread*(Thread::NTotalThreads-1);
+
+      SetPrev(-1,nStartPart);
+      if (nStartPart!=0) SetNext(-1,nStartPart-1);
+
+      Thread::AvailableParticleListLength[thread]=ListLength;
+      Thread::FirstPBufferParticle[thread]=nStartPart;
+    }
+  }
+
+
+
+
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   FirstPBufferParticle=0;
 
@@ -170,7 +198,26 @@ PIC::ParticleBuffer::byte *PIC::ParticleBuffer::GetParticleDataPointer(long int 
 //the functions that controls the particle buffer
 long int PIC::ParticleBuffer::GetMaxNPart() {return MaxNPart;}
 
+
+_TARGET_HOST_ _TARGET_DEVICE_
+long int PIC::ParticleBuffer::GetAllPartNumGPU() {
+  int nTotalParticles=0;
+  int nTotalAvailableParticles=0;
+
+  for (int thread=0;thread<_CUDA_BLOCKS_*_CUDA_THREADS_;thread++) nTotalAvailableParticles+=Thread::AvailableParticleListLength[thread];
+
+  nTotalParticles=MaxNPart-nTotalAvailableParticles;
+  return nTotalParticles;
+}
+
+
+_TARGET_HOST_ _TARGET_DEVICE_
 long int PIC::ParticleBuffer::GetAllPartNum() {
+
+  if (_CUDA_MODE_ == _ON_) { 
+    return GetAllPartNumGPU();
+  } 
+
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   return NAllPart;
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -206,10 +253,67 @@ long int PIC::ParticleBuffer::GetTotalParticleNumber() {
 long int PIC::ParticleBuffer::GetParticleDataLength() {return ParticleDataLength;}
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+#if _CUDA_MODE_ == _ON_
+_TARGET_DEVICE_ 
+long int PIC::ParticleBuffer::GetNewParticleGPU(bool RandomThread) {
+  long int newptr;
+  byte *pdataptr;
+  int thread; 
+
+  if (RandomThread==false) thread=blockIdx.x*blockDim.x+threadIdx.x;
+  else {
+    thread=(int)(rnd()*Thread::NTotalThreads);
+  }
+    
+  if (Thread::AvailableParticleListLength[thread]==0) {
+    bool found=false;
+
+    if (RandomThread==true) {
+      for (thread=0;thread<Thread::NTotalThreads;thread++) if (Thread::AvailableParticleListLength[thread]!=0) {
+        found=true;
+        break;
+      }
+    }
+
+    if (found==false) {
+      printf("$PREFIX: The particle buffer is full (thread=%i)\nParticle allocation report:\nOpenMP thread\tAvailable Particles\n",PIC::GPU::ThisThread);
+
+      for (int tt=0;tt<Thread::NTotalThreads;tt++) {
+        printf("$PREFIX: %i\t%ld\n",tt,Thread::AvailableParticleListLength[tt]);
+      }
+
+      exit(__LINE__,__FILE__,"The particle buffer is full");
+    }
+  }
+
+  Thread::AvailableParticleListLength[thread]--;
+  newptr=Thread::FirstPBufferParticle[thread];
+  pdataptr=GetParticleDataPointer(newptr);
+  Thread::FirstPBufferParticle[thread]=GetNext(pdataptr);
+
+  #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+  PIC::ParticleTracker::InitParticleID(pdataptr);
+  #endif
+
+  SetPrev(-1,pdataptr);
+  SetNext(-1,pdataptr);
+
+  if (IsParticleAllocated(pdataptr)==true) exit(__LINE__,__FILE__,"Error: the particle is re-allocated");
+  SetParticleAllocated(pdataptr);
+
+  return newptr;
+}
+#endif
+
+
 _TARGET_DEVICE_ _TARGET_HOST_
 long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
   long int newptr;
   byte *pdataptr;
+  
+  #ifdef __CUDA_ARCH__
+  return GetNewParticleGPU(RandomThreadOpenMP);
+  #endif
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   if (MaxNPart==NAllPart) exit(__LINE__,__FILE__,"The particle buffer is full");
@@ -274,11 +378,41 @@ long int PIC::ParticleBuffer::GetNewParticle(bool RandomThreadOpenMP) {
 }
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+#if _CUDA_MODE_ == _ON_
+_TARGET_DEVICE_ 
+long int PIC::ParticleBuffer::GetNewParticleGPU(long int &ListFirstParticle,bool RandomThread) {
+  long int newptr;
+  byte *pdataptr;
+
+  newptr=GetNewParticleGPU(RandomThread);
+  pdataptr=GetParticleDataPointer(newptr);
+  
+  if (ListFirstParticle>=0) {
+    byte *listFirstPData=GetParticleDataPointer(ListFirstParticle);
+
+    SetPrev(GetPrev(listFirstPData),pdataptr);
+    SetNext(ListFirstParticle,pdataptr);
+    SetPrev(newptr,listFirstPData);
+  }
+  else {
+    SetPrev(ListFirstParticle,pdataptr);
+    SetNext(ListFirstParticle,pdataptr);
+  }
+  
+  ListFirstParticle=newptr;
+  return newptr;
+}
+#endif
+
 _TARGET_DEVICE_ _TARGET_HOST_
 long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool RandomThreadOpenMP) {
   long int newptr;
   byte *pdataptr;
 
+  #ifdef __CUDA_ARCH__
+  return GetNewParticleGPU(ListFirstParticle,RandomThreadOpenMP);
+  #endif
+  
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   if (MaxNPart==NAllPart) exit(__LINE__,__FILE__,"The particle buffer is full");
 
@@ -374,6 +508,8 @@ long int PIC::ParticleBuffer::GetNewParticle(long int &ListFirstParticle,bool Ra
   return newptr;
 }
 
+
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::ExcludeParticleFromList(long int ptr,long int& ListFirstParticle) {
   byte *pdataptr=GetParticleDataPointer(ptr);
   long int prev,next;
@@ -406,9 +542,31 @@ void PIC::ParticleBuffer::DeleteParticle(long int ptr) {
 
 
 //option RandomThreadOpenMP==true can be used ONLY when the code is outside of any OpenMP sections
+#if _CUDA_MODE_ == _ON_
+_TARGET_DEVICE_ 
+void PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTerminationGPU(long int ptr,bool RandomThreadOpenMP) {
+
+  if (IsParticleAllocated(ptr)==false) exit(__LINE__,__FILE__,"Error: the particle is re-deleted");
+  SetParticleDeleted(ptr);
+
+  int thread; //=omp_get_thread_num();
+
+  thread=(RandomThreadOpenMP==false) ? blockIdx.x*blockDim.x+threadIdx.x : (int)(rnd()*Thread::NTotalThreads);
+  
+  Thread::AvailableParticleListLength[thread]++;
+  SetNext(Thread::FirstPBufferParticle[thread],ptr);
+  Thread::FirstPBufferParticle[thread]=ptr;
+}
+#endif
+
 _TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(long int ptr,bool RandomThreadOpenMP) {
 
+  #ifdef __CUDA_ARCH__
+  DeleteParticle_withoutTrajectoryTerminationGPU(ptr,RandomThreadOpenMP);
+  return;
+  #endif
+  
 //#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   if (IsParticleAllocated(ptr)==false) exit(__LINE__,__FILE__,"Error: the particle is re-deleted");
   SetParticleDeleted(ptr);
@@ -437,7 +595,7 @@ void PIC::ParticleBuffer::DeleteParticle(long int ptr,long int& ListFirstParticl
 }
 
 
-
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::CloneParticle(byte* CopyData,byte* SourceData) {
   long int next,prev;
 
@@ -450,6 +608,7 @@ void PIC::ParticleBuffer::CloneParticle(byte* CopyData,byte* SourceData) {
   SetNext(next,CopyData);
 }
 
+_TARGET_DEVICE_ _TARGET_HOST_
 void PIC::ParticleBuffer::CloneParticle(long int copy,long int source) {
   byte *SourceData,*CopyData;
 
@@ -699,6 +858,7 @@ void PIC::ParticleBuffer::CheckParticleList() {
 
 //==========================================================
 //initiate the new particle
+_TARGET_HOST_ _TARGET_DEVICE_
 int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorrectionFactor,int *spec,PIC::ParticleBuffer::byte* ParticleData,int InitMode,void *node,fUserInitParticle UserInitParticleFunction) {
   int ptr,ptrSpec;
   byte* ptrData;

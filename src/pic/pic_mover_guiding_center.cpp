@@ -74,10 +74,12 @@ void PIC::Mover::GuidingCenter::Init(){
 }
 
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mover::GuidingCenter::InitiateMagneticMoment(int spec,double *x, double *v,long int ptr, void *node) {
   PIC::Mover::GuidingCenter::InitiateMagneticMoment(spec,x,v,PIC::ParticleBuffer::GetParticleDataPointer(ptr),node);
 }
 
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Mover::GuidingCenter::InitiateMagneticMoment(int spec,double *x, double *v,PIC::ParticleBuffer::byte *ParticleData, void *node) {
   //magnetic moment:
   // mu       = p_{perp}^2 / (2*m0*B)

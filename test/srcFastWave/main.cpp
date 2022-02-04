@@ -38,6 +38,9 @@
 
 #include "PeriodicBCTest.dfn"
 
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+
 
 //for lapenta mover
 
@@ -269,8 +272,35 @@ long int PrepopulateDomain() {
               }
             */      
             //initiate the new particle
+            
+            #if _CUDA_MODE_ == _OFF_ 
             PIC::ParticleBuffer::InitiateParticle(xPar, electronVelocity,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
             PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+            #else 
+           
+            auto InitParticle = [=] _TARGET_DEVICE_ (double *xPar,double *electronVelocity,double *ionVelocity, int electronSpec, int ionSpec, void *node) { 
+              PIC::ParticleBuffer::InitiateParticle(xPar, electronVelocity,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+              PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+            };
+
+            double *xPar_dev,*electronVelocity_dev,*ionVelocity_dev;
+
+            cudaMalloc(&xPar_dev,3*sizeof(double));
+            cudaMalloc(&electronVelocity_dev,3*sizeof(double));
+            cudaMalloc(&ionVelocity_dev,3*sizeof(double));
+            
+            cudaMemcpy(xPar_dev,xPar,3*sizeof(double),cudaMemcpyHostToDevice);
+            cudaMemcpy(electronVelocity_dev,electronVelocity,3*sizeof(double),cudaMemcpyHostToDevice);
+            cudaMemcpy(ionVelocity_dev,ionVelocity,3*sizeof(double),cudaMemcpyHostToDevice);
+
+
+            kernel_6<<<1,1>>>(InitParticle,xPar_dev,electronVelocity_dev,ionVelocity_dev,electronSpec,ionSpec,node);
+            cudaDeviceSynchronize();
+
+            cudaFree(xPar_dev);
+            cudaFree(electronVelocity_dev);
+            cudaFree(ionVelocity_dev);
+            #endif
             
           }
       //end of the particle injection block

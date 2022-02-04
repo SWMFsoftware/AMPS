@@ -13,9 +13,10 @@
 #ifndef _RND_
 #define _RND_
 
-#ifndef _DO_NOT_LOAD_GLOBAL_H_
+//#ifndef _DO_NOT_LOAD_GLOBAL_H_
 #include "global.h"
-#endif 
+//#endif 
+
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #include <omp.h>
@@ -31,9 +32,8 @@
 
 
 namespace RandomNumberGenerator {
-  extern unsigned long int rndLastSeed;
-  extern unsigned long int *rndLastSeedArray;
-
+  extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned long int rndLastSeed;
+  extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned long int *rndLastSeedArray;
 }
 
 
@@ -42,7 +42,9 @@ struct cRndSeedContainer {
 };
 
 void rnd_seed(int seed=-1);
+void rnd_seedGPU(int seed);
 
+_TARGET_HOST_ _TARGET_DEVICE_
 inline double rnd(cRndSeedContainer *SeedIn) {
   double res;
   unsigned long int Seed=SeedIn->Seed;
@@ -54,10 +56,10 @@ start:
   if (Seed==0) Seed=1;
   res=double(Seed/2147483648.0); //(pow(2,31) - 1) + 1
 
-  #if _RND_LIMIT_PRESITION_MODE_ == _RND_LIMIT_PRECISION_ON_
-  res-=fmod(res,_RND_LIMIT_PRECISION_);
-  if (res<=0.0) goto start;
-  #endif
+  if (_RND_LIMIT_PRESITION_MODE_ == _RND_LIMIT_PRECISION_ON_) { 
+    res-=fmod(res,_RND_LIMIT_PRECISION_);
+    if (res<=0.0) goto start;
+  }
 
 
   SeedIn->Seed=Seed;
@@ -65,9 +67,29 @@ start:
   return res;
 }
 
+#if _CUDA_MODE_ == _ON_
+_TARGET_DEVICE_
+inline double rndGPU() {
+  int thread=blockIdx.x*blockDim.x+threadIdx.x;
+  double res;
+  cRndSeedContainer SeedContainer;
+
+  SeedContainer.Seed=RandomNumberGenerator::rndLastSeedArray[thread];
+  res=rnd(&SeedContainer);
+  RandomNumberGenerator::rndLastSeedArray[thread]=SeedContainer.Seed;
+
+  return res;
+}
+#endif
+
+_TARGET_HOST_ _TARGET_DEVICE_
 inline double rnd() {
   double res;
   cRndSeedContainer SeedContainer;
+
+  #ifdef __CUDA_ARCH__
+  return rndGPU();
+  #endif
 
   #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   SeedContainer.Seed=RandomNumberGenerator::rndLastSeed;

@@ -340,7 +340,7 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
 
   //check the consistence of the particles lists
-  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
     CheckParticleLists(); 
   }
 
@@ -423,7 +423,7 @@ void PIC::TimeStepInternal::ExecutionTrackFieldSolverECSIM(double& ParticleMovin
   RunTimeSystemState::CumulativeTiming::ParticleMovingTime+=ParticleMovingTime;
 
   //check the consistence of the particles lists
-  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+  if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
     PIC::ParticleBuffer::CheckParticleList();
   }
 

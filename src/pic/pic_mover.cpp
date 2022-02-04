@@ -337,12 +337,11 @@ void LapentaMultiThreadedMoverGPU() {
 
   int this_thread_id=0,thread_id_table_size=1;
 
-  #ifndef __CUDA_ARCH__
-  PIC::ParticleBuffer::CreateParticleTable();
-  #endif
+//  #ifndef __CUDA_ARCH__
+//  PIC::ParticleBuffer::CreateParticleTable();
+//  #endif
 
 
-  static Thread::Sync::cBarrier barrier_middle(thread_id_table_size);
   double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
 
   memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
@@ -376,13 +375,11 @@ void LapentaMultiThreadedMoverGPU() {
 
 
   //shift particle locations
-  static Thread::Sync::cBarrier barrier(thread_id_table_size);
   static atomic<int> iblock_max;
   int iblock,iblock_max_thread;
   int increment;
 
   iblock_max=0;
-  barrier.Sync();
 
   increment=nlocal_blocks/(10*thread_id_table_size);
   if (increment==0) increment=nlocal_blocks/(5*thread_id_table_size);
@@ -617,6 +614,12 @@ void PIC::Mover::MoveParticles() {
   } 
 
   //launch multi-threaded Lapenta particle mover
+  #if _CUDA_MODE_ == _ON_
+  LapentaMultiThreadedMoverGPU();
+  return;
+  #endif
+ 
+  
 #if _PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
 #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
@@ -639,11 +642,6 @@ void PIC::Mover::MoveParticles() {
 #endif
 #endif
 
-
-#if _CUDA_MODE_ == _ON_
-  LapentaMultiThreadedMoverGPU();
-  return;
-#endif
 
   //the table of increments for accessing the cells in the block
   static bool initTableFlag=false;

@@ -467,7 +467,7 @@ void PIC::Parallel::ExchangeParticleData() {
     }
   };
 
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+  if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
     SortParticleList();
   }
 

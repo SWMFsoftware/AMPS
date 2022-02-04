@@ -1953,8 +1953,8 @@ void DeleteAttachedParticles();
 
     //the namespace contains data used in case when OpenMP is used
     namespace Thread {
-      extern int NTotalThreads;
-      extern long int *AvailableParticleListLength,*FirstPBufferParticle;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ int NTotalThreads;
+      extern _TARGET_DEVICE_ _CUDA_MANAGED_ long int *AvailableParticleListLength,*FirstPBufferParticle;
       void RebalanceParticleList();
     }
 
@@ -1965,6 +1965,8 @@ void DeleteAttachedParticles();
     #define _PIC_INIT_PARTICLE_MODE__MOVE_      1
 
     typedef void (*fUserInitParticle)(byte*);
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     int InitiateParticle(double *x,double *v,double* WeightCorrectionFactor,int *spec,byte* ParticleData,int InitMode,void *node,fUserInitParticle=NULL);
 
 
@@ -1978,9 +1980,17 @@ void DeleteAttachedParticles();
     inline unsigned int GetI(byte* ParticleDataStart) {
       unsigned char res;
 
+      #ifndef __CUDA_ARCH__
       res=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
-      res&=0b0011'1111;
+      #else 
+      char *source,*target;
 
+      target=(char*)&res;
+      source=(char*)((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      memcpy(target,source,sizeof(unsigned char));
+      #endif
+
+      res&=0b0011'1111;
       return res;
     }
     //.........................................................................
@@ -1988,12 +1998,21 @@ void DeleteAttachedParticles();
     inline unsigned int GetI(long int ptr) {
       unsigned char res;
 
+      #ifndef __CUDA_ARCH__
       res=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
-      res&=0b0011'1111;
+      #else
+      char *source,*target;
 
+      target=(char*)&res;
+      source=(char*)(((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))); 
+      memcpy(target,source,sizeof(unsigned char));
+      #endif
+
+      res&=0b0011'1111;
       return res;
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void SetI(int spec,byte* ParticleDataStart) {
       unsigned char flag,t=spec;
 
@@ -2001,13 +2020,30 @@ void DeleteAttachedParticles();
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
       #endif
 
-      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
-      flag&=0b1100'0000;
 
+      #ifdef __CUDA_ARCH__
+      char *source,*target;
+
+      source=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_);
+      target=(char*)&flag;
+      memcpy(target,source,sizeof(unsigned char));
+      #else
+      flag=*((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      #endif
+
+      flag&=0b1100'0000;
       t|=flag;
+
+      #ifdef __CUDA_ARCH__
+      source=(char*)&t;
+      target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_);
+      memcpy(target,source,sizeof(unsigned char));
+      #else
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
+      #endif
     }
     //.........................................................................
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetI(int spec,long int ptr) {
       unsigned char flag,t=spec;
 
@@ -2015,11 +2051,26 @@ void DeleteAttachedParticles();
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
       #endif
 
-      flag=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
-      flag&=0b1100'0000;
+      #ifdef __CUDA_ARCH__
+      char *source,*target;
 
+      source=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_);
+      target=(char*)&flag;
+      memcpy(target,source,sizeof(unsigned char));
+      #else
+      flag=*((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_));
+      #endif
+
+      flag&=0b1100'0000;
       t|=flag;
+
+      #ifdef __CUDA_ARCH__
+      source=(char*)&t;
+      target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_);
+      memcpy(target,source,sizeof(unsigned char));
+      #else
       *((unsigned char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
+      #endif
     }
     //-------------------------------------------------------------------------
 
@@ -2787,15 +2838,27 @@ void DeleteAttachedParticles();
     //the particle buffer procedure
     void Init(long int);
     long int GetMaxNPart();
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     long int GetAllPartNum();
+
+    _TARGET_HOST_ _TARGET_DEVICE_
+    long int GetAllPartNumGPU();
+
     long int GetTotalParticleNumber();
     long int GetParticleDataLength();
 
     _TARGET_DEVICE_ _TARGET_HOST_
     long int GetNewParticle(bool RandomThreadOpenMP=false);
 
+    _TARGET_DEVICE_ 
+    long int GetNewParticleGPU(bool RandomThread=false);
+
     _TARGET_DEVICE_ _TARGET_HOST_
     long int GetNewParticle(long int&,bool RandomThreadOpenMP=false);
+
+    _TARGET_DEVICE_ 
+    long int GetNewParticleGPU(long int&,bool RandomThread=false);
 
     /*DeleteParticle_withoutTrajectoryTermination() acts as  DeleteParticle() when _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_OFF_;
      if _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_ON_ DeleteParticle_withoutTrajectoryTermination() does not terminate sampling of the particle trajectory; the function should be used only
@@ -2810,11 +2873,18 @@ void DeleteAttachedParticles();
     _TARGET_DEVICE_ _TARGET_HOST_
     void DeleteParticle_withoutTrajectoryTermination(long int,bool RandomThreadOpenMP=false);
 
+    _TARGET_DEVICE_ 
+    void DeleteParticle_withoutTrajectoryTerminationGPU(long int,bool RandomThreadOpenMP=false);
+
     void DeleteAllParticles();
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     void CloneParticle(long int,long int);
+
+    _TARGET_DEVICE_ _TARGET_HOST_
     void CloneParticle(byte*,byte*);
 
+    _TARGET_DEVICE_ _TARGET_HOST_
     void ExcludeParticleFromList(long int,long int&);
 
     void SaveImageFile(int);
@@ -3981,6 +4051,7 @@ void DeleteAttachedParticles();
       return (double*)(p+DriftVelocityOffset);
     }
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV_drift(double *v_drift,ParticleBuffer::byte* p) {
       memcpy(p+DriftVelocityOffset,v_drift,3*sizeof(double));
     }
@@ -4721,7 +4792,11 @@ void DeleteAttachedParticles();
 
       void Init_BeforeParser();
       void Init();
+ 
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitiateMagneticMoment(int spec, double *x, double *v, long int ptr, void *node);
+
+      _TARGET_HOST_ _TARGET_DEVICE_
       void InitiateMagneticMoment(int spec, double *x, double *v, PIC::ParticleBuffer::byte *ParticleData, void *node);
 
       //mover
