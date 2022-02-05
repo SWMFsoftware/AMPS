@@ -38,8 +38,10 @@
 
 #include "PeriodicBCTest.dfn"
 
+#if _CUDA_MODE_ == _ON_
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#endif
 
 
 //for lapenta mover
