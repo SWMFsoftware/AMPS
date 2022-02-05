@@ -486,6 +486,7 @@ namespace Vector3D {
 #endif
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double Length(double *x) {
     return sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   }
@@ -953,6 +954,26 @@ void amps_new_managed(T* &buff,int length) {
 }
 
 template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_new_device(T* &buff,int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  #if _CUDA_MODE_ == _ON_
+  cudaMalloc(&t,length*sizeof(T));
+  #else
+  buff=new T[length];
+  return;
+  #endif
+
+
+  buff=t;
+
+  for (int i=0;i<length;i++) new(buff+i)T();
+}
+
+template<class T>
 void amps_malloc_managed(T* &buff,long int length) {
   T* t;
 
@@ -961,8 +982,23 @@ void amps_malloc_managed(T* &buff,long int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T));
   #else
-//  t=(T*)malloc(length*sizeof(T));
+  buff=new T[length];
+  return;
+  #endif
 
+  buff=t;
+}
+
+template<class T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_malloc_device(T* &buff,long int length) {
+  T* t;
+
+  if (buff!=NULL) exit(__LINE__,__FILE__,"Error: the buffer is already allocated");
+
+  #if _CUDA_MODE_ == _ON_
+  cudaMalloc(&t,length*sizeof(T));
+  #else
   buff=new T[length];
   return;
   #endif
@@ -983,6 +1019,19 @@ void amps_free_managed(T* &buff) {
   buff=NULL;
 }
 
+template<typename T>
+_TARGET_HOST_ _TARGET_DEVICE_
+void amps_free_device(T* &buff) {
+  if (buff==NULL) exit(__LINE__,__FILE__,"Error: the buffer is not allocated");
+
+  #if _CUDA_MODE_ == _ON_
+  cudaFree(buff);
+  #else
+  delete [] buff;
+  #endif
+
+  buff=NULL;
+}
 
 
 template<class T>
