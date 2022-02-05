@@ -1842,7 +1842,10 @@ void DeleteAttachedParticles();
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ double MolMass[_TOTAL_SPECIES_NUMBER_];
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ double ElectricChargeTable[_TOTAL_SPECIES_NUMBER_];
 
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetMass(int spec) {return MolMass[spec];}
+
+    _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetElectricCharge(int spec) {return ElectricChargeTable[spec];}
 
     inline void SetMass(double t,int spec) {MolMass[spec]=t;}

@@ -74,8 +74,26 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   #endif
 
-  char *p=(char*)ParticleDataBuffer;
-  for (long int i=0;i<ParticleDataLength*MaxNPart;i++) p[i]=0;
+  auto ClearParticleBuffer = [=] _TARGET_HOST_ _TARGET_DEVICE_ () {
+    char *p=(char*)ParticleDataBuffer;
+    long int i;
+
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    for (i=id;i<ParticleDataLength*MaxNPart;i+=increment) p[i]=0;
+  };
+
+  #if _CUDA_MODE_ == _ON_ 
+  kernel<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(ClearParticleBuffer); 
+  cudaDeviceSynchronize();
+  #else
+  ClearParticleBuffer();
+  #endif
 
   if (ParticleDataBuffer==NULL) {
     char msg[500];
@@ -87,13 +105,33 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   if (PIC::ThisThread==0) printf("$PREFIX: The total particle buffer length=%li\n",BufrerLength);
 
   //init the list of particles in the buffer
-  for (long int ptr=0;ptr<MaxNPart-1;ptr++) {
-    SetNext(ptr+1,ptr);
-    SetParticleDeleted(ptr);
-  }
+  auto InitParticles = [=] _TARGET_HOST_ _TARGET_DEVICE_  () {
+    long int ptr;
 
-  SetNext(-1,MaxNPart-1);
-  SetParticleDeleted(MaxNPart-1);
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+    for (ptr=id;ptr<MaxNPart-1;ptr+=increment) {
+      SetNext(ptr+1,ptr);
+      SetParticleDeleted(ptr);
+    }
+
+    if (id==0) {
+      SetNext(-1,MaxNPart-1);
+      SetParticleDeleted(MaxNPart-1);
+    }
+  };
+
+  #if _CUDA_MODE_ == _ON_
+  kernel<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(InitParticles);
+  cudaDeviceSynchronize();
+  #else
+  InitParticles();
+  #endif
 
 
   if (_CUDA_MODE_ == _ON_) {

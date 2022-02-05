@@ -2032,6 +2032,8 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
           }
         }
 
+
+
         double matrixConst = chargeQ*QdT_over_2m/CellVolume;
 
         for (int iCorner=0; iCorner<8; iCorner++){
@@ -2090,6 +2092,11 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
           }
         }
 
+#ifdef __CUDA_ARCH__
+__syncwarp;
+#endif
+
+
         if (_PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_== _PIC_MODE_ON_) {
           //collect species data
           for (int iCorner=0; iCorner<8; iCorner++){
@@ -2101,6 +2108,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
             }
           }
         }
+
 
         //collect massmatrix
         for (int iCorner=0; iCorner<8; iCorner++){
