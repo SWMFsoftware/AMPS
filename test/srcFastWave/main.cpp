@@ -43,7 +43,6 @@
 #include "device_launch_parameters.h"
 #endif
 
-
 //for lapenta mover
 
 #include "pic.h"
@@ -127,6 +126,10 @@ long int PrepopulateDomain() {
   double lambda=32.0;
  
   waveNumber[0]=2*Pi/lambda;
+
+  double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
+  int ParticleDataTableIndex=0,ParticleDataTableLength=0;
+
   
   int nBlock[3]={_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_};
 
@@ -186,6 +189,9 @@ long int PrepopulateDomain() {
     ParticleWeight=node->block->GetLocalParticleWeight(ionSpec);
     #endif
 
+//    double *ParticleDataTable=NULL,*ParticleDataTable_dev=NULL;
+//    int ParticleDataTableIndex=0,ParticleDataTableLength=0;
+
     for (kCell=0;kCell<nBlock[2];kCell++) for (jCell=0;jCell<nBlock[1];jCell++) for (iCell=0;iCell<nBlock[0];iCell++) {
 	  //      nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(iCell,jCell,kCell);
 
@@ -244,6 +250,20 @@ long int PrepopulateDomain() {
           nLocalInjectedParticles+=npart*2;
           //std::cout<<"need to inject npart: "<<npart<<std::endl;
           
+          #if _CUDA_MODE_ == _ON_
+          if (ParticleDataTableLength<npart) {
+            if (ParticleDataTable!=NULL) {
+              delete [] ParticleDataTable;
+              cudaFree(ParticleDataTable_dev);
+            }
+
+            ParticleDataTable=new double [9*npart];
+            cudaMalloc(&ParticleDataTable_dev,9*npart*sizeof(double));
+          }
+          
+          ParticleDataTableIndex=0;
+          #endif 
+
           while (npart-->0) {
             double xPar[3];
             xPar[0]=x[0]+dx[0]*(rnd()-0.5);
@@ -280,35 +300,43 @@ long int PrepopulateDomain() {
             PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
             #else 
            
-            auto InitParticle = [=] _TARGET_DEVICE_ (double *xPar,double *electronVelocity,double *ionVelocity, int electronSpec, int ionSpec, void *node) { 
-              PIC::ParticleBuffer::InitiateParticle(xPar, electronVelocity,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-              PIC::ParticleBuffer::InitiateParticle(xPar, ionVelocity,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
-            };
+            memcpy(ParticleDataTable+0+9*ParticleDataTableIndex,xPar,3*sizeof(double));
+            memcpy(ParticleDataTable+3+9*ParticleDataTableIndex,electronVelocity,3*sizeof(double));
+            memcpy(ParticleDataTable+6+9*ParticleDataTableIndex,ionVelocity,3*sizeof(double));
 
-            double *xPar_dev,*electronVelocity_dev,*ionVelocity_dev;
-
-            cudaMalloc(&xPar_dev,3*sizeof(double));
-            cudaMalloc(&electronVelocity_dev,3*sizeof(double));
-            cudaMalloc(&ionVelocity_dev,3*sizeof(double));
-            
-            cudaMemcpy(xPar_dev,xPar,3*sizeof(double),cudaMemcpyHostToDevice);
-            cudaMemcpy(electronVelocity_dev,electronVelocity,3*sizeof(double),cudaMemcpyHostToDevice);
-            cudaMemcpy(ionVelocity_dev,ionVelocity,3*sizeof(double),cudaMemcpyHostToDevice);
-
-
-            kernel_6<<<1,1>>>(InitParticle,xPar_dev,electronVelocity_dev,ionVelocity_dev,electronSpec,ionSpec,node);
-            cudaDeviceSynchronize();
-
-            cudaFree(xPar_dev);
-            cudaFree(electronVelocity_dev);
-            cudaFree(ionVelocity_dev);
+            ParticleDataTableIndex++;
             #endif
             
           }
       //end of the particle injection block
       //std::cout<<"finished injecting npart: "<<npart<<std::endl;
+      
+     #if _CUDA_MODE_ == _ON_ 
+          auto InitParticle = [=] _TARGET_DEVICE_ (double *ParticleDataTable, int ParticleDataTableIndex,int electronSpec, int ionSpec, void *node) {
+            int id=blockIdx.x*blockDim.x+threadIdx.x;
+            int increment=gridDim.x*blockDim.x;
+
+            for (int i=id;i<ParticleDataTableIndex;i+=increment) {
+              PIC::ParticleBuffer::InitiateParticle(ParticleDataTable+0+9*i,ParticleDataTable+3+9*i,NULL,&electronSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+              PIC::ParticleBuffer::InitiateParticle(ParticleDataTable+0+9*i,ParticleDataTable+6+9*i,NULL,&ionSpec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+            }
+          };
+
+
+          cudaMemcpy(ParticleDataTable_dev,ParticleDataTable,9*ParticleDataTableIndex*sizeof(double),cudaMemcpyHostToDevice);
+
+          kernel_5<<<1,1>>>(InitParticle,ParticleDataTable_dev,ParticleDataTableIndex,electronSpec,ionSpec,node);
+          cudaDeviceSynchronize();
+      #endif
+      
+      
         }
         }
+
+    #if _CUDA_MODE_ == _ON_
+    delete [] ParticleDataTable;
+    cudaFree(ParticleDataTable_dev);
+    #endif
 
   MPI_Allreduce(&nLocalInjectedParticles,&nGlobalInjectedParticles,1,MPI_LONG,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
   printf("particles prepopulated!\n");
