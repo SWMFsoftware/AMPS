@@ -908,27 +908,15 @@ void PIC::Sampling::ProcessCell(int i, int j, int k,cTreeNodeAMR<PIC::Mesh::cDat
 
 
 void PIC::Sampling::SamplingManager(int **localSimulatedSpeciesParticleNumber) {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  int i,j,k;
-  PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
-  
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for schedule(dynamic,1) reduction(+:nTotalSampledParticles) default(none) \
-private (s,i,j,k,idim,LocalCellNumber,ptr,ptrNext,ParticleData, ParticleDataNext,SamplingData,v,LocalParticleWeight,Speed2,v2,node, \
-    FirstCellParticleTable, \
-    lParallelTemperatureSampleDirection,l0TangentialTemperatureSampleDirection,l1TangentialTemperatureSampleDirection)  \
-    shared (localSimulatedSpeciesParticleNumber,PIC::Mesh::mesh, \
-        DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable, \
-        PIC::IDF::_VIBRATIONAL_ENERGY_SAMPLE_DATA_OFFSET_, PIC::IDF::_ROTATIONAL_ENERGY_SAMPLE_DATA_OFFSET_,PIC::IDF::_TOTAL_SAMPLE_PARTICLE_WEIGHT_SAMPLE_DATA_OFFSET_,  \
-        PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity2,PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity,PIC::Mesh::DatumParticleSpeed,PIC::Mesh::DatumParticleVelocity2,PIC::Mesh::DatumParticleVelocity2Tensor,PIC::Mesh::DatumParticleVelocity, \
-        PIC::Mesh::DatumNumberDensity,PIC::Mesh::DatumParticleNumber,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::Mesh::sampleSetDataLength,PIC::ParticleBuffer::ParticleDataLength, \
-        PIC::Mesh::DatumParticleWeight, PIC::Sampling::constNormalDirection__SampleParallelTangentialTemperature, \
-        PIC::IDF::nTotalVibtationalModes, cout)
-
+#pragma omp parallel for schedule(dynamic,1) default(none) \ 
+shared (DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable,localSimulatedSpeciesParticleNumber)
 #endif //_COMPILATION_MODE_
   for (int iGlobalCell=0;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell++) {
     int iThreadOpenMP=0;
     int iNode,ii=iGlobalCell;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int i,j,k;
 
     iNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
     ii-=iNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
