@@ -916,24 +916,35 @@ if (ptr!=-1) {
 void PIC::Sampling::GetParticleNumberParallelLoadMeasure() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
-  
-  for (int iNode=0;iNode<DomainBlockDecomposition::nLocalBlocks;iNode++) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[iNode];
+
+  for (int iGlobalCell=0;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    PIC::Mesh::cDataBlockAMR *block;
+
+    int ii=iGlobalCell;
+    int i,j,k;
+    int iNode;
+    int t;
+
+    t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    iNode=ii/t;
+    ii=ii%t;
+
+    t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    k=ii/t;
+    ii=ii%t;
+
+    j=ii/_BLOCK_CELLS_X_;
+    i=ii%_BLOCK_CELLS_X_;
+
+    node=DomainBlockDecomposition::BlockTable[iNode];
 
     if (node->block!=NULL) {
-      long int *FirstCellParticleTable=node->block->FirstCellParticleTable;
+      long int ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
-      for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-        for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
-          for (i=0;i<_BLOCK_CELLS_X_;i++) {
-            ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-            while (ptr!=-1) {
-              node->ParallelLoadMeasure++;
-              ptr=PIC::ParticleBuffer::GetNext(ptr);
-            }
-          }
-        }
+      while (ptr!=-1) {
+        node->ParallelLoadMeasure++;
+        ptr=PIC::ParticleBuffer::GetNext(ptr);
       }
     }
   }
