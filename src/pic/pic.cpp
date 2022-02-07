@@ -643,7 +643,7 @@ int PIC::TimeStep() {
 //====================================================
 //the general sampling procedure
 
-void PIC::Sampling::ProcessCell(int i, int j, int k,int **localSimulatedSpeciesParticleNumber,int&  TreeNodeTotalParticleNumber,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, long int& nTotalSampledParticles,int iThreadOpenMP) {
+void PIC::Sampling::ProcessCell(int i, int j, int k,int **localSimulatedSpeciesParticleNumber,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int iThread) {
 
 PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
 PIC::Mesh::cDataCenterNode *cell;
@@ -709,11 +709,6 @@ if (ptr!=-1) {
   while (ptrNext!=-1) {
     ptr=ptrNext;
     ParticleData=ParticleDataNext;
-    nTotalSampledParticles++;
-
-    #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
-    TreeNodeTotalParticleNumber++;
-    #endif
 
     ptrNext=PIC::ParticleBuffer::GetNext(ParticleData);
 
@@ -789,7 +784,7 @@ if (ptr!=-1) {
       v[2]=0.0;
     }
 
-    localSimulatedSpeciesParticleNumber[iThreadOpenMP][s]++;
+    localSimulatedSpeciesParticleNumber[iThread][s]++;
 
     LocalParticleWeight=block->GetLocalParticleWeight(s);
     LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
@@ -935,7 +930,6 @@ void PIC::Sampling::GetParticleNumberParallelLoadMeasure() {
 
             while (ptr!=-1) {
               node->ParallelLoadMeasure++;
-//              nTotalParticleNumber++;
               ptr=PIC::ParticleBuffer::GetNext(ptr);
             }
           }
@@ -945,23 +939,21 @@ void PIC::Sampling::GetParticleNumberParallelLoadMeasure() {
   }
 }
 
-void PIC::Sampling::SamplingManager(int **localSimulatedSpeciesParticleNumber,long int& nTotalSampledParticles) {
-
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for schedule(dynamic,1) reduction(+:nTotalSampledParticles) default(none) \
-shared (DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable,localSimulatedSpeciesParticleNumber)
-#endif //_COMPILATION_MODE_
+void PIC::Sampling::SamplingManager(int **localSimulatedSpeciesParticleNumber) {
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp parallel for schedule(dynamic,1)  default(none) \
+    shared (DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable,localSimulatedSpeciesParticleNumber)
+  #endif //_COMPILATION_MODE_
   for (int iGlobalCell=0;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
     PIC::Mesh::cDataBlockAMR *block;
-  
+
     int ii=iGlobalCell;
     int i,j,k;
     int nLocalNode;
-    
+
     int t;
-    
+
     t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
     nLocalNode=ii/t;
     ii=ii%t;
@@ -974,75 +966,21 @@ shared (DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTa
     i=ii%_BLOCK_CELLS_X_;
 
 
-      
-  int iThreadOpenMP=0;
-  node=DomainBlockDecomposition::BlockTable[nLocalNode];
 
-  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  iThreadOpenMP=omp_get_thread_num();
-  #endif
-
-  block=node->block;
-  if (!block) continue;
-//  FirstCellParticleTable=block->FirstCellParticleTable;
-
-  int TreeNodeTotalParticleNumber=0;
-
-
-
-//  for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-//    for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
-  //    for (i=0;i<_BLOCK_CELLS_X_;i++) {
-        ProcessCell(i,j,k,localSimulatedSpeciesParticleNumber,TreeNodeTotalParticleNumber,node,nTotalSampledParticles,iThreadOpenMP);
-        
- //     }
- //   }
- // }
-        
-
-
-}
- 
-  /*
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel for schedule(dynamic,1) default(none) \
-shared (DomainBlockDecomposition::nLocalBlocks,DomainBlockDecomposition::BlockTable,localSimulatedSpeciesParticleNumber)
-#endif //_COMPILATION_MODE_
-  for (int iGlobalCell=0;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell++) {
     int iThreadOpenMP=0;
-    int iNode,ii=iGlobalCell;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    int i,j,k;
-
-    iNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=iNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-
-    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-
-    j=ii/_BLOCK_CELLS_X_;
-    ii-=j*_BLOCK_CELLS_X_;
-
-    i=ii;
-
-    node=DomainBlockDecomposition::BlockTable[iNode];
+    node=DomainBlockDecomposition::BlockTable[nLocalNode];
 
     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
     iThreadOpenMP=omp_get_thread_num();
     #endif
 
-    if (node->block==NULL) continue;
+    block=node->block;
+    if (!block) continue;
 
-  ///  ProcessCell(i,j,k,node,localSimulatedSpeciesParticleNumber,iThreadOpenMP);
-    
     int TreeNodeTotalParticleNumber=0;
-    
-    ProcessCell(i,j,k,localSimulatedSpeciesParticleNumber,TreeNodeTotalParticleNumber,node,nTotalSampledParticles,iThreadOpenMP);
 
-  }
-
-  */
-  
+    ProcessCell(i,j,k,localSimulatedSpeciesParticleNumber,node,iThreadOpenMP);
+  }  
 }
 
 
@@ -1055,30 +993,6 @@ void PIC::Sampling::Sampling() {
     long int nTotalParticleNumber=0;
     
     GetParticleNumberParallelLoadMeasure();
-
-//    for (int iNode=0;iNode<DomainBlockDecomposition::nLocalBlocks;iNode++) {
-//      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[iNode];
-//
-//      if (node->block!=NULL) {
-//        long int *FirstCellParticleTable=node->block->FirstCellParticleTable;
-//
-//        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-//          for (j=0;j<_BLOCK_CELLS_Y_;j++)  {
-//            for (i=0;i<_BLOCK_CELLS_X_;i++) {
-//              ptr=FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-//
-//              while (ptr!=-1) {
-//                node->ParallelLoadMeasure++;
-//                nTotalParticleNumber++;
-//                ptr=PIC::ParticleBuffer::GetNext(ptr);
-//              }
-//            }
-//          }
-//        }
-//      }
-//    }
-//
-//    if (nTotalParticleNumber!=PIC::ParticleBuffer::GetAllPartNum()) exit(__LINE__,__FILE__,"The number of the sampled particles is different from that in the particle buffer");
   }
 
   if ((_PIC_SAMPLING_MODE_ == _PIC_MODE_ON_)&&(RuntimeSamplingSwitch==true)) { //<-- begining of the particle sample section
@@ -1113,26 +1027,15 @@ void PIC::Sampling::Sampling() {
       }
     }
 
-    //parallel efficientcy measure
-    //#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
-    //  long int TreeNodeTotalParticleNumber;
-    //#elif _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-    //  double TreeNodeProcessingTime;
-    //#endif
-
     //the table of cells' particles
     long int *FirstCellParticleTable;
 
 
-    #if _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__BETWEEN_ITERATIONS_
-    //go through the 'local nodes'
-    //  while (node!=NULL) {
+    #if _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__BETWEEN_ITERATIONS_ 
+    SamplingManager(localSimulatedSpeciesParticleNumber);
+
+    nTotalSampledParticles=0;
     
-    
-    SamplingManager(localSimulatedSpeciesParticleNumber,nTotalSampledParticles);
-
-
-
     //collect the model parricle numbers individual for each species from determined by all OpenMP threads
     for (int s=0;s<PIC::nTotalSpecies;s++) {
       SimulatedSpeciesParticleNumber[s]=0;
@@ -1140,8 +1043,9 @@ void PIC::Sampling::Sampling() {
       for (int iThreadOpenMP=0;iThreadOpenMP<PIC::nTotalThreadsOpenMP;iThreadOpenMP++) {
         SimulatedSpeciesParticleNumber[s]+=localSimulatedSpeciesParticleNumber[iThreadOpenMP][s];
       }
+      
+      nTotalSampledParticles+=SimulatedSpeciesParticleNumber[s];
     }
-
 
     #elif _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__DURING_PARTICLE_MOTION_
     //do nothing
@@ -1166,23 +1070,10 @@ void PIC::Sampling::Sampling() {
       int nfunc,nfuncTotal=PIC::IndividualModelSampling::SamplingProcedure.size();
 
       for (nfunc=0;nfunc<nfuncTotal;nfunc++) PIC::IndividualModelSampling::SamplingProcedure[nfunc]();
-
-      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-      #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-      CatchOutLimitSampledValue();
-      #endif
-      #endif
     }
 
     //sample local data sets of the user defined functions
     for (int nfunc=0;nfunc<PIC::Sampling::ExternalSamplingLocalVariables::SamplingRoutinesRegistrationCounter;nfunc++) PIC::Sampling::ExternalSamplingLocalVariables::SamplingProcessor[nfunc]();
-
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-    CatchOutLimitSampledValue();
-    #endif
-    #endif
-
 
     //sample the distribution functions
     #if _SAMPLING_DISTRIBUTION_FUNCTION_MODE_ == _SAMPLING_DISTRIBUTION_FUNCTION_ON_
@@ -1192,11 +1083,6 @@ void PIC::Sampling::Sampling() {
     if (_PIC_COUPLER_MODE_!=_PIC_COUPLER_MODE__OFF_) if (PIC::PitchAngleDistributionSample::SamplingInitializedFlag==true) PIC::PitchAngleDistributionSample::SampleDistributionFnction();
     #endif
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-    CatchOutLimitSampledValue();
-    #endif
-    #endif
 
     //Sample size distribution parameters of dust grains
     #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -1221,24 +1107,6 @@ void PIC::Sampling::Sampling() {
       PIC::Mesh::switchSamplingBuffers();
       LastSampleLength=CollectingSampleCounter;
       CollectingSampleCounter=0;
-
-/*      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-        PIC::Mesh::cDataBlockAMR *block=node->block;
-
-        if (!block) continue;
-        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-            for (i=0;i<_BLOCK_CELLS_X_;i++) {
-              LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
-              PIC::Mesh::flushCollectingSamplingBuffer(block->GetCenterNode(LocalCellNumber));
-            }
-
-            if (DIM==1) break;
-          }
-
-          if ((DIM==1)||(DIM==2)) break;
-        }
-      }*/
 
       //flush sampling buffers in the internal surfaces installed into the mesh
   #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_OFF_
@@ -1555,58 +1423,7 @@ void PIC::Sampling::Sampling() {
 #endif
 
 
-//=====================  DEBUG   ========================
-    /*
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    //output the data into a file to check the new cells' distribution
-    for (s=0;s<PIC::nTotalSpecies;s++) {
-      PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-      sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-CompleteSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
-
-      if (PIC::Mesh::mesh->ThisThread==0) {
-        fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
-        fflush(stdout);
-      }
-
-      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
-
-      if (PIC::Mesh::mesh->ThisThread==0) {
-        fprintf(PIC::DiagnospticMessageStream,"done.\n");
-        fflush(stdout);
-      }
-    }
-
-    PIC::Mesh::switchSamplingBuffers();
-
-    for (s=0;s<PIC::nTotalSpecies;s++) {
-      PIC::MolecularData::GetChemSymbol(ChemSymbol,s);
-      sprintf(fname,"pic.%s.s=%i.out=%ld-redistributed-load-TempSample.dat",ChemSymbol,s,DataOutputFileNumber-1);
-
-      if (PIC::Mesh::mesh->ThisThread==0) {
-        fprintf(PIC::DiagnospticMessageStream,"printing output file: %s.........",fname);
-        fflush(stdout);
-      }
-
-      PIC::Mesh::mesh->outputMeshDataTECPLOT(fname,s);
-
-      if (PIC::Mesh::mesh->ThisThread==0) {
-        fprintf(PIC::DiagnospticMessageStream,"done.\n");
-        fflush(stdout);
-      }
-    }
-
-    PIC::Mesh::switchSamplingBuffers();
-#endif
-*/
-//=====================  END DEBUG ===========================
-
-
   }
-
-
-
-
-
 }
 
 
