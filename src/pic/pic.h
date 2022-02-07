@@ -4201,11 +4201,11 @@ void DeleteAttachedParticles();
     extern bool RuntimeSamplingSwitch;
 
     void Sampling();
-    void ProcessCell(int i, int j, int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int **localSimulatedSpeciesParticleNumber,int iThread);
-    void SamplingManager(int **localSimulatedSpeciesParticleNumber);
-    void SamplingManagerGPU();
-    void GetParticleNumberParallelLoadMeasure();
     
+    void ProcessCell(int i, int j, int k,int **localSimulatedSpeciesParticleNumber,int&  TreeNodeTotalParticleNumber,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, long int& nTotalSampledParticles,int iThreadOpenMP);       
+    void SamplingManager(int **localSimulatedSpeciesParticleNumber,long int& nTotalSampledParticles);
+
+    void GetParticleNumberParallelLoadMeasure();
     void CatchOutLimitSampledValue();
   }
 
