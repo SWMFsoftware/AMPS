@@ -7620,7 +7620,9 @@ void DeleteAttachedParticles();
         //send particles from 'ghost' to 'real' blocks
         void ExchangeParticles();
         void ExchangeParticlesMPI(cBlockPairTable& BlockPair);
-        void ExchangeParticlesLocal(cBlockPairTable& BlockPair);
+
+        _TARGET_GLOBAL_
+        void ExchangeParticlesLocal(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock);
 
         //pointer to user-defined local resolution function
         typedef double (*fUserResolutionFunction)(double*);

@@ -60,9 +60,20 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
     GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
     RealBlockThread=BlockPairTable[iBlockPair].RealBlock->Thread;
 
+
     if ((GhostBlockThread==PIC::ThisThread)||(RealBlockThread==PIC::ThisThread)) {
       if (GhostBlockThread==RealBlockThread) {
-        ExchangeParticlesLocal(BlockPairTable[iBlockPair]);
+
+
+       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPairTable[iBlockPair].GhostBlock;
+       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock=BlockPairTable[iBlockPair].RealBlock;
+
+        #if _CUDA_MODE_ == _ON_
+        ExchangeParticlesLocal<<<1,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_>>>(RealBlock,GhostBlock);
+        cudaDeviceSynchronize();
+        #else
+        ExchangeParticlesLocal(RealBlockThread,GhostBlockThread);
+        #endif
       }
       else {
         ExchangeParticlesMPI(BlockPairTable[iBlockPair]);
@@ -71,29 +82,58 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
   }
 }
 
-void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cBlockPairTable& BlockPair) {
+_TARGET_GLOBAL_ 
+void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock) {
   int i,j,k,idim;
   long int ptr,NextPtr;
   double *x;
 
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPair.GhostBlock;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock=BlockPair.RealBlock;
+  #ifdef __CUDA_ARCH__
+  int id=blockIdx.x*blockDim.x+threadIdx.x;
+  int increment=gridDim.x*blockDim.x;
+  #else
+  int id=0,increment=1;
+  #endif
 
   double dx[3]; //displacement from realblock to ghostbloock
+
   for (int i=0;i<3;i++) dx[i]=RealBlock->xmin[i]-GhostBlock->xmin[i];
 
+//  #ifdef __CUDA_ARCH__
+//   __syncthreads();
+//  #endif
+
+
   //attach particle list from the 'ghost' block to the 'real block'
-  for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
+  
+  for (int icell=id;icell<_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;icell+=increment) {
+    int t,ii=icell; 
+    double x[3];
+  
+    t=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_;
+    k=ii/t;
+    ii=ii%t;
+
+    j=ii/_BLOCK_CELLS_X_;
+    i=ii%_BLOCK_CELLS_X_; 
+
+    if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
+  
+//  for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
     //find the last particle in the block
     NextPtr=PIC::ParticleBuffer::GetNext(ptr);
 
     //shift the location of the first particle
-    for (idim=0,x=PIC::ParticleBuffer::GetX(ptr);idim<3;idim++) {
+    PIC::ParticleBuffer::GetX(x,ptr);
+
+    for (idim=0;idim<3;idim++) {
       x[idim]+=dx[idim];
 
       if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
       if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
     }  
+
+    PIC::ParticleBuffer::SetX(x,ptr);
 
     if (NextPtr!=-1) {
       //the list containes more than one particle => process them
@@ -101,12 +141,16 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cBlockPairTable
         ptr=NextPtr;
 
         //shift location of the particle
-        for (idim=0,x=PIC::ParticleBuffer::GetX(ptr);idim<3;idim++) {
+        PIC::ParticleBuffer::GetX(x,ptr); 
+        
+        for (idim=0;idim<3;idim++) {
           x[idim]+=dx[idim];
  
           if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
           if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
         }
+
+        PIC::ParticleBuffer::SetX(x,ptr);
 
         //get the next particle in the list
         NextPtr=PIC::ParticleBuffer::GetNext(ptr);
@@ -123,6 +167,13 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cBlockPairTable
 
     RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
     GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
+  }
+
+  #ifdef __CUDA_ARCH__
+   __syncwarp;
+  #endif
+
+
   }
 }
 

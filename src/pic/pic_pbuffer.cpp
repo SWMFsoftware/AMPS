@@ -57,7 +57,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   #if defined(__linux__)
   if ( _CUDA_MODE_ == _ON_) {
-    amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+    amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   }
   else {
     switch (_ALIGN_STATE_VECTORS_) {
