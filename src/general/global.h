@@ -35,7 +35,7 @@ extern MPI_Comm MPI_GLOBAL_COMMUNICATOR;
 #define _CUDA_CONSTANT_
 #define _CUDA_SHARED_
 
-#define _CUDA_BLOCKS_  250 
+#define _CUDA_BLOCKS_  123 
 #define _CUDA_THREADS_ 64  
 
 #define select_namespace \

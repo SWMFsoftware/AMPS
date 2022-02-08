@@ -142,20 +142,28 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
     amps_new_managed<long int>(Thread::AvailableParticleListLength,Thread::NTotalThreads);
     amps_new_managed<long int>(Thread::FirstPBufferParticle,Thread::NTotalThreads);
 
-    nParticlePerThread=MaxNPart/Thread::NTotalThreads;
+    auto InitThreadsData = [] _TARGET_HOST_ _TARGET_DEVICE_ () { 
+      int nParticlePerThread=MaxNPart/Thread::NTotalThreads;
+      int nStartPart,ListLength; 
 
-    for (thread=0;thread<Thread::NTotalThreads;thread++) {
-      long int nStartPart,ListLength;
+      for (int thread=0;thread<Thread::NTotalThreads;thread++) {
+        long int nStartPart,ListLength;
 
-      nStartPart=nParticlePerThread*thread;
-      ListLength=(thread!=Thread::NTotalThreads-1) ? nParticlePerThread : MaxNPart-nParticlePerThread*(Thread::NTotalThreads-1);
+        nStartPart=nParticlePerThread*thread;
+        ListLength=(thread!=Thread::NTotalThreads-1) ? nParticlePerThread : MaxNPart-nParticlePerThread*(Thread::NTotalThreads-1);
 
-      SetPrev(-1,nStartPart);
-      if (nStartPart!=0) SetNext(-1,nStartPart-1);
+        SetPrev(-1,nStartPart);
+        if (nStartPart!=0) SetNext(-1,nStartPart-1);
 
-      Thread::AvailableParticleListLength[thread]=ListLength;
-      Thread::FirstPBufferParticle[thread]=nStartPart;
-    }
+        Thread::AvailableParticleListLength[thread]=ListLength;
+        Thread::FirstPBufferParticle[thread]=nStartPart;
+      }
+    };
+
+    #if _CUDA_MODE_ == _ON_
+    kernel<<<1,1>>>(InitThreadsData);
+    cudaDeviceSynchronize();
+    #endif 
   }
 
 

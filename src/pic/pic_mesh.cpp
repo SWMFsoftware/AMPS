@@ -30,6 +30,9 @@ namespace PIC {
     cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity(3,"\"Vpar [m/s]\", \"Vt0 [m/s]\", \"Vt1 [m/s]\"",false);
     cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2(3,"\"Vpar^2 [(m/s)^2]\", \"Vt0^2 [(m/s)^2]\", \"Vt1^2 [(m/s)^2]\"",false);
 
+    //Datum table to be used on GPU
+    _TARGET_DEVICE_ _CUDA_MANAGED_ cDatumTableGPU *DatumTableGPU=NULL;
+
     // vector of active sampling data
     vector<PIC::Datum::cDatumSampled*> DataSampledCenterNodeActive;
     // vector of active derived data
@@ -58,7 +61,7 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::cDataBlockAMR_static_data::tempTem
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset=0;
 
 //the offsets to the sampled data stored in 'center nodes'
-int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::completedCellSampleDataPointerOffset=0,PIC::Mesh::collectingCellSampleDataPointerOffset=0;
 int PIC::Mesh::sampleSetDataLength=0;
 
 //domain block decomposition used in OpenMP loops

@@ -447,6 +447,7 @@ namespace Vector3D {
 
 
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void CrossProduct(double *res,double *a,double *b) {
 
     /*
@@ -491,18 +492,22 @@ namespace Vector3D {
     return sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void MultiplyScalar(double t,double *x) {
     for (int i=0;i<3;i++) x[i]*=t;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void MultiplyScalar(double* res,double *source,double t=1.0) {
     for (int i=0;i<3;i++) res[i]=t*source[i];
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void Copy(double *target,double *source,int length=3) {
     memcpy(target,source,length*sizeof(double));
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double DotProduct(double *a,double *b) {
     int i;
     double res=0.0;
@@ -511,6 +516,7 @@ namespace Vector3D {
     return res;
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double MixedProduct(double *a,double *b,double *c) {
     double l[3];
 
@@ -518,6 +524,7 @@ namespace Vector3D {
     return DotProduct(a,l);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void Orthogonalize(double *PrimaryVector,double *OrthogonalVector) {
      double l2=0.0,c=0.0;
      int i;
@@ -538,6 +545,7 @@ namespace Vector3D {
      }
    }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline double ParallelComponentLength(double *Vector,double *Axis) {
     int i;
     double l=0.0,c=0.0;
@@ -550,6 +558,7 @@ namespace Vector3D {
     return c/sqrt(l);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetComponents(double& ParallelComponent,double& NormalComponent,double *Vector,double *Axis) {
     int i;
     double l02=0.0,l0=0.0,c0=0.0,c1=0.0,t;
@@ -578,6 +587,7 @@ namespace Vector3D {
  
 
   //determine an orthogonal frame of rederence: z is input; e1 and e2 and orthogonal to z and form a right handed frame of reference
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetNormFrame(double *e0,double *e1,double *z) {
     double l,e[3];
     int idim;
@@ -596,6 +606,7 @@ namespace Vector3D {
     CrossProduct(e1,z,e0);
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
   inline void GetRandomNormFrame(double *e0,double *e1,double *z) {
     double e0temp[3],e1temp[3],theta,sin_theta,cos_theta;
 
@@ -610,6 +621,7 @@ namespace Vector3D {
     }
   }
 
+  _TARGET_DEVICE_ _TARGET_HOST_
   inline double Normalize(double *x,double NewLength=1.0) {
     double l,l0;
 

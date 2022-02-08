@@ -364,6 +364,8 @@ namespace PIC {
     class cDatumTimed : public cDatumSampled {
     public:
       // constructor is inherited as well
+      cDatumTimed() {} 
+      
       cDatumTimed(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Timed_;
       }
@@ -372,6 +374,8 @@ namespace PIC {
     class cDatumWeighted : public cDatumSampled {
     public:
       // constructor is inherited as well
+      cDatumWeighted() {} 
+      
       cDatumWeighted(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Weighted_;
       }
@@ -2945,6 +2949,8 @@ void DeleteAttachedParticles();
 
       // constructor is inherited as well
       //.......................................................................
+      cDatumDerived() {} 
+      
       cDatumDerived(int lengthIn, const char* nameIn, bool doPrintIn = false) : Datum::cDatumSampled(lengthIn, nameIn, doPrintIn) {
         type = Derived_; GetAverage=NULL;
       }
@@ -2970,6 +2976,23 @@ void DeleteAttachedParticles();
     extern cDatumDerived  DatumParallelTranslationalTemperature;
     extern cDatumDerived  DatumTangentialTranslationalTemperature;
 
+    struct cDatumTableGPU {
+      cDatumTimed    DatumParticleWeight;
+      cDatumTimed    DatumParticleNumber;
+      cDatumTimed    DatumNumberDensity;
+      cDatumWeighted DatumParticleVelocity;
+      cDatumWeighted DatumParticleVelocity2;
+      cDatumWeighted DatumParticleVelocity2Tensor;
+      cDatumWeighted DatumParticleSpeed;
+      cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity;
+      cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2;
+      cDatumDerived  DatumTranslationalTemperature;
+      cDatumDerived  DatumParallelTranslationalTemperature;
+      cDatumDerived  DatumTangentialTranslationalTemperature;
+    };
+
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ cDatumTableGPU *DatumTableGPU;
+
     //the limiting size of the domain 
     extern double xmin[3],xmax[3];
     
@@ -2978,7 +3001,7 @@ void DeleteAttachedParticles();
     extern fLocalMeshResolution LocalMeshResolution;
 
     //the offset of the sampled infomation that is stored in 'center nodes'
-    extern int completedCellSampleDataPointerOffset,collectingCellSampleDataPointerOffset;
+    extern _TARGET_DEVICE_ _CUDA_MANAGED_ int completedCellSampleDataPointerOffset,collectingCellSampleDataPointerOffset;
     
     //the data and order that the data are saved in the associated data buffer of 'center nodes'
     //3. The offset of the data buffer for 'completed sample'
@@ -3157,6 +3180,7 @@ void DeleteAttachedParticles();
       // data interpolation
       void InterpolateDatum(Datum::cDatumSampled Datum, cDataCenterNode** InterpolationList,double *InterpolationCoefficients,int nInterpolationCoefficients, int spec);
 
+      _TARGET_HOST_ _TARGET_DEVICE_
       inline void SampleDatum(Datum::cDatumSampled* Datum, double* In, int spec, double weight=1.0) {
         int length=Datum->length;
         double* ptr;
@@ -3167,6 +3191,7 @@ void DeleteAttachedParticles();
         }
       }
 
+      _TARGET_HOST_ _TARGET_DEVICE_ 
       inline void SampleDatum(Datum::cDatumSampled* Datum, double In, int spec,  double weight=1.0) {
         if (Datum->offset>=0) *(spec + (double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset))+= In*weight;
       }
@@ -4202,9 +4227,15 @@ void DeleteAttachedParticles();
 
     void Sampling();
     
+    _TARGET_HOST_ _TARGET_DEVICE_
     void ProcessCell(int i, int j, int k,int **localSimulatedSpeciesParticleNumber,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int iThread);       
+
     void SamplingManager(int **localSimulatedSpeciesParticleNumber);
 
+    _TARGET_GLOBAL_
+    void SamplingManagerGPU(int **localSimulatedSpeciesParticleNumber);
+
+    _TARGET_GLOBAL_
     void GetParticleNumberParallelLoadMeasure();
     void CatchOutLimitSampledValue();
   }

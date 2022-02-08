@@ -642,7 +642,7 @@ int PIC::TimeStep() {
 }
 //====================================================
 //the general sampling procedure
-
+_TARGET_HOST_ _TARGET_DEVICE_
 void PIC::Sampling::ProcessCell(int i, int j, int k,int **localSimulatedSpeciesParticleNumber,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,int iThread) {
 
 PIC::ParticleBuffer::byte *ParticleData,*ParticleDataNext;
@@ -656,10 +656,37 @@ int s,idim;
 long int LocalCellNumber,ptr,ptrNext;
 
 block=node->block;
-
-
-
 ptr=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+#ifdef __CUDA_ARCH__
+      PIC::Mesh::cDatumTableGPU locDatumTableGPU=*PIC::Mesh::DatumTableGPU; 
+
+      PIC::Mesh::cDatumTimed&    DatumParticleWeight=locDatumTableGPU.DatumParticleWeight;
+      PIC::Mesh::cDatumTimed&    DatumParticleNumber=locDatumTableGPU.DatumParticleNumber;
+      PIC::Mesh::cDatumTimed&    DatumNumberDensity=locDatumTableGPU.DatumNumberDensity;
+      PIC::Mesh::cDatumWeighted& DatumParticleVelocity=locDatumTableGPU.DatumParticleVelocity;
+      PIC::Mesh::cDatumWeighted&  DatumParticleVelocity2=locDatumTableGPU.DatumParticleVelocity2;
+      PIC::Mesh::cDatumWeighted& DatumParticleVelocity2Tensor=locDatumTableGPU.DatumParticleVelocity2Tensor;
+      PIC::Mesh::cDatumWeighted& DatumParticleSpeed=locDatumTableGPU.DatumParticleSpeed;
+      PIC::Mesh::cDatumWeighted& DatumParallelTantentialTemperatureSample_Velocity=locDatumTableGPU.DatumParallelTantentialTemperatureSample_Velocity;
+      PIC::Mesh::cDatumWeighted& DatumParallelTantentialTemperatureSample_Velocity2=locDatumTableGPU.DatumParallelTantentialTemperatureSample_Velocity2;
+      PIC::Mesh::cDatumDerived&  DatumTranslationalTemperature=locDatumTableGPU.DatumTranslationalTemperature;
+      PIC::Mesh::cDatumDerived&  DatumParallelTranslationalTemperature=locDatumTableGPU.DatumParallelTranslationalTemperature;
+      PIC::Mesh::cDatumDerived&  DatumTangentialTranslationalTemperature=locDatumTableGPU.DatumTangentialTranslationalTemperature;
+#else 
+      PIC::Mesh::cDatumTimed&    DatumParticleWeight=PIC::Mesh::DatumParticleWeight;
+      PIC::Mesh::cDatumTimed&    DatumParticleNumber=PIC::Mesh::DatumParticleNumber;
+      PIC::Mesh::cDatumTimed&    DatumNumberDensity=PIC::Mesh::DatumNumberDensity;
+      PIC::Mesh::cDatumWeighted& DatumParticleVelocity=PIC::Mesh::DatumParticleVelocity;
+      PIC::Mesh::cDatumWeighted&  DatumParticleVelocity2=PIC::Mesh::DatumParticleVelocity2;
+      PIC::Mesh::cDatumWeighted& DatumParticleVelocity2Tensor=PIC::Mesh::DatumParticleVelocity2Tensor;
+      PIC::Mesh::cDatumWeighted& DatumParticleSpeed=PIC::Mesh::DatumParticleSpeed;
+      PIC::Mesh::cDatumWeighted& DatumParallelTantentialTemperatureSample_Velocity=PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity;
+      PIC::Mesh::cDatumWeighted& DatumParallelTantentialTemperatureSample_Velocity2=PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity2;
+      PIC::Mesh::cDatumDerived&  DatumTranslationalTemperature=PIC::Mesh::DatumTranslationalTemperature;
+      PIC::Mesh::cDatumDerived&  DatumParallelTranslationalTemperature=PIC::Mesh::DatumParallelTranslationalTemperature;
+      PIC::Mesh::cDatumDerived&  DatumTangentialTranslationalTemperature=PIC::Mesh::DatumTangentialTranslationalTemperature;
+#endif
 
 if (ptr!=-1) {
   LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
@@ -700,7 +727,6 @@ if (ptr!=-1) {
   //===================    DEBUG ==============================
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   if (cell->Measure<=0.0) {
-    cout << "$PREFIX:" << __FILE__<< __LINE__ << std::endl;
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
   #endif
@@ -750,9 +776,9 @@ if (ptr!=-1) {
         ((cInternalSphericalData*)(InternalBoundaryDescriptor.BoundaryElement))->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
 
         if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh->EPS,2)) {
-          cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Sphere: x0=" << x0Sphere[0] << ", " << x0Sphere[1] << ", " << x0Sphere[2] << ", R=" << radiusSphere << endl;
-          cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Position: x=" << x[0] << ", " << x[1] << ", " << x[2] << endl;
-          cout << "$PREFIX:" << __FILE__ << "@" << __LINE__ << "Particle Distance from the center of the sphere: " << sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)) << endl;
+          printf("$PREFIX: %s@%ld Sphere: x0= %e, %e, %e, R=%e\n",__FILE__,__LINE__,x0Sphere[0],x0Sphere[1],x0Sphere[2],radiusSphere);
+          printf("$PREFIX: %s@%ld Particle Position: x=%e, %e, %e\n",__FILE__,__LINE__,x[0],x[1],x[2]);
+          printf("$PREFIX: %s@%ld Particle Distance from the center of the sphere: %e\n",sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)));
 
           exit(__LINE__,__FILE__,"Error: particle inside spherical body");
         }
@@ -774,11 +800,10 @@ if (ptr!=-1) {
     s=PIC::ParticleBuffer::GetI(ParticleData);
 
 
-    switch (_PIC_FIELD_LINE_MODE_) {
-    case _PIC_MODE_OFF_:
+    if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) {
       PIC::ParticleBuffer::GetV(v,ParticleData);
-      break;
-    case _PIC_MODE_ON_:
+    }
+    else {
       v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
       v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
       v[2]=0.0;
@@ -798,9 +823,9 @@ if (ptr!=-1) {
 
 
     //sample data
-    cell->SampleDatum(&PIC::Mesh::DatumParticleWeight,LocalParticleWeight, s);
-    cell->SampleDatum(&PIC::Mesh::DatumParticleNumber, 1.0, s);
-    cell->SampleDatum(&PIC::Mesh::DatumNumberDensity,
+    cell->SampleDatum(&DatumParticleWeight,LocalParticleWeight, s);
+    cell->SampleDatum(&DatumParticleNumber, 1.0, s);
+    cell->SampleDatum(&DatumNumberDensity,
         LocalParticleWeight/cell->Measure, s);
 
     double miscv2[3];
@@ -811,16 +836,16 @@ if (ptr!=-1) {
       miscv2[idim]=v2;
     }
 
-    cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity,v, s, LocalParticleWeight);
-    cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
-    cell->SampleDatum(&PIC::Mesh::DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
+    cell->SampleDatum(&DatumParticleVelocity,v, s, LocalParticleWeight);
+    cell->SampleDatum(&DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
+    cell->SampleDatum(&DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
 
     #if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
     double v2tensor[3];
     for (idim=0;idim<3;idim++) {
       v2tensor[idim]=v[idim]*v[(idim+1)%3];
     }
-    cell->SampleDatum(&PIC::Mesh::DatumParticleVelocity2Tensor,v2tensor, s, LocalParticleWeight);
+    cell->SampleDatum(&DatumParticleVelocity2Tensor,v2tensor, s, LocalParticleWeight);
     #endif
 
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -846,8 +871,8 @@ if (ptr!=-1) {
 
       for (int i=0;i<3;i++) v2TemperatureSample[i]=pow(vTemperatureSample[i],2);
 
-      cell->SampleDatum(&PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity,vTemperatureSample, s, LocalParticleWeight);
-      cell->SampleDatum(&PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity2,v2TemperatureSample, s, LocalParticleWeight);
+      cell->SampleDatum(&DatumParallelTantentialTemperatureSample_Velocity,vTemperatureSample, s, LocalParticleWeight);
+      cell->SampleDatum(&DatumParallelTantentialTemperatureSample_Velocity2,v2TemperatureSample, s, LocalParticleWeight);
     } //_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_
 
     //sample data for the internal degrees of freedom model
@@ -912,12 +937,19 @@ if (ptr!=-1) {
 }
 
 
-
+_TARGET_GLOBAL_
 void PIC::Sampling::GetParticleNumberParallelLoadMeasure() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
 
-  for (int iGlobalCell=0;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell++) {
+  #ifdef __CUDA_ARCH__
+  int id=blockIdx.x*blockDim.x+threadIdx.x;
+  int increment=gridDim.x*blockDim.x;
+  #else
+  int id=0,increment=1;
+  #endif
+
+  for (int iGlobalCell=id;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell+=increment) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
     PIC::Mesh::cDataBlockAMR *block;
 
@@ -947,6 +979,10 @@ void PIC::Sampling::GetParticleNumberParallelLoadMeasure() {
         ptr=PIC::ParticleBuffer::GetNext(ptr);
       }
     }
+
+    #ifdef __CUDA_ARCH__
+    __syncwarp;
+    #endif
   }
 }
 
@@ -995,6 +1031,45 @@ void PIC::Sampling::SamplingManager(int **localSimulatedSpeciesParticleNumber) {
 }
 
 
+_TARGET_GLOBAL_
+void PIC::Sampling::SamplingManagerGPU(int **localSimulatedSpeciesParticleNumber) {
+    #ifdef __CUDA_ARCH__
+    int id=blockIdx.x*blockDim.x+threadIdx.x;
+    int increment=gridDim.x*blockDim.x;
+    #else
+    int id=0,increment=1;
+    #endif
+
+  for (int iGlobalCell=id;iGlobalCell<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell+=increment) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int ii=iGlobalCell;
+    int i,j,k;
+    int nLocalNode;
+    int t;
+
+    t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    nLocalNode=ii/t;
+    ii=ii%t;
+
+    t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    k=ii/t;
+    ii=ii%t;
+
+    j=ii/_BLOCK_CELLS_X_;
+    i=ii%_BLOCK_CELLS_X_;
+
+    node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
+    if (node->block!=NULL) { 
+      ProcessCell(i,j,k,localSimulatedSpeciesParticleNumber,node,id);
+    }
+
+    #ifdef __CUDA_ARCH__
+    __syncwarp;
+    #endif
+  }
+}
+
 void PIC::Sampling::Sampling() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
@@ -1003,7 +1078,13 @@ void PIC::Sampling::Sampling() {
     //sample only the particle number for using in the energency load balancing if needed
     long int nTotalParticleNumber=0;
     
+    #if _CUDA_MODE_ == _ON_
+    GetParticleNumberParallelLoadMeasure<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>();
+    cudaDeviceSynchronize();
+    #else 
     GetParticleNumberParallelLoadMeasure();
+    #endif
+   
   }
 
   if ((_PIC_SAMPLING_MODE_ == _PIC_MODE_ON_)&&(RuntimeSamplingSwitch==true)) { //<-- begining of the particle sample section
@@ -1020,30 +1101,53 @@ void PIC::Sampling::Sampling() {
     long int nTotalSampledParticles=0;
 
     //reset the particle counter
-    static int **localSimulatedSpeciesParticleNumber=NULL;
+    int **localSimulatedSpeciesParticleNumber=NULL;
+    int nTotalThreads=(_CUDA_MODE_==_ON_) ? _CUDA_BLOCKS_*_CUDA_THREADS_ : PIC::nTotalThreadsOpenMP;
+
+    if (_CUDA_MODE_==_ON_) {
+      amps_malloc_managed<PIC::Mesh::cDatumTableGPU>(PIC::Mesh::DatumTableGPU,1); 
+
+      PIC::Mesh::DatumTableGPU->DatumParticleWeight=PIC::Mesh::DatumParticleWeight;
+      PIC::Mesh::DatumTableGPU->DatumParticleNumber=PIC::Mesh::DatumParticleNumber;
+      PIC::Mesh::DatumTableGPU->DatumNumberDensity=PIC::Mesh::DatumNumberDensity;
+      PIC::Mesh::DatumTableGPU->DatumParticleVelocity=PIC::Mesh::DatumParticleVelocity;
+      PIC::Mesh::DatumTableGPU->DatumParticleVelocity2=PIC::Mesh::DatumParticleVelocity2;
+      PIC::Mesh::DatumTableGPU->DatumParticleVelocity2Tensor=PIC::Mesh::DatumParticleVelocity2Tensor;
+      PIC::Mesh::DatumTableGPU->DatumParticleSpeed=PIC::Mesh::DatumParticleSpeed;
+      PIC::Mesh::DatumTableGPU->DatumParallelTantentialTemperatureSample_Velocity=PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity;
+      PIC::Mesh::DatumTableGPU->DatumParallelTantentialTemperatureSample_Velocity2=PIC::Mesh::DatumParallelTantentialTemperatureSample_Velocity2;
+      PIC::Mesh::DatumTableGPU->DatumTranslationalTemperature=PIC::Mesh::DatumTranslationalTemperature;
+      PIC::Mesh::DatumTableGPU->DatumParallelTranslationalTemperature=PIC::Mesh::DatumParallelTranslationalTemperature;
+      PIC::Mesh::DatumTableGPU->DatumTangentialTranslationalTemperature=PIC::Mesh::DatumTangentialTranslationalTemperature;
+    }
+
 
     if (localSimulatedSpeciesParticleNumber==NULL) {
-      localSimulatedSpeciesParticleNumber=new int *[PIC::nTotalThreadsOpenMP];
-      localSimulatedSpeciesParticleNumber[0]=new int [PIC::nTotalThreadsOpenMP*PIC::nTotalSpecies];
+      amps_new_managed<int*>(localSimulatedSpeciesParticleNumber,nTotalThreads);
 
-      for (int iThreadOpenMP=0;iThreadOpenMP<PIC::nTotalThreadsOpenMP;iThreadOpenMP++) {
-        localSimulatedSpeciesParticleNumber[iThreadOpenMP]=localSimulatedSpeciesParticleNumber[0]+iThreadOpenMP*PIC::nTotalSpecies;
+      localSimulatedSpeciesParticleNumber[0]=NULL;
+      amps_new_managed<int>(localSimulatedSpeciesParticleNumber[0],nTotalThreads*PIC::nTotalSpecies);
 
-        for (int s=0;s<PIC::nTotalSpecies;s++) localSimulatedSpeciesParticleNumber[iThreadOpenMP][s]=0;
+      for (int iThread=0;iThread<nTotalThreads;iThread++) {
+        localSimulatedSpeciesParticleNumber[iThread]=localSimulatedSpeciesParticleNumber[0]+iThread*PIC::nTotalSpecies;
+
+        for (int s=0;s<PIC::nTotalSpecies;s++) localSimulatedSpeciesParticleNumber[iThread][s]=0;
       }
     }
     else {
-      for (int iThreadOpenMP=0;iThreadOpenMP<PIC::nTotalThreadsOpenMP;iThreadOpenMP++) {
-        for (int s=0;s<PIC::nTotalSpecies;s++) localSimulatedSpeciesParticleNumber[iThreadOpenMP][s]=0;
+      for (int iThread=0;iThread<PIC::nTotalThreads;iThread++) {
+        for (int s=0;s<PIC::nTotalSpecies;s++) localSimulatedSpeciesParticleNumber[iThread][s]=0;
       }
     }
 
-    //the table of cells' particles
-    long int *FirstCellParticleTable;
-
-
     #if _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__BETWEEN_ITERATIONS_ 
+
+    #if _CUDA_MODE_ == _ON_
+    SamplingManagerGPU<<<_CUDA_BLOCKS_,_CUDA_THREADS_>>>(localSimulatedSpeciesParticleNumber);
+    cudaDeviceSynchronize();
+    #else
     SamplingManager(localSimulatedSpeciesParticleNumber);
+    #endif
 
     nTotalSampledParticles=0;
     
@@ -1051,11 +1155,18 @@ void PIC::Sampling::Sampling() {
     for (int s=0;s<PIC::nTotalSpecies;s++) {
       SimulatedSpeciesParticleNumber[s]=0;
 
-      for (int iThreadOpenMP=0;iThreadOpenMP<PIC::nTotalThreadsOpenMP;iThreadOpenMP++) {
-        SimulatedSpeciesParticleNumber[s]+=localSimulatedSpeciesParticleNumber[iThreadOpenMP][s];
+      for (int iThread=0;iThread<nTotalThreads;iThread++) {
+        SimulatedSpeciesParticleNumber[s]+=localSimulatedSpeciesParticleNumber[iThread][s];
       }
       
       nTotalSampledParticles+=SimulatedSpeciesParticleNumber[s];
+    }
+
+    amps_free_managed(localSimulatedSpeciesParticleNumber[0]);
+    amps_free_managed(localSimulatedSpeciesParticleNumber);
+
+    if (_CUDA_MODE_==_ON_) {
+      amps_free_managed(PIC::Mesh::DatumTableGPU);
     }
 
     #elif _PIC_SAMPLE_PARTICLE_DATA_MODE_ == _PIC_SAMPLE_PARTICLE_DATA_MODE__DURING_PARTICLE_MOTION_
