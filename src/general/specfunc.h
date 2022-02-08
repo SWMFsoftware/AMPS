@@ -982,7 +982,7 @@ void amps_malloc_managed(T* &buff,long int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMallocManaged(&t,length*sizeof(T));
   #else
-  buff=(T*) malloc(length*sizeof(T));
+  buff=new T[length];
   return;
   #endif
 
@@ -999,7 +999,7 @@ void amps_malloc_device(T* &buff,long int length) {
   #if _CUDA_MODE_ == _ON_
   cudaMalloc(&t,length*sizeof(T));
   #else
-  buff=(T*) malloc(length*sizeof(T));
+  buff=new T[length];
   return;
   #endif
 
