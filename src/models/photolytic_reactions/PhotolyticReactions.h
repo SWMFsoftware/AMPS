@@ -29,6 +29,10 @@ namespace PhotolyticReactions {
         double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
         double TotalReactionRate,double *ExcessEnergyTable);
 
+    void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
+    double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
+								    double TotalReactionRate,double *ExcessEnergyTable);
+
 
     //calculate the yield fpr a particular specie
     double GetSpeciesReactionYield(int spec,double *ReactionRateTable, int nReactionChannels, int* TotalReactionProductTable, int nMaxReactionProducts);
@@ -99,6 +103,17 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+      
+      inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+	
+	  
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -113,6 +128,11 @@ namespace PhotolyticReactions {
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
+
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+
 
     inline double GetSpeciesReactionYield(int spec) {
       return Huebner1992ASS::GetSpeciesReactionYield(spec);
@@ -154,6 +174,15 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+      inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -166,6 +195,11 @@ namespace PhotolyticReactions {
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
+
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+
 
     inline double GetSpeciesReactionYield(int spec) {
       return Huebner1992ASS::GetSpeciesReactionYield(spec);
@@ -206,6 +240,15 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+      inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -218,6 +261,11 @@ namespace PhotolyticReactions {
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
+    
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+    
 
     inline double GetSpeciesReactionYield(int spec) {
       return Huebner1992ASS::GetSpeciesReactionYield(spec);
@@ -257,6 +305,16 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+
+      inline void GenerateGivenProducts(int prodSpec,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec,ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+            ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -269,6 +327,11 @@ namespace PhotolyticReactions {
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
+
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+
 
     inline double GetSpeciesReactionYield(int spec) {
       return Huebner1992ASS::GetSpeciesReactionYield(spec);
@@ -308,6 +371,15 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+      inline void GenerateGivenProducts(int prodSpec,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec,ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+								   ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+	
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -320,6 +392,11 @@ namespace PhotolyticReactions {
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
+    
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+
 
     inline double GetSpeciesReactionYield(int spec) {
       return Huebner1992ASS::GetSpeciesReactionYield(spec);
@@ -359,6 +436,15 @@ namespace PhotolyticReactions {
         ReactionProductVelocityTable=ReturnReactionProductVelocity;
       }
 
+      inline void GenerateGivenProducts(int prodSpec,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(prodSpec,ReactionChannel,nReactionProducts,ReturnReactionProductList,ReturnReactionProductVelocity,
+								   ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],ReactionChannelProductNumber,&ReactionProductMassTable[0][0],nMaxReactionProducts,TotalReactionRate,ExcessEnergyTable);
+	
+        ReactionProductTable=ReturnReactionProductList;
+        ReactionProductVelocityTable=ReturnReactionProductVelocity;
+      }
+      
+
       inline double GetSpeciesReactionYield(int spec) {
         return PhotolyticReactions::Huebner1992ASS::GetSpeciesReactionYield(spec,ReactionRateTable,nReactionChannels,&ReactionProducts[0][0],nMaxReactionProducts);
       }
@@ -370,6 +456,10 @@ namespace PhotolyticReactions {
 
     inline void GenerateReactionProducts(int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
       Huebner1992ASS::GenerateReactionProducts(ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+    }
+
+    inline void GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+      Huebner1992ASS::GenerateGivenProducts(prodSpec, ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
     }
 
     inline double GetSpeciesReactionYield(int spec) {
@@ -410,6 +500,32 @@ namespace PhotolyticReactions {
       exit(__LINE__,__FILE__,"Error: the species is unknown");
     }
   }
+
+  inline void GenerateGivenProducts(int spec,int prodSpec,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+    switch (spec) {
+    case _H2O_SPEC_ :
+      H2O::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _O2_SPEC_:
+      O2::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _H2_SPEC_:
+      H2::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _H_SPEC_:
+      H::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _OH_SPEC_:
+      OH::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _O_SPEC_:
+      O::GenerateGivenProducts( prodSpec,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the species is unknown");
+    }
+  }
+
   
   inline void GenerateReactionProducts_test(){
     int ReactionChannel, nReactionProducts;
@@ -506,6 +622,59 @@ namespace PhotolyticReactions {
     }
 
     return res;
+  }
+
+
+  inline bool hasDaughterSpec(int parentSpec, int daughterSpec) {
+    bool res= false;
+    int * ProdTable=NULL;
+    int nMaxProducts=0, nChannels=0;
+    switch (parentSpec) {
+    case _H2O_SPEC_ :
+      ProdTable=&H2O::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=H2O::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =H2O::Huebner1992ASS::nReactionChannels;
+      break;
+    case _O2_SPEC_:
+      ProdTable=&O2::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=O2::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =O2::Huebner1992ASS::nReactionChannels;
+      break;
+    case _H2_SPEC_:
+      ProdTable=&H2::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=H2::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =H2::Huebner1992ASS::nReactionChannels;
+      break;
+    case _H_SPEC_:
+      ProdTable=&H::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=H::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =H::Huebner1992ASS::nReactionChannels;
+      break;
+    case _OH_SPEC_:
+      ProdTable=&OH::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=OH::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =OH::Huebner1992ASS::nReactionChannels;
+      break;
+    case _O_SPEC_:
+      ProdTable=&O::Huebner1992ASS::ReactionProducts[0][0];
+      nMaxProducts=O::Huebner1992ASS::nMaxReactionProducts;
+      nChannels =O::Huebner1992ASS::nReactionChannels;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the species is unknown");
+    }
+   
+    for (int iChannel=0; iChannel<nChannels; iChannel++){
+      for (int i=0; i<nMaxProducts; i++){
+	if (ProdTable[iChannel*nMaxProducts+i]==daughterSpec){
+	  res=true;
+	  break;
+	}
+      }
+    }
+
+    return res;
+
   }
 
 }

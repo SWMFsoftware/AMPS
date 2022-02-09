@@ -392,6 +392,7 @@ void ElectronImpact::Burger2010SSR::GetProductVelocity_4(double electronTemp, do
     // first try
     double phi, theta,r1sq,r1;
     nCycle++;
+    //printf("nCycle:%d\n", nCycle);
     phi = Pi*rnd()*2;
     theta = acos(2*rnd()-1);
     r1sq =  e_calc*rnd();
@@ -543,6 +544,104 @@ void ElectronImpact::Burger2010SSR::GenerateReactionProducts(double ElectronTeme
     if ((t=ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts])>=0) {
       ReturnReactionProductTable[nReactionProducts++]=t;
     }
+  }
+
+  if (nReactionProducts==0) return;
+
+  
+  double LocalReactionProductVelocityTable[nMaxReactionProducts][3];
+  int nSpecies=ReactionChannelProductNumber[ReactionChannel];
+
+  if (nSpecies==3){
+    GetProductVelocity_3(ElectronTemeprature ,minTemp[nChannel],&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else if (nSpecies==4){
+    GetProductVelocity_4(ElectronTemeprature ,minTemp[nChannel],&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else{
+    exit(__LINE__,__FILE__,"Error: something is wrong, nSpecies cannot be this number");
+  }
+
+  
+  //for test
+  /*
+  double mx=0.0,my=0.0,mz=0.0,energy=0.0;
+  for (i=0;i<nMaxReactionProducts;i++) {
+   
+      double mass=ReactionProductMassTable[i+ReactionChannel*nMaxReactionProducts];
+      if (mass<0) continue;
+      double vx =LocalReactionProductVelocityTable[i][0];
+      double vy =LocalReactionProductVelocityTable[i][1];
+      double vz =LocalReactionProductVelocityTable[i][2];
+	    
+      printf("Burger2010ssr ReactionChannel:%d,iProduct:%d, mass:%e, v:%e,%e,%e\n", ReactionChannel,i,mass,vx,vy,vz);
+      mx+= mass*vx;
+      my+= mass*vy;
+      mz+= mass*vz;
+      energy +=0.5*mass*(vx*vx+vy*vy+vz*vz);	 
+  }
+  printf("Burger2010ssr reactionChannel:%d momtum:%e,%e,%e, energy:%e,excess energy:%e, electron temp:%e, min temp:%e\n", ReactionChannel, mx,my,mz,energy/eV2J,(ElectronTemeprature-minTemp[nChannel]),
+	 ElectronTemeprature, minTemp[nChannel]);
+  */
+  //4. Init the list of the reaction products
+ 
+
+  for (i=0;i<nMaxReactionProducts;i++) {
+    int t;
+    if ((t=ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts])>=0) {
+      //ReturnReactionProductTable[nReactionProducts++]=t;
+      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
+    }
+  }
+
+
+ 
+}
+
+
+
+void ElectronImpact::Burger2010SSR::GenerateGivenProducts(int prodSpec,double ElectronTemeprature,int &ReactionChannel,int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,int &nReactionProducts,
+							     int *ReactionChannelProducts,int nMaxReactionProducts,double *log10RateCoefficientTable,int nReactionChannels, double *minTemp, int *ReactionChannelProductNumber,double *ReactionProductMassTable) {
+
+  double RateCoefficientTable[nReactionChannels],TotalRateCoefficient,summ;
+  int nChannel,i;
+  
+ 
+  TotalRateCoefficient=GetTotalRateCoefficient(RateCoefficientTable,ElectronTemeprature,nReactionChannels,log10RateCoefficientTable, minTemp);
+
+  if (TotalRateCoefficient==0) {
+    nReactionProducts=0;
+    return;
+  }
+  //determine the channel of the impact reaction
+  //Note some channels can have 0 probablity.
+
+  bool findGivenSpec=false;
+  
+  while (!findGivenSpec){
+    double temp = TotalRateCoefficient*rnd();
+    for (nChannel=0,summ=0.0;nChannel<nReactionChannels;nChannel++) {
+      summ+=RateCoefficientTable[nChannel];
+      if (summ>temp) break;
+    }
+    
+    if (nChannel==nReactionChannels) nChannel-=1; //keep the reaction channel index within the range
+    ReactionChannel=nChannel;
+    
+    double excessEnergy=-1.0;
+    excessEnergy = ElectronTemeprature-minTemp[nChannel];
+    if (excessEnergy<0.0)
+      exit(__LINE__,__FILE__,"Error: the something is wrong, this channel should not be chosen");
+    excessEnergy *= eV2J;
+    //how to deal calculate the product speed after reaction.
+    // Init the list of the reaction products
+    int t;
+    
+    for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+      if ((t=ReactionChannelProducts[i+ReactionChannel*nMaxReactionProducts])>=0) {
+	ReturnReactionProductTable[nReactionProducts++]=t;
+	if (t==prodSpec) findGivenSpec=true;
+      }
+    }
+    
   }
 
   if (nReactionProducts==0) return;

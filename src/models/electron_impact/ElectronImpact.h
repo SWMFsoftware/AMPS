@@ -22,7 +22,7 @@ namespace ElectronImpact {
     static const double dlog10RateCoefficientTableElectronTemeprature_LOG10=(maxlog10RateCoefficientTableElectronTemeprature_LOG10-minlog10RateCoefficientTableElectronTemeprature_LOG10)/(log10RateCoefficientTableLength-1);
 
     void GenerateReactionProducts(double ElectronTemeprature,int &ReactionChannel,int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,int &nReactionProducts,int *ReactionChannelProducts,int nMaxReactionProducts,double *log10RateCoefficientTable,int nReactionChannels, double *minTemp, int *ReactionChannelProductNumber,double *ReactionProductMassTable);
-    
+    void GenerateGivenProducts(int prodSpec,double ElectronTemeprature,int &ReactionChannel,int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,int &nReactionProducts,int *ReactionChannelProducts,int nMaxReactionProducts,double *log10RateCoefficientTable,int nReactionChannels, double *minTemp, int *ReactionChannelProductNumber,double *ReactionProductMassTable);
     void GetProductVelocity_3(double electronTemeprature, double minTemp,double * productMassArray, double * productVelocityTable);
     void GetProductVelocity_4(double electronTemeprature, double minTemp,double * productMassArray, double * productVelocityTable);
     double GetTotalRateCoefficient(double *RateCoefficientTable,double ElectronTemeprature,int nReactionChannels,double *log10RateCoefficientTable, double *minTemp); 
@@ -66,6 +66,15 @@ namespace ElectronImpact {
         ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
       }
 
+      inline void GenerateGivenProducts(int prodSpec, double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        ElectronImpact::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
+								&ReactionChannelProducts[0][0],nMaxReactionProducts,
+        &log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
+	
+        ReactionProductTable=ReturnReactionProductTable;
+        ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
+      }
+      
 
       // *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts
 
@@ -134,6 +143,15 @@ namespace ElectronImpact {
       }
 
 
+      inline void GenerateGivenProducts(int prodSpec, double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        ElectronImpact::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
+								&ReactionChannelProducts[0][0],nMaxReactionProducts,
+        &log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
+	
+        ReactionProductTable=ReturnReactionProductTable;
+        ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
+      }
+
 
 
       inline void Print(const char* fname,const char* OutputDirectory) {
@@ -192,14 +210,22 @@ namespace ElectronImpact {
       
       inline void GenerateReactionProducts(double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         ElectronImpact::Burger2010SSR::GenerateReactionProducts(ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
-            &ReactionChannelProducts[0][0],nMaxReactionProducts,
+								&ReactionChannelProducts[0][0],nMaxReactionProducts,
 								&log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
 	
 	ReactionProductTable=ReturnReactionProductTable;
         ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
       }
 
+      inline void GenerateGivenProducts(int prodSpec, double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        ElectronImpact::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
+							     &ReactionChannelProducts[0][0],nMaxReactionProducts,
+							     &log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
 	
+        ReactionProductTable=ReturnReactionProductTable;
+        ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
+      }
+      
 	
 	inline void Print(const char* fname,const char* OutputDirectory) {
         ElectronImpact::Burger2010SSR::Print(fname,OutputDirectory,nReactionChannels,nMaxReactionProducts,&ReactionChannelProducts[0][0],&log10RateCoefficientTable[0][0],&ReactionChannelProductsString[0][0]);
@@ -257,13 +283,23 @@ namespace ElectronImpact {
       
       inline void GenerateReactionProducts(double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
         ElectronImpact::Burger2010SSR::GenerateReactionProducts(ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
-            &ReactionChannelProducts[0][0],nMaxReactionProducts,
+								&ReactionChannelProducts[0][0],nMaxReactionProducts,
 								&log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
-
 	
+       
 	ReactionProductTable=ReturnReactionProductTable;
         ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
       }
+      
+      inline void GenerateGivenProducts(int prodSpec, double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        ElectronImpact::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
+							     &ReactionChannelProducts[0][0],nMaxReactionProducts,
+							     &log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
+	
+        ReactionProductTable=ReturnReactionProductTable;
+        ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
+      }
+
 
 
       inline void Print(const char* fname,const char* OutputDirectory) {
@@ -328,6 +364,16 @@ namespace ElectronImpact {
 	ReactionProductTable=ReturnReactionProductTable;
         ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
       }
+      
+      inline void GenerateGivenProducts(int prodSpec, double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+        ElectronImpact::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,ReturnReactionProductTable,ReturnReactionProductVelocityTable,nReactionProducts,
+							     &ReactionChannelProducts[0][0],nMaxReactionProducts,
+							     &log10RateCoefficientTable[0][0],nReactionChannels,minTemp, ReactionChannelProductNumber, &ReactionProductMassTable[0][0]);
+	
+        ReactionProductTable=ReturnReactionProductTable;
+        ReactionProductVelocityTable=ReturnReactionProductVelocityTable;
+      }
+
 
 
 
@@ -447,6 +493,30 @@ namespace ElectronImpact {
     }
   }
 
+  inline void GenerateGivenProducts(int spec,int prodSpec,double ElectronTemeprature,int &ReactionChannel,int &nReactionProducts, int* &ReactionProductTable,double* &ReactionProductVelocityTable) {
+    switch (spec) {
+    case _H2O_SPEC_ :
+      H2O::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _O2_SPEC_:
+      O2::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _H2_SPEC_:
+      H2::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _H_SPEC_:
+      H::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+    case _O_SPEC_:
+      O::Burger2010SSR::GenerateGivenProducts(prodSpec,ElectronTemeprature,ReactionChannel,nReactionProducts,ReactionProductTable,ReactionProductVelocityTable);
+      break;
+      
+    default:
+      exit(__LINE__,__FILE__,"Error: the species is unknown");
+    }
+  }
+
+
   
     inline void GenerateReactionProducts_test(){
     int ReactionChannel, nReactionProducts;
@@ -561,6 +631,65 @@ namespace ElectronImpact {
 
     return res;
   }
+
+  inline bool hasDaughterSpec(int parentSpec, int daughterSpec, double ElectronTemeprature) {
+    bool res= false;
+    int * ProdTable=NULL;
+    int nMaxProducts=0, nChannels=0;
+    double * minTemp;
+    switch (parentSpec) {
+    case _H2O_SPEC_ :
+      ProdTable=&H2O::Burger2010SSR::ReactionChannelProducts[0][0];
+      nMaxProducts=H2O::Burger2010SSR::nMaxReactionProducts;
+      nChannels = H2O::Burger2010SSR::nReactionChannels;
+      minTemp = H2O::Burger2010SSR::minTemp;
+      break;
+    case _O2_SPEC_:
+      ProdTable=&O2::Burger2010SSR::ReactionChannelProducts[0][0];
+      nMaxProducts=O2::Burger2010SSR::nMaxReactionProducts;
+      nChannels = O2::Burger2010SSR::nReactionChannels;
+      minTemp = O2::Burger2010SSR::minTemp;
+      break;
+    case _H2_SPEC_:
+      ProdTable=&H2::Burger2010SSR::ReactionChannelProducts[0][0];
+      nMaxProducts=H2::Burger2010SSR::nMaxReactionProducts;
+      nChannels = H2::Burger2010SSR::nReactionChannels;
+      minTemp = H2::Burger2010SSR::minTemp;
+      break;
+    case _H_SPEC_:
+      ProdTable=&H::Burger2010SSR::ReactionChannelProducts[0][0];
+      nMaxProducts=H::Burger2010SSR::nMaxReactionProducts;
+      nChannels = H::Burger2010SSR::nReactionChannels;
+      minTemp = H::Burger2010SSR::minTemp;
+      break;
+    case _O_SPEC_:
+      ProdTable=&O::Burger2010SSR::ReactionChannelProducts[0][0];
+      nMaxProducts=O::Burger2010SSR::nMaxReactionProducts;
+      nChannels = O::Burger2010SSR::nReactionChannels;
+      minTemp = O::Burger2010SSR::minTemp;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the species is unknown");
+    }
+   
+    for (int iChannel=0; iChannel<nChannels; iChannel++){
+      if (ElectronTemeprature>minTemp[iChannel]){
+	for (int i=0; i<nMaxProducts; i++){
+	  if (ProdTable[iChannel*nMaxProducts+i]==daughterSpec){
+	    res=true;
+	    break;
+	  }
+	}
+      }
+      if (res) break;
+    }
+
+    return res;
+
+  }
+
+  
+
 
 }
 

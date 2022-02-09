@@ -598,7 +598,66 @@ void PhotolyticReactions::Huebner1992ASS::GenerateReactionProducts(int &Reaction
       for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
     }
   }
+}
 
+
+
+void PhotolyticReactions::Huebner1992ASS::GenerateGivenProducts(int prodSpec, int &ReactionChannel,int &nReactionProducts, int* ReturnReactionProductTable,double *ReturnReactionProductVelocityTable,
+    double *ReactionRateTable, int nReactionChannels,int* TotalReactionProductTable,int *ReactionChannelProductNumber,double *ReactionProductMassTable,int nMaxReactionProducts,
+    double TotalReactionRate,double *ExcessEnergyTable) {
+    int i;
+  double summ=0.0;
+  bool findGivenSpec=false;
+
+
+  while (!findGivenSpec){
+    double temp = TotalReactionRate*rnd();
+    for (i=0,summ=0.0;i<nReactionChannels;i++) {
+      summ+=ReactionRateTable[i];
+      if (summ>temp) break;
+    }
+    
+    if (i==nReactionChannels) i = i-1;
+    ReactionChannel=i;
+    
+  
+    for (i=0,nReactionProducts=0;i<nMaxReactionProducts;i++) {
+      int t;
+      if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
+	ReturnReactionProductTable[nReactionProducts++]=t;
+	if (t==prodSpec) findGivenSpec=true;
+      } 
+    } 
+  }
+
+  if (nReactionProducts==0) return;
+
+  
+  //2. Evaluate the total excess energy for the reaction channel
+  double TotalEnergy=0.0;
+
+  if (ExcessEnergyTable!=NULL) TotalEnergy=ExcessEnergyTable[ReactionChannel];
+
+    
+  double LocalReactionProductVelocityTable[nMaxReactionProducts][3];
+  int nSpecies=ReactionChannelProductNumber[ReactionChannel];
+  
+  if (nSpecies==2){
+    GetProductVelocity_2(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else if (nSpecies==3){
+    GetProductVelocity_3(TotalEnergy,&ReactionProductMassTable[ReactionChannel*nMaxReactionProducts], &LocalReactionProductVelocityTable[0][0]);
+  }else{
+    exit(__LINE__,__FILE__,"Error: something is wrong, nSpecies cannot be this number");
+  }
+
+
+  for (i=0;i<nMaxReactionProducts;i++) {
+    int t;
+    if ((t=TotalReactionProductTable[i+ReactionChannel*nMaxReactionProducts])>=0) {
+      //ReturnReactionProductTable[nReactionProducts++]=t;
+      for (int idim=0;idim<3;idim++) ReturnReactionProductVelocityTable[idim+3*i]=LocalReactionProductVelocityTable[i][idim];
+    }
+  }
 
 }
 
