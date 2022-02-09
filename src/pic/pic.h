@@ -3848,7 +3848,7 @@ void DeleteAttachedParticles();
         bool SplitFlag,AllocatedFlag;
 
         void clear() {
-          SplitFlag=NULL,AllocatedFlag=NULL;
+          SplitFlag=false,AllocatedFlag=false;
         }
 
         cNodeData() {
