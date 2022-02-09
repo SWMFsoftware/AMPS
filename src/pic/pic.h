@@ -3837,6 +3837,25 @@ void DeleteAttachedParticles();
 
     //mesh -> is the pointed to the mesh discritizing a single computational region
     extern _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
+    
+    namespace GPU {
+      extern _TARGET_DEVICE_ cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh;
+      void CopyMeshHost2Device();
+
+      class cNodeData {
+      public:
+        cAMRnodeID NodeId;
+        bool SplitFlag,AllocatedFlag;
+
+        void clear() {
+          SplitFlag=NULL,AllocatedFlag=NULL;
+        }
+
+        cNodeData() {
+          clear();
+        }
+      };
+    }
 
     //init the computational mesh
     void Init(double*,double*,fLocalMeshResolution);

@@ -4315,7 +4315,7 @@ void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *Neib
 }
 
 
-_TARGET_HOST_ 
+_TARGET_HOST_ _TARGET_DEVICE_ 
 void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
   int ioffset,joffset,koffset;
@@ -5534,7 +5534,7 @@ if (newCenterNode->Temp_ID==88861) {
 
 */
 
-_TARGET_HOST_ 
+_TARGET_HOST_ _TARGET_DEVICE_ 
 bool splitTreeNode(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k;
 

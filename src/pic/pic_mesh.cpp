@@ -77,6 +77,8 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::c
 _TARGET_DEVICE_ _CUDA_MANAGED_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::MeshTable=NULL;
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::Mesh::MeshTableLength=0;
 
+_TARGET_DEVICE_ cAmpsMesh<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> *PIC::Mesh::GPU::mesh=NULL;
+
 
 //the user defined functions for output of the 'ceneter node' data into a data file
 vector<PIC::Mesh::fPrintVariableListCenterNode> PIC::Mesh::PrintVariableListCenterNode;
@@ -1853,8 +1855,100 @@ int PIC::Mesh::GetAllocatedCellTotalNumber() {
 }
 
 
+//==========================================================================================
+//copy mesh from the host to the device 
+#if _CUDA_MODE_ == _ON_
+void PIC::Mesh::GPU::CopyMeshHost2Device() {
+  //gather the tree information on the host 
 
+  vector<list<PIC::Mesh::GPU::cNodeData> > TreeStructureTable;
+  list<PIC::Mesh::GPU::cNodeData> TreeLevelList;
+  list<PIC::Mesh::GPU::cNodeData>::iterator it;
+  cNodeData new_entry;
+  int i,j,k;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node,*DownNode;
 
+  bool next_tree_level_exists=true;
+  int iCurrentTreeLevel=0; 
+ 
+  //prepare the tree structure
+  if (PIC::Mesh::mesh->rootTree!=NULL) {
+    new_entry.clear();
+
+    new_entry.SplitFlag=true;
+    new_entry.AllocatedFlag=false;
+    PIC::Mesh::mesh->GetAMRnodeID(new_entry.NodeId,PIC::Mesh::mesh->rootTree); 
+
+    TreeLevelList.push_back(new_entry);
+    TreeStructureTable.push_back(TreeLevelList);  
+
+    while (next_tree_level_exists==true) {
+      next_tree_level_exists=false;
+      TreeLevelList.clear(); 
+
+      for (it=TreeStructureTable[iCurrentTreeLevel].begin();it!=TreeStructureTable[iCurrentTreeLevel].end();it++) {
+        Node=PIC::Mesh::mesh->findAMRnodeWithID(it->NodeId);  
+
+        for (i=0;i<(1<<DIM);i++) if ((DownNode=Node->downNode[i])!=NULL) {
+           //the next level exists
+           next_tree_level_exists=true;
+           it->SplitFlag=true;
+           
+           //add the new node in the list
+           new_entry.clear();
+    
+           PIC::Mesh::mesh->GetAMRnodeID(new_entry.NodeId,DownNode);
+           if (DownNode->block!=NULL) new_entry.AllocatedFlag=true;
+           
+           TreeLevelList.push_back(new_entry);
+        }
+      }
+
+      TreeStructureTable.push_back(TreeLevelList);
+      iCurrentTreeLevel++;
+    }
+  }
+
+  //create the tree structure on the device 
+  for (int iLevel=0;iLevel<iCurrentTreeLevel;iLevel++) {
+    int i,nNodes;
+    PIC::Mesh::GPU::cNodeData *buffer,*buffer_dev;
+   
+    nNodes=TreeStructureTable[iLevel].size();
+    buffer=new cNodeData [nNodes];
+    amps_new_device(buffer_dev,nNodes);
+
+    for (i=0,it=TreeStructureTable[iLevel].begin();it!=TreeStructureTable[iLevel].end();i++,it++) {
+      buffer[i]=*it;
+    }
+
+    cudaMemcpy(buffer_dev,buffer,nNodes*sizeof(PIC::Mesh::GPU::cNodeData),cudaMemcpyHostToDevice);
+
+    auto SplitDeviceMeshBlocks = [=] _TARGET_DEVICE_ (PIC::Mesh::GPU::cNodeData *buffer, int nNodes) {
+      int i;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node;
+
+      for (i=0;i<nNodes;i++) {
+        Node=PIC::Mesh::GPU::mesh->findAMRnodeWithID(buffer[i].NodeId);
+      
+        if (buffer[i].SplitFlag==true) {
+          PIC::Mesh::GPU::mesh->splitTreeNode(Node);
+  
+          if (buffer[i].AllocatedFlag==true) {
+            PIC::Mesh::GPU::mesh->AllocateBlock(Node);
+          }
+        }
+      } 
+    };  
+
+    kernel_2<<<1,1>>>(SplitDeviceMeshBlocks,buffer,nNodes);
+    cudaDeviceSynchronize();
+  
+    delete [] buffer;
+    amps_free_device(buffer_dev); 
+  }
+}
+#endif
 
 
 

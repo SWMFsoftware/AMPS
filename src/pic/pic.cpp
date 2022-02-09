@@ -1692,6 +1692,8 @@ void PIC::Init_BeforeParser() {
 
   #if _CUDA_MODE_ == _ON_
   auto AllocateMesh = [=] _TARGET_DEVICE_ _TARGET_HOST_ () { 
+    amps_new<cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR> >(PIC::Mesh::GPU::mesh,1);
+
     //intialize the interpolation module
     PIC::InterpolationRoutines::Init();
 
