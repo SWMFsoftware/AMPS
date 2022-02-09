@@ -72,7 +72,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
         ExchangeParticlesLocal<<<1,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_>>>(RealBlock,GhostBlock);
         cudaDeviceSynchronize();
         #else
-        ExchangeParticlesLocal(RealBlockThread,GhostBlockThread);
+        ExchangeParticlesLocal(RealBlock,GhostBlock);
         #endif
       }
       else {
