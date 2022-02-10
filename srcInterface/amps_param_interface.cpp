@@ -36,9 +36,7 @@ F                       Particle data sampling
 #SAMPLE_OUTPUT_CADENCE
 20                      the cadence between starting sampled procedure for output AMPS' data file
 
-#TIMESTEPPING
-F                       useSWMFDt
-T                       useFixedDt
+#TIMESTEP
 1.0                     fixedDt
 
 
@@ -138,13 +136,12 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
 
 
-    else if (Command == "#TIMESTEPPING") { 
+    else if (Command == "#TIMESTEP") { 
       t=param_list.front().first;
 
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-/*
       int dt=atoi(t.c_str()); 
 
       if (_SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) {
@@ -153,7 +150,6 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=dt; 
       }
       else exit(__LINE__,__FILE__,"Error: the option is not defined"); 
-*/
     }
 
     else if (Command == "#FIELDLINE") { 

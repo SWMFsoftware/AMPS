@@ -458,7 +458,7 @@ contains
        call amps_recieve_batsrus2amps_center_point_data_oh(&
             NameVar//char(0), nVar, Data_VI, iPoint_I,PTTime)
 
-       call amps_recv_oh_checksum(Data_VI,DataBufferSize,nRecvFromOH)
+       !call amps_recv_oh_checksum(Data_VI,DataBufferSize,nRecvFromOH)
     else
        call CON_stop(NameSub//': neither Pos_DI nor Data_VI are present!')
     end if
