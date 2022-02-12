@@ -161,4 +161,9 @@
   mass=1.0*_AMU_
   charge=0.0     
 
+#component=photon 
+  mass=0.0*_AMU_
+  charge=0.0
+
+
 #endspecies
