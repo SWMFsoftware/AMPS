@@ -33,6 +33,8 @@
 #include "cCutBlockSet.h"
 #include "meshAMRgeneric.h"
 
+#include "radiation.h"
+
 #include "../../srcInterface/LinearSystemCornerNode.h"
 #include "linear_solver_wrapper_c.h"
 
@@ -389,119 +391,59 @@ void SetIC() {
 */
 
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
-    double CellSize;
-    double CharacteristicSpeed;
-    double dt;
+  double res,CellSize;
+
+  CellSize=startNode->GetCharacteristicCellSize();
+  res=0.00002*CellSize/Radiation::SpeedOfLight_cm;
 
 
-    CellSize=startNode->GetCharacteristicCellSize();
-    //return 0.3*CellSize/CharacteristicSpeed;
-
-    //return 0.05;
-    return 1;
+  return (res>1.0) ? 1.0 : res; 
 }
 
 
 double BulletLocalResolution(double *x) {                                                                                           
-  
   double res;
 
-  res=sqrt(3)+0.1;
+  res=0.01;
   return res;
 }
                        
 
 int main(int argc,char **argv) {
   
-   time_t TimeValue=time(NULL);
-   tm *ct=localtime(&TimeValue);
+  time_t TimeValue=time(NULL);
+  tm *ct=localtime(&TimeValue);
   
-   printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
+  printf("start: (%i/%i %i:%i:%i)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec);
 
+  Radiation::Init();
 
   PIC::InitMPI();
   PIC::Init_BeforeParser();
-
   
-  int RelativeOffset=0;
-  
-#if _TEST_MESH_MODE_==_NONUNIFORM_MESH_
-  printf("non-uniform mesh!\n");
-#endif
-
-#if _TEST_MESH_MODE_==_UNIFORM_MESH_
-  printf("uniform mesh!\n");
-#endif
-
-
-#if _CURRENT_MODE_==_PIC_MODE_ON_
-  printf("current on!\n");
-#endif
-
-#if _CURRENT_MODE_==_PIC_MODE_OFF_
-  printf("current mode off!\n");
-#endif
-
-
-
   //seed the random number generator
   rnd_seed(100);
 
-  //generate mesh or read from file
-  char mesh[_MAX_STRING_LENGTH_PIC_]="none";  ///"amr.sig=0xd7058cc2a680a3a2.mesh.bin";
-  sprintf(mesh,"amr.sig=%s.mesh.bin","test_mesh");
+  double xmin[3]={-0.1,-0.05,-0.05},xmax[3]={0.1,0.05,0.05};
 
+  //generate mesh or read from file
   PIC::Mesh::mesh->AllowBlockAllocation=false;
-  if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
-  PIC::BC::ExternalBoundary::Periodic::Init(xmin,xmax,BulletLocalResolution);
-  }else{
-    PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
-  }
+
+  PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
   PIC::Mesh::mesh->memoryAllocationReport();
 
   //generate mesh or read from file
-  bool NewMeshGeneratedFlag=false;
-
-  char fullname[STRING_LENGTH];
-  sprintf(fullname,"%s/%s",PIC::UserModelInputDataPath,mesh);
-
-  FILE *fmesh=NULL;
-
-  fmesh=fopen(fullname,"r");
-
-  if (fmesh!=NULL) {
-    fclose(fmesh);
-    PIC::Mesh::mesh->readMeshFile(fullname);
+  if (PIC::Mesh::mesh->ThisThread==0) {
+     PIC::Mesh::mesh->buildMesh();
+     PIC::Mesh::mesh->saveMeshFile("mesh.msh");
+     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
   else {
-    NewMeshGeneratedFlag=true;
-
-    if (PIC::Mesh::mesh->ThisThread==0) {
-       PIC::Mesh::mesh->buildMesh();
-       PIC::Mesh::mesh->saveMeshFile("mesh.msh");
-       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-    }
-    else {
-       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
-       PIC::Mesh::mesh->readMeshFile("mesh.msh");
-    }
-  }
-
-
-  //if the new mesh was generated => rename created mesh.msh into amr.sig=0x%lx.mesh.bin
-  if (NewMeshGeneratedFlag==true) {
-    unsigned long MeshSignature=PIC::Mesh::mesh->getMeshSignature();
-
-    if (PIC::Mesh::mesh->ThisThread==0) {
-      char command[300];
-
-      sprintf(command,"mv mesh.msh amr.sig=0x%lx.mesh.bin",MeshSignature);
-      system(command);
-    }
-  }
-
-  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+     PIC::Mesh::mesh->readMeshFile("mesh.msh");
+   }
   
+  MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   PIC::Mesh::initCellSamplingDataBuffer();
 
@@ -510,6 +452,11 @@ int main(int argc,char **argv) {
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
   PIC::Mesh::mesh->InitCellMeasure();
+
+  //create the list of mesh nodes where the injection boundary conditinos are applied
+  PIC::BC::BlockInjectionBCindicatior=Radiation::Injection::BoundingBoxParticleInjectionIndicator;
+  PIC::BC::userDefinedBoundingBlockInjectionFunction=Radiation::Injection::BoundingBoxInjection;
+  PIC::BC::InitBoundingBoxInjectionBlockList();
 
   PIC::Init_AfterParser();
   PIC::Mover::Init();
@@ -524,106 +471,24 @@ int main(int argc,char **argv) {
   if(_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_){
   PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable();
   }
-  //-387.99e2
+
   int s,i,j,k;
-
-
   if (PIC::ThisThread==0) printf("test2\n");
  
-  // PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(0);
-  //PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(1);
-  
-  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*0.1);
-  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(1,1e-2*0.0795774715459477*0.1);
+  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*10*0.001*0.01*0.001);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
-  //solve the transport equation
-  //set the initial conditions for the transport equation
-  //  TransportEquation::SetIC(3);
- 
+  Radiation::IC::Set();
+  PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
+  
+  int totalIter=300000;
 
-  switch (_PIC_BC__PERIODIC_MODE_) {
-  case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh->ParallelBlockDataExchange();
-      break;
-      
-  case _PIC_BC__PERIODIC_MODE_ON_:
-    PIC::BC::ExternalBoundary::UpdateData();
-      break;
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) totalIter=100;
+
+  for (int niter=0;niter<totalIter;niter++) {
+    PIC::TimeStep();
   }
-    
-  int  totalIter,CaseNumber;
-
-  //SetIC();
-
-  totalIter=60;
-     
-    switch (_PIC_BC__PERIODIC_MODE_) {
-    case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh->ParallelBlockDataExchange();
-      break;
-      
-    case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData();
-      break;
-    }
-    PIC::Mesh::mesh->outputMeshDataTECPLOT("ic.dat",0);
-  
-
-      int LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
-      int GlobalParticleNumber;
-      MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-      printf("Before cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-      std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
-
-      CleanParticles();
-      LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
-      MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-      printf("After cleaning, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-
-      PrepopulateDomain();
-
-      LocalParticleNumber=PIC::ParticleBuffer::GetAllPartNum();
-      MPI_Allreduce(&LocalParticleNumber,&GlobalParticleNumber,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
-      printf("After prepopulating, LocalParticleNumber,GlobalParticleNumber,iThread:%d,%d,%d\n",LocalParticleNumber,GlobalParticleNumber,PIC::ThisThread);
-      std::cout<<"LocalParticleNumber: "<<LocalParticleNumber<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
-   
-    switch (_PIC_BC__PERIODIC_MODE_) {
-    case _PIC_BC__PERIODIC_MODE_OFF_:
-      PIC::Mesh::mesh->ParallelBlockDataExchange();
-      break;
-      
-    case _PIC_BC__PERIODIC_MODE_ON_:
-      PIC::BC::ExternalBoundary::UpdateData();
-      break;
-    }
-    
-    PIC::Sampling::Sampling();
-
-    for (int niter=0;niter<totalIter;niter++) {
-    
-      //PIC::Mesh::mesh->outputMeshDataTECPLOT("1.dat",0);
-    
-      //TransportEquation::TimeStep();
-  
-      PIC::TimeStep();
-      //PIC::FieldSolver::Electromagnetic::ECSIM::TimeStep();
-
-      //PIC::Mesh::mesh->outputMeshDataTECPLOT("2.dat",0);
-
-
-      switch (_PIC_BC__PERIODIC_MODE_) {
-      case _PIC_BC__PERIODIC_MODE_OFF_:
-	PIC::Mesh::mesh->ParallelBlockDataExchange();
-	break;
-
-      case _PIC_BC__PERIODIC_MODE_ON_:
-	PIC::BC::ExternalBoundary::UpdateData();
-	break;
-      }
-
-    }
   
   PIC::RunTimeSystemState::CumulativeTiming::Print();
   MPI_Finalize();
@@ -635,6 +500,4 @@ int main(int argc,char **argv) {
 
   cout << "End of the run" << endl;
   return EXIT_SUCCESS;
-
-
 }

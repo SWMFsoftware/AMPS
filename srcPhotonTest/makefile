@@ -4,7 +4,7 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = main_lib.o 
+MAINLIBOBJ = main_lib.o radiation.o 
 
 MAINOBJ = main.o
 
