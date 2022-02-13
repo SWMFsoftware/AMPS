@@ -39,7 +39,11 @@ namespace Radiation {
   int RequestStaticCellData(int offset);
   int ProcessParticlesBoundaryIntersection(long int ptr,double* xInit,double* vInit,int nIntersectionFace,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *startNode);
 
+  _TARGET_DEVICE_ _TARGET_HOST_ 
   int Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+ 
+  _TARGET_GLOBAL_
+  void MoverManagerGPU(double  dtTota);
 
   namespace Injection {
     bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);

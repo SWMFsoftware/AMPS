@@ -18,7 +18,7 @@ void Radiation::Init() {
   PIC::Mesh::InterpolateCenterNode.push_back(Interpolate);
 
   //particle interaction with the boundary of the domain
-  PIC::Mover::ProcessOutsideDomainParticles=ProcessParticlesBoundaryIntersection;
+//  PIC::Mover::ProcessOutsideDomainParticles=ProcessParticlesBoundaryIntersection;
 
   //particle produced in thermal radiation
   PIC::BC::UserDefinedParticleInjectionFunction=ThermalRadiation::InjectParticles;
@@ -115,6 +115,7 @@ bool Radiation::Injection::BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PI
   return false;
 }
 
+
 long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   bool ExternalFaces[6];
   int nface,idim;
@@ -135,8 +136,93 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
 
       PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,0,startNode);
    
+      
+      double Vol=LocalTimeStep*SpeedOfLight_cm*Vector3D::Length(e0)*Vector3D::Length(e1);
+      
+      
+       double T0=1.0; //equilibrium temeprature
+       double I0=Opasity::GetSigma(T0)*Material::RadiationConstant*pow(T0,4);
+       
+
+
+//       double I0=10* Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4)/(4.0*Pi); 
+
+
+       double apart=I0*Vol/ParticleWeight;  
+       int npart=(int) apart;
+       
+       if (apart-npart>rnd()) npart++;
+       
+       for (int ii=0;ii<npart;ii++) {
+         double dx=-rnd()*LocalTimeStep*SpeedOfLight_cm;
+     
+         Vector3D::Distribution::Uniform(v,SpeedOfLight_cm);
+         
+         if (dx+v[0]*LocalTimeStep>0.0) {
+        //generate the new particle position on the face
+        for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim];
+        
+        x[0]=dx+v[0]*LocalTimeStep;
+        
+        //find the localtion of the particle 
+        int i,j,k;
+
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->findTreeNode(x,startNode);
+        if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+        //generate a particle
+        newParticle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true); 
+        newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
+        nInjectedParticles++;
+
+        //generate particles' velocity
+        /*
+        double theta=asin(rnd()); 
+        v[0]=SpeedOfLight_cm*cos(theta); 
+        
+     //   v[0]=sqrt(rnd())*SpeedOfLight_cm; 
+        vr=sqrt(SpeedOfLight_cm*SpeedOfLight_cm-v[0]*v[0]);
+
+        theta=PiTimes2*rnd(); 
+        v[1]=vr*sin(theta); 
+        v[2]=vr*cos(theta);
+*/
+
+        PIC::ParticleBuffer::SetX(x,newParticleData);
+        PIC::ParticleBuffer::SetV(v,newParticleData);
+        PIC::ParticleBuffer::SetI(spec,newParticleData);
+        PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+      }
+    }
+  } 
+}
+
+  return nInjectedParticles;
+}
+
+
+/*long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  bool ExternalFaces[6];
+  int nface,idim;
+  long int newParticle;
+  PIC::ParticleBuffer::byte *newParticleData;
+  long int nInjectedParticles=0;
+  double c0,c1,TimeCounter,ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,x[3],v[3],vr,theta;
+  double x0[3],e0[3],e1[3];
+
+  if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
+    if (ExternalFaces[0]==true) {
+      //inject new particles 
+      TimeCounter=0.0;
+      ModelParticlesInjectionRate;
+
+      ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
+      LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
+
+      PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,0,startNode);
+   
       ModelParticlesInjectionRate=1.0;//kev* cm^2 /ns
-      ModelParticlesInjectionRate*=Vector3D::Length(e0)*Vector3D::Length(e1); //kev*/ns 
+      ModelParticlesInjectionRate*=Vector3D::Length(e0)*Vector3D::Length(e1); //kev/ns 
 //      ModelParticlesInjectionRate/=_NANO_; // kev/s 
 
 
@@ -144,7 +230,7 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
      double T0=1.0; //equilibrium temeprature
      double I0=Opasity::GetSigma(T0)*Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4)/(4*Pi);
      double ModelParticleDensity=I0/ParticleWeight;  
-     double ModelParticleFlux=ModelParticleDensity*SpeedOfLight_cm/2.0;
+     double ModelParticleFlux=ModelParticleDensity*SpeedOfLight_cm/4.0;
 
 
       ModelParticlesInjectionRate=ModelParticleFlux*Vector3D::Length(e0)*Vector3D::Length(e1);;
@@ -163,7 +249,7 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
         double theta=asin(rnd()); 
         v[0]=SpeedOfLight_cm*cos(theta); 
         
-     //   v[0]=sqrt(rnd())*SpeedOfLight; 
+     //   v[0]=sqrt(rnd())*SpeedOfLight_cm; 
         vr=sqrt(SpeedOfLight_cm*SpeedOfLight_cm-v[0]*v[0]);
 
         theta=PiTimes2*rnd(); 
@@ -182,7 +268,7 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
   } 
 
   return nInjectedParticles;
-}
+}*/
 
 void Radiation::IC::Set() {
   int iNode,i,j,k;
@@ -211,7 +297,7 @@ long int Radiation::Injection::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDat
   return BoundingBoxInjection(0,startNode);
 }
 
-
+_TARGET_HOST_ _TARGET_DEVICE_
 int Radiation::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double v[3],x[3];
   int idim; 
@@ -265,6 +351,23 @@ int Radiation::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
 
   if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+
+#ifdef __CUDA_ARCH__
+  int tptr=ptr;
+  int *source=(int*)(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k));
+
+  long int tempFirstCellParticle=atomicExch(source,tptr);
+
+  if (sizeof(long int )>sizeof(int)) {
+    *(source+1)=0;
+  }
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,_GetParticleDataPointer(tempFirstCellParticle,data->ParticleDataLength,data->ParticleDataBuffer));
+#else
+
   tempFirstCellParticlePtr=node->block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
@@ -273,10 +376,80 @@ int Radiation::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
 
   if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
   *tempFirstCellParticlePtr=ptr;
+#endif
 
   return _PARTICLE_MOTION_FINISHED_;
 }  
 
+_TARGET_GLOBAL_ 
+void Radiation::MoverManagerGPU(double dtTotal) {
+  int s,i,j,k,idim;
+  long int LocalCellNumber,ptr,ptrNext;
+
+  #ifdef __CUDA_ARCH__
+  int id=blockIdx.x*blockDim.x+threadIdx.x;
+  int increment=gridDim.x*blockDim.x;
+  #else
+  int id=0,increment=1;
+  #endif
+
+  for (int iGlobalCell=id;iGlobalCell<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell+=increment) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    PIC::Mesh::cDataBlockAMR *block;
+
+    int ii=iGlobalCell;
+    int i,j,k;
+    int iNode;
+    int t;
+
+    t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    iNode=ii/t;
+    ii=ii%t;
+
+    t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    k=ii/t;
+    ii=ii%t;
+
+    j=ii/_BLOCK_CELLS_X_;
+    i=ii%_BLOCK_CELLS_X_;
+
+    node=PIC::DomainBlockDecomposition::BlockTable[iNode];
+
+    if (node->block!=NULL) {
+      long int ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+      long int ptr_next=ptr;
+
+      while (ptr_next!=-1) {
+        ptr=ptr_next;
+        ptr_next=PIC::ParticleBuffer::GetNext(ptr);
+
+        Radiation::Mover(ptr,dtTotal,node); 
+      }
+    }
+
+    #ifdef __CUDA_ARCH__
+    __syncwarp;
+    #endif
+  }
+
+
+  //update the particle lists 
+  if (id==0)   for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
+
+    if (node==NULL) continue;
+
+    for (;node!=NULL;node=node->nextNodeThisThread) {
+      PIC::Mesh::cDataBlockAMR *block=node->block;
+      if (!block) continue;
+
+      for (int ii=0;ii<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;ii++) {
+        block->FirstCellParticleTable[ii]=block->tempParticleMovingListTable[ii];
+        block->tempParticleMovingListTable[ii]=-1;
+      }
+    }
+  }
+}
  
 
 //absorption of radiation 
@@ -299,15 +472,60 @@ void Radiation::Absorption(long int ptr,long int& FirstParticleCell,cTreeNodeAMR
   if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   cell=node->block->GetCenterNode(i,j,k);
 
+double T0=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
+
+auto F = [&] (double T,double T0) {
+  double res,dU;
+  w=exp(-100/(T*T*T)*SpeedOfLight_cm*LocalTimeStep);
+
+  if (w*ParticleWeightCorrection<1.0E-2) w=0.0;
+  
+  dU=(1.0-w)*ParticleWeightCorrection*GlobalWeight; //GJ   
+
+  res=T0-T+dU/(Material::Density*cell->Measure)/Material::SpecificHeat;
+  return res;
+}; 
+
+double T1,dU;
+
+  MaterialTemparature=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
+  w=exp(-100/pow(MaterialTemparature,3)*SpeedOfLight_cm*LocalTimeStep);
+  if (w*ParticleWeightCorrection<1.0E-2) w=0.0;
+  
+  dU=(1.0-w)*ParticleWeightCorrection*GlobalWeight; //GJ 
+  T1=MaterialTemparature+dU/(Material::Density*cell->Measure)/Material::SpecificHeat; //keV 
+
+double F0,F1,dT;
+
+F0=F(MaterialTemparature,MaterialTemparature);
+
+for (int ii=0;ii<5;ii++) {
+  double dFdT,dT;
+
+  F1=F(T1,MaterialTemparature);
+
+  dFdT=(F1-F0)/(T1-MaterialTemparature);
+  dT=-F1/dFdT;
+
+  T1+=0.5*dT;
+}
+  
+*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=T1;
+
+
+/*
 if (true) {
   MaterialTemparature= *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
 
-  double dU,sigma=Opasity::GetSigma(MaterialTemparature); 
+  double dU,dT,sigma=Opasity::GetSigma(MaterialTemparature); 
   w=exp(-sigma*SpeedOfLight_cm*LocalTimeStep); 
 
   if (w*ParticleWeightCorrection<1.0E-2) w=0.0; 
 
   dU=(1.0-w)*ParticleWeightCorrection*GlobalWeight; //GJ 
+  dT=dU/(Material::Density*cell->Measure)/Material::SpecificHeat;
+
+
   MaterialTemparature+=dU/(Material::Density*cell->Measure)/Material::SpecificHeat; //keV 
   *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=MaterialTemparature;
 }
@@ -357,7 +575,7 @@ delta=(T0-T1)+d0/d1*d2;
    }
    while (cnt-->0);
 }
-
+*/
 
 
   if (w==0.0) {
@@ -446,6 +664,9 @@ long int Radiation::ThermalRadiation::InjectParticles(int spec,int i,int j,int k
   npart=(int)anpart;
 
   if (rnd()<npart-anpart) npart++;
+
+
+  dU_GJ=npart*ParticleWeight/(cell->Measure*Material::Density); //GJ/g 
 
   if (npart!=0) MaterialTemparature-=dU_GJ/Material::SpecificHeat; //keV 
   *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=MaterialTemparature;

@@ -394,7 +394,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   double res,CellSize;
 
   CellSize=startNode->GetCharacteristicCellSize();
-  res=0.00002*CellSize/Radiation::SpeedOfLight_cm;
+  res=0.05*CellSize/Radiation::SpeedOfLight_cm;
 
 
   return (res>1.0) ? 1.0 : res; 
@@ -424,7 +424,7 @@ int main(int argc,char **argv) {
   //seed the random number generator
   rnd_seed(100);
 
-  double xmin[3]={-0.1,-0.05,-0.05},xmax[3]={0.1,0.05,0.05};
+  double xmin[3]={0.0,0.0,0.0},xmax[3]={0.2,0.1,0.1};
 
   //generate mesh or read from file
   PIC::Mesh::mesh->AllowBlockAllocation=false;
@@ -487,6 +487,9 @@ int main(int argc,char **argv) {
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) totalIter=100;
 
   for (int niter=0;niter<totalIter;niter++) {
+
+if (PIC::ThisThread==0) cout << "t=" << niter*PIC::ParticleWeightTimeStep::GlobalTimeStep[0] << "[ns], pass=" << niter*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*Radiation::SpeedOfLight_cm << "[cm]"<<endl;  
+
     PIC::TimeStep();
   }
   
