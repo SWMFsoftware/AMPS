@@ -25,7 +25,7 @@ void Radiation::Init() {
 }
 
 void Radiation::PrintVariableList(FILE* fout,int DataSetNumber) {
-  fprintf(fout,", \"Material Temparature\"");
+  fprintf(fout,", \"Material Temparature\", \"I\", \"Equilibrium Temepature\"");
 }
 
 void Radiation::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -36,10 +36,14 @@ void Radiation::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Ce
 
   struct cDataExchengeBuffer {
     double MaterialTemparature;
+    double I, EquilibriumTemparature;
   } buffer;
 
   if (gather_output_data==true) {
     buffer.MaterialTemparature=*((double*)(MaterialTemperatureOffset+CenterNode->GetAssociatedDataBufferPointer()));
+
+    buffer.I=CenterNode->GetNumberDensity(0); //////*PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
+    buffer.EquilibriumTemparature=pow(4.0*Pi*buffer.I/Material::RadiationConstant/SpeedOfLight_cm,0.25);  
   } 
 
   if ((PIC::ThisThread==0)||(pipe==NULL)) { 
@@ -47,7 +51,7 @@ void Radiation::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int Ce
       pipe->recv((char*)&buffer,sizeof(cDataExchengeBuffer),CenterNodeThread);
     }
 
-    fprintf(fout,"%e ",buffer.MaterialTemparature);
+    fprintf(fout,"%e  %e  %e ",buffer.MaterialTemparature,buffer.I,buffer.EquilibriumTemparature);
   }
   else {
     pipe->send((char*)&buffer,sizeof(cDataExchengeBuffer));
@@ -143,6 +147,7 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
        double T0=1.0; //equilibrium temeprature
        double I0=Opasity::GetSigma(T0)*Material::RadiationConstant*pow(T0,4);
        
+//I0/=30;
 
 
 //       double I0=10* Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4)/(4.0*Pi); 
@@ -453,6 +458,60 @@ void Radiation::MoverManagerGPU(double dtTotal) {
  
 
 //absorption of radiation 
+
+void Radiation::Absorption(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+
+
+
+  int i,j,k,spec;
+  PIC::Mesh::cDataCenterNode *cell;
+  double w,x[3],ParticleWeight,MaterialTemparature;
+  double LocalTimeStep,GlobalWeight,ParticleWeightCorrection;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+
+  ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::ParticleBuffer::GetX(x,ParticleData);
+  spec=PIC::ParticleBuffer::GetI(ParticleData);
+  ParticleWeightCorrection=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+  LocalTimeStep=node->block->GetLocalTimeStep(spec);
+  GlobalWeight=node->block->GetLocalParticleWeight(spec);
+
+  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  cell=node->block->GetCenterNode(i,j,k);
+
+double T0=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
+
+double sigma=Opasity::GetSigma(T0);
+double p=exp(-sigma*SpeedOfLight_cm*LocalTimeStep);
+
+if (rnd()<1-p) {
+  //the particle was absorbed 
+  double dU,dT;
+
+
+  dU=GlobalWeight;
+
+  dT=dU/(Material::Density*cell->Measure)/Material::SpecificHeat;  
+  T0+=dT;
+ 
+  *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=T0;
+
+  //remove the particle from the simulation
+  PIC::ParticleBuffer::DeleteParticle(ptr);
+}
+  else {
+    //keep the particle in the simulation 
+    PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr);
+    PIC::ParticleBuffer::SetPrev(-1,ptr);
+
+    if (FirstParticleCell!=-1) PIC::ParticleBuffer::SetPrev(ptr,FirstParticleCell);
+    FirstParticleCell=ptr;
+  }
+}
+
+/*
 void Radiation::Absorption(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   int i,j,k,spec;
   PIC::Mesh::cDataCenterNode *cell;
@@ -511,7 +570,7 @@ for (int ii=0;ii<5;ii++) {
 }
   
 *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=T1;
-
+*/
 
 /*
 if (true) {
@@ -529,55 +588,9 @@ if (true) {
   MaterialTemparature+=dU/(Material::Density*cell->Measure)/Material::SpecificHeat; //keV 
   *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=MaterialTemparature;
 }
-else {
-  double T0=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
-  
-    double dU,sigma=Opasity::GetSigma(T0);
-  w=exp(-sigma*SpeedOfLight_cm*LocalTimeStep);
-
-  if (w*ParticleWeightCorrection<1.0E-2) w=0.0;
-
-  dU=(1.0-w)*ParticleWeightCorrection*GlobalWeight; //GJ
-  double T1=T0+dU/(Material::Density*cell->Measure)/Material::SpecificHeat; //keV
-  
-  double J,delta;
-
-int cnt=4;
-
-  do {
-    J=-1+ParticleWeightCorrection*GlobalWeight/
-      ((Material::Density*cell->Measure)/(Material::SpecificHeat)*
-      400/pow(T0,4)*SpeedOfLight_cm*LocalTimeStep*exp(-100/pow(T0,3)*SpeedOfLight_cm*LocalTimeStep));  
-
-double c0=ParticleWeightCorrection*GlobalWeight;
-double c1=(Material::Density*cell->Measure)*(Material::SpecificHeat);
-double c2=400/pow(T0,4)*SpeedOfLight_cm*LocalTimeStep;
-double c3=exp(-100/pow(T0,3)*SpeedOfLight_cm*LocalTimeStep);
-
-J=-1+c0/c1*c2*c3; 
-
-
-
-    delta=(T0-T1)+ParticleWeightCorrection*GlobalWeight/
-       ((Material::Density*cell->Measure)/(Material::SpecificHeat)*
-        exp(-100/pow(T0,3)*SpeedOfLight_cm*LocalTimeStep)); 
-
-double d0=ParticleWeightCorrection*GlobalWeight;
-double d1=(Material::Density*cell->Measure)*(Material::SpecificHeat);
-double d2=exp(-100/pow(T0,3)*SpeedOfLight_cm*LocalTimeStep);
-
-delta=(T0-T1)+d0/d1*d2; 
-
-    delta/=J; 
-
-    T1=T0-0.1*delta;
-   
-   }
-   while (cnt-->0);
-}
 */
 
-
+/*
   if (w==0.0) {
     //remove the particle from the simulation
     PIC::ParticleBuffer::DeleteParticle(ptr); 
@@ -593,7 +606,7 @@ delta=(T0-T1)+d0/d1*d2;
     FirstParticleCell=ptr;
   }
 }        
-
+*/
 
 long int Radiation::ThermalRadiation::InjectParticles() {
   int LocalCellNumber,i,j,k;
@@ -636,12 +649,16 @@ long int Radiation::ThermalRadiation::InjectParticles(int spec,int i,int j,int k
   double rho=3.0; //g/cm^3
   double SpecificHeat=0.1; //GJ/g/keV
 
-  dU=sigma*a*pow(Radiation::SpeedOfLight_cm,2)*pow(MaterialTemparature,4)/(4.0*Pi); //GJ/g/ns 
+//  dU=sigma*a*pow(Radiation::SpeedOfLight_cm,2)*pow(MaterialTemparature,4)/(4.0*Pi); //GJ/g/ns 
+
+dU=sigma*a*Radiation::SpeedOfLight_cm*pow(MaterialTemparature,4); //GJ/g/n
+
   dU_GJ=dU*LocalTimeStep; //GJ/g 
+
   dU=dU_GJ*cell->Measure*Material::Density; //GJ
 
 //  dU_kev=dU*1.0E9*J2eV/1.0E3;
-  anpart=dU/ParticleWeight;
+  anpart=dU/ParticleWeight*SpeedOfLight_cm/(4.0*Pi);
 
 /*
   dU=100.0/pow(MaterialTemparature,3)* 0.01372 * 29.98 *  pow(MaterialTemparature,4)/(4.0*Pi); //GJ/g/ns 
@@ -655,10 +672,13 @@ long int Radiation::ThermalRadiation::InjectParticles(int spec,int i,int j,int k
   anpart=dU_kev/ParticleWeight;
 */
 
-  if (anpart>100.0) {
-    WeightCorrectionFactor=anpart/100.0;
-    anpart=100.0;
-  }
+
+  WeightCorrectionFactor=1.0;
+
+//  if (anpart>100.0) {
+//    WeightCorrectionFactor=anpart/100.0;
+//    anpart=100.0;
+//  }
 
 
   npart=(int)anpart;
@@ -668,7 +688,12 @@ long int Radiation::ThermalRadiation::InjectParticles(int spec,int i,int j,int k
 
   dU_GJ=npart*ParticleWeight/(cell->Measure*Material::Density); //GJ/g 
 
-  if (npart!=0) MaterialTemparature-=dU_GJ/Material::SpecificHeat; //keV 
+///  if (npart!=0) MaterialTemparature-=dU_GJ/Material::SpecificHeat * SpeedOfLight_cm/(4.0*Pi); //keV 
+
+MaterialTemparature-=npart*ParticleWeight/(Material::SpecificHeat*cell->Measure*Material::Density) ; 
+
+
+
   *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=MaterialTemparature;
 
   for (int ii=0;ii<npart;ii++) {
@@ -680,7 +705,7 @@ long int Radiation::ThermalRadiation::InjectParticles(int spec,int i,int j,int k
 
     ptr=PIC::ParticleBuffer::GetNewParticle(block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true);
 
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,ptr);
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightCorrectionFactor,ptr);
     PIC::ParticleBuffer::SetX(x,ptr);
     PIC::ParticleBuffer::SetV(v,ptr);
     PIC::ParticleBuffer::SetI(spec,ptr);

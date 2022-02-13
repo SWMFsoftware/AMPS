@@ -1,9 +1,9 @@
 #main
 
-SpeciesList=H_PLUS,25thElectron
+SpeciesList=photon 
 
 DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=on ! on,off 
+ForceRepeatableSimulationPath=off ! on,off 
 
 !MoverIntegratorMode=Lapenta2017
 
@@ -51,10 +51,20 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_OFF_
   define _PIC_LINEAR_SOLVER_MODE_ _PIC_MODE_OFF_
 
+ define _PIC_USER_PARTICLE_PROCESSING__MODE_  _PIC_MODE_ON_
+ define _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(ptr,FirstParticleCell,node)   Radiation::Absorption(ptr,FirstParticleCell,node)
+
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Radiation::Mover(ptr,LocalTimeStep,node)
+
+! OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
+  !define _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=off !on,off
-  InitialSampleLength=20
+  InitialSampleLength=101
   TestRunTotalIteration=50
 
   NastranSurfaceUserData=on
@@ -91,6 +101,14 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _TARGET_ _TARGET_NONE_
 
   addPhysicalModelHeader=PeriodicBCTest.dfn
+  addPhysicalModelHeader=radiation.h
+
+
+  Source:UserDefined=off \\ !on,off
+    SourceProcessCode=ThremalRadiation  \\
+    SourceRate=Radiation::ThermalRadiation::Rate \\
+    GenerateParticleProperties=Radiation::ThermalRadiation::GetParticle 
+
 
 #endblock
 

@@ -394,7 +394,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   double res,CellSize;
 
   CellSize=startNode->GetCharacteristicCellSize();
-  res=0.05*CellSize/Radiation::SpeedOfLight_cm;
+  res=0.01*CellSize/Radiation::SpeedOfLight_cm;
 
 
   return (res>1.0) ? 1.0 : res; 
@@ -475,7 +475,7 @@ int main(int argc,char **argv) {
   int s,i,j,k;
   if (PIC::ThisThread==0) printf("test2\n");
  
-  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*10*0.001*0.01*0.001);
+  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*10*0.001*0.01*0.001*0.1);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 
