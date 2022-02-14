@@ -302,6 +302,148 @@ long int Radiation::Injection::BoundingBoxInjection(cTreeNodeAMR<PIC::Mesh::cDat
   return BoundingBoxInjection(0,startNode);
 }
 
+
+_TARGET_HOST_ _TARGET_DEVICE_
+int Radiation::Mover1(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  double v[3],x[3];
+  int idim;
+  PIC::ParticleBuffer::byte *ParticleData;
+  PIC::Mesh::cDataCenterNode *cell;
+
+  ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::ParticleBuffer::GetX(x,ParticleData);
+  PIC::ParticleBuffer::GetV(v,ParticleData);
+
+  int i,j,k;
+  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+
+  static int ncalls=0;
+  ncalls++;
+
+
+if (ncalls==25106) {
+double d=33;
+d+=33;
+}
+
+double xInit[3];
+memcpy(xInit,x,3*sizeof(double));
+
+  cell=node->block->GetCenterNode(i,j,k);
+
+  double T0=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
+  double sigma=Opasity::GetSigma(T0);
+
+
+  while (dtTotal>0.0) {
+    //get the time interval to the next event 
+    double dt=-log(rnd())/(SpeedOfLight_cm*sigma);
+
+    if (dt<dtTotal) {
+      //the particle is absorbed 
+      for (idim=0;idim<3;idim++) x[idim]+=dt*v[idim];
+
+      for (idim=0;idim<3;idim++) {
+        double delta;
+
+        if (x[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) {
+          delta=PIC::Mesh::mesh->xGlobalMin[idim]-x[idim];
+
+          x[idim]=PIC::Mesh::mesh->xGlobalMin[idim]+delta;
+          v[idim]*=-1.0;
+        }
+
+        if (x[idim]>PIC::Mesh::mesh->xGlobalMax[idim]) {
+          delta=x[idim]-PIC::Mesh::mesh->xGlobalMax[idim];
+
+          x[idim]=PIC::Mesh::mesh->xGlobalMax[idim]-delta;
+          v[idim]*=-1.0;
+        }
+      }
+
+
+      node=PIC::Mesh::mesh->findTreeNode(x,node);
+
+      if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+      cell=node->block->GetCenterNode(i,j,k);
+
+      T0=*(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer());
+
+      double ParticleWeightCorrection=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+      double GlobalWeight=node->block->GetLocalParticleWeight(0);
+
+      double dT=ParticleWeightCorrection*GlobalWeight/(Material::Density*cell->Measure)/Material::SpecificHeat;
+      T0+=dT;
+
+      *(double*)(MaterialTemperatureOffset+cell->GetAssociatedDataBufferPointer())=T0; 
+
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_DELETED_ON_THE_FACE_;
+    }
+    else {
+      //the particle survived  
+      for (idim=0;idim<3;idim++) x[idim]+=dtTotal*v[idim];
+
+      if (x[0]<PIC::Mesh::mesh->xGlobalMin[0]) {
+        //the particle existed from the domain 
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_DELETED_ON_THE_FACE_;
+      }
+
+      //check if the particle ger scattered from the walls 
+      for (idim=0;idim<3;idim++) {
+        double delta;
+
+        if (x[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) {
+          delta=PIC::Mesh::mesh->xGlobalMin[idim]-x[idim];
+
+          x[idim]=PIC::Mesh::mesh->xGlobalMin[idim]+delta;
+          v[idim]*=-1.0;
+        }
+
+        if (x[idim]>PIC::Mesh::mesh->xGlobalMax[idim]) {
+          delta=x[idim]-PIC::Mesh::mesh->xGlobalMax[idim];
+
+          x[idim]=PIC::Mesh::mesh->xGlobalMax[idim]-delta;
+          v[idim]*=-1.0;
+        }
+      }
+
+      //find a new location of the particle and add it to the processed particle list 
+      node=PIC::Mesh::mesh->findTreeNode(x,node);
+
+      if (node==NULL) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_DELETED_ON_THE_FACE_;
+      }
+
+      dtTotal=-1.0;
+    } 
+  }
+
+  PIC::ParticleBuffer::SetX(x,ParticleData);
+  PIC::ParticleBuffer::SetV(v,ParticleData);
+
+  //attach the particle to the temporaty list
+  long int tempFirstCellParticle,*tempFirstCellParticlePtr;
+
+  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+
+  tempFirstCellParticlePtr=node->block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
+  tempFirstCellParticle=(*tempFirstCellParticlePtr);
+
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
+  *tempFirstCellParticlePtr=ptr;
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
+
 _TARGET_HOST_ _TARGET_DEVICE_
 int Radiation::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double v[3],x[3];
@@ -701,7 +843,7 @@ MaterialTemparature-=npart*ParticleWeight/(Material::SpecificHeat*cell->Measure*
     x[1]=node->xmin[1]+(node->xmax[1]-node->xmin[1])*(j+rnd())/_BLOCK_CELLS_Y_;
     x[2]=node->xmin[2]+(node->xmax[2]-node->xmin[2])*(k+rnd())/_BLOCK_CELLS_Z_;
 
-    Vector3D::Distribution::Uniform(v,SpeedOfLight); 
+    Vector3D::Distribution::Uniform(v,SpeedOfLight_cm); 
 
     ptr=PIC::ParticleBuffer::GetNewParticle(block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true);
 

@@ -41,6 +41,8 @@ namespace Radiation {
 
   _TARGET_DEVICE_ _TARGET_HOST_ 
   int Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  
+  int Mover1(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
  
   _TARGET_GLOBAL_
   void MoverManagerGPU(double  dtTota);
