@@ -58,7 +58,7 @@ void add_counters_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const in
   int Mover2(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
  
   _TARGET_GLOBAL_
-  void MoverManagerGPU(double  dtTota);
+  void MoverManagerGPU();
 
   namespace Injection {
     bool BoundingBoxParticleInjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);

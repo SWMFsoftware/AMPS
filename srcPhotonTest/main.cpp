@@ -411,7 +411,7 @@ double BulletLocalResolution(double *x) {
 
 int main(int argc,char **argv) {
 
-
+  PIC::Mover::UserDefinedMoverManager=Radiation::MoverManagerGPU; 
   
   time_t TimeValue=time(NULL);
   tm *ct=localtime(&TimeValue);

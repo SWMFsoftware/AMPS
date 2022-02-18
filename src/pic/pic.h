@@ -4775,6 +4775,11 @@ void DeleteAttachedParticles();
 
   namespace Mover {
 
+    //the pointer to a function that replaces the build-in mover procedure with that provided by a user
+     typedef void (*fUserDefinedMoverManager)(void);
+     extern fUserDefinedMoverManager UserDefinedMoverManager;
+
+
     //perform backward time integraion of the tarticle trajectory;
     //if BackwardTimeIntegrationMode==_PIC_MODE_ON_ the particle trajectory will be integrated backward in time
     extern int BackwardTimeIntegrationMode;

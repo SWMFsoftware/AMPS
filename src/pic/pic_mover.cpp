@@ -598,6 +598,11 @@ void PIC::Mover::MoveParticles() {
   long int ParticleList,ptr;
   double LocalTimeStep;
 
+  if (UserDefinedMoverManager!=NULL) {
+    UserDefinedMoverManager();
+    return;
+  }
+
   timing_start("PT::Mover");
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   //the total number of the particle moving procedure calls

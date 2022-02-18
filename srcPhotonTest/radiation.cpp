@@ -1154,11 +1154,13 @@ int Radiation::Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBl
 }  */
 
 _TARGET_GLOBAL_ 
-void Radiation::MoverManagerGPU(double dtTotal) {
+void Radiation::MoverManagerGPU() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
 
 //Radiation::ClearCellCounters();
+
+  double dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
 
   #ifdef __CUDA_ARCH__
   int id=blockIdx.x*blockDim.x+threadIdx.x;

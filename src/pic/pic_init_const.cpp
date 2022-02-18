@@ -12,6 +12,10 @@ int PIC::CPU::ThisThread=0,PIC::CPU::nTotalThreads=1;
 _TARGET_DEVICE_ int PIC::GPU::ThisThread=0;
 _TARGET_DEVICE_ int PIC::GPU::nTotalThreads=1;
 
+//pointer to a user-defined mover manager
+PIC::Mover::fUserDefinedMoverManager PIC::Mover::UserDefinedMoverManager=NULL;
+
+
 //the list containing the functions used to exchange the run time execution statistics
 vector<PIC::fExchangeExecutionStatistics> PIC::ExchangeExecutionStatisticsFunctions;
 
