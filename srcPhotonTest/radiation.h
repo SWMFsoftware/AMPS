@@ -31,6 +31,11 @@ namespace Radiation {
   extern long int PhotonFreqOffset;
   extern int MaterialTemperatureOffset;
 
+  extern int AbsorptionCounterOffset;
+  extern int EmissionCounterOffset;
+
+  void ClearCellCounters();
+  void Emission();
 
   void Init();
   void PrintVariableList(FILE* fout,int DataSetNumber);
@@ -43,6 +48,7 @@ namespace Radiation {
   int Mover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   
   int Mover1(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int Mover2(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
  
   _TARGET_GLOBAL_
   void MoverManagerGPU(double  dtTota);
