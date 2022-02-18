@@ -25,6 +25,9 @@
 
 namespace Radiation {
 
+
+  void ProcessCenterNodeAssociatedData(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
+
   const double SpeedOfLight_cm=29.98; //cm/ns
 
 

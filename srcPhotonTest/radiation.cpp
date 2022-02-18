@@ -10,6 +10,14 @@ int Radiation::MaterialTemperatureOffset=-1;
 int Radiation::AbsorptionCounterOffset=-1;
 int Radiation::EmissionCounterOffset=-1;
 
+
+void Radiation::ProcessCenterNodeAssociatedData(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
+  *(double*)(AbsorptionCounterOffset+TargetBlockAssociatedData)+=*(double*)(AbsorptionCounterOffset+SourceBlockAssociatedData);
+  *(double*)(EmissionCounterOffset+TargetBlockAssociatedData)+=*(double*)(EmissionCounterOffset+SourceBlockAssociatedData);
+}
+
+
+
 void Radiation::ClearCellCounters() {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
@@ -107,19 +115,19 @@ void Radiation::Emission() {
       
       
       
-      double I0=f*Opasity::GetSigma(T0)*Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4)/(4*Pi);
+      double I0=f*Opasity::GetSigma(T0)*Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4); ///(4*Pi);
       
       double ParticleWeight=node->block->GetLocalParticleWeight(0);
       double LocalTimeStep=node->block->GetLocalTimeStep(0);
           
-      dU=cell->Measure*I0;
-      double anpart=dU*LocalTimeStep/ParticleWeight;  
+      dU=cell->Measure*I0*LocalTimeStep;
+      double anpart=dU/ParticleWeight;  
   
       double WeightCorrectionFactor=1.0;
       double x[3],v[3];
       
       int npart=(int) anpart;
-      if (rnd()<anpart-npart) npart++;
+      if (anpart-npart>0.1) if (rnd()<anpart-npart) npart++;
       
       *(double*)(EmissionCounterOffset+cell->GetAssociatedDataBufferPointer())+=npart*ParticleWeight;
       
@@ -165,6 +173,9 @@ void Radiation::Init() {
   //request a place in a particle's tate vector
   PIC::ParticleBuffer::RequestDataStorage(PhotonFreqOffset,sizeof(double));
   PIC::IndividualModelSampling::RequestStaticCellData.push_back(RequestStaticCellData);
+
+  PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(true);
+  PIC::Parallel::CenterBlockBoundaryNodes::ProcessCenterNodeAssociatedData=ProcessCenterNodeAssociatedData;
   
 
   //register output functions
@@ -176,7 +187,7 @@ void Radiation::Init() {
 //  PIC::Mover::ProcessOutsideDomainParticles=ProcessParticlesBoundaryIntersection;
 
   //particle produced in thermal radiation
-  PIC::BC::UserDefinedParticleInjectionFunction=ThermalRadiation::InjectParticles;
+//  PIC::BC::UserDefinedParticleInjectionFunction=ThermalRadiation::InjectParticles;
 }
 
 void Radiation::PrintVariableList(FILE* fout,int DataSetNumber) {
@@ -318,10 +329,22 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
 
        double apart=I0*Vol/ParticleWeight;  
        int npart=(int) apart;
+
+
+
+
+double EnergyFlux=Material::RadiationConstant*SpeedOfLight_cm*pow(T0,4)/4*LocalTimeStep*Vector3D::Length(e0)*Vector3D::Length(e1);
+      apart=EnergyFlux/ParticleWeight;
+      npart=(int) apart;
+
+
+
        
        if (apart-npart>rnd()) npart++;
        
        for (int ii=0;ii<npart;ii++) {
+
+/*
          double dx=-rnd()*LocalTimeStep*SpeedOfLight_cm;
      
          Vector3D::Distribution::Uniform(v,SpeedOfLight_cm);
@@ -331,15 +354,34 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
         for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim];
         
         x[0]=dx+v[0]*LocalTimeStep;
+*/
         
         //find the localtion of the particle 
         int i,j,k;
+        double vr,phi;
+
+        v[0]=SpeedOfLight_cm*sqrt(rnd());
+        vr=sqrt(SpeedOfLight_cm*SpeedOfLight_cm-v[0]*v[0]);
+        phi=2.0*Pi*rnd();
+        v[1]=vr*sin(phi);
+        v[2]=vr*cos(phi);        
+
+
+v[0]=SpeedOfLight_cm;
+v[1]=0.0,v[2]=0.0;
+
+        for (idim=0,c0=rnd(),c1=rnd();idim<DIM;idim++) x[idim]=x0[idim]+c0*e0[idim]+c1*e1[idim];
+
 
         cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->findTreeNode(x,startNode);
         if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,node,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
         //generate a particle
-        newParticle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true); 
+        //newParticle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true); 
+
+        newParticle=PIC::ParticleBuffer::GetNewParticle();
+
+
         newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
         nInjectedParticles++;
 
@@ -360,10 +402,13 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
         PIC::ParticleBuffer::SetV(v,newParticleData);
         PIC::ParticleBuffer::SetI(spec,newParticleData);
         PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+
+
+        Radiation::Mover2(newParticle,rnd()*LocalTimeStep,node);
+
       }
     }
   } 
-}
 
   return nInjectedParticles;
 }
@@ -501,7 +546,7 @@ memcpy(xInit,x,3*sizeof(double));
 
   while (dtTotal>0.0) {
     //get the time interval to the next event 
-    double dt=-log(rnd())/(SpeedOfLight_cm*sigma);
+    double dt=fabs(log(rnd())/(SpeedOfLight_cm*sigma));
 
     if (dt<dtTotal) {
       //the particle is absorbed 
@@ -623,7 +668,7 @@ int Radiation::Mover2(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataB
   ncalls++;
 
 
-if (ncalls==25106) {
+if ((ncalls==463983)||(x[0]>0.03)) {
 double d=33;
 d+=33;
 }
@@ -645,44 +690,112 @@ memcpy(xInit,x,3*sizeof(double));
 
   while (dtTotal>0.0) {
     //get the time interval to the next event 
-    double dt=-log(rnd())/(SpeedOfLight_cm*sigma);
+    double dt=fabs(-log(rnd())/(SpeedOfLight_cm*sigma));
+
+//dt=1000000;
 
     if (dt<dtTotal) {
       //the particle is absorbed or scatered
-      for (idim=0;idim<3;idim++) x[idim]+=dt*v[idim];
+      //     for (idim=0;idim<3;idim++) x[idim]+=dt*v[idim];
 
       if (x[0]<0.0) {
         //the particle left the domain -> remove it
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_DELETED_ON_THE_FACE_;
       }
-      
-      for (idim=0;idim<3;idim++) {
-        double delta;
 
-        if (x[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) {
-          delta=PIC::Mesh::mesh->xGlobalMin[idim]-x[idim];
+      double dtmove=dt;
+      int iface_last=-1;
 
-          x[idim]=PIC::Mesh::mesh->xGlobalMin[idim]+delta;
-          v[idim]*=-1.0;
+      while (dtmove>0.0) {
+        int iFaceMinTime=-1;
+        double dtFlight,dtFlightmin=-1.0;
+
+        for (int iface=0;iface<6;iface++) if (iface!=iface_last) {
+          switch (iface) {
+          case 0:
+            dtFlight=(v[0]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[0]-x[0])/v[0] : 1000000;
+            break;
+          case 1: 
+            dtFlight=(v[0]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[0]-x[0])/v[0] : 1000000;
+            break;
+
+          case 2:
+            dtFlight=(v[1]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[1]-x[1])/v[1] : 1000000;
+            break;
+          case 3:
+            dtFlight=(v[1]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[1]-x[1])/v[1] : 1000000;
+            break;
+
+          case 4:
+            dtFlight=(v[2]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[2]-x[2])/v[2] : 1000000;
+            break;
+          case 5:
+            dtFlight=(v[2]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[2]-x[2])/v[2] : 1000000;
+            break;
+          }
+
+          if (dtFlight>0.0) {
+          if (dtFlightmin<0.0) { 
+            dtFlightmin=dtFlight;
+            iFaceMinTime=iface;
+          } 
+          else {
+            if (dtFlightmin>dtFlight) {
+              dtFlightmin=dtFlight;
+              iFaceMinTime=iface;
+            }
+          }
+          }
         }
 
-        if (x[idim]>PIC::Mesh::mesh->xGlobalMax[idim]) {
-          delta=x[idim]-PIC::Mesh::mesh->xGlobalMax[idim];
 
-          x[idim]=PIC::Mesh::mesh->xGlobalMax[idim]-delta;
-          v[idim]*=-1.0;
+        if ((dtFlightmin<dtmove)&&(iFaceMinTime==0)) {
+          //the particle left the domain -> remove it
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_DELETED_ON_THE_FACE_;
+        }
+
+        if (dtmove<dtFlightmin) {
+          for (idim=0;idim<3;idim++) x[idim]+=dtmove*v[idim];
+          dtmove=0.0;
+        }
+        else {
+          for (idim=0;idim<3;idim++) x[idim]+=dtFlightmin*v[idim]; 
+
+          iface_last=iFaceMinTime;
+
+          switch (iFaceMinTime) {
+          case 0: case 1:
+            v[0]*=-1.0;
+            break;
+          case 2: case 3:
+            v[1]*=-1.0;
+            break;
+          case 4:case 5:
+            v[2]*=-1.0;
+          }
+
+          dtmove-=dtFlightmin;
         }
       }
 
-      node=PIC::Mesh::mesh->findTreeNode(x,node);
+
+if ((ncalls==463983)||(x[0]>0.03)) {
+double d=33;
+d+=33;
+}
+
+
+
+        node=PIC::Mesh::mesh->findTreeNode(x,node);
 
      
       
       //determine whether the particle is absorbed or scattered
       if (rnd()<(1.0-f)) {
         //the particle is scattered -> get the new velocity direction for the particle
-        Vector3D::Distribution::Uniform(v,SpeedOfLight_cm);
+//        Vector3D::Distribution::Uniform(v,SpeedOfLight_cm);
         dtTotal-=dt;
       }
       else {
@@ -719,32 +832,120 @@ memcpy(xInit,x,3*sizeof(double));
     }
     else {
       //the particle survived  
-      for (idim=0;idim<3;idim++) x[idim]+=dtTotal*v[idim];
+      
+      
+      double dtmove=dtTotal;
+      int iface_last=-1;
 
-      if (x[0]<PIC::Mesh::mesh->xGlobalMin[0]) {
-        //the particle existed from the domain 
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_DELETED_ON_THE_FACE_;
-      }
+      while (dtmove>0.0) {
+        int iFaceMinTime=-1;
+        double dtFlight,dtFlightmin=-1.0;
 
-      //check if the particle ger scattered from the walls 
-      for (idim=0;idim<3;idim++) {
-        double delta;
+        for (int iface=0;iface<6;iface++) if (iface!=iface_last) {
+          switch (iface) {
+          case 0:
+            dtFlight=(v[0]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[0]-x[0])/v[0] : 1000000;
+            break;
+          case 1: 
+            dtFlight=(v[0]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[0]-x[0])/v[0] : 1000000;
+            break;
 
-        if (x[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) {
-          delta=PIC::Mesh::mesh->xGlobalMin[idim]-x[idim];
+          case 2:
+            dtFlight=(v[1]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[1]-x[1])/v[1] : 1000000;
+            break;
+          case 3:
+            dtFlight=(v[1]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[1]-x[1])/v[1] : 1000000;
+            break;
 
-          x[idim]=PIC::Mesh::mesh->xGlobalMin[idim]+delta;
-          v[idim]*=-1.0;
+          case 4:
+            dtFlight=(v[2]!=0.0) ? (PIC::Mesh::mesh->xGlobalMin[2]-x[2])/v[2] : 1000000;
+            break;
+          case 5:
+            dtFlight=(v[2]!=0.0) ? (PIC::Mesh::mesh->xGlobalMax[2]-x[2])/v[2] : 1000000;
+            break;
+          }
+
+          if (dtFlight>0.0) {
+          if (dtFlightmin<0.0) { 
+            dtFlightmin=dtFlight;
+            iFaceMinTime=iface;
+          } 
+          else {
+            if (dtFlightmin>dtFlight) {
+              dtFlightmin=dtFlight;
+              iFaceMinTime=iface;
+            }
+          }
+          }
+
         }
 
-        if (x[idim]>PIC::Mesh::mesh->xGlobalMax[idim]) {
-          delta=x[idim]-PIC::Mesh::mesh->xGlobalMax[idim];
 
-          x[idim]=PIC::Mesh::mesh->xGlobalMax[idim]-delta;
-          v[idim]*=-1.0;
+        if ((dtFlightmin<dtmove)&&(iFaceMinTime==0)) {
+          //the particle left the domain -> remove it
+          PIC::ParticleBuffer::DeleteParticle(ptr);
+          return _PARTICLE_DELETED_ON_THE_FACE_;
+        }
+
+        if (dtmove<dtFlightmin) {
+          for (idim=0;idim<3;idim++) x[idim]+=dtmove*v[idim];
+          dtmove=0.0;
+        }
+        else {
+          for (idim=0;idim<3;idim++) x[idim]+=dtFlightmin*v[idim]; 
+
+iface_last=iFaceMinTime;
+
+          switch (iFaceMinTime) {
+          case 0: case 1:
+            v[0]*=-1.0;
+            break;
+          case 2: case 3:
+            v[1]*=-1.0;
+            break;
+          case 4:case 5:
+            v[2]*=-1.0;
+          }
+
+          dtmove-=dtFlightmin;
         }
       }
+      
+      
+if ((ncalls==463983)||(x[0]>0.03)) {
+double d=33;
+d+=33;
+}      
+      
+      
+      
+      
+//      for (idim=0;idim<3;idim++) x[idim]+=dtTotal*v[idim];
+//
+//      if (x[0]<PIC::Mesh::mesh->xGlobalMin[0]) {
+//        //the particle existed from the domain 
+//        PIC::ParticleBuffer::DeleteParticle(ptr);
+//        return _PARTICLE_DELETED_ON_THE_FACE_;
+//      }
+//
+//      //check if the particle ger scattered from the walls 
+//      for (idim=0;idim<3;idim++) {
+//        double delta;
+//
+//        if (x[idim]<PIC::Mesh::mesh->xGlobalMin[idim]) {
+//          delta=PIC::Mesh::mesh->xGlobalMin[idim]-x[idim];
+//
+//          x[idim]=PIC::Mesh::mesh->xGlobalMin[idim]+delta;
+//          v[idim]*=-1.0;
+//        }
+//
+//        if (x[idim]>PIC::Mesh::mesh->xGlobalMax[idim]) {
+//          delta=x[idim]-PIC::Mesh::mesh->xGlobalMax[idim];
+//
+//          x[idim]=PIC::Mesh::mesh->xGlobalMax[idim]-delta;
+//          v[idim]*=-1.0;
+//        }
+//      }
 
       //find a new location of the particle and add it to the processed particle list 
       node=PIC::Mesh::mesh->findTreeNode(x,node);
@@ -757,6 +958,12 @@ memcpy(xInit,x,3*sizeof(double));
       dtTotal=-1.0;
     } 
   }
+
+
+if ((ncalls==463983)||(x[0]>0.03)) {
+double d=33;
+d+=33;
+}
 
   PIC::ParticleBuffer::SetX(x,ParticleData);
   PIC::ParticleBuffer::SetV(v,ParticleData);
@@ -1017,6 +1224,9 @@ void Radiation::MoverManagerGPU(double dtTotal) {
       }
     }
   }
+
+  PIC::Parallel::ExchangeParticleData();
+  PIC::Parallel::ProcessCenterBlockBoundaryNodes();
 }
  
 

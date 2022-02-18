@@ -394,7 +394,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   double res,CellSize;
 
   CellSize=startNode->GetCharacteristicCellSize();
-  res=0.01*CellSize/Radiation::SpeedOfLight_cm;
+  res=0.2*CellSize/Radiation::SpeedOfLight_cm;
 
 
   return (res>1.0) ? 1.0 : res; 
@@ -404,12 +404,14 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 double BulletLocalResolution(double *x) {                                                                                           
   double res;
 
-  res=0.01;
+  res=0.005;
   return res;
 }
                        
 
 int main(int argc,char **argv) {
+
+
   
   time_t TimeValue=time(NULL);
   tm *ct=localtime(&TimeValue);
@@ -424,10 +426,12 @@ int main(int argc,char **argv) {
   //seed the random number generator
   rnd_seed(100);
 
-  double xmin[3]={0.0,0.0,0.0},xmax[3]={0.2,0.05,0.05};
+  double xmin[3]={0.0,0.0,0.0},xmax[3]={0.2,0.01,0.01};
 
   //generate mesh or read from file
   PIC::Mesh::mesh->AllowBlockAllocation=false;
+
+  PIC::Mesh::mesh->PopulateOutsideDomainNodesFlag=true;
 
   PIC::Mesh::mesh->init(xmin,xmax,BulletLocalResolution);
   PIC::Mesh::mesh->memoryAllocationReport();
@@ -475,7 +479,7 @@ int main(int argc,char **argv) {
   int s,i,j,k;
   if (PIC::ThisThread==0) printf("test2\n");
  
-  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*10*0.001*0.01*0.001*0.1);
+  PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(0,1e-2*0.0795774715459477*10*0.001*0.01*0.001*0.1*0.1);
 
   PIC::DomainBlockDecomposition::UpdateBlockTable();
 

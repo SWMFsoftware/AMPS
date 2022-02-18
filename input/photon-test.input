@@ -52,7 +52,7 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _PIC_LINEAR_SOLVER_MODE_ _PIC_MODE_OFF_
 
  define _PIC_USER_PARTICLE_PROCESSING__MODE_  _PIC_MODE_ON_
- define _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(ptr,FirstParticleCell,node)   Radiation::Absorption(ptr,FirstParticleCell,node)
+!define _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(ptr,FirstParticleCell,node)   Radiation::Absorption(ptr,FirstParticleCell,node)
 
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) Radiation::Mover(ptr,LocalTimeStep,node)
@@ -69,8 +69,8 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
   NastranSurfaceUserData=on
   
-  BlockCells=16,8,4
-  GhostCells=2,2,1
+  BlockCells=16,4,4
+  GhostCells=2,2,2
 
   NastranSurfaceUserData=on !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
