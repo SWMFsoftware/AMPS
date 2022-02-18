@@ -26,6 +26,10 @@
 namespace Radiation {
 
 
+void copy_counters_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr);
+void add_counters_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef); 
+
+
   void ProcessCenterNodeAssociatedData(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData);
 
   const double SpeedOfLight_cm=29.98; //cm/ns

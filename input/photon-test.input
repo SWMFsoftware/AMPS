@@ -88,6 +88,9 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
 
   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_
 
+
+  define _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE_  _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__Yuxi_
+
 #endGeneral
 
 #interface

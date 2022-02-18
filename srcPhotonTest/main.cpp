@@ -497,6 +497,7 @@ int main(int argc,char **argv) {
 
 if (PIC::ThisThread==0) cout << "t=" << niter*PIC::ParticleWeightTimeStep::GlobalTimeStep[0] << "[ns], pass=" << niter*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*Radiation::SpeedOfLight_cm << "[cm]"<<endl;  
 
+    Radiation::ClearCellCounters();
     PIC::TimeStep();
     Radiation::Emission();
   }

@@ -12,55 +12,50 @@ int Radiation::EmissionCounterOffset=-1;
 
 
 void Radiation::ProcessCenterNodeAssociatedData(char *TargetBlockAssociatedData,char *SourceBlockAssociatedData) {
-  *(double*)(AbsorptionCounterOffset+TargetBlockAssociatedData)+=*(double*)(AbsorptionCounterOffset+SourceBlockAssociatedData);
-  *(double*)(EmissionCounterOffset+TargetBlockAssociatedData)+=*(double*)(EmissionCounterOffset+SourceBlockAssociatedData);
+  double t;
+
+  t=*(double*)(AbsorptionCounterOffset+SourceBlockAssociatedData);
+  *(double*)(AbsorptionCounterOffset+TargetBlockAssociatedData)+=t;
+
+  t=*(double*)(EmissionCounterOffset+SourceBlockAssociatedData);
+  *(double*)(EmissionCounterOffset+TargetBlockAssociatedData)+=t;
+
+  t=*(double*)(MaterialTemperatureOffset+SourceBlockAssociatedData); 
+  *(double*)(MaterialTemperatureOffset+TargetBlockAssociatedData)=t;
 }
 
 
 
 void Radiation::ClearCellCounters() {
-  int s,i,j,k,idim;
-  long int LocalCellNumber,ptr,ptrNext;
+  int i,j,k;
+  PIC::Mesh::cDataCenterNode *cell;
 
-  #ifdef __CUDA_ARCH__
-  int id=blockIdx.x*blockDim.x+threadIdx.x;
-  int increment=gridDim.x*blockDim.x;
-  #else
-  int id=0,increment=1;
-  #endif
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=(thread==PIC::Mesh::mesh->ThisThread) ? PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread] : PIC::Mesh::mesh->DomainBoundaryLayerNodesList[thread];
 
-  for (int iGlobalCell=id;iGlobalCell<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;iGlobalCell+=increment) {
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-    PIC::Mesh::cDataBlockAMR *block;
+    if (node==NULL) continue;
 
-    int ii=iGlobalCell;
-    int i,j,k;
-    int iNode;
-    int t;
+    for (;node!=NULL;node=node->nextNodeThisThread) {
+      PIC::Mesh::cDataBlockAMR *block=node->block;
+      if (!block) continue;
 
-    t=_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-    iNode=ii/t;
-    ii=ii%t;
+      for (int ii=0;ii<_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;ii++) {
+        int t=ii;
 
-    t=_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-    k=ii/t;
-    ii=ii%t;
+        k=t/(_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
+        t=t%(_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_);
 
-    j=ii/_BLOCK_CELLS_X_;
-    i=ii%_BLOCK_CELLS_X_;
+        j=t/_BLOCK_CELLS_X_;
+        i=t%_BLOCK_CELLS_X_; 
 
-    node=PIC::DomainBlockDecomposition::BlockTable[iNode];
+        cell=node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
 
-    if (node->block!=NULL) {
-      *(double*)(AbsorptionCounterOffset+node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer())=0.0;
-      *(double*)(EmissionCounterOffset+node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer())=0.0; 
+        *(double*)(AbsorptionCounterOffset+cell->GetAssociatedDataBufferPointer())=0.0;
+        *(double*)(EmissionCounterOffset+cell->GetAssociatedDataBufferPointer())=0.0;
+      }
     }
-
-    #ifdef __CUDA_ARCH__
-    __syncwarp;
-    #endif
   }
-} 
+}
 
 void Radiation::Emission() {
   int s,i,j,k,idim;
@@ -302,6 +297,8 @@ long int Radiation::Injection::BoundingBoxInjection(int spec,cTreeNodeAMR<PIC::M
   long int nInjectedParticles=0;
   double c0,c1,TimeCounter,ModelParticlesInjectionRate,ParticleWeight,LocalTimeStep,x[3],v[3],vr,theta;
   double x0[3],e0[3],e1[3];
+
+  if (startNode->Thread!=PIC::ThisThread) return 0;
 
   if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
     if (ExternalFaces[0]==true) {
@@ -1161,6 +1158,8 @@ void Radiation::MoverManagerGPU(double dtTotal) {
   int s,i,j,k,idim;
   long int LocalCellNumber,ptr,ptrNext;
 
+//Radiation::ClearCellCounters();
+
   #ifdef __CUDA_ARCH__
   int id=blockIdx.x*blockDim.x+threadIdx.x;
   int increment=gridDim.x*blockDim.x;
@@ -1225,13 +1224,53 @@ void Radiation::MoverManagerGPU(double dtTotal) {
     }
   }
 
+
+
+
+  PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(true);
+  PIC::Parallel::BPManager.isCorner = false;
+  PIC::Parallel::BPManager.pointBufferSize = 2*sizeof(double);
+  PIC::Parallel::BPManager.copy_node_to_buffer = copy_counters_to_buffer;
+  PIC::Parallel::BPManager.add_buffer_to_node = add_counters_to_node;
+
+  PIC::Parallel::ProcessBlockBoundaryNodes();
+  PIC::Parallel::CenterBlockBoundaryNodes::SetActiveFlag(false);
+
+
   PIC::Parallel::ExchangeParticleData();
-  PIC::Parallel::ProcessCenterBlockBoundaryNodes();
+//  PIC::Parallel::ProcessCenterBlockBoundaryNodes_new();
 }
  
 
-//absorption of radiation 
 
+void Radiation::copy_counters_to_buffer(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr) {
+  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+  double SendData[2];
+
+  SendData[0]=*(double*)(AbsorptionCounterOffset+nodePtr);
+  SendData[1]=*(double*)(EmissionCounterOffset+nodePtr);
+
+//  memcpy(bufferPtr, nodePtr, 2*sizeof(double));
+
+memcpy(bufferPtr, SendData, 2*sizeof(double));
+
+}
+
+
+void Radiation::add_counters_to_node(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node, const int i, const int j, const int k, char *bufferPtr, double coef){
+  char *nodePtr = node->block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k))->GetAssociatedDataBufferPointer();
+
+
+  coef=1.0;
+
+  *(double*)(AbsorptionCounterOffset+nodePtr)+=coef*((double*)bufferPtr)[0];
+  *(double*)(EmissionCounterOffset+nodePtr)+=coef*((double*)bufferPtr)[1]; 
+}
+
+
+
+
+//absorption of radiation 
 void Radiation::Absorption(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 
