@@ -2718,11 +2718,10 @@ Time=3
 
 Check=
 >>>@echo "test_photon-test_check..." >> test_photon-test$(TESTphoton-test-REF).diff
->>>cd $(TESTphoton-testDIR)/PT/plots; cat pic.25THELECTRON.s=1.out=0.dat pic.25THELECTRON.s=1.out=1.dat pic.25THELECTRON.s=1.out=2.dat pic.H_PLUS.s=0.out=0.dat pic.H_PLUS.s=0.out=1.dat pic.H_PLUS.s=0.out=2.dat > test_photon.dat   
->>>@${TESTphoton-testDIR}/../utility/ReduceFile.pl ${TESTphoton-testDIR}/PT/plots/test_photon.dat 10
+>>>@${TESTphoton-testDIR}/../utility/ReduceFile.pl ${TESTphoton-testDIR}/PT/plots/pic.PHOTON.s=0.out=3.dat 10
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTphoton-testDIR)/PT/plots/test_photon.dat.Reduced.Step=10 \
->>>output/test_photon/test_photon.Reduced.Step=10.ref_np`ls $(TESTphoton-testDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon-test$(TESTphoton-test-REF).diff)
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTphoton-testDIR)/PT/plots/pic.PHOTON.s=0.out=3.dat.Reduced.Step=10 \
+>>>output/test_photon/pic.PHOTON.s=0.out=3.dat.Reduced.Step=10.ref_np`ls $(TESTphoton-testDIR)/PT/thread* |wc -l |tr -d ' '`  > test_photon-test$(TESTphoton-test-REF).diff)
 
 >>>@ls -l test_photon-test$(TESTphoton-test-REF).diff 
 >>>@echo Test test_photon-test has finished: `date`

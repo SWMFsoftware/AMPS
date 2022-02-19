@@ -488,7 +488,7 @@ int main(int argc,char **argv) {
   
   int totalIter=300000;
 
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) totalIter=100;
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) totalIter=410;
 
 
   Radiation::ClearCellCounters();
