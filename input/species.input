@@ -165,5 +165,8 @@
   mass=0.0*_AMU_
   charge=0.0
 
+#component=neutron 
+  mass=1.008665*_AMU_
+  charge=0.0
 
 #endspecies
