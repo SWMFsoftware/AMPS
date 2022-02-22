@@ -194,7 +194,7 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
 
 
   switch (PIC::ParticleBuffer::GetI(ptr)) {
-  case _ELECTRON_SPEC_:
+  case _ELECTRON_SPEC_: case _H_PLUS_SPEC_:case _NEUTRON_SPEC_: 
    // res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 

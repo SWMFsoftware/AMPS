@@ -34,6 +34,15 @@ using namespace std;
 #define _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_  _PIC_MODE_OFF_
 #endif
 
+//application of the Earth model
+#define _MODEL_APPLICATION_RIGIDITY_CUTOFF_  0
+#define _MODEL_APPLICATION_POINT_SOURCE_     1
+
+#ifndef _MODEL_APPLICATION_
+#define _MODEL_APPLICATION_ _MODEL_APPLICATION_RIGIDITY_CUTOFF_ 
+#endif
+
+
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
 public:
@@ -108,6 +117,15 @@ namespace Earth {
     extern double W[6];
   }
 
+  //model of the atmosphere 
+  double GetAtmosphereTotalNumberDensity(double *x);
+
+  //physics of the ebergetic particles  
+  void NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
+  void ProtonPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  void ElectronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  void EnergeticParticlesPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
+
   //the mesh parameters
   namespace Mesh {
     extern char sign[_MAX_STRING_LENGTH_PIC_];
@@ -179,6 +197,9 @@ namespace Earth {
     const double RigidityTestRadiusVector=400.0E3+_RADIUS_(_TARGET_);
     const double RigidityTestMinEnergy=1.0*MeV2J;
     const double RigidityTestMaxEnergy=1.0E4*MeV2J;
+    
+    //manager of the regidity cutoff model that controls all elements of the model execution
+    void Run();
 
     //the distribution of the injected particles velocity vector 
     extern int ParticleVelocityDirectionMode;

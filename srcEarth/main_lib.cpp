@@ -130,6 +130,13 @@ double localTimeStep(int spec, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode
   nCompositionGroup=Earth::CompositionGroupTableIndex[spec];
   maxSpeed=Earth::CompositionGroupTable[nCompositionGroup].GetMaxVelocity(spec);
 
+
+  if (_MODEL_APPLICATION_==_MODEL_APPLICATION_POINT_SOURCE_) {
+    return 0.3*CellSize/(0.5*SpeedOfLight); 
+  }
+
+
+
   
 /*  //evaluate the maximum particle speed with the energy limit used in the Earth magnetosphere model
   mass=PIC::MolecularData::GetMass(spec);

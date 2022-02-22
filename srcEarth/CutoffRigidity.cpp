@@ -13,6 +13,14 @@
  *      Author: vtenishe
  */
 
+void amps_init();
+void amps_init_mesh();
+void amps_time_step();
+
+void CutoffRigidityCalculation(double TestShellRadius,int nMaxIterations);
+void CutoffRigidityCalculation_Legacy(int nTotalIterations);
+
+
 bool Earth::CutoffRigidity::SampleRigidityMode=false;
 long int Earth::CutoffRigidity::InitialRigidityOffset=-1;
 long int Earth::CutoffRigidity::InitialLocationOffset=-1;
@@ -274,5 +282,35 @@ bool Earth::CutoffRigidity::ParticleInjector::GenerateParticleProperties(int spe
   }
 
   return true;
+}
+
+
+//============================================================
+//Manager of the cutoff rigidity model
+void RunCutoffRigidity() {
+  Earth::CutoffRigidity::SampleRigidityMode=true;
+
+  amps_init_mesh();
+
+  Earth::CutoffRigidity::Init_BeforeParser();
+  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
+
+  amps_init();
+
+
+  if (Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1) {
+    exit(__LINE__,__FILE__,"Error: Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1 is not implemented");
+  }
+   
+  for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
+    CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],Earth::CutoffRigidity::nMaxIteractions);
+  }
+
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    //output the particle statistics of the test run
+    char fname[300];
+    sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
+    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+  }
 }
 

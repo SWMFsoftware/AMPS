@@ -37,6 +37,9 @@ void amps_init();
 void amps_init_mesh();
 void amps_time_step();
 
+void RunCutoffRigidity();
+void RunImpulseSource();
+
 #define _NIGHTLY_TEST__CUTOFF_  0
 #define _NIGHTLY_TEST__LEGACY_ 1
 
@@ -1049,32 +1052,18 @@ int main(int argc,char **argv) {
     }
   }
 
-
-  Earth::CutoffRigidity::SampleRigidityMode=true;
-
-  amps_init_mesh();
-
-  Earth::CutoffRigidity::Init_BeforeParser();
-  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
-
-  amps_init();
-
-
-  if (Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1) {
-    exit(__LINE__,__FILE__,"Error: Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength>1 is not implemented");
+  //select a particular application
+  switch (_MODEL_APPLICATION_) {
+  case _MODEL_APPLICATION_RIGIDITY_CUTOFF_:
+    RunCutoffRigidity();
+    break;
+    
+  case _MODEL_APPLICATION_POINT_SOURCE_:
+    RunImpulseSource();
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: not implemented");
   }
-   
-  for (int i=0;i<Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTableLength;i++) {
-    CutoffRigidityCalculation(Earth::CutoffRigidity::ShericalShells::rTestSphericalShellTable[i],Earth::CutoffRigidity::nMaxIteractions);
-  }
-
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
-    //output the particle statistics of the test run
-    char fname[300];
-    sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
-    PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
-  }
-
 
 
   //finish the run

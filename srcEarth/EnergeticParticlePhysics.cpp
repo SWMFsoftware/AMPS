@@ -98,6 +98,9 @@ void Earth::NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR
       //the neutron decayed via bete-decay
       long int ptr_electron,ptr_proton;
 
+static int ncall=0;
+ncall++;
+
       ptr_electron=PIC::ParticleBuffer::GetNewParticle();
       ptr_proton=PIC::ParticleBuffer::GetNewParticle();
 
@@ -121,20 +124,20 @@ void Earth::NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR
       double e_total=5.5*MeV2J;
       double e_electron=0.78*MeV2J;
       double e_proton=e_total-e_electron; 
-      double v_new[3],speed;
+      double v_new[3],speed,v_new_simulation_frame[3];
 
 
       speed=Relativistic::E2Speed(e_electron,PIC::MolecularData::GetMass(_ELECTRON_SPEC_));
       Vector3D::Distribution::Uniform(v_new,speed);
 
-      for (int idim=0;idim<3;idim++) v_new[idim]+=v[idim];
-      PIC::ParticleBuffer::SetV(v_new,ptr_electron);  
+      Relativistic::FrameVelocityTransformation(v_new_simulation_frame,v_new,v); 
+      PIC::ParticleBuffer::SetV(v_new_simulation_frame,ptr_electron);  
 
       speed=Relativistic::E2Speed(e_proton,PIC::MolecularData::GetMass(_H_PLUS_SPEC_));
       Vector3D::Distribution::Uniform(v_new,speed);
 
-      for (int idim=0;idim<3;idim++) v_new[idim]+=v[idim];
-      PIC::ParticleBuffer::SetV(v_new,ptr_proton);
+      Relativistic::FrameVelocityTransformation(v_new_simulation_frame,v_new,v);
+      PIC::ParticleBuffer::SetV(v_new_simulation_frame,ptr_proton);
     }
 
     //delete the original neutron

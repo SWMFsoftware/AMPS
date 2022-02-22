@@ -13,7 +13,9 @@ MAINLIBOBJ = Earth_Sampling.o \
 	GCR_Badavi2011ASR.o \
 	CutoffRigidity.o \
 	ImpulseSource.o \
-	DomainBoundaryParticlePropertyTable.o
+	DomainBoundaryParticlePropertyTable.o \
+	EnergeticParticlePhysics.o \
+	Atmosphere.o 
 	
 	
 MAINOBJ = main.o

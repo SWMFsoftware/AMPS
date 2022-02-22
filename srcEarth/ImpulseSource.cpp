@@ -18,6 +18,11 @@ double Earth::ImpulseSource::EnergySpectrum::Constant::e=1.0*MeV2J;
 int Earth::ImpulseSource::EnergySpectrum::Mode=Earth::ImpulseSource::EnergySpectrum::Mode_Constatant;
 bool Earth::ImpulseSource::Mode=false;
 
+
+void amps_init();
+void amps_init_mesh();
+void amps_time_step();
+
 //inject the energetic particles
 long int Earth::ImpulseSource::InjectParticles() {
   int nTotalInjectedParticles=0;
@@ -191,3 +196,37 @@ void Earth::ImpulseSource::InitParticleWeight() {
   }
 }
 
+//run the impulse source model
+void RunImpulseSource() {
+  Earth::ImpulseSource::Mode==true; 
+
+  amps_init_mesh();
+  amps_init();
+
+
+  int nTotalIterations=1000;
+  int LastDataOutputFileNumber=0;
+  
+  for (long int niter=0;niter<nTotalIterations;niter++) {
+    amps_time_step();
+
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      time_t TimeValue=time(NULL);
+      tm *ct=localtime(&TimeValue);
+      printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
+             ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
+             PIC::RequiredSampleLength,
+             PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+    }
+
+     if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
+       PIC::RequiredSampleLength*=2;
+       if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
+
+
+       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
+       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+     }
+  }
+
+}
