@@ -727,6 +727,25 @@ namespace Vector3D {
 //=========================================================
 //Relativistic functions
 namespace Relativistic {
+
+  //https://opentextbc.ca/universityphysicsv3openstax/chapter/relativistic-velocity-transformation/
+  //https://farside.ph.utexas.edu/teaching/em/lectures/node110.html
+  //https://en.wikipedia.org/wiki/Velocity-addition_formula#CITEREFFriedman2002
+  //the function transform velocity from the moving frame to the stationary frame of reference
+  inline void FrameVelocityTransformation(double *vRestFrame, double *vMovingFrame,double *vFrame) {
+    double c2=SpeedOfLight*SpeedOfLight;
+    double gamma=1.0/(1.0-Vector3D::DotProduct(vMovingFrame,vMovingFrame)/c2);
+    double one_over_gamma=1.0/gamma;
+    double vMovingFrame_Dot_vFrame=Vector3D::DotProduct(vMovingFrame,vFrame);
+
+    double t0=1.0/(1.0+vMovingFrame_Dot_vFrame/c2); 
+    double t1=gamma/(c2*(1.0+gamma))*vMovingFrame_Dot_vFrame;
+
+    for (int idim=0;idim<3;idim++) {
+      vRestFrame[idim]=t0*(vFrame[idim]+vMovingFrame[idim]*one_over_gamma+t1*vFrame[idim]); 
+    }
+  } 
+
   inline double Speed2E(double Speed,double mass) {
     double beta2,gamma2;
 
