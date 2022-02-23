@@ -64,11 +64,11 @@ MoverIntegratorMode=Boris-relativistic
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
 
-  FirstPrintedOutputFile=100000000
+! FirstPrintedOutputFile=100000000
 
   RequestedParticleBufferLength=15000000
 
-  InitialSampleLength=1000
+  InitialSampleLength=100
 
   BlockCells=4,4,4
   GhostCells=1,1,1
