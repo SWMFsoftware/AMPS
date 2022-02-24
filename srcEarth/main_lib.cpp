@@ -504,7 +504,7 @@ void amps_init_mesh() {
 
            if (startNode->block!=NULL) {
              #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-             #pragma omp parallel for schedule(dynamic,1) default (none) shared (PIC::Mesh::mesh,iMin,jMin,kMin,S,PIC::CPLR::DATAFILE::Offset::MagneticField, \
+             #pragma omp parallel for schedule(dynamic,1) default (none) shared (PIC::Mesh::mesh,S,PIC::CPLR::DATAFILE::Offset::MagneticField, Earth::T05::active_flag, \
                  PIC::CPLR::DATAFILE::Offset::ElectricField,startNode,PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin,PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset)
              #endif
 

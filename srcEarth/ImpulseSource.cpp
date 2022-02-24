@@ -89,7 +89,7 @@ long int Earth::ImpulseSource::InjectParticles() {
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
        #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
-        shared (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Mode_Constatant,EnergySpectrum::Constant::e,ImpulseSourceData)
+        shared (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
         {
 #endif
 
