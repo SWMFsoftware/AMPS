@@ -238,6 +238,7 @@ void PIC::Restart::SaveParticleData(const char* fname) {
     if (UserAdditionalRestartDataSave!=NULL)  UserAdditionalRestartDataSave(fRestart);
 
     fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+    fwrite(&PIC::ParticleBuffer::ParticleDataLength,sizeof(long int),1,fRestart); 
   }
 
   //save the restart information
@@ -461,6 +462,10 @@ void PIC::Restart::ReadParticleData(const char* fname) {
   //read the end-of-the-user-data-marker
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
   fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+
+  long int t;
+  fread(&t,sizeof(long int),1,fRestart);
+  if (t!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: the value of the PIC::ParticleBuffer::ParticleDataLength haschanged");
 
   if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
