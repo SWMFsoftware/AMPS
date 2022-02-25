@@ -349,6 +349,13 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
 
   if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
 
+  char msg[UserAdditionalRestartDataCompletedMarkerLength];
+  fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+
+  long int t;
+  fread(&t,sizeof(long int),1,fRestart);
+
+
   while (feof(fRestart)==0) {
     int nTotalParticleNumber=0;
 
