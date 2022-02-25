@@ -241,14 +241,19 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   }
 
   //save the restart information
-  SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
+  int nSavedParticles,nTotalSavedParticles;
+
+  nSavedParticles=SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
   fclose(fRestart);
 
   //combine the multiple files in a single restart file
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&nSavedParticles,&nTotalSavedParticles,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (ThisThread==0) {
     std::ofstream  dst(fname,   std::ios::binary);
+
+    printf("$PREFIX: Saving restart file: the total number of particles saved is %i\n", nTotalSavedParticles);
 
     for (int thread=0;thread<PIC::nTotalThreads;thread++) {
       sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
@@ -269,7 +274,9 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   GetParticleDataCheckSum();
 }
 
-void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
+int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
+  int res=0;
+
   //save the data
   if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
     if (node->Thread==PIC::ThisThread) {
@@ -317,6 +324,8 @@ void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
 
               memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
               fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart);
+
+              ++res;
             }
           }
         }
@@ -324,8 +333,10 @@ void PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) SaveParticleDataBlock(node->downNode[nDownNode],fRestart);
+    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=SaveParticleDataBlock(node->downNode[nDownNode],fRestart);
   }
+
+  return res;
 }
 
 
@@ -357,7 +368,9 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   return res;
 }
 
-void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
+int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
+  int res=0;
+
   //read the data
   while (feof(fRestart)==0) {
     int nTotalParticleNumber=0;
@@ -375,7 +388,7 @@ void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
       if (Node->Thread!=PIC::ThisThread) {
         //skip the data for this block
         if (fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
-          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR)!=0) return;
+          nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR)!=0) return res;
       }
       else {
         //read the data for this block
@@ -391,6 +404,7 @@ void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
           for (np=0;np<ParticleNumberTable[i][j][k];np++) {
             if (fread(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: file reading error");
             ptr=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+            res++; 
 
             PIC::ParticleBuffer::CloneParticle((PIC::ParticleBuffer::byte*) PIC::ParticleBuffer::GetParticleDataPointer(ptr),(PIC::ParticleBuffer::byte*) tempParticleData);
 
@@ -424,6 +438,8 @@ void PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
       }
     }
   }
+
+  return res;
 }
 
 
@@ -450,12 +466,19 @@ void PIC::Restart::ReadParticleData(const char* fname) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
   }
 
-  ReadParticleDataBlock(fRestart);
+  int nLoadedParticles,nTotalLoadedParticles;
+
+  nLoadedParticles=ReadParticleDataBlock(fRestart);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&nLoadedParticles,&nTotalLoadedParticles,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
-  if (PIC::ThisThread==0) printf("$PREFIX: Reading particle restart file: %s\n",fname);
+  if (PIC::ThisThread==0) {
+    printf("$PREFIX: Reading particle restart file: %s\n",fname);
+    printf("$PREFIX: Reading particle restart file: the total number of locaded particles is %i\n",nTotalLoadedParticles);
+  } 
+
   GetParticleDataCheckSum();
 }
 
