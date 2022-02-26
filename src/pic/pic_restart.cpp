@@ -172,6 +172,28 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+
+  //reset the sampling buffer
+  PIC::CollectingSampleCounter=0;
+
+  for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+    PIC::Mesh::cDataBlockAMR *block=node->block;
+
+    if (!block) continue;
+    for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+      for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+        for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+          int LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+          PIC::Mesh::flushCollectingSamplingBuffer(block->GetCenterNode(LocalCellNumber));
+        }
+
+        if (DIM==1) break;
+      }
+
+      if ((DIM==1)||(DIM==2)) break;
+    }
+  }
+
 }
 
 void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
@@ -239,6 +261,14 @@ void PIC::Restart::SaveParticleData(const char* fname) {
 
     fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
     fwrite(&PIC::ParticleBuffer::ParticleDataLength,sizeof(long int),1,fRestart); 
+
+    //save the particle weight table
+    if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+      fwrite(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+    }
+    else {
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    } 
   }
 
   //save the restart information
@@ -355,6 +385,16 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   long int t;
   fread(&t,sizeof(long int),1,fRestart);
 
+  //read the particle weight table
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+    double tt[_TOTAL_SPECIES_NUMBER_];
+
+    fread(tt,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+  }
+  else {
+    exit(__LINE__,__FILE__,"Error: not implemented");
+  }
+  
 
   while (feof(fRestart)==0) {
     int nTotalParticleNumber=0;
@@ -473,6 +513,14 @@ void PIC::Restart::ReadParticleData(const char* fname) {
   long int t;
   fread(&t,sizeof(long int),1,fRestart);
   if (t!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: the value of the PIC::ParticleBuffer::ParticleDataLength haschanged");
+
+  //save the particle weight table
+  if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+    fread(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+  }
+  else {
+    exit(__LINE__,__FILE__,"Error: not implemented");
+  }
 
   if (memcmp(msg,UserAdditionalRestartDataCompletedMarker,sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength)!=0) {
     exit(__LINE__,__FILE__,"Error: the end-of-the additional used data in the input file is mislocated. Something wrong with the user-defined additional restart data save/read procedures.");
