@@ -204,8 +204,13 @@ void RunImpulseSource() {
   amps_init();
 
 
-  int nTotalIterations=1000;
+  int nTotalIterations=1000000;
   int LastDataOutputFileNumber=0;
+
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    nTotalIterations=100;
+    PIC::RequiredSampleLength=50;
+  } 
   
   for (long int niter=0;niter<nTotalIterations;niter++) {
     amps_time_step();
