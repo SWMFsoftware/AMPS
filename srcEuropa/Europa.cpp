@@ -23,7 +23,7 @@ char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EOJ";  //Europa-centric 
 //Y is along the direction from Europa to Jupiter orthogonal to X;
 //defined in galileo.tf
 
-
+char Europa::BackgroundPlasmaFileName[200]="./3d__mhd_3_n00045039-extracted.plt";  
 char Europa::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
 
 double Europa::TotalInjectionRate=0.0;

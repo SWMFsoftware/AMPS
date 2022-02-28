@@ -97,6 +97,16 @@ while ($line=<InputFile>) {
     }
   }
 
+  #the file name of the background plasma model 
+  elsif ($InputLine eq "BACKGROUNDPLASMAFILE") {
+    $line=~s/[=():]/ /g;
+    ($InputLine,$line)=split(' ',$line,2);
+    ($InputLine,$line)=split(' ',$line,2);
+
+    ampsConfigLib::ChangeValueOfVariable("char Europa::BackgroundPlasmaFileName\\[200\\]","\"".$InputLine."\"","main/Europa.cpp");
+  }
+
+
   #define the mesh sigrature that will be used in the simuation (for generation of the particular mesh settings and loadging particular model data files)
   elsif ($InputLine eq "MESHSIGNATURE") {
     $line=~s/[=():]/ /g;

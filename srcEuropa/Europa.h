@@ -103,6 +103,8 @@ const char SPICE_Kernels[nFurnishedSPICEkernels][_MAX_STRING_LENGTH_PIC_]={"GALI
 namespace Europa {
   using namespace Exosphere;
 
+  //the name of the background plasma data file 
+  extern char BackgroundPlasmaFileName[200];
 
   //the total injection rate
   extern double TotalInjectionRate;

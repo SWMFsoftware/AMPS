@@ -1418,8 +1418,8 @@ void amps_init() {
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
       PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
       PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=11;
-      PIC::CPLR::DATAFILE::TECPLOT::ImportData("./3d__mhd_3_n00045039-extracted.plt"); 
-      
+
+      PIC::CPLR::DATAFILE::TECPLOT::ImportData(Europa::BackgroundPlasmaFileName); 
       PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS");
     }
 
