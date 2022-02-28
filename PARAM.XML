@@ -227,6 +227,15 @@ The number of iteractions that AMPS uses to commect the statistical information 
 </command>
 
 
+<command name="TIMESTEP">
+  <parameter name="TimeStep" type="real" />
+
+#TIMESTEP 
+2.0                      Dt 
+
+The command sets the time step that AMPS uses in the simulation
+</command>
+
 
 
 <command name="SAMPLING_OUTPUT_CADENCE">
