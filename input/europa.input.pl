@@ -77,7 +77,7 @@ while ($line=<InputFile>) {
   $InputLine=uc($InputLine);
   chomp($InputLine);
  
-  $InputLine=~s/[=()]/ /g;
+  $InputLine=~s/[=():]/ /g;
   ($InputLine,$InputComment)=split(' ',$InputLine,2);
   $InputLine=~s/ //g;
   
@@ -91,6 +91,42 @@ while ($line=<InputFile>) {
     } 
     elsif ($InputLine eq "OFF") {
       ampsConfigLib::ChangeValueOfVariable("static const bool SphereInsideDomain","false","main/main_lib.cpp");
+    }
+    else {
+      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+  }
+
+  #parameters of the background plasma model TECPLOT file 
+  elsif ($InputLine eq "COUPLER") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+    if ($InputLine eq "NTOTALTECPLOTVARIABLES") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+      ampsConfigLib::ChangeValueOfVariable("PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT",$InputLine,"main/main_lib.cpp");  
+    }
+    elsif ($InputLine eq "INDEX") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "DENSITY") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::ChangeValueOfVariable("const int _density",$InputLine,"main/main_lib.cpp");
+      }
+      elsif ($InputLine eq "BULKVELOCITY") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::ChangeValueOfVariable("const int _bulk_velocity",$InputLine,"main/main_lib.cpp");
+      }    
+      elsif ($InputLine eq "IONPRESSURE") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::ChangeValueOfVariable("const int _pressure",$InputLine,"main/main_lib.cpp");
+      }
+      elsif ($InputLine eq "MAGNETICFIELD") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        ampsConfigLib::ChangeValueOfVariable("const int _magnetic_field",$InputLine,"main/main_lib.cpp");
+      }
+      else {
+        die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+      }
     }
     else {
       die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
