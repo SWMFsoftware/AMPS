@@ -142,7 +142,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
-      int dt=atoi(t.c_str()); 
+      double dt=atof(t.c_str()); 
 
       if (_SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) {
         PIC::ParticleWeightTimeStep::GlobalTimeStepInitialized=true;
