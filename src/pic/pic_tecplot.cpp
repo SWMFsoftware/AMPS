@@ -441,37 +441,46 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
             data[i]=strtod(str1, NULL);
           }
 
-          //save the data on the AMPS data buffers
-          //the order of the state vector: number density, temperature
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.active) {
-            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=
-                data[IonFluidDescriptorTable[0].Density.Index]*IonFluidDescriptorTable[0].Density.ScaleFactor;
-          }
-
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.active) {
-            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=
-                (data[IonFluidDescriptorTable[0].Density.Index]>0.0) ? data[IonFluidDescriptorTable[0].Pressure.Index]*IonFluidDescriptorTable[0].Pressure.ScaleFactor/
-                    (Kbol*data[IonFluidDescriptorTable[0].Density.Index]*IonFluidDescriptorTable[0].Density.ScaleFactor) : 0.0;
-          }
-
-          //get pressure
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.active) {
-            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=data[IonFluidDescriptorTable[0].Pressure.Index]*IonFluidDescriptorTable[0].Pressure.ScaleFactor;
+          
+          for (int iFluid=0;iFluid<PIC::CPLR::DATAFILE::nIonFluids;iFluid++) {
+          
+          
+            //save the data on the AMPS data buffers
+            //the order of the state vector: number density, temperature
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.active) {
+              *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=
+                  data[IonFluidDescriptorTable[iFluid].Density.Index]*IonFluidDescriptorTable[iFluid].Density.ScaleFactor;
+            }
+  
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.active) {
+              *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=
+                  (data[IonFluidDescriptorTable[iFluid].Density.Index]>0.0) ? data[IonFluidDescriptorTable[iFluid].Pressure.Index]*IonFluidDescriptorTable[iFluid].Pressure.ScaleFactor/
+                      (Kbol*data[IonFluidDescriptorTable[iFluid].Density.Index]*IonFluidDescriptorTable[iFluid].Density.ScaleFactor) : 0.0;
+            }
+  
+            //get pressure
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.active) {
+              *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=data[IonFluidDescriptorTable[iFluid].Pressure.Index]*IonFluidDescriptorTable[iFluid].Pressure.ScaleFactor;
+            }
+            
+            //bulk velocity 
+            for (idim=0;idim<3;idim++) {
+              if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active) {             
+                *(3*iFluid+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))=
+                  data[idim+IonFluidDescriptorTable[iFluid].BulkVelocity.Index]*IonFluidDescriptorTable[iFluid].BulkVelocity.ScaleFactor;
+              }
+            }
           }
           
+          //electron pressure
           if (PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.active) {
             *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.RelativeOffset))=data[ElectronPressure.offset]*ElectronPressure.ScaleFactor;
           }
 
-          //bulk velocity and magnetic field
+          //magnetic field
           for (idim=0;idim<3;idim++) {
             if (PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
               *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=data[idim+MagneticField.offset]*MagneticField.ScaleFactor;
-            }
-            
-            if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active) {             
-              *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset+idim*sizeof(double)))=
-                data[idim+IonFluidDescriptorTable[0].BulkVelocity.Index]*IonFluidDescriptorTable[0].BulkVelocity.ScaleFactor;
             }
           }
 
@@ -510,12 +519,17 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
           nLoadedDataPoints++;
         }
         else {
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=0.0;
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=0.0;
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=0.0;
+          for (int iFluid=0;iFluid<PIC::CPLR::DATAFILE::nIonFluids;iFluid++) {
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset!=-1) *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=0.0;
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset!=-1) *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=0.0;
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset!=-1) *(iFluid+ (double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=0.0;
+          }
 
           for (idim=0;idim<3;idim++) {
-            if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset+idim*sizeof(double)))=0.0;
+            for (int iFluid=0;iFluid<PIC::CPLR::DATAFILE::nIonFluids;iFluid++) {
+              if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset!=-1) *(3*iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset+idim*sizeof(double)))=0.0;
+            }
+
             if (PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=0.0;
             if (PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset!=-1) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
           }

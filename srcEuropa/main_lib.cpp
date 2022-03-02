@@ -1413,21 +1413,42 @@ void amps_init() {
       PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.001,10.0);
 
       PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-      PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=11;
+
+      switch (PIC::CPLR::DATAFILE::nIonFluids) {
+      case 1:
+        PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=11;
+        break;
+      case 2:
+        PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=20;
+        break;
+      defualt:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
 
       PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
 
-      const int _density=4-1;
-      const int _bulk_velocity=5-1;
-      const int _pressure=11-1;
+      const int _density=3;
+      const int _bulk_velocity=4;
+      const int _pressure=11;
       const int _magnetic_field=8;
 
 
+      //indexing when using SetLoadedMagneticFieldVariableData() starts with 1. BUT, indexting when using PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable starts with 0
+      PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(_magnetic_field,1.0E-9);
+
+      //Fuid 0: 
+      IonFluid.Density.Set(_density,1.0E6/16); //O+, 16 amu 
       IonFluid.BulkVelocity.Set(_bulk_velocity,1.0E3);
       IonFluid.Pressure.Set(_pressure,1.0E-9);
-      IonFluid.Density.Set(_density,1.0E6);
-
       PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
+      if (PIC::CPLR::DATAFILE::nIonFluids>1) {
+        //Fluid 1:
+        IonFluid.Density.Set(12,1.0E6/32); //O2+, 32 amu 
+        IonFluid.BulkVelocity.Set(13,1.0E3);
+        IonFluid.Pressure.Set(16,1.0E-9);
+        PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+      }
 
       PIC::CPLR::DATAFILE::TECPLOT::ImportData(Europa::BackgroundPlasmaFileName); 
       PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS");

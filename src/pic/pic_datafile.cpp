@@ -46,10 +46,10 @@ bool PIC::CPLR::DATAFILE::Offset::InitFlag=false;
 int PIC::CPLR::DATAFILE::nIonFluids=1;
 
 //Physical quantaties offsets that could be read and srored
-PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity={false,false,1,"\"Plasma number density\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity={false,false,1,"Plasma number density",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity={false,false,3,"\"vPlasmaX\", \"vPlasmaY\", \"vPlasmaZ\"",-1};
-PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaTemperature={false,false,1,"\"Plasma temperature\"",-1};
-PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure={false,false,1,"\"Plasma pressure\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaTemperature={false,false,1,"Plasma temperature",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure={false,false,1,"Plasma pressure",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure={false,false,1,"\"Plasma electron pressure\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::MagneticField={false,false,3,"\"Bx\", \"By\", \"Bz\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::ElectricField={false,false,3,"\"Ex\", \"Ey\", \"Ez\"",-1};
@@ -665,10 +665,10 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
 //====================================================
 //output background parameters loaded with ICES from SWMF output
 void PIC::CPLR::DATAFILE::PrintVariableList(FILE* fout,int DataSetNumber) {
-  if (Offset::PlasmaNumberDensity.active) fprintf(fout,", %s",Offset::PlasmaNumberDensity.VarList);
-  if (Offset::PlasmaBulkVelocity.active) fprintf(fout,", %s",Offset::PlasmaBulkVelocity.VarList);
-  if (Offset::PlasmaTemperature.active) fprintf(fout,", %s",Offset::PlasmaTemperature.VarList);
-  if (Offset::PlasmaIonPressure.active) fprintf(fout,", %s",Offset::PlasmaIonPressure.VarList);
+  if (Offset::PlasmaNumberDensity.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaNumberDensity.VarList,i);
+  if (Offset::PlasmaBulkVelocity.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"vPlasmaX[%i]\", \"vPlasmaY[%i]\", \"vPlasmaZ[%i]\"",i,i,i);
+  if (Offset::PlasmaTemperature.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaTemperature.VarList,i);
+  if (Offset::PlasmaIonPressure.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaIonPressure.VarList,i);
   if (Offset::PlasmaElectronPressure.active) fprintf(fout,", %s",Offset::PlasmaElectronPressure.VarList);
   if (Offset::MagneticField.active) fprintf(fout,", %s",Offset::MagneticField.VarList);
   if (Offset::ElectricField.active) fprintf(fout,", %s",Offset::ElectricField.VarList);
