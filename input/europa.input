@@ -1,7 +1,8 @@
 
 #main
 
-SpeciesList=H2O,O2,H2,H,O,OH,O_PLUS,O2_PLUS,H_PLUS,H2_PLUS,H2O_PLUS,OH_PLUS,DUST
+SpeciesList=H2O,O2,H2,H,O,OH,O_PLUS,O2_PLUS,H_PLUS,H2_PLUS,H2O_PLUS,OH_PLUS,DUST 
+!,O_PLUS,O2_PLUS,H_PLUS,H2_PLUS,H2O_PLUS,OH_PLUS,DUST
 !,O_PLUS_HIGH,O_PLUS_THERMAL
 
 
@@ -50,6 +51,8 @@ StdoutErrorLog=off !on,off -> print out error message on the screen
 
 
 CouplerMode=file(tecplot) !!!ices !!off, ices, swmf
+!Coupler::FILE::IonFluidNumber=2
+
 
 TimeStepMode=SpeciesGlobalTimeStep
 ParticleWeightMode=SpeciesGlobalParticleWeight
