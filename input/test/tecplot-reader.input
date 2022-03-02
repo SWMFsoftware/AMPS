@@ -20,6 +20,8 @@ InputDirectory=InputData
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
 CouplerMode=file(tecplot) 
+Coupler::FILE::IonFluidNumber=1 
+
 #endmain
 
 #General

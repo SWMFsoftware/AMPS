@@ -18,11 +18,14 @@ int PIC::CPLR::DATAFILE::TECPLOT::maxScriptPointNumber=15000;
 int PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=0;
 int PIC::CPLR::DATAFILE::TECPLOT::DataMode=-1;
 
-PIC::CPLR::DATAFILE::TECPLOT::cLoadedVariableData PIC::CPLR::DATAFILE::TECPLOT::Velocity,PIC::CPLR::DATAFILE::TECPLOT::IonPressure,PIC::CPLR::DATAFILE::TECPLOT::ElectronPressure,PIC::CPLR::DATAFILE::TECPLOT::MagneticField,PIC::CPLR::DATAFILE::TECPLOT::Density;
+PIC::CPLR::DATAFILE::TECPLOT::cLoadedVariableData PIC::CPLR::DATAFILE::TECPLOT::ElectronPressure,PIC::CPLR::DATAFILE::TECPLOT::MagneticField;
 
 //rotation matrixes
 double PIC::CPLR::DATAFILE::TECPLOT::RotationMatrix_LocalFrame2DATAFILE[3][3]={{1.0,0.0,0.0},{0.0,1.0,0.0},{0.0,0.0,1.0}};
 double PIC::CPLR::DATAFILE::TECPLOT::RotationMatrix_DATAFILE2LocalFrame[3][3]={{1.0,0.0,0.0},{0.0,1.0,0.0},{0.0,0.0,1.0}};
+
+//ion fluid descriptor
+vector<PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor> PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable; 
 
 //init the reader
 void PIC::CPLR::DATAFILE::TECPLOT::Init() {
@@ -440,17 +443,36 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
 
           //save the data on the AMPS data buffers
           //the order of the state vector: number density, temperature
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=data[Density.offset]*Density.ScaleFactor;
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=(data[Density.offset]>0.0) ? data[IonPressure.offset]*IonPressure.ScaleFactor/(Kbol*data[Density.offset]*Density.ScaleFactor) : 0.0;
+          if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.active) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=
+                data[IonFluidDescriptorTable[0].Density.Index]*IonFluidDescriptorTable[0].Density.ScaleFactor;
+          }
+
+          if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.active) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.RelativeOffset))=
+                (data[IonFluidDescriptorTable[0].Density.Index]>0.0) ? data[IonFluidDescriptorTable[0].Pressure.Index]*IonFluidDescriptorTable[0].Pressure.ScaleFactor/
+                    (Kbol*data[IonFluidDescriptorTable[0].Density.Index]*IonFluidDescriptorTable[0].Density.ScaleFactor) : 0.0;
+          }
 
           //get pressure
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=data[IonPressure.offset]*IonPressure.ScaleFactor;
-          if (PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.RelativeOffset))=data[ElectronPressure.offset]*ElectronPressure.ScaleFactor;
+          if (PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.active) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=data[IonFluidDescriptorTable[0].Pressure.Index]*IonFluidDescriptorTable[0].Pressure.ScaleFactor;
+          }
+          
+          if (PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.active) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.RelativeOffset))=data[ElectronPressure.offset]*ElectronPressure.ScaleFactor;
+          }
 
           //bulk velocity and magnetic field
           for (idim=0;idim<3;idim++) {
-            if (PIC::CPLR::DATAFILE::Offset::MagneticField.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=data[idim+MagneticField.offset]*MagneticField.ScaleFactor;
-            if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active) *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset+idim*sizeof(double)))=data[idim+Velocity.offset]*Velocity.ScaleFactor;
+            if (PIC::CPLR::DATAFILE::Offset::MagneticField.active) {
+              *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=data[idim+MagneticField.offset]*MagneticField.ScaleFactor;
+            }
+            
+            if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active) {             
+              *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset+idim*sizeof(double)))=
+                data[idim+IonFluidDescriptorTable[0].BulkVelocity.Index]*IonFluidDescriptorTable[0].BulkVelocity.ScaleFactor;
+            }
           }
 
           //calculate the electric field

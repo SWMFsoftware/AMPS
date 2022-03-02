@@ -42,6 +42,9 @@ int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::CenterNodeAssociatedData
 int PIC::CPLR::DATAFILE::nTotalBackgroundVariables=0;
 bool PIC::CPLR::DATAFILE::Offset::InitFlag=false;
 
+//the unmber of ion fluids used in PIC::CPLR::DATAFILE 
+int PIC::CPLR::DATAFILE::nIonFluids=1;
+
 //Physical quantaties offsets that could be read and srored
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity={false,false,1,"\"Plasma number density\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity={false,false,3,"\"vPlasmaX\", \"vPlasmaY\", \"vPlasmaZ\"",-1};
@@ -341,9 +344,9 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaNumberDensity.active=true;
     Offset::PlasmaNumberDensity.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaNumberDensity.nVars*sizeof(double);
-    RelativeOffset+=Offset::PlasmaNumberDensity.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::PlasmaNumberDensity.nVars;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nIonFluids*Offset::PlasmaNumberDensity.nVars*sizeof(double);
+    RelativeOffset+=nIonFluids*Offset::PlasmaNumberDensity.nVars*sizeof(double);
+    nTotalBackgroundVariables+=nIonFluids*Offset::PlasmaNumberDensity.nVars;
   }
 
 
@@ -353,9 +356,9 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaBulkVelocity.active=true;
     Offset::PlasmaBulkVelocity.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaBulkVelocity.nVars*sizeof(double);
-    RelativeOffset+=Offset::PlasmaBulkVelocity.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::PlasmaBulkVelocity.nVars;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nIonFluids*Offset::PlasmaBulkVelocity.nVars*sizeof(double);
+    RelativeOffset+=nIonFluids*Offset::PlasmaBulkVelocity.nVars*sizeof(double);
+    nTotalBackgroundVariables+=nIonFluids*Offset::PlasmaBulkVelocity.nVars;
   }
 
 
@@ -365,9 +368,9 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaTemperature.active=true;
     Offset::PlasmaTemperature.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaTemperature.nVars*sizeof(double);
-    RelativeOffset+=Offset::PlasmaTemperature.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::PlasmaTemperature.nVars;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nIonFluids*Offset::PlasmaTemperature.nVars*sizeof(double);
+    RelativeOffset+=nIonFluids*Offset::PlasmaTemperature.nVars*sizeof(double);
+    nTotalBackgroundVariables+=nIonFluids*Offset::PlasmaTemperature.nVars;
   }
 
 
@@ -377,9 +380,9 @@ void PIC::CPLR::DATAFILE::Init() {
     Offset::PlasmaIonPressure.active=true;
     Offset::PlasmaIonPressure.RelativeOffset=RelativeOffset;
 
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaIonPressure.nVars*sizeof(double);
-    RelativeOffset+=Offset::PlasmaIonPressure.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::PlasmaIonPressure.nVars;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=nIonFluids*Offset::PlasmaIonPressure.nVars*sizeof(double);
+    RelativeOffset+=nIonFluids*Offset::PlasmaIonPressure.nVars*sizeof(double);
+    nTotalBackgroundVariables+=nIonFluids*Offset::PlasmaIonPressure.nVars;
   }
 
 

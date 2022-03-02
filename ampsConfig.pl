@@ -440,7 +440,7 @@ sub ReadMainBlock {
     $InputLine=~s/\s+$//; #remove spaces from the end of the line
  
     #substitute separators by 'spaces'
-    $InputLine=~s/[=,]/ /g;
+    $InputLine=~s/[=,:]/ /g;
     
     #get the first word in the sequence
     ($s0,$s1)=split(' ',$InputLine,2);
@@ -579,6 +579,30 @@ sub ReadMainBlock {
         die "UNRECOGNIZED/UNDEFINED integrator mode $s0!\n";
       }
     }       
+
+    #the number of the background ion fluids used in PIC::CPLR::DATAFILE
+    elsif ($s0 eq "COUPLER") {
+      ($s0,$s1)=split(' ',$s1,2);
+             
+      if ($s0 eq "FILE") {
+        ($s0,$s1)=split(' ',$s1,2);
+
+        if ($s0 eq "IONFLUIDNUMBER") {
+          ($s0,$s1)=split(' ',$s1,2); 
+
+          ampsConfigLib::ChangeValueOfVariable("int PIC::CPLR::DATAFILE::nIonFluids",$s0,"pic/pic_datafile.cpp");
+        }
+        else {
+          warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+          die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+      else {
+        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+        die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+      }
+    }
+
     elsif ($s0 eq "COUPLERMODE") {
       $s1=~s/[();]/ /g;
       ($s0,$s1)=split(' ',$s1,2);

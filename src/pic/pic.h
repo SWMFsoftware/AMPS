@@ -6365,6 +6365,9 @@ void DeleteAttachedParticles();
     //coupling thrugh a file
     namespace DATAFILE {
 
+      //the total number of the background ion fluids
+      extern int nIonFluids;
+
       namespace MULTIFILE {
         //-----------------------------------
         //number of file to be loaded
@@ -6595,6 +6598,10 @@ void DeleteAttachedParticles();
         GetBackgroundValue(vel,Offset::PlasmaBulkVelocity.nVars,Offset::PlasmaBulkVelocity.RelativeOffset, cell, Time);
       }
 
+      inline void GetBackgroundPlasmaVelocity(double *vel,int spec,PIC::Mesh::cDataCenterNode *cell, double Time) {
+        GetBackgroundValue(vel,Offset::PlasmaBulkVelocity.nVars,Offset::PlasmaBulkVelocity.RelativeOffset+spec*Offset::PlasmaBulkVelocity.nVars*sizeof(double), cell, Time);
+      }
+
       inline double GetBackgroundMagneticFluxFunction(PIC::Mesh::cDataCenterNode *cell, double Time) {
         double ff;
 
@@ -6608,6 +6615,14 @@ void DeleteAttachedParticles();
         GetBackgroundValue(&p,Offset::PlasmaIonPressure.nVars,Offset::PlasmaIonPressure.RelativeOffset, cell, Time);
         return p;
       }
+
+      inline double GetBackgroundPlasmaPressure(int spec,PIC::Mesh::cDataCenterNode *cell, double Time) {
+        double p;
+
+        GetBackgroundValue(&p,Offset::PlasmaIonPressure.nVars,Offset::PlasmaIonPressure.RelativeOffset+spec*Offset::PlasmaIonPressure.nVars*sizeof(double), cell, Time);
+        return p;
+      }
+
 
       inline double GetBackgroundElectronPlasmaPressure(PIC::Mesh::cDataCenterNode *cell, double Time) {
         double p;
@@ -6633,12 +6648,28 @@ void DeleteAttachedParticles();
          return n;
       }	
 
+      inline double GetBackgroundPlasmaNumberDensity(int spec,PIC::Mesh::cDataCenterNode *cell, double Time) {
+        double n;
+
+         GetBackgroundValue(&n,Offset::PlasmaNumberDensity.nVars,Offset::PlasmaNumberDensity.RelativeOffset+spec*Offset::PlasmaNumberDensity.nVars*sizeof(double), cell, Time);
+         return n;
+      }
+
+
       inline double GetBackgroundPlasmaTemperature(PIC::Mesh::cDataCenterNode *cell, double Time) {
          double T;
 
          GetBackgroundValue(&T, Offset::PlasmaTemperature.nVars,Offset::PlasmaTemperature.RelativeOffset, cell, Time);
          return T;
       }
+
+      inline double GetBackgroundPlasmaTemperature(int spec,PIC::Mesh::cDataCenterNode *cell, double Time) {
+         double T;
+
+         GetBackgroundValue(&T, Offset::PlasmaTemperature.nVars,Offset::PlasmaTemperature.RelativeOffset+spec*Offset::PlasmaTemperature.nVars*sizeof(double), cell, Time);
+         return T;
+      }
+
 
       inline void GetBackgroundFieldsVector(double *E,double *B,PIC::Mesh::cDataCenterNode *cell, double Time) {
          GetBackgroundValue(E, Offset::ElectricField.nVars,Offset::ElectricField.RelativeOffset, cell, Time);
@@ -6774,6 +6805,27 @@ void DeleteAttachedParticles();
         extern double xDataMin[3],xDataMax[3]; //the size of the domain. used when DataMode==DataMode_XYZ
         extern double rDataMin,rDataMax; //the radial size of the domain. used when DataMode==DataMode_SPERICAL
 
+        //nessesary stuff to read multi-fluid data files
+        class cIonFluidParameter {
+        public:
+          int Index;
+          double ScaleFactor;
+ 
+          cIonFluidParameter() {Index=-1,ScaleFactor=0.0;}
+          void Set(int i,double f)  {Index=i,ScaleFactor=f;}
+        };
+
+        class cIonFluidDescriptor {
+        public: 
+          cIonFluidParameter Density,BulkVelocity,Pressure;
+          string FluidSymbol;
+
+          void SetSymbol(const string& str) {FluidSymbol=str;}
+        };
+
+        extern vector<cIonFluidDescriptor> IonFluidDescriptorTable;
+
+
         extern double UnitLength; //the spatial units used in the BATSRUS' output file
         extern int maxScriptPointNumber; //the maximum number of point that one single script can have
         extern int nTotalVarlablesTECPLOT; //the total number of the variabled in the TECPLOT output file (including thoses that are not needed)
@@ -6799,10 +6851,7 @@ void DeleteAttachedParticles();
           }
         };
 
-        extern cLoadedVariableData Velocity,IonPressure,ElectronPressure,MagneticField,Density;
-        inline void SetLoadedDensityVariableData(int offset,double ScaleFactor) {Density.offset=offset-1,Density.ScaleFactor=ScaleFactor;}
-        inline void SetLoadedVelocityVariableData(int offset,double ScaleFactor) {Velocity.offset=offset-1,Velocity.ScaleFactor=ScaleFactor;}
-        inline void SetLoadedIonPressureVariableData(int offset,double ScaleFactor) {IonPressure.offset=offset-1,IonPressure.ScaleFactor=ScaleFactor;}
+        extern cLoadedVariableData ElectronPressure,MagneticField;
         inline void SetLoadedElectronPressureVariableData(int offset,double ScaleFactor) {ElectronPressure.offset=offset-1,ElectronPressure.ScaleFactor=ScaleFactor;}
         inline void SetLoadedMagneticFieldVariableData(int offset,double ScaleFactor) {MagneticField.offset=offset-1,MagneticField.ScaleFactor=ScaleFactor;}
 
@@ -7107,7 +7156,7 @@ void DeleteAttachedParticles();
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
          SWMF::GetBackgroundPlasmaVelocity(iBackgroundPlasmaSpec,t,Stencil->cell[iStencil]);
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-         DATAFILE::GetBackgroundPlasmaVelocity(t,Stencil->cell[iStencil], Time);
+         DATAFILE::GetBackgroundPlasmaVelocity(t,iBackgroundPlasmaSpec,Stencil->cell[iStencil], Time);
          #else
          t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
          exit(__LINE__,__FILE__,"not implemented");
@@ -7157,7 +7206,7 @@ void DeleteAttachedParticles();
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
          res+=SWMF::GetBackgroundPlasmaPressure(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-         res+=DATAFILE::GetBackgroundPlasmaPressure(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
+         res+=DATAFILE::GetBackgroundPlasmaPressure(iBackgroundPlasmaSpec,Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
          exit(__LINE__,__FILE__,"not implemented");
          #endif
@@ -7209,7 +7258,7 @@ void DeleteAttachedParticles();
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
          res+=SWMF::GetBackgroundPlasmaNumberDensity(iBackgroundPlasmaSpec,Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-         res+=DATAFILE::GetBackgroundPlasmaNumberDensity(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
+         res+=DATAFILE::GetBackgroundPlasmaNumberDensity(iBackgroundPlasmaSpec,Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
          exit(__LINE__,__FILE__,"not implemented");
          #endif
@@ -7237,7 +7286,7 @@ void DeleteAttachedParticles();
          #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
          res+=SWMF::GetBackgroundPlasmaTemperature(Stencil->cell[iStencil])*Stencil->Weight[iStencil];
          #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-         res+=DATAFILE::GetBackgroundPlasmaTemperature(Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
+         res+=DATAFILE::GetBackgroundPlasmaTemperature(iBackgroundPlasmaSpec,Stencil->cell[iStencil], Time)*Stencil->Weight[iStencil];
          #else
          exit(__LINE__,__FILE__,"not implemented");
          #endif
