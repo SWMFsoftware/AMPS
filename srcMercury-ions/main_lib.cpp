@@ -380,6 +380,9 @@ void amps_init() {
       //  0  1  0
       //  0  0  1
 
+
+      PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
+
       switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
       case _PIC_COUPLER_DATAFILE_READER_MODE__TECPLOT_:
         PIC::CPLR::DATAFILE::TECPLOT::SetRotationMatrix_DATAFILE2LocalFrame(RotationMatrix_BATSRUS2AMPS);
@@ -402,12 +405,19 @@ void amps_init() {
           PIC::CPLR::DATAFILE::TECPLOT::UnitLength=_MERCURY__RADIUS_;
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsXYZ(xminTECPLOT,xmaxTECPLOT);
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.04,8.0);
-
           PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
+
+          IonFluid.BulkVelocity.Set(5-1,1.0E3);
+          IonFluid.Pressure.Set(11-1,1.0E-9);
+          IonFluid.Density.Set(4,1.0E6);
+          PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
+
           PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
           PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=14;
           // NOTE_ANG: YOU MUST remove the *.mcr and *.CenterNodeBackgroundData.bin files in the data source folder upon changing the input file!
 

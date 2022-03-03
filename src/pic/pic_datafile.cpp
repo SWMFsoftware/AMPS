@@ -665,10 +665,26 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
 //====================================================
 //output background parameters loaded with ICES from SWMF output
 void PIC::CPLR::DATAFILE::PrintVariableList(FILE* fout,int DataSetNumber) {
-  if (Offset::PlasmaNumberDensity.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaNumberDensity.VarList,i);
-  if (Offset::PlasmaBulkVelocity.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"vPlasmaX[%i]\", \"vPlasmaY[%i]\", \"vPlasmaZ[%i]\"",i,i,i);
-  if (Offset::PlasmaTemperature.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaTemperature.VarList,i);
-  if (Offset::PlasmaIonPressure.active) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaIonPressure.VarList,i);
+  if (Offset::PlasmaNumberDensity.active) {
+    if (nIonFluids!=1) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaNumberDensity.VarList,i);
+    else fprintf(fout,", \"%s\"",Offset::PlasmaNumberDensity.VarList);
+  }
+
+  if (Offset::PlasmaBulkVelocity.active) {
+    if (nIonFluids!=1) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"vPlasmaX[%i]\", \"vPlasmaY[%i]\", \"vPlasmaZ[%i]\"",i,i,i);
+    else fprintf(fout,", \"vPlasmaX\", \"vPlasmaY\", \"vPlasmaZ\"");
+  }
+
+  if (Offset::PlasmaTemperature.active) {
+    if (nIonFluids!=1) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaTemperature.VarList,i);
+    else fprintf(fout,", \"%s\"",Offset::PlasmaTemperature.VarList);
+  }
+
+  if (Offset::PlasmaIonPressure.active) {
+    if (nIonFluids!=1) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaIonPressure.VarList,i);
+    else fprintf(fout,", \"%s\"",Offset::PlasmaIonPressure.VarList);
+  }
+
   if (Offset::PlasmaElectronPressure.active) fprintf(fout,", %s",Offset::PlasmaElectronPressure.VarList);
   if (Offset::MagneticField.active) fprintf(fout,", %s",Offset::MagneticField.VarList);
   if (Offset::ElectricField.active) fprintf(fout,", %s",Offset::ElectricField.VarList);

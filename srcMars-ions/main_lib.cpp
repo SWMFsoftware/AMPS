@@ -284,6 +284,8 @@ void amps_init() {
       //  0  1  0
       //  0  0  1
 
+      PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
+
       switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
       case _PIC_COUPLER_DATAFILE_READER_MODE__TECPLOT_:
         PIC::CPLR::DATAFILE::TECPLOT::SetRotationMatrix_DATAFILE2LocalFrame(RotationMatrix_BATSRUS2AMPS);
@@ -292,12 +294,18 @@ void amps_init() {
           PIC::CPLR::DATAFILE::TECPLOT::UnitLength=_MARS__RADIUS_;
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsXYZ(xminTECPLOT,xmaxTECPLOT);
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.001,10.0);
-
           PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(39,1.0E3);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(26,1.0E-9);
+
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(39,1.0E3);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(26,1.0E-9);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(22,1.0E6/16.);
+
+          IonFluid.BulkVelocity.Set(39-1,1.0E3);
+          IonFluid.Pressure.Set(26-1,1.0E-9);
+          IonFluid.Density.Set(22-1,1.0E6/16.);
+          PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
           PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(22,1.0E6/16.);
           PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=41;
           PIC::CPLR::DATAFILE::TECPLOT::ImportData("data_mhd_PERmax-SSLONG180U.plt");
         }
@@ -305,12 +313,18 @@ void amps_init() {
           PIC::CPLR::DATAFILE::TECPLOT::UnitLength=_MARS__RADIUS_;
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsXYZ(xminTECPLOT,xmaxTECPLOT);
           PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.04,8.0);
-
           PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(11,1.0E-9);
+          //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6/16.);
+
+          IonFluid.BulkVelocity.Set(5-1,1.0E3);
+          IonFluid.Pressure.Set(11-1,1.0E-9);
+          IonFluid.Density.Set(4-1,1.0E6/16.);
+          PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
           PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(8,1.0E-9);
-          PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6/16.);
           PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=38;
           PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__ful_1_n00050000.plt"); //"data_mhd_PERmax-SSLONG180U.plt");
         }
