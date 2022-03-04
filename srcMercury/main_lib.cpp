@@ -1247,16 +1247,23 @@ void amps_init() {
   else {
 
     double xminTECPLOT[3]={-32,-32,-32},xmaxTECPLOT[3]={16,32,32};
+    PIC::CPLR::DATAFILE::TECPLOT::cIonFluidDescriptor IonFluid;
 
     PIC::CPLR::DATAFILE::TECPLOT::UnitLength=_RADIUS_(_TARGET_);
     PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsXYZ(xminTECPLOT,xmaxTECPLOT);
     PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.0,50.0);
-
     PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
-    PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
-    PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(14,1.0E-9);
+
+    //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedVelocityVariableData(5,1.0E3);
+    //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedIonPressureVariableData(14,1.0E-9);
+    //PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
+
+    IonFluid.BulkVelocity.Set(5-1,1.0E3);
+    IonFluid.Pressure.Set(14-1,1.0E-9);
+    IonFluid.Density.Set(4-1,1.0E6);
+    PIC::CPLR::DATAFILE::TECPLOT::IonFluidDescriptorTable.push_back(IonFluid);
+
     PIC::CPLR::DATAFILE::TECPLOT::SetLoadedMagneticFieldVariableData(11,1.0E-9);
-    PIC::CPLR::DATAFILE::TECPLOT::SetLoadedDensityVariableData(4,1.0E6);
     PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=21;
     PIC::CPLR::DATAFILE::TECPLOT::ImportData("3d__var_7_t00000200_n0300072.plt"); //data/input/Mercury/040915-Jia/3d__var_7_t00000200_n0300072.plt
 
