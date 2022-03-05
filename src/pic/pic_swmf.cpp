@@ -568,7 +568,14 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
             }
 
             //get pressure
-            *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=((offset>=0)&&(P_SWMF2AMPS>=0)) ? data[offset+P_SWMF2AMPS] : 0.0;
+            if ((offset>=0)&&(P_SWMF2AMPS>=0)) {
+              *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=data[offset+P_SWMF2AMPS];
+
+              if (data[offset+P_SWMF2AMPS]<0.0) exit(__LINE__,__FILE__,"Error: negative pressure is detected");
+            }
+            else {
+              *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaPressureOffset))=0.0;
+            }
 
             //AlfvenWave
             if ((offset>=0)&&(I01_SWMF2AMPS>=0)) { 
