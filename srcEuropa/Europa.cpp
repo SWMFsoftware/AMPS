@@ -24,6 +24,7 @@ char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GALL_EOJ";  //Europa-centric 
 //defined in galileo.tf
 
 char Europa::BackgroundPlasmaFileName[200]="./3d__mhd_3_n00045039-extracted.plt";  
+double Europa::BackgroundPlasmaModelBoundary=0.001;
 char Europa::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
 
 double Europa::TotalInjectionRate=0.0;

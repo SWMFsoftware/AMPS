@@ -1410,7 +1410,7 @@ void amps_init() {
       
       PIC::CPLR::DATAFILE::TECPLOT::UnitLength=_EUROPA__RADIUS_;
       PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsXYZ(xminTECPLOT,xmaxTECPLOT);
-      PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(1.001,10.0);
+      PIC::CPLR::DATAFILE::TECPLOT::SetDomainLimitsSPHERICAL(Europa::BackgroundPlasmaModelBoundary,10.0);
 
       PIC::CPLR::DATAFILE::TECPLOT::DataMode=PIC::CPLR::DATAFILE::TECPLOT::DataMode_SPHERICAL;
 

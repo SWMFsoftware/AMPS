@@ -105,6 +105,7 @@ namespace Europa {
 
   //the name of the background plasma data file 
   extern char BackgroundPlasmaFileName[200];
+  extern double BackgroundPlasmaModelBoundary;
 
   //the total injection rate
   extern double TotalInjectionRate;
