@@ -1094,6 +1094,37 @@ sub ReadGeneralBlock {
       }
     }
 
+    #parameter of the reader of the background TECPLOT data
+    elsif ($InputLine eq "COUPLER") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "TECPLOT") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+        if ($InputLine eq "NTOTALTECPLOTVARIABLES") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT",$InputLine,"pic/pic_tecplot.cpp");
+        }
+        else {
+          warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+          die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+      elsif ($InputLine eq "FILE") {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+        if ($InputLine eq "IONFLUIDNUMBER") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          ampsConfigLib::ChangeValueOfVariable("int PIC::CPLR::DATAFILE::nIonFluids",$InputLine,"pic/pic_datafile.cpp");
+        }
+        else {
+          warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+          die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+      }
+    }
+
+
     #create a single output file vs a set of separated output files that need to be concatenated using AMPS/utility/ConOutput.pl script
     elsif ($InputLine eq "OUTPUTMODE") {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
