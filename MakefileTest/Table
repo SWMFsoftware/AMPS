@@ -3873,6 +3873,54 @@ Check=
 >>>@ls -l test_Europa-test1.diff
 >>>@echo Test test_Europa-test1 has finished: `date`
 <#
+
+-------------------------------------------------------------------------------
+#>
+Name=Europa-test2@@(0-amps-gpu) 
+Time=3
+
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+valeriy)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+stampede)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+pleiades)
+
+Check=
+>>>@echo "test_Europa-test2_check..." >> test_Europa-test2.diff
+>>>-${SCRIPTDIR}/DiffNum.pl ${TESTEuropa-test2DIR}/PT/plots/test_Europa.dat         \
+>>>output/test_Europa-test2/test_Europa-test2.ref_np`ls ${TESTEuropa-test2DIR}/PT/thread* |wc -l |tr -d ' '` > test_Europa-test2.diff
+>>>@ls -l test_Europa-test2.diff
+>>>@echo Test test_Europa-test2 has finished: `date`
+<#
+
+#>
+Name=Europa-test2@@(0+amps-gpu)
+Time=3
+
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+amps-gpu)
+
+Run=
+>>>@echo "test_Europa-test2_run..." >> test_Europa-test2$(TESTEuropa-test2-REF).diff
+>>>@echo Test test_Europa-test2 has started: `date`
+>>>@rm /home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid/*.bin
+>>>cd $(TESTEuropa-test2DIR); ${MPIRUN} ./amps
+>>>@echo "test_Europa-test2_run... done" >> test_Europa-test2$(TESTEuropa-test2-REF).diff
+
+Check=
+>>>@echo "test_Europa-test2_check..." >> test_Europa-test2.diff
+>>>-${SCRIPTDIR}/DiffNum.pl ${TESTEuropa-test2DIR}/PT/plots/test_Europa.dat         \
+>>>output/test_Europa-test2/test_Europa-test2.ref_np`ls ${TESTEuropa-test2DIR}/PT/thread* |wc -l |tr -d ' '` > test_Europa-test2.diff
+
+>>>-${TESTEuropa-test2DIR}/../utility/ReduceFile.pl ${TESTEuropa-test2DIR}/loaded.SavedCellData.dat 100 
+>>>-gunzip output/test_Europa-test2/loaded.SavedCellData.dat.Reduced.Step=100.gz
+>>>-${SCRIPTDIR}/DiffNum.pl ${TESTEuropa-test2DIR}/loaded.SavedCellData.dat.Reduced.Step=100 \
+>>>output/test_Europa-test2/loaded.SavedCellData.dat.Reduced.Step=100 > test_Europa-test2-background-plasma-model.diff 
+
+>>>@ls -l test_Europa-test2-background-plasma-model.diff
+>>>@ls -l test_Europa-test2.diff
+>>>@echo Test test_Europa-test2 has finished: `date`
+<#
+
+
 -------------------------------------------------------------------------------
 #>
 Name=LOS@@(0+) 
