@@ -32,27 +32,24 @@ long int Earth::ImpulseSource::InjectParticles() {
   long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
+  //sampling buffer of the gyro-frequency and gyro-radii
+  double *GyroFrequencySample=new double[PIC::nTotalThreadsOpenMP];
+  double *GyroRadiiSample=new double [PIC::nTotalThreadsOpenMP];
+  int *SampleCounter=new int [PIC::nTotalThreadsOpenMP];
+
+  for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
+    SampleCounter[thread]=0;
+    GyroFrequencySample[thread]=0.0,GyroRadiiSample[thread]=0.0;
+  }
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  #pragma omp parallel
+  #pragma omp parallel shared(TimeCounter)  
   {
   #pragma omp single
   {
 #endif
 
-  //the number of the OpenMP threads
-  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  int nThreadsOpenMP=omp_get_num_threads();
-  #else
-  int nThreadsOpenMP=1;
-  #endif
-
-  //sampling buffer of the gyro-frequency and gyro-radii
-  double *GyroFrequencySample=new double[nThreadsOpenMP];
-  double *GyroRadiiSample=new double [nThreadsOpenMP];
-  int *SampleCounter=new int [nThreadsOpenMP];
   double SourceLocationB[3];
-
   TimeCounter+=PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0);
 
   for (iSource=0;iSource<nTotalSourceLocations;iSource++) {
@@ -78,7 +75,7 @@ long int Earth::ImpulseSource::InjectParticles() {
       PIC::CPLR::GetBackgroundMagneticField(SourceLocationB);
 
       //reset the sampling buffers
-      for (int thread=0;thread<nThreadsOpenMP;thread++) {
+      for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
         GyroFrequencySample[thread]=0.0,GyroRadiiSample[thread]=0.0;
         SampleCounter[thread]=0;
       }
@@ -87,11 +84,11 @@ long int Earth::ImpulseSource::InjectParticles() {
         //generate particles' velocity
         newParticle=PIC::ParticleBuffer::GetNewParticle(true);
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
-        shared (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
+       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+//       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
+//        firstprivate (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
         {
-#endif
+       #endif
 
         //generate new particle velocity
         double v[3],speed;
@@ -138,7 +135,7 @@ long int Earth::ImpulseSource::InjectParticles() {
       //end of the particle injetion loop
 
       //output sampled information
-      for (int thread=1;thread<nThreadsOpenMP;thread++) {
+      for (int thread=1;thread<PIC::nTotalThreadsOpenMP;thread++) {
         GyroFrequencySample[0]+=GyroFrequencySample[thread];
         GyroRadiiSample[0]+=GyroRadiiSample[thread];
         SampleCounter[0]+=SampleCounter[thread];
@@ -154,16 +151,14 @@ long int Earth::ImpulseSource::InjectParticles() {
 
   }
 
-
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+     }}
+#endif
 
   //deallocate the sampling buffers
   delete [] GyroFrequencySample;
   delete [] GyroRadiiSample;
   delete [] SampleCounter;
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-     }}
-#endif
 
   return nTotalInjectedParticles;
 }

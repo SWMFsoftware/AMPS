@@ -21,56 +21,42 @@ void PIC::UserParticleProcessing::Processing_default(long int ptr,long int& Firs
 
 //call the particle processing function
 void PIC::UserParticleProcessing::Processing() {
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
-  int i,j,k;
-  long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp parallel default(none)  shared(PIC::Mesh::mesh) \
-  private (node,i,j,k,oldFirstCellParticle,newFirstCellParticle,p,pnext)
-   {
-#pragma omp single
-     {
-#endif //_COMPILATION_MODE_
-  for (node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
-    if (node->block!=NULL) {
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp task default (none) firstprivate (node) private (i,j,k,oldFirstCellParticle,newFirstCellParticle,p,pnext)
-    {
+#pragma omp parallel for schedule(dynamic,1) default(none)  firstprivate(PIC::ThisThread,PIC::DomainBlockDecomposition::nLocalBlocks,PIC::Mesh::mesh,PIC::DomainBlockDecomposition::BlockTable)  
 #endif
-      for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-         for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-            for (i=0;i<_BLOCK_CELLS_X_;i++) {
-              oldFirstCellParticle=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-              newFirstCellParticle=-1;
+  for (int icell=0;icell<PIC::DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;icell++) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+    int i,j,k,inode,ii;
+    long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
-              if (oldFirstCellParticle!=-1) {
-                p=oldFirstCellParticle;
+    inode=icell/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
 
-                while (p!=-1) {
-                  pnext=PIC::ParticleBuffer::GetNext(p);
-                  _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(p,newFirstCellParticle,node);
-                  p=pnext;
-                }
+    ii=icell%(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii=ii%(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
 
-                node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=newFirstCellParticle;
-              }
-           }
-         }
+    j=ii/_BLOCK_CELLS_X_;
+    i=ii%_BLOCK_CELLS_X_;
+
+    node=PIC::DomainBlockDecomposition::BlockTable[inode];
+    if (node->block==NULL) continue;
+
+    oldFirstCellParticle=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+    newFirstCellParticle=-1;
+
+    if (oldFirstCellParticle!=-1) {
+      p=oldFirstCellParticle;
+
+      while (p!=-1) {
+        pnext=PIC::ParticleBuffer::GetNext(p);
+        _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(p,newFirstCellParticle,node);
+        p=pnext;
       }
 
-      //end of the block processing
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  }
-#endif
+      node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=newFirstCellParticle;
     }
   }
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-}}
-#endif
-
 }
 
 
