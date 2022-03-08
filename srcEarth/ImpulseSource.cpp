@@ -85,8 +85,8 @@ long int Earth::ImpulseSource::InjectParticles() {
         newParticle=PIC::ParticleBuffer::GetNewParticle(true);
 
        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-//       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
-//        firstprivate (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
+       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
+       firstprivate (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
         {
        #endif
 
