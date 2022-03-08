@@ -379,16 +379,18 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_2(double excessEner
   double positiveTemp=-1;
   double r1sq, r1;
   
-  while (positiveTemp<0){
-    r1sq = e_calc*rnd();
-    r1 = sqrt(r1sq*2*m1);
-    positiveTemp = 2*e_calc*m1*m2-(m1+m2)*r1*r1;
-  }
+  //while (positiveTemp<0){
+  e_calc *= 2*m1*m2/(m1+m2);
+  //r1sq =e_calc*rnd();
+  r1 = sqrt(e_calc);
+    //positiveTemp = 2*e_calc*m1*m2-(m1+m2)*r1*r1;
+    //}
 
   double phi = rnd()*Pi*2;
-  p1x = r1*cos(phi);
-  p1y = r1*sin(phi);
-  p1z = -sqrt(positiveTemp/(m1+m2));
+  double theta= rnd()*Pi;
+  p1x = r1*cos(phi)*sin(theta);
+  p1y = r1*sin(phi)*sin(theta);
+  p1z = r1*cos(theta);
   p2x = -p1x;
   p2y = -p1y;
   p2z = -p1z;
@@ -429,12 +431,12 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
     r1sq = e_calc*rnd();
     r1 = sqrt(r1sq*2*m1);
     phi = rnd()*Pi*2;
-    theta = acos(2*rnd()-1);
+    theta = rnd()*Pi;
     p1x = r1*cos(phi)*sin(theta);
     p1y = r1*sin(phi)*sin(theta);
     p1z = r1*cos(theta);
     r2sq = (e_calc-r1sq)*rnd();
-    r2 = sqrt(r2sq*2*m2);
+    r2 = sqrt(r2sq*m2*2);
     phi = rnd()*Pi*2;
     p2x = r2*cos(phi);
     p2y = r2*sin(phi);
@@ -447,6 +449,54 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
   p3y = -p1y-p2y;
   p3z = (-m1*m3*p1z+sqrt(positiveTemp))/(m1*(m2+m3));
 
+
+    double beta,gamma;
+  beta = rnd()*2*Pi;
+  gamma= rnd()*2*Pi;
+
+  double matrixBeta[3][3]={{cos(beta),0,sin(beta)},{0,1,0},{-sin(beta),0,cos(beta)}};
+  double matrixGamma[3][3]={{cos(gamma),-sin(gamma),0},{sin(gamma),cos(gamma),0},{0,0,1}};
+  double tempVelocity1[3][3], tempVelocity2[3][3];
+  
+  for (int i=0;i<3;i++){
+    for (int j=0;j<3;j++){
+      tempVelocity2[i][j]=0.0;
+      productVelocityTable[3*i+j]=0.0;
+    }
+  }
+
+  tempVelocity1[2][0]=p3x/m3;
+  tempVelocity1[2][1]=p3y/m3;  
+  tempVelocity1[2][2]=p3z/m3;
+  
+  tempVelocity1[1][0]=p2x/m2;
+  tempVelocity1[1][1]=p2y/m2;  
+  tempVelocity1[1][2]=p2z/m2;
+ 
+  tempVelocity1[0][0]=p1x/m1;
+  tempVelocity1[0][1]=p1y/m1;  
+  tempVelocity1[0][2]=p1z/m1;
+
+  
+  for (int iprod=0; iprod<3; iprod++){
+    for (int i=0; i<3;i++){
+      for (int j=0;j<3;j++){
+	tempVelocity2[iprod][i]+=matrixBeta[i][j]*tempVelocity1[iprod][j];	
+      }
+    }
+  }
+
+  for (int iprod=0; iprod<3; iprod++){
+    for (int i=0; i<3;i++){
+      for (int j=0;j<3;j++){
+	productVelocityTable[3*iprod+i]+=matrixGamma[i][j]*tempVelocity2[iprod][j];	
+      }
+    }
+  }
+
+  
+
+  /*
   productVelocityTable[0] = p1x/m1;
   productVelocityTable[1] = p1y/m1;
   productVelocityTable[2] = p1z/m1;
@@ -458,7 +508,8 @@ void PhotolyticReactions::Huebner1992ASS::GetProductVelocity_3(double excessEner
   productVelocityTable[6] = p3x/m3;
   productVelocityTable[7] = p3y/m3;
   productVelocityTable[8] = p3z/m3;
-
+  */
+  
   /*
   printf("photo_test_Prod3,px:%e,py:%e,pz:%e,total energy diff:%e,e:%e\n", (p1x+p2x+p3x), (p1y+p2y+p3y),(p1z+p2z+p3z),
 	 ((p1x*p1x+p1y*p1y+p1z*p1z)/m1+

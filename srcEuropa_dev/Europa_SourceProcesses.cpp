@@ -78,7 +78,8 @@ void Europa::UniformMaxwellian::Init_surfaceDistribution(){
 
       for (el=0;el<nTotalSurfaceElements;el++) {
 	ElementSourceRate=GetSurfaceElementProductionRate(spec,el,Exosphere::Planet);
-	rate[el]=ElementSourceRate/Planet->GetSurfaceElementArea(el);     
+	//rate[el]=ElementSourceRate/Planet->GetSurfaceElementArea(el);
+	rate[el]= ElementSourceRate;
       }
 
     SurfaceInjectionDistribution[spec].InitArray(rate,nTotalSurfaceElements,10*nTotalSurfaceElements);
@@ -122,7 +123,8 @@ void Europa::UniformSputtering::Init_surfaceDistribution(){
 
       for (el=0;el<nTotalSurfaceElements;el++) {
 	ElementSourceRate=GetSurfaceElementProductionRate(spec,el,Exosphere::Planet);
-	rate[el]=ElementSourceRate/Planet->GetSurfaceElementArea(el);     
+	//rate[el]=ElementSourceRate/Planet->GetSurfaceElementArea(el);
+	rate[el]=ElementSourceRate;
       }
 
     SurfaceInjectionDistribution[spec].InitArray(rate,nTotalSurfaceElements,10*nTotalSurfaceElements);

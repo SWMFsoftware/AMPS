@@ -185,7 +185,7 @@ void Europa::Init_BeforeParser() {
 
   //init the location of the plume
   OrbitalMotion::UpdateTransformationMartix();
-  Plume::SetPlumeLocation();
+  //Plume::SetPlumeLocation();
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
   //init the dust model
@@ -551,8 +551,10 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
   int idim;
   double vi,vt,vf,v_LOCAL_SO[3],x_LOCAL_SO[3],v_LOCAL_IAU_EUROPA[3],x_LOCAL_IAU_EUROPA[3],SurfaceTemp,beta;
   SpiceDouble xform[6][6];
-
-
+  
+  static int nCall=0;
+  nCall = (nCall+1)%100000;
+  printf("ParticleSphereInteraction_SurfaceAccomodation called, nCall:%d\n", nCall);
 
   {
 
@@ -1447,6 +1449,7 @@ double Europa::LossProcesses::PhotolyticReactionRate=0.0;
 double Europa::LossProcesses::ElectronImpactRate=0.0;
 double Europa::LossProcesses::ElectronTemperature=0.0;
 bool Europa::LossProcesses::UseElectronImpact =true;
+bool Europa::LossProcesses::UsePhotoReaction = true;
 double Europa::LossProcesses::ThermalElectronDensity;
 double  Europa::LossProcesses::HotElectronDensity; 
 
@@ -1638,6 +1641,8 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
     ElectronImpactRate=0.0;
   }
   
+  if (UsePhotoReaction==false) PhotolyticReactionRate=0.0;
+
   if (PhotolyticReactionRate+ElectronImpactRate<=0.0) {
     PhotolyticReactionAllowedFlag=false;
     return -1.0;
@@ -1649,6 +1654,7 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
 
 double Europa::LossProcesses::CalcElectronImpactRate(int spec, double electronTemp, double electronDens){
   double ElectronImpactRate=0.0;
+
 
   switch (spec){
   case _H2O_SPEC_:
@@ -1674,16 +1680,19 @@ double Europa::LossProcesses::CalcElectronImpactRate(int spec, double electronTe
     break;
   }
   
-  return ElectronImpactRate;  
 }
 
 void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  using namespace Europa::LossProcesses;
   int *ReactionProductsList,nReactionProducts;
   double *ReactionProductVelocity;
   int ReactionChannel,spec;
   PIC::ParticleBuffer::byte *ParticleData;
   double vParent[3],xParent[3],ParentLifeTime;
-
+  bool isTest=false;
+  static int nCall=0;
+  nCall = (nCall+1)%100000;
+  if (nCall==8542) isTest=true;
   //get the particle data
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   spec=PIC::ParticleBuffer::GetI(ParticleData);
@@ -1694,7 +1703,7 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
 
   //ParentLifeTime=TotalLifeTime(NULL,spec,ptr,PhotolyticReactionAllowedFlag,node);
   ParentLifeTime=ExospherePhotoionizationLifeTime(NULL,spec,ptr,PhotolyticReactionAllowedFlag,node);
-
+  //printf("ExospherePhotoionizationReactionProcessor called: %d\n", nCall);
 
 
   if (PhotolyticReactionAllowedFlag==false) {
@@ -1709,22 +1718,40 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
   }
 
   //init the reaction tables
-  static bool initflag=false;
+  static bool initflag[PIC::nTotalSpecies]={ 0 };
   static double ProductionYieldTable_photo[PIC::nTotalSpecies][PIC::nTotalSpecies];
   static double ProductionYieldTable_electron[PIC::nTotalSpecies][PIC::nTotalSpecies];
   static double ProductionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies];
 
-  if (initflag==false) {
+  if (initflag[spec]==false) {
     int iParent,iProduct;
-    initflag=true;
+    initflag[spec]=true;
 
-    for (iParent=0;iParent<PIC::nTotalSpecies;iParent++) for (iProduct=0;iProduct<PIC::nTotalSpecies;iProduct++) {
+    PhotolyticReactions::Init();
+    //test hasDaughterSpec
+    /*
+    for (int ii=0; ii<PIC::nTotalSpecies; ii++){
+      for(int jj=0; jj<PIC::nTotalSpecies; jj++){
+	printf("parent:%d, daughter:%d, %s\n", ii,jj,PhotolyticReactions::hasDaughterSpec(ii,jj)?"T":"F");
+      }
+    }
+    */
+
+    /*
+    for (int ii=0; ii<PIC::nTotalSpecies; ii++){
+      for(int jj=0; jj<PIC::nTotalSpecies; jj++){
+	printf("parent:%d, daughter:%d, %s\n", ii,jj,ElectronImpact::hasDaughterSpec(ii,jj,250)?"T":"F");
+      }
+    }
+    */
+    iParent = spec;
+    for (iProduct=0;iProduct<PIC::nTotalSpecies;iProduct++) {
       ProductionYieldTable_photo[iParent][iProduct]=0.0;
       ProductionYieldTable_electron[iParent][iProduct]=0.0;
 
       if (PhotolyticReactions::ModelAvailable(iParent)==true) {
         ProductionYieldTable_photo[iParent][iProduct]=PhotolyticReactions::GetSpeciesReactionYield(iProduct,iParent);
-	printf("ProductionYieldTable iParent:%d,iProduct:%d, yield:%e\n", iParent, iProduct, ProductionYieldTable_photo[iParent][iProduct]);
+	printf("ProductionYieldTable photo iParent:%d,iProduct:%d, yield:%e\n", iParent, iProduct, ProductionYieldTable_photo[iParent][iProduct]);
       }
       
       //the yield table may not be static if the temperature or density of hot electron and thermal electron change
@@ -1732,16 +1759,18 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
         ProductionYieldTable_electron[iParent][iProduct]=
 	  Europa::ElectronModel::HotElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::HotElectronTemperature) +
 	  Europa::ElectronModel::ThermalElectronFraction*ElectronImpact::GetSpeciesReactionYield(iProduct,iParent,Europa::ElectronModel::ThermalElectronTemperature);
-	printf("ProductionYieldTable iParent:%d,iProduct:%d, yield:%e\n", iParent, iProduct, ProductionYieldTable_electron[iParent][iProduct]);
+	printf("ProductionYieldTable elelctron  iParent:%d,iProduct:%d, yield:%e\n", iParent, iProduct, ProductionYieldTable_electron[iParent][iProduct]);
       }
       
       ProductionYieldTable[iParent][iProduct]= (ProductionYieldTable_photo[iParent][iProduct]*PhotolyticReactionRate 
-	 + ProductionYieldTable_photo[iParent][iProduct]*ElectronImpactRate)/(PhotolyticReactionRate+ElectronImpactRate);
-
-
+	 + ProductionYieldTable_electron[iParent][iProduct]*ElectronImpactRate)/(PhotolyticReactionRate+ElectronImpactRate);
+      
+      printf("ProductionYieldTable total iParent:%d,iProduct:%d, yield:%e\n", iParent, iProduct, ProductionYieldTable[iParent][iProduct]);
+      printf("PhotolyticReactionRate:%e, ElectronImpactRate:%e\n",PhotolyticReactionRate, ElectronImpactRate);
     }
   }
 
+  //printf("europa test 1\n");
   //inject the products of the reaction
   double ParentTimeStep,ParentParticleWeight;
 
@@ -1754,10 +1783,12 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
 
 #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   ParentTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+  //printf("spec:%d, global time step:%e\n", spec, PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]);
 #else
   ParentTimeStep=node->block->GetLocalTimeStep(spec);
 #endif
 
+  //printf("europa test 2\n");
 
   //account for the parent particle correction factor
   ParentParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
@@ -1768,6 +1799,14 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
 
   //copy the state of the initial parent particle into the new-daugher particle (just in case....)
   PIC::ParticleBuffer::CloneParticle((PIC::ParticleBuffer::byte*)tempParticleData,ParticleData);
+  //printf("europa test 3\n");
+
+  /*
+  if (isTest){
+    printf("test processor\n");
+  }
+  */
+
 
   for (int specProduct=0;specProduct<PIC::nTotalSpecies;specProduct++) if (specProduct!=spec) {
     double ProductTimeStep,ProductParticleWeight;
@@ -1776,7 +1815,7 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
     long int newParticle;
     PIC::ParticleBuffer::byte *newParticleData;
 
-
+    //printf("europa test 4\n");
 #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
      ProductParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[specProduct];
 #else
@@ -1790,61 +1829,86 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
      ProductTimeStep=node->block->GetLocalTimeStep(specProduct);
 #endif
 
-
+     //printf("europa test 5\n");
      double anpart;
      
      anpart=ProductionYieldTable[spec][specProduct]*(1.0-exp(-ProductTimeStep/ParentLifeTime))*ParentParticleWeight/ProductParticleWeight;
     
-     int npart=(int)anpart;
+     int npart=(int)anpart;    
      if (anpart-npart>rnd()) npart+=1;
+    
 
+     //printf("Europa.cpp PhotolyticReactionRate:%e, ElectronImpactRate:%e,spec:%d, specProduct:%d, anpart:%e,npart:%d, ParentParticleWeight:%e, ProductParticleWeight:%e\n", PhotolyticReactionRate, ElectronImpactRate, spec, specProduct, anpart,npart,  ParentParticleWeight,ProductParticleWeight);
      Exosphere::ChemicalModel::TotalSourceRate[specProduct]+=anpart*ParentParticleWeight/ProductTimeStep;
      
+     //printf("europa test 6\n");
      int reactionType=-1;
      double hotRate, thermalRate;
      for (int n=0;n<npart;n++) {
        //generate model particle with spec=specProduct
        bool flag=false;
-       double Photo_prob =PhotolyticReactionRate/(PhotolyticReactionRate+ElectronImpactRate);
-
+       double Photo_prob =(ProductionYieldTable_photo[spec][specProduct]*PhotolyticReactionRate)/(PhotolyticReactionRate*ProductionYieldTable_photo[spec][specProduct]
+					+ElectronImpactRate*ProductionYieldTable_electron[spec][specProduct]);
+       //printf("europa test 11\n");
        do {
          //generate a reaction channel
 	 if (ElectronImpactRate>0){
+	   //printf("europa test 12\n");
 	   if (rnd()<Photo_prob){
-	     PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+	     //printf("europa test 121\n");
+	     if (PhotolyticReactions::hasDaughterSpec(spec,specProduct)==false) continue;
+	     PhotolyticReactions::GenerateGivenProducts(spec,specProduct,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
 	     reactionType=0;
 	   }
 	   else{
-	     hotRate = CalcElectronImpactRate(spec,Europa::ElectronModel::HotElectronTemperature,HotElectronDensity);
-	     thermalRate = CalcElectronImpactRate(spec,Europa::ElectronModel::ThermalElectronTemperature,ThermalElectronDensity);
+	     //printf("europa test 122\n");
+	     //printf("spec:%d, hotTemp:%e, hotDen:%e, thermalTemp:%e, thermalDen:%e\n",spec, Europa::ElectronModel::HotElectronTemperature,
+	     //HotElectronDensity, Europa::ElectronModel::ThermalElectronTemperature, ThermalElectronDensity);
+	     hotRate = Europa::LossProcesses::CalcElectronImpactRate(spec,Europa::ElectronModel::HotElectronTemperature,HotElectronDensity);
+	     thermalRate = Europa::LossProcesses::CalcElectronImpactRate(spec,Europa::ElectronModel::ThermalElectronTemperature,ThermalElectronDensity);
+	     //printf("europa test 123\n");
 	     if (rnd()<hotRate/(hotRate+thermalRate)){
-	       ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	       //printf("europa test 124\n");
+	       if (ElectronImpact::hasDaughterSpec(spec,specProduct,Europa::ElectronModel::HotElectronTemperature)==false) continue;
+	       //ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::HotElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	       ElectronImpact::GenerateGivenProducts(spec,specProduct,Europa::ElectronModel::HotElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	      
 	       reactionType=1;
+	       
 	     }else{
-	       ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	       //printf("europa test 125\n");
+	       if (ElectronImpact::hasDaughterSpec(spec,specProduct,Europa::ElectronModel::ThermalElectronTemperature)==false) continue;
+	       //ElectronImpact::GenerateReactionProducts(spec,Europa::ElectronModel::ThermalElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
+	       ElectronImpact::GenerateGivenProducts(spec,specProduct,Europa::ElectronModel::ThermalElectronTemperature,ReactionChannel,nReactionProducts, ReactionProductsList,ReactionProductVelocity);
 	       reactionType=2;
 	     }
 	   }
 	 }else{
-	   PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+	   //printf("europa test 126\n");
+	   if (PhotolyticReactions::hasDaughterSpec(spec,specProduct)==false) continue;
+	   //PhotolyticReactions::GenerateReactionProducts(spec,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
+	   PhotolyticReactions::GenerateGivenProducts(spec,specProduct,ReactionChannel,nReactionProducts,ReactionProductsList,ReactionProductVelocity);
 	   reactionType=0;
 	 }
-	  
+	 //printf("europa test 13\n");
          //check whether the products contain species with spec=specProduct
          for (iProduct=0;iProduct<nReactionProducts;iProduct++) if (ReactionProductsList[iProduct]==specProduct) {
 	     flag=true;
 	     break;
 	   }
+	 //printf("europa test 14\n");
        }
        while (flag==false);
 
-
+       //printf("europa test 7\n");
        //determine the velocity of the product specie
        double x[3],v[3],c=rnd();
-
+       double r2=0.0,rr;
        for (int idim=0;idim<3;idim++) {
          x[idim]=xParent[idim];
+	 r2 += x[idim]*x[idim];
          v[idim]=vParent[idim]+ReactionProductVelocity[idim+3*iProduct];
+	 //v[idim]=vParent[idim]+2e3;
 	 /*
 	 if (fabs(ReactionProductVelocity[idim+3*iProduct])>1e4) {
 	   printf("PhotolyticReactionRate:%e, ElectronImpactRate:%e, thermalRate:%e, hotRate:%e\n", PhotolyticReactionRate, ElectronImpactRate,thermalRate,hotRate);
@@ -1853,9 +1917,17 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
 	 }
 	 */
        }
-
        
+       //rr = sqrt(r2);
+       
+       /*
+       for (int idim=0;idim<3;idim++) {
+	 v[idim]=vParent[idim] + 4e3*x[idim]/rr;
+       
+       }
+       */
 
+       //printf("europa test 8\n");
        //generate a particle
        PIC::ParticleBuffer::SetX(x,(PIC::ParticleBuffer::byte*)tempParticleData);
        PIC::ParticleBuffer::SetV(v,(PIC::ParticleBuffer::byte*)tempParticleData);
@@ -1871,15 +1943,17 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
        PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,specProduct,tempParticleData,(void*)node);
        #endif
 
-
+       //printf("europa test 8\n");
        //get and injection into the system the new model particle
        newParticle=PIC::ParticleBuffer::GetNewParticle(FirstParticleCell);
        newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
        PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte *)tempParticleData);
      }
-  }
+     //printf("europa test 9\n");
+    }
 
+  //printf("europa test 10\n");
   //determine whether the parent particle is removed
   if (rnd()<exp(-ParentTimeStep/ParentLifeTime)) {
     //the particle is remain in the system
@@ -1894,6 +1968,9 @@ void Europa::LossProcesses::ExospherePhotoionizationReactionProcessor(long int p
     Exosphere::ChemicalModel::TotalLossRate[spec]+=ParentParticleWeight/ParentTimeStep;
     PIC::ParticleBuffer::DeleteParticle(ptr);
   }
+  
+  //printf("europa test end\n");
+
 }
 
 /*
