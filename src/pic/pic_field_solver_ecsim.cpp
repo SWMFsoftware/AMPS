@@ -3430,7 +3430,7 @@ barrier.Sync();
     int this_thread_id=omp_get_thread_num();
     auto CellData_TH=CellDataTable_Bank0+this_thread_id;
 
-#pragma omp for schedule(guided,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_)
+#pragma omp parallel for schedule(guided,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_)
 
 #else
     int this_thread_id=0;
