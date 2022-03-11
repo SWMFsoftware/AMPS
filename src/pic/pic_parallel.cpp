@@ -59,10 +59,41 @@ void PIC::Parallel::CopyCenterNodeAssociatedData_default(char *TargetBlockAssoci
 
 //====================================================
 //Exchange particles between Processors
-void PIC::Parallel::ExchangeParticleData() {
+//PIC::Parallel::ExchangeParticleData_buffered -> collects the particle data to be send in buffers, send them, and then unpack them
+//PIC::Parallel::ExchangeParticleData_unbuffered -> creates the MPY type that contained pointers to the particles that needs to be send. On the recieving side, the MPI type 
+//contains pointers to the state vector of the newly arrived particles. There is an issue: the function does not work with when OpenMP is used - the function dies somewhere in 
+//MPI calls.
+void PIC::Parallel::ExchangeParticleData_unbuffered() {
   int From,To,i,iFrom,flag;
-  long int Particle;
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL;
+  long int Particle,NextParticle,newParticle,LocalCellNumber=-1;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL,*recvNode=NULL;
+
+  int RecvMessageSizeRequestTableLength=0;
+  int SendMessageSizeRequestTableLength=0;
+
+  MPI_Request RecvPaticleDataRequestTable[PIC::nTotalThreads];
+  int RecvPaticleDataRequestTableLength=0;
+  int RecvPaticleDataProcessTable[PIC::nTotalThreads];
+
+  int SendParticleDataRequestTableLength=0;
+
+  MPI_Request SendParticleDataRequestTable[PIC::nTotalThreads];
+
+  MPI_Request SendMessageSizeRequestTable[PIC::nTotalThreads];
+  MPI_Request RecvMessageSizeRequestTable[PIC::nTotalThreads];
+
+  int SendMessageLengthTable[PIC::nTotalThreads];
+  int RecvMessageLengthTable[PIC::nTotalThreads];
+
+  int SendMessageLengthProcessTable[PIC::nTotalThreads];
+  int RecvMessageLengthProcessTable[PIC::nTotalThreads];
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    SendMessageLengthTable[thread]=0,RecvMessageLengthTable[thread]=0;
+  }
+
+  //set the default value inthe counters
+  for (i=0;i<PIC::nTotalThreads;i++) SendMessageLengthTable[i]=0,RecvMessageLengthTable[i]=0;
 
   #if DIM == 3
   //  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
@@ -100,8 +131,9 @@ void PIC::Parallel::ExchangeParticleData() {
   
 
   auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<MPI_Aint> *SendParticleList,int& nTotalSendParticles,int To) {
-    int SendSellNumber=0;
+    int npart,SendSellNumber=0;
     long int *FirstCellParticleTable;
+    bool block_header_saved,cell_header_saved; 
 
     cMessageDescriptorList p;
     MPI_Aint particle_data;
@@ -175,7 +207,7 @@ void PIC::Parallel::ExchangeParticleData() {
 
   auto RemoveSentParticles = [&] (cMessageDescriptorList *SendMessageDescriptor,int nSendCells) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-    int ptr,next,cnt;
+    int ptr,iCell,jCell,kCell,next,cnt;
     cAMRnodeID node_id;
     cMessageDescriptorList *it;
 
@@ -201,11 +233,12 @@ void PIC::Parallel::ExchangeParticleData() {
   };
 
   auto InitNewParticles = [&] (int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable,list<MPI_Aint> *RecvParticleList) {
-    int icell;
+    int icell,i,j,k;
     int ptr_cnt,new_particle;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
     cAMRnodeID node_id;
     cMessageDescriptorList *p;
+    int particle_data_buffer_offset=0;
 
     MPI_Aint particle_data;
 
@@ -402,6 +435,398 @@ void PIC::Parallel::ExchangeParticleData() {
   //caused by the randomness of the particle data exchange time
 
 
+  auto SortParticleCellList = [&] (int iCell,int jCell,int kCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node) {
+
+    class cParticleDescriptor {
+    public:
+      long int ptr;
+      unsigned long int checksum;
+
+      bool operator < (const cParticleDescriptor& p) const {
+        return checksum<p.checksum;
+      }
+    };
+
+    //put together the particle list
+    vector <cParticleDescriptor> ParticleList;
+    cParticleDescriptor p;
+    long int Particle;
+    CRC32 sig;
+
+
+    Particle=Node->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
+
+    while (Particle!=-1) {
+      p.ptr=Particle;
+      p.checksum=PIC::ParticleBuffer::GetParticleSignature(Particle,&sig,false);
+      sig.clear();
+
+      ParticleList.push_back(p);
+      Particle=PIC::ParticleBuffer::GetNext(Particle);
+    }
+
+
+    //sort the list
+    std::sort(ParticleList.begin(),ParticleList.end(),
+        [](const cParticleDescriptor& a,const cParticleDescriptor& b) {return a.checksum>b.checksum;});
+
+    //create the sorted list
+    int ip,ipmax=ParticleList.size();
+
+    Node->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]=ParticleList[0].ptr;
+
+    for (ip=0;ip<ipmax;ip++) {
+      PIC::ParticleBuffer::SetPrev((ip!=0) ? ParticleList[ip-1].ptr : -1,ParticleList[ip].ptr);
+      PIC::ParticleBuffer::SetNext((ip!=ipmax-1) ? ParticleList[ip+1].ptr : -1,ParticleList[ip].ptr);
+    }
+  };
+
+  auto SortParticleList = [&] () {
+    int nLocalNode;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node;
+    int i,j,k;
+
+
+    for (nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
+      Node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
+      if (Node->block!=NULL) {
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) {
+          if (Node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+            SortParticleCellList(i,j,k,Node);
+          }
+        }
+      }
+    }
+  };
+
+  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+    SortParticleList();
+  }
+ }
+
+
+void PIC::Parallel::ExchangeParticleData_buffered() {
+  int From,To,i,iFrom,flag;
+  long int Particle;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *sendNode=NULL;
+
+  #if DIM == 3
+  //  cMeshAMR3d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
+  cAMRnodeID nodeid;
+  #elif DIM == 2
+  cMeshAMR2d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
+  #else
+  cMeshAMR1d<PIC::Mesh::cDataCornerNode,PIC::Mesh::cDataCenterNode,PIC::Mesh::cDataBlockAMR > :: cAMRnodeID nodeid;
+  #endif
+
+
+  //The signals
+  int Signal;
+  const int _NEW_BLOCK_ID_SIGNAL_=       0;
+  const int _CENTRAL_NODE_NUMBER_SIGNAL_=1;
+  const int _NEW_PARTICLE_SIGNAL_=       2;
+  const int _END_COMMUNICATION_SIGNAL_=  3;
+
+  #if DIM == 3
+  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+  #elif DIM == 2
+  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+  #elif DIM == 1
+  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+  #else
+  exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+  #endif
+
+  struct cMessageDescriptorList {
+    int iCell,jCell,kCell;
+    int nTotalParticles;
+    cAMRnodeID node_id;
+  };
+
+  
+
+  auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<PIC::ParticleBuffer::byte*> *SendParticleList,int& nTotalSendParticles,int To) {
+    int SendSellNumber=0;
+    long int *FirstCellParticleTable;
+
+    cMessageDescriptorList p;
+    PIC::ParticleBuffer::byte* particle_data;
+
+    nTotalSendParticles=0;
+
+    if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+      for (sendNode=PIC::Mesh::mesh->DomainBoundaryLayerNodesList[To];sendNode!=NULL;sendNode=sendNode->nextNodeThisThread) if (sendNode->block!=NULL) {
+        FirstCellParticleTable=sendNode->block->FirstCellParticleTable;
+
+        for (int kCell=0;kCell<kCellMax;kCell++) for (int jCell=0;jCell<jCellMax;jCell++) for (int iCell=0;iCell<iCellMax;iCell++) {
+          Particle=FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)];
+
+          if  (Particle!=-1) {
+            p.nTotalParticles=0;
+            p.iCell=iCell,p.jCell=jCell,p.kCell=kCell;
+            p.node_id=sendNode->AMRnodeID;  
+          
+            SendSellNumber++;
+
+            while (Particle!=-1) {
+              particle_data=PIC::ParticleBuffer::GetParticleDataPointer(Particle);
+              SendParticleList->push_back(particle_data);
+
+              p.nTotalParticles++;
+              nTotalSendParticles++;
+
+              Particle=PIC::ParticleBuffer::GetNext(particle_data);
+            }
+
+            MessageDescriptorList->push_back(p);
+          }
+        }
+      }
+    }
+
+    return SendSellNumber;
+  };
+
+  auto PopulateSendBuffer = [&] (PIC::ParticleBuffer::byte* &buffer,list<cMessageDescriptorList> *MessageDescriptorList,list<PIC::ParticleBuffer::byte*> *SendParticleList) {
+    int offset=0;
+    list<PIC::ParticleBuffer::byte*>::iterator it;
+        
+    for (it=SendParticleList->begin();it!=SendParticleList->end();it++) {
+      PIC::ParticleBuffer::CloneParticle(buffer+offset,*it);
+      offset+=PIC::ParticleBuffer::ParticleDataLength;
+    }
+  };
+ 
+
+  class cSendDataInfo {
+  public:
+    int nTotalSendCells,nTotalSendParticles;
+
+    cSendDataInfo() {
+      nTotalSendCells=0,nTotalSendParticles=0;
+    }
+  };
+
+  
+  auto RecvParticles = [&] (PIC::ParticleBuffer::byte* buffer,int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable) {
+    int icell;
+    int offset=0,ptr_cnt=0;
+    long int new_particle;
+    PIC::ParticleBuffer::byte* new_particle_ptr;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+    cAMRnodeID node_id;
+    cMessageDescriptorList *p;
+
+    MPI_Aint particle_data;
+
+    for (icell=0;icell<nTotalSendCells;icell++) {
+      if ((node==NULL)||(node_id!=MessageDescriptorTable[icell].node_id)) { 
+        node_id=MessageDescriptorTable[icell].node_id;
+        node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
+      }
+
+      p=MessageDescriptorTable+icell;      
+
+      for (ptr_cnt=0;ptr_cnt<p->nTotalParticles;ptr_cnt++) {  
+        new_particle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[p->iCell+_BLOCK_CELLS_X_*(p->jCell+_BLOCK_CELLS_Y_*p->kCell)],true);  
+        new_particle_ptr=PIC::ParticleBuffer::GetParticleDataPointer(new_particle);
+        
+        PIC::ParticleBuffer::CloneParticle(new_particle_ptr,buffer+offset);
+        offset+=PIC::ParticleBuffer::ParticleDataLength;
+      }
+   }
+ };
+
+  auto RemoveSentParticles = [&] (cMessageDescriptorList *SendMessageDescriptor,int nSendCells) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+    int ptr,next,cnt;
+    cAMRnodeID node_id;
+    cMessageDescriptorList *it;
+
+    for (cnt=0;cnt<nSendCells;cnt++) {
+      it=SendMessageDescriptor+cnt; 
+
+      if ((node==NULL)||(node_id!=it->node_id)) {
+        node_id=it->node_id;
+        node=PIC::Mesh::mesh->findAMRnodeWithID(node_id);
+      }
+
+      ptr=node->block->FirstCellParticleTable[it->iCell+_BLOCK_CELLS_X_*(it->jCell+_BLOCK_CELLS_Y_*it->kCell)]; 
+
+      while (ptr!=-1) {
+        next=PIC::ParticleBuffer::GetNext(ptr);
+
+        PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr,true);
+        ptr=next;
+      }
+
+      node->block->FirstCellParticleTable[it->iCell+_BLOCK_CELLS_X_*(it->jCell+_BLOCK_CELLS_Y_*it->kCell)]=-1;
+    }
+  };
+
+
+
+  //beginning of the particle exchange procedure!!!!
+  cMessageDescriptorList *SendMessageDescriptorTable[PIC::nTotalThreads];
+  cSendDataInfo SendDataInfo[PIC::nTotalThreads];
+  PIC::ParticleBuffer::byte *SendBuffer[PIC::nTotalThreads];
+
+  MPI_Request SendRequestTable[3*PIC::nTotalThreads];
+  int SendRequestTableLength=0;
+
+  for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) SendMessageDescriptorTable[thread]=NULL,SendBuffer[thread]=NULL; 
+
+  //send send_descriptor and particle data
+  for (To=0;To<PIC::Mesh::mesh->nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
+    int i,n_sent_cells,nTotalSendParticles;
+    list<PIC::ParticleBuffer::byte*> SendParticleList;
+    list<cMessageDescriptorList> MessageDescriptorList;
+
+    n_sent_cells=PrepareMessageDescriptorTable(&MessageDescriptorList,&SendParticleList,nTotalSendParticles,To); 
+
+    SendDataInfo[To].nTotalSendCells=n_sent_cells;
+    SendDataInfo[To].nTotalSendParticles=nTotalSendParticles;
+
+    MPI_Isend(SendDataInfo+To,sizeof(cSendDataInfo),MPI_BYTE,To,9,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+    SendRequestTableLength++;
+
+    //send particle data
+    if (n_sent_cells!=0) {
+      list<cMessageDescriptorList>::iterator it;
+      cMessageDescriptorList *SendMessageDescriptorTable;
+      PIC::ParticleBuffer::byte *SendParticleData;
+      int BufferSize=n_sent_cells*sizeof(cMessageDescriptorList)+nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
+
+      SendBuffer[To]=new PIC::ParticleBuffer::byte [BufferSize]; 
+
+      SendMessageDescriptorTable=(cMessageDescriptorList*)SendBuffer[To];
+      SendParticleData=SendBuffer[To]+n_sent_cells*sizeof(cMessageDescriptorList);
+      
+      for (i=0,it=MessageDescriptorList.begin();it!=MessageDescriptorList.end();it++,i++) SendMessageDescriptorTable[i]=*it;
+           
+      PopulateSendBuffer(SendParticleData,&MessageDescriptorList,&SendParticleList); 
+      RemoveSentParticles(SendMessageDescriptorTable,n_sent_cells);
+      
+      MPI_Isend(SendBuffer[To],BufferSize,MPI_BYTE,To,11,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
+      SendRequestTableLength++;
+    }
+  }
+
+
+  //recv send_descriptor and particle data
+  MPI_Request RecvRequestDescriptorTable[PIC::nTotalThreads];
+  int RecvRequestDescriptorTableLength=0;
+
+  cSendDataInfo RecvDataInfo[PIC::nTotalThreads];
+  int RecvDataInfoMap[PIC::nTotalThreads];
+
+  MPI_Request RecvRequestDataInfoTable[PIC::nTotalThreads];
+  int RecvRequestDataInfoTableLength=0;
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) RecvDataInfoMap[thread]=-1; //,RecvCellNumber[thread]=0;
+
+  for (From=0;From<PIC::nTotalThreads;From++) if ((PIC::ThisThread!=From)&&(PIC::Mesh::mesh->ParallelSendRecvMap[From][PIC::ThisThread]==true)) {
+    MPI_Irecv(RecvDataInfo+From,sizeof(cSendDataInfo),MPI_BYTE,From,9,MPI_GLOBAL_COMMUNICATOR,RecvRequestDataInfoTable+RecvRequestDataInfoTableLength);
+    RecvDataInfoMap[RecvRequestDataInfoTableLength]=From;
+
+    RecvRequestDataInfoTableLength++;
+  }
+
+  //recive the particle data
+  MPI_Request RecvRequestMessageDescriptorTable[PIC::nTotalThreads];
+  int RecvRequestMessageDescriptorTableLength=0;
+
+  MPI_Request RecvRequestParticleDataTable[PIC::nTotalThreads];
+  int RecvRequestParticleDataTableLength=0;
+
+  int RecvRequestTableLength=0;
+  int nRecvPackages=0;
+
+  bool RecvMessageDescriptorFlagTable[PIC::nTotalThreads];
+  bool RecvParticleDataFlagTable[PIC::nTotalThreads]; 
+  
+  PIC::ParticleBuffer::byte *RecvParticleDataBuffer[PIC::nTotalThreads];
+
+  cMessageDescriptorList *RecvMessageDescriptorTable[PIC::nTotalThreads];
+  PIC::ParticleBuffer::byte *RecvBuffer[PIC::nTotalThreads]; 
+  
+  int RecvParticleDataMap[PIC::nTotalThreads];
+
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    RecvParticleDataMap[thread]=-1;
+    RecvBuffer[thread]=NULL;
+    RecvMessageDescriptorTable[thread]=NULL,RecvParticleDataBuffer[thread]=NULL;
+    RecvMessageDescriptorFlagTable[thread]=false,RecvParticleDataFlagTable[thread]=false;
+  }
+
+  int MessageDescriptorWaiting=0;
+
+  while ((RecvRequestDataInfoTableLength!=0)||(MessageDescriptorWaiting!=0)) {
+    if (RecvRequestDataInfoTableLength!=0) {
+      MPI_Testany(RecvRequestDataInfoTableLength,RecvRequestDataInfoTable,&iFrom,&flag,MPI_STATUS_IGNORE);
+
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
+        int From=RecvDataInfoMap[iFrom];
+
+        MPI_Wait(RecvRequestDataInfoTable+iFrom,MPI_STATUS_IGNORE); 
+        RecvRequestDataInfoTable[iFrom]=RecvRequestDataInfoTable[RecvRequestDataInfoTableLength-1];
+        RecvDataInfoMap[iFrom]=RecvDataInfoMap[RecvRequestDataInfoTableLength-1];
+
+        RecvRequestDataInfoTableLength--;
+
+        if (RecvDataInfo[From].nTotalSendCells!=0) {
+          //init recieving the message descriptor
+          int BufferSize=RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList)+RecvDataInfo[From].nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
+          
+          RecvBuffer[From]=new PIC::ParticleBuffer::byte[BufferSize];
+          RecvParticleDataMap[RecvRequestMessageDescriptorTableLength]=From;
+
+          MPI_Irecv(RecvBuffer[From],BufferSize,MPI_BYTE,From,11,MPI_GLOBAL_COMMUNICATOR,RecvRequestMessageDescriptorTable+RecvRequestMessageDescriptorTableLength);
+          RecvRequestMessageDescriptorTableLength++;
+          MessageDescriptorWaiting++;
+        } 
+      }
+    }
+
+
+    if (RecvRequestMessageDescriptorTableLength!=0) {
+      MPI_Testany(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,&iFrom,&flag,MPI_STATUS_IGNORE);
+
+      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
+        int From=RecvParticleDataMap[iFrom];
+        
+        MPI_Wait(RecvRequestMessageDescriptorTable+iFrom,MPI_STATUS_IGNORE);
+        
+        cMessageDescriptorList *SendMessageDescriptorTable=(cMessageDescriptorList*)RecvBuffer[From];
+        PIC::ParticleBuffer::byte *SendParticleData=RecvBuffer[From]+RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList);
+        
+        MessageDescriptorWaiting--;
+               
+        RecvParticles(SendParticleData,RecvDataInfo[From].nTotalSendCells,SendMessageDescriptorTable);
+      } 
+    }
+  }
+  
+
+  //wait for completing recv operation (clean memory used by MPI) 
+  MPI_Waitall(RecvRequestParticleDataTableLength,RecvRequestParticleDataTable,MPI_STATUSES_IGNORE);
+  MPI_Waitall(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,MPI_STATUSES_IGNORE); 
+
+  //wait for completing send operations 
+  MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
+
+
+  //delete recv/send buffers
+  for (int thread=0;thread<PIC::nTotalThreads;thread++) {
+    if (RecvBuffer[thread]!=NULL) delete [] RecvBuffer[thread];
+    if (SendBuffer[thread]!=NULL) delete [] SendBuffer[thread];
+  }
+
+
+
+  //in case AMPS is compiled in the debugger mode, source particles to eliminate the randomness of the particles in the particle lists
+  //caused by the randomness of the particle data exchange time
   auto SortParticleCellList = [&] (int iCell,int jCell,int kCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *Node) {
 
     class cParticleDescriptor {

@@ -445,5 +445,10 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _PIC__DEBUG_CONCURRENT_RUNS_ _PIC_MODE_OFF_
 #endif
 
+//buffered/unbuffered particle exchanged functions
+#define _PIC_PARTICLE_EXCHANGE_BUFFERED_    0
+#define _PIC_PARTICLE_EXCHANGE_UNBUFFERED_  1
+#define _PIC_PARTICLE_EXCHANGE_ _PIC_PARTICLE_EXCHANGE_UNBUFFERED_
+
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

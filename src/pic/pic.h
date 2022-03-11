@@ -5043,8 +5043,29 @@ void DeleteAttachedParticles();
      }
 
 
-     //exchenge paricles between iterations
-     void ExchangeParticleData();
+     /* Exchange paricles between iterations
+     PIC::Parallel::ExchangeParticleData_buffered -> collects the particle data to be send in buffers, send them, and then unpack them. 
+     PIC::Parallel::ExchangeParticleData_unbuffered -> creates the MPI type that contained pointers to the particles that needs to be send. 
+     On the recieving side, the MPI type contains pointers to the state vector of the newly arrived particles. 
+
+     There is an issue: ExchangeParticleData_buffered does not work correctly with when OpenMP is used - the function dies somewhere in MPI calls 
+     depending on the size of the particle data buffer. */ 
+
+     void ExchangeParticleData_unbuffered();
+     void ExchangeParticleData_buffered();
+
+     inline void ExchangeParticleData() {
+       switch (_PIC_PARTICLE_EXCHANGE_) {
+       case _PIC_PARTICLE_EXCHANGE_UNBUFFERED_:
+         ExchangeParticleData_unbuffered();
+         break;
+       case _PIC_PARTICLE_EXCHANGE_BUFFERED_:
+         ExchangeParticleData_buffered();
+         break;
+       default:
+         exit(__LINE__,__FILE__,"Error: the option is unknown");
+       }
+     } 
 
      //process the corner node associated data for nodes located at the boundary of the subdomain and at the boundary of the computational domain
      void ProcessBlockBoundaryNodes(); 
