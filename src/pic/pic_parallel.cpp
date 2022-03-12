@@ -207,7 +207,8 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
 
   auto RemoveSentParticles = [&] (cMessageDescriptorList *SendMessageDescriptor,int nSendCells) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-    int ptr,iCell,jCell,kCell,next,cnt;
+    long int ptr,next;
+    int iCell,jCell,kCell,cnt;
     cAMRnodeID node_id;
     cMessageDescriptorList *it;
 
@@ -238,7 +239,7 @@ void PIC::Parallel::ExchangeParticleData_unbuffered() {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
     cAMRnodeID node_id;
     cMessageDescriptorList *p;
-    int particle_data_buffer_offset=0;
+    unsigned long int particle_data_buffer_offset=0;
 
     MPI_Aint particle_data;
 
@@ -589,7 +590,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
   };
 
   auto PopulateSendBuffer = [&] (PIC::ParticleBuffer::byte* &buffer,list<cMessageDescriptorList> *MessageDescriptorList,list<PIC::ParticleBuffer::byte*> *SendParticleList) {
-    int offset=0;
+    unsigned long int offset=0;
     list<PIC::ParticleBuffer::byte*>::iterator it;
         
     for (it=SendParticleList->begin();it!=SendParticleList->end();it++) {
@@ -610,8 +611,8 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
 
   
   auto RecvParticles = [&] (PIC::ParticleBuffer::byte* buffer,int nTotalSendCells,cMessageDescriptorList *MessageDescriptorTable) {
-    int icell;
-    int offset=0,ptr_cnt=0;
+    int icell,ptr_cnt=0;
+    unsigned long int offset=0;
     long int new_particle;
     PIC::ParticleBuffer::byte* new_particle_ptr;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
@@ -640,7 +641,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
 
   auto RemoveSentParticles = [&] (cMessageDescriptorList *SendMessageDescriptor,int nSendCells) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-    int ptr,next,cnt;
+    long int ptr,next,cnt;
     cAMRnodeID node_id;
     cMessageDescriptorList *it;
 
@@ -696,7 +697,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
       list<cMessageDescriptorList>::iterator it;
       cMessageDescriptorList *SendMessageDescriptorTable;
       PIC::ParticleBuffer::byte *SendParticleData;
-      int BufferSize=n_sent_cells*sizeof(cMessageDescriptorList)+nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
+      unsigned long int BufferSize=n_sent_cells*sizeof(cMessageDescriptorList)+nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
 
       SendBuffer[To]=new PIC::ParticleBuffer::byte [BufferSize]; 
 
@@ -777,7 +778,7 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
 
         if (RecvDataInfo[From].nTotalSendCells!=0) {
           //init recieving the message descriptor
-          int BufferSize=RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList)+RecvDataInfo[From].nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
+          unsigned long int BufferSize=RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList)+RecvDataInfo[From].nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
           
           RecvBuffer[From]=new PIC::ParticleBuffer::byte[BufferSize];
           RecvParticleDataMap[RecvRequestMessageDescriptorTableLength]=From;
@@ -2019,7 +2020,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
   for(int ii = 0; ii < nProcSendTo; ii++ ){
     // Packing data for each target MPI. 
     int iTarget = procSendToList[ii];
-    int offset=0; 
+    long int offset=0; 
     for (int iNodeIdx=0;iNodeIdx<PIC::DomainBlockDecomposition::nLocalBlocks;iNodeIdx++) {
       node=PIC::DomainBlockDecomposition::BlockTable[iNodeIdx];
       if (node->Thread==PIC::ThisThread && node->block) { 
@@ -2087,7 +2088,7 @@ void PIC::Parallel::ProcessBlockBoundaryNodes(BoundaryProcessManager &mgr) {
 
   // Unpacking data
   for(int ii=0; ii<nProcRecvFrom; ii++){
-    int offset=0;
+    long int offset=0;
     cAMRnodeID nodeId;
     int iNeib, jNeib, kNeib;
     double coef; 
