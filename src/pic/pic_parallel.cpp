@@ -547,13 +547,11 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
 
   
 
-  auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<PIC::ParticleBuffer::byte*> *SendParticleList,int& nTotalSendParticles,int To) {
-    int SendSellNumber=0;
+  auto PrepareMessageDescriptorTable = [&] (list<cMessageDescriptorList> *MessageDescriptorList,list<long int> *SendParticleList,int& nTotalSendParticles,int To) {
+    int SendCellNumber=0;
     long int *FirstCellParticleTable;
-
     cMessageDescriptorList p;
-    PIC::ParticleBuffer::byte* particle_data;
-
+    
     nTotalSendParticles=0;
 
     if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
@@ -568,16 +566,14 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
             p.iCell=iCell,p.jCell=jCell,p.kCell=kCell;
             p.node_id=sendNode->AMRnodeID;  
           
-            SendSellNumber++;
+            SendCellNumber++;
+            SendParticleList->push_back(Particle);
 
             while (Particle!=-1) {
-              particle_data=PIC::ParticleBuffer::GetParticleDataPointer(Particle);
-              SendParticleList->push_back(particle_data);
-
               p.nTotalParticles++;
               nTotalSendParticles++;
 
-              Particle=PIC::ParticleBuffer::GetNext(particle_data);
+              Particle=PIC::ParticleBuffer::GetNext(Particle);
             }
 
             MessageDescriptorList->push_back(p);
@@ -586,16 +582,25 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
       }
     }
 
-    return SendSellNumber;
+    return SendCellNumber;
   };
 
-  auto PopulateSendBuffer = [&] (PIC::ParticleBuffer::byte* &buffer,list<cMessageDescriptorList> *MessageDescriptorList,list<PIC::ParticleBuffer::byte*> *SendParticleList) {
+  auto PopulateSendBuffer = [&] (PIC::ParticleBuffer::byte* &buffer,list<cMessageDescriptorList> *MessageDescriptorList,list<long int> *SendParticleList) {
     unsigned long int offset=0;
-    list<PIC::ParticleBuffer::byte*>::iterator it;
+    list<long int >::iterator it;
+    long int ptr;
+    PIC::ParticleBuffer::byte* particle_data;
         
     for (it=SendParticleList->begin();it!=SendParticleList->end();it++) {
-      PIC::ParticleBuffer::CloneParticle(buffer+offset,*it);
-      offset+=PIC::ParticleBuffer::ParticleDataLength;
+      ptr=*it;
+      
+      while (ptr!=-1) {
+        particle_data=PIC::ParticleBuffer::GetParticleDataPointer(ptr);  
+         
+        PIC::ParticleBuffer::CloneParticle(buffer+offset,particle_data);
+        offset+=PIC::ParticleBuffer::ParticleDataLength;
+        ptr=PIC::ParticleBuffer::GetNext(particle_data);
+      }
     }
   };
  
@@ -673,15 +678,22 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
   cSendDataInfo SendDataInfo[PIC::nTotalThreads];
   PIC::ParticleBuffer::byte *SendBuffer[PIC::nTotalThreads];
 
-  MPI_Request SendRequestTable[3*PIC::nTotalThreads];
-  int SendRequestTableLength=0;
+  list<MPI_Request> SendRequestList;
+  MPI_Request Request;
+  int isend;
+  unsigned long int send_offset;
+  
+  MPI_Request SendDataInfoRequestTable[PIC::nTotalThreads];
+  int SendDataInfoRequestTableLength=0;
+  
+  const unsigned long int MaxMessageLength=100000000;
 
   for (int thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) SendMessageDescriptorTable[thread]=NULL,SendBuffer[thread]=NULL; 
 
   //send send_descriptor and particle data
   for (To=0;To<PIC::Mesh::mesh->nTotalThreads;To++) if ((PIC::ThisThread!=To)&&(PIC::Mesh::mesh->ParallelSendRecvMap[PIC::ThisThread][To]==true)) {
     int i,n_sent_cells,nTotalSendParticles;
-    list<PIC::ParticleBuffer::byte*> SendParticleList;
+    list<long int> SendParticleList;
     list<cMessageDescriptorList> MessageDescriptorList;
 
     n_sent_cells=PrepareMessageDescriptorTable(&MessageDescriptorList,&SendParticleList,nTotalSendParticles,To); 
@@ -689,8 +701,8 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
     SendDataInfo[To].nTotalSendCells=n_sent_cells;
     SendDataInfo[To].nTotalSendParticles=nTotalSendParticles;
 
-    MPI_Isend(SendDataInfo+To,sizeof(cSendDataInfo),MPI_BYTE,To,9,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
-    SendRequestTableLength++;
+    MPI_Isend(SendDataInfo+To,sizeof(cSendDataInfo),MPI_BYTE,To,9,MPI_GLOBAL_COMMUNICATOR,SendDataInfoRequestTable+SendDataInfoRequestTableLength);
+    SendDataInfoRequestTableLength++;
 
     //send particle data
     if (n_sent_cells!=0) {
@@ -709,8 +721,15 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
       PopulateSendBuffer(SendParticleData,&MessageDescriptorList,&SendParticleList); 
       RemoveSentParticles(SendMessageDescriptorTable,n_sent_cells);
       
-      MPI_Isend(SendBuffer[To],BufferSize,MPI_BYTE,To,11,MPI_GLOBAL_COMMUNICATOR,SendRequestTable+SendRequestTableLength);
-      SendRequestTableLength++;
+      for (isend=0,send_offset=0;send_offset<BufferSize;isend++) {
+        unsigned long int data_chunk;
+        
+        data_chunk=(BufferSize-send_offset>MaxMessageLength) ? MaxMessageLength : BufferSize-send_offset;
+      
+        MPI_Isend(SendBuffer[To]+send_offset,data_chunk,MPI_BYTE,To,20+isend,MPI_GLOBAL_COMMUNICATOR,&Request);
+        SendRequestList.push_back(Request);
+        send_offset+=data_chunk;
+      }
     }
   }
 
@@ -753,17 +772,22 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
   PIC::ParticleBuffer::byte *RecvBuffer[PIC::nTotalThreads]; 
   
   int RecvParticleDataMap[PIC::nTotalThreads];
+  
+  int IncompleteRecvCounter[PIC::nTotalThreads]; 
+  int TotalIncompleteRecvCounter=0;
 
   for (int thread=0;thread<PIC::nTotalThreads;thread++) {
     RecvParticleDataMap[thread]=-1;
     RecvBuffer[thread]=NULL;
     RecvMessageDescriptorTable[thread]=NULL,RecvParticleDataBuffer[thread]=NULL;
     RecvMessageDescriptorFlagTable[thread]=false,RecvParticleDataFlagTable[thread]=false;
+    IncompleteRecvCounter[thread]=0;
   }
 
-  int MessageDescriptorWaiting=0;
+  list<pair<int,MPI_Request> > RecvRequestList;
+  pair<int,MPI_Request> t;
 
-  while ((RecvRequestDataInfoTableLength!=0)||(MessageDescriptorWaiting!=0)) {
+  while ((RecvRequestDataInfoTableLength!=0)||(TotalIncompleteRecvCounter!=0)) {
     if (RecvRequestDataInfoTableLength!=0) {
       MPI_Testany(RecvRequestDataInfoTableLength,RecvRequestDataInfoTable,&iFrom,&flag,MPI_STATUS_IGNORE);
 
@@ -779,33 +803,69 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
         if (RecvDataInfo[From].nTotalSendCells!=0) {
           //init recieving the message descriptor
           unsigned long int BufferSize=RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList)+RecvDataInfo[From].nTotalSendParticles*PIC::ParticleBuffer::ParticleDataLength;
+          unsigned long int recv_offset=0;
+          
           
           RecvBuffer[From]=new PIC::ParticleBuffer::byte[BufferSize];
           RecvParticleDataMap[RecvRequestMessageDescriptorTableLength]=From;
+          
+          
+          for (int irecv=0;recv_offset<BufferSize;irecv++) {
+            unsigned long int data_chunk;
+              
+            data_chunk=(BufferSize-recv_offset>MaxMessageLength) ? MaxMessageLength : BufferSize-recv_offset;
+            MPI_Irecv(RecvBuffer[From]+recv_offset,data_chunk,MPI_BYTE,From,20+irecv,MPI_GLOBAL_COMMUNICATOR,&Request);
+            recv_offset+=data_chunk;
 
-          MPI_Irecv(RecvBuffer[From],BufferSize,MPI_BYTE,From,11,MPI_GLOBAL_COMMUNICATOR,RecvRequestMessageDescriptorTable+RecvRequestMessageDescriptorTableLength);
-          RecvRequestMessageDescriptorTableLength++;
-          MessageDescriptorWaiting++;
+            t.first=From;
+            t.second=Request;
+            
+            RecvRequestList.push_back(t);
+            IncompleteRecvCounter[From]++;   
+            TotalIncompleteRecvCounter++;
+          }
         } 
       }
     }
 
 
-    if (RecvRequestMessageDescriptorTableLength!=0) {
-      MPI_Testany(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,&iFrom,&flag,MPI_STATUS_IGNORE);
-
-      if ((flag==true)&&(iFrom!=MPI_UNDEFINED)) {
-        int From=RecvParticleDataMap[iFrom];
+    if (TotalIncompleteRecvCounter!=0) {
+      //check if any of new messages arrived
+      int flag;
+      list<pair<int,MPI_Request> >::iterator it=RecvRequestList.begin();
+      
+      while (it!=RecvRequestList.end()) {
+        Request=it->second;
+        MPI_Test(&Request,&flag,MPI_STATUS_IGNORE);
         
-        MPI_Wait(RecvRequestMessageDescriptorTable+iFrom,MPI_STATUS_IGNORE);
-        
-        cMessageDescriptorList *SendMessageDescriptorTable=(cMessageDescriptorList*)RecvBuffer[From];
-        PIC::ParticleBuffer::byte *SendParticleData=RecvBuffer[From]+RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList);
-        
-        MessageDescriptorWaiting--;
-               
-        RecvParticles(SendParticleData,RecvDataInfo[From].nTotalSendCells,SendMessageDescriptorTable);
-      } 
+        if (flag==true) {
+          //a new message is arived
+          int From=it->first;
+          
+          TotalIncompleteRecvCounter--;
+          IncompleteRecvCounter[From]--;
+          
+          //in case all messaged from process 'From' arrived -> unpack the data buffer
+          if (IncompleteRecvCounter[From]==0) {
+            PIC::ParticleBuffer::byte *RecvParticleData;
+            cMessageDescriptorList *RecvMessageDescriptorTable;
+            
+            RecvMessageDescriptorTable=(cMessageDescriptorList*)RecvBuffer[From];
+            RecvParticleData=RecvBuffer[From]+RecvDataInfo[From].nTotalSendCells*sizeof(cMessageDescriptorList);   
+                       
+            RecvParticles(RecvParticleData,RecvDataInfo[From].nTotalSendCells,RecvMessageDescriptorTable);
+          }
+          
+          //exclude the request from the list of requests, and release memory allocated by MPI
+          MPI_Wait(&Request,MPI_STATUS_IGNORE);
+          
+          list<pair<int,MPI_Request> >::iterator t=it++;
+          RecvRequestList.erase(t);
+        }
+        else {
+          it++;
+        }
+      }
     }
   }
   
@@ -815,7 +875,13 @@ void PIC::Parallel::ExchangeParticleData_buffered() {
   MPI_Waitall(RecvRequestMessageDescriptorTableLength,RecvRequestMessageDescriptorTable,MPI_STATUSES_IGNORE); 
 
   //wait for completing send operations 
-  MPI_Waitall(SendRequestTableLength,SendRequestTable,MPI_STATUSES_IGNORE);
+  MPI_Waitall(SendDataInfoRequestTableLength,SendDataInfoRequestTable,MPI_STATUSES_IGNORE);
+  
+  //what for completing particle data send
+  for (auto const& t : SendRequestList) {
+    Request=t;
+    MPI_Wait(&Request,MPI_STATUSES_IGNORE);
+  }
 
 
   //delete recv/send buffers
