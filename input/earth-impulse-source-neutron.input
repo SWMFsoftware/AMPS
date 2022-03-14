@@ -64,9 +64,25 @@ MoverIntegratorMode=Boris-relativistic
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
 
+  define _PIC_PARTICLE_EXCHANGE_ _PIC_PARTICLE_EXCHANGE_BUFFERED_
+
+  define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_  _PIC_DEBUGGER_MODE_OFF_
+
+  !define _PIC__OPENMP_THREAD_SPLIT_MODE_   _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
+   define _PIC__OPENMP_THREAD_SPLIT_MODE_   _PIC__OPENMP_THREAD_SPLIT_MODE__CELLS_
+
+  define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
+  define _PIC_RUNTIME_STAT_OUTPUT__MAX_ITERATION_NUMBER_ 5
+  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+  ! define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_ 
+
+  
+  define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_ 
+
+
 ! FirstPrintedOutputFile=100000000
 
-  RequestedParticleBufferLength=15000000
+  RequestedParticleBufferLength=140000000
 
   InitialSampleLength=100
 
@@ -187,7 +203,7 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
 
   ImpulseSource=on \\
     Spectrum=constant(1.0E1*MeV2J) \\ 
-    New: x=100.0E3+_RADIUS_(_TARGET_),0,0.5*_RADIUS_(_TARGET_); spec=NEUTRON,time=0,Source=1.0E11,npart=2.0E6 
+    New: x=100.0E3+_RADIUS_(_TARGET_),0,0.5*_RADIUS_(_TARGET_); spec=NEUTRON,time=0,Source=1.0E11,npart=50.0E6 
 
   SphericalShells=off \\
     x=125.0E3+_RADIUS_(_TARGET_),400.0E3+_RADIUS_(_TARGET_), \\
@@ -214,8 +230,6 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
 
 ! ReferenceGroundBasedObservationTime="2008-05-18T00:00:00","2008-07-06T00:00:00","2008-11-07T00:00:00","2007-11-12T00:00:00","2007-06-03T00:00:00"
 
-
-define _PIC__OPENMP_THREAD_SPLIT_MODE_   _PIC__OPENMP_THREAD_SPLIT_MODE__PARTICLES_
 
   define _TARGET_ _EARTH_ 
 !  define _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) Europa::TotalParticleAcceleration(acclMiddle,spec,ptr,xMiddle,vMiddle,middleNode) 
