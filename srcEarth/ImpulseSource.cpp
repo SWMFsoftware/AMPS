@@ -42,13 +42,6 @@ long int Earth::ImpulseSource::InjectParticles() {
     GyroFrequencySample[thread]=0.0,GyroRadiiSample[thread]=0.0;
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  #pragma omp parallel shared(TimeCounter)  
-  {
-  #pragma omp single
-  {
-#endif
-
   double SourceLocationB[3];
   TimeCounter+=PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0);
 
@@ -80,15 +73,23 @@ long int Earth::ImpulseSource::InjectParticles() {
         SampleCounter[thread]=0;
       }
 
+
+      long int *ParticleTable=new long int [nTotalInjectedParticles];
+
+      
       for (int iPart=0;iPart<nTotalInjectedParticles;iPart++) {
         //generate particles' velocity
-        newParticle=PIC::ParticleBuffer::GetNewParticle(true);
+        ParticleTable[iPart]=PIC::ParticleBuffer::GetNewParticle(true);
+      }
 
        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
+       #pragma omp parallel for firstprivate (newParticle) private (idim,newParticleData)  \
        firstprivate (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
-        {
        #endif
+      for (int iPart=0;iPart<nTotalInjectedParticles;iPart++) {
+        //generate particles' velocity
+        newParticle=ParticleTable[iPart]; 
+//PIC::ParticleBuffer::GetNewParticle(true);
 
         //generate new particle velocity
         double v[3],speed;
@@ -125,11 +126,6 @@ long int Earth::ImpulseSource::InjectParticles() {
 
         //inject the particle into the system
         _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,TimeCounter-ImpulseSourceData[iSource].time,startNode);
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-        }
-#endif
-
       }
 
       //end of the particle injetion loop
@@ -141,6 +137,8 @@ long int Earth::ImpulseSource::InjectParticles() {
         SampleCounter[0]+=SampleCounter[thread];
       }
 
+      delete [] ParticleTable;
+
       if (SampleCounter[0]!=0) GyroRadiiSample[0]/=SampleCounter[0],GyroFrequencySample[0]/=SampleCounter[0];
       printf("$PREFIX: Impulse source location %i:  spec=%i\n",iSource,spec);
       printf("$PREFIX: Impulse source location %i:  Mean Gyro Radii=%e\n",iSource,GyroRadiiSample[0]);
@@ -151,9 +149,6 @@ long int Earth::ImpulseSource::InjectParticles() {
 
   }
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-     }}
-#endif
 
   //deallocate the sampling buffers
   delete [] GyroFrequencySample;
@@ -220,7 +215,7 @@ void RunImpulseSource() {
     }
 
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-       PIC::RequiredSampleLength*=2;
+//       PIC::RequiredSampleLength*=2;
        if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
 
 
