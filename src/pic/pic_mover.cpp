@@ -902,7 +902,12 @@ void PIC::Mover::MoveParticles() {
             firstprivate (nParticlePerThread,node,LocalTimeStep,ParticleList) private(ptr,s)
             #endif
             {
+              #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
               int thread=omp_get_thread_num(); 
+              #else 
+              int thread=0;
+              #endif
+
               int nParticleSkip=thread*nParticlePerThread;
 
               for (int ii=0;ii<nParticleSkip;ii++) {
