@@ -65,7 +65,8 @@ PICOBJ = pic.o \
 	pic_block_send_mask.o \
 	pic_move_blocks.o \
 	pic_rnd.o \
-	pic_gyrokinetic.o 
+	pic_gyrokinetic.o \
+	pic_particle_spliting.o 
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \

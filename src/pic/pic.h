@@ -1309,6 +1309,14 @@ void DeleteAttachedParticles();
     long int InjectParticle_default(int spec,double *p,double ParticleWeightCorrectionFactor,int iFieldLine,int iSegment,double sIn=-1.0);
   }
 
+  //split/merge particles
+  namespace ParticleSplitting {
+    namespace Split {
+      void Scatter(int particle_num_limit);
+    }
+  }
+
+
   //the first part of the namespace Debugger difinition
   namespace Debugger {
     //debug concurrently executed AMPS applications
