@@ -1735,8 +1735,8 @@ public:
   void MarkUnusedInsideObjectBlocks();
 
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
-  int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
-  int (*fDefaultUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
+  unsigned long int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+  unsigned long int (*fDefaultUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
 
   //function that initializes the block send map
   void (*fInitBlockSendMask)(cTreeNodeAMR<cBlockAMR>* node,int To,unsigned char* BlockCenterNodeSendMask,unsigned char* BlockCornerNodeSendMask);
@@ -1746,9 +1746,9 @@ public:
   int (*fCornerNodeMaskSize)();
 
   //functions used to move blocks between MPI processes as a result of the domain re-decomposistion
-  void (*fGetMoveBlockDataSize)(cTreeNodeAMR<cBlockAMR> **MoveOutTable,int NodeTableLength,int* NodeDataLength);
-  int (*fPackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
-  int (*fUnpackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+  void (*fGetMoveBlockDataSize)(cTreeNodeAMR<cBlockAMR> **MoveOutTable,int NodeTableLength,unsigned long int* NodeDataLength);
+  unsigned long int (*fPackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+  unsigned long int (*fUnpackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
   //Flag: populate center and corner 'ghost' nodes that are outside of the domain. The feature is needed when the code is used in the embedded PIC mode
   bool PopulateOutsideDomainNodesFlag;
@@ -12129,12 +12129,13 @@ if (TmpAllocationCounter==2437) {
     for (int thread=0;thread<nTotalThreads;thread++) SendOperationCounterTable[thread]=0,RecvOperationCounterTable[thread]=0;
 
     auto InitRecieve = [&] (int From,int *iLastRecvStartNode, int *iLastRecvFinishNode,
-        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,
+        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,unsigned long int **MoveInDataSizeTable,int *MoveInNodeTableSize,
         int *LastRecvMessageSize,
         MPI_Request *MoveInRequestTable, int &MoveInRequestTableSize,
-        int *RecvBlockMaxMessageSize,int *MoveInProcessTable,char **RecvBlockDataBuffer) {
+        unsigned long int *RecvBlockMaxMessageSize,int *MoveInProcessTable,char **RecvBlockDataBuffer) {
       int iStart=iLastRecvFinishNode[From]+1;
-      int iFinish=0,Size=0;
+      int iFinish=0;
+      unsigned int Size=0;
 
       for (iFinish=iStart;iFinish<MoveInNodeTableSize[From];iFinish++) {
         Size+=MoveInDataSizeTable[From][iFinish];
@@ -12176,11 +12177,12 @@ if (TmpAllocationCounter==2437) {
     };
 
     auto InitSend = [&] (int To,int *iLastSendStartNode,int *iLastSendFinishNode,
-        cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,int *MoveOutNodeTableSize,
+        cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,unsigned long int **MoveOutDataSizeTable,int *MoveOutNodeTableSize,
         MPI_Request *MoveOutRequestTable, int &MoveOutRequestTableSize,
-        int *SendBlockMaxMessageSize,int *MoveOutProcessTable,char **SendBlockDataBuffer) {
+        unsigned long int *SendBlockMaxMessageSize,int *MoveOutProcessTable,char **SendBlockDataBuffer) {
       int iStart=iLastSendFinishNode[To]+1;
-      int iFinish=0,Size=0;
+      int iFinish=0;
+      unsigned int Size=0;
 
       for (iFinish=iStart;iFinish<MoveOutNodeTableSize[To];iFinish++) {
         Size+=MoveOutDataSizeTable[To][iFinish];
@@ -12335,7 +12337,7 @@ if (TmpAllocationCounter==2437) {
 
 
     //distribute the MoveInDataSizeTable/MoveOutDataSizeTable tables
-    auto DistributeMoveDataSizeTables = [&] (int **MoveInDataSizeTable,int *MoveInNodeTableSize,int **MoveOutDataSizeTable,int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable) {
+    auto DistributeMoveDataSizeTables = [&] (unsigned long int **MoveInDataSizeTable,int *MoveInNodeTableSize,unsigned long int **MoveOutDataSizeTable,int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable) {
       int thread;
 
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
@@ -12346,20 +12348,20 @@ if (TmpAllocationCounter==2437) {
 
       for (thread=0;thread<nTotalThreads;thread++) {
          if (MoveInNodeTableSize[thread]!=0) {
-           MoveInDataSizeTable[thread]=new int [MoveInNodeTableSize[thread]];
+           MoveInDataSizeTable[thread]=new unsigned long int [MoveInNodeTableSize[thread]];
 
            //schedule reciving of the table
-           MPI_Irecv(MoveInDataSizeTable[thread],MoveInNodeTableSize[thread],MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
+           MPI_Irecv(MoveInDataSizeTable[thread],MoveInNodeTableSize[thread],MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,MoveInRequestTable+MoveInRequestTableSize);
            MoveInRequestTableSize++;
          }
          else MoveInDataSizeTable[thread]=NULL;
 
          if (MoveOutNodeTableSize[thread]!=0) {
-           MoveOutDataSizeTable[thread]=new int [MoveOutNodeTableSize[thread]];
+           MoveOutDataSizeTable[thread]=new unsigned long int [MoveOutNodeTableSize[thread]];
 
            //init the table and send it
            fGetMoveBlockDataSize(MoveOutNodeTable[thread],MoveOutNodeTableSize[thread],MoveOutDataSizeTable[thread]);
-           MPI_Isend(MoveOutDataSizeTable[thread],MoveOutNodeTableSize[thread],MPI_INT,thread,0,MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
+           MPI_Isend(MoveOutDataSizeTable[thread],MoveOutNodeTableSize[thread],MPI_LONG,thread,0,MPI_GLOBAL_COMMUNICATOR,MoveOutRequestTable+MoveOutRequestTableSize);
            MoveOutRequestTableSize++;
          }
          else MoveOutDataSizeTable[thread]=NULL;
@@ -12381,10 +12383,11 @@ if (TmpAllocationCounter==2437) {
 
 
     //allocate Send/Recv buffers
-    auto InitSendRecvBuffers = [&] (int *SendBlockMaxMessageSize,int *RecvBlockMaxMessageSize,
-        int *MoveInNodeTableSize,int **MoveInDataSizeTable,int *MoveOutNodeTableSize,int **MoveOutDataSizeTable,int MessageSizeLimit,int& TotalBufferSize) {
+    auto InitSendRecvBuffers = [&] (unsigned long int *SendBlockMaxMessageSize,unsigned long int *RecvBlockMaxMessageSize,
+        int *MoveInNodeTableSize,unsigned long int **MoveInDataSizeTable,int *MoveOutNodeTableSize,unsigned long int **MoveOutDataSizeTable,unsigned int MessageSizeLimit,unsigned int& TotalBufferSize) {
       for (int thread=0;thread<nTotalThreads;thread++) {
-        int inode,MaxSize,TotalSize;
+        int inode;
+        unsigned long MaxSize,TotalSize;
 
         SendBlockMaxMessageSize[thread]=0,RecvBlockMaxMessageSize[thread]=0;
 
@@ -12426,7 +12429,7 @@ if (TmpAllocationCounter==2437) {
       }
     };
 
-    auto DeallocateSendRecvTables = [&] (cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveInDataSizeTable,int **MoveOutDataSizeTable) {
+    auto DeallocateSendRecvTables = [&] (cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,unsigned long int **MoveInDataSizeTable,unsigned long int **MoveOutDataSizeTable) {
       int thread;
 
       for (thread=0;thread<nTotalThreads;thread++) {
@@ -12453,8 +12456,8 @@ if (TmpAllocationCounter==2437) {
     };
 
     //exchange blocks
-   auto TestSendOperation = [&] (MPI_Request *MoveOutRequestTable,int &MoveOutRequestTableSize,int *iLastSendStartNode,int *iLastSendFinishNode,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,
-       int *MoveOutNodeTableSize,int* SendBlockMaxMessageSize,int *MoveOutProcessTable,char **SendBlockDataBuffer) {
+   auto TestSendOperation = [&] (MPI_Request *MoveOutRequestTable,int &MoveOutRequestTableSize,int *iLastSendStartNode,int *iLastSendFinishNode,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,unsigned long int **MoveOutDataSizeTable,
+       int *MoveOutNodeTableSize,unsigned long int* SendBlockMaxMessageSize,int *MoveOutProcessTable,char **SendBlockDataBuffer) {
      int index,flag,To=-1;
      MPI_Status status;
 
@@ -12485,7 +12488,7 @@ if (TmpAllocationCounter==2437) {
    };
 
    auto TestRecvOperation = [&] (MPI_Request *MoveInRequestTable,int &MoveInRequestTableSize,int *MoveInProcessTable,int *iLastRecvStartNode,int *iLastRecvFinishNode,
-       int *LastRecvMessageSize,cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,char **RecvBlockDataBuffer,int *MoveInNodeTableSize,int **MoveInDataSizeTable,int* RecvBlockMaxMessageSize) {
+       int *LastRecvMessageSize,cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,char **RecvBlockDataBuffer,int *MoveInNodeTableSize,unsigned long int **MoveInDataSizeTable,unsigned long int* RecvBlockMaxMessageSize) {
      int flag,index,From=-1;
      MPI_Status status;
 
@@ -12525,9 +12528,10 @@ if (TmpAllocationCounter==2437) {
       return From;
    };
 
-    auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,int **MoveOutDataSizeTable,int* SendBlockMaxMessageSize,
-        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,int **MoveInDataSizeTable,int *MoveInNodeTableSize,int* RecvBlockMaxMessageSize,int TotalBufferSize) {
-      int To,From,from_complete,to_complete,Size;
+    auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,unsigned long int **MoveOutDataSizeTable,long unsigned int* SendBlockMaxMessageSize,
+        cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,unsigned long int **MoveInDataSizeTable,int *MoveInNodeTableSize,unsigned long int* RecvBlockMaxMessageSize,unsigned int TotalBufferSize) {
+      int To,From;
+      unsigned long from_complete,to_complete,Size;
 
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
       MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
@@ -12723,18 +12727,18 @@ if (TmpAllocationCounter==2437) {
     PopulateSendRecvTables(MoveOutNodeTableSize,MoveOutNodeTable,MoveInNodeTableSize,MoveInNodeTable);
 
     //perform the moving of the blocks
-    int **MoveInDataSizeTable=new int* [nTotalThreads];
-    int **MoveOutDataSizeTable=new int* [nTotalThreads];
+    unsigned long int **MoveInDataSizeTable=new unsigned long int* [nTotalThreads];
+    unsigned long int **MoveOutDataSizeTable=new unsigned long int* [nTotalThreads];
 
 
     DistributeMoveDataSizeTables(MoveInDataSizeTable,MoveInNodeTableSize,MoveOutDataSizeTable,MoveOutNodeTableSize,MoveOutNodeTable);
 
 
-    int *SendBlockMaxMessageSize=new int [nTotalThreads];
-    int *RecvBlockMaxMessageSize=new int [nTotalThreads];
+    unsigned long int *SendBlockMaxMessageSize=new unsigned long int [nTotalThreads];
+    unsigned long int *RecvBlockMaxMessageSize=new unsigned long int [nTotalThreads];
 
-    const int MessageSizeLimit=5000000;
-    int TotalBufferSize=100000000;
+    const unsigned int MessageSizeLimit=5000000;
+    unsigned int TotalBufferSize=100000000;
 
     //determine the limits of the send/recv buffers
     InitSendRecvBuffers(SendBlockMaxMessageSize,RecvBlockMaxMessageSize,MoveInNodeTableSize,MoveInDataSizeTable,MoveOutNodeTableSize,
@@ -13115,8 +13119,8 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
   class cBlockExchangeDataLengthTableElement : public cAMRexit {
   public:
-    int *BlockDataLengthTable;
-    int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+    unsigned long int *BlockDataLengthTable;
+    unsigned long int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
     int TableLength;
 
     cBlockExchangeDataLengthTableElement() {
@@ -13129,7 +13133,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       for (int i=0;i<TableLength;i++) BlockDataLengthTable[i]=0;
     }
 
-    void Allocate(int TableLengthIn,int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    void Allocate(int TableLengthIn,unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       if (BlockDataLengthTable!=NULL) {
         exit(__LINE__,__FILE__,"Error: the buffer is alredy allocated");
       }
@@ -13137,7 +13141,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       TableLength=TableLengthIn;
       fPackBlockData=fPackBlockDataIn;
 
-      BlockDataLengthTable=new int [TableLength];
+      BlockDataLengthTable=new unsigned long int [TableLength];
       clean();
     }
 
@@ -13145,7 +13149,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       return (BlockDataLengthTable==NULL) ? false : true;
     }
 
-    bool CheckFunction(int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    bool CheckFunction(unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       bool res;
 
       if (IsAllocated()==true) {
@@ -13156,7 +13160,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       return res;
     }
 
-    void Resize(int NewLength,int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    void Resize(int NewLength,unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       if (NewLength>TableLength) {
         //re-allocate the table
         if (IsAllocated()==true) {
@@ -13221,12 +13225,12 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
   cParallelBlockDataExchangeData ParallelBlockDataExchangeData;
 
-  void ParallelBlockDataExchange(int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-      int (*fUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
+  void ParallelBlockDataExchange(unsigned long int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+      unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
     int thread;
 
     //the maximum length of a single message
-    const int nMaxBytesSendPerRound=10000000;
+    const unsigned int nMaxBytesSendPerRound=10000000;
 
     //the total number of the Block Communication Length Tables
     const int BlockDataLengthTableNumber=10;
@@ -13581,9 +13585,9 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     } LastRecvMessageTable[nTotalThreads];
 
 
-    auto InitSend = [&] (int To,int **BlockSendDataLengthTable,int *SendProcessTable,int& SendTableIndex, MPI_Request *SendRequestTable,int *iStartSendTable,int *iStartRecvTable) {
+    auto InitSend = [&] (int To,unsigned long int **BlockSendDataLengthTable,int *SendProcessTable,int& SendTableIndex, MPI_Request *SendRequestTable,int *iStartSendTable,int *iStartRecvTable) {
       int iStart,iEnd;
-      int TotalMessageSize=0;
+      unsigned long int TotalMessageSize=0;
       int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[To+this->ThisThread*this->nTotalThreads];
 
       iStart=iStartSendTable[To];
@@ -13618,10 +13622,10 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       SendTableIndex++;
     };
 
-    auto InitRecieve = [&] (int From,int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable,cLastRecvMessage *LastRecvMessageTable) {
+    auto InitRecieve = [&] (int From,unsigned long int **BlockRecvDataLengthTable,int *RecvProcessTable,int& RecvTableIndex, MPI_Request *RecvRequestTable,int *iStartSendTable,int *iStartRecvTable,cLastRecvMessage *LastRecvMessageTable) {
       int iStart,iEnd;
 
-      int TotalMessageSize=0;
+      unsigned long int TotalMessageSize=0;
       int nNodeListMaxLength=this->ParallelBlockDataExchangeData.GlobalSendTable[ThisThread+From*nTotalThreads];
 
       iStart=iStartRecvTable[From];
@@ -13660,7 +13664,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
     };
 
     //determine the appropriate NodeDataLengthTable
-    int *BlockRecvDataLengthTable[nTotalThreads],*BlockSendDataLengthTable[nTotalThreads];
+    unsigned long int *BlockRecvDataLengthTable[nTotalThreads],*BlockSendDataLengthTable[nTotalThreads];
     int UnusedTableElementIndex=-1;
     int flag=false;
 
