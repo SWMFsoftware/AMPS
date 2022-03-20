@@ -546,7 +546,7 @@ void PIC::Mesh::buildMesh() {
 
 //pack block data for the data syncronization
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer) {
+int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
@@ -557,7 +557,7 @@ unsigned long int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTab
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
@@ -570,7 +570,7 @@ unsigned long int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTab
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer,
+int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
@@ -582,7 +582,7 @@ unsigned long int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>*
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
+int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* SendDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
@@ -798,7 +798,7 @@ unsigned long int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>*
 
 //unpack data for the data syncronization
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
+int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
@@ -809,7 +809,7 @@ unsigned long int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeT
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
@@ -822,7 +822,7 @@ unsigned long int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeT
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
+int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
     int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
@@ -833,7 +833,7 @@ unsigned long int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
-unsigned long int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
+int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
     unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
     char* RecvDataBuffer,
     int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,

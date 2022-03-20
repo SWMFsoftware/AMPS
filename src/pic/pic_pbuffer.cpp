@@ -76,7 +76,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   auto ClearParticleBuffer = [=] _TARGET_HOST_ _TARGET_DEVICE_ () {
     char *p=(char*)ParticleDataBuffer;
-    long int i;
+    unsigned long int i;
 
     #ifdef __CUDA_ARCH__
     int id=blockIdx.x*blockDim.x+threadIdx.x;

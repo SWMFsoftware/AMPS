@@ -1735,8 +1735,8 @@ public:
   void MarkUnusedInsideObjectBlocks();
 
   //default functions that will be used for packing/un-paking block's data by ParallelBlockDataExchange()
-  unsigned long int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
-  unsigned long int (*fDefaultUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
+  int (*fDefaultPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+  int (*fDefaultUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
 
   //function that initializes the block send map
   void (*fInitBlockSendMask)(cTreeNodeAMR<cBlockAMR>* node,int To,unsigned char* BlockCenterNodeSendMask,unsigned char* BlockCornerNodeSendMask);
@@ -1747,8 +1747,8 @@ public:
 
   //functions used to move blocks between MPI processes as a result of the domain re-decomposistion
   void (*fGetMoveBlockDataSize)(cTreeNodeAMR<cBlockAMR> **MoveOutTable,int NodeTableLength,unsigned long int* NodeDataLength);
-  unsigned long int (*fPackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
-  unsigned long int (*fUnpackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+  int (*fPackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+  int (*fUnpackMoveBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
   //Flag: populate center and corner 'ghost' nodes that are outside of the domain. The feature is needed when the code is used in the embedded PIC mode
   bool PopulateOutsideDomainNodesFlag;
@@ -13120,7 +13120,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
   class cBlockExchangeDataLengthTableElement : public cAMRexit {
   public:
     unsigned long int *BlockDataLengthTable;
-    unsigned long int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+    int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
     int TableLength;
 
     cBlockExchangeDataLengthTableElement() {
@@ -13133,7 +13133,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       for (int i=0;i<TableLength;i++) BlockDataLengthTable[i]=0;
     }
 
-    void Allocate(int TableLengthIn,unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    void Allocate(int TableLengthIn,int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       if (BlockDataLengthTable!=NULL) {
         exit(__LINE__,__FILE__,"Error: the buffer is alredy allocated");
       }
@@ -13149,7 +13149,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       return (BlockDataLengthTable==NULL) ? false : true;
     }
 
-    bool CheckFunction(unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    bool CheckFunction(int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       bool res;
 
       if (IsAllocated()==true) {
@@ -13160,7 +13160,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
       return res;
     }
 
-    void Resize(int NewLength,unsigned long int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
+    void Resize(int NewLength,int (*fPackBlockDataIn)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer)) {
       if (NewLength>TableLength) {
         //re-allocate the table
         if (IsAllocated()==true) {
@@ -13225,12 +13225,12 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
   cParallelBlockDataExchangeData ParallelBlockDataExchangeData;
 
-  void ParallelBlockDataExchange(unsigned long int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-      unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
+  void ParallelBlockDataExchange(int (*fPackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+      int (*fUnpackBlockData)(cTreeNodeAMR<cBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
     int thread;
 
     //the maximum length of a single message
-    const unsigned int nMaxBytesSendPerRound=10000000;
+    const int nMaxBytesSendPerRound=10000000;
 
     //the total number of the Block Communication Length Tables
     const int BlockDataLengthTableNumber=10;

@@ -77,16 +77,16 @@ MoverIntegratorMode=Boris-relativistic
   ! define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_ 
 
   
-  define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_ 
+! define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_ 
 
 
 ! FirstPrintedOutputFile=100000000
 
-  RequestedParticleBufferLength=140000000
+  RequestedParticleBufferLength=100000000
 
   InitialSampleLength=100
 
-  BlockCells=4,4,4
+  BlockCells=2,2,2
   GhostCells=1,1,1
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 

@@ -189,7 +189,7 @@ inline double interp2D(double vmm, double vpm, double vpp, double vmp,
 
 
 //magnetic field
-unsigned long int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
@@ -204,7 +204,7 @@ unsigned long int PackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeT
 
 
 //magnetic fieled
-unsigned long int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
@@ -217,7 +217,7 @@ unsigned long int UnpackBlockData_B(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** Nod
 }
 
 //net charge
-unsigned long int PackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
     int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
         +PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex*sizeof(double);
     int dataLengthByte=1*sizeof(double);
@@ -231,7 +231,7 @@ unsigned long int PackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>
 }
 
 //net charge
-unsigned long int UnpackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
     +PIC::FieldSolver::Electromagnetic::ECSIM::netChargeNewIndex*sizeof(double);
   int dataLengthByte=1*sizeof(double);
@@ -245,7 +245,7 @@ unsigned long int UnpackBlockData_netCharge(cTreeNodeAMR<PIC::Mesh::cDataBlockAM
 }
 
 //phi
-unsigned long int PackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
     +PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex*sizeof(double);
   int dataLengthByte=1*sizeof(double);
@@ -260,7 +260,7 @@ unsigned long int PackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** Nod
 
 
 //phi
-unsigned long int UnpackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset
     +PIC::FieldSolver::Electromagnetic::ECSIM::phiIndex*sizeof(double);
   int dataLengthByte=1*sizeof(double);
@@ -275,7 +275,7 @@ unsigned long int UnpackBlockData_phi(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** N
 
 
 //electric field
-unsigned long int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
@@ -289,7 +289,7 @@ unsigned long int PackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeT
 
 
 //electric fieled
-unsigned long int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset;
   int dataLengthByte=6*sizeof(double);
 
@@ -302,7 +302,7 @@ unsigned long int UnpackBlockData_E(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** Nod
 }
 
 //current and massmatrix
-unsigned long int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=246*sizeof(double);
 
@@ -316,7 +316,7 @@ unsigned long int PackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAM
 
 
 //current and massmatrix
-unsigned long int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=246*sizeof(double);
 
@@ -328,7 +328,7 @@ unsigned long int UnpackBlockData_JMassMatrix(cTreeNodeAMR<PIC::Mesh::cDataBlock
       NULL,NULL,0);
 }
 
-unsigned long int PackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
+int PackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=(246+10*PIC::nTotalSpecies)*sizeof(double);
 
@@ -340,7 +340,7 @@ unsigned long int PackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::c
       NULL,NULL,0);
 }
 
-unsigned long int UnpackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
+int UnpackBlockData_JMassMatrixSpeciesData(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer) {
   int ibegin=PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+6*sizeof(double);
   int dataLengthByte=(246+10*PIC::nTotalSpecies)*sizeof(double);
 

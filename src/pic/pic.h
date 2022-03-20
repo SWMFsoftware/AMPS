@@ -3567,7 +3567,7 @@ void DeleteAttachedParticles();
       extern int _TARGET_DEVICE_ _CUDA_MANAGED_ LocalTimeStepOffset,LocalParticleWeightOffset;
       extern int _TARGET_DEVICE_ _CUDA_MANAGED_ totalAssociatedDataLength; 
 
-      typedef unsigned long int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
+      typedef int (*fPackBlockData)(cDataBlockAMR* block,char* SendBuffer);
       extern _TARGET_DEVICE_ fPackBlockData PackBlockData,UnpackBlockData;
 
       extern _TARGET_DEVICE_  _CUDA_MANAGED_ int tempTempParticleMovingListMultiThreadTableOffset,tempTempParticleMovingListMultiThreadTableLength;
@@ -3872,26 +3872,26 @@ void DeleteAttachedParticles();
 
     //pack and un-pack blocks data
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
+    int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer);
  
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer);
+    int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,char* SendDataBuffer);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
+    int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+    int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
+    int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
         char* SendDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
         int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
+    int PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,
         unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
         char* SendDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
@@ -3899,14 +3899,14 @@ void DeleteAttachedParticles();
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
+    int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
         char* RecvDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
         int* iCenterNodeStateVectorIntervalBegin,int *CenterNodeStateVectorIntervalLength,int nCenterNodeStateVectorIntervals,
         int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals);
 
     _TARGET_DEVICE_ _TARGET_HOST_
-    unsigned long int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
+    int UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,
         unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,
         char* RecvDataBuffer,
         int* iCornerNodeStateVectorIntervalBegin,int *CornerNodeStateVectorIntervalLength,int nCornerNodeStateVectorIntervals,
@@ -4016,10 +4016,10 @@ void DeleteAttachedParticles();
       void GetBlockDataSize(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength);
 
       _TARGET_DEVICE_ _TARGET_HOST_
-      unsigned long int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
+      int PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* SendDataBuffer);
 
       _TARGET_DEVICE_ _TARGET_HOST_
-      unsigned long int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
+      int UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTableLength,char* RecvDataBuffer);
     }
 
     //tratment of the cut-cells
@@ -5038,8 +5038,8 @@ void DeleteAttachedParticles();
 
      //update data in the 'ghost blocks'
      void UpdateGhostBlockData();
-     void UpdateGhostBlockData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-                      unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
+     void UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+                      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
 
 
      namespace CenterBlockBoundaryNodes {
@@ -7666,8 +7666,8 @@ void DeleteAttachedParticles();
       
       //manager of the information update between the real and ghost blocks
       void UpdateData();
-      void UpdateData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-                      unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
+      void UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+                      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
       
       //periodic boundary conditions
       namespace Periodic {
@@ -7746,8 +7746,8 @@ void DeleteAttachedParticles();
 
       //manager of the information update between the real and ghost blocks
       void UpdateGhostBlockData();
-      void UpdateGhostBlockData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-                      unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
+      void UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+                      int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer));
       }
 
     }

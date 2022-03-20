@@ -286,8 +286,8 @@ void PIC::BC::ExternalBoundary::UpdateData() {
   UpdateData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 }
 
-void PIC::BC::ExternalBoundary::UpdateData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long  int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-    unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
+void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long  int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
 
   using namespace PIC::BC::ExternalBoundary::Periodic;
@@ -305,8 +305,8 @@ void PIC::Parallel::UpdateGhostBlockData() {
   UpdateGhostBlockData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 }
 
-void PIC::Parallel::UpdateGhostBlockData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-    unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) { 
+void PIC::Parallel::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) { 
 
     if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
 
@@ -318,8 +318,8 @@ void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
   UpdateGhostBlockData(PIC::Mesh::PackBlockData,PIC::Mesh::UnpackBlockData);
 }
 
-void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(unsigned long int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
-    unsigned long int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
+void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
+    int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
 #if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
   int iBlockPair,RealBlockThread,GhostBlockThread;  
