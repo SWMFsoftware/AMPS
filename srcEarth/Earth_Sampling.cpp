@@ -115,8 +115,13 @@ void Earth::Sampling::ParticleData::PrintData(FILE* fout,int DataSetNumber,CMPI_
   char *SamplingBuffer=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset;
   double TotalWeight,GyroRadius,GyroFrequency;
 
+  bool gather_output_data=false;
 
-  if (pipe->ThisThread==CenterNodeThread) {
+  if (pipe==NULL) gather_output_data=true;
+  else if (pipe->ThisThread==CenterNodeThread) gather_output_data=true;  
+
+
+  if  (gather_output_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     TotalWeight=CenterNode->GetDatumCumulative(PIC::Mesh::DatumParticleWeight,DataSetNumber);
 
     if (TotalWeight>0.0) {
@@ -126,8 +131,8 @@ void Earth::Sampling::ParticleData::PrintData(FILE* fout,int DataSetNumber,CMPI_
     else GyroRadius=0.0,GyroFrequency=0.0;
   }
 
-  if (pipe->ThisThread==0) {
-    if (CenterNodeThread!=0) {
+  if ((PIC::ThisThread==0)||(pipe==NULL)) { //  (pipe->ThisThread==0) {
+    if ((CenterNodeThread!=0)&&(pipe!=NULL)) { // (CenterNodeThread!=0) {
       GyroRadius=pipe->recv<double>(CenterNodeThread);
       GyroFrequency=pipe->recv<double>(CenterNodeThread);
     }
