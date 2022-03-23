@@ -312,7 +312,7 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   *tempFirstCellParticlePtr=ptr;
 
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=node->block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
 
   PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
@@ -650,7 +650,7 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   *tempFirstCellParticlePtr=ptr;
 
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=node->block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
 
   PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
@@ -658,6 +658,9 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
   if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
   ThreadTempParticleMovingData->first=ptr;
+
+  exit(__LINE__,__FILE__,"WARNING: something strang in the implementation. Could be an issue with concurrency. Need to be comapred with how other movers do the same thing");
+   
   #else
   #error The option is unknown
   #endif
@@ -725,6 +728,9 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   double dmu=0.0;
   double delta;
 
+  bool first_pass_flag=true;
+
+
   while (time_counter<dtTotal) { 
    if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
@@ -741,6 +747,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   case _DIFFUSION_ROUX2004AJ_:
     SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
+
 
     delta=sqrt(4.0*D*dt)/erf(rnd());
     dmu+=(rnd()>0.5) ? delta : -delta;
@@ -759,6 +766,22 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   case _DIFFUSION_JOKIPII1966AJ_:
     SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
+
+    delta=sqrt(4.0*D*dt)/erf(rnd());
+
+    if (first_pass_flag==true) {
+      if (fabs(dD_dmu*dt)>0.1) {
+        dt=1.0/fabs(dD_dmu);
+      }
+
+      if (fabs(delta)>0.1) {
+        double t=0.01/(4.0*D);
+
+        if (t<dt) dt=t;
+      } 
+
+      first_pass_flag=false;
+    } 
 
     delta=sqrt(4.0*D*dt)/erf(rnd());
     dmu+=(rnd()>0.5) ? delta : -delta;
@@ -845,11 +868,18 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp critical
+#endif
+    {
     PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
     if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
     Segment->tempFirstParticleIndex=ptr;
+    } 
+
     break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
