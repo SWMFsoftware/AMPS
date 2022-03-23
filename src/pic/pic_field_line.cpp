@@ -1354,6 +1354,37 @@ namespace FieldLine{
       exit(__LINE__,__FILE__,"Error: wrong options");
     } 
 
+  auto CountParticle = [&] (FL::cFieldLineSegment* Segment) {
+    long int ptr;
+    int cnt=0;
+
+    ptr=Segment->FirstParticleIndex;
+
+    while (ptr!=-1) {
+      cnt++;
+      ptr=PB::GetNext(ptr);
+    }
+
+    return cnt;
+  };
+
+  auto PopulateParticleTable = [&] (long int *ParticleTable,FL::cFieldLineSegment* Segment) {
+    long int ptr;
+    int cnt=0;
+
+    ptr=Segment->FirstParticleIndex;
+
+    while (ptr!=-1) {
+      ParticleTable[cnt]=ptr;
+
+      cnt++;
+      ptr=PB::GetNext(ptr);
+    }
+
+    return cnt;
+  };
+      
+
     auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
       long int ptr,ptr_next;
@@ -1362,32 +1393,55 @@ namespace FieldLine{
       PB::byte* ParticleData;
 
       ptr=Segment->FirstParticleIndex;
-      
-      while (ptr!=-1) {
-        ParticleData=PB::GetParticleDataPointer(ptr);
 
-        x=PB::GetX(ParticleData);
-        spec=PB::GetI(ParticleData);
-        ptr_next=PB::GetNext(ParticleData);
 
-        node=PIC::Mesh::mesh->findTreeNode(x,node);
-        if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
-        if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+   static long int *ParticleTable=NULL;
+   static int ParticleTableLength=0;
 
-        LocalTimeStep=node->block->GetLocalTimeStep(spec); 
-        _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
-    
-        ptr=ptr_next;
-      }
-    };
+   int SegmentParticleNumber=CountParticle(Segment);
+
+   if (ParticleTableLength<SegmentParticleNumber) {
+     if (ParticleTable!=NULL) delete [] ParticleTable;
+
+     ParticleTable=new long int [2*SegmentParticleNumber]; 
+     ParticleTableLength=2*SegmentParticleNumber;
+   }
+
+   PopulateParticleTable(ParticleTable,Segment);
+
+   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+   #pragma omp parallel for private (x,spec, ParticleData,LocalTimeStep) firstprivate(node) shared(ParticleTable) 
+   #endif
+   for (int ii=0;ii<SegmentParticleNumber;ii++) {
+     ptr=ParticleTable[ii];
+     ParticleData=PB::GetParticleDataPointer(ptr);
+
+     x=PB::GetX(ParticleData);
+     spec=PB::GetI(ParticleData);
+
+     node=PIC::Mesh::mesh->findTreeNode(x,node);
+     if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+     if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+     LocalTimeStep=node->block->GetLocalTimeStep(spec); 
+     _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+   }
+   };
 
     //loop through the field lines 
     int iFieldLine;
     FL::cFieldLineSegment *Segment; 
+    int thread=0,SegmentCounter=0;
+
+    
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    thread=omp_get_thread_num();
+    #endif
 
     for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
       for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
         ProcessSegment(Segment);
+        SegmentCounter++;
       }
     } 
  
@@ -1713,5 +1767,5 @@ void PIC::FieldLine::CheckParticleList() {
     }
   }
 
-  if (nTotalParticles!=PB::NAllPart) exit(__LINE__,__FILE__,"Error: the total number of particles stored in the lists is different from that stored in the particle buffer");
+  if (nTotalParticles!=PB::GetAllPartNum()) exit(__LINE__,__FILE__,"Error: the total number of particles stored in the lists is different from that stored in the particle buffer");
 } 
