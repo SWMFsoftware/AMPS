@@ -89,6 +89,7 @@ void amps_init_mesh() {
       VertexAllocationManager.PlasmaPressure=true;
       VertexAllocationManager.MagneticFluxFunction=true;
       VertexAllocationManager.PlasmaWaves=true;
+      VertexAllocationManager.Fluence=true;
 
 
       VertexAllocationManager.PreviousVertexData.MagneticField=true;

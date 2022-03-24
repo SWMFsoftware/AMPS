@@ -934,6 +934,7 @@ if (ptr!=-1) {
     #endif
   }
 }
+
 }
 
 
@@ -1148,6 +1149,11 @@ void PIC::Sampling::Sampling() {
     #else
     SamplingManager(localSimulatedSpeciesParticleNumber);
     #endif
+
+    //sample particles attached to segments of the field lines
+    if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
+      PIC::FieldLine::Sampling();
+    }
 
     nTotalSampledParticles=0;
     

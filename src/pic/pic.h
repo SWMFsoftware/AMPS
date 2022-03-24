@@ -447,6 +447,11 @@ namespace PIC {
     extern cDatumWeighted DatumAtVertexParticleEnergy;
     extern cDatumWeighted DatumAtGridParticleEnergy;
 
+    extern cDatumTimed    DatumAtVertexNumberDensity_mu_positive,DatumAtVertexNumberDensity_mu_negative;
+    extern cDatumTimed    DatumAtVertexParticleFlux_mu_positive,DatumAtVertexParticleFlux_mu_negative;
+
+    extern cDatumStored   DatumAtVertexFluence;
+
     namespace DatumAtVertexPrevious {
       extern cDatumStored   DatumAtVertexElectricField;
       extern cDatumStored   DatumAtVertexMagneticField;
@@ -462,7 +467,7 @@ namespace PIC {
     public:
       bool ElectricField,MagneticField,PlasmaVelocity,PlasmaDensity;
       bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
-      bool PlasmaWaves;
+      bool PlasmaWaves,Fluence;
 
       class cPreviousVertexData {
       public:
@@ -481,7 +486,7 @@ namespace PIC {
       cVertexAllocationManager() {
         ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
         PlasmaTemperature=false,PlasmaPressure=false,MagneticFluxFunction=false;
-        PlasmaWaves=false;
+        PlasmaWaves=false,Fluence=true;
       }
     };
 
@@ -743,8 +748,22 @@ namespace PIC {
         }
       }
 
+      inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec,int SampleLength) {
+        if (Datum.offset>=0) {
+          if (SampleLength>0) {
+            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength;
+          }
+          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        }
+      }
+
+
       inline double GetDatumAverage(cDatumTimed& Datum, int spec) {
         return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
+      }
+
+      inline double GetDatumAverage(cDatumTimed& Datum, int spec,int SampleLength) {
+        return ((SampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength : 0.0;
       }
 
       //get data averaged over sampled weight
@@ -1300,6 +1319,11 @@ void DeleteAttachedParticles();
 
     // sample data from a particle
     void Sampling(long int ptr, double Weight, char* SamplingBuffer);
+    void Sampling();
+
+    //counter of the sampling cycles (can be different from PIC::SampleLength)
+    extern int SampleCycleCounter;
+
 
     // inject particle onto the field line:
     // 1st function is a wrapper in the case
@@ -3254,9 +3278,21 @@ void DeleteAttachedParticles();
         else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
       }
 
+      inline void GetDatumAverage(cDatumTimed Datum, double* Out, int spec,int SampleLength) {
+        if (SampleLength > 0) for (int i=0; i<Datum.length; i++) {
+          Out[i] = *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / SampleLength;
+        }
+        else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
+      }
+
       inline double GetDatumAverage(cDatumTimed Datum, int spec) {
         return (PIC::LastSampleLength > 0) ?  *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
       }
+
+      inline double GetDatumAverage(cDatumTimed Datum, int spec,int SampleLength) {
+        return (SampleLength > 0) ?  *(spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) / SampleLength : 0.0;
+      }
+
 
       //get data averaged over sampled weight
       //.......................................................................

@@ -10,6 +10,9 @@ int PIC::FieldLine::cFieldLineVertex::sampleDataLength=-1;
 int PIC::FieldLine::cFieldLineVertex::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 
+//sample cycle counter 
+int PIC::FieldLine::SampleCycleCounter=0;
+
 //offset of the field line related data in a particle state vector
 int PIC::FieldLine::ParticleDataOffset=-1; 
 
@@ -48,12 +51,20 @@ namespace PIC {
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
 
+    cDatumStored DatumAtVertexFluence(1,"\"Fluence\"", true); 
+
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
     cDatumTimed DatumAtVertexNumberDensity(1,"\"Number Density[1/m^3]\"",true);
     cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [J]\"",true);
 
+
+    cDatumTimed DatumAtVertexNumberDensity_mu_positive(1,"\"Number Density (mu positive) [1/m^3]\"",true); 
+    cDatumTimed DatumAtVertexNumberDensity_mu_negative(1,"\"Number Density (mu negative) [1/m^3]\"",true);
+
+    cDatumTimed DatumAtVertexParticleFlux_mu_positive(1,"\"Particle Flux (mu positive) [1/m^3]\"",true);
+    cDatumTimed DatumAtVertexParticleFlux_mu_negative(1,"\"Particle Flux (mu negative) [1/m^3]\"",true);
 
     cDatumWeighted DatumAtGridParticleEnergy(1,"\"Kinetic energy [J]\"",true);
 
@@ -727,7 +738,7 @@ namespace PIC {
 
           if ((*itrDatum)->type == PIC::Datum::cDatumSampled::Timed_) {
             ptrDatumTimed = static_cast<cDatumTimed*> ((*itrDatum));
-            Vertex->GetDatumAverage(*ptrDatumTimed, Value, 0);
+            Vertex->GetDatumAverage(*ptrDatumTimed, Value, 0,SampleCycleCounter);
           }
           else {
             ptrDatumWeighted = static_cast<cDatumWeighted*> ((*itrDatum));
@@ -782,6 +793,8 @@ namespace PIC {
       if (VertexAllocationManager.PreviousVertexData.PlasmaPressure==true)       DatumAtVertexPrevious::DatumAtVertexPlasmaPressure.      activate(Offset, &DataStoredAtVertex);
       if (VertexAllocationManager.PreviousVertexData.PlasmaWaves==true)          DatumAtVertexPrevious::DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
 
+      if (VertexAllocationManager.Fluence==true) DatumAtVertexFluence.activate(Offset, &DataStoredAtVertex);
+
       // activate data that is sampled
       long int SamplingOffset = Offset;
       Offset = 0;
@@ -790,6 +803,13 @@ namespace PIC {
       DatumAtVertexParticleNumber.  activate(Offset, &DataSampledAtVertex);
       DatumAtVertexNumberDensity.   activate(Offset, &DataSampledAtVertex);
       DatumAtVertexParticleEnergy.  activate(Offset, &DataSampledAtVertex);
+
+      DatumAtVertexNumberDensity_mu_positive.activate(Offset, &DataSampledAtVertex);
+      DatumAtVertexNumberDensity_mu_negative.activate(Offset, &DataSampledAtVertex);
+
+      DatumAtVertexParticleFlux_mu_positive.activate(Offset, &DataSampledAtVertex);
+      DatumAtVertexParticleFlux_mu_negative.activate(Offset, &DataSampledAtVertex);
+
 
       // assign offsets and data length
       cFieldLineVertex::SetDataOffsets(SamplingOffset, Offset);
@@ -846,10 +866,49 @@ namespace PIC {
         FieldLinesAll[iFieldLine].Output(fout, true);
       }
       
+      //reset the sanple counpter 
+      SampleCycleCounter=0;
+
       fclose(fout);
     }
 
     //=========================================================================
+    void Sampling() {
+      SampleCycleCounter++;
+
+      int iFieldLine,spec;
+      PIC::FieldLine::cFieldLineSegment *Segment;
+      long int ptr;
+      double LocalParticleWeight;
+
+      if (_SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
+        exit(__LINE__,__FILE__,"Error: the function is implemented only for the case _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_. Changed input file.");
+      }
+
+      if (DatumAtVertexFluence.is_active()==true) {
+        if (_SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) {
+           exit(__LINE__,__FILE__,"Error: the function is implemented only for the case _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_. Change input file."); 
+        }
+      }
+
+
+      for (iFieldLine=0;iFieldLine<nFieldLine;iFieldLine++) {
+        for (Segment=FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+          ptr=Segment->FirstParticleIndex;
+
+          while (ptr!=-1) {
+            spec=PIC::ParticleBuffer::GetI(ptr);
+
+            LocalParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+            LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
+
+            PIC::FieldLine::Sampling(ptr,LocalParticleWeight,NULL);
+            ptr=PIC::ParticleBuffer::GetNext(ptr);
+          }
+        }
+      }
+    }
+
     void Sampling(long int ptr, double Weight, char* CellSamplingBuffer){
       // namespace alias
       namespace PB = PIC::ParticleBuffer;
@@ -862,9 +921,10 @@ namespace PIC {
       double w = S - (int)S;
 
       //magnetic field
-      double B[3];
+      double B[3],l[3];
 
       FieldLinesAll[iFieldLine].GetMagneticField(B,S);
+      FieldLinesAll[iFieldLine].GetSegment(S)->GetDir(l);
 
       double AbsB = pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2], 0.5);
 
@@ -881,6 +941,7 @@ namespace PIC {
       v[1]=PB::GetVNormal(ptr);
       v[2]=0.0;
 
+      double CosPitchAngleSign=(v[0]*Vector3D::DotProduct(B,l)>0.0) ? 1.0 : -1.0;
 
       PB::GetX(x, ptr);
 
@@ -906,14 +967,52 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E,spec, (1-w));
 
+      if (CosPitchAngleSign>0.0) {
+        V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*Vector3D::Length(v)/volume, spec, (1-w));
+      }
+      else {
+        V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (1-w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*Vector3D::Length(v)/volume, spec, (1-w));  
+      }
+
+      if (DatumAtVertexFluence.is_active()==true) {
+        double t;
+
+        V->GetDatum(DatumAtVertexFluence,t);
+        t+=Weight/volume*Vector3D::Length(v)*(1-w)/volume*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+        V->SetDatum(DatumAtVertexFluence,t);
+      }
+
+
       V = V->GetNext();
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume,spec,  (w));
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E,spec, w);
 
+      if (CosPitchAngleSign>0.0) {
+        V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_positive,Weight*Vector3D::Length(v)/volume, spec, (w));
+      }
+      else {
+        V->SampleDatum(DatumAtVertexNumberDensity_mu_negative,Weight/volume, spec, (w));
+        V->SampleDatum(DatumAtVertexParticleFlux_mu_negative,Weight*Vector3D::Length(v)/volume, spec, (w));
+      }
+
+      if (DatumAtVertexFluence.is_active()==true) {
+        double t;
+
+        V->GetDatum(DatumAtVertexFluence,t);
+        t+=Weight/volume*Vector3D::Length(v)*(w)/volume*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+        V->SetDatum(DatumAtVertexFluence,t);
+      }
+
+
       //.........................
-      *((double*)(CellSamplingBuffer+DatumAtGridParticleEnergy.offset))+=Weight*E;
+      if (CellSamplingBuffer!=NULL) {
+        *((double*)(CellSamplingBuffer+DatumAtGridParticleEnergy.offset))+=Weight*E;
+      }
     }
 
     //=========================================================================
