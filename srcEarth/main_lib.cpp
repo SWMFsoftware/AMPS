@@ -107,8 +107,8 @@ double localResolution(double *x) {
     } else {
       if (r<0.98*rSphere) res=rSphere;
       else if (r<2*1.05*rSphere) res=localSphericalSurfaceResolution(x);
-      else if (r<3.0*rSphere) res=2.5* rSphere * dxMinGlobal;
-      else res=6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_TARGET_))*(r-2.0*_RADIUS_(_TARGET_)),1.0);
+      else if (r<3.0*rSphere) res=0.5*2.5* rSphere * dxMinGlobal;
+      else res=0.5*6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_TARGET_))*(r-2.0*_RADIUS_(_TARGET_)),1.0);
     }
   }
 
@@ -116,10 +116,10 @@ double localResolution(double *x) {
 res*=3;
 
   if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(_PIC_NIGHTLY_TEST__REDUCE_RESOLUTION_MODE_==_PIC_MODE_ON_)) { 
-    return 2.5*res;
+    return 0.3*2.5*res;
   }
 
-  return 0.3*  2.5*res;
+  return 0.3*0.3*  2.5*res;
 }
 
 //set up the local time step

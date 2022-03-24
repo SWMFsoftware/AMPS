@@ -64,6 +64,8 @@ MoverIntegratorMode=Boris-relativistic
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
 
+ OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
   define _PIC_PARTICLE_EXCHANGE_ _PIC_PARTICLE_EXCHANGE_BUFFERED_
 
   define _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_  _PIC_DEBUGGER_MODE_OFF_
@@ -84,9 +86,9 @@ MoverIntegratorMode=Boris-relativistic
 
   RequestedParticleBufferLength=100000000
 
-  InitialSampleLength=100
+  InitialSampleLength=10  !00
 
-  BlockCells=2,2,2
+  BlockCells=4,4,4
   GhostCells=1,1,1
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 
@@ -153,11 +155,13 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
  define _PIC_USER_PARTICLE_PROCESSING__FUNCTION_(ptr,FirstParticleCell,node)  Earth::EnergeticParticlesPhysics(ptr,FirstParticleCell,node)
 
   define _MODEL_APPLICATION_  _MODEL_APPLICATION_POINT_SOURCE_
+
+  define _PIC_DISCONNECTED_MPI_PROCESSES_ _PIC_MODE_ON_
 #endGeneral
 
 #interface
-  cell_centered_linear_interpolation_mode=amps !!off !amps,swmf,off  
-  cell_centered_linear_interpolation_src=default
+! cell_centered_linear_interpolation_mode=amps !!off !amps,swmf,off  
+! cell_centered_linear_interpolation_src=default
 
   geopack=on
   T96=on
