@@ -59,6 +59,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   EnforceRequestedMeshResolution=off !on,off
   InitialSampleLength=1
 
+  define _TEMP_FIX_VISUALIZATION_ 1
+
   RequestedParticleBufferLength=2000000
 
   define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_
