@@ -1316,7 +1316,10 @@ void PIC::Sampling::Sampling() {
 
 //the nexr line is tempopaly commented before cleaning up the UpdateData 
 //presence of the line changes the reference solution significantly, so it is commented for now
-//              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
+
+#ifdef _TEMP_FIX_VISUALIZATION_
+              if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::UpdateData();
+#endif
 
                 switch (_PIC_OUTPUT_MODE_) {
                 case _PIC_OUTPUT_MODE_DISTRIBUTED_FILES_:

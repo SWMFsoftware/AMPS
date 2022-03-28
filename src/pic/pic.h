@@ -1336,7 +1336,7 @@ void DeleteAttachedParticles();
   //split/merge particles
   namespace ParticleSplitting {
     namespace Split {
-      void Scatter(int particle_num_limit);
+      void Scatter(int particle_num_limit_min,int particle_num_limit_max);
     }
   }
 
@@ -2055,6 +2055,8 @@ void DeleteAttachedParticles();
     inline void SetI(int spec,byte* ParticleDataStart) {
       unsigned char flag,t=spec;
 
+      if ((spec<0)||(spec>=PIC::nTotalSpecies)) exit(__LINE__,__FILE__,"Error: out of range");
+
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
       #endif
@@ -2085,6 +2087,8 @@ void DeleteAttachedParticles();
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetI(int spec,long int ptr) {
       unsigned char flag,t=spec;
+
+      if ((spec<0)||(spec>=PIC::nTotalSpecies)) exit(__LINE__,__FILE__,"Error: out of range");
 
       #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
       PIC::Debugger::SaveParticleDataIntoDebuggerDataStream(&spec,sizeof(int),__LINE__,__FILE__);
