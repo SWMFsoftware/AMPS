@@ -85,8 +85,6 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   !function = OH::user_set_face_boundary
    define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
 
-  define _TEMP_FIX_VISUALIZATION_
-
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
 
   RndPrecisionLimit=on,limit=1E-5
@@ -110,7 +108,7 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   PrePopulateDomain=on \\ !on,off
   n=0.18E6,T=6519,v=(100E3,0,0) \\
-  ModelParticleNumber=1000000 
+  ModelParticleNumber=2000000 
  
   ! user defined global time step
   UserGlobalTimeStep=3.154e7   ! default = -1.0 (i.e. use time step defined by AMPS)
