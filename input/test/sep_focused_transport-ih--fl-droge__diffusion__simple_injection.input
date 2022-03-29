@@ -3,7 +3,7 @@
 
 #General
   define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) SEP::ParticleMover_Droge_2009_AJ(ptr,LocalTimeStep,node)
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Droge_2009_AJ(ptr,LocalTimeStep,node)
 
   define _SEP_DIFFUSION_MODEL_ _DIFFUSION_JOKIPII1966AJ_
 
