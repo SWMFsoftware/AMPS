@@ -55,6 +55,7 @@
 #include "SpiceEmptyDefinitions.h"
 #endif
 
+#include "sep.dfn"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -68,11 +69,56 @@
 #define _SEP_DIFFUSION_MODEL_  _DIFFUSION_NONE_
 #endif 
 
+//class that is used for keeping information of the injected faces
+class cBoundaryFaceDescriptor {
+public:
+  int nface;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+
+  cBoundaryFaceDescriptor() {
+    nface=-1,node=NULL;
+  }
+};
+
+class cCompositionGroupTable {
+public:
+  int FistGroupSpeciesNumber;
+  int nModelSpeciesGroup;
+  double minVelocity,maxVelocity; //the velocity range of particles from a given species group that corresponds to the energy range from Earth::BoundingBoxInjection
+  double GroupVelocityStep;   //the velocity threhold after which the species number in the group is switched
+  double maxEnergySpectrumValue;
+
+  double inline GetMaxVelocity(int spec) {
+    int nGroup=spec-FistGroupSpeciesNumber;
+
+    if ((nGroup<0)||(spec>=FistGroupSpeciesNumber+nModelSpeciesGroup)) exit(__LINE__,__FILE__,"Error: cannot recogniza the velocit group");
+    return minVelocity+(nGroup+1)*GroupVelocityStep;
+  }
+
+  double inline GetMinVelocity(int spec) {
+    int nGroup=spec-FistGroupSpeciesNumber;
+
+    if ((nGroup<0)||(spec>=FistGroupSpeciesNumber+nModelSpeciesGroup)) exit(__LINE__,__FILE__,"Error: cannot recogniza the velocit group");
+    return minVelocity+nGroup*GroupVelocityStep;
+  }
+
+  cCompositionGroupTable() {
+    FistGroupSpeciesNumber=-1,nModelSpeciesGroup=-1;
+    minVelocity=-1.0,maxVelocity=-1.0,GroupVelocityStep=-1.0;
+  }
+};
 
 
 namespace SEP {
   using namespace Exosphere;
 
+  void Init();
+  
+  //composition table of the GCR composition
+  extern cCompositionGroupTable *CompositionGroupTable;
+  extern int *CompositionGroupTableIndex;
+  extern int nCompositionGroups;
+  
   //functions used to sample and output macroscopic somulated data into the AMPS' output file
   namespace OutputAMPS {
     namespace SamplingParticleData {
@@ -612,6 +658,59 @@ namespace SEP {
       long int sphereParticleInjection(void *SphereDataPointer);
     }
   }
+  
+  
+  //injection of new particles into the system
+    namespace BoundingBoxInjection {
+      //Energy limis of the injected particles
+      const double minEnergy=1.0*MeV2J;
+      const double maxEnergy=1.0E4*MeV2J;
+
+      extern bool BoundaryInjectionMode;
+
+      //the list of the faces located on the domain boundary through which particles can be injected
+      extern int nTotalBoundaryInjectionFaces;
+
+      //model that specify injectino of the gakactic cosmic rays
+      namespace GCR {
+
+        extern double *InjectionRateTable;  //injection rate for a given species/composition group component
+        extern double *maxEnergySpectrumValue;  //the maximum value of the energy epectra for a given species/composition group component
+
+        //init the model
+        void Init();
+
+        //init and populate the tables used by the particle injectino procedure
+        void InitBoundingBoxInjectionTable();
+
+        //source rate and geenration of GCRs
+        double InjectionRate(int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+        void GetNewParticle(PIC::ParticleBuffer::byte *ParticleData,double *x,int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,double *ExternalNormal);
+
+        //init the model
+        void Init();
+
+      }
+      
+      //model that specifies injectino of SEP
+      namespace SEP {
+
+        //source rate and generation of SEP
+        double InjectionRate(int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+        void GetNewParticle(PIC::ParticleBuffer::byte *ParticleData,double *x,int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,double *ExternalNormal);
+
+        //init the model
+        void Init();
+      }
+      
+      //general injection functions
+      bool InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+      long int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+
+      long int InjectionProcessor(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+      long int InjectionProcessor(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+      double InjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+    }
 
 
   class cFieldLine {

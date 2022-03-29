@@ -71,6 +71,7 @@ void amps_init_mesh() {
 
   //set the function for the particle sampling 
   SEP::Sampling::Init();
+  SEP::Init();
 
   //set the particle injection function used in case magnetic field lines are used 
   if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
@@ -176,7 +177,10 @@ void amps_init_mesh() {
     Sphere->InjectionRate=SEP::ParticleSource::InnerBoundary::sphereInjectionRate;
     Sphere->faceat=0;
     Sphere->ParticleSphereInteraction=ParticleSphereInteraction;
-    Sphere->InjectionBoundaryCondition=SEP::ParticleSource::InnerBoundary::sphereParticleInjection;
+
+    if (_DOMAIN_GEOMETRY_!=_DOMAIN_GEOMETRY_BOX_) {
+      Sphere->InjectionBoundaryCondition=SEP::ParticleSource::InnerBoundary::sphereParticleInjection;
+    }
 
     Sphere->PrintTitle=SEP::Sampling::OutputSurfaceDataFile::PrintTitle;
     Sphere->PrintVariableList=SEP::Sampling::OutputSurfaceDataFile::PrintVariableList;
@@ -435,9 +439,11 @@ void amps_init() {
   PIC::ParticleWeightTimeStep::initTimeStep();
 
   //create the list of mesh nodes where the injection boundary conditinos are applied
-  PIC::BC::BlockInjectionBCindicatior=SEP::ParticleSource::OuterBoundary::BoundingBoxParticleInjectionIndicator;
-  PIC::BC::userDefinedBoundingBlockInjectionFunction=SEP::ParticleSource::OuterBoundary::BoundingBoxInjection;
-  PIC::BC::InitBoundingBoxInjectionBlockList();
+  if (_DOMAIN_GEOMETRY_==_DOMAIN_GEOMETRY_BOX_) {
+    PIC::BC::BlockInjectionBCindicatior=SEP::BoundingBoxInjection::InjectionIndicator;
+    PIC::BC::userDefinedBoundingBlockInjectionFunction=SEP::BoundingBoxInjection::InjectionProcessor;
+    PIC::BC::InitBoundingBoxInjectionBlockList();
+  }
 
   //set up the particle weight
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate;

@@ -102,10 +102,9 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   double AbsB=Vector3D::Normalize(b);
   mu=Vector3D::DotProduct(v,b)/Vector3D::Length(v);
 
-  if (AbsB==0.0) {
-   PIC::ParticleBuffer::DeleteParticle(ptr);
-   return _PARTICLE_DELETED_ON_THE_FACE_;
-  }
+//  if (AbsB==0.0) {
+   //return _PARTICLE_DELETED_ON_THE_FACE_;
+//  }
 
   //create a coordinate frame where 'x' and 'y' are orthogonal to 'b'
   double e0[3],e1[3];
@@ -231,9 +230,11 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   if (mu<-1.0) mu=-1.0;
 
   //determine the final location of the particle
-  for (idim=0;idim<3;idim++) {
-    x[idim]+=(AbsV*b[idim]+SwU[idim])*dtTotal; 
-  }
+  if (AbsB!=0.0) {
+    for (idim=0;idim<3;idim++) {
+      x[idim]+=(AbsV*b[idim]+SwU[idim])*dtTotal; 
+    }
+  } else for (idim=0;idim<3;idim++) x[idim]+=v[idim]*dtTotal;
 
   //determine the final velocity of the particle in the frame related to the Sun 
   switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
@@ -247,7 +248,7 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
 
   double sin_mu=sqrt(1.0-mu*mu);
 
-  for (idim=0;idim<3;idim++) {
+  if (AbsB!=0.0) for (idim=0;idim<3;idim++) {
     v[idim]=AbsV*(b[idim]*mu+e0[idim]*sin_mu)+SwU[idim];  
   }
 
