@@ -85,6 +85,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   !function = OH::user_set_face_boundary
    define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
 
+  define _TEMP_FIX_VISUALIZATION_
+
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
 
   RndPrecisionLimit=on,limit=1E-5
