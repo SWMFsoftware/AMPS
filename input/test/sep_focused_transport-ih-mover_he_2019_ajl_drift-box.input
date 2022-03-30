@@ -25,10 +25,10 @@ CouplerMode=swmf !!T96 !ices !!off, ices, swmf
 
   define  _SEP_MOVER_DRIFT_ _PIC_MODE_ON_
 
- TrajectoryTracing=on
+ !TrajectoryTracing=on
  MaxSampledTrajectoryNumber=1000
 
- define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_ON_
+ !define _PIC_PARTICLE_TRACKER_MODE_ _PIC_MODE_ON_
 
  define _PIC_USER_DEFING_PARTICLE_SAMPLING__NODE_(ParticleData,LocalParticleWeight,SamplingBuffer,spec,Node) SEP::OutputAMPS::SamplingParticleData::SampleParticleData(ParticleData,LocalParticleWeight,SamplingBuffer,spec,Node) 
 
