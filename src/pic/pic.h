@@ -1337,6 +1337,7 @@ void DeleteAttachedParticles();
   namespace ParticleSplitting {
     namespace Split {
       void Scatter(int particle_num_limit_min,int particle_num_limit_max);
+      void SplitWithVelocityShift(double shift_max,int particle_num_limit_min,int particle_num_limit_max);
     }
   }
 

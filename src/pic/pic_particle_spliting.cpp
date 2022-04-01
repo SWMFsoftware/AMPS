@@ -3,6 +3,187 @@
 
 //functions for splitting/merging particles 
 
+
+void PIC::ParticleSplitting::Split::SplitWithVelocityShift(double shift_max,int particle_num_limit_min,int particle_num_limit_max) {
+  int i,j,k,inode;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+
+  auto GetParticleNumber = [&] (int *ParticleNumberTable,int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    long int p;
+    int spec;
+    
+    for (spec=0;spec<PIC::nTotalSpecies;spec++) ParticleNumberTable[spec]=0;
+    
+    p=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+    
+    while (p!=-1) {
+      ParticleNumberTable[PIC::ParticleBuffer::GetI(p)]++;
+      p=PIC::ParticleBuffer::GetNext(p);
+    }    
+  };
+    
+  //Reduce particle number  
+  class cParticleDescriptor {
+  public:
+    long int p;
+    double w;
+  };
+
+  auto ReduceParticleNumber = [&] (int spec,int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node)  {
+    vector<cParticleDescriptor> ParticleList;  
+    cParticleDescriptor t;
+    double *v,w_max=0.0,SummedWeight=0.0,w;
+    int nModelParticles=0;
+    long int p;
+
+    p=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) { 
+        t.p=p;
+        t.w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        ParticleList.push_back(t);
+
+        SummedWeight+=t.w;
+        nModelParticles++;
+
+        if (w_max<t.w) w_max=t.w;
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+
+    //sort the particle list  
+    std::sort(ParticleList.begin(),ParticleList.end(),
+        [](const cParticleDescriptor& a,const cParticleDescriptor& b) {return a.w>b.w;});
+    
+    //delete particles 
+    int nDeleteParticles=nModelParticles-particle_num_limit_max,ip; 
+    double RemovedParticleWeight=0.0;
+    int ii;
+    
+    for (ii=0;ii<nDeleteParticles;ii++) {
+      RemovedParticleWeight+=ParticleList[ii].w;
+      PIC::ParticleBuffer::DeleteParticle(ParticleList[ii].p,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+    }
+    
+
+    //distribute the removed weight among particles that left in the system 
+    for (;ii<nModelParticles;ii++) {
+      w=ParticleList[ii].w+RemovedParticleWeight/(SummedWeight-RemovedParticleWeight);    
+      p=ParticleList[ii].p;
+
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(w,p);
+    }
+  }; 
+
+  auto IncreseParticleNumber = [&] (int spec,int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    double MeanV[3]={0.0,0.0,0.0},*v,w;
+    double MeanV2[3]={0.0,0.0,0.0};
+    
+    vector<cParticleDescriptor> ParticleList;
+    cParticleDescriptor t;
+    double w_max=0.0,SummedWeight=0.0,ThermalSpeed=0.0;
+    int idim,nModelParticles=0;
+    long int p;
+
+    p=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) {
+        t.p=p;
+        t.w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        ParticleList.push_back(t); 
+
+        SummedWeight+=t.w;
+        if (w_max<t.w) w_max=t.w;
+
+        v=PIC::ParticleBuffer::GetV(p); 
+
+        for (int idim=0;idim<3;idim++) {
+          MeanV[idim]+=t.w*v[idim];
+          MeanV2[idim]+=t.w*v[idim]*v[idim];
+        }
+
+        nModelParticles++;
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+
+    for (idim=0;idim<3;idim++) ThermalSpeed+=MeanV2[idim]/SummedWeight-MeanV[idim]*MeanV[idim]/(SummedWeight*SummedWeight); 
+
+    ThermalSpeed=sqrt(fabs(ThermalSpeed));
+
+    //add new particles in the system
+    int nNewParticles=particle_num_limit_min-nModelParticles;
+    int ip;
+    long int pnew;
+    double l[3],*vnew;
+    bool flag;
+
+    for (int ii=0;ii<nNewParticles;ii++) {
+      flag=true;
+ 
+      while (flag==true) {
+        ip=(int)(rnd()*nModelParticles);
+  
+        if (ParticleList[ip].w/w_max>rnd()) { //split particles with larger weight  
+          pnew=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]); 
+          PIC::ParticleBuffer::CloneParticle(pnew,ParticleList[ip].p);
+  
+          //set new weight for both particles 
+          ParticleList[ip].w/=2.0;
+          t=ParticleList[ip];
+          t.p=pnew;
+          ParticleList.push_back(t);
+          nModelParticles++;
+          flag=false;
+  
+          PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleList[ip].w,ParticleList[ip].p);
+          PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleList[ip].w,pnew);
+  
+          //perturb a new particle velocity;
+          double dSpeed=shift_max*rnd()*ThermalSpeed; 
+  
+          Vector3D::Distribution::Uniform(l); 
+  
+          //get velocity for the new particle 
+          vnew=PIC::ParticleBuffer::GetV(pnew); 
+  
+          for (idim=0;idim<3;idim++) vnew[idim]+=dSpeed*l[idim];
+        }
+      }
+    }
+  };
+
+  //loop through the nodes
+  int ParticleNumberTable[PIC::nTotalSpecies],spec; 
+
+  for (inode=0;inode<PIC::DomainBlockDecomposition::nLocalBlocks;inode++) {
+    node=PIC::DomainBlockDecomposition::BlockTable[inode];
+
+    if (node->block!=NULL) {
+      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        GetParticleNumber(ParticleNumberTable,i,j,k,node);
+        
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+          if (ParticleNumberTable[spec]>particle_num_limit_max) {
+            ReduceParticleNumber(spec,i,j,k,node);
+          }
+          else if ((0<ParticleNumberTable[spec])&&(ParticleNumberTable[spec]<particle_num_limit_min)) {
+            IncreseParticleNumber(spec,i,j,k,node);
+          }
+        }
+      }
+    }      
+  }
+  
+}
+
+
+
+
 void PIC::ParticleSplitting::Split::Scatter(int particle_num_limit_min,int particle_num_limit_max) {
   int inode,i,j,k,i0,j0,k0,di,dj,dk,nParticles;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;

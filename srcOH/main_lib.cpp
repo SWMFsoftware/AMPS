@@ -424,7 +424,7 @@ void amps_time_step(){
      PIC::TimeStep();
 
     //run the particle splitting procedure 
-//    PIC::ParticleSplitting::Split::Scatter(100,110); 
+    //PIC::ParticleSplitting::Split::SplitWithVelocityShift(0.01,10,15); 
 
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
