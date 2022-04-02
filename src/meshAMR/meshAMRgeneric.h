@@ -1636,6 +1636,10 @@ public:
   typedef bool (*fUserNodeSplitCriterion)(cTreeNodeAMR<cBlockAMR>*); 
   fUserNodeSplitCriterion UserNodeSplitCriterion;
 
+  //assemble the distributed output files into a single file 
+  bool AssembleDistributedOutputFile;
+  void SetAssembleDistributedOutputFile(bool flag) {AssembleDistributedOutputFile=flag;} 
+
   //accept tree node function
   typedef bool (*cAcceptBlockFunc)(double*,double*);
   cAcceptBlockFunc accepltTreeNodeFunction;
@@ -2502,6 +2506,8 @@ public:
      //extra parallel load "window" allowed when rebalancing the parallel load 
      ParallelLoadEPS=0.1;
 
+     //assemble the distributed output files into a single file
+     bool AssembleDistributedOutputFile;
 
      //user-defined criterion for node splitting
      UserNodeSplitCriterion=NULL;
@@ -7776,23 +7782,23 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
    ResetNodeIndex(rootTree);
 
-   sprintf(fname_data,"%s.tread=%ld.data",fname,ThisThread); 
+   sprintf(fname_data,"%s.thread=%ld.data",fname,ThisThread); 
    fData=fopen(fname_data,"w");
 
    //print the data and create the tetrahedtal mesh of cut cells
    OutputDataFile(rootTree,TetrahedronList,ConnectivityList);
 
    //print the header and combine it with the datafile 
-   sprintf(fname_header,"%s.tread=%ld.header",fname,ThisThread);
+   sprintf(fname_header,"%s.thread=%ld.header",fname,ThisThread);
    fHeader=fopen(fname_header,"w");
 
-   sprintf(fname_variables,"%s.tread=%ld.variables",fname,ThisThread);
+   sprintf(fname_variables,"%s.thread=%ld.variables",fname,ThisThread);
    fVariables=fopen(fname_variables,"w");
 
    PrintHeader(fVariables,fHeader);
   
    //Print the connectivity list 
-   sprintf(fname_connectivity,"%s.tread=%ld.connectivity",fname,ThisThread);
+   sprintf(fname_connectivity,"%s.thread=%ld.connectivity",fname,ThisThread);
    fConnectivity=fopen(fname_connectivity,"w");
 
    PrintConnectivity(fConnectivity,ConnectivityList);
@@ -7820,7 +7826,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
  
    MPI_Gather(&nSubDomainTotalCells,1,MPI_INT,ConnectivityListLengthTable,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
-   if (ThisThread==0) {
+   if ((ThisThread==0)&&(AssembleDistributedOutputFile==true))  {
      std::ofstream  dst(fname,   std::ios::binary);
      std::ifstream  src_variables(fname_variables, std::ios::binary);
  
@@ -7828,10 +7834,10 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
      src_variables.close();
 
      for (int thread=0;thread<nTotalThreads;thread++) {
-       sprintf(fname_header,"%s.tread=%ld.header",fname,thread);
-       sprintf(fname_variables,"%s.tread=%ld.variables",fname,thread);
-       sprintf(fname_data,"%s.tread=%ld.data",fname,thread);
-       sprintf(fname_connectivity,"%s.tread=%ld.connectivity",fname,thread);
+       sprintf(fname_header,"%s.thread=%ld.header",fname,thread);
+       sprintf(fname_variables,"%s.thread=%ld.variables",fname,thread);
+       sprintf(fname_data,"%s.thread=%ld.data",fname,thread);
+       sprintf(fname_connectivity,"%s.thread=%ld.connectivity",fname,thread);
 
        if (ConnectivityListLengthTable[thread]!=0) {
          std::ifstream  src_header(fname_header, std::ios::binary);
