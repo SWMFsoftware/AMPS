@@ -57,15 +57,17 @@ void PIC::BC::InjectionBoundaryConditions() {
   }
 
   //model the particle injection through the face of the bounding box
-  list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* >::iterator end,nodeptr;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
 
 #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
   double EndTime,StartTime=MPI_Wtime();
 #endif
 
-  if (userDefinedBoundingBlockInjectionFunction!=NULL) for (nodeptr=boundingBoxInjectionBlocksList.begin(),end=boundingBoxInjectionBlocksList.end();nodeptr!=end;nodeptr++) {
-    node=*nodeptr;
+  int test_cnt=0;
+
+  if (userDefinedBoundingBlockInjectionFunction!=NULL) for (list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* >::iterator it=boundingBoxInjectionBlocksList.begin();it!=boundingBoxInjectionBlocksList.end();it++) {
+    node=*it;
+    test_cnt++;
 
     if (node->Thread==PIC::Mesh::mesh->ThisThread) {
       nTotalInjectedParticles+=userDefinedBoundingBlockInjectionFunction(node);

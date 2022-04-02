@@ -4266,11 +4266,11 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode=NULL;
   PIC::ParticleBuffer::byte *ParticleData;
   int idim,i,j,k,spec;
-  double *v,*x;
+  double v[3],x[3];
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-  v=PIC::ParticleBuffer::GetV(ParticleData);
-  x=PIC::ParticleBuffer::GetX(ParticleData);
+  PIC::ParticleBuffer::GetV(v,ParticleData);
+  PIC::ParticleBuffer::GetX(x,ParticleData);
 
   static long int nCall=0;
   nCall++;
@@ -4304,6 +4304,8 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   if ((block=newNode->block)==NULL) {
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
+
+  PIC::ParticleBuffer::SetX(x,ParticleData);
 
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
