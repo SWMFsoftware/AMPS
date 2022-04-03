@@ -2507,7 +2507,7 @@ public:
      ParallelLoadEPS=0.1;
 
      //assemble the distributed output files into a single file
-     bool AssembleDistributedOutputFile;
+     AssembleDistributedOutputFile=true;
 
      //user-defined criterion for node splitting
      UserNodeSplitCriterion=NULL;
