@@ -224,4 +224,10 @@ void RunImpulseSource() {
      }
   }
 
+  char fname[400];
+
+  sprintf(fname,"%s/test_Earth-Impulse-Neutron.dat",PIC::OutputDataFileDirectory);
+  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+
+
 }

@@ -207,7 +207,7 @@ define _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ _PIC_DEBUGGER_MODE__VARIA
 
   ImpulseSource=on \\
     Spectrum=constant(1.0E1*MeV2J) \\ 
-    New: x=100.0E3+_RADIUS_(_TARGET_),0,0.5*_RADIUS_(_TARGET_); spec=NEUTRON,time=0,Source=1.0E11,npart=50.0E6 
+    New: x=100.0E3+_RADIUS_(_TARGET_),0,0.5*_RADIUS_(_TARGET_); spec=NEUTRON,time=0,Source=1.0E11,npart=1.0E6 
 
   SphericalShells=off \\
     x=125.0E3+_RADIUS_(_TARGET_),400.0E3+_RADIUS_(_TARGET_), \\

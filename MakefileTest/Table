@@ -1797,6 +1797,22 @@ Compile=
 >>>@echo "test_Earth-Impulse-Source_compile... done" >> test_Earth-Impulse-Source$(TESTEarth-Impulse-Source-REF).diff
 <#
 
+#>
+Name=test/Earth-Impulse-Neutron-Source
+Time=6
+
+Outs=test_Earth-Impulse-Neutron 
+Keys= -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+
+Compile=
+>>>@echo "test_Earth-Impulse-Neutron-Source_compile..." > test_Earth-Impulse-Neutron-Source$(TESTEarth-Impulse-Neutron-Source-REF).diff
+>>>./Config.pl -application=earth-impulse-source-neutron -amps-test=on $(TESTEarth-Impulse-Neutron-SourceKEYS)
+>>>rm -rf srcTemp
+>>>-@($(MAKE) -j8 amps)
+>>>@echo "test_Earth-Impulse-Neutron-Source_compile... done" >> test_Earth-Impulse-Neutron-Source$(TESTEarth-Impulse-Neutron-Source-REF).diff
+
+
+<#
 
 -------------------------------------------------------------------------------
 #>
