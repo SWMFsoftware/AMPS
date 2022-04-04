@@ -24,12 +24,12 @@ void Earth::EnergeticParticlesPhysics(long int ptr,long int& FirstParticleCell,c
    
 void Earth::ElectronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double dt=node->block->GetLocalTimeStep(_ELECTRON_SPEC_);
-  double *v,n,*x,freq;
+  double v[3],n,x[3],freq;
 
   const double CrossSection=1.2E-19; //m^2 J. W. Daiber and H. F. Waldron Scattering Cross Sections of Argon and Atomic Oxygen to Thermal Electrons 
     
-  x=PIC::ParticleBuffer::GetX(ptr);
-  v=PIC::ParticleBuffer::GetV(ptr);
+  PIC::ParticleBuffer::GetX(x,ptr);
+  PIC::ParticleBuffer::GetV(v,ptr);
 
   n=GetAtmosphereTotalNumberDensity(x); 
   freq=n*CrossSection*Vector3D::Length(v); 
@@ -50,12 +50,12 @@ void Earth::ElectronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAM
    
 void Earth::ProtonPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double dt=node->block->GetLocalTimeStep(_ELECTRON_SPEC_);
-  double *v,n,*x,freq;
+  double v[3],n,x[3],freq;
     
   const double CrossSection=1.5E-19;        
 
-  x=PIC::ParticleBuffer::GetX(ptr);
-  v=PIC::ParticleBuffer::GetV(ptr);
+  PIC::ParticleBuffer::GetX(x,ptr);
+  PIC::ParticleBuffer::GetV(v,ptr);
 
   n=GetAtmosphereTotalNumberDensity(x);
   freq=n*CrossSection*Vector3D::Length(v);
@@ -76,7 +76,7 @@ void Earth::ProtonPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<
 
 void Earth::NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double dt=node->block->GetLocalTimeStep(_ELECTRON_SPEC_);
-  double *v,n,*x,freq_total,freq_collision;
+  double v[3],n,x[3],freq_total,freq_collision;
 
   const double CrossSection=1.5E-19; 
   const double BetaDecayLifetime=879.6;  
@@ -84,8 +84,8 @@ void Earth::NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR
   //two parallel processes can occur: 1. interaction with the atmosphere, and 2. beta-decay
   const double freq_decay=1.0/BetaDecayLifetime;
   
-  x=PIC::ParticleBuffer::GetX(ptr);
-  v=PIC::ParticleBuffer::GetV(ptr);
+  PIC::ParticleBuffer::GetX(x,ptr);
+  PIC::ParticleBuffer::GetV(v,ptr);
 
   n=GetAtmosphereTotalNumberDensity(x);
   freq_collision=n*CrossSection*Vector3D::Length(v);

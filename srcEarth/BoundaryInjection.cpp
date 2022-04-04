@@ -114,9 +114,9 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
 
            //apply the injection phase space limiting condition
            if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::ApplyInjectionPhaseSpaceLimiting==true) {
-             double *v;
+             double v[3];
 
-             v=PIC::ParticleBuffer::GetV(tempParticleData);
+             PIC::ParticleBuffer::GetV(v,tempParticleData);
 
              if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::TestInjectedParticleProperties(spec,x,v,0,nface)==false) continue;
            }

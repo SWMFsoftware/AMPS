@@ -203,9 +203,9 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
    // res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
    if (_EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_ == _PIC_MODE_ON_) {
-     double dx,*v;
+     double dx,v[3];
 
-     v=PIC::ParticleBuffer::GetV(ptr);
+     PIC::ParticleBuffer::GetV(v,ptr);
      dx=startNode->GetCharacteristicCellSize(); 
 
      res=PIC::Mover::Boris(ptr,dx/Vector3D::Length(v),startNode);
