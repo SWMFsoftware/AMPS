@@ -282,7 +282,13 @@ void amps_init_mesh() {
     SEP::Mesh::InitFieldLineAMPS(&field_line_new);
   }
 
-  PIC::Mesh::mesh->UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
+
+  //refining the mesh along a set of magnetic field lines: use onle wher model SEP
+  if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) { 
+    PIC::Mesh::mesh->UserNodeSplitCriterion=SEP::Mesh::NodeSplitCriterion;
+  }
+
+
   //generate only the tree
   PIC::Mesh::mesh->AllowBlockAllocation=false;
   PIC::Mesh::mesh->init(xmin,xmax,SEP::Mesh::localResolution);

@@ -49,6 +49,14 @@
 #endif
 
 
+//Model case (SEP,GCR, .....)
+#define _MODEL_CASE_GCR_TRANSPORT_ 0
+#define _MODEL_CASE_SEP_TRANSPORT_ 1
+
+#ifndef _MODEL_CASE_ 
+#define _MODEL_CASE_ _MODEL_CASE_SEP_TRANSPORT_
+#endif 
+
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
 #include "SpiceUsr.h"
 #else

@@ -25,7 +25,12 @@ double SEP::Mesh::localSphericalSurfaceResolution(double *x) {
   int idim;
   double SubsolarAngle;
 
-  res=(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) ? 0.1 : 10.0; 
+  if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) {
+    res=(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) ? 0.1 : 10.0; 
+  }
+  else {
+    res=2.0;
+  }
 
   return res*_RADIUS_(_SUN_);
 }
