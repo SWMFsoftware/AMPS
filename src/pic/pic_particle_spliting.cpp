@@ -32,7 +32,7 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift(double shift_max,int 
   auto ReduceParticleNumber = [&] (int spec,int i,int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node)  {
     vector<cParticleDescriptor> ParticleList;  
     cParticleDescriptor t;
-    double *v,w_max=0.0,SummedWeight=0.0,w;
+    double *v,w_max=0.0,w_min=-1.0,SummedWeight=0.0,w;
     int nModelParticles=0;
     long int p;
 
@@ -48,14 +48,15 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift(double shift_max,int 
         nModelParticles++;
 
         if (w_max<t.w) w_max=t.w;
+        if ((w_min<0.0)||(w_min>t.w)) w_min=t.w; 
       }
 
       p=PIC::ParticleBuffer::GetNext(p);
     }
 
     //sort the particle list  
-    std::sort(ParticleList.begin(),ParticleList.end(),
-        [](const cParticleDescriptor& a,const cParticleDescriptor& b) {return a.w>b.w;});
+//    std::sort(ParticleList.begin(),ParticleList.end(),
+//        [](const cParticleDescriptor& a,const cParticleDescriptor& b) {return a.w>b.w;});
     
     //delete particles 
     int nDeleteParticles=nModelParticles-particle_num_limit_max,ip; 
@@ -63,14 +64,30 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift(double shift_max,int 
     int ii;
     
     for (ii=0;ii<nDeleteParticles;ii++) {
-      RemovedParticleWeight+=ParticleList[ii].w;
-      PIC::ParticleBuffer::DeleteParticle(ParticleList[ii].p,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+      const bool _search_continue=true;
+      const bool _search_completed=false; 
+
+      bool flag=_search_continue;
+      int ip, cnt=0;
+
+      while ((++cnt<1000000)&&(flag==_search_continue)) {
+        ip=(int)(rnd()*nModelParticles);
+
+        if (w_min/ParticleList[ip].w>rnd()) { // delete particles with smaller weight  
+          RemovedParticleWeight+=ParticleList[ip].w;
+          PIC::ParticleBuffer::DeleteParticle(ParticleList[ip].p,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+
+          ParticleList[ip]=ParticleList[nModelParticles-1];
+          nModelParticles--;
+          flag=_search_completed; 
+        }
+      } 
     }
     
 
     //distribute the removed weight among particles that left in the system 
-    for (;ii<nModelParticles;ii++) {
-      w=ParticleList[ii].w+RemovedParticleWeight/(SummedWeight-RemovedParticleWeight);    
+    for (ii=0;ii<nModelParticles;ii++) {
+      w=ParticleList[ii].w*(1.0+RemovedParticleWeight/(SummedWeight-RemovedParticleWeight));    
       p=ParticleList[ii].p;
 
       PIC::ParticleBuffer::SetIndividualStatWeightCorrection(w,p);
