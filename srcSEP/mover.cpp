@@ -59,7 +59,7 @@ int SEP::ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mes
 int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer; 
 
-  double *x,*v,mu,SwU[3]={0.0,0.0,0.0},b[3]={0.0,0.0,0.0},p;
+  double x[3],v[3],mu,SwU[3]={0.0,0.0,0.0},b[3]={0.0,0.0,0.0},p;
   PB::byte* ParticleData;
   int spec;   
 
@@ -68,8 +68,8 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
    
   
   ParticleData=PB::GetParticleDataPointer(ptr);
-  v=PB::GetV(ParticleData);
-  x=PB::GetX(ParticleData); 
+  PB::GetV(v,ParticleData);
+  PB::GetX(x,ParticleData); 
   spec=PB::GetI(ParticleData);
 
 
@@ -285,6 +285,9 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
       PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,ParticleData,(void*)node);
     }
   }
+
+  PB::SetV(v,ParticleData);
+  PB::SetX(x,ParticleData);
 
   //determine the cell where the particle is located
   int i,j,k;
