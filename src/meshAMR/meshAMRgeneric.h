@@ -1638,7 +1638,7 @@ public:
 
   //assemble the distributed output files into a single file 
   bool AssembleDistributedOutputFile;
-  void SetAssembleDistributedOutputFile(bool flag) {AssembleDistributedOutputFile=flag;} 
+  void SetAssembleDistributedOutputFileFlag(bool flag) {AssembleDistributedOutputFile=flag;} 
 
   //accept tree node function
   typedef bool (*cAcceptBlockFunc)(double*,double*);

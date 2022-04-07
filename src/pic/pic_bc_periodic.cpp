@@ -753,7 +753,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
       break;
     }
   }
-  if (levelFind==false) exit(__LINE__,__FILE__,"Error: please change block number to power of 2.");
+  if (levelFind==false) exit(__LINE__,__FILE__,"Error: please change the number of cells in a block in each direction to be a power of 2");
 }
 
 
