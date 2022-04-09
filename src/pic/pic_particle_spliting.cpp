@@ -322,51 +322,49 @@ public:
   vector<long int> p;
 }; 
 
-list<cVelocitySpaceElement> VelocitySpaceTable;
+cVelocitySpaceElement **VelocitySpaceTable=NULL;
+const int nSerachLevels=6;
+
+const int nVelCells1d=1<<nSerachLevels;
+const int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
+
 
 //create the initial velovity space table
 auto InitVelocitySpaceTable = [&] (int spec,double *vmin,double *dv,int i, int j,int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node)  {
   long int p;
-  int idim,iv[3];
+  int idim,iv[3],iVelCell;
   double v[3];
   bool foundflag;
 
-  VelocitySpaceTable.clear();
+  VelocitySpaceTable=new cVelocitySpaceElement* [nVelCells];
+  for (int i=0;i<nVelCells;i++) VelocitySpaceTable[i]=NULL;
 
     p=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
     while (p!=-1) {
       if (spec==PIC::ParticleBuffer::GetI(p)) {
-        foundflag=false;
-
-      PIC::ParticleBuffer::GetV(v,p);
+        PIC::ParticleBuffer::GetV(v,p);
       
+        for (idim=0;idim<3;idim++) iv[idim]=(int)((v[idim]-vmin[idim])/dv[idim]); 
 
-      for (idim=0;idim<3;idim++) iv[idim]=(int)((v[idim]-vmin[idim])/dv[idim]); 
+        iVelCell=iv[0]+nVelCells1d*(iv[1]+nVelCells1d*iv[2]);  
 
-      for (list<cVelocitySpaceElement>::iterator it=VelocitySpaceTable.begin();it!=VelocitySpaceTable.end();it++) {
-        if ((it->iv==iv[0])&&(it->jv==iv[1])&&(it->kv==iv[2])) {
-          it->p.push_back(p);
-          foundflag=true;
-          break;
-        }
-      }
+        if (VelocitySpaceTable[iVelCell]==NULL) {
+          VelocitySpaceTable[iVelCell]=new cVelocitySpaceElement [1];
 
-      if (foundflag==false) {
-        cVelocitySpaceElement t;
+          VelocitySpaceTable[iVelCell]->iv=iv[0];
+          VelocitySpaceTable[iVelCell]->jv=iv[1];
+          VelocitySpaceTable[iVelCell]->kv=iv[2];
+        } 
 
-        t.iv=iv[0],t.jv=iv[1],t.kv=iv[2]; 
-         
-        VelocitySpaceTable.push_front(t);
-        VelocitySpaceTable.begin()->p.push_back(p);
-      }
-    }
+        VelocitySpaceTable[iVelCell]->p.push_back(p);
+     }
 
-    p=PIC::ParticleBuffer::GetNext(p);
-  }
+      p=PIC::ParticleBuffer::GetNext(p);
+   }
 }; 
 
-auto RemoveOneParticle= [&] (int nMaxParticlesReduce,int i, int j, int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,bool& more_then_one_particle_left) { 
+auto RemoveOneParticle= [&] (int nCurrentResolutionLevel,int nMaxParticlesReduce,int i, int j, int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node,bool& more_then_one_particle_left) { 
   int cnt=0,npart;
   long int p;
   double w_remove;
@@ -375,23 +373,27 @@ auto RemoveOneParticle= [&] (int nMaxParticlesReduce,int i, int j, int k,cTreeNo
 
   if (nMaxParticlesReduce==0) return cnt;
 
-  for (list<cVelocitySpaceElement>::iterator it=VelocitySpaceTable.begin();it!=VelocitySpaceTable.end();it++) {
-    if ((npart=it->p.size())>1) {
+
+  int nCells1d=1<<nCurrentResolutionLevel;
+  int nCells=nCells1d*nCells1d*nCells1d;
+
+
+  for (int ii=0;ii<nCells;ii++) if (VelocitySpaceTable[ii]!=NULL) if ((npart=VelocitySpaceTable[ii]->p.size())>1) { 
       double w_tot=0.0,w;
 
-      p=it->p[0];
+      p=VelocitySpaceTable[ii]->p[0];
       w_remove=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
 
       //delete particles
       PIC::ParticleBuffer::DeleteParticle(p,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
-      it->p.erase(it->p.begin());
+      VelocitySpaceTable[ii]->p.erase(VelocitySpaceTable[ii]->p.begin());
 
       if (npart-1>1) more_then_one_particle_left=true;
 
       //distribute the weights
-      for (auto& t : it->p) w_tot+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(t); 
+      for (auto& t : VelocitySpaceTable[ii]->p) w_tot+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(t); 
       
-      for (auto& t : it->p) {
+      for (auto& t : VelocitySpaceTable[ii]->p) {
         w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(t);
 
         w=w*(1.0+w_remove/w_tot);
@@ -400,36 +402,59 @@ auto RemoveOneParticle= [&] (int nMaxParticlesReduce,int i, int j, int k,cTreeNo
 
       if (++cnt==nMaxParticlesReduce) break;
     }
-  } 
 
   return cnt;
 }; 
 
-auto RebuildVelocitySpaceTable = [&] () {
-  list<cVelocitySpaceElement> NewVelocitySpaceTable;
+auto RebuildVelocitySpaceTable = [&] (int CurrentResolutionLevel) {
+  cVelocitySpaceElement **NewVelocitySpaceTable;
+  int iVelCell,iNewVelCell,iv,jv,kv;
 
-  for (auto& it : VelocitySpaceTable) {
-    bool found=false;
 
-    for (auto& itNew : NewVelocitySpaceTable) {
-      if ((itNew.iv==it.iv/2)&&(itNew.jv==it.jv/2)&&(itNew.kv==it.kv/2)) {
-        itNew.p.insert(itNew.p.begin(),it.p.begin(),it.p.end());
-        found=true;
-        break;
+  int NewResolutionLevel=CurrentResolutionLevel-1;
+
+  int nVelCells1d=1<<CurrentResolutionLevel;
+  int nNewVelCells1d=nVelCells1d/2;
+
+  int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
+  int nNewVelCells=nNewVelCells1d*nNewVelCells1d*nNewVelCells1d;
+
+
+  NewVelocitySpaceTable=new cVelocitySpaceElement* [nNewVelCells];
+  for (int i=0;i<nNewVelCells;i++) NewVelocitySpaceTable[i]=NULL;
+
+  for (int i=0;i<nVelCells;i++) {
+    if (VelocitySpaceTable[i]!=NULL) {
+      iv=VelocitySpaceTable[i]->iv;
+      jv=VelocitySpaceTable[i]->jv;
+      kv=VelocitySpaceTable[i]->kv;
+
+      iVelCell=iv+nVelCells1d*(jv+nVelCells1d*kv);  
+
+      iv/=2,jv/=2,kv/=2;
+      iNewVelCell=iv+nNewVelCells1d*(jv+nNewVelCells1d*kv);
+  
+      if (NewVelocitySpaceTable[iNewVelCell]==NULL) {
+        NewVelocitySpaceTable[iNewVelCell]=new cVelocitySpaceElement [1];
+
+        *NewVelocitySpaceTable[iNewVelCell]=*VelocitySpaceTable[i];
+
+        NewVelocitySpaceTable[iNewVelCell]->iv/=2;
+        NewVelocitySpaceTable[iNewVelCell]->jv/=2;
+        NewVelocitySpaceTable[iNewVelCell]->kv/=2;
+         
       }
-    }   
-
-    if (found==false) {
-      NewVelocitySpaceTable.push_front(it);
-
-      NewVelocitySpaceTable.begin()->iv/=2;
-      NewVelocitySpaceTable.begin()->jv/=2; 
-      NewVelocitySpaceTable.begin()->kv/=2;
-
-//      NewVelocitySpaceTable.begin()->p.insert(NewVelocitySpaceTable.begin()->p.begin(),it.p.begin(),it.p.end());
+      else {
+        NewVelocitySpaceTable[iNewVelCell]->p.insert(NewVelocitySpaceTable[iNewVelCell]->p.begin(),
+                                                    VelocitySpaceTable[i]->p.begin(),VelocitySpaceTable[i]->p.end());
+      }
     }
   }
 
+  //delete the previous table 
+  for (int i=0;i<nVelCells;i++) if (VelocitySpaceTable[i]!=NULL) delete [] VelocitySpaceTable[i];
+
+  delete [] VelocitySpaceTable;
   VelocitySpaceTable=NewVelocitySpaceTable;
 }; 
 
@@ -438,23 +463,32 @@ auto ReduceParticleNumber1 = [&] (int spec,int nModelParticles,int i,int j,int k
   double vmin[3],vmax[3],dv[3]; 
   bool more_then_one_particle_left;
 
-  const int nTestLevels=6;
-
   if (nModelParticles>nRequestedParticles) {
     int nDeleteParticles=nModelParticles-nRequestedParticles;  
     int nRemovedParticles=0;
 
     GetVelocityRange(spec,vmin,vmax,i,j,k,node);
 
-    for (int idim=0;idim<3;idim++) dv[idim]=(vmax[idim]-vmin[idim])/(1<<nTestLevels);
+    for (int idim=0;idim<3;idim++) {
+      double d=vmax[idim]-vmin[idim]; 
+
+      vmin[idim]-=0.05*d; 
+      vmax[idim]+=0.05*d;
+
+      dv[idim]=(vmax[idim]-vmin[idim])/nVelCells1d;
+    }
+    
 
     InitVelocitySpaceTable(spec,vmin,dv,i,j,k,node);
 
+          int CurrentResolutionLevel=nSerachLevels;
+
     while (nRemovedParticles<nDeleteParticles) {
-      nRemovedParticles+=RemoveOneParticle(nDeleteParticles-nRemovedParticles,i,j,k,node,more_then_one_particle_left); 
+      nRemovedParticles+=RemoveOneParticle(CurrentResolutionLevel,nDeleteParticles-nRemovedParticles,i,j,k,node,more_then_one_particle_left); 
 
       if ((nRemovedParticles<nDeleteParticles)&&(more_then_one_particle_left==false)) {
-        RebuildVelocitySpaceTable();
+        RebuildVelocitySpaceTable(CurrentResolutionLevel);
+        --CurrentResolutionLevel;
       } 
     }
   }
@@ -611,9 +645,16 @@ auto ReduceParticleNumber = [&] (int spec,int i,int j,int k,cTreeNodeAMR<PIC::Me
           k=k0+dk; 
 
           int npart;
+          int CurrentResolutionLevel=nSerachLevels;
           
           if ((npart=GetParticleNumber(s,i,j,k,node))>particle_num_limit_max) {
-            ReduceParticleNumber1(s,npart,i,j,k,node,particle_num_limit_min+0.85*(particle_num_limit_max-particle_num_limit_min));
+
+//cout << nSerachLevels << endl; 
+//cout << nVelCells1d << endl;
+//cout << nVelCells << endl;
+
+
+            ReduceParticleNumber1(s,npart,i,j,k,node,particle_num_limit_min+0.9*(particle_num_limit_max-particle_num_limit_min));
           }
         }
       }
