@@ -10,6 +10,7 @@ int SEP::Sampling::nSampleIntervals=7;
 */
 
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
+vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
 
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
@@ -29,12 +30,24 @@ void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
 
   if (SamplingBufferTable[iFieldLine]!=NULL) return; 
 
-  SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
+  if (SamplingHeliocentricDistanceList.size()==0) {
+    SamplingBufferTable[iFieldLine]=new cSamplingBuffer [SamplingHeliocentricDistanceTableLength];
 
-  for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
-    sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory); 
+    for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
+      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory); 
 
-    SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
+      SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceTable[i],iFieldLine);
+    }
+  }
+  else {
+    int size=SamplingHeliocentricDistanceList.size();
+    SamplingBufferTable[iFieldLine]=new cSamplingBuffer [size];
+
+    for (int i=0;i<SamplingHeliocentricDistanceList.size();i++) {
+      sprintf(fname,"%s/sample",PIC::OutputDataFileDirectory);
+
+      SamplingBufferTable[iFieldLine][i].Init(fname,MinSampleEnergy,MaxSampleEnergy,nSampleIntervals,SamplingHeliocentricDistanceList[i],iFieldLine);
+    }
   }
 }
 
@@ -54,7 +67,10 @@ void SEP::Sampling::Manager() {
     }  
 
     //sample the field line data 
-    for (int i=0;i<SamplingHeliocentricDistanceTableLength;i++) {
+    int TableSize=SamplingHeliocentricDistanceList.size();
+    if (TableSize==0) TableSize=SamplingHeliocentricDistanceTableLength;
+
+    for (int i=0;i<TableSize;i++) {
       SamplingBufferTable[iFieldLine][i].Sampling();
 
       //output sampled data

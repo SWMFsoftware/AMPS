@@ -226,6 +226,8 @@ namespace SEP {
     const double MaxSampleEnergy=500.0*MeV2J;
     const int nSampleIntervals=7;
 
+    /*SamplingHeliocentricDistanceTable can be set in AMPS' input file while SamplingHeliocentricDistanceList is defined in SWMF's PARAM.in. The latter has priority*/
+    extern vector<double> SamplingHeliocentricDistanceList;
 
     class cSamplingBuffer {
     public:
