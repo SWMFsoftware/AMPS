@@ -149,6 +149,17 @@ namespace SEP {
 
   //functions related to tracing SEPs along field lines 
   namespace FieldLine {
+    namespace InjectionParameters {
+      extern int nParticlesPerIteration;
+      extern double PowerIndex,emin,emax;
+
+      extern int InjectLocation;
+      const int _InjectShockLocations=0;
+      const int _InjectBegginingFL=1;
+      const int _InjectInputFileAMPS=2;
+    }
+
+
     long int InjectParticleFieldLineBeginning(int spec,int iFieldLine);    
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();

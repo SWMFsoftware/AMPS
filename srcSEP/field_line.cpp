@@ -4,6 +4,13 @@
 #include "amps2swmf.h"
 
 
+int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=30;
+double SEP::FieldLine::InjectionParameters::PowerIndex=4.0;
+double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionParameters::emax=500;
+
+int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectInputFileAMPS;
+
+
 long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
 
@@ -41,11 +48,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   //determine the filed line to inject particles
   iShockFieldLine=0; 
 
-  #ifdef _SEP_SHOCK_LOCATION_COUPLER_TABLE_
-  #if _SEP_SHOCK_LOCATION_COUPLER_TABLE_ == _PIC_MODE_ON_ 
-  if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0; 
-  #endif
-  #endif
+  if (InjectionParameters::InjectLocation==InjectionParameters::_InjectInputFileAMPS) {
+    #ifdef _SEP_SHOCK_LOCATION_COUPLER_TABLE_
+    #if _SEP_SHOCK_LOCATION_COUPLER_TABLE_ == _PIC_MODE_ON_ 
+    if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0; 
+    #endif
+    #endif
+  }
+  else {
+    exit(__LINE__,__FILE__);
+  }
 
 
   //determine the radiaus of the magnetic tube at the middle of the magnetic tube
@@ -102,19 +114,19 @@ vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSp
 
   double GlobalWeightCorrectionFactor=1.0;
 
-  if (anpart<30) {
-    GlobalWeightCorrectionFactor=anpart/30.0;
-    anpart=30.0;
+  if (anpart<InjectionParameters::nParticlesPerIteration) {
+    GlobalWeightCorrectionFactor=anpart/InjectionParameters::nParticlesPerIteration;
+    anpart=InjectionParameters::nParticlesPerIteration;
   }
 
  
   npart=(int)anpart;
   if (anpart-npart>rnd()) npart++; 
   
-  double emin=0.1*MeV2J;
-  double emax=500.0*MeV2J;
+  double emin=InjectionParameters::emin*MeV2J;
+  double emax=InjectionParameters::emax*MeV2J;
 
-  double s=4.0;
+  double s=InjectionParameters::PowerIndex;
   double q=3.0*s/(3-1.0);
 
   double pAbs,pmin,pmax,speed,pvect[3];
