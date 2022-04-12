@@ -744,33 +744,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
    v=sqrt(vParallel*vParallel+vNormal*vNormal);
    mu=vParallel/v;
 
-  switch (_SEP_DIFFUSION_MODEL_) {
-  case _DIFFUSION_NONE_:
-    //no diffution model is used -> do nothing
-    break; 
-
-  case _DIFFUSION_ROUX2004AJ_:
-    SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment); 
-
-
-    delta=sqrt(4.0*D*dt)/erf(rnd());
-    dmu+=(rnd()>0.5) ? delta : -delta;
-
-    dmu+=dD_dmu*dt;
-    break;
-   
-  case _DIFFUSION_BOROVIKOV_2019_ARXIV_:
-    SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
-
-    delta=sqrt(4.0*D*dt)/erf(rnd());
-    dmu+=(rnd()>0.5) ? delta : -delta;
-
-    dmu+=dD_dmu*dt;
-    break;
-
-  case _DIFFUSION_JOKIPII1966AJ_:
-    SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
-
+   if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
     delta=sqrt(4.0*D*dt)/erf(rnd());
 
     if (first_pass_flag==true) {
@@ -791,11 +766,6 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     dmu+=(rnd()>0.5) ? delta : -delta;
 
     dmu+=dD_dmu*dt;
-    break;
-
-
-  default: 
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
   //move the particle in the original frame of reference

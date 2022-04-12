@@ -156,6 +156,9 @@ namespace SEP {
 
   //the namespace contains the diffution models
   namespace Diffusion {
+    typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
+    extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
+
     //LeRoux-2004-AJ
     namespace Roux2004AJ {
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
@@ -167,6 +170,8 @@ namespace SEP {
     }     
 
     namespace Jokopii1966AJ {
+      extern double k_ref_min,k_ref_max,k_ref_R;
+
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW);
     }

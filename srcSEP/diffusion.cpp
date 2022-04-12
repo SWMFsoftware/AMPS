@@ -6,6 +6,11 @@
 
 #include "sep.h"
 
+double SEP::Diffusion::Jokopii1966AJ::k_ref_min=1.0E-10;
+double SEP::Diffusion::Jokopii1966AJ::k_ref_max=1.0E-7;
+double SEP::Diffusion::Jokopii1966AJ::k_ref_R=_AU_;
+
+SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
 //========= Roux2004AJ (LeRoux-2004-AJ) =============================
 void SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
@@ -128,12 +133,9 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
   //reference values of k_max and k_min at 1 AU
   //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
-  const double k_ref_min=1.0E-10;
-  const double k_ref_max=1.0E-7;
-
   double k_min,k_max;
 
-  double t=_AU_*_AU_/r2;
+  double t=k_ref_R*k_ref_R/r2;
 
   k_min=t*k_ref_min;
   k_max=t*k_ref_max;
