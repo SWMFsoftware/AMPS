@@ -194,6 +194,128 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       cout << "PT: " << param_list.front().second << endl;
       param_list.pop_front();
     }
+    
+    //command related to the SEP model
+    else if (Command == "#SEP_PITCH_ANGLE_SCATTERING_FUCTION") {
+      t=param_list.front().first;
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      
+      #ifdef _SEP_MODEL_ON_
+      if (t == "none") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;
+      }
+      else if (t=="Jokopii") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+      #endif
+    }
+    
+    else if (Command == "#SEP_PITCH_ANGLE_JOKOPII_DIFFUSION") {
+      cout << "PT: "  << param_list.front().second << endl;
+          
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::k_ref_min=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::k_ref_max=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::k_ref_R=atof(t.c_str())*_AU_;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      #endif
+    }
+
+    else if (Command == "#SEP_INJECTION_FL") {
+      std::string::size_type sz;
+      cout << "PT: "  << param_list.front().second << endl;
+     
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      SEP::FieldLine::InjectionParameters::nParticlesPerIteration=std::stoi(t.c_str(),&sz);
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::FieldLine::InjectionParameters::emin=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::FieldLine::InjectionParameters::emax=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "beginning") {
+        SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectBegginingFL;
+      }
+      else if (t == "shock") {
+        SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectShockLocations;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not recognized");
+      }
+      #endif    
+    }
+    
+    else if (Command == "#SEP_INJECTION_TYPE_FL") {
+      cout << "PT: "  << param_list.front().second << endl;
+     
+      t=param_list.front().first;
+      param_list.pop_front();
+      
+      #ifdef _SEP_MODEL_ON_
+      if (t == "PowerLaw") {
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl; 
+        param_list.pop_front();
+
+        SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not recognized");
+      } 
+      #endif
+    }
+    
+    else if (Command == "#SEP_SAMPLING_LOCATION_FL") {
+      double r;
+      int nSamplePoints=0;
+      
+      cout << "PT: "  << param_list.front().second << endl;
+      
+      t=param_list.front().first;
+      nSamplePoints=atoi(t.c_str());
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      
+      #ifdef _SEP_MODEL_ON_
+      for (int i=0;i<nSamplePoints;i++) {
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+
+        r=atof(t.c_str());
+        SEP::Sampling::SamplingHeliocentricDistanceList.push_back(r*_AU_);
+      }
+      #endif
+    }
+    
     else {
       if (Command.c_str()[0]=='#') cout<<"PT: Can not find Comand : "<<Command<<endl;
     }
