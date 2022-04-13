@@ -56,7 +56,20 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     #endif
   }
   else {
-    exit(__LINE__,__FILE__);
+    switch (InjectionParameters::InjectLocation) {
+    case InjectionParameters::_InjectShockLocations:
+      if (AMPS2SWMF::ShockData==NULL) {
+        exit(__LINE__,__FILE__,"Error: the shock location table is not allocated");
+      }
+      else {
+        if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0;
+      }
+  
+      break;
+    case  InjectionParameters::_InjectBegginingFL:
+      iShockFieldLine=0;
+      break;
+    }
   }
 
 
