@@ -692,6 +692,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   iFieldLine=PB::GetFieldLineId(ParticleData); 
   spec=PB::GetI(ParticleData);
 
+  //velocity is in the frame moving with solar wind
   vParallel=PB::GetVParallel(ParticleData);
   vNormal=PB::GetVNormal(ParticleData);
 
@@ -721,7 +722,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   
   //move the particle along the magnetic field line 
   double FieldLineCoord_init=FieldLineCoord;
-  FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
+ // FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*(vParallel+vSolarWindParallel));
 
   //get the new value of 'mu'
   double D,dD_dmu;
@@ -740,7 +741,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
    dmu=0.0;
 
-   vParallel-=vSolarWindParallel;
+//   vParallel-=vSolarWindParallel;
    v=sqrt(vParallel*vParallel+vNormal*vNormal);
    mu=vParallel/v;
 
@@ -768,15 +769,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     dmu+=dD_dmu*dt;
   }
 
-  //move the particle in the original frame of reference
-  if (false) { //(fabs(dmu)>0.2) {
-    dt/=2.0;
-    time_counter=0.0;
-    vParallel=vParallelInit,vNormal=vNormalInit;
-    mu=mu_init;
-    continue;
-  }
-  
+  FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel));
+
   mu+=dmu;
   dmu=0.0; 
   
@@ -786,7 +780,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v;
-  vParallel+=vSolarWindParallel;
+//  vParallel+=vSolarWindParallel;
 
   //calculate mu in the frame of the simulation
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
