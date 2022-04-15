@@ -2574,7 +2574,12 @@ void DeleteAttachedParticles();
     inline double GetIndividualStatWeightCorrection(long int ptr) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       #ifndef __CUDA_ARCH__
-      return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      double res;
+     
+      memcpy(&res,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,sizeof(double));
+      return res;
+
+//      return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
       #else 
       union {double res;char buf[sizeof(double)];}; 
       char *source,*target;
@@ -2596,7 +2601,12 @@ void DeleteAttachedParticles();
     inline double GetIndividualStatWeightCorrection(byte *ParticleDataStart) {
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       #ifndef __CUDA_ARCH__
-      return *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
+      double res;
+
+      memcpy(&res,ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,sizeof(double)); 
+      return res;
+
+     // return *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
       #else
       union {double res;char buf[sizeof(double)];};
       char *source,*target;
@@ -2628,7 +2638,9 @@ void DeleteAttachedParticles();
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       #ifndef __CUDA_ARCH__
-      *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,&WeightCorrectionFactor,sizeof(double)); 
+
+     // *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
       #else 
       char *source=(char*)&WeightCorrectionFactor;
       char *target=(char*)(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
@@ -2656,7 +2668,9 @@ void DeleteAttachedParticles();
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
       #ifndef __CUDA_ARCH__
-      *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
+      memcpy(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,&WeightCorrectionFactor,sizeof(double));
+
+    //  *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_)) =WeightCorrectionFactor;
       #else 
       char *source=(char*)&WeightCorrectionFactor;
       char *target=(char*)(ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_);
