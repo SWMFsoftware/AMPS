@@ -26,6 +26,7 @@ Plan for improvements:
 
 
 OH::Sampling::LymanAlpha::cVelocitySampleBuffer *OH::Sampling::LymanAlpha::SampleBuffer=NULL;
+OH::Sampling::LymanAlpha::cVelocitySampleBuffer *OH::Sampling::LymanAlpha::CountBuffer=NULL;
 int OH::Sampling::LymanAlpha::nZenithPoints=0;
 //double OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTable[3*OH::Sampling::LymanAlpha::LymanAlphaSampleDirectionTableLength];
 
@@ -38,13 +39,21 @@ void OH::Sampling::LymanAlpha::Init() {
 
   //This is written for a single direction  (X,Y,Z) = (1,1,1)
   SampleBuffer=new cVelocitySampleBuffer[LymanAlphaSampleDirectionTableLength];
-
+  CountBuffer=new cVelocitySampleBuffer[LymanAlphaSampleDirectionTableLength];
+  
   for (int i=0;i<LymanAlphaSampleDirectionTableLength;i++) {
     SampleBuffer[i].lGSE[0]=LymanAlphaSampleDirectionTable[0+3*i];
     SampleBuffer[i].lGSE[1]=LymanAlphaSampleDirectionTable[1+3*i];
     SampleBuffer[i].lGSE[2]=LymanAlphaSampleDirectionTable[2+3*i];
 
     Vector3D::Normalize(SampleBuffer[i].lGSE);
+
+    CountBuffer[i].lGSE[0]=LymanAlphaSampleDirectionTable[0+3*i];
+    CountBuffer[i].lGSE[1]=LymanAlphaSampleDirectionTable[1+3*i];
+    CountBuffer[i].lGSE[2]=LymanAlphaSampleDirectionTable[2+3*i];
+
+    Vector3D::Normalize(CountBuffer[i].lGSE);
+
   }
 }
 
@@ -70,6 +79,10 @@ void OH::Sampling::LymanAlpha::Sampling() {
     //temporary sampling buffer and the buffer for the particle data
     cVelocitySampleBuffer *tempSamplingBuffer=SampleBuffer+Direction_i;
 
+    //temporary sampling buffer and the buffer for the particle data
+    cVelocitySampleBuffer *tempCountingBuffer=CountBuffer+Direction_i;
+ 
+    
     //determine the limits of integration and initalize the nodes
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NULL;
     
@@ -112,7 +125,11 @@ void OH::Sampling::LymanAlpha::Sampling() {
           VelocityLineOfSight=Vector3D::DotProduct(v,l);
 
           i=(int)((VelocityLineOfSight+maxVelocityLimit)/VelocityBinWidth);
-          if ((i>=0.0)&&(i<nVelocitySamplePoints)) tempSamplingBuffer->VelocityLineOfSight[spec][i]+=LocalParticleWeight*dl;
+          if ((i>=0.0)&&(i<nVelocitySamplePoints)) {
+	    tempSamplingBuffer->VelocityLineOfSight[spec][i]+=LocalParticleWeight*dl;
+	    tempCountingBuffer->VelocityLineOfSight[spec][i]+=1;
+	      
+	      }
 
 	  //Next particle
           ptr=PIC::ParticleBuffer::GetNext(ParticleData);
@@ -131,11 +148,16 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
   char fname[_MAX_STRING_LENGTH_PIC_];
   int iZone,s,i,cnt;
   FILE *fout=NULL;
+  char fCountname[_MAX_STRING_LENGTH_PIC_];
+  FILE *fCountout=NULL;
 
+  
   const int mpiZoneExchangeBufferLength=PIC::nTotalSpecies*(nVelocitySamplePoints);
   double mpiZoneExchangeBuffer[mpiZoneExchangeBufferLength];
 
-  //Need to redo this whole section for my problem --later problem
+  const int mpiZoneExchangeCountBufferLength=PIC::nTotalSpecies*(nVelocitySamplePoints);
+  double mpiZoneExchangeCountBuffer[mpiZoneExchangeBufferLength];
+
  
   if (PIC::ThisThread==0) {
     sprintf(fname,"%s/pic.LymanAlpha_Parr_Velocity_Dist.out=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber);
@@ -145,6 +167,17 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
     for (s=0;s<PIC::nTotalSpecies;s++) fprintf(fout,", \"f Velocity along the Line of Sight (%s) (in respect to the SUN)\" ",
 					       PIC::MolecularData::GetChemSymbol(s));
     fprintf(fout,"\n");
+
+
+    sprintf(fCountname,"%s/pic.LymanAlpha_Count_Dist.out=%i.dat",PIC::OutputDataFileDirectory,DataOutputFileNumber);
+    fCountout=fopen(fCountname,"w");
+    fprintf(fCountout,"VARIABLES=\"v\"");
+
+    for (s=0;s<PIC::nTotalSpecies;s++) fprintf(fCountout,", \"f Velocity along the Line of Sight (%s) (in respect to the SUN)\" ",
+					       PIC::MolecularData::GetChemSymbol(s));
+    fprintf(fCountout,"\n");
+
+    
   }
 
 
@@ -156,13 +189,16 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
     
     if (PIC::ThisThread==0) {
       fprintf(fout,"ZONE T=\"X=%e , Y=%e , Z=%e \",I=%i\n",XYZ[0],XYZ[1],XYZ[2],nVelocitySamplePoints);
+      fprintf(fCountout,"ZONE T=\"X=%e , Y=%e , Z=%e \",I=%i\n",XYZ[0],XYZ[1],XYZ[2],nVelocitySamplePoints);
     }
 
     //combine all sampled data on the root processor and print them into a file
     for (cnt=0,s=0;s<PIC::nTotalSpecies;s++) {
       for (i=0;i<nVelocitySamplePoints;i++) {
         mpiZoneExchangeBuffer[cnt++]=SampleBuffer[iZone].VelocityLineOfSight[s][i];
-       }
+	mpiZoneExchangeCountBuffer[cnt++]=CountBuffer[iZone].VelocityLineOfSight[s][i];
+	
+      }
     }
 
 
@@ -173,37 +209,51 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
         MPI_Status status;
 
         MPI_Recv(mpiZoneExchangeBuffer,mpiZoneExchangeBufferLength,MPI_DOUBLE,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        MPI_Recv(mpiZoneExchangeCountBuffer,mpiZoneExchangeCountBufferLength,MPI_DOUBLE,thread,0,MPI_GLOBAL_COMMUNICATOR,&status);
 
         for (cnt=0,s=0;s<PIC::nTotalSpecies;s++) {
           for (i=0;i<nVelocitySamplePoints;i++) {
             SampleBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeBuffer[cnt++];
+            CountBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeCountBuffer[cnt++];
           }
         }
       }
 
       //normalize the distribution function
+      /*
       for (s=0;s<PIC::nTotalSpecies;s++) {
         double w;
 
         for (w=0.0,i=0;i<nVelocitySamplePoints;i++) w+=SampleBuffer[iZone].VelocityLineOfSight[s][i];
         if (w>0.0) for (i=0;i<nVelocitySamplePoints;i++) SampleBuffer[iZone].VelocityLineOfSight[s][i]/=w*VelocityBinWidth;
       }
-
+      */
 
       //output sample data into a file
       for (i=0;i<nVelocitySamplePoints;i++) {
         fprintf(fout,"%e  ",-maxVelocityLimit+VelocityBinWidth*(i+0.5));
+	fprintf(fCountout,"%e  ",-maxVelocityLimit+VelocityBinWidth*(i+0.5));
+	
+        for (s=0;s<PIC::nTotalSpecies;s++) {
+	  fprintf(fout,"  %e  ", SampleBuffer[iZone].VelocityLineOfSight[s][i]);
+	  fprintf(fCountout,"  %e  ", CountBuffer[iZone].VelocityLineOfSight[s][i]);
 
-        for (s=0;s<PIC::nTotalSpecies;s++) fprintf(fout,"  %e  ", SampleBuffer[iZone].VelocityLineOfSight[s][i]);
-        fprintf(fout,"\n");
+	}
+       fprintf(fout,"\n");
+       fprintf(fCountout,"\n");
       }
+    } 
+    else {
+      MPI_Send(mpiZoneExchangeBuffer,mpiZoneExchangeBufferLength,MPI_DOUBLE,0,0,MPI_GLOBAL_COMMUNICATOR);
+      MPI_Send(mpiZoneExchangeCountBuffer,mpiZoneExchangeCountBufferLength,MPI_DOUBLE,0,0,MPI_GLOBAL_COMMUNICATOR);
     }
-    else MPI_Send(mpiZoneExchangeBuffer,mpiZoneExchangeBufferLength,MPI_DOUBLE,0,0,MPI_GLOBAL_COMMUNICATOR);
-
     //clear the sampling buffer
     for (s=0;s<PIC::nTotalSpecies;s++) {
-      for (i=0;i<nVelocitySamplePoints;i++) SampleBuffer[iZone].VelocityLineOfSight[s][i]=0.0;
-    }
+      for (i=0;i<nVelocitySamplePoints;i++){
+	SampleBuffer[iZone].VelocityLineOfSight[s][i]=0.0;
+	CountBuffer[iZone].VelocityLineOfSight[s][i]=0.0;
+      }
+      }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   }
@@ -212,6 +262,7 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
   //close the file
   if (PIC::ThisThread==0) {
     fclose(fout);
+    fclose(fCountout);
   }
 }
 

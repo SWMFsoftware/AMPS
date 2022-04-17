@@ -126,6 +126,7 @@ namespace OH {
       };
 
       extern cVelocitySampleBuffer *SampleBuffer;
+      extern cVelocitySampleBuffer *CountBuffer;
 
       const int LymanAlphaSampleDirectionTableLength=0;
       extern double LymanAlphaSampleDirectionTable[]; 
