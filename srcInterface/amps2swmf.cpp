@@ -196,6 +196,7 @@ extern "C" {
   }
   
   void amps_save_restart_(){
+    //if(PIC::ThisThread == 0) printf("amps_save_restart start\n");
     printf("amps_save_restart start\n");
     
     switch (AMPS2SWMF::ComponentID) {
@@ -219,7 +220,7 @@ extern "C" {
       exit(__LINE__,__FILE__,"Error: the option is unlnown"); 
     }
 
- 
+    //if(PIC::ThisThread == 0) printf("amps_save_restart end\n");
     printf("amps_save_restart end\n");
   }
 
