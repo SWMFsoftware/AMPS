@@ -58,12 +58,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   else {
     switch (InjectionParameters::InjectLocation) {
     case InjectionParameters::_InjectShockLocations:
+      #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
       if (AMPS2SWMF::ShockData==NULL) {
         exit(__LINE__,__FILE__,"Error: the shock location table is not allocated");
       }
       else {
         if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0;
       }
+      #else 
+      iShockFieldLine=0;
+      #endif
   
       break;
     case  InjectionParameters::_InjectBegginingFL:
@@ -98,7 +102,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   v_sw=Segment->GetBegin()->GetDatum_ptr(FL::DatumAtVertexPlasmaVelocity);
 //  vol=node->block->GetLocalTimeStep(spec)*Vector3D::Length(v_sw)*rMiddleTube;
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
+#else 
+vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
+#endif
 
 
   //determine the number of particles to inject 
@@ -119,7 +127,11 @@ vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSp
 //  anpart=vol*InjectionEfficiency/(8.0*Pi)*n_sw/pow(t,3)*pow(t/p_inj,5);  
 
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   n_sw_end=AMPS2SWMF::ShockData[iFieldLine].DownStreamDensity;
+#else 
+  n_sw_end=1.0;
+#endif
 
   anpart=vol*InjectionEfficiency*n_sw_end;
   anpart/=node->block->GetLocalParticleWeight(spec);

@@ -64,8 +64,12 @@ CouplerMode=T96 !ices !!off, ices, swmf
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) SEP::ParticleMover(ptr,LocalTimeStep,node)
-  define _SEP_MOVER_ _SEP_MOVER_DEFUALT_
+  !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
+  !define _SEP_MOVER_ _SEP_MOVER_DEFUALT_
+
+
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Tenishev_2005_FL(ptr,LocalTimeStep,node)
+
 
   define _PIC_MOVER_INTEGRATOR_MODE_  _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
   define _PIC_FIELD_LINE_MODE_ _PIC_MODE_ON_
@@ -74,6 +78,8 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   !the macro supress using 'AMPS2SWMF::iShockWaveSegmentTable' in the SEP model
   define _SEP_SHOCK_LOCATION_COUPLER_TABLE_ _PIC_MODE_OFF_ ! _PIC_MODE_ON_, _PIC_MODE_OFF_ 
+
+  define _PIC_PARTICLE_LIST_ATTACHING_ _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_
 
 #endGeneral
 
