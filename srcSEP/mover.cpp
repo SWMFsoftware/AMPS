@@ -716,26 +716,30 @@ int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR
 
 
   //simulate scattering of the particle
-  const double alpha=0.0,beta=0.0,lambda_0=0.4*_AU_;
-  double Speed,p,energy,lambda;
+  if (SEP::Scattering::Tenishev2005AIAA::status==SEP::Scattering::Tenishev2005AIAA::_enabled) {
+    double Speed,p,energy,lambda;
 
-  FL::FieldLinesAll[iFieldLine].GetCartesian(xCartesian,FieldLineCoord);
+    FL::FieldLinesAll[iFieldLine].GetCartesian(xCartesian,FieldLineCoord);
 
-  Speed=sqrt(vParallel*vParallel+vNormal*vNormal);
-  energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
-  lambda=lambda_0*pow(energy/GeV2J,alpha)*pow(Vector3D::Length(xCartesian)/_AU_,beta);
+    Speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+    energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
 
-  //the prabability of scattering event during the current time step
-  p=1.0-exp(-dtTotal*Speed/lambda);
+    lambda=SEP::Scattering::Tenishev2005AIAA::lambda0*
+      pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+      pow(Vector3D::Length(xCartesian)/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
 
-  if (p>rnd()) {
-    //scattering occured
-    double vnew[3],l[3];
+    //the prabability of scattering event during the current time step
+    p=1.0-exp(-dtTotal*Speed/lambda);
+
+    if (p>rnd()) {
+      //scattering occured
+      double vnew[3],l[3];
     
-    Vector3D::Distribution::Uniform(vnew,Speed);
-    Segment->GetDir(l);
+      Vector3D::Distribution::Uniform(vnew,Speed);
+      Segment->GetDir(l);
  
-    Vector3D::GetComponents(vParallel,vNormal,vnew,l);
+      Vector3D::GetComponents(vParallel,vNormal,vnew,l);
+    }
   }
 
   //set the new values of the normal and parallel particle velocities 

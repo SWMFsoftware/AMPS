@@ -37,6 +37,13 @@ void amps_time_step();
 int main(int argc,char **argv) {
   //      MPI_Init(&argc,&argv);
 
+
+  //read post-compile input file  
+  if (PIC::PostCompileInputFileName!="") {
+     SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
+  }
+  
+ 
   amps_init_mesh();
   amps_init();
 

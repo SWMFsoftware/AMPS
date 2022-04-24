@@ -126,6 +126,17 @@ namespace SEP {
   extern cCompositionGroupTable *CompositionGroupTable;
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
+
+  //scattering path the particles (used witu Parker spiral simulations) 
+  namespace Scattering {
+    namespace Tenishev2005AIAA {
+      extern double alpha,beta,lambda0;
+      
+      const int _enabled=0;
+      const int _disabled=1;
+      extern int status;
+    }
+  }  
   
   //functions used to sample and output macroscopic somulated data into the AMPS' output file
   namespace OutputAMPS {
@@ -145,6 +156,12 @@ namespace SEP {
     }
   }
 
+  //parser
+  namespace Parser {
+    void ReadFile(string fname);
+    void SelectCommand(vector<string>& StringVector); 
+    void Scattering(vector<string>& StringVector);
+  }
 
 
   //functions related to tracing SEPs along field lines 

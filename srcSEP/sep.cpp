@@ -13,6 +13,12 @@ int SEP::nCompositionGroups=0;
 
 cInternalSphericalData* SEP::InnerBoundary=NULL;
 
+//parameters of the scattering model
+int SEP::Scattering::Tenishev2005AIAA::status=SEP::Scattering::Tenishev2005AIAA::_disabled;
+double SEP::Scattering::Tenishev2005AIAA::alpha=0.0;
+double SEP::Scattering::Tenishev2005AIAA::beta=0.0;
+double SEP::Scattering::Tenishev2005AIAA::lambda0=0.4*_AU_;
+
 void SEP::Init() {
   //composition of the GCRs
   nCompositionGroups=1;
