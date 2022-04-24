@@ -7,6 +7,86 @@
 
 #include "pic.h"
 //====================================================
+double PIC::Parser::Evaluate(string s) {
+  vector<string> ExpressionVector;
+  size_t start_pos=0,plus_pos,mult_pos,div_pos;
+  string t;
+  bool flag=true;
+
+  while (flag==true) {
+    plus_pos=s.find_first_of("+",start_pos);
+    mult_pos=s.find_first_of("*",start_pos);
+    div_pos=s.find_first_of("/",start_pos);
+
+    if ((plus_pos==std::string::npos)&&(mult_pos==std::string::npos)&&(div_pos==std::string::npos)) {
+      //no operations found
+      t=s.substr(start_pos);
+      ExpressionVector.push_back(t);
+      flag=false;
+    }
+    else {
+      size_t m=min(plus_pos,mult_pos);
+      m=min(m,div_pos);
+
+      t=s.substr(start_pos,m-start_pos);
+      ExpressionVector.push_back(t);
+      start_pos=m;
+
+      t=s.substr(start_pos,1);
+      ExpressionVector.push_back(t);
+      start_pos++;
+    }
+  }
+
+  //evaluate
+  double a,b,r;
+
+  while (ExpressionVector.size()!=1) {
+    for (int i=0;i<ExpressionVector.size();i++) {
+      if (ExpressionVector[i]=="*") {
+        a=atof(ExpressionVector[i-1].c_str());
+        b=atof(ExpressionVector[i+1].c_str());
+
+        a*=b;
+
+        ExpressionVector[i-1]=to_string(a);
+        ExpressionVector.erase(ExpressionVector.begin()+i,ExpressionVector.begin()+i+2);
+        --i;
+      }
+    }
+
+    for (int i=0;i<ExpressionVector.size();i++) {
+      if (ExpressionVector[i]=="/") {
+        a=atof(ExpressionVector[i-1].c_str());
+        b=atof(ExpressionVector[i+1].c_str());
+
+        a/=b;
+
+        ExpressionVector[i-1]=to_string(a);
+        ExpressionVector.erase(ExpressionVector.begin()+i,ExpressionVector.begin()+i+2);
+        --i;
+      }
+    }
+
+    for (int i=0;i<ExpressionVector.size();i++) {
+      if (ExpressionVector[i]=="+") {
+        a=atof(ExpressionVector[i-1].c_str());
+        b=atof(ExpressionVector[i+1].c_str());
+
+        a+=b;
+
+        ExpressionVector[i-1]=to_string(a);
+        ExpressionVector.erase(ExpressionVector.begin()+i,ExpressionVector.begin()+i+2);
+        --i;
+      }
+    }
+  }
+
+  return atof(ExpressionVector[0].c_str());
+}
+
+  
+//====================================================
 void PIC::Parser::Run(char* InputFile) {
   CiFileOperations ifile;
 //  char nonstandardBlock_endname[_MAX_STRING_LENGTH_PIC_];

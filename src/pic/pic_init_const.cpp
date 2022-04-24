@@ -19,6 +19,9 @@ PIC::Mover::fUserDefinedMoverManager PIC::Mover::UserDefinedMoverManager=NULL;
 //the list containing the functions used to exchange the run time execution statistics
 vector<PIC::fExchangeExecutionStatistics> PIC::ExchangeExecutionStatisticsFunctions;
 
+//the name of the post-compile input file 
+string PIC::PostCompileInputFileName="";
+
 //the list contains the functions used for user defined sampling procedures
 vector<PIC::IndividualModelSampling::fRequestSamplingData> PIC::IndividualModelSampling::RequestSamplingData;
 vector<PIC::IndividualModelSampling::fSamplingProcedure> PIC::IndividualModelSampling::SamplingProcedure;

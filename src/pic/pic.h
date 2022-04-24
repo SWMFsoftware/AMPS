@@ -26,6 +26,13 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <algorithm>
+#include <cctype>
+#include <locale>
+#include <string>
+#include <sstream>
+
+
 
 
 #include "logger.h"
@@ -153,6 +160,9 @@ namespace PIC {
 //  //the total number of the OpenMP threads (when OpneMP is used in the model run)
   extern _TARGET_DEVICE_ _CUDA_MANAGED_ int nTotalThreadsOpenMP;
 
+  //the used input file that is used after the code is already compiled
+  extern string PostCompileInputFileName;
+
   //The path to the input data of the user-defined physical models
   extern char UserModelInputDataPath[_MAX_STRING_LENGTH_PIC_];
 
@@ -227,6 +237,56 @@ namespace PIC {
     void readMain(CiFileOperations&);
     void readGeneral(CiFileOperations&);
 
+    //ecaluate a simple expression
+    double Evaluate(string s);
+
+    // trim from start (in place)
+    static inline void ltrim(std::string &s) {
+      s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+      }));
+    }
+
+    // trim from end (in place)
+    static inline void rtrim(std::string &s) {
+      s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+      }).base(), s.end());
+    }
+
+    // trim from both ends (in place)
+    static inline void trim(std::string &s) {
+      ltrim(s);
+      rtrim(s);
+    }
+
+    // trim from start (copying)
+    static inline std::string ltrim_copy(std::string s) {
+      ltrim(s);
+      return s;
+    }
+
+    // trim from end (copying)
+    static inline std::string rtrim_copy(std::string s) {
+      rtrim(s);
+      return s;
+    }
+
+    // trim from both ends (copying)
+    static inline std::string trim_copy(std::string s) {
+      trim(s);
+      return s;
+    }
+
+    //replace substring
+    void inline replace(std::string& subject, const std::string& search,const std::string& replace) {
+      size_t pos = 0;
+      
+      while ((pos = subject.find(search, pos)) != std::string::npos) {
+        subject.replace(pos, search.length(), replace);
+        pos += replace.length();
+      }
+    }
   }
 
   namespace Datum {
