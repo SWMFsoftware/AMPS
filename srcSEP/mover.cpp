@@ -681,7 +681,7 @@ int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR
 
   PIC::ParticleBuffer::byte *ParticleData;
   double mu,AbsB,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
-  double FieldLineCoord;
+  double FieldLineCoord,xCartesian[3];
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment;
 
@@ -693,10 +693,10 @@ int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR
 
   //velocity is in the frame moving with solar wind
   vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
 
   //shift location of the particle 
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*vParallel);
-
 
   //get the segment of the new particle location 
   if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
@@ -712,6 +712,30 @@ int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR
     default:
       exit(__LINE__,__FILE__,"Error: not implemented");
     }
+  }
+
+
+  //simulate scattering of the particle
+  const double alpha=0.0,beta=0.0,lambda_0=0.4*_AU_;
+  double Speed,p,energy,lambda;
+
+  FL::FieldLinesAll[iFieldLine].GetCartesian(xCartesian,FieldLineCoord);
+
+  Speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+  energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+  lambda=lambda_0*pow(energy/GeV2J,alpha)*pow(Vector3D::Length(xCartesian)/_AU_,beta);
+
+  //the prabability of scattering event during the current time step
+  p=1.0-exp(-dtTotal*Speed/lambda);
+
+  if (p>rnd()) {
+    //scattering occured
+    double vnew[3],l[3];
+    
+    Vector3D::Distribution::Uniform(vnew,Speed);
+    Segment->GetDir(l);
+ 
+    Vector3D::GetComponents(vParallel,vNormal,vnew,l);
   }
 
   //set the new values of the normal and parallel particle velocities 
