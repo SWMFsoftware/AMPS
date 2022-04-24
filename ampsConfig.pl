@@ -4043,6 +4043,11 @@ sub ampsConfigSettings {
         next;
       }
 
+      if (/^PostCompileInputFileAMPS=(.*)$/i) {
+        ampsConfigLib::ChangeValueOfVariable("string PIC::PostCompileInputFileName","\"".$1."\"","pic/pic_init_const.cpp");
+        next;
+      }
+
       if (/^MemoryPrefetch=(.*)$/i) {
          ampsConfigLib::RedefineMacro("_PIC_MEMORY_PREFETCH_MODE_","_PIC_MEMORY_PREFETCH_MODE__".$1."_","pic/picGlobal.dfn");
       }

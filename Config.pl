@@ -119,6 +119,7 @@ foreach (@Arguments) {
      print "-mp=[on,off]\t\t\tallow memory prefetch\n";
      print "-cuda\t\t\t\tcompile AMPS as a CUDA code\n"; 
      print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
+     print "-input=[the name of the input file that is used at start after the code is compiled]\n";
 
      print "-no-avx-matmul\t\t\tdisable AVX in the matrix multiplication functions\n";
      print "-no-avx-mover\t\t\tdisable AVX in the particle movers\n";
@@ -192,7 +193,11 @@ foreach (@Arguments) {
 
     next
   };
-    
+
+  if (/^-input=(.*)$/i)        {
+    add_line_amps_conf("PostCompileInputFileAMPS=$1");
+    next;} 
+
   if (/^-mpi=(.*)$/i)        {$MpiLocation=$1;                next}; 
   if (/^-np=(.*)$/i)         {$TestRunProcessorNumber=$1;     next};
   if (/^-spice-path=(.*)$/i)      {
