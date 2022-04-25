@@ -7143,7 +7143,7 @@ if (CallsCounter==83) {
       #endif
 
       if (rank==0) {
-        printf("\r$PREFIX: Building mesh [completed level: %i] minimum cell size:%e,%e,%e\n",level,
+        printf("$PREFIX: Building mesh [completed level: %i] minimum cell size:%e,%e,%e\n",level,
 	       dx[0]/_BLOCK_CELLS_X_,dx[1]/_BLOCK_CELLS_Y_,dx[2]/_BLOCK_CELLS_Z_);
         for (int idim=0;idim<3;idim++) dx[idim]*=0.5;
         fflush(stdout);
