@@ -49,7 +49,10 @@ double PIC::Parser::Evaluate(string s) {
 
         a*=b;
 
-        ExpressionVector[i-1]=to_string(a);
+        ostringstream ss;
+
+        ss<<a;
+        ExpressionVector[i-1]=ss.str();
         ExpressionVector.erase(ExpressionVector.begin()+i,ExpressionVector.begin()+i+2);
         --i;
       }
