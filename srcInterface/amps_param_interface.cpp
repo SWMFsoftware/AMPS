@@ -310,8 +310,11 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         cout << "PT: "  << param_list.front().second << endl;
         param_list.pop_front();
 
-        r=atof(t.c_str());
-        SEP::Sampling::SamplingHeliocentricDistanceList.push_back(r*_AU_);
+        PIC::Parser::replace(t,"au","149598000.0E3");
+        PIC::Parser::replace(t,"rsun","6.96345E8");
+
+        r=PIC::Parser::Evaluate(t);
+        SEP::Sampling::SamplingHeliocentricDistanceList.push_back(r);
       }
       #endif
     }
