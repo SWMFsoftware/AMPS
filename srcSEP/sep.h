@@ -169,6 +169,7 @@ namespace SEP {
     namespace InjectionParameters {
       extern int nParticlesPerIteration;
       extern double PowerIndex,emin,emax;
+      extern double InjectionEfficiency;
 
       extern int InjectLocation;
       const int _InjectShockLocations=0;

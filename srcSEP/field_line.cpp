@@ -7,6 +7,7 @@
 int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=30;
 double SEP::FieldLine::InjectionParameters::PowerIndex=4.0;
 double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionParameters::emax=500;
+double SEP::FieldLine::InjectionParameters::InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
 
 int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectInputFileAMPS;
 
@@ -96,23 +97,22 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   rMiddleTube=pow(rMiddle/Vector3D::Length(xFirstFieldLine),2); 
 
   //velocity of the shock wave
-  double *v_sw,vol;
+  double vol;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::Search::FindBlock(xMiddle);
 
-  v_sw=Segment->GetBegin()->GetDatum_ptr(FL::DatumAtVertexPlasmaVelocity);
-//  vol=node->block->GetLocalTimeStep(spec)*Vector3D::Length(v_sw)*rMiddleTube;
-
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
-#else 
-vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
-#endif
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>0.0) {
+    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
+  }
+  else {
+    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockSpeed*rMiddleTube;
+  }
+  #else 
+  vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
+  #endif
 
 
   //determine the number of particles to inject 
-  const double InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
-
-
   double t_sw_begin,t_sw_end; //=Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaTemperature); 
   double n_sw_begin,n_sw_end; //=Segment->GetBegin()->GetDatum(FL::DatumAtVertexPlasmaDensity); 
   double p_inj=sqrt(2.0*_AMU_*1.0E4*ElectronCharge);  
@@ -133,7 +133,7 @@ vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
   n_sw_end=1.0;
 #endif
 
-  anpart=vol*InjectionEfficiency*n_sw_end;
+  anpart=vol*SEP::FieldLine::InjectionParameters::InjectionEfficiency*n_sw_end;
   anpart/=node->block->GetLocalParticleWeight(spec);
 
 
@@ -148,41 +148,59 @@ vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
   npart=(int)anpart;
   if (anpart-npart>rnd()) npart++; 
   
-  double emin=InjectionParameters::emin*MeV2J;
-  double emax=InjectionParameters::emax*MeV2J;
+  auto GetMomentum_Tenishev2005AIAA = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) {
+    double emin=InjectionParameters::emin*MeV2J;
+    double emax=InjectionParameters::emax*MeV2J;
 
-  double s=InjectionParameters::PowerIndex;
-  double q=3.0*s/(3-1.0);
+    double s=InjectionParameters::PowerIndex;
+    double q=3.0*s/(3-1.0);
 
-  double pAbs,pmin,pmax,speed,pvect[3];
-  double mass=PIC::MolecularData::GetMass(spec);
+    double pAbs,pmin,pmax,speed,pvect[3];
+    double mass=PIC::MolecularData::GetMass(spec);
 
-  pmin=Relativistic::Energy2Momentum(emin,mass);
-  pmax=Relativistic::Energy2Momentum(emax,mass);
+    pmin=Relativistic::Energy2Momentum(emin,mass);
+    pmax=Relativistic::Energy2Momentum(emax,mass);
 
-  double cMin=pow(pmin,-q);
+    double cMin=pow(pmin,-q);
 
-  speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));
-  pmin=Relativistic::Speed2Momentum(speed,mass);
+    speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));
+    pmin=Relativistic::Speed2Momentum(speed,mass);
 
-  speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
-  pmax=Relativistic::Speed2Momentum(speed,mass);
+    speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
+    pmax=Relativistic::Speed2Momentum(speed,mass);
 
 
-  double A0=pow(pmin,-q+1.0);
-  double A=pow(pmax,-q+1.0)-A0;
+    double A0=pow(pmin,-q+1.0);
+    double A=pow(pmax,-q+1.0)-A0;
 
-  double WeightNorm=pow(pmin,-q);
+    double WeightNorm=pow(pmin,-q);
+
+    for (int i=0;i<nParticles;i++) {
+      pAbsTable[i]=pmin+rnd()*(pmax-pmin);
+      WeightCorrectionTable[i]=pow(pAbsTable[i],-q)/WeightNorm*GlobalWeightCorrectionFactor;
+    }
+  }; 
+
+  double *pAbsTable=new double [npart];
+  double *WeightCorrectionTable=new double [npart];
+
+  GetMomentum_Tenishev2005AIAA(pAbsTable,WeightCorrectionTable,npart);
 
   for (int i=0;i<npart;i++) {
+    Vector3D::Distribution::Uniform(p,pAbsTable[i]);
 
-    pAbs=pmin+rnd()*(pmax-pmin);
-    ParticleWeightCorrectionFactor=pow(pAbs,-q)/WeightNorm*GlobalWeightCorrectionFactor;
-
-    Vector3D::Distribution::Uniform(p,pAbs);
-
-    if (PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
+    if (PIC::FieldLine::InjectParticle_default(spec,p,WeightCorrectionTable[i],iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
   }
+
+  delete [] pAbsTable;
+  delete [] WeightCorrectionTable;
+
+
+
+  //Sokolov-2004-AJ:
+
+
+
 
   return nInjectedParticles;
 } 
