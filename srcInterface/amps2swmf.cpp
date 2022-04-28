@@ -45,6 +45,13 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 int AMPS2SWMF::FieldLineData::nLon=4;
 int AMPS2SWMF::FieldLineData::nLat=4;
 
+//speed of the CME driven shock
+double AMPS2SWMF::ShockSpeed=0.0;
+
+
+//shock search mode
+int AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_disabled;
+
 //in case sampling in AMPS is disabled SamplingOutputCadence is the interval when the sampling get tempoparely enabled to output a data file 
 int AMPS2SWMF::SamplingOutputCadence=1;
 
@@ -861,11 +868,25 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         };
 
  
-        DensityTemporalVariation();
-        //DensityRatio();
-//        DensityBumpSearch(); 
+        if (AMPS2SWMF::ShockSearchMode!=AMPS2SWMF::_disabled) {
+          switch (AMPS2SWMF::ShockSearchMode) {
+          case AMPS2SWMF::_density_variation:
+            DensityTemporalVariation();
+            break;
+          case AMPS2SWMF::_density_ratio:
+            DensityRatio();
+            break;
+          case AMPS2SWMF::_density_bump:
+            DensityBumpSearch(); 
+            break;
+          }
 
-    //    AMPS2SWMF::iShockWaveSegmentTable[iImportFieldLine]=iSegmentShock;
+          if (iSegmentShock!=-1) AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
+        }
+        else { 
+          AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=-1; 
+        }
+
         cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", ratio=" << max_ratio << endl;
       }
     };

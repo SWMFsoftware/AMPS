@@ -318,9 +318,45 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       }
       #endif
     }
-    
+
+    else if (Command == "#LOCATE_SHOCK") {
+      t=param_list.front().first;
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "disabled") {
+        AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_disabled; 
+      }
+      else if (t=="density_variation") {
+        AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_density_variation;
+      }
+      else if (t=="density_bump") {
+        AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_density_bump;
+      }
+      else if (t=="density_ratio") {
+        AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_density_ratio;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+    }
+
+    else if (Command == "#SHOCK_SPEED") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      AMPS2SWMF::ShockSpeed=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    }
+
+
     else {
-      if (Command.c_str()[0]=='#') cout<<"PT: Can not find Comand : "<<Command<<endl;
+      if (Command.c_str()[0]=='#') {
+        cout<<"PT: Can not find Comand : "<<Command<<endl;
+//        exit(__LINE__,__FILE__);
+      }
     }
 
   }

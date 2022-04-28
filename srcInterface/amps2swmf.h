@@ -37,6 +37,9 @@ namespace AMPS2SWMF {
   //init amps mesh flag
   extern bool amps_init_mesh_flag;
 
+  //speed of the CME driven shock
+  extern double ShockSpeed;
+
   //the counter of the field line update events since beginning of a new session
   extern int FieldLineUpdateCounter; 
 
@@ -53,6 +56,14 @@ namespace AMPS2SWMF {
   };
 
   extern cShockData *ShockData;
+
+  //location of the shock procedure
+  const int _disabled=0;
+  const int _density_bump=1;
+  const int _density_ratio=2;
+  const int _density_variation=3;
+
+  extern int ShockSearchMode;
 
   //AMPS execution timer 
   extern PIC::Debugger::cTimer ExecutionTimer; 
