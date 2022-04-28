@@ -10,6 +10,7 @@ double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionPa
 double SEP::FieldLine::InjectionParameters::InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
 
 int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectInputFileAMPS;
+int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
 
 
 long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
@@ -181,10 +182,32 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     }
   }; 
 
+  auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) { 
+    double pmin=sqrt(10.0*KeV2J*2.0*PIC::MolecularData::GetMass(spec));
+    double r;
+
+    for (int i=0;i<nParticles;i++) {
+      r=rnd();
+      if (r==0.0) r=rnd();
+
+      pAbsTable[i]=pmin/pow(r,4);
+      WeightCorrectionTable[i]=1.0;
+    }
+  };
+
   double *pAbsTable=new double [npart];
   double *WeightCorrectionTable=new double [npart];
 
-  GetMomentum_Tenishev2005AIAA(pAbsTable,WeightCorrectionTable,npart);
+  switch (InjectionParameters::InjectionMomentumModel) {
+  case InjectionParameters::_tenishev2005aiaa: 
+    GetMomentum_Tenishev2005AIAA(pAbsTable,WeightCorrectionTable,npart);
+    break;
+  case InjectionParameters::_sokolov2004aj:
+    GetMomentum_Sokolov2004AJ(pAbsTable,WeightCorrectionTable,npart);
+    break;
+  defaut:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }  
 
   for (int i=0;i<npart;i++) {
     Vector3D::Distribution::Uniform(p,pAbsTable[i]);

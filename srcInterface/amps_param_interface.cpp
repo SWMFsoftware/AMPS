@@ -283,8 +283,17 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         t=param_list.front().first;
         cout << "PT: "  << param_list.front().second << endl; 
         param_list.pop_front();
-
         SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
+
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+        SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str()); 
+
+        SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
+      }
+      else if (t=="Sokolov2004AJ") {
+        SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_sokolov2004aj; 
       }
       else {
         exit(__LINE__,__FILE__,"Error: the option is not recognized");

@@ -175,6 +175,10 @@ namespace SEP {
       const int _InjectShockLocations=0;
       const int _InjectBegginingFL=1;
       const int _InjectInputFileAMPS=2;
+
+      extern int InjectionMomentumModel;
+      const int _tenishev2005aiaa=0;
+      const int _sokolov2004aj=1; 
     }
 
 

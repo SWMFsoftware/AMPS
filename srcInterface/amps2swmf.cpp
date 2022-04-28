@@ -814,6 +814,10 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
               max_ratio=max(rho1/rho0,rho0/rho1);
 
               iSegmentShock=iSegment;
+
+              AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegment;
+              AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=0.0;
+              AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=min(rho0,rho1);
             }
           }
         }; 
