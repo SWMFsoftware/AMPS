@@ -750,7 +750,7 @@ Compile=
 >>>./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>./Config.pl -o=IH:u=Awsom,e=Awsom,g=8,8,8,ng=3
 >>>./Config.pl -o=SP:g=2000
->>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-Droge,amps-test=on
+>>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-Droge__diffusion,amps-test=on
 >>>./Config.pl -o=SC:u=Awsom,e=Awsom,g=6,8,8,ng=3
 
 >>>-make test19_rundir
@@ -4784,7 +4784,7 @@ Run=
 
 >>>-cd SWMF-IH/SWMF;$(MAKE) test15_pt_rundir 
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
->>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge 
+>>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge__diffusion
 >>>cd SWMF-IH/SWMF;make -j
 >>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_run... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
