@@ -750,7 +750,7 @@ Compile=
 >>>./Config.pl -o=OH:u=Awsom,e=Awsom,ng=2,g=4,4,4
 >>>./Config.pl -o=IH:u=Awsom,e=Awsom,g=8,8,8,ng=3
 >>>./Config.pl -o=SP:g=2000
->>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-Droge__diffusion,amps-test=on
+>>>./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge,amps-test=on
 >>>./Config.pl -o=SC:u=Awsom,e=Awsom,g=6,8,8,ng=3
 
 >>>-make test19_rundir
@@ -3892,7 +3892,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=Europa-test2@@(0-amps-gpu) 
+Name=Europa-test2
 Time=3
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+valeriy)
@@ -3900,24 +3900,12 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenish
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+stampede)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+pleiades)
 
-Check=
->>>@echo "test_Europa-test2_check..." >> test_Europa-test2.diff
->>>-${SCRIPTDIR}/DiffNum.pl ${TESTEuropa-test2DIR}/PT/plots/test_Europa.dat         \
->>>output/test_Europa-test2/test_Europa-test2.ref_np`ls ${TESTEuropa-test2DIR}/PT/thread* |wc -l |tr -d ' '` > test_Europa-test2.diff
->>>@ls -l test_Europa-test2.diff
->>>@echo Test test_Europa-test2 has finished: `date`
-<#
-
-#>
-Name=Europa-test2@@(0+amps-gpu)
-Time=3
-
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+amps-gpu)
 
 Run=
 >>>@echo "test_Europa-test2_run..." >> test_Europa-test2$(TESTEuropa-test2-REF).diff
 >>>@echo Test test_Europa-test2 has started: `date`
->>>@rm /home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid/*.bin
+>>>-@rm /home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid/*.bin
+>>>-@rm /Users/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid/*.bin
 >>>cd $(TESTEuropa-test2DIR); ${MPIRUN} ./amps
 >>>@echo "test_Europa-test2_run... done" >> test_Europa-test2$(TESTEuropa-test2-REF).diff
 
@@ -4778,13 +4766,13 @@ Run=
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
->>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-droge__diffusion,amps-test=on
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-Droge__diffusion,amps-test=on
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
 >>>-cd SWMF-IH/SWMF;$(MAKE) test15_pt_rundir 
 >>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
->>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge__diffusion
+>>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-Droge__diffusion 
 >>>cd SWMF-IH/SWMF;make -j
 >>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_run... done" >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
