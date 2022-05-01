@@ -9,6 +9,8 @@
 double SEP::Diffusion::Jokopii1966AJ::k_ref_min=1.0E-10;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_max=1.0E-7;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_R=_AU_;
+double SEP::Diffusion::Jokopii1966AJ::FractionValue=0.05;
+int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
 
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
@@ -141,23 +143,24 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   k_max=t*k_ref_max;
 
 
-  double omega,k,P;
+  double omega,k,P,C,c;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
 
-  double C;
-
-//  C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
-
-  C=0.05*absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+  switch (Mode) {
+  case _awsom:
+    C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+    break;
+  case _fraction: 
+    C=FractionValue*absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
 
   k=omega/fabs(vParallel);
-
-  //C/=1.0E7;
-
   P=C/pow(k,5.0/3.0); 
- 
-  double c=Pi/4.0*omega*k*P/absB2;
+  c=Pi/4.0*omega*k*P/absB2;
 
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;

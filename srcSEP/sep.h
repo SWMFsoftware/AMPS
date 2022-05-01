@@ -205,6 +205,11 @@ namespace SEP {
     namespace Jokopii1966AJ {
       extern double k_ref_min,k_ref_max,k_ref_R;
 
+      extern int Mode;
+      const int _awsom=0;
+      const int _fraction=1;
+      extern double FractionValue;
+
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW);
     }

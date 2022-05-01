@@ -233,6 +233,29 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::Diffusion::Jokopii1966AJ::k_ref_R=atof(t.c_str())*_AU_;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
+
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t=="fraction") {
+        SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;        
+      }
+      else if (t=="awsom") {
+        SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_awsom;
+      }
+      else exit(__LINE__,__FILE__,"Error: the option is unknown");
+
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::FractionValue=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::k_ref_R=atof(t.c_str())*_AU_;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
       #endif
     }
 
