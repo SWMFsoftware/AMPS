@@ -871,6 +871,22 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   }
 
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel));
+  
+  //get the segment of the new particle location 
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    //the particle left the computational domain
+    int code=_PARTICLE_DELETED_ON_THE_FACE_;
+    
+    //call the function that process particles that leaved the coputational domain
+    switch (code) {
+    case _PARTICLE_DELETED_ON_THE_FACE_:
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }
+  }
 
   mu+=dmu;
   dmu=0.0; 
@@ -907,22 +923,6 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   vNormal=sqrt(1.0-mu*mu)*v;
 }
 
-
-  //get the segment of the new particle location 
-  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
-    //the particle left the computational domain
-    int code=_PARTICLE_DELETED_ON_THE_FACE_;
-    
-    //call the function that process particles that leaved the coputational domain
-    switch (code) {
-    case _PARTICLE_DELETED_ON_THE_FACE_:
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-
-    default:
-      exit(__LINE__,__FILE__,"Error: not implemented");
-    }
-  }
 
   //set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel,ParticleData);
