@@ -600,7 +600,7 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
     double PlasmaNumberDensity, PlasmaPressure, PlasmaTemperature;
 
 
-auto SimulateReaction = [&] () { 
+auto SimulateReaction = [&] (double ParticleWeightCorrection) { 
     //inject the products of the reaction
     double ParentTimeStep,ParentParticleWeight;
 
@@ -656,7 +656,7 @@ auto SimulateReaction = [&] () {
 
 
 #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-    ParentParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+    ParentParticleWeight=ParticleWeightCorrection*PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
 #else
     ParentParticleWeight=0.0;
     exit(__LINE__,__FILE__,"Error: the weight mode is node defined");
@@ -786,7 +786,7 @@ auto SimulateReaction = [&] () {
   };
 
 
-  for (int i=0;i<nWeightQuantumLoss;i++) SimulateReaction();
+  for (int i=0;i<nWeightQuantumLoss;i++) SimulateReaction(PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData));
 
   //determine whether the original particle need to be deleted
   double new_weight_correction=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*exp(-ParentTimeStep/ParentLifeTime);

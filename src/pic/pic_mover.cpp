@@ -4272,6 +4272,11 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   PIC::ParticleBuffer::GetV(v,ParticleData);
   PIC::ParticleBuffer::GetX(x,ParticleData);
 
+
+  if (startNode->block==NULL) exit(__LINE__,__FILE__);
+  if (startNode->Thread!=PIC::ThisThread) exit(__LINE__,__FILE__);
+  if (PIC::Mesh::mesh->findTreeNode(x,startNode)!=startNode) exit(__LINE__,__FILE__);
+
   static long int nCall=0;
   nCall++;
 
@@ -4284,6 +4289,19 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   if (newNode==NULL) {
     //the particle left the computational domain
     int code=_PARTICLE_DELETED_ON_THE_FACE_;
+
+    double l=0.0;
+
+    for (int idim=0;idim<3;idim++) {
+      double t=v[idim]*dtTotal;
+      l+=t*t;
+    }
+
+    l=sqrt(l);
+    
+
+    printf("Characteristic cell size=%e\n",startNode->GetCharacteristicCellSize());
+    printf("Path passed by the particle=%e\n",l);
     
     //call the function that process particles that leaved the coputational domain
     switch (code) {
@@ -4302,6 +4320,20 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
   if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
   if ((block=newNode->block)==NULL) {
+    double l=0.0;
+
+    for (int idim=0;idim<3;idim++) {
+      double t=v[idim]*dtTotal;
+      l+=t*t;
+    }
+
+
+    l=sqrt(l);
+    
+
+    printf("Characteristic cell size=%e\n",startNode->GetCharacteristicCellSize());
+    printf("Path passed by the particle=%e\n",l);
+
     exit(__LINE__,__FILE__,"Error: the block is empty. Most probably hte tiime step is too long");
   }
 

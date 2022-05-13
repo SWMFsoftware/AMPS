@@ -28,11 +28,11 @@ long int PIC::InitialCondition::PutParticle(int spec, double *x, double *v){
   return 1;  
 }
 
-long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
-  return PrepopulateDomain(spec,NumberDensity,Velocity,Temperature,NULL,UserInitParticleFunction);
+long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,bool ForceMinParticleNumber,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+  return PrepopulateDomain(spec,NumberDensity,Velocity,Temperature,ForceMinParticleNumber,NULL,UserInitParticleFunction);
 }
 
-long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
+long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,bool ForceMinParticleNumber,fPrepopulateCellCondition PrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle UserInitParticleFunction) {
   int iCell,jCell,kCell;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   PIC::Mesh::cDataCenterNode *cell;
@@ -97,6 +97,16 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
       anpart=NumberDensity*cell->Measure/ParticleWeight;
       npart=(int)(anpart);
       if (rnd()<anpart-npart) npart++;
+
+      double w=1.0;
+ 
+      if (ForceMinParticleNumber==true) { 
+        if (npart<PIC::ParticleSplitting::particle_num_limit_min) {
+          w=anpart/PIC::ParticleSplitting::particle_num_limit_min;  
+          npart=PIC::ParticleSplitting::particle_num_limit_min;
+        }
+      }
+
       nLocalInjectedParticles+=npart;
 
       while (npart-->0) {
@@ -107,7 +117,7 @@ long int PIC::InitialCondition::PrepopulateDomain(int spec,double NumberDensity,
         for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta)+Velocity[idim];
 
         //initiate the new particle
-        PIC::ParticleBuffer::InitiateParticle(x,v,NULL,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node,UserInitParticleFunction);
+        PIC::ParticleBuffer::InitiateParticle(x,v,&w,&spec,NULL,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node,UserInitParticleFunction);
       }
       //end of the particle injection block
     }

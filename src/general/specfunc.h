@@ -342,6 +342,18 @@ namespace VectorRotation {
 //=========================================================
 //Vector Operations
 namespace Vector3D {
+
+  inline double Distance(double *x0,double *x1) {
+    double d,res=0.0;
+
+    for (int idim=0;idim<3;idim++) {
+      d=x0[idim]-x1[idim];
+      res+=d*d;
+    }
+
+    return sqrt(res);
+  } 
+
   inline bool IsInLimits(double *x,double *xmin,double *xmax) {
     for (int idim=0;idim<3;idim++) if ((x[idim]<xmin[idim])||(xmax[idim]<x[idim])) return false; 
   

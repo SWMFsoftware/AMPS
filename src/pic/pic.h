@@ -1395,9 +1395,30 @@ void DeleteAttachedParticles();
 
   //split/merge particles
   namespace ParticleSplitting {
+    extern int particle_num_limit_min,particle_num_limit_max;
+    extern double v_shift_max;
+    extern double x_shift_max;
+    extern bool apply_non_uniform_x_shift;
+
+    extern int Mode;
+
+    const int _disactivated=0;
+    const int _VelocityShift=1;
+    const int _Scatter=2;
+
+    void inline SetMode(int t) {Mode=t;}
+
+
+    void inline SetParam(double x_shift_in,double v_shift_in,int particle_num_limit_min_in,int particle_num_limit_max_in,bool non_uniform_x_shift) {
+      x_shift_max=x_shift_in,v_shift_max=v_shift_in;
+      particle_num_limit_min=particle_num_limit_min_in,particle_num_limit_max=particle_num_limit_max_in;
+      apply_non_uniform_x_shift=non_uniform_x_shift;
+    }
+
+
     namespace Split {
       void Scatter(int particle_num_limit_min,int particle_num_limit_max);
-      void SplitWithVelocityShift(double shift_max,int particle_num_limit_min,int particle_num_limit_max);
+      void SplitWithVelocityShift(int particle_num_limit_min,int particle_num_limit_max);
     }
   }
 
@@ -7513,8 +7534,8 @@ void DeleteAttachedParticles();
     typedef bool (*fPrepopulateCellCondition)(int,int,int,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
 
     //constant number density
-    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
-    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,PIC::ParticleBuffer::fUserInitParticle=NULL);
+    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,bool ForceMinParticleNumber,fPrepopulateCellCondition,PIC::ParticleBuffer::fUserInitParticle=NULL);
+    long int PrepopulateDomain(int spec,double NumberDensity,double *Velocity,double Temperature,bool ForceMinParticleNumber,PIC::ParticleBuffer::fUserInitParticle=NULL);
 
     // put a single particle (for each thread)
     long int PutParticle(int spec, double *x, double *v);

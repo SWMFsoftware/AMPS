@@ -339,6 +339,22 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
 
   ParticleMovingTime=MPI_Wtime()-ParticleMovingTime;
 
+  //increase the number of particles if needed
+  switch (PIC::ParticleSplitting::Mode) {
+  case PIC::ParticleSplitting::_disactivated:
+    //do nothing
+    break;
+  case PIC::ParticleSplitting::_VelocityShift:
+    PIC::ParticleSplitting::Split::SplitWithVelocityShift(PIC::ParticleSplitting::particle_num_limit_min,PIC::ParticleSplitting::particle_num_limit_max);
+    break;
+  case PIC::ParticleSplitting::_Scatter:
+    PIC::ParticleSplitting::Split::Scatter(PIC::ParticleSplitting::particle_num_limit_min,PIC::ParticleSplitting::particle_num_limit_max);
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unlnown");
+  }
+
+
   //check the consistence of the particles lists
   if ((_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)&&(_CUDA_MODE_ == _OFF_)) {
     CheckParticleLists(); 

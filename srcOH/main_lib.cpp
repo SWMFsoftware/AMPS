@@ -229,6 +229,9 @@ void amps_init_mesh(){
 
 
   PIC::InitMPI();
+
+  //init particle splitting procedure
+  PIC::ParticleSplitting::SetParam(0.2,0.01,160,200,false);
   
    //SetUp the alarm
   //  PIC::Alarm::SetAlarm(2000);
@@ -398,7 +401,7 @@ void amps_init() {
      PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_]=PIC::Mesh::mesh->GetTotalVolume()*density_prepopulate_domain/n_model_particles_prepopulate_domain; 
 
      //pre-populate the domain
-     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,SetDefaultOriginID);
+     PIC::InitialCondition::PrepopulateDomain(_H_SPEC_,density_prepopulate_domain,bulk_vel_prepopulate_domain,temp_prepopulate_domain,false,SetDefaultOriginID);
    }
 
    //init from restart file if needed
