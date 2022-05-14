@@ -342,9 +342,9 @@ int main(int argc,char **argv) {
 
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
-    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
-    PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,O::Temperature);
-    PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,H2::Temperature);
+    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature,false);
+    PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,O::Temperature,false);
+    PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,H2::Temperature,false);
 
     //sample relative speed
     if (n==0) {
@@ -452,9 +452,9 @@ int main(int argc,char **argv) {
   //======================= TEST 2 BEGINS: RELATIVE VELOCITY AFTER MULTIPLE COLLISIONS WHEN INITAL TEMEPRATURE OF ALL SPECIES IS THE SAME =======
   double Temp=H2O::Temperature;
 
-  PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,Temp);
-  PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,Temp);
-  PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp);
+  PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,Temp,false);
+  PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,Temp,false);
+  PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp,false);
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
   SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);
@@ -570,9 +570,9 @@ int main(int argc,char **argv) {
 
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
-    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
-    PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,O::Temperature);
-    PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,H2::Temperature);
+    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature,false);
+    PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,O::Temperature,false);
+    PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,H2::Temperature,false);
 
     //sample relative speed
     if (n==0) {
@@ -678,9 +678,9 @@ int main(int argc,char **argv) {
   //======================= TEST 4 BEGINS: RELATIVE VELOCITY AFTER MULTIPLE COLLISIONS WHEN INITAL TEMEPRATURE OF ALL SPECIES IS THE SAME(SPECIES DEPENDENT TIME STEP)  =======
   Temp=H2O::Temperature;
 
-  PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,Temp);
-  PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,Temp);
-  PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp);
+  PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,Temp,false);
+  PIC::InitialCondition::PrepopulateDomain(_O_SPEC_,O::Density,v,Temp,false);
+  PIC::InitialCondition::PrepopulateDomain(_H2_SPEC_,H2::Density,v,Temp,false);
 
   for (s0=0;s0<PIC::nTotalSpecies;s0++) for (s1=0;s1<PIC::nTotalSpecies;s1++) RelativeSpeed[s0][s1]=0.0,RelativeSpeedCouter[s0][s1]=0;
   SampleRelativeSpeed(RelativeSpeed,RelativeSpeedCouter,PIC::Mesh::mesh->rootTree);

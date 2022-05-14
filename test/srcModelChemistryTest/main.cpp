@@ -761,7 +761,7 @@ void Test1(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
 
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
-    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
+    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature,false);
     CountParticles(InitialParticleCounter,PIC::Mesh::mesh->rootTree);
 
     //apply the chemical model
@@ -842,7 +842,7 @@ void Test2(double ReactionYieldTable[PIC::nTotalSpecies][PIC::nTotalSpecies]) {
 
   for (n=0;n<nTotalTestIterations;n++) {
     //populate the domain with partiucles
-    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature);
+    PIC::InitialCondition::PrepopulateDomain(_H2O_SPEC_,H2O::Density,v,H2O::Temperature,false);
     CountParticles(InitialParticleCounter,PIC::Mesh::mesh->rootTree);
 
     //apply the chemical model
