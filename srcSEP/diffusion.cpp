@@ -209,7 +209,13 @@ void SEP::Diffusion::Florinskiy::GetB(double *B,PIC::InterpolationRoutines::Cell
   }
 } 
 
-double SEP::Diffusion::Florinskiy::GetD_mu_mu(double *x,double *v,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node) {
+void SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+  namespace FL = PIC::FieldLine;
+  namespace MD = PIC::MolecularData;
+
+  FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+  FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
   double r_s,w_plus,w_minus,r_2D_A,sigma_2D_c;
   double D_2D_mu_mu;
 
@@ -217,8 +223,9 @@ double SEP::Diffusion::Florinskiy::GetD_mu_mu(double *x,double *v,int spec,cTree
   //calculate plasma density and magnetic field 
   double B[3]={0.0,0.0,0.0},PlasmaDensity=0.0,omega_minus=0.0,omega_plus=0.0;
   PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-  int idim;
+  //int idim;
 
+/*
   PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(x,Node,Stencil);
   
   for (int iStencil=0;iStencil<Stencil.Length;iStencil++) {
@@ -227,14 +234,48 @@ double SEP::Diffusion::Florinskiy::GetD_mu_mu(double *x,double *v,int spec,cTree
     for (idim=0;idim<3;idim++) B[idim]+=Stencil.Weight[iStencil]*ptr[idim];
 
     PlasmaDensity+=(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::PlasmaNumberDensityOffset)))*Stencil.Weight[iStencil]; 
-    omega_minus+=(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil]; 
-    omega_plus+=(*(1+(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
+!!! some thing wrond with index    omega_minus+=(*((double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil]; 
+   omega_plus+=(*(1+(double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::AlfvenWaveI01Offset)))*Stencil.Weight[iStencil];
   }
+*/
+
+
+  double *B0,*B1;
+  double *W0,*W1;
+  double *x0,*x1;
+  double w0,w1;
+  double PlasmaDensity0,PlasmaDensity1;
+
+  B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+  B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+  W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+  W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+
+  VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
+  VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+
+  //determine the interpolation coefficients
+  w1=fmod(FieldLineCoord,1);
+  w0=1.0-w1;
+
+  double absB2=0.0,r2=0.0;
+  int idim;
+
+  for (idim=0;idim<3;idim++) {
+    B[idim]=w0*B0[idim]+w1*B1[idim];
+  }
+
+  omega_minus=w0*W0[0]+w1*W1[0];
+  omega_plus=w0*W0[1]+w1*W1[1]; 
+
+  PlasmaDensity=w0*PlasmaDensity0+w1*PlasmaDensity1;
+
 
   //calculate the Alfven speed
   double B2=Vector3D::DotProduct(B,B);
-  double mu=Vector3D::DotProduct(v,B)/sqrt(B2);
-  double v_abs=Vector3D::Length(v);
+  //double mu=Vector3D::DotProduct(v,B)/sqrt(B2);
+  double v_abs=sqrt(vParallel*vParallel+vNorm*vNorm);
 
   double vAlfven=sqrt(B2/(VacuumPermeability*PlasmaDensity*_MASS_(_H_))); 
   double Omega=fabs(PIC::MolecularData::GetElectricCharge(spec))*sqrt(B2)/PIC::MolecularData::GetMass(spec); 
@@ -267,9 +308,7 @@ double SEP::Diffusion::Florinskiy::GetD_mu_mu(double *x,double *v,int spec,cTree
   double mu_plus=mu+mu_step; 
   double mu_minus=mu-mu_step;
  
-  double dD_mu_mu__d_mu=(GetD_mu_mu(mu_plus)-GetD_mu_mu(mu_minus))/(mu_plus-mu_minus);
-  
-  return D_mu_mu;
+  dD_dmu=(GetD_mu_mu(mu_plus)-GetD_mu_mu(mu_minus))/(mu_plus-mu_minus);
 } 
 
 

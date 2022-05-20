@@ -240,6 +240,9 @@ namespace SEP {
 
       double GetD_mu_mu(double *x,double *v,int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node); 
       double GetDxx(double *x,double *v,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *Node);
+
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+
     }
  
   }

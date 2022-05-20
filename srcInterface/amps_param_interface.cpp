@@ -209,6 +209,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else if (t=="Jokopii") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
       }
+      else if (t=="Florinskiy") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient;
+      }
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
