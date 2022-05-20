@@ -61,11 +61,11 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
 
   define _TEMP_FIX_VISUALIZATION_ 1
 
-  RequestedParticleBufferLength=2000000
+  RequestedParticleBufferLength=20000000
 
   define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_
 
-  BlockCells=6,6,6
+  BlockCells=4,4,4
   GhostCells=2,2,2
 
   !define _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE_ _PIC_OUTPUT_MACROSCOPIC_FLOW_DATA_MODE__OFF_
@@ -86,6 +86,9 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
    define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
 
   define _PIC_USER_DEFING_PARTICLE_SAMPLING_(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s) OH::Sampling::OriginLocation::SampleParticleData(tempParticleData,LocalParticleWeight,tempSamplingBuffer,s)
+
+  define _OH_GRID_ _OH_GRID_USER_
+  define _PARTICLE_SPLITTING_ _PARTICLE_SPLITTING_VELOCITY_SHIFT_
 
   RndPrecisionLimit=on,limit=1E-5
 
@@ -119,8 +122,8 @@ UserDefinedParticleInitialization=OH::InitializeParticleWithEnaOriginTag(newPart
   InjectionTemperature=6519;		!default=6519
   
   !domain settings
-  DomainXMin=(-3E13,-3E13,-3E13);!default=(-2.25E14,-2.25E14,-2.25E14)
-  DomainXMax=( 3E13, 3E13, 3E13);!default=( 2.25E14, 2.25E14, 2.25E14)
+  DomainXMin=(-3.9E13,-3.9E13,-3.9E13);!default=(-2.25E14,-2.25E14,-2.25E14)
+  DomainXMax=( 3.9E13, 3.9E13, 3.9E13);!default=( 2.25E14, 2.25E14, 2.25E14)
   DomainDXmin = 1.5E13;			  !default=1.8E13
   DomainDXMax = 1.5E13;			  !default=1.8E13
 
