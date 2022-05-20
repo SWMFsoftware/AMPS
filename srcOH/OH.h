@@ -3,6 +3,22 @@
 #ifndef _OH_H_
 #define _OH_H_
 
+// Uniform (default) or User-specified grid
+#define _OH_GRID_DEFAULT_              0
+#define _OH_GRID_USER_                 1
+
+#ifndef _OH_GRID_
+#define _OH_GRID_ _OH_GRID_DEFAULT_ 
+#endif
+
+// Particle Splittng (default = off)
+#define _PARTICLE_SPLITTING_DEFAULT_         0
+#define _PARTICLE_SPLITTING_VELOCITY_SHIFT_  1
+
+#ifndef _PARTICLE_SPLITTING_
+#define _PARTICLE_SPLITTING_ _PARTICLE_SPLITTING_DEFAULT_
+#endif
+
 // AMPS core code
 #include "pic.h"
 
