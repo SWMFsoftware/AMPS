@@ -43,9 +43,25 @@ const double DebugRunMultiplier=4.0;
 double localResolution(double *x) {
   int idim;
   double lnR,res,r=0.0;
-  
-  res = OH::DomainDXMin;
-  return res;
+
+ switch (_OH_GRID_) {
+  case _OH_GRID_DEFAULT_:
+      res = OH::DomainDXMin;
+
+      return res;
+    break;
+  case _OH_GRID_USER_:
+      if (x[0] < 1.5E13 && x[0] > -1.5E13 && x[1] < 1.5E13 && x[1] > -1.5E13 && x[2] < 1.5E13 && x[2] > -1.5E13) res = 3.0E12;
+
+      if (x[0] < 3.0E12 && x[0] > -3.0E12 && x[1] < 3.0E12 && x[1] > -3.0E12 && x[2] < 3.0E12 && x[2] > -3.0E12) res = 1.5E12;
+
+      else res = 6.0E12;
+
+      return res;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the grid is not being called correctly");
+  }
 }
 
 //set up the local time step
@@ -426,8 +442,21 @@ void amps_time_step(){
     //make the time advance
      PIC::TimeStep();
 
-    //run the particle splitting procedure 
-    //PIC::ParticleSplitting::Split::SplitWithVelocityShift(0.01,80,90); 
+    //run the particle splitting procedure
+
+ switch (_PARTICLE_SPLITTING_) {
+  case _PARTICLE_SPLITTING_DEFAULT_:
+
+    break;
+  case _PARTICLE_SPLITTING_VELOCITY_SHIFT_:
+
+    PIC::ParticleSplitting::SetParam(0.2,0.01,160,200,false);
+    PIC::ParticleSplitting::SetMode(PIC::ParticleSplitting::_VelocityShift);
+
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: splitting command undefined");
+ }
 
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
