@@ -745,7 +745,7 @@ subroutine amps_get_bline(&
   !----------------------------------------------------------------------------
 
 
-  call amps_get_bline_c(nVertexMax,nLine,nVertex_B,& 
+  call amps_get_bline_c(DataInputTime,nVertexMax,nLine,nVertex_B,& 
     nMHData,NameVar_V,MHData_VIB) 
 
   RETURN

@@ -48,6 +48,11 @@ int AMPS2SWMF::FieldLineData::nLat=4;
 //speed of the CME driven shock
 double AMPS2SWMF::ShockSpeed=0.0;
 
+//magnetic field line coupling
+bool AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag=false;
+bool AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag=false;
+double AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=-1.0;
+double AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime=-1.0;
 
 //shock search mode
 int AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_disabled;
@@ -590,8 +595,19 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
   #endif
 
 
-  void amps_get_bline_c_(int* nVertexMax, int* nLine, int* nVertex_B,int *nMHData,char* NameVar_V, double* MHData_VIB) {
+  void amps_get_bline_c_(double *DataInputTime,int* nVertexMax, int* nLine, int* nVertex_B,int *nMHData,char* NameVar_V, double* MHData_VIB) {
     using namespace PIC::FieldLine;
+
+    if (AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==false) {
+      AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag=true;
+      AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=*DataInputTime;
+    }
+    else {
+      AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag=true;
+      AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime=AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime;
+
+      AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=*DataInputTime;
+    }
 
     //init AMPS if needed 
     if (AMPS2SWMF::amps_init_mesh_flag==false) {

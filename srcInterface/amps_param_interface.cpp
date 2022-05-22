@@ -253,6 +253,11 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::Diffusion::Jokopii1966AJ::FractionValue=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex=atof(t.c_str());
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
       #endif
     }
 

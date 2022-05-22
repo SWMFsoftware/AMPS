@@ -10,6 +10,7 @@ double SEP::Diffusion::Jokopii1966AJ::k_ref_min=1.0E-10;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_max=1.0E-7;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_R=_AU_;
 double SEP::Diffusion::Jokopii1966AJ::FractionValue=0.05;
+double SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex=0.0;
 int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
 
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
@@ -152,7 +153,7 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
     C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
     break;
   case _fraction: 
-    C=FractionValue*absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+    C=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) *absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
     break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");

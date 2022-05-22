@@ -74,7 +74,7 @@ void SEP::Sampling::Manager() {
       SamplingBufferTable[iFieldLine][i].Sampling();
 
       //output sampled data
-      if (cnt%2==0) {
+      if (cnt%120==0) {
         SamplingBufferTable[iFieldLine][i].Output();
       }
     }

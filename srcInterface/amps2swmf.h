@@ -23,6 +23,12 @@ namespace AMPS2SWMF {
   extern char ComponentName[10];
   extern int ComponentID;
 
+  //magnetic field line coupling 
+  namespace MagneticFieldLineUpdate {
+    extern bool FirstCouplingFlag,SecondCouplingFlag;
+    extern double LastCouplingTime,LastLastCouplingTime;
+  }
+
   //parameters of the current SWMF session
   extern int iSession;
   extern double swmfTimeSimulation;

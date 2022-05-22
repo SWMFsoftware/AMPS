@@ -33,6 +33,8 @@
 #include "Exosphere.h"
 #include "constants.h"
 
+#include "array_2d.h"
+
 #ifndef _DOMAIN_GEOMETRY_
 #define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
 #endif
@@ -208,7 +210,7 @@ namespace SEP {
       extern int Mode;
       const int _awsom=0;
       const int _fraction=1;
-      extern double FractionValue;
+      extern double FractionValue,FractionPowerIndex;
 
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW);
@@ -261,13 +263,14 @@ namespace SEP {
 
     class cSamplingBuffer {
     public:
-      int nEnergyBins;
+      int nEnergyBins,nPitchAngleBins;
       double MinEnergy,MaxEnergy,dLogEnergy;
      
       double *DensitySamplingTable;
       double *FluxSamplingTable,*ReturnFluxSamplingTable;
       int SamplingCounter;
       double SamplingTime;
+      array_2d<double> PitchAngleSamplingTable;
 
       int iFieldLine;
       double HeliocentricDisctance;
@@ -325,6 +328,7 @@ namespace SEP {
         if (node==NULL) return;
         if (node->block==NULL) return;
 
+        double dmu=2.0/nPitchAngleBins;
         double vol=0.0;
         double xFirstFieldLine[3];
 
@@ -351,8 +355,8 @@ namespace SEP {
         SamplingCounter++;
 
         while (ptr!=-1) {
-          double v[3],e,m0;
-          int spec,ibin;
+          double v[3],e,m0,mu;
+          int spec,ibin,iMuBin;
           PB::byte* ParticleData;
 
           ParticleData=PB::GetParticleDataPointer(ptr); 
@@ -365,6 +369,7 @@ namespace SEP {
           v[2]=0.0;
 
 
+          mu=v[0]/sqrt(v[0]*v[0]+v[1]*v[1]);
           m0=PIC::MolecularData::GetMass(spec);
 
           if (PB::GetFieldLineId(ParticleData)!=iFieldLine) {
@@ -383,6 +388,10 @@ namespace SEP {
           }
 
           ibin=(int)(log(e/MinEnergy)/dLogEnergy);  
+          iMuBin=(int)(((mu+1.0)/dmu)); 
+
+          if (iMuBin<0) iMuBin=0;
+          if (iMuBin>=nPitchAngleBins) iMuBin=nPitchAngleBins-1;
 
           if ((ibin>=0)&&(ibin<nEnergyBins)) {  
             double ParticleWeight;
@@ -393,6 +402,8 @@ namespace SEP {
             DensitySamplingTable[ibin]+=ParticleWeight/vol;
             FluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v); 
 
+            PitchAngleSamplingTable(iMuBin,ibin)+=ParticleWeight;
+
             if (v[0]<0.0) ReturnFluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v);
           } 
 
@@ -400,9 +411,59 @@ namespace SEP {
         }
       }
 
-      void Clear() {
-        for (int i=0;i<nEnergyBins;i++) DensitySamplingTable[i]=0.0,FluxSamplingTable[i]=0.0,ReturnFluxSamplingTable[i]=0.0;
+      void OutputPitchAngleDistribution() {
+        double dmu=2.0/nPitchAngleBins;  
+        int j,ibin;
+
+        char fname[200];
+        FILE *fout=NULL;
+
+        sprintf(fname,"%s.pitch_angle_distribution.field-line=%ld.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime); 
+        fout=fopen(fname,"w");
+
+        fprintf(fout,"VARIABLES = \"Pitch Angle\"  ");
+
+        //notmalize the distribution
+        for (ibin=0;ibin<nEnergyBins;ibin++) {
+          double sum=0.0;
+
+          fprintf(fout,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(ibin*dLogEnergy)*J2MeV,MinEnergy*exp((ibin+1)*dLogEnergy)*J2MeV); 
         
+          for (j=0;j<nPitchAngleBins;j++) { 
+            sum+=PitchAngleSamplingTable(j,ibin);
+          }
+
+          sum*=dmu; 
+
+          if (sum>0.0) {
+            for (j=0;j<nPitchAngleBins;j++) {
+              PitchAngleSamplingTable(j,ibin)/=sum;
+            }
+          }
+        }
+
+        fprintf(fout,"\n");
+
+        //output the distribution
+        for (j=0;j<nPitchAngleBins;j++) {
+          fprintf(fout,"%e  ",(j+0.5)*dmu-1.0);
+
+          for (ibin=0;ibin<nEnergyBins;ibin++) fprintf(fout,"%e  ",PitchAngleSamplingTable(j,ibin)); 
+
+          fprintf(fout,"\n");
+        }
+
+        //clear the ssampling buffer
+        PitchAngleSamplingTable=0.0; 
+        fclose(fout);
+      }
+
+      void Clear() {
+        for (int i=0;i<nEnergyBins;i++) {
+          DensitySamplingTable[i]=0.0,FluxSamplingTable[i]=0.0,ReturnFluxSamplingTable[i]=0.0;
+        }
+        
+        PitchAngleSamplingTable=0.0;
         SamplingCounter=0;
       }
 
@@ -429,13 +490,17 @@ namespace SEP {
         fflush(foutReturnFlux);
 
 
-
+        //output the pirch angle distribution
+        OutputPitchAngleDistribution();
+      
+        //clear the sampling buffers
         Clear();
       }
 
 
       //full name of the output file is saved here for debugging purposes 
       char full_name[200];
+      char base_name[200];      
 
       void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
         nEnergyBins=n;
@@ -444,6 +509,11 @@ namespace SEP {
         HeliocentricDisctance=r;
         iFieldLine=l; 
 
+        nPitchAngleBins=20;
+        PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
+
+        sprintf(base_name,"%s",fname);
+ 
         sprintf(full_name,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutDensity=fopen(full_name,"w"); 
         if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting"); 
@@ -472,6 +542,7 @@ namespace SEP {
         DensitySamplingTable=new double[nEnergyBins];
         FluxSamplingTable=new double[nEnergyBins];
         ReturnFluxSamplingTable=new double[nEnergyBins];
+
         Clear(); 
       }
     };
@@ -531,6 +602,7 @@ namespace SEP {
   int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
   int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   //particle mover
   int inline ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
