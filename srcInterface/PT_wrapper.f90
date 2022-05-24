@@ -262,7 +262,7 @@ contains
 
        if (DataInputTime > PTTime) then
           PTTime = DataInputTime
-          call save_mhd(PTTime)
+    !     call save_mhd(PTTime)
        end if
 
        call amps_get_bline(&
