@@ -985,7 +985,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
   
-  auto GetTransportCoefficients = [] (double& dv,double& dmu,double v,double mu,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
+  auto GetTransportCoefficients = [] (double& dp,double& dmu,double v,double mu,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
     //calculate B and L
     double B[3],B0[3],B1[3], AbsBDeriv;
     double L,AbsB; 
@@ -1001,7 +1001,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     L=-Vector3D::Length(B)/AbsBDeriv;
 
     if (::AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==false) {
-      dv=0.0;
+      dp=0.0;
       dmu=(1.0-mu*mu)/2.0*v/L*dt; 
       return;
     }
@@ -1039,7 +1039,10 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
     vSolarWindParallel=vSW0*weight0+vSW1*weight1; 
 
-    dv=-v*((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;  
+
+    if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
+
+    dp=-Relativistic::Speed2Momentum(v,_H__MASS_)*((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;  
     dmu=((1.0-mu2)/2.0*(v/L+mu*(DivVsw-3.0*dVz_dz)))*dt; 
   };
     
@@ -1056,6 +1059,15 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   bool first_pass_flag=true;
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
+
+if (v>=SpeedOfLight) {
+double t=0.99*SpeedOfLight/v;
+
+v*=t;
+vParallel*=t;
+vNormal*=t;
+}
+
   mu=vParallel/v;
 
   while (time_counter<dtTotal) { 
@@ -1093,18 +1105,40 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       if (mu>1.0) mu=1.0;
     }
 
+
+double dp;
+static int ncall=0;
+
+ncall++;
+
+if (ncall==1587351) {
+double d33=0.0;
+
+d33+=34;
+cout << d33 << endl;
+}
      
 
-    GetTransportCoefficients(dv,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
+
+if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
+
+    GetTransportCoefficients(dp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel)); 
 
-    v+=dv;
+
+double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
+p+=dp;
+v=Relativistic::Momentum2Speed(p,_H__MASS_);
+
+//    v+=dv;
     mu+=dmu;
 
     if (mu<-1.0) mu=-1.0;
     if (mu>1.0) mu=1.0; 
 
-    vParallel=mu*v;
+if ((isfinite(mu)==false)||(isfinite(v)==false)) {
+  exit(__LINE__,__FILE__);
+} 
   
     //get the segment of the new particle location 
     if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {

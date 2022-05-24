@@ -254,7 +254,7 @@ namespace SEP {
 
     const int SamplingHeliocentricDistanceTableLength=6;
     const double SamplingHeliocentricDistanceTable[]={16.0*_RADIUS_(_SUN_),0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
-    const double MinSampleEnergy=1.0*MeV2J;
+    const double MinSampleEnergy=0.1*MeV2J;
     const double MaxSampleEnergy=500.0*MeV2J;
     const int nSampleIntervals=7;
 
