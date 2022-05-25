@@ -272,12 +272,12 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
 
       t=param_list.front().first;
-      SEP::FieldLine::InjectionParameters::emin=atof(t.c_str());
+      SEP::FieldLine::InjectionParameters::emin=atof(t.c_str())*MeV2J;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
 
       t=param_list.front().first;
-      SEP::FieldLine::InjectionParameters::emax=atof(t.c_str());
+      SEP::FieldLine::InjectionParameters::emax=atof(t.c_str())*MeV2J;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
       

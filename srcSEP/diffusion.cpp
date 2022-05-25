@@ -144,24 +144,74 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   k_max=t*k_ref_max;
 
 
+  const int nR=100;
+  const int nK=1000;
+
+  const double dR=1.0/nR;
+
+  double gamma,dK;
+
+   static bool init_flag=false;
+  
+static double IntegralTable[nR];
+static double GammaTable[nR];
+
+if (init_flag==false) {
+  init_flag=true;
+
+  for (int iR=0;iR<nR;iR++) {
+    t=nR*dR/((iR+0.5)*dR); 
+
+    k_min=t*t*k_ref_min; 
+    k_max=t*t*k_ref_max;
+
+    gamma=1.0E9/(t*t); 
+    dK=(k_max-k_min)/nK;
+
+    GammaTable[iR]=gamma;
+
+    double summ=0.0;
+
+    for (int iK=0;iK<nK;iK++) {
+      summ+=1.0/(1.0+pow(k_min+(iK+0.5)*dK,5.0/3.0));
+    }
+
+    IntegralTable[iR]=gamma*dK*summ;
+  }
+} 
+
   double omega,k,P,C,c;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
+
+  int iR=sqrt(r2)/(_AU_*dR);
+
+  if (iR>=nR) iR=nR-1; 
+  if (iR<0) iR=0; 
 
   switch (Mode) {
   case _awsom:
     C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
     break;
   case _fraction: 
-    C=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) *absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+//    C=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) *absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+
+    C=1.0/ IntegralTable[iR];
+
     break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
   k=omega/fabs(vParallel);
-  P=C/pow(k,5.0/3.0); 
+//  P=C/pow(k,5.0/3.0); 
+
+  P=C*GammaTable[iR]/(1.0+pow(k*GammaTable[iR],5.0/3.0))*FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) * absB2; 
+
+
   c=Pi/4.0*omega*k*P/absB2;
+
+//  P=C*GammaTable[iR] * FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) * absB2 / (1.0+pow(k*GammaTable[iR],5.0/3.0)); 
 
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;

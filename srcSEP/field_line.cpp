@@ -186,11 +186,18 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double pmin=sqrt(10.0*KeV2J*2.0*PIC::MolecularData::GetMass(spec));
     double r;
 
+//cout << "pmin -> " << Relativistic::Momentum2Energy(pmin,PIC::MolecularData::GetMass(spec))/MeV2J << "MeV"<< endl;
+
     for (int i=0;i<nParticles;i++) {
+do {
       r=rnd();
       if (r==0.0) r=rnd();
 
       pAbsTable[i]=pmin/pow(r,4);
+}
+while (Relativistic::Momentum2Energy(pAbsTable[i],PIC::MolecularData::GetMass(spec))>1.0*MeV2J); 
+
+
       WeightCorrectionTable[i]=1.0;
     }
   };

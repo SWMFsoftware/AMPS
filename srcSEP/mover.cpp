@@ -1030,6 +1030,11 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
     DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
 
+    if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
+      dmu=0.0;
+      dp=0.0;
+      return;
+    }  
 
     double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
     double weight1=1.0-weight0;
@@ -1111,7 +1116,7 @@ static int ncall=0;
 
 ncall++;
 
-if (ncall==1587351) {
+if (ncall==1212370) {
 double d33=0.0;
 
 d33+=34;
