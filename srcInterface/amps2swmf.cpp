@@ -96,7 +96,7 @@ int AMPS2SWMF::FieldLineUpdateCounter=0;
 AMPS2SWMF::cShockData *AMPS2SWMF::ShockData=NULL;
 
 //amps execution timer 
-PIC::Debugger::cTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
+PIC::Debugger::cGenericTimer AMPS2SWMF::ExecutionTimer(_PIC_TIMER_MODE_HRES_);  
 
 //hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
 AMPS2SWMF::fUserFinalizeSimulation AMPS2SWMF::UserFinalizeSimulation=NULL;
@@ -427,6 +427,7 @@ extern "C" {
     bool call_amps_flag=true; 
 
 do {
+    ExecutionTimer.Start("amps_timestep_",__LINE__,__FILE__);
 
     switch (_PIC_COUPLER_MODE_) {
     case _PIC_COUPLER_MODE__SWMF_:
@@ -437,17 +438,19 @@ do {
       break;
     }
 
+    ExecutionTimer.SwitchTimeSegment(__LINE__);
+
     //call AMPS
     static long int counter=0;
     counter++;
 
     if (call_amps_flag==true) {
-      ExecutionTimer.Start();
       amps_time_step();
-      ExecutionTimer.UpdateTimer();
 
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
     }
+
+    ExecutionTimer.Stop(__LINE__);
 }
 while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
@@ -483,7 +486,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     char fname[_MAX_STRING_LENGTH_PIC_];
 
     //print the executed time 
-     AMPS2SWMF::ExecutionTimer.PrintMeanMPI("AMPS execution time avaraged over all MPI processes involved in the simulation");
+     AMPS2SWMF::ExecutionTimer.PrintSampledDataMPI();
 
     //output the test run particle data
     sprintf(fname,"%s/amps.dat",PIC::OutputDataFileDirectory);

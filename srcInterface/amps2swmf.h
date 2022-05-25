@@ -72,7 +72,7 @@ namespace AMPS2SWMF {
   extern int ShockSearchMode;
 
   //AMPS execution timer 
-  extern PIC::Debugger::cTimer ExecutionTimer; 
+  extern PIC::Debugger::cGenericTimer ExecutionTimer; 
 
   //hook that AMPS applications can use so a user-defined function is called at the end of the SWMF simulation
   typedef void (*fUserFinalizeSimulation)(); 
