@@ -54,6 +54,9 @@ int main(int argc,char **argv) {
   for (long int niter=0;niter<TotalIterations;niter++) {
     //SEP::InitDriftVelData();
     amps_time_step();
+
+    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
+
   }
 
 

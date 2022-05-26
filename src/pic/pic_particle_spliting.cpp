@@ -186,7 +186,7 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift(int particle_num_limi
       PIC::ParticleBuffer::GetV(v1,p);
 
       for (auto& t : VelocitySpaceTable[ii]->p) if (t!=p) {
-        PIC::ParticleBuffer::GetV(v2,p);
+        PIC::ParticleBuffer::GetV(v2,t);
         d2=0.0;
         
         for (int idim=0;idim<3;idim++) {
@@ -1257,6 +1257,620 @@ if (PIC::ThisThread==0) PrintStat(s,i,j,k,node);
   }
 }  
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max) {
+  int inode,i,j,k,i0,j0,k0,di,dj,dk,nParticles;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+  long int p;
+  
+  namespace FL = PIC::FieldLine;
+  namespace PB = PIC::ParticleBuffer;
+
+  auto GetParticleNumber = [&] (int *ParticleNumberTable,FL::cFieldLineSegment *Segment) {
+    long int p;
+    int spec;
+
+    for (spec=0;spec<PIC::nTotalSpecies;spec++) ParticleNumberTable[spec]=0;
+
+    p=Segment->FirstParticleIndex;
+
+    while (p!=-1) {
+      ParticleNumberTable[PIC::ParticleBuffer::GetI(p)]++;
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+  };
+
+
+  class cParticleListElement {
+  public:
+    long int ptr;
+    double w;
+  };
+
+
+  class cParticleId {
+  public:
+    long int ptr;
+    int nd;
+  };
+
+  class cParticleDescriptor {
+  public:
+    long int p;
+    double w;
+  };
+
+  vector<cParticleListElement>  ParticleList;
+
+  //reduce the number of model particles 
+
+  auto GetVelocityRange = [&] (int spec,double *vmin,double *vmax,FL::cFieldLineSegment *Segment)  {
+    long int p;
+    int res=0,idim;
+    bool initflag=false;
+    double vNorm,vParallel,v[3];
+
+    p=Segment->FirstParticleIndex;
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) {
+
+        res++;
+//        PIC::ParticleBuffer::GetV(v,p);
+        v[0]=PB::GetVParallel(p);
+        v[1]=PB::GetVNormal(p);
+        v[2]=0.0;
+
+        if (initflag==false) {
+          for (idim=0;idim<3;idim++) vmin[idim]=v[idim],vmax[idim]=v[idim];
+
+          initflag=true;
+        }
+        else {
+          for (idim=0;idim<3;idim++) {
+            if (vmin[idim]>v[idim]) vmin[idim]=v[idim];
+            if (vmax[idim]<v[idim]) vmax[idim]=v[idim]; 
+          }
+        }
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+
+    return res;
+  };
+
+
+  class cVelocitySpaceElement {
+  public:
+    int iv,jv,kv;
+    vector<long int> p;
+  }; 
+
+  cVelocitySpaceElement **VelocitySpaceTable=NULL;
+  const int nSerachLevels=6;
+
+  const int nVelCells1d=1<<nSerachLevels;
+  const int nVelCells=nVelCells1d*nVelCells1d;
+
+
+  //create the initial velovity space table
+  auto InitVelocitySpaceTable = [&] (int spec,double *vmin,double *dv,FL::cFieldLineSegment *Segment)  {
+    long int p;
+    int idim,iv[3],iVelCell;
+    double v[3];
+    bool foundflag;
+
+    VelocitySpaceTable=new cVelocitySpaceElement* [nVelCells];
+    for (int i=0;i<nVelCells;i++) VelocitySpaceTable[i]=NULL;
+
+    p=Segment->FirstParticleIndex;
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) {
+ //       PIC::ParticleBuffer::GetV(v,p);
+        
+        v[0]=PB::GetVParallel(p);
+        v[1]=PB::GetVNormal(p);
+        v[2]=0.0;
+
+        for (idim=0;idim<2;idim++) iv[idim]=(int)((v[idim]-vmin[idim])/dv[idim]); 
+
+        iVelCell=iv[0]+nVelCells1d*iv[1];  
+
+        if (VelocitySpaceTable[iVelCell]==NULL) {
+          VelocitySpaceTable[iVelCell]=new cVelocitySpaceElement [1];
+
+          VelocitySpaceTable[iVelCell]->iv=iv[0];
+          VelocitySpaceTable[iVelCell]->jv=iv[1];
+          VelocitySpaceTable[iVelCell]->kv=iv[2];
+        } 
+
+        VelocitySpaceTable[iVelCell]->p.push_back(p);
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+  }; 
+
+  auto RemoveOneParticle= [&] (int nCurrentResolutionLevel,int nMaxParticlesReduce,FL::cFieldLineSegment *Segment,bool& more_then_one_particle_left) { 
+    int cnt=0,npart;
+    long int p;
+    double w_remove;
+
+    more_then_one_particle_left=false;
+
+    if (nMaxParticlesReduce==0) return cnt;
+
+
+    int nCells1d=1<<nCurrentResolutionLevel;
+    int nCells=nCells1d*nCells1d;
+
+
+    for (int ii=0;ii<nCells;ii++) if (VelocitySpaceTable[ii]!=NULL) if ((npart=VelocitySpaceTable[ii]->p.size())>1) { 
+      double w_tot=0.0,w,wmin;
+      auto itmin=VelocitySpaceTable[ii]->p.begin(); 
+
+
+      //find particle with smallest weight
+      p=-1,wmin=-1.0;
+    
+  
+      for (auto it=VelocitySpaceTable[ii]->p.begin();it!=VelocitySpaceTable[ii]->p.end();it++) {
+        w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(*it);
+
+        if ((wmin<0.0)||(w<wmin)) p=*it,wmin=w,itmin=it;
+      }
+
+
+      //find particles that closest to 'p' in the velocity space 
+      long int p1;
+      double d2,d2min=-1.0;
+      double v1[3],v2[3];
+
+    //  PIC::ParticleBuffer::GetV(v1,p);
+      
+      v1[0]=PB::GetVParallel(p);
+      v1[1]=PB::GetVNormal(p);
+      v1[2]=0.0;
+
+      for (auto& t : VelocitySpaceTable[ii]->p) if (t!=p) {
+        //PIC::ParticleBuffer::GetV(v2,p);
+        v2[0]=PB::GetVParallel(t);
+        v2[1]=PB::GetVNormal(t);
+        v2[2]=0.0;
+
+
+        d2=0.0;
+        
+        for (int idim=0;idim<3;idim++) {
+          double tt=v1[idim]-v2[idim];
+
+          d2+=tt*tt;
+        }
+
+        if ((d2min<0.0)||(d2<d2min)) d2min=d2,p1=t;
+      } 
+ 
+      //merge particle p1 and p: weight of 'p' is added to 'p1'
+      w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p1); 
+
+      //PIC::ParticleBuffer::GetV(v1,p1);
+      v1[0]=PB::GetVParallel(p1);
+      v1[1]=PB::GetVNormal(p1);
+      v1[2]=0.0;
+      
+      
+      
+      //PIC::ParticleBuffer::GetV(v2,p);
+      v2[0]=PB::GetVParallel(p);
+      v2[1]=PB::GetVNormal(p);
+      v2[2]=0.0;
+
+      for (int idim=0;idim<3;idim++) v1[idim]=(w*v1[idim]+wmin*v2[idim])/(w+wmin);
+
+      //PIC::ParticleBuffer::SetV(v1,p1);  
+      PB::SetVParallel(v1[0],p1);
+      PB::SetVNormal(v1[1],p1);
+      
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(w+wmin,p1);
+      
+      //delete particles
+      PIC::ParticleBuffer::DeleteParticle(p,Segment->FirstParticleIndex);
+      VelocitySpaceTable[ii]->p.erase(itmin);
+
+      if (npart-1>1) more_then_one_particle_left=true;
+
+      if (++cnt==nMaxParticlesReduce) break;
+    }
+
+    return cnt;
+  }; 
+
+  auto RebuildVelocitySpaceTable = [&] (int CurrentResolutionLevel) {
+    cVelocitySpaceElement **NewVelocitySpaceTable;
+    int iVelCell,iNewVelCell,iv,jv;
+
+
+    int NewResolutionLevel=CurrentResolutionLevel-1;
+
+    int nVelCells1d=1<<CurrentResolutionLevel;
+    int nNewVelCells1d=nVelCells1d/2;
+
+    int nVelCells=nVelCells1d*nVelCells1d;
+    int nNewVelCells=nNewVelCells1d*nNewVelCells1d;
+
+
+    NewVelocitySpaceTable=new cVelocitySpaceElement* [nNewVelCells];
+    for (int i=0;i<nNewVelCells;i++) NewVelocitySpaceTable[i]=NULL;
+
+    for (int i=0;i<nVelCells;i++) {
+      if (VelocitySpaceTable[i]!=NULL) {
+        iv=VelocitySpaceTable[i]->iv;
+        jv=VelocitySpaceTable[i]->jv;
+
+        iVelCell=iv+nVelCells1d*jv;  
+
+        iv/=2,jv/=2;
+        iNewVelCell=iv+nNewVelCells1d*jv;
+
+        if (NewVelocitySpaceTable[iNewVelCell]==NULL) {
+          NewVelocitySpaceTable[iNewVelCell]=new cVelocitySpaceElement [1];
+
+          *NewVelocitySpaceTable[iNewVelCell]=*VelocitySpaceTable[i];
+
+          NewVelocitySpaceTable[iNewVelCell]->iv/=2;
+          NewVelocitySpaceTable[iNewVelCell]->jv/=2;
+        }
+        else {
+          NewVelocitySpaceTable[iNewVelCell]->p.insert(NewVelocitySpaceTable[iNewVelCell]->p.begin(),
+              VelocitySpaceTable[i]->p.begin(),VelocitySpaceTable[i]->p.end());
+        }
+      }
+    }
+
+    //delete the previous table 
+    for (int i=0;i<nVelCells;i++) if (VelocitySpaceTable[i]!=NULL) delete [] VelocitySpaceTable[i];
+
+    delete [] VelocitySpaceTable;
+    VelocitySpaceTable=NewVelocitySpaceTable;
+  }; 
+
+
+  auto DeleteVelocitySpaceTable = [&] (int CurrentResolutionLevel) {
+    int nVelCells1d=1<<CurrentResolutionLevel;
+    int nVelCells=nVelCells1d*nVelCells1d;
+
+    for (int i=0;i<nVelCells;i++) if (VelocitySpaceTable[i]!=NULL) delete [] VelocitySpaceTable[i];
+
+    delete [] VelocitySpaceTable;
+  };
+
+  auto ReduceParticleNumber1 = [&] (int spec,int nModelParticles,FL::cFieldLineSegment *Segment,int nRequestedParticles)  {
+    double vmin[3],vmax[3],dv[3]; 
+    bool more_then_one_particle_left;
+
+
+    if (nModelParticles>nRequestedParticles) {
+      int nDeleteParticles=nModelParticles-nRequestedParticles;  
+      int nRemovedParticles=0;
+
+
+static int ncall=0;
+ncall++;
+
+
+
+if (ncall==10792) {
+  cout << "sfpsodfposiapfoipo"<< endl;
+}
+
+
+
+
+      GetVelocityRange(spec,vmin,vmax,Segment);
+
+      for (int idim=0;idim<3;idim++) {
+        double d=vmax[idim]-vmin[idim]; 
+
+        vmin[idim]-=0.05*d; 
+        vmax[idim]+=0.05*d;
+
+        dv[idim]=(vmax[idim]-vmin[idim])/nVelCells1d;
+      }
+
+
+      InitVelocitySpaceTable(spec,vmin,dv,Segment);
+
+      int CurrentResolutionLevel=nSerachLevels;
+
+      while (nRemovedParticles<nDeleteParticles) {
+        nRemovedParticles+=RemoveOneParticle(CurrentResolutionLevel,nDeleteParticles-nRemovedParticles,Segment,more_then_one_particle_left); 
+
+        if ((nRemovedParticles<nDeleteParticles)&&(more_then_one_particle_left==false)) {
+          RebuildVelocitySpaceTable(CurrentResolutionLevel);
+          --CurrentResolutionLevel;
+        } 
+      }
+
+      DeleteVelocitySpaceTable(CurrentResolutionLevel);
+    }
+  };
+
+  auto ReduceParticleNumber = [&] (int spec,FL::cFieldLineSegment *Segment,int nRequestedParticles)  {
+    vector<cParticleDescriptor> ParticleList;  
+    cParticleDescriptor t;
+    double *v,w_max=0.0,w_min=-1.0,SummedWeight=0.0,w;
+    int nModelParticles=0;
+    long int p;
+
+    p=Segment->FirstParticleIndex;
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) { 
+        t.p=p;
+        t.w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        ParticleList.push_back(t);
+
+        SummedWeight+=t.w;
+        nModelParticles++;
+
+        if (w_max<t.w) w_max=t.w;
+        if ((w_min<0.0)||(w_min>t.w)) w_min=t.w; 
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+
+    //delete particles 
+    int nDeleteParticles=nModelParticles-nRequestedParticles,ip; 
+    double RemovedParticleWeight=0.0;
+    int ii;
+
+    for (ii=0;ii<nDeleteParticles;ii++) {
+      const bool _search_continue=true;
+      const bool _search_completed=false; 
+
+      bool flag=_search_continue;
+      int ip, cnt=0;
+
+      while ((++cnt<1000000)&&(flag==_search_continue)) {
+        ip=(int)(rnd()*nModelParticles);
+
+        if (w_min/ParticleList[ip].w>rnd()) { // delete particles with smaller weight  
+          RemovedParticleWeight+=ParticleList[ip].w;
+          PIC::ParticleBuffer::DeleteParticle(ParticleList[ip].p,Segment->FirstParticleIndex);
+
+          ParticleList[ip]=ParticleList[nModelParticles-1];
+          nModelParticles--;
+          flag=_search_completed; 
+        }
+      } 
+    }
+
+
+    //distribute the removed weight among particles that left in the system 
+    for (ii=0;ii<nModelParticles;ii++) {
+      w=ParticleList[ii].w*(1.0+RemovedParticleWeight/(SummedWeight-RemovedParticleWeight));    
+      p=ParticleList[ii].p;
+
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(w,p);
+    }
+  }; 
+
+
+
+
+  auto IncreseParticleNumber = [&] (int spec,FL::cFieldLineSegment *Segment) {
+    double MeanV[3]={0.0,0.0,0.0},v[3],w;
+    double MeanV2[3]={0.0,0.0,0.0};
+
+    vector<cParticleDescriptor> ParticleList;
+    cParticleDescriptor t;
+    double w_max=0.0,SummedWeight=0.0,ThermalSpeed=0.0;
+    int idim,nModelParticles=0;
+    long int p;
+
+    p=Segment->FirstParticleIndex;
+
+    while (p!=-1) {
+      if (spec==PIC::ParticleBuffer::GetI(p)) {
+        t.p=p;
+        t.w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
+        ParticleList.push_back(t); 
+
+        SummedWeight+=t.w;
+        if (w_max<t.w) w_max=t.w;
+
+        //PIC::ParticleBuffer::GetV(v,p); 
+        v[0]=PB::GetVParallel(p);
+        v[1]=PB::GetVNormal(p);
+        v[2]=0.0;
+
+        for (int idim=0;idim<3;idim++) {
+          MeanV[idim]+=t.w*v[idim];
+          MeanV2[idim]+=t.w*v[idim]*v[idim];
+        }
+
+        nModelParticles++;
+      }
+
+      p=PIC::ParticleBuffer::GetNext(p);
+    }
+
+    for (idim=0;idim<3;idim++) ThermalSpeed+=MeanV2[idim]/SummedWeight-MeanV[idim]*MeanV[idim]/(SummedWeight*SummedWeight); 
+
+    ThermalSpeed=sqrt(fabs(ThermalSpeed));
+
+    //add new particles in the system
+    int nNewParticles=particle_num_limit_max-nModelParticles;
+    int ip;
+    long int pnew;
+    double l[3],vnew[3],vold[3];
+    bool flag;
+
+    for (int ii=0;ii<nNewParticles;ii++) {
+      flag=true;
+
+      while (flag==true) {
+        ip=(int)(rnd()*nModelParticles);
+
+        int ip_wmax=-1;
+        w_max=-1.0;
+ 
+        for (int i=0;i<nModelParticles;i++) {
+          if (w_max<ParticleList[i].w) w_max=ParticleList[i].w,ip_wmax=i;
+        } 
+
+        ip=ip_wmax;
+
+        if (true) { // (ParticleList[ip].w/w_max>rnd()) { //split particles with larger weight  
+          pnew=PIC::ParticleBuffer::GetNewParticle(Segment->FirstParticleIndex); 
+          PIC::ParticleBuffer::CloneParticle(pnew,ParticleList[ip].p);
+
+          //set new weight for both particles 
+          ParticleList[ip].w/=2.0;
+          t=ParticleList[ip];
+          t.p=pnew;
+          ParticleList.push_back(t);
+          nModelParticles++;
+          flag=false;
+
+          PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleList[ip].w,ParticleList[ip].p);
+          PIC::ParticleBuffer::SetIndividualStatWeightCorrection(ParticleList[ip].w,pnew);
+
+          //perturb a new particle velocity;
+          Vector3D::Distribution::Uniform(l,0.5*v_shift_max*ThermalSpeed); 
+
+          //get velocity for the new particle 
+       //   PIC::ParticleBuffer::GetV(vnew,pnew); 
+        vnew[0]=PB::GetVParallel(pnew);
+        vnew[1]=PB::GetVNormal(pnew);
+        vnew[2]=0.0;
+
+          for (idim=0;idim<3;idim++) {
+            vold[idim]=vnew[idim]-l[idim];
+            vnew[idim]+=l[idim];
+          }
+
+          //PIC::ParticleBuffer::SetV(vnew,pnew);
+          PB::SetVParallel(vnew[0],pnew);
+          PB::SetVNormal(vnew[1],pnew);
+
+       //   PIC::ParticleBuffer::SetV(vold,ParticleList[ip].p);
+          PB::SetVParallel(vold[0],p);
+          PB::SetVNormal(vold[1],p);
+
+
+/*
+          double dx[3],*xmin,*xmax,x[3],x0[3];
+
+          xmin=node->xmin;
+          
+
+          dx[0]=(node->xmax[0]-xmin[0])/_BLOCK_CELLS_X_;
+          dx[1]=(node->xmax[1]-xmin[1])/_BLOCK_CELLS_Y_;
+          dx[2]=(node->xmax[2]-xmin[2])/_BLOCK_CELLS_Z_;
+*/
+
+/*
+
+ 
+
+
+
+double r;
+bool flag=true;
+do {
+  flag=true;
+
+
+    r=pow(rnd(),1.0/3.0);
+
+  
+  if (apply_non_uniform_x_shift==true) if (r>rnd()) {
+    flag=false;
+    continue;
+  }
+
+  PIC::ParticleBuffer::GetX(x0,pnew);
+
+  double ll[3];
+
+  Vector3D::Distribution::Uniform(ll,x_shift_max*r*sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]));
+
+  x0[0]+=ll[0];
+  if (x0[0]<xmin[0]+i*dx[0]) {flag=false;continue;}
+  if (x0[0]>xmin[0]+(i+1)*dx[0]) {flag=false;continue;} 
+
+  x0[1]+=ll[1];
+  if (x0[1]<xmin[1]+j*dx[1]) {flag=false;continue;}
+  if (x0[1]>xmin[1]+(j+1)*dx[1]) {flag=false;continue;}
+
+  x0[2]+=ll[2];
+  if (x0[2]<xmin[2]+k*dx[2]) {flag=false;continue;}
+  if (x0[2]>xmin[2]+(k+1)*dx[2]) {flag=false;continue;}
+}
+while (flag==false);
+
+
+
+PIC::ParticleBuffer::SetX(x0,pnew);*/
+
+
+
+        }
+      }
+    }
+  };
+
+
+  //loop through the nodes
+  int ParticleNumberTable[PIC::nTotalSpecies],spec; 
+  
+  
+  
+  for (int iFieldLine=0; iFieldLine<FL::nFieldLine; iFieldLine++) {  
+    FL::cFieldLineSegment* Segment;
+    int iSegment;
+    
+    for (iSegment=0,Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment(); iSegment<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber(); iSegment++,Segment=Segment->GetNext()) {
+      GetParticleNumber(ParticleNumberTable,Segment);
+
+      for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+        if (ParticleNumberTable[spec]>particle_num_limit_max) {
+          ReduceParticleNumber1(spec,ParticleNumberTable[spec],Segment,particle_num_limit_min+0.9*(particle_num_limit_max-particle_num_limit_min));
+        }
+        else if ((1<ParticleNumberTable[spec])&&(ParticleNumberTable[spec]<particle_num_limit_min)) {
+          IncreseParticleNumber(spec,Segment);
+        }
+      }
+    }
+    
+  }
+  
+
+/*  for (inode=0;inode<PIC::DomainBlockDecomposition::nLocalBlocks;inode++) {
+    node=PIC::DomainBlockDecomposition::BlockTable[inode];
+
+    if (node->block!=NULL) {
+      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        GetParticleNumber(ParticleNumberTable,i,j,k,node);
+
+        for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+          if (ParticleNumberTable[spec]>particle_num_limit_max) {
+            ReduceParticleNumber1(spec,ParticleNumberTable[spec],i,j,k,node,particle_num_limit_min+0.9*(particle_num_limit_max-particle_num_limit_min));
+          }
+          else if ((1<ParticleNumberTable[spec])&&(ParticleNumberTable[spec]<particle_num_limit_min)) {
+            IncreseParticleNumber(spec,i,j,k,node);
+          }
+        }
+      }
+    }      
+  }*/
+
+//  PIC::Parallel::ExchangeParticleData();
+} 
 
 
 

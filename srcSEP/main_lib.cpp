@@ -545,6 +545,9 @@ void amps_time_step(){
     //make the time advance
      PIC::TimeStep();
 
+         PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(200,300);
+
+
      // write output file
      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
 //       PIC::RequiredSampleLength*=2;
