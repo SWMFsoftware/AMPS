@@ -1075,14 +1075,35 @@ vNormal*=t;
 
   mu=vParallel/v;
 
+static long int ncall=0;
+
+ncall++;
+
+if (ncall==2369588) {
+double d33=0.0;
+
+d33+=34;
+cout << d33 << endl;
+}
+
+
+
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
     dmu=0.0;
 
+
+if (isfinite(mu)==false) exit(__LINE__,__FILE__);
+
+
+
+
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord,Segment);
       delta=sqrt(4.0*D*dt)/erf(rnd());
+
+if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
         if (fabs(dD_dmu*dt)>0.05) {
@@ -1101,28 +1122,24 @@ vNormal*=t;
       delta=sqrt(4.0*D*dt)/erf(rnd());
       dmu+=(rnd()>0.5) ? delta : -delta;
 
+      if (mu<-1.0) mu+=1.0;
+      if (mu>1.0) mu-=1.0;
+
       dmu+=dD_dmu*dt;
 
       mu+=dmu;
       dmu=0.0;
 
-      if (mu<-1.0) mu=-1.0;
-      if (mu>1.0) mu=1.0;
+      if (mu<-1.0) mu+=1.0;
+      if (mu>1.0) mu-=1.0;
+
+      if (mu>0.999) mu=0.999; 
+      if (mu<-0.999) mu=-0.999;
     }
 
 
 double dp;
-static int ncall=0;
 
-ncall++;
-
-if (ncall==1212370) {
-double d33=0.0;
-
-d33+=34;
-cout << d33 << endl;
-}
-     
 
 
 if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
@@ -1135,18 +1152,30 @@ double p=Relativistic::Speed2Momentum(v,_H__MASS_);
 p+=dp;
 v=Relativistic::Momentum2Speed(p,_H__MASS_);
 
+if (v>=0.99*SpeedOfLight) {
+v=0.99*SpeedOfLight;
+}
+
 //    v+=dv;
     mu+=dmu;
+    dmu=0.0;
 
-    if (mu<-1.0) mu=-1.0;
-    if (mu>1.0) mu=1.0; 
+
+      if (mu<-1.0) mu+=1.0;
+      if (mu>1.0) mu-=1.0;
+
+      if (mu>0.999) mu=0.999;
+      if (mu<-0.999) mu=-0.999;
+
+  vParallel=mu*v;
+  vNormal=sqrt(1.0-mu*mu)*v;
 
 if ((isfinite(mu)==false)||(isfinite(v)==false)) {
   exit(__LINE__,__FILE__);
 } 
   
     //get the segment of the new particle location 
-    if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    if ((FieldLineCoord<0.0) || ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL)) {
       //the particle left the computational domain
       int code=_PARTICLE_DELETED_ON_THE_FACE_;
     

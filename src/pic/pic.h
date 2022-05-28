@@ -1420,7 +1420,7 @@ void DeleteAttachedParticles();
       void Scatter(int particle_num_limit_min,int particle_num_limit_max);
       void SplitWithVelocityShift(int particle_num_limit_min,int particle_num_limit_max);
 
-      void SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max);
+      void SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max,double WeightSplittingLimit=1.0E-10);
     }
   }
 

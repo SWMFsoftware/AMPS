@@ -1258,7 +1258,7 @@ if (PIC::ThisThread==0) PrintStat(s,i,j,k,node);
 }  
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
-void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max) {
+void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max,double WeightSplittingLimit) {
   int inode,i,j,k,i0,j0,k0,di,dj,dk,nParticles;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
   long int p;
@@ -1677,26 +1677,31 @@ if (ncall==10792) {
       if (spec==PIC::ParticleBuffer::GetI(p)) {
         t.p=p;
         t.w=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(p);
-        ParticleList.push_back(t); 
 
-        SummedWeight+=t.w;
-        if (w_max<t.w) w_max=t.w;
+        if (t.w>WeightSplittingLimit) {
+          ParticleList.push_back(t); 
 
-        //PIC::ParticleBuffer::GetV(v,p); 
-        v[0]=PB::GetVParallel(p);
-        v[1]=PB::GetVNormal(p);
-        v[2]=0.0;
+          SummedWeight+=t.w;
+          if (w_max<t.w) w_max=t.w;
 
-        for (int idim=0;idim<3;idim++) {
-          MeanV[idim]+=t.w*v[idim];
-          MeanV2[idim]+=t.w*v[idim]*v[idim];
+          //PIC::ParticleBuffer::GetV(v,p); 
+          v[0]=PB::GetVParallel(p);
+          v[1]=PB::GetVNormal(p);
+          v[2]=0.0;
+
+          for (int idim=0;idim<3;idim++) {
+            MeanV[idim]+=t.w*v[idim];
+            MeanV2[idim]+=t.w*v[idim]*v[idim];
+          }
+
+          nModelParticles++;
         }
-
-        nModelParticles++;
       }
 
       p=PIC::ParticleBuffer::GetNext(p);
     }
+
+    if (nModelParticles<2) return;
 
     for (idim=0;idim<3;idim++) ThermalSpeed+=MeanV2[idim]/SummedWeight-MeanV[idim]*MeanV[idim]/(SummedWeight*SummedWeight); 
 

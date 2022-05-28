@@ -545,7 +545,7 @@ void amps_time_step(){
     //make the time advance
      PIC::TimeStep();
 
-         PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(200,300);
+         PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(20,30);
 
 
      // write output file
