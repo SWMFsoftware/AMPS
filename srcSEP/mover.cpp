@@ -1025,10 +1025,12 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
     Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
     DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+    DivVsw0=-DivVsw0;
 
     Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
     Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
     DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+    DivVsw1=-DivVsw1;
 
     if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
       dmu=0.0;
@@ -1049,6 +1051,9 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
     dp=-Relativistic::Speed2Momentum(v,_H__MASS_)*((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;  
     dmu=((1.0-mu2)/2.0*(v/L+mu*(DivVsw-3.0*dVz_dz)))*dt; 
+
+
+    dp=((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;
   };
     
 
@@ -1149,7 +1154,10 @@ if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
 
 double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
-p+=dp;
+//p+=dp;
+
+p*=exp(dp);
+
 v=Relativistic::Momentum2Speed(p,_H__MASS_);
 
 if (v>=0.99*SpeedOfLight) {
