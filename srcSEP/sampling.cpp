@@ -1,14 +1,6 @@
 
 #include "sep.h"
 
-/*
-int SEP::Sampling::SamplingHeliocentricDistanceTableLength=5;
-double SEP::Sampling::SamplingHeliocentricDistanceTable[]={0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_}; 
-double SEP::Sampling::MinSampleEnergy=0.1*MeV2J;
-double SEP::Sampling::MaxSampleEnergy=500.0*MeV2J;
-int SEP::Sampling::nSampleIntervals=7; 
-*/
-
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
 

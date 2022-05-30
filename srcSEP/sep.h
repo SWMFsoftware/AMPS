@@ -255,8 +255,8 @@ namespace SEP {
     const int SamplingHeliocentricDistanceTableLength=6;
     const double SamplingHeliocentricDistanceTable[]={16.0*_RADIUS_(_SUN_),0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
     const double MinSampleEnergy=0.1*MeV2J;
-    const double MaxSampleEnergy=500.0*MeV2J;
-    const int nSampleIntervals=7;
+    const double MaxSampleEnergy=3000.0*MeV2J;
+    const int nSampleIntervals=10;
 
     /*SamplingHeliocentricDistanceTable can be set in AMPS' input file while SamplingHeliocentricDistanceList is defined in SWMF's PARAM.in. The latter has priority*/
     extern vector<double> SamplingHeliocentricDistanceList;
@@ -386,6 +386,10 @@ namespace SEP {
             e=Relativistic::Speed2E(Vector3D::Length(v),m0);
             break;
           }
+
+          e=Relativistic::Speed2E(Vector3D::Length(v),m0);
+
+double e_mev=e*J2MeV;
 
           ibin=(int)(log(e/MinEnergy)/dLogEnergy);  
           iMuBin=(int)(((mu+1.0)/dmu)); 
