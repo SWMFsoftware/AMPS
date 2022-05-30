@@ -184,7 +184,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) { 
     double pmin=sqrt(10.0*KeV2J*2.0*PIC::MolecularData::GetMass(spec));
-    double r;
+    double e,r;
 
 //cout << "pmin -> " << Relativistic::Momentum2Energy(pmin,PIC::MolecularData::GetMass(spec))/MeV2J << "MeV"<< endl;
 
@@ -193,9 +193,10 @@ do {
       r=rnd();
       if (r==0.0) r=rnd();
 
-      pAbsTable[i]=pmin/pow(r,4);
+      pAbsTable[i]=pmin/pow(r,InjectionParameters::PowerIndex);
+      e=Relativistic::Momentum2Energy(pAbsTable[i],PIC::MolecularData::GetMass(spec));
 }
-while (Relativistic::Momentum2Energy(pAbsTable[i],PIC::MolecularData::GetMass(spec))>1.0*MeV2J); 
+while ((e<SEP::FieldLine::InjectionParameters::emin)||(e>SEP::FieldLine::InjectionParameters::emax)); 
 
 
       WeightCorrectionTable[i]=1.0;
