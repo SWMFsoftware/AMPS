@@ -58,6 +58,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
   bool TestVar=false;
   list<pair<string,string> >::iterator it;
 
+  //exit if the command is not recognized
+  bool StrictCommandCheck=false;
+
   while (param_list.begin()!=param_list.end()) { 
     Command="";
 
@@ -150,6 +153,10 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=dt; 
       }
       else exit(__LINE__,__FILE__,"Error: the option is not defined"); 
+    }
+
+    else if (Command == "#STRICT") {  
+      StrictCommandCheck=true; 
     }
 
     else if (Command == "#FIELDLINE") { 
@@ -318,6 +325,16 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
       }
       else if (t=="Sokolov2004AJ") {
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+        SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
+
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+        SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+
         SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_sokolov2004aj; 
       }
       else {
@@ -387,9 +404,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
 
     else {
-      if (Command.c_str()[0]=='#') {
+      if ((Command.c_str()[0]!='!')&&(StrictCommandCheck==true)) {
         cout<<"PT: Can not find Comand : "<<Command<<endl;
-//        exit(__LINE__,__FILE__);
+        exit(__LINE__,__FILE__);
       }
     }
 
