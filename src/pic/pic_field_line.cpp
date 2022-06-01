@@ -1453,6 +1453,7 @@ namespace FieldLine{
       exit(__LINE__,__FILE__,"Error: wrong options");
     } 
 
+
   auto CountParticle = [&] (FL::cFieldLineSegment* Segment) {
     long int ptr;
     int cnt=0;
@@ -1494,22 +1495,22 @@ namespace FieldLine{
       ptr=Segment->FirstParticleIndex;
 
 
-   static long int *ParticleTable=NULL;
-   static int ParticleTableLength=0;
+   long int *ParticleTable=NULL;
+   int ParticleTableLength=0;
 
    int SegmentParticleNumber=CountParticle(Segment);
 
    if (ParticleTableLength<SegmentParticleNumber) {
      if (ParticleTable!=NULL) delete [] ParticleTable;
 
-     ParticleTable=new long int [2*SegmentParticleNumber]; 
-     ParticleTableLength=2*SegmentParticleNumber;
+     ParticleTable=new long int [SegmentParticleNumber]; 
+     ParticleTableLength=SegmentParticleNumber;
    }
 
    PopulateParticleTable(ParticleTable,Segment);
 
    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   #pragma omp parallel for private (x,spec, ParticleData,LocalTimeStep) firstprivate(node) shared(ParticleTable) 
+   #pragma omp parallel for default (none) private (ptr,x,spec, ParticleData,LocalTimeStep) firstprivate(node,SegmentParticleNumber,PIC::Mesh::mesh) shared(ParticleTable) 
    #endif
    for (int ii=0;ii<SegmentParticleNumber;ii++) {
      ptr=ParticleTable[ii];
@@ -1525,6 +1526,9 @@ namespace FieldLine{
      LocalTimeStep=node->block->GetLocalTimeStep(spec); 
      _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
    }
+
+
+   if (ParticleTable==NULL) delete [] ParticleTable;
    };
 
     //loop through the field lines 
