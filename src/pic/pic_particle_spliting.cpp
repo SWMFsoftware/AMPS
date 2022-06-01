@@ -1763,8 +1763,8 @@ if (ncall==10792) {
           PB::SetVNormal(vnew[1],pnew);
 
        //   PIC::ParticleBuffer::SetV(vold,ParticleList[ip].p);
-          PB::SetVParallel(vold[0],p);
-          PB::SetVNormal(vold[1],p);
+          PB::SetVParallel(vold[0],ParticleList[ip].p);
+          PB::SetVNormal(vold[1],ParticleList[ip].p);
 
 
 /*
