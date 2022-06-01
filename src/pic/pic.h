@@ -883,7 +883,8 @@ namespace PIC {
       bool ActiveFlag;
 
       //index of the first particle attached to the segment
-      long int FirstParticleIndex,tempFirstParticleIndex; 
+      long int FirstParticleIndex;
+      std::atomic<long int> tempFirstParticleIndex; 
 
       //.......................................................................
       // interface with stack functionality
