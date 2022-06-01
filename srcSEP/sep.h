@@ -212,6 +212,15 @@ namespace SEP {
       const int _fraction=1;
       extern double FractionValue,FractionPowerIndex;
 
+      const int nR=100;
+      const int nK=1000;
+
+      extern double IntegralTable[nR];
+      extern double GammaTable[nR]; 
+  
+      void Init();
+
+
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
       void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW);
     }

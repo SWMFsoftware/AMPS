@@ -1219,16 +1219,14 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    #pragma omp critical
-#endif
     {
-    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
-    Segment->tempFirstParticleIndex=ptr;
+    long int tempFirstParticleIndex;
+
+    tempFirstParticleIndex=atomic_exchange(&Segment->tempFirstParticleIndex,ptr);
+    if (tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstParticleIndex);
+    PIC::ParticleBuffer::SetNext(tempFirstParticleIndex,ParticleData);
     } 
 
     break;

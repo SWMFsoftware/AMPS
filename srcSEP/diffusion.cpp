@@ -131,6 +131,37 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,absB2,r2,spec,SummW); 
 }
 
+
+double SEP::Diffusion::Jokopii1966AJ::IntegralTable[SEP::Diffusion::Jokopii1966AJ::nR];
+double SEP::Diffusion::Jokopii1966AJ::GammaTable[SEP::Diffusion::Jokopii1966AJ::nR];
+
+void SEP::Diffusion::Jokopii1966AJ::Init() {
+   double dR=1.0/nR;
+   double dK,t;
+   double k_min,k_max,gamma;
+
+
+  for (int iR=0;iR<nR;iR++) {
+    t=nR*dR/((iR+0.5)*dR);
+
+    k_min=t*t*k_ref_min;
+    k_max=t*t*k_ref_max;
+
+    gamma=1.0E9/(t*t);
+    dK=(k_max-k_min)/nK;
+
+    GammaTable[iR]=gamma;
+
+    double summ=0.0;
+
+    for (int iK=0;iK<nK;iK++) {
+      summ+=1.0/(1.0+pow(k_min+(iK+0.5)*dK,5.0/3.0));
+    }
+
+    IntegralTable[iR]=gamma*dK*summ;
+  }
+}
+
 void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double absB2,double r2,int spec,double SummW) {
   namespace MD = PIC::MolecularData;
 
@@ -144,41 +175,9 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   k_max=t*k_ref_max;
 
 
-  const int nR=100;
-  const int nK=1000;
-
-  const double dR=1.0/nR;
+  double dR=1.0/nR;
 
   double gamma,dK;
-
-   static bool init_flag=false;
-  
-static double IntegralTable[nR];
-static double GammaTable[nR];
-
-if (init_flag==false) {
-  init_flag=true;
-
-  for (int iR=0;iR<nR;iR++) {
-    t=nR*dR/((iR+0.5)*dR); 
-
-    k_min=t*t*k_ref_min; 
-    k_max=t*t*k_ref_max;
-
-    gamma=1.0E9/(t*t); 
-    dK=(k_max-k_min)/nK;
-
-    GammaTable[iR]=gamma;
-
-    double summ=0.0;
-
-    for (int iK=0;iK<nK;iK++) {
-      summ+=1.0/(1.0+pow(k_min+(iK+0.5)*dK,5.0/3.0));
-    }
-
-    IntegralTable[iR]=gamma*dK*summ;
-  }
-} 
 
   double omega,k,P,C,c;
 
