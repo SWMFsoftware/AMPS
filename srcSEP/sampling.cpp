@@ -4,7 +4,13 @@
 SEP::Sampling::cSamplingBuffer **SEP::Sampling::SamplingBufferTable=NULL;
 vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
 
+array_4d<double>  SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable;
 array_3d<double>  SEP::Sampling::PitchAngle::PitchAngleRSamplingTable;
+
+double SEP::Sampling::PitchAngle::emin=0.1*MeV2J;
+double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
+int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=10;
+double SEP::Sampling::PitchAngle::dLogE; 
 
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
@@ -18,8 +24,13 @@ void SEP::Sampling::Init() {
 
   for (int i=0;i<FL::nFieldLineMax;i++) SamplingBufferTable[i]=NULL;
 
+  SEP::Sampling::PitchAngle::dLogE=log(SEP::Sampling::PitchAngle::emax/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::nEnergySamplingIntervals;
+  PitchAngle::PitchAngleREnergySamplingTable.init(PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+  PitchAngle::PitchAngleREnergySamplingTable=0.0; 
+
   PitchAngle::PitchAngleRSamplingTable.init(PitchAngle::nMuIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
-  PitchAngle::PitchAngleRSamplingTable=0.0; 
+  PitchAngle::PitchAngleRSamplingTable=0.0;
+
 }  
 
 void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
@@ -66,9 +77,9 @@ void SEP::Sampling::Manager() {
 
       //sample pitchaanglesof the partcles for a given field line 
       FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
-      double x[3],v[3],mu,FieldLineCoord;
+      double speed,e,x[3],v[3],mu,FieldLineCoord;
       long int ptr; 
-      int iMu,iR,spec;
+      int iMu,iR,spec,iE;
 
       for (;Segment!=NULL;Segment=Segment->GetNext()) {
         ptr=Segment->FirstParticleIndex;
@@ -81,6 +92,13 @@ void SEP::Sampling::Manager() {
           v[1]=PB::GetVNormal(ParticleData);
           v[2]=0.0;
 
+          speed=sqrt(v[0]*v[0]+v[1]*v[1]);
+          if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
+          e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec)); 
+          iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE; 
+
+          if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1; 
+          if (iE<0)iE=0;
 
           mu=v[0]/sqrt(v[0]*v[0]+v[1]*v[1]);
           iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
@@ -96,6 +114,7 @@ void SEP::Sampling::Manager() {
           double ParticleWeight= PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
           ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
 
+          SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(iMu,iE,iR,iFieldLine)+=ParticleWeight;
           SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iFieldLine)+=ParticleWeight;
 
           ptr=PB::GetNext(ptr);
@@ -141,6 +160,23 @@ void SEP::Sampling::Manager() {
       for (iMu=0;iMu<SEP::Sampling::PitchAngle::nMuIntervals;iMu++) {
         SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iLine)/=summ;
       }
+
+      int iE;
+
+      for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+        summ=0.0;
+
+        for (iMu=0;iMu<SEP::Sampling::PitchAngle::nMuIntervals;iMu++) {
+          summ+=SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(iMu,iE,iR,iLine);
+        }
+
+        summ*=SEP::Sampling::PitchAngle::dMu;
+        if (summ==0.0) summ=1.0;
+
+        for (iMu=0;iMu<SEP::Sampling::PitchAngle::nMuIntervals;iMu++) {
+          SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(iMu,iE,iR,iLine)/=summ;
+        }
+      }
     }
 
     //output a  file  
@@ -152,7 +188,15 @@ void SEP::Sampling::Manager() {
 
     fprintf(fout,"VARIABLES=\"R [AU]\", \"Mu\"");
 
-    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  fprintf(fout,", \"f%i\"",iLine); 
+    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
+      if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
+        fprintf(fout,", \"f%i\"",iLine); 
+
+        for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) fprintf(fout,", \"f%i(%e-%e)Mev\"",iLine, 
+          SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
+          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV); 
+      }
+    }
 
     fprintf(fout,"\nZONE I=%i, J=%i, DATAPACKING=POINT\n",SEP::Sampling::PitchAngle::nMuIntervals+1,SEP::Sampling::PitchAngle::nRadiusIntervals+1);
 
@@ -176,6 +220,23 @@ void SEP::Sampling::Manager() {
           }
       
           fprintf(fout,"  %e",f/base);
+
+
+          for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+            f=0.0,base=0.0; 
+
+            for (di=-1;di<=0;di++) for (dj=-1;dj<=0;dj++) {
+              i=iR+di;
+              j=iMu+dj;
+
+              if ((i>=0)&&(i<SEP::Sampling::PitchAngle::nRadiusIntervals)&&(j>=0)&&(j<SEP::Sampling::PitchAngle::nMuIntervals)) {
+                f+=SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(j,iE,i,iLine);
+                base++;
+              }
+            }
+
+            fprintf(fout,"  %e",f/base);
+          }
        }
 
        fprintf(fout,"\n");
@@ -184,7 +245,7 @@ void SEP::Sampling::Manager() {
 
    fclose(fout);
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
-    
+   SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
 
   }
 

@@ -35,6 +35,7 @@
 
 #include "array_2d.h"
 #include "array_3d.h"
+#include "array_4d.h"
 
 #ifndef _DOMAIN_GEOMETRY_
 #define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
@@ -273,6 +274,10 @@ namespace SEP {
     
     namespace PitchAngle {
       extern array_3d<double> PitchAngleRSamplingTable; 
+
+      extern array_4d<double> PitchAngleREnergySamplingTable;
+      extern double emin,emax,dLogE;
+      extern int nEnergySamplingIntervals;
       
       const int nRadiusIntervals=50;
       const double dR=_AU_/nRadiusIntervals;
