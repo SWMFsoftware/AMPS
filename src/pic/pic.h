@@ -1109,6 +1109,7 @@ void DeleteAttachedParticles();
       cFieldLineVertex  *FirstVertex,  *LastVertex;
 
       //table of segment pointers needed for the segment random access
+    public:
       vector<cFieldLineSegment*> SegmentPointerTable;
 
       //check whether the line is broken

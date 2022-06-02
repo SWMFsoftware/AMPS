@@ -1454,6 +1454,12 @@ namespace FieldLine{
     } 
 
 
+const int _process_by_particles=0;
+const int _process_by_segments=1;
+
+int _process_mode=_process_by_particles;
+
+
   auto CountParticle = [&] (FL::cFieldLineSegment* Segment) {
     long int ptr;
     int cnt=0;
@@ -1531,6 +1537,35 @@ namespace FieldLine{
    if (ParticleTable==NULL) delete [] ParticleTable;
    };
 
+    auto ProcessEntireSegment = [&] (FL::cFieldLineSegment* Segment) {
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+      long int ptr,ptr_next;
+      double *x,LocalTimeStep;
+      int spec;
+      PB::byte* ParticleData;
+
+      ptr=Segment->FirstParticleIndex;
+
+      while (ptr!=-1) {
+        ptr_next=PB::GetNext(ptr);
+
+       ParticleData=PB::GetParticleDataPointer(ptr);
+
+       x=PB::GetX(ParticleData);
+       spec=PB::GetI(ParticleData);
+
+       node=PIC::Mesh::mesh->findTreeNode(x,node);
+       if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+       if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+       LocalTimeStep=node->block->GetLocalTimeStep(spec);
+       _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+
+       ptr=ptr_next;
+    }
+   };
+
+
     //loop through the field lines 
     int iFieldLine;
     FL::cFieldLineSegment *Segment; 
@@ -1542,10 +1577,24 @@ namespace FieldLine{
     #endif
 
     for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+
+const int _process_by_particles=0;
+const int _process_by_segments=1;
+
+if (_process_mode==_process_by_segments) {
+     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+     #pragma omp parallel for  
+     #endif
+      for (int i=0;i<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();i++) {
+         Segment=FL::FieldLinesAll[iFieldLine].SegmentPointerTable[i]; 
+         ProcessEntireSegment(Segment);
+      }
+} else {
       for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
         ProcessSegment(Segment);
         SegmentCounter++;
-      }
+     }
+}
     } 
  
 
