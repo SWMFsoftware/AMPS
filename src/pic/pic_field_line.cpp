@@ -1516,7 +1516,7 @@ int _process_mode=_process_by_particles;
    PopulateParticleTable(ParticleTable,Segment);
 
    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   #pragma omp parallel for default (none) private (ptr,x,spec, ParticleData,LocalTimeStep) firstprivate(node,SegmentParticleNumber,PIC::Mesh::mesh) shared(ParticleTable) 
+   #pragma omp parallel for default (none) private (ptr,x,spec, ParticleData,LocalTimeStep) firstprivate(node,SegmentParticleNumber,PIC::Mesh::mesh,ParticleTable) 
    #endif
    for (int ii=0;ii<SegmentParticleNumber;ii++) {
      ptr=ParticleTable[ii];
@@ -1534,7 +1534,7 @@ int _process_mode=_process_by_particles;
    }
 
 
-   if (ParticleTable==NULL) delete [] ParticleTable;
+   if (ParticleTable!=NULL) delete [] ParticleTable;
    };
 
     auto ProcessEntireSegment = [&] (FL::cFieldLineSegment* Segment) {
