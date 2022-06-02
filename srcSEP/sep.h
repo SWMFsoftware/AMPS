@@ -34,6 +34,7 @@
 #include "constants.h"
 
 #include "array_2d.h"
+#include "array_3d.h"
 
 #ifndef _DOMAIN_GEOMETRY_
 #define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
@@ -269,6 +270,18 @@ namespace SEP {
 
     /*SamplingHeliocentricDistanceTable can be set in AMPS' input file while SamplingHeliocentricDistanceList is defined in SWMF's PARAM.in. The latter has priority*/
     extern vector<double> SamplingHeliocentricDistanceList;
+    
+    namespace PitchAngle {
+      extern array_3d<double> PitchAngleRSamplingTable; 
+      
+      const int nRadiusIntervals=50;
+      const double dR=_AU_/nRadiusIntervals;
+
+      const int nMuIntervals=20;
+      const double dMu=2.0/nMuIntervals;
+   
+      void Output();
+    }
 
     class cSamplingBuffer {
     public:
@@ -406,12 +419,20 @@ double e_mev=e*J2MeV;
           if (iMuBin<0) iMuBin=0;
           if (iMuBin>=nPitchAngleBins) iMuBin=nPitchAngleBins-1;
 
+          double ParticleWeight=node->block->GetLocalParticleWeight(spec);
+          ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
+
+//          double x[3],iMu_RSample,iR_RSample;
+//          PB::GetX(x,ParticleData);
+//          iMu_RSample=(int)(((mu+1.0)/SEP::Sampling::PitchAngle::dMu));
+//          iR_RSample=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
+
+//          if (iMu_RSample>=SEP::Sampling::PitchAngle::nMuIntervals) iMu_RSample=SEP::Sampling::PitchAngle::nMuIntervals-1; 
+//          if (iR_RSample>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR_RSample=SEP::Sampling::PitchAngle::nRadiusIntervals; 
+
+//          SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu_RSample,iR_RSample,iFieldLine)+=ParticleWeight; 
+
           if ((ibin>=0)&&(ibin<nEnergyBins)) {  
-            double ParticleWeight;
-
-            ParticleWeight=node->block->GetLocalParticleWeight(spec); 
-            ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
-
             DensitySamplingTable[ibin]+=ParticleWeight/vol;
             FluxSamplingTable[ibin]+=ParticleWeight/vol*Vector3D::Length(v); 
 
