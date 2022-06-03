@@ -1112,6 +1112,33 @@ if (isfinite(mu)==false) exit(__LINE__,__FILE__);
 if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
+
+        //sample Dmumu
+        double x[3],e,speed,ParticleWeight;
+        int iR,iE,iMu;
+
+        speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
+
+        e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec));
+        iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE;
+
+        if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
+        if (iE<0)iE=0;
+
+        iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
+        if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
+
+        FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord); 
+        iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
+        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
+
+        ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
+        ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
+
+        SEP::Sampling::PitchAngle::DmumuSamplingTable(0,iMu,iE,iR,iFieldLine)+=D*ParticleWeight;
+        SEP::Sampling::PitchAngle::DmumuSamplingTable(1,iMu,iE,iR,iFieldLine)+=ParticleWeight; 
+
         if (fabs(dD_dmu*dt)>0.05) {
           dt=0.05/fabs(dD_dmu);
         }

@@ -202,7 +202,17 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
 
+
   k=omega/fabs(vParallel);
+
+  if (isfinite(k)==false) {
+    k=k_max;
+  }
+  else if (k>k_max) {
+    k=k_max; 
+  } 
+
+
 //  P=C/pow(k,5.0/3.0); 
 
   P=C*GammaTable[iR]/(1.0+pow(k*GammaTable[iR],5.0/3.0))*FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) * absB2; 

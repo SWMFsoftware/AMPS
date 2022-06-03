@@ -6,6 +6,7 @@ vector<double> SEP::Sampling::SamplingHeliocentricDistanceList;
 
 array_4d<double>  SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable;
 array_3d<double>  SEP::Sampling::PitchAngle::PitchAngleRSamplingTable;
+array_5d<double>  SEP::Sampling::PitchAngle::DmumuSamplingTable;
 
 double SEP::Sampling::PitchAngle::emin=0.1*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
@@ -30,6 +31,9 @@ void SEP::Sampling::Init() {
 
   PitchAngle::PitchAngleRSamplingTable.init(PitchAngle::nMuIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::PitchAngleRSamplingTable=0.0;
+
+  PitchAngle::DmumuSamplingTable.init(2,PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+  PitchAngle::DmumuSamplingTable=0.0;
 
 }  
 
@@ -192,9 +196,15 @@ void SEP::Sampling::Manager() {
       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
         fprintf(fout,", \"f%i\"",iLine); 
 
-        for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) fprintf(fout,", \"f%i(%e-%e)Mev\"",iLine, 
+        for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+          fprintf(fout,", \"f%i(%e-%e)Mev\"",iLine, 
           SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
           SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV); 
+
+          fprintf(fout,", \"D%i(%e-%e)Mev\"",iLine,
+          SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
+          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
+        }
       }
     }
 
@@ -223,6 +233,8 @@ void SEP::Sampling::Manager() {
 
 
           for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+            double D=0.0,TotalSampledWeight=0.0;           
+
             f=0.0,base=0.0; 
 
             for (di=-1;di<=0;di++) for (dj=-1;dj<=0;dj++) {
@@ -232,10 +244,15 @@ void SEP::Sampling::Manager() {
               if ((i>=0)&&(i<SEP::Sampling::PitchAngle::nRadiusIntervals)&&(j>=0)&&(j<SEP::Sampling::PitchAngle::nMuIntervals)) {
                 f+=SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(j,iE,i,iLine);
                 base++;
+
+                D+=SEP::Sampling::PitchAngle::DmumuSamplingTable(0,j,iE,i,iLine);
+                TotalSampledWeight+=SEP::Sampling::PitchAngle::DmumuSamplingTable(1,j,iE,i,iLine);
               }
             }
 
-            fprintf(fout,"  %e",f/base);
+            if (TotalSampledWeight==0.0) TotalSampledWeight=1.0;
+
+            fprintf(fout,"  %e  %e",f/base,D/TotalSampledWeight);
           }
        }
 
@@ -246,7 +263,7 @@ void SEP::Sampling::Manager() {
    fclose(fout);
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
-
+   SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;
   }
 
 
