@@ -126,6 +126,27 @@ public:
 
 
 //===================================================
+  array_5d<T>& operator = (const array_5d<T>& v) {
+    int i,imax;
+
+    imax=size_dim0*size_dim1*size_dim2*size_dim3*size_dim4;
+    for (i=0;i<imax;i++) data[i]=v.data[i];
+
+    return *this;
+  };
+
+//===================================================
+  array_5d<T>& operator = (T f) {
+    int i,imax;
+
+    imax=size_dim0*size_dim1*size_dim2*size_dim3*size_dim4;
+    for (i=0;i<imax;i++) data[i]=f;
+
+    return *this;
+  };
+
+
+//===================================================
   //get pointer to an element of the array
   T* GetPtr(int i0,int i1,int i2,int i3,int i4) {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)||(i4<0)||(i4>=size_dim4)) exit(__LINE__,__FILE__,"Error: out of range");
