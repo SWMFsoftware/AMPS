@@ -32,7 +32,7 @@ void SEP::Sampling::Init() {
   PitchAngle::PitchAngleRSamplingTable.init(PitchAngle::nMuIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::PitchAngleRSamplingTable=0.0;
 
-  PitchAngle::DmumuSamplingTable.init(2,PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+  PitchAngle::DmumuSamplingTable.init(4,PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::DmumuSamplingTable=0.0;
 
 }  
@@ -204,6 +204,14 @@ void SEP::Sampling::Manager() {
           fprintf(fout,", \"D%i(%e-%e)Mev\"",iLine,
           SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
           SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
+
+          fprintf(fout,", \"dMudT%i(%e-%e)Mev\"",iLine,
+          SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
+          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
+
+          fprintf(fout,", \"dPdT%i(%e-%e)Mev\"",iLine,
+          SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV,
+          SEP::Sampling::PitchAngle::emin*exp((iE+1)*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
         }
       }
     }
@@ -234,6 +242,7 @@ void SEP::Sampling::Manager() {
 
           for (int iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
             double D=0.0,TotalSampledWeight=0.0;           
+            double dPdT=0.0,dMuDt=0.0;
 
             f=0.0,base=0.0; 
 
@@ -247,12 +256,15 @@ void SEP::Sampling::Manager() {
 
                 D+=SEP::Sampling::PitchAngle::DmumuSamplingTable(0,j,iE,i,iLine);
                 TotalSampledWeight+=SEP::Sampling::PitchAngle::DmumuSamplingTable(1,j,iE,i,iLine);
+
+                dMuDt+=SEP::Sampling::PitchAngle::DmumuSamplingTable(2,j,iE,i,iLine);
+                dPdT+=SEP::Sampling::PitchAngle::DmumuSamplingTable(3,j,iE,i,iLine);
               }
             }
 
             if (TotalSampledWeight==0.0) TotalSampledWeight=1.0;
 
-            fprintf(fout,"  %e  %e",f/base,D/TotalSampledWeight);
+            fprintf(fout,"  %e  %e  %e  %e ",f/base,D/TotalSampledWeight,dMuDt/TotalSampledWeight,dPdT/TotalSampledWeight);
           }
        }
 

@@ -1068,6 +1068,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   double delta,vSolarWindParallel;
 
   bool first_pass_flag=true;
+  bool first_transport_coeffcient=true;
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
@@ -1103,6 +1104,7 @@ cout << d33 << endl;
 if (isfinite(mu)==false) exit(__LINE__,__FILE__);
 
 
+int iR,iE,iMu;
 
 
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
@@ -1115,7 +1117,6 @@ if (isfinite(delta)==false) exit(__LINE__,__FILE__);
 
         //sample Dmumu
         double x[3],e,speed,ParticleWeight;
-        int iR,iE,iMu;
 
         speed=sqrt(vNormal*vNormal+vParallel*vParallel);
         if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
@@ -1179,6 +1180,17 @@ if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel)); 
+
+
+    if (first_transport_coeffcient==true) {
+      first_transport_coeffcient=false;
+
+      double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+      ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
+
+      SEP::Sampling::PitchAngle::DmumuSamplingTable(2,iMu,iE,iR,iFieldLine)+=dmu*ParticleWeight;
+      SEP::Sampling::PitchAngle::DmumuSamplingTable(3,iMu,iE,iR,iFieldLine)+=dp*ParticleWeight;
+    }
 
 
 double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
