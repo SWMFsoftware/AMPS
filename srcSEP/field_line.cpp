@@ -66,6 +66,24 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       }
       else {
         if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0;
+
+
+/*
+        for (int iSegment=0;iSegment<iShockFieldLine-120;iSegment++) {
+          auto Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iSegment);
+          long int ptr_next,ptr=Segment->FirstParticleIndex;
+
+           while (ptr!=-1) {
+             ptr_next=PIC::ParticleBuffer::GetNext(ptr); 
+             PIC::ParticleBuffer::DeleteParticle(ptr);
+
+             ptr=ptr_next;
+           }         
+
+           Segment->FirstParticleIndex=-1;
+        }
+*/
+
       }
       #else 
       iShockFieldLine=0;
@@ -187,6 +205,9 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double e,r;
 
 //cout << "pmin -> " << Relativistic::Momentum2Energy(pmin,PIC::MolecularData::GetMass(spec))/MeV2J << "MeV"<< endl;
+
+
+
 
     for (int i=0;i<nParticles;i++) {
 do {

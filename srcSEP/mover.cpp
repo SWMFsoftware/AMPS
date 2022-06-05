@@ -868,7 +868,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     delta=sqrt(4.0*D*dt)/erf(rnd());
     dmu+=(rnd()>0.5) ? delta : -delta;
 
-    dmu+=dD_dmu*dt;
+    dmu-=dD_dmu*dt;
   }
 
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel));
@@ -892,8 +892,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   mu+=dmu;
   dmu=0.0; 
   
-  if (mu<-1.0) mu=-1.0;
-  if (mu>1.0) mu=1.0;
+  if (mu<-0.999) mu=-0.999;
+  if (mu>0.999) mu=0.999;
  
   
   vParallel=mu*v;
@@ -1156,16 +1156,10 @@ if (isfinite(delta)==false) exit(__LINE__,__FILE__);
       delta=sqrt(4.0*D*dt)/erf(rnd());
       dmu+=(rnd()>0.5) ? delta : -delta;
 
-      if (mu<-1.0) mu+=1.0;
-      if (mu>1.0) mu-=1.0;
-
-      dmu+=dD_dmu*dt;
+      dmu-=dD_dmu*dt;
 
       mu+=dmu;
       dmu=0.0;
-
-      if (mu<-1.0) mu+=1.0;
-      if (mu>1.0) mu-=1.0;
 
       if (mu>0.999) mu=0.999; 
       if (mu<-0.999) mu=-0.999;
@@ -1208,9 +1202,6 @@ v=0.99*SpeedOfLight;
     mu+=dmu;
     dmu=0.0;
 
-
-      if (mu<-1.0) mu+=1.0;
-      if (mu>1.0) mu-=1.0;
 
       if (mu>0.999) mu=0.999;
       if (mu<-0.999) mu=-0.999;

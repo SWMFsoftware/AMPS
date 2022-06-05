@@ -210,7 +210,7 @@ double SEP::Mesh::localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
 
   if (res>1.0) res=1.0;
 
-  return res;
+  return res/1.0;
 }
 
 //init the magnetic filed line in AMPS
