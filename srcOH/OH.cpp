@@ -324,8 +324,6 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   double xParent[3],vParent[3],ParentLifeTime,ParentTimeStep;
   bool ReactionOccurredFlag;
 
-  timing_start("PT::ReacProc_LT");
-
   ReactionProcessorTimer.Start();
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
@@ -539,8 +537,6 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   }
 
   ReactionProcessorTimer.UpdateTimer();
-  timing_stop("PT::ReacProc_LT");
-  
 }
 
 
@@ -555,7 +551,6 @@ void OH::Loss::ReactionProcessor(long int ptr,long int& FirstParticleCell,cTreeN
   double xParent[3],vParent[3],ParentLifeTime,ParentTimeStep;
   bool ReactionOccurredFlag;
 
-  timing_start("PT::ReacProc_MC");
   ReactionProcessorTimer.Start();
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
@@ -817,8 +812,6 @@ auto SimulateReaction = [&] (double ParticleWeightCorrection) {
   }
 
   ReactionProcessorTimer.UpdateTimer();
-  timing_stop("PT::ReacProc_MC");
-  
 }
 
 
