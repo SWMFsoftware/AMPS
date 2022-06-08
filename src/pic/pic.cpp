@@ -150,6 +150,7 @@ int PIC::TimeStep() {
   }
 
   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Photolytic Reactions");
+  timing_start("PT::ReacProc"); // MARC
 
   //particle photochemistry model
   if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
@@ -163,7 +164,9 @@ int PIC::TimeStep() {
     RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   }
 
+  timing_stop("PT::ReacProc"); // MARC
   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+
 
   //perform user-define processing of the model particles
   if (_PIC_USER_PARTICLE_PROCESSING__MODE_ == _PIC_MODE_ON_) {
@@ -175,7 +178,8 @@ int PIC::TimeStep() {
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Particle Mover/Field Solver/Dust");
-  
+  timing_start("PT::Mover"); // MARC
+
   switch (_PIC_FIELD_SOLVER_MODE_) {
   case _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_:
     if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
@@ -207,7 +211,7 @@ int PIC::TimeStep() {
   default:
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
   }
-
+  timing_stop("PT::Mover"); // MARC
   
   IterationExecutionTime=MPI_Wtime()-StartTime;
   summIterationExecutionTime+=IterationExecutionTime;
