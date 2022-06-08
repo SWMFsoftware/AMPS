@@ -1182,8 +1182,8 @@ if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
       double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
       ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
 
-      SEP::Sampling::PitchAngle::DmumuSamplingTable(2,iMu,iE,iR,iFieldLine)+=dmu*ParticleWeight;
-      SEP::Sampling::PitchAngle::DmumuSamplingTable(3,iMu,iE,iR,iFieldLine)+=dp*ParticleWeight;
+      SEP::Sampling::PitchAngle::DmumuSamplingTable(2,iMu,iE,iR,iFieldLine)+=dmu/dt*ParticleWeight;
+      SEP::Sampling::PitchAngle::DmumuSamplingTable(3,iMu,iE,iR,iFieldLine)+=dp/dt*ParticleWeight;
     }
 
 
