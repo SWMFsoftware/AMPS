@@ -40,6 +40,8 @@ namespace OH {
 
   void Init_AfterParser();
   
+  //produce secondary ENAa in interaction woth solar wind
+  extern bool ProduceENAflag;
   
   //timer
   extern PIC::Debugger::cTimer ReactionProcessorTimer;

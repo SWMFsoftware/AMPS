@@ -13,6 +13,9 @@ double OH::InjectionVelocity[3] = {0.0, 0.0, 0.0};
 double OH::InjectionNDensity    = 0.18E6;
 double OH::InjectionTemperature = 6519;
 
+//produce secondary ENAa in interaction woth solar wind
+bool OH::ProduceENAflag=false;
+
 // computational domain size
 double OH::DomainXMin[3] = {-2.25E14,-2.25E14,-2.25E14};
 double OH::DomainXMax[3] = { 2.25E14, 2.25E14, 2.25E14};
@@ -431,6 +434,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
   static double MaxProductTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_SPEC_];
   static double MinProductStatWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_SPEC_];
 
+  if (ProduceENAflag==true) {
   if (init_flag==false) {
     //init stuff needed for generating ENAa
     init_flag=true;
@@ -533,7 +537,7 @@ void OH::Loss::ReactionProcessor_Lookup_Table(long int ptr,long int& FirstPartic
         FirstParticleCell=new_ptr;
       }
     }
-
+    }
   }
 
   ReactionProcessorTimer.UpdateTimer();
