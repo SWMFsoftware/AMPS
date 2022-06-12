@@ -19,6 +19,11 @@ double SEP::Scattering::Tenishev2005AIAA::alpha=0.0;
 double SEP::Scattering::Tenishev2005AIAA::beta=0.0;
 double SEP::Scattering::Tenishev2005AIAA::lambda0=0.4*_AU_;
 
+
+//min/max particle number limit during a run 
+int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
+
+
 void SEP::Init() {
   //composition of the GCRs
   nCompositionGroups=1;

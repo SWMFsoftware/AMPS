@@ -269,6 +269,24 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     }
 
+    else if (Command == "#SEP_PARTICLE_LIMIT") {
+      std::string::size_type sz;
+      cout << "PT: "  << param_list.front().second << endl;
+      
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      SEP::MinParticleLimit=std::stoi(t.c_str(),&sz);
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      t=param_list.front().first;
+      SEP::MaxParticleLimit=atof(t.c_str())*MeV2J;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      #endif
+    }
+    
+    
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
       cout << "PT: "  << param_list.front().second << endl;

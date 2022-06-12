@@ -125,6 +125,9 @@ public:
 namespace SEP {
   using namespace Exosphere;
 
+  //min/max particle number limit per segment of a field line 
+  extern int MinParticleLimit,MaxParticleLimit;
+
   void Init();
   
   //composition table of the GCR composition
