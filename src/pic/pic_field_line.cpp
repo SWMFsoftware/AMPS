@@ -57,7 +57,7 @@ namespace PIC {
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
     cDatumTimed DatumAtVertexNumberDensity(1,"\"Number Density[1/m^3]\"",true);
-    cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [J]\"",true);
+    cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [MeV]\"",true);
 
 
     cDatumTimed DatumAtVertexNumberDensity_mu_positive(1,"\"Number Density (mu positive) [1/m^3]\"",true); 
@@ -965,7 +965,7 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume, spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
-      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E,spec, (1-w));
+      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
@@ -989,7 +989,7 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexNumberDensity,Weight/volume,spec,  (w));
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
-      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E,spec, w);
+      V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));

@@ -210,6 +210,8 @@ double SEP::Mesh::localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
 
   if (res>1.0) res=1.0;
 
+//res=10.0;
+
   return res/1.0;
 }
 

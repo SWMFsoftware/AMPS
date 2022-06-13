@@ -208,7 +208,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
 
 
-
+/*
     for (int i=0;i<nParticles;i++) {
 do {
       r=rnd();
@@ -222,7 +222,21 @@ while ((e<SEP::FieldLine::InjectionParameters::emin)||(e>SEP::FieldLine::Injecti
 
       WeightCorrectionTable[i]=1.0;
     }
-  };
+*/
+
+     double p_injection_min=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emin,PIC::MolecularData::GetMass(spec));
+     double p_injection_max=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emax,PIC::MolecularData::GetMass(spec));
+
+
+     double log_p_injection_min=log(p_injection_min);
+     double log_p_injection_max=log(p_injection_max);
+
+     for (int i=0;i<nParticles;i++) {
+       pAbsTable[i]=exp(log_p_injection_min+rnd()*(log_p_injection_max-log_p_injection_min));  
+       WeightCorrectionTable[i]=pow(p_injection_min/pAbsTable[i],InjectionParameters::PowerIndex);
+       WeightCorrectionTable[i]*=1.0/pAbsTable[i];
+     } 
+   };
 
   double *pAbsTable=new double [npart];
   double *WeightCorrectionTable=new double [npart];
