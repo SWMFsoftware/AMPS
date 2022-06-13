@@ -1303,7 +1303,6 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
   vector<cParticleListElement>  ParticleList;
 
   //reduce the number of model particles 
-
   auto GetVelocityRange = [&] (int spec,double *vmin,double *vmax,FL::cFieldLineSegment *Segment)  {
     long int p;
     int res=0,idim;
@@ -1316,7 +1315,6 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
       if (spec==PIC::ParticleBuffer::GetI(p)) {
 
         res++;
-//        PIC::ParticleBuffer::GetV(v,p);
         v[0]=PB::GetVParallel(p);
         v[1]=PB::GetVNormal(p);
         v[2]=0.0;
@@ -1368,8 +1366,6 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
 
     while (p!=-1) {
       if (spec==PIC::ParticleBuffer::GetI(p)) {
- //       PIC::ParticleBuffer::GetV(v,p);
-        
         v[0]=PB::GetVParallel(p);
         v[1]=PB::GetVNormal(p);
         v[2]=0.0;
@@ -1556,22 +1552,15 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
       int nRemovedParticles=0;
 
 
-static int ncall=0;
-ncall++;
-
-
-
-if (ncall==10792) {
-  cout << "sfpsodfposiapfoipo"<< endl;
-}
-
-
-
+      static int ncall=0;
+      ncall++;
 
       GetVelocityRange(spec,vmin,vmax,Segment);
 
       for (int idim=0;idim<3;idim++) {
         double d=vmax[idim]-vmin[idim]; 
+
+        if (d==0.0) d=1.0;
 
         vmin[idim]-=0.05*d; 
         vmax[idim]+=0.05*d;
