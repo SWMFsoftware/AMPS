@@ -203,7 +203,7 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   }
 
 
-  k=omega/fabs(vParallel);
+  k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
 
   if (isfinite(k)==false) {
     k=k_max;
