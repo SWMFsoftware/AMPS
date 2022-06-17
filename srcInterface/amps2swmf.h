@@ -44,7 +44,7 @@ namespace AMPS2SWMF {
   extern bool amps_init_mesh_flag;
 
   //speed of the CME driven shock
-  extern double ShockSpeed;
+  extern double MinShockSpeed;
 
   //the counter of the field line update events since beginning of a new session
   extern int FieldLineUpdateCounter; 

@@ -412,11 +412,11 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       }
     }
 
-    else if (Command == "#SHOCK_SPEED") {
+    else if (Command == "#SHOCK_MIN_SPEED") {
       cout << "PT: "  << param_list.front().second << endl;
 
       t=param_list.front().first;
-      AMPS2SWMF::ShockSpeed=atof(t.c_str());
+      AMPS2SWMF::MinShockSpeed=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
     }

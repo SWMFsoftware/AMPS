@@ -46,7 +46,7 @@ int AMPS2SWMF::FieldLineData::nLon=4;
 int AMPS2SWMF::FieldLineData::nLat=4;
 
 //speed of the CME driven shock
-double AMPS2SWMF::ShockSpeed=0.0;
+double AMPS2SWMF::MinShockSpeed=0.0;
 
 //magnetic field line coupling
 bool AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag=false;
@@ -904,7 +904,35 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
             break;
           }
 
-          if (iSegmentShock!=-1) AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
+          if (iSegmentShock!=-1) {
+            AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
+
+            if (iSegmentShock==0) AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=-1.0;
+            else {
+              int iSegmentAfterShock=iSegmentShock-2;
+              int iSegmentBeforeShock=iSegmentShock+2; 
+              double U,rho0,rho1,vSW[3];
+ 
+              if (iSegmentAfterShock<0) iSegmentAfterShock=0;
+
+              rho0=PIC::FieldLine::FieldLinesAll[iImportFieldLine]. GetPlasmaDensity(iSegmentBeforeShock+0.5);
+              rho1=PIC::FieldLine::FieldLinesAll[iImportFieldLine]. GetPlasmaDensity(iSegmentAfterShock+0.5);
+
+              if (rho1>=rho0) {
+                PIC::FieldLine::FieldLinesAll[iImportFieldLine].GetPlasmaVelocity(vSW,iSegmentBeforeShock+0.5);
+                U=Vector3D::Length(vSW);
+
+                AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=(rho0<rho1) ? U/(1.0-rho0/rho1) : 0.0;
+              }
+              else {
+                PIC::FieldLine::FieldLinesAll[iImportFieldLine].GetPlasmaVelocity(vSW,iSegmentAfterShock+0.5);
+                U=Vector3D::Length(vSW);
+
+                AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed= U/(1.0-rho1/rho0);
+              }
+            }
+          }
+          else AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=-1.0; 
         }
         else { 
           AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=-1; 
@@ -959,7 +987,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat\n",cnt);
     sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
 
-    if (cnt%10==0) Output(fname,true);
+    if (cnt%100==0) Output(fname,true);
     cnt++;
   } 
 
