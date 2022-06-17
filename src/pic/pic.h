@@ -1338,6 +1338,7 @@ void DeleteAttachedParticles();
       
       //get plasma velocity      
       void GetPlasmaVelocity(double* VelOut, double S);
+      double GetPlasmaDensity(double S);
  
 
       // print data stored on the field line
