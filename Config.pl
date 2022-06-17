@@ -158,7 +158,7 @@ foreach (@Arguments) {
 #process the configuration settings
 foreach (@Arguments) {
   if (/^-application=(.*)/i) {
-    my $application = lc($1);
+    my $application = $1;
   
     #default values
     if (! -e ".amps.conf") {
