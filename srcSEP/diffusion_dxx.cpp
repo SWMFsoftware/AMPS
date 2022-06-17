@@ -36,7 +36,7 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
   double xmin[]={-1.0};
   double xmax[]={1.0};
 
-  D=Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);  
+  D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);  
 
   ds=Segment->GetLength();
 
@@ -48,7 +48,7 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
     return;
   }
   else {
-    D1=Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);
+    D1=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);
   }
 
   DxxInternalNumerics::FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
@@ -59,10 +59,17 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
     return;
   }
   else {
-    D0=Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);
+    D0=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);
   }
 
   dDxx_dx=(D1-D0)/(2.0*ds);
 } 
 
+//====================================================================================================
+//calcualte particle's mean free path
+double SEP::Diffusion::GetMeanFreePath(double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+  double D,dDxx_dx; 
 
+  GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
+  return 3.0*D/v;
+}
