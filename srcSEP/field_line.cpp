@@ -120,11 +120,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::Search::FindBlock(xMiddle);
 
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-  if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>0.0) {
+  if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>AMPS2SWMF::MinShockSpeed) {
     vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
   }
   else {
-    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockSpeed*rMiddleTube;
+    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*rMiddleTube;
   }
   #else 
   vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
