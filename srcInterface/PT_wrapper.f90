@@ -62,7 +62,7 @@ module PT_wrapper
   integer, pointer :: nVertex_B(:)
   ! Grid:
   ! Mxx point number on the magnetic field line
-  integer          :: nVertexMax=2000
+  integer          :: nVertexMax=20000
   ! Dimensions of the grid formed by the line intersections with the spherical
   ! "origin" surface nLon*nLat, uniform in latitude grid:
   integer          :: nLon = 4, nLat = 4
