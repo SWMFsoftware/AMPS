@@ -134,7 +134,7 @@ Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL
 
 -------------------------------------------------------------------------------
 #>
-Name=test/COPS 
+Name=test/COPS@@(0+) 
 Time=20 
 
 Ref=2{icc}@@(0+valeriy)
@@ -302,7 +302,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/SC-Cont 
+Name=test/SC-Cont@@(0+) 
 Time=60 
 
 Ref=2{icc}@@(0+valeriy)
@@ -362,7 +362,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=test-1853-shape
+Name=test-1853-shape@@(0+) 
 Time=5
 
 Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu) 
@@ -2746,7 +2746,7 @@ Check=
 
 
 #>
-Name=photon-test-openmp 
+Name=photon-test-openmp@@(0+) 
 Time=3
 
 Compile=
@@ -4267,7 +4267,7 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
-Name=test/Drag-Coefficient--Specular-Reflection
+Name=test/Drag-Coefficient--Specular-Reflection@@(0+) 
 Time=1
 
 Ref=2{icc}@@(0+valeriy)
@@ -4320,7 +4320,7 @@ Check=
 
 /------------------------------------------------------------------------------
 #>
-Name=test/Sphere-drag-coefficient
+Name=test/Sphere-drag-coefficient@@(0+) 
 Time=32
 
 Keys=-model-data-path=${PTDIR}/data/input/DragCoefficient
