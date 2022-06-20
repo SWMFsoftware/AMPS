@@ -424,7 +424,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
     else {
       if ((Command.c_str()[0]!='!')&&(StrictCommandCheck==true)) {
-        cout<<"PT: Can not find Comand : "<<Command<<endl;
+        cout << "PT: Can not find Command : " << Command << endl;
         exit(__LINE__,__FILE__);
       }
     }
