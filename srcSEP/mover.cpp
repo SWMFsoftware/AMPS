@@ -1148,12 +1148,21 @@ if (isfinite(delta)==false) exit(__LINE__,__FILE__);
 
         if (fabs(dD_dmu*dt)>0.05) {
           dt=0.05/fabs(dD_dmu);
+
+if (dtTotal/dt>100.0) {
+    return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+}
+
         }
 
         if (fabs(delta)>0.05) {
-          double t=0.005/(4.0*D);
+         double t=0.005/(4.0*D);
 
           if (t<dt) dt=t;
+
+if (dtTotal/dt>100.0) {
+    return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+}
         } 
 
         first_pass_flag=false;

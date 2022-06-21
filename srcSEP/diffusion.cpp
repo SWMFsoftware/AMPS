@@ -134,15 +134,20 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
 double SEP::Diffusion::Jokopii1966AJ::IntegralTable[SEP::Diffusion::Jokopii1966AJ::nR];
 double SEP::Diffusion::Jokopii1966AJ::GammaTable[SEP::Diffusion::Jokopii1966AJ::nR];
+double SEP::Diffusion::Jokopii1966AJ::NormalizationConstantTable[SEP::Diffusion::Jokopii1966AJ::nR];
 
+//Zhao-2014-JGR
 void SEP::Diffusion::Jokopii1966AJ::Init() {
    double dR=1.0/nR;
    double dK,t;
    double k_min,k_max,gamma;
 
+   double integral;
 
   for (int iR=0;iR<nR;iR++) {
     t=nR*dR/((iR+0.5)*dR);
+
+    integral=0.0;
 
     k_min=t*t*k_ref_min;
     k_max=t*t*k_ref_max;
@@ -156,9 +161,14 @@ void SEP::Diffusion::Jokopii1966AJ::Init() {
 
     for (int iK=0;iK<nK;iK++) {
       summ+=1.0/(1.0+pow(k_min+(iK+0.5)*dK,5.0/3.0));
+
+      integral=1.0/(1.0+pow(k_min+(iK+0.5)*dK,5.0/3.0));
     }
 
     IntegralTable[iR]=gamma*dK*summ;
+
+    integral*=dK;
+    NormalizationConstantTable[iR]=1.0/integral;
   }
 }
 
@@ -180,6 +190,7 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   double gamma,dK;
 
   double omega,k,P,C,c;
+  double dB_over_B;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
 
@@ -191,6 +202,7 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   switch (Mode) {
   case _awsom:
     C=SummW*VacuumPermeability/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
+    exit(__LINE__,__FILE__,"not implemented"); 
     break;
   case _fraction: 
 //    C=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) *absB2/(3.0*(pow(k_min,-2.0/3.0)-pow(k_max,-2.0/3.0))/2.0);
@@ -217,10 +229,17 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
   P=C*GammaTable[iR]/(1.0+pow(k*GammaTable[iR],5.0/3.0))*FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) * absB2; 
 
+  double absB=sqrt(absB2);
+  double dB=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0)*absB; 
+  if (dB>absB) dB=absB;
+
+  P=NormalizationConstantTable[iR]*dB*dB/(1.0+pow(1.0E9*k,5.0/3.0));   
 
   c=Pi/4.0*omega*k*P/absB2;
 
 //  P=C*GammaTable[iR] * FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0) * absB2 / (1.0+pow(k*GammaTable[iR],5.0/3.0)); 
+
+  if (fabs(mu)<0.002) mu=(mu>=0.0) ? 0.002 : -0.002; 
 
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;

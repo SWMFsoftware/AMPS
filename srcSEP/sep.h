@@ -227,6 +227,8 @@ namespace SEP {
 
       extern double IntegralTable[nR];
       extern double GammaTable[nR]; 
+
+      extern double NormalizationConstantTable[nR];
   
       void Init();
 
