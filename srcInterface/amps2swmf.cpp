@@ -42,6 +42,9 @@ double AMPS2SWMF::FieldLineData::LonMax=10.0*_DEGREE_;
 double AMPS2SWMF::FieldLineData::LatMin=25.0*_DEGREE_; 
 double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_; 
 
+//step in importing the magnetic field line point
+int AMPS2SWMF::bl_import_point_step=1;
+
 int AMPS2SWMF::FieldLineData::nLon=4;
 int AMPS2SWMF::FieldLineData::nLat=4;
 
@@ -117,6 +120,10 @@ extern "C" {
   void amps_finalize_();
 
   void amps_init_session_(int* iSession,double *TimeSimulation,int* swmfTimeAccurateMode);
+
+  void get_bl_import_point_step_(int* step_out) {
+    *step_out=AMPS2SWMF::bl_import_point_step;
+  } 
 
   //set the component name 
   void amps_set_component_name_(char* l) {

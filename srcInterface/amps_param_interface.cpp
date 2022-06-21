@@ -421,6 +421,14 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
     }
 
+    else if (Command == "#BL_POINT_IMPORT_STEP") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      AMPS2SWMF::bl_import_point_step=atoi(t.c_str()); 
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    }
 
     else {
       if ((Command.c_str()[0]!='!')&&(StrictCommandCheck==true)) {

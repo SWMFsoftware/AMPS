@@ -744,9 +744,12 @@ subroutine amps_get_bline(&
   real,              intent(in) :: MHData_VIB(0:nMHData, 1:nVertexMax, 1:nLine)
   !----------------------------------------------------------------------------
 
+  integer :: ImportPointStep=1
 
-  call amps_get_bline_c(DataInputTime,nVertexMax,nLine,nVertex_B,& 
-    nMHData,NameVar_V,MHData_VIB) 
+  call get_bl_import_point_step(ImportPointStep)
+
+  call amps_get_bline_c(DataInputTime,nVertexMax/ImportPointStep,nLine,nVertex_B(1:nLine)/ImportPointStep,&
+    nMHData,NameVar_V,MHData_VIB(0:nMHData, 1:nVertexMax:ImportPointStep, 1:nLine))
 
   RETURN
 end subroutine amps_get_bline
