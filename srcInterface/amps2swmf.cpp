@@ -45,6 +45,9 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 //step in importing the magnetic field line point
 int AMPS2SWMF::bl_import_point_step=1;
 
+//the step of output of the magnetic field lines
+int AMPS2SWMF::bl_output_step=100;
+
 int AMPS2SWMF::FieldLineData::nLon=4;
 int AMPS2SWMF::FieldLineData::nLat=4;
 
@@ -994,7 +997,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
     if (PIC::ThisThread==0) printf("AMPS: saved exported field line file: exported-field-lines.thread=:.cnt=%i.dat\n",cnt);
     sprintf(fname,"%s/exported-field-lines.thread=%ld.cnt=%i.dat",PIC::OutputDataFileDirectory,PIC::ThisThread,cnt);    
 
-    if (cnt%100==0) Output(fname,true);
+    if (cnt%AMPS2SWMF::bl_output_step==0) Output(fname,true);
     cnt++;
   } 
 

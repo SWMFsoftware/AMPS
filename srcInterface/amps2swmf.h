@@ -26,6 +26,9 @@ namespace AMPS2SWMF {
   //step in importing the magnetic field line point
   extern int bl_import_point_step;
 
+  //the step of output of the magnetic field lines
+  extern int bl_output_step;
+
   //magnetic field line coupling 
   namespace MagneticFieldLineUpdate {
     extern bool FirstCouplingFlag,SecondCouplingFlag;
