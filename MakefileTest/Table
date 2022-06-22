@@ -390,7 +390,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/X-Wing 
+Name=test/X-Wing@@(0+) 
 Time=54 
 
 Ref=2{icc}@@(0+valeriy)
@@ -1989,7 +1989,7 @@ Check=
 <#
 
 #>
-Name=test/lightwave-current-on-openmp 
+Name=test/lightwave-current-on-openmp@@(0+) 
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -2092,7 +2092,7 @@ Check=
 <#
 
 #>
-Name=test/magnetic-reconnection-openmp 
+Name=test/magnetic-reconnection-openmp@@(0+) 
 Time=10
 
 Ref=2{icc}@@(0+valeriy)
