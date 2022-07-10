@@ -84,7 +84,7 @@ void PIC::MolecularCollisions::BackgroundAtmosphere::GenerateBackgoundAtmosphere
   for (idim=0;idim<3;idim++) v[idim]=cos(2*Pi*rnd())*sqrt(-log(rnd())/beta);
 
   PIC::ParticleBuffer::SetV(v,BackgroundAtmosphereParticleData);
-  PIC::ParticleBuffer::SetI(BackgroundSpecieNumber,BackgroundAtmosphereParticleData);
+//  PIC::ParticleBuffer::SetI(BackgroundSpecieNumber,BackgroundAtmosphereParticleData);
 }
 
 double PIC::MolecularCollisions::BackgroundAtmosphere::GetBackgroundLocalNumberDensity(int BackgroundSpecieNumber,double *x) {
