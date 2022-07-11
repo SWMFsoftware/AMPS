@@ -1424,7 +1424,7 @@ Keys=-cplr-data-path=${PTDIR}/data/input/Enceladus
 <#
 -------------------------------------------------------------------------------
 #>
-Name=Rosetta 
+Name=Rosetta@@(0+) 
 Time=17 
 
 Ref=2{icc}@@(0+valeriy)
@@ -2987,7 +2987,7 @@ Check=
 -------------------------------------------------------------------------------
 
 #>
-Name=Legacy_2dCG@@(0+valeriy)
+Name=Legacy_2dCG@@(0+)
 Time=8
 
 ExeptionCode=SKIP{pgcc}@@(0+valeriy)
@@ -3045,7 +3045,7 @@ Run=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CG-PostProcess--Read-Trajectories--on@@(0+valeriy+pleiades)
+Name=CG-PostProcess--Read-Trajectories--on@@(0+)
 Time=26
 
 ExeptionCode=SKIP{pgcc}
@@ -3113,7 +3113,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CG-PostProcess--Read-Trajectories--off@@(0+valeriy+pleiades) 
+Name=CG-PostProcess--Read-Trajectories--off@@(0+) 
 Time=2
 
 ExeptionCode=SKIP{pgcc}
