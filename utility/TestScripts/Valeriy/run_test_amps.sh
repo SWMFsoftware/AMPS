@@ -31,8 +31,10 @@ set WorkDir = $HOME
 #set WorkDir = /Volumes/Data01
 
 #update the data file repository 
+echo -n "Update AMPS_DATA_TEST...     "
 cd /Users/vtenishe/AMPS_DATA_TEST
 git pull
+echo "done." 
 
 #Go to your home directory
 cd $WorkDir
@@ -43,6 +45,11 @@ cd Tmp_AMPS_test
 
 #checkout the new copy of AMPS if needed otherwise update the existing copy 
 set CheckoutTime = `date`
+
+rm -rf AMPS
+rm -rf AMPS_Legacy
+rm -rf BATL
+rm -rf SWMF_data  
 
 if (-e AMPS) then 
   cd AMPS_Legacy; git pull 
@@ -99,6 +106,6 @@ rm -rf runlog scheduler
 cp AMPS/utility/TestScripts/Valeriy/scheduler.cpp .
 g++ ./scheduler.cpp -o scheduler -lpthread
 
-./scheduler -threads 10  -path /Users/vtenishe/Tmp_AMPS_test -TestScriptsPath Valeriy -ParallelTestExecutionThreads 6 -intel -gcc > runlog 
+./scheduler -threads 10  -path /Users/vtenishe/Tmp_AMPS_test -TestScriptsPath Valeriy -ParallelTestExecutionThreads 6  -gcc > runlog 
 
 
