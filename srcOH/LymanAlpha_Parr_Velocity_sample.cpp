@@ -195,9 +195,9 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
     //combine all sampled data on the root processor and print them into a file
     for (cnt=0,s=0;s<PIC::nTotalSpecies;s++) {
       for (i=0;i<nVelocitySamplePoints;i++) {
-        mpiZoneExchangeBuffer[cnt++]=SampleBuffer[iZone].VelocityLineOfSight[s][i];
-	mpiZoneExchangeCountBuffer[cnt++]=CountBuffer[iZone].VelocityLineOfSight[s][i];
-	
+        mpiZoneExchangeBuffer[cnt]=SampleBuffer[iZone].VelocityLineOfSight[s][i];
+	mpiZoneExchangeCountBuffer[cnt]=CountBuffer[iZone].VelocityLineOfSight[s][i];
+        cnt++;	
       }
     }
 
@@ -213,8 +213,9 @@ void OH::Sampling::LymanAlpha::OutputSampledData(int DataOutputFileNumber) {
 
         for (cnt=0,s=0;s<PIC::nTotalSpecies;s++) {
           for (i=0;i<nVelocitySamplePoints;i++) {
-            SampleBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeBuffer[cnt++];
-            CountBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeCountBuffer[cnt++];
+            SampleBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeBuffer[cnt];
+            CountBuffer[iZone].VelocityLineOfSight[s][i]+=mpiZoneExchangeCountBuffer[cnt];
+            cnt++;
           }
         }
       }
