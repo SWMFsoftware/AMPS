@@ -46,11 +46,17 @@ cd Tmp_AMPS_test
 #checkout the new copy of AMPS if needed otherwise update the existing copy 
 set CheckoutTime = `date`
 
+rm -rf AMPS
+rm -rf AMPS_Legacy
+rm -rf BATL
+rm -rf SWMF_data
+
+
 if (-e AMPS) then 
-  cd AMPS_Legacy; git pull 
-  cd ../BATL; git pull 
-  cd ../AMPS; git pull 
-  cd SWMF_data; git pull 
+  cd AMPS_Legacy; git pull
+  cd ../BATL; git pull
+  cd ../AMPS; git pull
+  cd SWMF_data; git pull
 
   cd ../../
 else  
