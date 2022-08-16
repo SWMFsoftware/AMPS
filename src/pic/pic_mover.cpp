@@ -4298,8 +4298,8 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
     l=sqrt(l);
     
 
-    printf("Characteristic cell size=%e\n",startNode->GetCharacteristicCellSize());
-    printf("Path passed by the particle=%e\n",l);
+    //printf("Characteristic cell size=%e\n",startNode->GetCharacteristicCellSize());
+    //printf("Path passed by the particle=%e\n",l);
     
     //call the function that process particles that leaved the coputational domain
     switch (code) {
