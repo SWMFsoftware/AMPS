@@ -204,12 +204,11 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     
     //command related to the SEP model
     else if (Command == "#SEP_PITCH_ANGLE_SCATTERING_FUCTION") {
+      #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;
-
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
-      
-      #ifdef _SEP_MODEL_ON_
+   
       if (t == "none") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;
       }
@@ -231,6 +230,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
           
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;
+
       SEP::Diffusion::Jokopii1966AJ::k_ref_min=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
@@ -289,7 +289,6 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
-      cout << "PT: "  << param_list.front().second << endl;
      
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;
@@ -413,8 +412,6 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
 
     else if (Command == "#SHOCK_MIN_SPEED") {
-      cout << "PT: "  << param_list.front().second << endl;
-
       t=param_list.front().first;
       AMPS2SWMF::MinShockSpeed=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
