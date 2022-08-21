@@ -698,7 +698,7 @@ PIC::ParticleBuffer::SetX(x0,pnew);
 
         for (spec=0;spec<PIC::nTotalSpecies;spec++) {
           if (ParticleNumberTable[spec]>particle_num_limit_max) {
-            ReduceParticleNumber1(spec,ParticleNumberTable[spec],i,j,k,node,particle_num_limit_min+0.9*(particle_num_limit_max-particle_num_limit_min));
+            ReduceParticleNumber1(spec,ParticleNumberTable[spec],i,j,k,node,(int)(particle_num_limit_min+0.9*(particle_num_limit_max-particle_num_limit_min)));
           }
           else if ((1<ParticleNumberTable[spec])&&(ParticleNumberTable[spec]<particle_num_limit_min)) {
             IncreseParticleNumber(spec,i,j,k,node);
