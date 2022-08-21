@@ -124,6 +124,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
   }
   else {
+    if (AMPS2SWMF::MinShockSpeed==0.0) exit(__LINE__,__FILE__,"Error: AMPS2SWMF::MinShockSpeed is not set");
+
     vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*rMiddleTube;
   }
   #else 
