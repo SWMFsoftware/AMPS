@@ -830,7 +830,9 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
         //plasma density ratio
         auto DensityRatio = [&] () {
-          for (iSegment=0,s=FieldLinesAll[iImportFieldLine].GetFirstSegment();s!=NULL;iSegment++,s=s->GetNext()) {
+          s=FieldLinesAll[iImportFieldLine].GetFirstSegment()->GetNext();
+
+          for (iSegment=1;iSegment<FieldLinesAll[iImportFieldLine].GetTotalSegmentNumber()-1;iSegment++,s=s->GetNext()) {
             double grad,rho0,rho1;
 
             //s->GetBegin()->GetPlasmaDensity(rho0);
