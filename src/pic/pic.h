@@ -2363,6 +2363,12 @@ void DeleteAttachedParticles();
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_"); 
       #endif
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(v[0])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
+      #endif
+
       return v[0];
     } 
 
@@ -2372,6 +2378,12 @@ void DeleteAttachedParticles();
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
+      #endif
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(v[0])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
       #endif
 
       return v[0];
@@ -2386,6 +2398,12 @@ void DeleteAttachedParticles();
       #endif
 
       v[0]=t;
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
+      #endif
     }
 
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -2397,6 +2415,12 @@ void DeleteAttachedParticles();
       #endif
 
       v[0]=t;
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
+      #endif
     }
 
 
@@ -2409,6 +2433,12 @@ void DeleteAttachedParticles();
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
       #endif
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(v[1])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
+      #endif
+
       return v[1];
     }
 
@@ -2418,6 +2448,12 @@ void DeleteAttachedParticles();
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
+      #endif
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(v[1])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
       #endif
 
       return v[1];
@@ -2432,6 +2468,12 @@ void DeleteAttachedParticles();
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
       #endif
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
+      #endif
+
       v[1]=t;
     }
 
@@ -2441,6 +2483,12 @@ void DeleteAttachedParticles();
 
       #if _PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_");
+      #endif
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+      #endif
       #endif
 
       v[1]=t;
@@ -2663,6 +2711,11 @@ void DeleteAttachedParticles();
       double res;
      
       memcpy(&res,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,sizeof(double));
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if ((isfinite(res)==false)||(res<1.0E-50)) exit(__LINE__,__FILE__);
+      #endif
+
       return res;
 
 //      return *((double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
@@ -2690,6 +2743,11 @@ void DeleteAttachedParticles();
       double res;
 
       memcpy(&res,ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_,sizeof(double)); 
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if ((isfinite(res)==false)||(res<1.0E-50)) exit(__LINE__,__FILE__);
+      #endif
+
       return res;
 
      // return *((double*) (ParticleDataStart+_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_));
@@ -2715,6 +2773,8 @@ void DeleteAttachedParticles();
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+
+       if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
     #endif
     #endif
 
@@ -2745,6 +2805,8 @@ void DeleteAttachedParticles();
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
     #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+
+      if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
     #endif
     #endif
 
