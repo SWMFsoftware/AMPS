@@ -29,6 +29,10 @@ namespace AMPS2SWMF {
   //the step of output of the magnetic field lines
   extern int bl_output_step;
 
+  //maximum heliocentric distance where the shock will be located
+  extern double ShockLocationsMaxHeliocentricDistance;
+
+
   //magnetic field line coupling 
   namespace MagneticFieldLineUpdate {
     extern bool FirstCouplingFlag,SecondCouplingFlag;

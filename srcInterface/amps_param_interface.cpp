@@ -411,6 +411,19 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       }
     }
 
+    else if (Command == "#MAX_DISTANCE_SHOCK_LOCATOR") {
+      t=param_list.front().first;
+      AMPS2SWMF::MinShockSpeed=atof(t.c_str());
+
+      PIC::Parser::replace(t,"au","149598000.0E3");
+      PIC::Parser::replace(t,"rsun","6.96345E8");
+
+      AMPS2SWMF::ShockLocationsMaxHeliocentricDistance=PIC::Parser::Evaluate(t);
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    }
+
     else if (Command == "#SHOCK_MIN_SPEED") {
       t=param_list.front().first;
       AMPS2SWMF::MinShockSpeed=atof(t.c_str());

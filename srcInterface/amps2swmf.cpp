@@ -54,6 +54,9 @@ int AMPS2SWMF::FieldLineData::nLat=4;
 //speed of the CME driven shock
 double AMPS2SWMF::MinShockSpeed=0.0;
 
+//maximum heliocentric distance where the shock will be located
+double AMPS2SWMF::ShockLocationsMaxHeliocentricDistance=-1.0;
+
 //magnetic field line coupling
 bool AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag=false;
 bool AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag=false;
@@ -801,6 +804,16 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
             if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
               Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
               Vertex->GetDatum(DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&rho_prev);
+
+              if (AMPS2SWMF::ShockLocationsMaxHeliocentricDistance>0.0) {
+                double x[3];
+   
+                Vertex->GetX(x);
+
+                if (Vector3D::DotProduct(x,x)>AMPS2SWMF::ShockLocationsMaxHeliocentricDistance*AMPS2SWMF::ShockLocationsMaxHeliocentricDistance) {
+                  continue;
+                }
+              }                   
 
               if (rho_prev>0.0) if (rho_new/rho_prev>max_ratio) {
                 max_ratio=rho_new/rho_prev; //*(rho_new+rho_prev);
