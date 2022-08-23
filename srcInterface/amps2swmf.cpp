@@ -794,7 +794,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         auto DensityTemporalVariation = [&] () {
           int imin=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;
 
-          for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine];i++,Vertex=Vertex->GetNext()) if ((i>0)&&(i>=imin)) {
+          for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine]-1;i++,Vertex=Vertex->GetNext()) if ((i>0)&&(i>=imin)) {
             int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
             double rho_new,rho_prev;
 
@@ -1028,7 +1028,3 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
   }
 }
 
-/*
-int main () {
-  return 1;
-*/
