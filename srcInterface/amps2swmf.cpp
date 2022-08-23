@@ -221,8 +221,8 @@ extern "C" {
   }
   
   void amps_save_restart_(){
-    //if(PIC::ThisThread == 0) printf("amps_save_restart start\n");
-    printf("amps_save_restart start\n");
+    if(PIC::ThisThread == 0) printf("amps_save_restart start\n");
+    //printf("amps_save_restart start\n");
     
     switch (AMPS2SWMF::ComponentID) {
     case _AMPS_SWMF_PC_:
@@ -245,8 +245,8 @@ extern "C" {
       exit(__LINE__,__FILE__,"Error: the option is unlnown"); 
     }
 
-    //if(PIC::ThisThread == 0) printf("amps_save_restart end\n");
-    printf("amps_save_restart end\n");
+    if(PIC::ThisThread == 0) printf("amps_save_restart end\n");
+    //printf("amps_save_restart end\n");
   }
 
   void amps_get_center_point_number_(int *nCenterPoints) {
