@@ -228,9 +228,9 @@ double BoundingBoxInjectionRate(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> 
 
 void init_from_restart(){
 
-  printf("init from restart called!\n");
+  if(PIC::ThisThread == 0) printf("init from restart called!\n");
 
-  cout << "Restart file contains " << PIC::Restart::GetRestartFileParticleNumber("PT/restartIN/restart_particle.dat") << " paticles" << endl << std::flush;
+  if(PIC::ThisThread == 0) cout << "Restart file contains " << PIC::Restart::GetRestartFileParticleNumber("PT/restartIN/restart_particle.dat") << " particles" << endl << std::flush;
 
   PIC::Restart::SamplingData::Read("PT/restartIN/restart_field.dat");
   PIC::Restart::ReadParticleData("PT/restartIN/restart_particle.dat");
