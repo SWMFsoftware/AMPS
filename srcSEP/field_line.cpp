@@ -66,24 +66,6 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       }
       else {
         if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0;
-
-
-/*
-        for (int iSegment=0;iSegment<iShockFieldLine-120;iSegment++) {
-          auto Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iSegment);
-          long int ptr_next,ptr=Segment->FirstParticleIndex;
-
-           while (ptr!=-1) {
-             ptr_next=PIC::ParticleBuffer::GetNext(ptr); 
-             PIC::ParticleBuffer::DeleteParticle(ptr);
-
-             ptr=ptr_next;
-           }         
-
-           Segment->FirstParticleIndex=-1;
-        }
-*/
-
       }
       #else 
       iShockFieldLine=0;
@@ -144,9 +126,6 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   Segment->GetEnd()->GetDatum(FL::DatumAtVertexPlasmaTemperature,&t_sw_end);
   Segment->GetEnd()->GetDatum(FL::DatumAtVertexPlasmaDensity,&n_sw_end);
 
-//  double t=sqrt(2.0*_AMU_*t_sw);
-//  anpart=vol*InjectionEfficiency/(8.0*Pi)*n_sw/pow(t,3)*pow(t/p_inj,5);  
-
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   n_sw_end=AMPS2SWMF::ShockData[iFieldLine].DownStreamDensity;
@@ -206,39 +185,18 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double pmin=sqrt(10.0*KeV2J*2.0*PIC::MolecularData::GetMass(spec));
     double e,r;
 
-//cout << "pmin -> " << Relativistic::Momentum2Energy(pmin,PIC::MolecularData::GetMass(spec))/MeV2J << "MeV"<< endl;
+    double p_injection_min=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emin,PIC::MolecularData::GetMass(spec));
+    double p_injection_max=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emax,PIC::MolecularData::GetMass(spec));
 
+    double log_p_injection_min=log(p_injection_min);
+    double log_p_injection_max=log(p_injection_max);
 
-
-/*
     for (int i=0;i<nParticles;i++) {
-do {
-      r=rnd();
-      if (r==0.0) r=rnd();
-
-      pAbsTable[i]=pmin/pow(r,InjectionParameters::PowerIndex);
-      e=Relativistic::Momentum2Energy(pAbsTable[i],PIC::MolecularData::GetMass(spec));
-}
-while ((e<SEP::FieldLine::InjectionParameters::emin)||(e>SEP::FieldLine::InjectionParameters::emax)); 
-
-
-      WeightCorrectionTable[i]=1.0;
-    }
-*/
-
-     double p_injection_min=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emin,PIC::MolecularData::GetMass(spec));
-     double p_injection_max=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emax,PIC::MolecularData::GetMass(spec));
-
-
-     double log_p_injection_min=log(p_injection_min);
-     double log_p_injection_max=log(p_injection_max);
-
-     for (int i=0;i<nParticles;i++) {
-       pAbsTable[i]=exp(log_p_injection_min+rnd()*(log_p_injection_max-log_p_injection_min));  
-       WeightCorrectionTable[i]=pow(p_injection_min/pAbsTable[i],InjectionParameters::PowerIndex);
-       WeightCorrectionTable[i]*=1.0/pAbsTable[i];
-     } 
-   };
+      pAbsTable[i]=exp(log_p_injection_min+rnd()*(log_p_injection_max-log_p_injection_min));  
+      WeightCorrectionTable[i]=pow(p_injection_min/pAbsTable[i],InjectionParameters::PowerIndex);
+      WeightCorrectionTable[i]*=1.0/pAbsTable[i];
+    } 
+  };
 
   double *pAbsTable=new double [npart];
   double *WeightCorrectionTable=new double [npart];
@@ -257,18 +215,11 @@ while ((e<SEP::FieldLine::InjectionParameters::emin)||(e>SEP::FieldLine::Injecti
   for (int i=0;i<npart;i++) {
     Vector3D::Distribution::Uniform(p,pAbsTable[i]);
 
-    if (PIC::FieldLine::InjectParticle_default(spec,p,WeightCorrectionTable[i],iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
+    if (PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
   }
 
   delete [] pAbsTable;
   delete [] WeightCorrectionTable;
-
-
-
-  //Sokolov-2004-AJ:
-
-
-
 
   return nInjectedParticles;
 } 

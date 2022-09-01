@@ -1545,6 +1545,7 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
 
 
   //set the new values of the normal and parallel particle velocities 
+  mu=-1.0+2.0*rnd();
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v; 
   

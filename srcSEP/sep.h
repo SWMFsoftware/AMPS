@@ -225,10 +225,7 @@ namespace SEP {
       const int nR=100;
       const int nK=1000;
 
-      extern double IntegralTable[nR];
-      extern double GammaTable[nR]; 
-
-      extern double NormalizationConstantTable[nR];
+      extern double Lambda[nR],A[nR];
   
       void Init();
 
