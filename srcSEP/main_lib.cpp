@@ -513,7 +513,7 @@ void amps_init() {
   if (PIC::Mesh::mesh->ThisThread==0) cout << "The mesh is generated" << endl;
 
   //init the particle buffer
-  PIC::ParticleBuffer::Init(10000000);
+  if (PIC::ParticleBuffer::ParticleDataBuffer==NULL) PIC::ParticleBuffer::Init(10000000);
 //  double TimeCounter=time(NULL);
 //  int LastDataOutputFileNumber=-1;
 
