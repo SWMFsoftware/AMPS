@@ -1436,34 +1436,27 @@ int iR,iE,iMu;
       SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
       delta=sqrt(4.0*D*dt)/erf(rnd());
 
-if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
+      if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
+        //sample particle distribution 
+        double x[3],e,speed,ParticleWeight;
 
-        //sample Dmumu
-//        double x[3],e,speed,ParticleWeight;
-//
-//        speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-//        if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
-//
-//        e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec));
-//        iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE;
-//
-//        if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
-//        if (iE<0)iE=0;
-//
-//        iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
-//        if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
-//
-//        FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord); 
-//        iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
-//        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
-//
-//        ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
-//        ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
-//
-//        SEP::Sampling::PitchAngle::DmumuSamplingTable(0,iMu,iE,iR,iFieldLine)+=D*ParticleWeight;
-//        SEP::Sampling::PitchAngle::DmumuSamplingTable(1,iMu,iE,iR,iFieldLine)+=ParticleWeight; 
+        speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
+
+        e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec));
+        iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE;
+
+        if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
+        if (iE<0)iE=0;
+
+        iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
+        if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
+
+        FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord); 
+        iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
+        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
 
         if (fabs(dDxx_dx*dt)>0.5*Segment->GetLength()) {
           dt=0.5*Segment->GetLength()/fabs(dDxx_dx);
