@@ -129,6 +129,9 @@ namespace SEP {
   extern int MinParticleLimit,MaxParticleLimit;
 
   void Init();
+
+  //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high
+  extern double TimeStepRatioSwitch_FTE2PE;
   
   //composition table of the GCR composition
   extern cCompositionGroupTable *CompositionGroupTable;

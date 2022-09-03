@@ -103,9 +103,6 @@ int SEP::ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC
   double AbsB=Vector3D::Normalize(b);
   mu=Vector3D::DotProduct(v,b)/Vector3D::Length(v);
 
-//  if (AbsB==0.0) {
-   //return _PARTICLE_DELETED_ON_THE_FACE_;
-//  }
 
   //create a coordinate frame where 'x' and 'y' are orthogonal to 'b'
   double e0[3],e1[3];
@@ -849,7 +846,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
    if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
-    delta=sqrt(4.0*D*dt)/erf(rnd());
+    delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
 
     if (first_pass_flag==true) {
       if (fabs(dD_dmu*dt)>0.1) {
@@ -865,8 +862,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
       first_pass_flag=false;
     } 
 
-    delta=sqrt(4.0*D*dt)/erf(rnd());
-    dmu+=(rnd()>0.5) ? delta : -delta;
+    delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+    dmu+=delta;
 
     dmu-=dD_dmu*dt;
   }
@@ -1060,10 +1057,6 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
-  
-
-    
-
   //get the new value of 'mu'
   double D,dD_dmu;
 
@@ -1078,46 +1071,34 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
-if (v>=SpeedOfLight) {
-double t=0.99*SpeedOfLight/v;
+  if (v>=SpeedOfLight) {
+    double t=0.99*SpeedOfLight/v;
 
-v*=t;
-vParallel*=t;
-vNormal*=t;
-}
+    v*=t;
+    vParallel*=t;
+    vNormal*=t;
+  }
 
   mu=vParallel/v;
 
-static long int ncall=0;
+  static long int ncall=0;
 
-ncall++;
-
-if (ncall==2369588) {
-double d33=0.0;
-
-d33+=34;
-cout << d33 << endl;
-}
-
-
+  ncall++;
 
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
     dmu=0.0;
 
+    if (isfinite(mu)==false) exit(__LINE__,__FILE__);
 
-if (isfinite(mu)==false) exit(__LINE__,__FILE__);
-
-
-int iR,iE,iMu;
-
+    int iR,iE,iMu;
 
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord,Segment);
-      delta=sqrt(4.0*D*dt)/erf(rnd());
+      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
 
-if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
+      if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
 
@@ -1149,28 +1130,26 @@ if (isfinite(delta)==false) exit(__LINE__,__FILE__);
         if (fabs(dD_dmu*dt)>0.05) {
           dt=0.05/fabs(dD_dmu);
 
-if (dtTotal/dt>100.0) {
-    return ParticleMover_ParkerEquation(ptr,dtTotal,node);
-}
-
+          if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
+            return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+          }
         }
 
         if (fabs(delta)>0.05) {
-         double t=0.005/(4.0*D);
+          double t=0.005/(4.0*D);
 
           if (t<dt) dt=t;
 
-if (dtTotal/dt>100.0) {
-    return ParticleMover_ParkerEquation(ptr,dtTotal,node);
-}
+          if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
+            return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+          }
         } 
 
         first_pass_flag=false;
       } 
 
-      delta=sqrt(4.0*D*dt)/erf(rnd());
-      dmu+=(rnd()>0.5) ? delta : -delta;
-
+      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+      dmu+=delta;
       dmu-=dD_dmu*dt;
 
       mu+=dmu;
@@ -1181,11 +1160,9 @@ if (dtTotal/dt>100.0) {
     }
 
 
-double dp,dlogp;
+    double dp,dlogp;
 
-
-
-if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
+    if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel)); 
@@ -1202,37 +1179,37 @@ if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
     }
 
 
-double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
-//p+=dp;
+    double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
+    //p+=dp;
 
-p*=exp(dlogp);
+    p*=exp(dlogp);
 
-v=Relativistic::Momentum2Speed(p,_H__MASS_);
+    v=Relativistic::Momentum2Speed(p,_H__MASS_);
 
-if (v>=0.99*SpeedOfLight) {
-v=0.99*SpeedOfLight;
-}
+    if (v>=0.99*SpeedOfLight) {
+      v=0.99*SpeedOfLight;
+    }
 
-//    v+=dv;
+    //    v+=dv;
     mu+=dmu;
     dmu=0.0;
 
 
-      if (mu>0.999) mu=0.999;
-      if (mu<-0.999) mu=-0.999;
+    if (mu>0.999) mu=0.999;
+    if (mu<-0.999) mu=-0.999;
 
-  vParallel=mu*v;
-  vNormal=sqrt(1.0-mu*mu)*v;
+    vParallel=mu*v;
+    vNormal=sqrt(1.0-mu*mu)*v;
 
-if ((isfinite(mu)==false)||(isfinite(v)==false)) {
-  exit(__LINE__,__FILE__);
-} 
-  
+    if ((isfinite(mu)==false)||(isfinite(v)==false)) {
+      exit(__LINE__,__FILE__);
+    } 
+
     //get the segment of the new particle location 
     if ((FieldLineCoord<0.0) || ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL)) {
       //the particle left the computational domain
       int code=_PARTICLE_DELETED_ON_THE_FACE_;
-    
+
       //call the function that process particles that leaved the coputational domain
       switch (code) {
       case _PARTICLE_DELETED_ON_THE_FACE_:
@@ -1251,7 +1228,7 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
   //set the new values of the normal and parallel particle velocities 
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v; 
-  
+
   PB::SetVParallel(vParallel,ParticleData);
   PB::SetVNormal(vNormal,ParticleData);
 
@@ -1264,7 +1241,7 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-    {
+  {
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
     long int tempFirstParticleIndex;
@@ -1272,9 +1249,9 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
     tempFirstParticleIndex=atomic_exchange(&Segment->tempFirstParticleIndex,ptr);
     if (tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstParticleIndex);
     PIC::ParticleBuffer::SetNext(tempFirstParticleIndex,ParticleData);
-    } 
+  } 
 
-    break;
+  break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
@@ -1303,7 +1280,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   //velocity is in the frame moving with solar wind
   vParallel=PB::GetVParallel(ParticleData);
   vNormal=PB::GetVNormal(ParticleData);
-  
+
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
   vParallelInit=vParallel,vNormalInit=vNormal;
@@ -1311,7 +1288,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
-  
+
   auto GetTransportCoefficients = [] (double& dP,double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
     //calculate B and L
     double B[3],B0[3],B1[3], AbsBDeriv;
@@ -1323,7 +1300,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     AbsB   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
 
     AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
-      pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
 
     L=-Vector3D::Length(B)/AbsBDeriv;
 
@@ -1348,7 +1325,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw0,DivVsw1;
     auto Vertex0=Segment->GetBegin();
     auto Vertex1=Segment->GetEnd(); 
-  
+
     Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
     Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
     DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
@@ -1376,11 +1353,11 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     //dLogP=-((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;
-    
+
     dLogP=-(DivVsw)*dt/3.0;
     dP=Relativistic::Speed2Momentum(v,_H__MASS_)*dLogP;
   };
-    
+
 
   //get the new value of 'mu'
   double D;
@@ -1396,50 +1373,37 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
-if (v>=SpeedOfLight) {
-double t=0.99*SpeedOfLight/v;
+  if (v>=SpeedOfLight) {
+    double t=0.99*SpeedOfLight/v;
 
-v*=t;
-vParallel*=t;
-vNormal*=t;
-}
+    v*=t;
+    vParallel*=t;
+    vNormal*=t;
+  }
 
-//  mu=vParallel/v;
+  mu=vParallel/v;
 
-static long int ncall=0;
+  static long int ncall=0;
 
-ncall++;
+  ncall++;
+  if (isfinite(mu)==false) exit(__LINE__,__FILE__);
 
-if (ncall==2369588) {
-double d33=0.0;
-
-d33+=34;
-cout << d33 << endl;
-}
-
-
-double dx,dDxx_dx;
+  double dx,dDxx_dx;
+  int iR,iE,iMu;
 
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
     dx=0.0;
 
-
-if (isfinite(mu)==false) exit(__LINE__,__FILE__);
-
-
-int iR,iE,iMu;
-
-
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
-      delta=sqrt(4.0*D*dt)/erf(rnd());
+      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
 
       if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
-        //sample particle distribution 
+/*        //sample particle distribution 
         double x[3],e,speed,ParticleWeight;
 
         speed=sqrt(vNormal*vNormal+vParallel*vParallel);
@@ -1456,72 +1420,60 @@ int iR,iE,iMu;
 
         FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord); 
         iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
-        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;
+        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;*/
 
         if (fabs(dDxx_dx*dt)>0.5*Segment->GetLength()) {
-          dt=0.5*Segment->GetLength()/fabs(dDxx_dx);
+          double dt_new=0.5*Segment->GetLength()/fabs(dDxx_dx);
+
+          delta*=sqrt(dt_new/dt); 
+          dt=dt_new;
         }
 
         if (fabs(delta)>0.5*Segment->GetLength()) {
-          double t=0.5*Segment->GetLength()/(4.0*D);
+          double dt_new=dt*sqrt(0.5*Segment->GetLength()/delta);
 
-          if (t<dt) dt=t;
+          if (dt<dt_new) dt=dt_new;
         } 
 
         first_pass_flag=false;
       } 
 
-      delta=sqrt(4.0*D*dt)/erf(rnd());
-      dx+=(rnd()>0.5) ? delta : -delta;
+      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+      dx+=delta;
+      dx-=dDxx_dx*dt;
     }
 
 
-double dp,dlogp;
+    double dp,dlogp;
 
-
-
-if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
+    if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dp,dlogp,v,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dx+dt*vSolarWindParallel); 
 
+    double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
+    //p+=dp;
 
-    if (first_transport_coeffcient==true) {
-//      first_transport_coeffcient=false;
-//
-//      double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-//      ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
-//
-//      SEP::Sampling::PitchAngle::DmumuSamplingTable(2,iMu,iE,iR,iFieldLine)+=dmu/dt*ParticleWeight;
-//      SEP::Sampling::PitchAngle::DmumuSamplingTable(3,iMu,iE,iR,iFieldLine)+=dp/dt*ParticleWeight;
+    p*=exp(dlogp);
+
+    v=Relativistic::Momentum2Speed(p,_H__MASS_);
+
+    if (v>=0.99*SpeedOfLight) {
+      v=0.99*SpeedOfLight;
     }
 
+    vParallel=v;
+    vNormal=0.0;
 
-double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
-//p+=dp;
+    if ((isfinite(mu)==false)||(isfinite(v)==false)) {
+      exit(__LINE__,__FILE__);
+    } 
 
-p*=exp(dlogp);
-
-v=Relativistic::Momentum2Speed(p,_H__MASS_);
-
-if (v>=0.99*SpeedOfLight) {
-v=0.99*SpeedOfLight;
-}
-
-
-
-  vParallel=v;
-  vNormal=0.0;
-
-if ((isfinite(mu)==false)||(isfinite(v)==false)) {
-  exit(__LINE__,__FILE__);
-} 
-  
     //get the segment of the new particle location 
     if ((FieldLineCoord<0.0) || ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL)) {
       //the particle left the computational domain
       int code=_PARTICLE_DELETED_ON_THE_FACE_;
-    
+
       //call the function that process particles that leaved the coputational domain
       switch (code) {
       case _PARTICLE_DELETED_ON_THE_FACE_:
@@ -1541,7 +1493,7 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
   mu=-1.0+2.0*rnd();
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v; 
-  
+
   PB::SetVParallel(vParallel,ParticleData);
   PB::SetVNormal(vNormal,ParticleData);
 
@@ -1554,7 +1506,7 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-    {
+  {
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
     long int tempFirstParticleIndex;
@@ -1562,9 +1514,9 @@ if ((isfinite(mu)==false)||(isfinite(v)==false)) {
     tempFirstParticleIndex=atomic_exchange(&Segment->tempFirstParticleIndex,ptr);
     if (tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstParticleIndex);
     PIC::ParticleBuffer::SetNext(tempFirstParticleIndex,ParticleData);
-    } 
+  } 
 
-    break;
+  break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }

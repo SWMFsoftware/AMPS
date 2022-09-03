@@ -19,6 +19,8 @@ double SEP::Scattering::Tenishev2005AIAA::alpha=0.0;
 double SEP::Scattering::Tenishev2005AIAA::beta=0.0;
 double SEP::Scattering::Tenishev2005AIAA::lambda0=0.4*_AU_;
 
+//the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high
+double SEP::TimeStepRatioSwitch_FTE2PE=-1.0;
 
 //min/max particle number limit during a run 
 int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;

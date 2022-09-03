@@ -431,6 +431,18 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
     }
 
+    else if (Command == "#SEP_FTE2PE_TIME_STEP_RATIO_SWITCH") {
+      t=param_list.front().first;
+
+      #ifdef _SEP_MODEL_ON_
+      SEP::TimeStepRatioSwitch_FTE2PE=atof(t.c_str());
+      #endif
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    }
+
+
     else if (Command == "#BL_POINT_IMPORT_STEP") {
       cout << "PT: "  << param_list.front().second << endl;
 
