@@ -1477,7 +1477,7 @@ namespace FieldLine{
 const int _process_by_particles=0;
 const int _process_by_segments=1;
 
-int _process_mode=_process_by_particles;
+int _process_mode=_process_by_segments;
 
 
   auto CountParticle = [&] (FL::cFieldLineSegment* Segment) {
@@ -1511,51 +1511,51 @@ int _process_mode=_process_by_particles;
   };
       
 
-    auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
-      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
-      long int ptr,ptr_next;
-      double *x,LocalTimeStep;
-      int spec;
-      PB::byte* ParticleData;
+  auto ProcessSegment = [&] (FL::cFieldLineSegment* Segment) {
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+    long int ptr,ptr_next;
+    double *x,LocalTimeStep;
+    int spec;
+    PB::byte* ParticleData;
 
-      ptr=Segment->FirstParticleIndex;
-
-
-   long int *ParticleTable=NULL;
-   int ParticleTableLength=0;
-
-   int SegmentParticleNumber=CountParticle(Segment);
-
-   if (ParticleTableLength<SegmentParticleNumber) {
-     if (ParticleTable!=NULL) delete [] ParticleTable;
-
-     ParticleTable=new long int [SegmentParticleNumber]; 
-     ParticleTableLength=SegmentParticleNumber;
-   }
-
-   PopulateParticleTable(ParticleTable,Segment);
-
-   #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-   #pragma omp parallel for default (none) private (ptr,x,spec, ParticleData,LocalTimeStep) firstprivate(node,SegmentParticleNumber,PIC::Mesh::mesh,ParticleTable) 
-   #endif
-   for (int ii=0;ii<SegmentParticleNumber;ii++) {
-     ptr=ParticleTable[ii];
-     ParticleData=PB::GetParticleDataPointer(ptr);
-
-     x=PB::GetX(ParticleData);
-     spec=PB::GetI(ParticleData);
-
-     node=PIC::Mesh::mesh->findTreeNode(x,node);
-     if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
-     if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
-
-     LocalTimeStep=node->block->GetLocalTimeStep(spec); 
-     _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
-   }
+    ptr=Segment->FirstParticleIndex;
 
 
-   if (ParticleTable!=NULL) delete [] ParticleTable;
-   };
+    long int *ParticleTable=NULL;
+    int ParticleTableLength=0;
+
+    int SegmentParticleNumber=CountParticle(Segment);
+
+    if (ParticleTableLength<SegmentParticleNumber) {
+      if (ParticleTable!=NULL) delete [] ParticleTable;
+
+      ParticleTable=new long int [SegmentParticleNumber]; 
+      ParticleTableLength=SegmentParticleNumber;
+    }
+
+    PopulateParticleTable(ParticleTable,Segment);
+
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp parallel for default (none) private (ptr,x,spec, ParticleData,LocalTimeStep) firstprivate(node,SegmentParticleNumber,PIC::Mesh::mesh,ParticleTable) 
+    #endif
+    for (int ii=0;ii<SegmentParticleNumber;ii++) {
+      ptr=ParticleTable[ii];
+      ParticleData=PB::GetParticleDataPointer(ptr);
+
+      x=PB::GetX(ParticleData);
+      spec=PB::GetI(ParticleData);
+
+      node=PIC::Mesh::mesh->findTreeNode(x,node);
+      if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+      if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+      LocalTimeStep=node->block->GetLocalTimeStep(spec); 
+      _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+    }
+
+
+    if (ParticleTable!=NULL) delete [] ParticleTable;
+  };
 
     auto ProcessEntireSegment = [&] (FL::cFieldLineSegment* Segment) {
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
@@ -1597,24 +1597,27 @@ int _process_mode=_process_by_particles;
     #endif
 
     for (iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+      switch (_process_mode) {
+      case _process_by_segments:
+        #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+        #pragma omp parallel for  
+        #endif
+        for (int i=0;i<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();i++) {
+          Segment=FL::FieldLinesAll[iFieldLine].SegmentPointerTable[i]; 
+          ProcessEntireSegment(Segment);
+        }
 
-const int _process_by_particles=0;
-const int _process_by_segments=1;
+        break;
+      case _process_by_particles:
+        for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+          ProcessSegment(Segment);
+          SegmentCounter++;
+        }
 
-if (_process_mode==_process_by_segments) {
-     #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-     #pragma omp parallel for  
-     #endif
-      for (int i=0;i<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();i++) {
-         Segment=FL::FieldLinesAll[iFieldLine].SegmentPointerTable[i]; 
-         ProcessEntireSegment(Segment);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
       }
-} else {
-      for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
-        ProcessSegment(Segment);
-        SegmentCounter++;
-     }
-}
     } 
  
 
