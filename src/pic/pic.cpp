@@ -1630,21 +1630,6 @@ void PIC::InitMPI() {
       nTotalThreadsOpenMP=omp_get_num_threads();
     }
   }
-
-  if (nTotalThreadsOpenMP==1) {
-    omp_set_dynamic(0);
-    omp_set_num_threads(2);
-
-    #pragma omp parallel shared(nThreadsOpenMP)
-    {
-      #pragma omp single
-      {
-        nTotalThreadsOpenMP=omp_get_num_threads();
-      }
-    }
-  }
-
-
 #endif //_COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 
   if (ThisThread==0) {
