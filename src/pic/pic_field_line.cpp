@@ -1465,6 +1465,46 @@ namespace PIC {
 namespace Mover{
 namespace FieldLine{
   //manager executing the particle moving procedure when the partice lists are attached to the field line segments
+  void MoveParticlesMultiThread(int this_thread_id,int thread_id_table_size) {
+    namespace FL = PIC::FieldLine;
+    namespace PB = PIC::ParticleBuffer;
+
+    long int SegmentCounter=0;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=NULL;
+    long int ptr,ptr_next;
+    double *x,LocalTimeStep;
+    int spec;
+    PB::byte* ParticleData;
+    FL::cFieldLineSegment* Segment; 
+
+    for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+      for (int i=0;i<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();i++) if (++SegmentCounter%thread_id_table_size==this_thread_id) {
+        Segment=FL::FieldLinesAll[iFieldLine].SegmentPointerTable[i];
+
+        ptr=Segment->FirstParticleIndex;
+
+        while (ptr!=-1) {
+          ptr_next=PB::GetNext(ptr);
+ 
+          ParticleData=PB::GetParticleDataPointer(ptr);
+
+          x=PB::GetX(ParticleData);
+          spec=PB::GetI(ParticleData);
+
+          node=PIC::Mesh::mesh->findTreeNode(x,node);
+          if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+          if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+
+          LocalTimeStep=node->block->GetLocalTimeStep(spec);
+          _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
+
+          ptr=ptr_next;
+        }
+      }
+    }
+  }
+
+
   void MoveParticles () {
     namespace FL = PIC::FieldLine;
     namespace PB = PIC::ParticleBuffer; 
@@ -1472,6 +1512,28 @@ namespace FieldLine{
     if ((_PIC_PARTICLE_LIST_ATTACHING_!=_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_)||(_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_)) {
       exit(__LINE__,__FILE__,"Error: wrong options");
     } 
+
+    if (_PIC_FL_MOVER_MULTITHREAD_== _PIC_MODE_ON_) {
+      std::thread tTable[_PIC_NUMBER_STD_THREADS_];
+
+      for (int i=1;i<_PIC_NUMBER_STD_THREADS_;i++) {
+        tTable[i]=std::thread(MoveParticlesMultiThread,i,_PIC_NUMBER_STD_THREADS_);
+      }
+
+      MoveParticlesMultiThread(0,_PIC_NUMBER_STD_THREADS_);
+
+      for (int i=1;i<_PIC_NUMBER_STD_THREADS_;i++)  tTable[i].join();
+
+      //update particle list indexes 
+      for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+        for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+          Segment->FirstParticleIndex=Segment->tempFirstParticleIndex;
+          Segment->tempFirstParticleIndex=-1;
+        }
+      }
+
+      return;
+    }
 
 
 const int _process_by_particles=0;

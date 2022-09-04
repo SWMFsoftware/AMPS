@@ -397,6 +397,9 @@ at the end of each time step
 #define _PIC_MOVER__MPI_MULTITHREAD_ _PIC_MODE_OFF_
 #define _PIC_MATMUL_MPI_MULTITHREAD_ _PIC_MODE_OFF_
 
+//in the case MPI only is used - multithreading with pthread can be used in the field line particle mover
+#define _PIC_FL_MOVER_MULTITHREAD_  _PIC_MODE_OFF_
+
 //the number of the std::threads used in the multithread mode 
 #define _PIC_NUMBER_STD_THREADS_ 4
 

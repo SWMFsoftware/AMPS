@@ -3066,6 +3066,8 @@ void DeleteAttachedParticles();
     _TARGET_DEVICE_ 
     long int GetNewParticleGPU(long int&,bool RandomThread=false);
 
+    extern pthread_mutex_t DeleteParticlePthreadMutex;
+
     /*DeleteParticle_withoutTrajectoryTermination() acts as  DeleteParticle() when _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_OFF_;
      if _PIC_PARTICLE_TRACKER_MODE_  == _PIC_MODE_ON_ DeleteParticle_withoutTrajectoryTermination() does not terminate sampling of the particle trajectory; the function should be used only
      from PIC::Parallel::ExchangeParticleData() when particles are moved between processors
@@ -5056,6 +5058,9 @@ void DeleteAttachedParticles();
 
       //manager executing the particle moving procedure when the partice lists are attached to the field line segments
        void MoveParticles ();
+
+      //multi-thread particle mover
+      void MoveParticlesMultiThread(int this_thread_id,int thread_id_table_size);
     }
 
     namespace GuidingCenter{

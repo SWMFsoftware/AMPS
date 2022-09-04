@@ -6,10 +6,10 @@
 #include "quadrature.h"
 
 namespace DxxInternalNumerics {
-  double v;
-  int spec;
-  double FieldLineCoord;
-  PIC::FieldLine::cFieldLineSegment *Segment;
+  thread_local double v;
+  thread_local int spec;
+  thread_local double FieldLineCoord;
+  thread_local PIC::FieldLine::cFieldLineSegment *Segment;
 
   double Integrant(double *mu) {
     double D,dD_dmu,vParallel,vNorm;
