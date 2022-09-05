@@ -223,8 +223,6 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;
-
-  if (mu<0.0) dD_dmu*=-1.0;
 }
 
 
