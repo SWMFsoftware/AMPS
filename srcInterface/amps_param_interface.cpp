@@ -442,6 +442,25 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
     }
 
+    else if (Command == "#SEP_MODEL_EQUATION") {
+      t=param_list.front().first;
+
+      #ifdef _SEP_MODEL_ON_
+      if (t == "FTE") {
+        SEP::ModelEquation=SEP::ModelEquationFTE;
+      }
+      else if (t=="Parker") {
+        SEP::ModelEquation=SEP::ModelEquationParker;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+      #endif
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    }
+
 
     else if (Command == "#BL_POINT_IMPORT_STEP") {
       cout << "PT: "  << param_list.front().second << endl;

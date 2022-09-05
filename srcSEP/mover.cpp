@@ -846,7 +846,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
    if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
-    delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+    delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
 
     if (first_pass_flag==true) {
       if (fabs(dD_dmu*dt)>0.1) {
@@ -862,7 +862,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
       first_pass_flag=false;
     } 
 
-    delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+    delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
     dmu+=delta;
 
     dmu-=dD_dmu*dt;
@@ -1096,11 +1096,10 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord,Segment);
-      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
-
-      if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
       if (first_pass_flag==true) {
+        delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+        if (isfinite(delta)==false) exit(__LINE__,__FILE__);
 
         //sample Dmumu
         double x[3],e,speed,ParticleWeight;
@@ -1127,6 +1126,10 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
         SEP::Sampling::PitchAngle::DmumuSamplingTable(0,iMu,iE,iR,iFieldLine)+=D*ParticleWeight;
         SEP::Sampling::PitchAngle::DmumuSamplingTable(1,iMu,iE,iR,iFieldLine)+=ParticleWeight; 
 
+        if (ModelEquation==ModelEquationParker) {
+          return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+        }
+
         if (fabs(dD_dmu*dt)>0.05) {
           dt=0.05/fabs(dD_dmu);
 
@@ -1148,7 +1151,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
         first_pass_flag=false;
       } 
 
-      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+      delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
       dmu+=delta;
       dmu-=dD_dmu*dt;
 
@@ -1398,7 +1401,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
-      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+      delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
 
       if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
 
@@ -1438,7 +1441,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
         first_pass_flag=false;
       } 
 
-      delta=sqrt(4.0*D*dt)*Vector3D::Distribution::Normal();
+      delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
       dx+=delta;
       dx-=dDxx_dx*dt;
     }

@@ -125,6 +125,10 @@ public:
 namespace SEP {
   using namespace Exosphere;
 
+  //the type of the equation that is solved 
+  const int ModelEquationParker=0,ModelEquationFTE=1;
+  extern int ModelEquation;
+
   //min/max particle number limit per segment of a field line 
   extern int MinParticleLimit,MaxParticleLimit;
 
