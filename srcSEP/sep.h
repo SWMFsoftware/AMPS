@@ -204,6 +204,13 @@ namespace SEP {
 
   //the namespace contains the diffution models
   namespace Diffusion {
+
+    //avoid "special" points in the pitch angle diffusion coefficient 
+    const int LimitSpecialMuPointsModeOff=0;
+    const int LimitSpecialMuPointsModeOn=1;
+    extern int LimitSpecialMuPointsMode;
+    extern double LimitSpecialMuPointsDistance;
+
     typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 

@@ -15,6 +15,9 @@ int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction
 
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
+int SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOff;
+double SEP::Diffusion::LimitSpecialMuPointsDistance=0.05;
+
 //========= Roux2004AJ (LeRoux-2004-AJ) =============================
 void SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
   static double c=7.0*Pi/8.0*2.0E3/(0.01*_AU_)*(0.2*0.2);
@@ -219,10 +222,15 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   P=A[iR]*Lambda[iR]/(1.0+pow(k*Lambda[iR],5.0/3.0))*dB2;
   c=Pi/4.0*omega*k*P/absB2;
 
-  if (fabs(mu)<0.002) mu=(mu>=0.0) ? 0.002 : -0.002; 
-
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;
+
+  if ((SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn)&& (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)) {
+    double mu_test=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)*mu/fabs(mu);
+  
+    D=c*(1.0-mu_test*mu_test);
+    dD_dmu=0.0; 
+  }
 }
 
 

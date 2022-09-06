@@ -461,6 +461,33 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
     }
 
+    else if (Command == "#SEP_PITCH_ANGLE_DIFFUSION_EXCLUDE_SPECIAL_POINTS") {
+      t=param_list.front().first;
+
+      #ifdef _SEP_MODEL_ON_
+      if (t == "ON") {
+        SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOn;
+      }
+      else if (t=="OFF") {
+        SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOff; 
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+      #endif
+
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+    
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      #ifdef _SEP_MODEL_ON_
+      SEP::Diffusion::LimitSpecialMuPointsDistance=atof(t.c_str());
+      #endif 
+    }
+
 
     else if (Command == "#BL_POINT_IMPORT_STEP") {
       cout << "PT: "  << param_list.front().second << endl;
