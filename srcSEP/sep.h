@@ -211,6 +211,12 @@ namespace SEP {
     extern int LimitSpecialMuPointsMode;
     extern double LimitSpecialMuPointsDistance;
 
+    //types of the differentiation of the pitch angle diffusion coeffcient
+    const int PitchAngleDifferentialModeNumerical=0;
+    const int PitchAngleDifferentialModeAnalytical=1; 
+
+    extern int PitchAngleDifferentialMode;
+
     typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 

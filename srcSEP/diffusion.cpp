@@ -78,11 +78,29 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
  
    if (lambda!=0) {
      double mu2=mu*mu;
-     
+     double mu_init=mu;
+
      mu=fabs(mu);
 
      D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
      dD_dmu=speed/lambda*(2.0/3.0/pow(mu,1.0/3.0)-8.0/3.0*pow(mu,5.0/3.0));  
+
+     if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
+       if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
+         double mu=SEP::Diffusion::LimitSpecialMuPointsDistance*mu_init/fabs(mu_init); 
+
+         mu2=mu*mu;
+         D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+         dD_dmu=0.0;
+       }
+       else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
+         double mu=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)*mu_init/fabs(mu_init);
+
+         mu2=mu*mu;
+         D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+         dD_dmu=0.0;
+       }
+     }
    }
    else {
      D=0.0,dD_dmu=0.0;

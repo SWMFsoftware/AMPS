@@ -16,6 +16,9 @@ cInternalSphericalData* SEP::InnerBoundary=NULL;
 //the type of the equations that is soleved 
 int SEP::ModelEquation=SEP::ModelEquationFTE;
 
+//types of the differentiation of the pitch angle diffusion coeffcient
+int SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeAnalytical; 
+
 //parameters of the scattering model
 int SEP::Scattering::Tenishev2005AIAA::status=SEP::Scattering::Tenishev2005AIAA::_disabled;
 double SEP::Scattering::Tenishev2005AIAA::alpha=0.0;

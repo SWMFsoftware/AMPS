@@ -219,6 +219,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else if (t=="Florinskiy") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Florinskiy::GetPitchAngleDiffusionCoefficient;
       }
+      else if (t=="Borovikov") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient;
+      }
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
@@ -488,6 +491,21 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif 
     }
 
+    else if (Command == "#SEP_PITCH_ANGLE_DIFERENTIAL") {
+      t=param_list.front().first;
+
+      #ifdef _SEP_MODEL_ON_
+      if (t == "numerical") {
+        SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeNumerical;
+      }
+      else if (t=="analytical") {
+        SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeAnalytical;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+      #endif
+    }
 
     else if (Command == "#BL_POINT_IMPORT_STEP") {
       cout << "PT: "  << param_list.front().second << endl;

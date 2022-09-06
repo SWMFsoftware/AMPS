@@ -1097,6 +1097,26 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord,Segment);
 
+      if (SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
+        double mu_plus,mu_minus,D_plus,D_minus,D_mu_mu_numerical;
+
+        mu_plus=mu+0.01;
+        if (mu_plus>1.0) mu_plus=1.0;
+
+        mu_minus=mu-0.01;
+        if (mu_minus<-1.0) mu_minus=-1.0;
+
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_plus,dD_dmu,mu_plus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_minus,dD_dmu,mu_minus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+
+        D_mu_mu_numerical=(D_plus-D_minus)/(mu_plus-mu_minus); 
+
+        dD_dmu=D_mu_mu_numerical;
+      }
+      else if (SEP::Diffusion::PitchAngleDifferentialMode!=SEP::Diffusion::PitchAngleDifferentialModeAnalytical) {
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
+
       if (first_pass_flag==true) {
         delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
         if (isfinite(delta)==false) exit(__LINE__,__FILE__);
