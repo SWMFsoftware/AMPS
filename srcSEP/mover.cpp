@@ -1295,6 +1295,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
 
 //=============================================================================================================
+//Sokolov-2004-AJ
 int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
@@ -1323,7 +1324,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
 
-  auto GetTransportCoefficients = [] (double& dP,double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
+  auto GetTransportCoefficients = [] (double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
     //calculate B and L
     double B[3],B0[3],B1[3], AbsBDeriv;
     double L,AbsB; 
@@ -1339,7 +1340,6 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     L=-Vector3D::Length(B)/AbsBDeriv;
 
     if (::AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==false) {
-      dP=0.0;
       dLogP=0.0;
       return;
     }
@@ -1370,32 +1370,23 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     DivVsw1=-DivVsw1;
 
-    if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
-      dP=0.0;
-      dLogP=0.0;
-      return;
-    }  
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+      if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
+        dLogP=0.0;
+        return;
+      } 
+    }
 
     double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
     double weight1=1.0-weight0;
 
     double DivVsw=DivVsw0*weight0+DivVsw1*weight1;
-
-    vSolarWindParallel=vSW0*weight0+vSW1*weight1; 
-
-
-    if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
-
-    //dLogP=-((1.0-mu2)/2.0*(DivVsw-dVz_dz)+mu2*dVz_dz)*dt;
-
     dLogP=-(DivVsw)*dt/3.0;
-    dP=Relativistic::Speed2Momentum(v,_H__MASS_)*dLogP;
   };
 
 
   //get the new value of 'mu'
   double D;
-
   double mu_init=mu;
   double time_counter=0.0;
   double dt=dtTotal;
@@ -1418,7 +1409,6 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   mu=vParallel/v;
 
   static long int ncall=0;
-
   ncall++;
 
   if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) {
@@ -1427,11 +1417,11 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   double dx,dDxx_dx;
   int iR,iE,iMu;
+  
+  dx=0.0;
 
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
-
-    dx=0.0;
 
     if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
       SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
@@ -1449,8 +1439,8 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
           dt=dt_new;
         }
 
-        if (fabs(delta)>0.5*Segment->GetLength()) {
-          double dt_new=dt*sqrt(0.5*Segment->GetLength()/delta);
+        if (fabs(delta)>0.5*Segment->GetLength()) {          
+          double dt_new=dt*pow(0.5*Segment->GetLength()/delta,2);
 
           if (dt<dt_new) dt=dt_new;
         } 
@@ -1468,12 +1458,10 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
-    GetTransportCoefficients(dp,dlogp,v,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
+    GetTransportCoefficients(dlogp,v,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dx+dt*vSolarWindParallel); 
 
     double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
-    //p+=dp;
-
     p*=exp(dlogp);
 
     v=Relativistic::Momentum2Speed(p,_H__MASS_);
