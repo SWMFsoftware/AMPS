@@ -493,6 +493,8 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
     else if (Command == "#SEP_PITCH_ANGLE_DIFERENTIAL") {
       t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
 
       #ifdef _SEP_MODEL_ON_
       if (t == "numerical") {
