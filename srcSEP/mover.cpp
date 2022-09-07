@@ -1085,9 +1085,12 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   ncall++;
 
+  static long int loop_cnt=0;
+
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
+    loop_cnt++;
     dmu=0.0;
 
     if (isfinite(mu)==false) exit(__LINE__,__FILE__);
@@ -1098,7 +1101,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord,Segment);
 
       if (SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
-        double mu_plus,mu_minus,D_plus,D_minus,D_mu_mu_numerical;
+        double t,mu_plus,mu_minus,D_plus,D_minus,D_mu_mu_numerical;
 
         mu_plus=mu+0.01;
         if (mu_plus>1.0) mu_plus=1.0;
@@ -1106,8 +1109,8 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
         mu_minus=mu-0.01;
         if (mu_minus<-1.0) mu_minus=-1.0;
 
-        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_plus,dD_dmu,mu_plus,vParallel,vNormal,spec,FieldLineCoord,Segment);
-        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_minus,dD_dmu,mu_minus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_plus,t,mu_plus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_minus,t,mu_minus,vParallel,vNormal,spec,FieldLineCoord,Segment);
 
         D_mu_mu_numerical=(D_plus-D_minus)/(mu_plus-mu_minus); 
 
@@ -1202,6 +1205,12 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     }
 
 
+    if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) { 
+      if ((isfinite(dp)==false)||(isfinite(dlogp)==false)) {
+        exit(__LINE__,__FILE__);
+      }
+    }
+
     double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
     //p+=dp;
 
@@ -1224,9 +1233,11 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     vParallel=mu*v;
     vNormal=sqrt(1.0-mu*mu)*v;
 
-    if ((isfinite(mu)==false)||(isfinite(v)==false)) {
-      exit(__LINE__,__FILE__);
-    } 
+    if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) {
+      if ((isfinite(mu)==false)||(isfinite(v)==false)) {
+        exit(__LINE__,__FILE__);
+      } 
+    }
 
     //get the segment of the new particle location 
     if ((FieldLineCoord<0.0) || ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL)) {
@@ -1409,7 +1420,10 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   static long int ncall=0;
 
   ncall++;
-  if (isfinite(mu)==false) exit(__LINE__,__FILE__);
+
+  if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) {
+    if (isfinite(mu)==false) exit(__LINE__,__FILE__);
+  }
 
   double dx,dDxx_dx;
   int iR,iE,iMu;
@@ -1423,28 +1437,11 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
       SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
       delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
 
-      if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
+      if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) {
+        if (isfinite(delta)==false) exit(__LINE__,__FILE__); 
+      }
 
       if (first_pass_flag==true) {
-/*        //sample particle distribution 
-        double x[3],e,speed,ParticleWeight;
-
-        speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-        if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
-
-        e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec));
-        iE=log(e/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::dLogE;
-
-        if (iE>=SEP::Sampling::PitchAngle::nEnergySamplingIntervals) iE=SEP::Sampling::PitchAngle::nEnergySamplingIntervals-1;
-        if (iE<0)iE=0;
-
-        iMu=(int)((mu+1.0)/SEP::Sampling::PitchAngle::dMu);
-        if (iMu>=SEP::Sampling::PitchAngle::nMuIntervals) iMu=SEP::Sampling::PitchAngle::nMuIntervals-1;
-
-        FL::FieldLinesAll[iFieldLine].GetCartesian(x,FieldLineCoord); 
-        iR=(int)(Vector3D::Length(x)/SEP::Sampling::PitchAngle::dR);
-        if (iR>=SEP::Sampling::PitchAngle::nRadiusIntervals) iR=SEP::Sampling::PitchAngle::nRadiusIntervals-1;*/
-
         if (fabs(dDxx_dx*dt)>0.5*Segment->GetLength()) {
           double dt_new=0.5*Segment->GetLength()/fabs(dDxx_dx);
 

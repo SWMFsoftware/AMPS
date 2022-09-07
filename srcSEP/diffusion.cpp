@@ -87,17 +87,17 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
 
      if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
        if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
-         double mu=SEP::Diffusion::LimitSpecialMuPointsDistance*mu_init/fabs(mu_init); 
+         double mu_abs=SEP::Diffusion::LimitSpecialMuPointsDistance; 
 
-         mu2=mu*mu;
-         D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+         mu2=mu_abs*mu_abs;
+         D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
          dD_dmu=0.0;
        }
        else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
-         double mu=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)*mu_init/fabs(mu_init);
+         double mu_abs=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance);
 
-         mu2=mu*mu;
-         D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+         mu2=mu_abs*mu_abs;
+         D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
          dD_dmu=0.0;
        }
      }
@@ -244,9 +244,9 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   dD_dmu=-c*2*mu;
 
   if ((SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn)&& (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)) {
-    double mu_test=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)*mu/fabs(mu);
+    double mu_abs=1.0-SEP::Diffusion::LimitSpecialMuPointsDistance;
   
-    D=c*(1.0-mu_test*mu_test);
+    D=c*(1.0-mu_abs*mu_abs);
     dD_dmu=0.0; 
   }
 }
