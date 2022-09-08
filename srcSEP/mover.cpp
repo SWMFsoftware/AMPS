@@ -1325,36 +1325,6 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
 
   auto GetTransportCoefficients = [] (double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
-    //calculate B and L
-    double B[3],B0[3],B1[3], AbsBDeriv;
-    double L,AbsB; 
-
-    FL::FieldLinesAll[iFieldLine].GetMagneticField(B0, (int)FieldLineCoord);
-    FL::FieldLinesAll[iFieldLine].GetMagneticField(B,       FieldLineCoord);
-    FL::FieldLinesAll[iFieldLine].GetMagneticField(B1, (int)FieldLineCoord+1-1E-7);
-    AbsB   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
-
-    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
-        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
-
-    L=-Vector3D::Length(B)/AbsBDeriv;
-
-    if (::AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==false) {
-      dLogP=0.0;
-      return;
-    }
-
-    //calculate dVsw_dz
-    double vSolarWind[3],vSW1,vSW0,dVz_dz; 
-
-    FL::FieldLinesAll[iFieldLine].GetPlasmaVelocity(vSolarWind,(int)FieldLineCoord);
-    vSW0=Vector3D::DotProduct(vSolarWind,B0)/Vector3D::Length(B0);
-
-    FL::FieldLinesAll[iFieldLine].GetPlasmaVelocity(vSolarWind,(int)FieldLineCoord+1-1E-7);
-    vSW1=Vector3D::DotProduct(vSolarWind,B1)/Vector3D::Length(B1);
-
-    dVz_dz=(vSW1-vSW0)/FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord); 
-
     //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
     double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw0,DivVsw1;
     auto Vertex0=Segment->GetBegin();
