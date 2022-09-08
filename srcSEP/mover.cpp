@@ -975,8 +975,7 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
   L=-Vector3D::Length(B)/AbsBDeriv;
 
   if (::AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==false) {
-    dP=0.0;
-    dLogP=0.0;
+    dLogP=0.0,dP=0.0;
     dmu=(1.0-mu*mu)/2.0*v/L*dt; 
     return;
   }
@@ -1008,20 +1007,15 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
   DivVsw1=-DivVsw1;
 
   if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
-    dmu=0.0;
-    dP=0.0;
-    dLogP=0.0;
+    dP=0.0,dLogP=0.0;
     return;
-  }  
+  }
 
   double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
   double weight1=1.0-weight0;
 
   double DivVsw=DivVsw0*weight0+DivVsw1*weight1;
   double mu2=mu*mu;
-
-  vSolarWindParallel=vSW0*weight0+vSW1*weight1; 
-
 
   if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
@@ -1081,11 +1075,8 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   mu=vParallel/v;
 
-  static long int ncall=0;
-
+  static long int ncall=0,loop_cnt=0;
   ncall++;
-
-  static long int loop_cnt=0;
 
   while (time_counter<dtTotal) { 
     if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
@@ -1093,7 +1084,9 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     loop_cnt++;
     dmu=0.0;
 
-    if (isfinite(mu)==false) exit(__LINE__,__FILE__);
+    if (_PIC_DEBUGGER_MODE_== _PIC_DEBUGGER_MODE_ON_) {
+      if (isfinite(mu)==false) exit(__LINE__,__FILE__);
+    }
 
     int iR,iE,iMu;
 
@@ -1153,16 +1146,16 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
           return ParticleMover_ParkerEquation(ptr,dtTotal,node);
         }
 
-        if (fabs(dD_dmu*dt)>0.05) {
-          dt=0.05/fabs(dD_dmu);
+        if (fabs(dD_dmu*dt)>0.1) {
+          dt=0.1/fabs(dD_dmu);
 
           if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
             return ParticleMover_ParkerEquation(ptr,dtTotal,node);
           }
         }
 
-        if (fabs(delta)>0.05) {
-          double t=0.005/(4.0*D);
+        if (fabs(delta)>0.1) {
+          double t=dt*pow(0.1/fabs(delta),2);
 
           if (t<dt) dt=t;
 
@@ -1186,8 +1179,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     }
 
 
-    double dp,dlogp;
-
+    double dlogp,dp;
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
@@ -1212,23 +1204,13 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     }
 
     double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
-    //p+=dp;
 
     p*=exp(dlogp);
-
     v=Relativistic::Momentum2Speed(p,_H__MASS_);
 
     if (v>=0.99*SpeedOfLight) {
       v=0.99*SpeedOfLight;
     }
-
-    //    v+=dv;
-    mu+=dmu;
-    dmu=0.0;
-
-
-    if (mu>0.999) mu=0.999;
-    if (mu<-0.999) mu=-0.999;
 
     vParallel=mu*v;
     vNormal=sqrt(1.0-mu*mu)*v;
@@ -1340,12 +1322,10 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     DivVsw1=-DivVsw1;
 
-    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
-      if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
-        dLogP=0.0;
-        return;
-      } 
-    }
+    if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
+      dLogP=0.0;
+      return;
+    } 
 
     double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
     double weight1=1.0-weight0;
