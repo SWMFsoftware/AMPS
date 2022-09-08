@@ -30,7 +30,9 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ int *PIC::ParticleBuffer::ParticleOffsetTable=NUL
 //the particle table
 _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::ParticleBuffer::cParticleTable *PIC::ParticleBuffer::ParticlePopulationTable=NULL; 
 
+#if defined(__linux__)
 pthread_mutex_t PIC::ParticleBuffer::DeleteParticlePthreadMutex=PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+#endif
 
 //==========================================================
 //init the buffer
@@ -621,17 +623,21 @@ void PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(long int p
 //#endif
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+#if defined(__linux__)
   if ((_PIC_FL_MOVER_MULTITHREAD_==_PIC_MODE_ON_)||(_PIC_MOVER__MPI_MULTITHREAD_==_PIC_MODE_ON_)) { 
     pthread_mutex_lock(&DeleteParticlePthreadMutex); 
   }
+#endif
 
   NAllPart--;
   SetNext(FirstPBufferParticle,ptr);
   FirstPBufferParticle=ptr;
 
+#if defined(__linux__)
   if ((_PIC_FL_MOVER_MULTITHREAD_==_PIC_MODE_ON_)||(_PIC_MOVER__MPI_MULTITHREAD_==_PIC_MODE_ON_)) {
     pthread_mutex_unlock(&DeleteParticlePthreadMutex);
   }
+#endif
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int thread; //=omp_get_thread_num();
 
