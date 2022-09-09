@@ -1745,7 +1745,7 @@ void Exosphere::Sampling::OutputDataFile::PrintVariableList(FILE* fout,int DataS
 */
 
   //print variables of the Chamberlain exosphere model
-  if (Exosphere::ChamberlainExosphere::ModelInitFlag==true) Exosphere::ChamberlainExosphere::PrintVariableList(fout);
+  if ((Exosphere::ChamberlainExosphere::ModelInitFlag==true)&&(fout!=NULL)) Exosphere::ChamberlainExosphere::PrintVariableList(fout);
 //#endif
 }
 
@@ -1937,7 +1937,7 @@ void Exosphere::Sampling::OutputDataFile::PrintData(FILE* fout,int DataSetNumber
 
 
   //Output parameters of the Chamberlain model
-  if (Exosphere::ChamberlainExosphere::ModelInitFlag==true) Exosphere::ChamberlainExosphere::PrintData(fout,DataSetNumber,pipe,CenterNodeThread,CenterNode);
+  if ((Exosphere::ChamberlainExosphere::ModelInitFlag==true)&&(fout!=NULL))  Exosphere::ChamberlainExosphere::PrintData(fout,DataSetNumber,pipe,CenterNodeThread,CenterNode);
 
 
   //other soruce processes......
