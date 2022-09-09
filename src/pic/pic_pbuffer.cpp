@@ -929,7 +929,9 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
   ptrData=GetParticleDataPointer(ptr);
 
   //default settings
-  SetIndividualStatWeightCorrection(1.0,ptrData);
+  if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+     SetIndividualStatWeightCorrection(1.0,ptrData);
+  }
 
   //set up the fields of the new particle with the user-defined data
   if (ParticleData!=NULL) {
@@ -942,7 +944,10 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
   if (x!=NULL) SetX(x,ptrData);
   if (v!=NULL) SetV(v,ptrData);
   if (spec!=NULL) SetI(*spec,ptrData);
-  if (WeightCorrectionFactor!=NULL) SetIndividualStatWeightCorrection(*WeightCorrectionFactor,ptrData);
+
+  if ((WeightCorrectionFactor!=NULL)&&(_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_)) {
+    SetIndividualStatWeightCorrection(*WeightCorrectionFactor,ptrData);
+  }
 
   //call the user-defined function to initiate the partcles
   if (UserInitParticleFunction!=NULL) UserInitParticleFunction(ptrData); 
