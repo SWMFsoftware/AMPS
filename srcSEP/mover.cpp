@@ -833,28 +833,61 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   double delta;
 
   bool first_pass_flag=true;
+  static long int loop_cnt=0;
 
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/v;
+
+  if (v>0.99*SpeedOfLight) {
+    double t=0.99*SpeedOfLight/v;
+
+    v=0.99*SpeedOfLight;
+    vParallel*=t;
+    vNormal*=t; 
+  }
 
   while (time_counter<dtTotal) { 
+   loop_cnt++;
+
    if (time_counter+dt>dtTotal) dt=dtTotal-time_counter;
 
    dmu=0.0;
-
-//   vParallel-=vSolarWindParallel;
    v=sqrt(vParallel*vParallel+vNormal*vNormal);
    mu=vParallel/v;
 
    if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
-    delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+
+    if (SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
+      double t,mu_plus,mu_minus,D_plus,D_minus,D_mu_mu_numerical;
+
+      mu_plus=mu+0.01;
+      if (mu_plus>1.0) mu_plus=1.0;
+
+      mu_minus=mu-0.01;
+      if (mu_minus<-1.0) mu_minus=-1.0;
+
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_plus,t,mu_plus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_minus,t,mu_minus,vParallel,vNormal,spec,FieldLineCoord,Segment);
+
+      D_mu_mu_numerical=(D_plus-D_minus)/(mu_plus-mu_minus);
+
+      dD_dmu=D_mu_mu_numerical;
+    }
+    else if (SEP::Diffusion::PitchAngleDifferentialMode!=SEP::Diffusion::PitchAngleDifferentialModeAnalytical) {
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
+
 
     if (first_pass_flag==true) {
+      delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
+
       if (fabs(dD_dmu*dt)>0.1) {
         dt=1.0/fabs(dD_dmu);
       }
 
       if (fabs(delta)>0.1) {
-        double t=0.01/(4.0*D);
+        double t=dt*pow(0.1/fabs(delta),2);
 
         if (t<dt) dt=t;
       } 
@@ -864,7 +897,6 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
     delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
     dmu+=delta;
-
     dmu-=dD_dmu*dt;
   }
 
@@ -892,10 +924,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   if (mu<-0.999) mu=-0.999;
   if (mu>0.999) mu=0.999;
  
-  
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v;
-//  vParallel+=vSolarWindParallel;
 
   //calculate mu in the frame of the simulation
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
@@ -903,16 +933,9 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
   dmu+=(1.0-mu*mu)/(2.0*L)*v*dt;
 
-  if (fabs(dmu)>0.1) {
-    dt/=2.0;
-    time_counter=0.0;
-    vParallel=vParallelInit,vNormal=vNormalInit;
-    mu=mu_init;
-    continue;
-  }
-
   mu+=dmu;
   time_counter+=dt;
+  dmu=0.0;
 
   if (mu<-1.0) mu=-1.0;
   if (mu>1.0) mu=1.0; 
@@ -1065,7 +1088,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
-  if (v>=SpeedOfLight) {
+  if (v>=0.99*SpeedOfLight) {
     double t=0.99*SpeedOfLight/v;
 
     v*=t;
