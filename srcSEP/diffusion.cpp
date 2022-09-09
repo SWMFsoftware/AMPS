@@ -76,35 +76,37 @@ void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(dou
 
    lambda=0.5*absB2/(VacuumPermeability*SummedW)*pow(Lmax*Lmax*rLarmor*Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec))*J2GeV,1.0/3.0); 
  
-   if (lambda!=0) {
-     double mu2=mu*mu;
-     double mu_init=mu;
+   if (lambda==0.0) { 
+     D=0.0,dD_dmu=0.0;
+     return;
+   }
 
-     mu=fabs(mu);
+   double mu2=mu*mu;
+   double mu_init=mu;
 
-     D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
-     dD_dmu=speed/lambda*(2.0/3.0/pow(mu,1.0/3.0)-8.0/3.0*pow(mu,5.0/3.0));  
+   mu=fabs(mu);
 
-     if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
-       if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
-         double mu_abs=SEP::Diffusion::LimitSpecialMuPointsDistance; 
+   if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
+     if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
+       double mu_abs=SEP::Diffusion::LimitSpecialMuPointsDistance; 
 
-         mu2=mu_abs*mu_abs;
-         D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
-         dD_dmu=0.0;
-       }
-       else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
-         double mu_abs=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance);
+       mu2=mu_abs*mu_abs;
+       D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
+       dD_dmu=0.0;
+       return;
+     }
+     else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
+       double mu_abs=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance);
 
-         mu2=mu_abs*mu_abs;
-         D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
-         dD_dmu=0.0;
-       }
+       mu2=mu_abs*mu_abs;
+       D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
+       dD_dmu=0.0;
+       return; 
      }
    }
-   else {
-     D=0.0,dD_dmu=0.0;
-   }
+
+   D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+   dD_dmu=speed/lambda*(2.0/3.0/pow(mu,1.0/3.0)-8.0/3.0*pow(mu,5.0/3.0));
 } 
 
 //========= Jokopii1966AJ (Jokopii-1966-AJ) =============================
