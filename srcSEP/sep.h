@@ -220,9 +220,17 @@ namespace SEP {
     typedef void (*fGetPitchAngleDiffusionCoefficient)(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 
+    //calculate the parameters of the background IMF 
+    void GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2); 
+
     //calculate Dxx
     void GetDxx(double& D,double &dDxx_dx,double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine);
     double GetMeanFreePath(double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine);
+
+    //Qin-2013-AJ 
+    namespace Qin2013AJ {
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+    }
 
     //LeRoux-2004-AJ
     namespace Roux2004AJ {

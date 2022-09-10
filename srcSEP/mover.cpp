@@ -856,6 +856,10 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
    mu=vParallel/v;
 
    if (SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL) {
+     if (ModelEquation==ModelEquationParker) {
+       return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+     }
+
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,vNormal,spec,FieldLineCoord_init,Segment);
 
     if (SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
@@ -882,14 +886,23 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     if (first_pass_flag==true) {
       delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
 
+
       if (fabs(dD_dmu*dt)>0.1) {
         dt=1.0/fabs(dD_dmu);
+
+        if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
+          return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+        }
       }
 
       if (fabs(delta)>0.1) {
         double t=dt*pow(0.1/fabs(delta),2);
 
         if (t<dt) dt=t;
+
+        if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
+          return ParticleMover_ParkerEquation(ptr,dtTotal,node);
+        }
       } 
 
       first_pass_flag=false;
@@ -897,7 +910,8 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
 
     delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
     dmu+=delta;
-    dmu-=dD_dmu*dt;
+//    dmu-=dD_dmu*dt;
+    dmu+=dD_dmu*dt; //IMPORTANT. It is actually should be '+' [Dresing, 2012 Arxive; Droge-2009-AJ] 
   }
 
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel));
@@ -1192,7 +1206,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
       delta=sqrt(2.0*D*dt)*Vector3D::Distribution::Normal();
       dmu+=delta;
-      dmu-=dD_dmu*dt;
+      dmu+=dD_dmu*dt; //IMPORTANT. It is actually should be '+' [Dresing, 2012 Arxive; Droge-2009-AJ]  
 
       mu+=dmu;
       dmu=0.0;

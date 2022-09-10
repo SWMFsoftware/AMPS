@@ -222,6 +222,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else if (t=="Borovikov") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient;
       }
+      else if (t=="Qin") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Qin2013AJ::GetPitchAngleDiffusionCoefficient;
+      }
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }

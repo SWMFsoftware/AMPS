@@ -26,91 +26,84 @@ void SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(double& D,dou
   dD_dmu=-2.0*c*mu;
 } 
 
+//========= Qin-2013-AJ (Eq. 3) ========================================
+void SEP::Diffusion::Qin2013AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+  double absB,dB,SummW,r2,absB2,dB2,lambda,LarmorRadius,speed;
+
+  GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
+  absB2=absB*absB;
+  dB2=dB*dB;
+  
+  const double s=5.0/3.0;
+  const double h=0.01;
+  const double kmin=33.0/_AU_;
+  
+  const double c=Pi*(s-1.0)/(4.0*s)*kmin;
+  
+  speed=sqrt(vParallel*vParallel+vNorm*vNorm);
+  LarmorRadius=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec))/fabs(PIC::MolecularData::GetElectricCharge(spec)*absB);
+  
+  mu=fabs(mu);
+  D=dB2/absB2*c*speed*pow(LarmorRadius,s-2.0)*(pow(mu,s-1.0)+h)*(1.0-mu*mu);
+  dD_dmu=0.0;
+  
+  if (SEP::Diffusion::PitchAngleDifferentialMode!=SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
+    exit(__LINE__,__FILE__,"Error: the function is inlmeneted only when SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical. Corrent the input file.");
+  }
+}
+
 //========= Borovokov_2019_ARXIV (Borovikov-2019-ARXIV, Eq. 6.11)==== 
 void SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
   namespace FL = PIC::FieldLine;
   namespace MD = PIC::MolecularData;
 
-  FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
-  FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+  double absB,dB,SummW,r2,absB2,dB2,lambda;
 
-  double *B0,*B1;
-  double *W0,*W1;
-  double *x0,*x1;
-  double w0,w1;
+  GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
+  absB2=absB*absB;
+  dB2=dB*dB;
 
-  //get the magnetic field and the plasma waves at the corners of the segment
-  B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-  B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+  double mu2=mu*mu;
+  double mu_init=mu;
+  double speed=sqrt(vParallel*vParallel+vNorm*vNorm);
 
-  W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves); 
-  W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+  mu=fabs(mu);
 
-  x0=VertexBegin->GetX();
-  x1=VertexEnd->GetX();
-  
-  //determine the interpolation coefficients
-  w1=fmod(FieldLineCoord,1); 
-  w0=1.0-w1;
+  double Lmax=0.03*sqrt(r2);
+  double rLarmor=Relativistic::Energy2Momentum(1.0*GeV2J,PIC::MolecularData::GetMass(spec))/fabs(PIC::MolecularData::GetElectricCharge(spec)*absB); 
 
-  //calculate lambda
-  double lambda,r2=0.0,absB2=0.0,SummedW=0.0;
-  int idim;
+  lambda=0.5*absB2/dB2*pow(Lmax*Lmax*rLarmor*Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec))*J2GeV,1.0/3.0); 
 
-  for (idim=0;idim<3;idim++) {
-    double t;
-
-    t=w0*B0[idim]+w1*B1[idim];
-    absB2+=t*t;
-
-    t=w0*x0[idim]+w1*x1[idim];
-    r2+=t*t;
+  if (lambda==0.0) {
+    D=0.0,dD_dmu=0.0;
+    return;
   }
 
+  if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
+    if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
+      double mu_abs=SEP::Diffusion::LimitSpecialMuPointsDistance; 
 
-   SummedW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]); 
+      mu2=mu_abs*mu_abs;
+      D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
+      dD_dmu=0.0;
+      return;
+    }
+    else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
+      double mu_abs=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance);
 
-   double Lmax=0.03*sqrt(r2);
-   double rLarmor=PIC::MolecularData::GetMass(spec)*Relativistic::E2Speed(1.0*GeV2J,PIC::MolecularData::GetMass(spec))/fabs(PIC::MolecularData::GetElectricCharge(spec)*sqrt(absB2));
-   double speed=sqrt(vParallel*vParallel+vNorm*vNorm);
+      mu2=mu_abs*mu_abs;
+      D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
+      dD_dmu=0.0;
+      return; 
+    }
+  }
 
-   lambda=0.5*absB2/(VacuumPermeability*SummedW)*pow(Lmax*Lmax*rLarmor*Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec))*J2GeV,1.0/3.0); 
- 
-   if (lambda==0.0) { 
-     D=0.0,dD_dmu=0.0;
-     return;
-   }
-
-   double mu2=mu*mu;
-   double mu_init=mu;
-
-   mu=fabs(mu);
-
-   if (SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn) {
-     if (fabs(mu)<SEP::Diffusion::LimitSpecialMuPointsDistance) {
-       double mu_abs=SEP::Diffusion::LimitSpecialMuPointsDistance; 
-
-       mu2=mu_abs*mu_abs;
-       D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
-       dD_dmu=0.0;
-       return;
-     }
-     else if (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance) {
-       double mu_abs=(1.0-SEP::Diffusion::LimitSpecialMuPointsDistance);
-
-       mu2=mu_abs*mu_abs;
-       D=speed/lambda*(1.0-mu2)*pow(mu_abs,2.0/3.0);
-       dD_dmu=0.0;
-       return; 
-     }
-   }
-
-   D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
-   dD_dmu=speed/lambda*(2.0/3.0/pow(mu,1.0/3.0)-8.0/3.0*pow(mu,5.0/3.0));
+  D=speed/lambda*(1.0-mu2)*pow(mu,2.0/3.0);
+  dD_dmu=speed/lambda*(2.0/3.0/pow(mu,1.0/3.0)-8.0/3.0*pow(mu,5.0/3.0));
 } 
 
 //========= Jokopii1966AJ (Jokopii-1966-AJ) =============================
-void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2) {
   namespace FL = PIC::FieldLine;
   namespace MD = PIC::MolecularData;
 
@@ -135,8 +128,10 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   //determine the interpolation coefficients
   w1=fmod(FieldLineCoord,1);
   w0=1.0-w1;
+  
+  r2=0.0;
 
-  double absB2=0.0,r2=0.0;
+  double absB2=0.0;
   int idim;
 
   for (idim=0;idim<3;idim++) {
@@ -149,9 +144,70 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
     r2+=t*t;
   }
   
-  double SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
+  SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
+  absB=sqrt(absB2);
+  
+  //calculate dB 
+  switch (Jokopii1966AJ::Mode) {
+  case Jokopii1966AJ::_awsom:
+    //(db/b)^2 = (W+ + W-)*mu0 / {(W+ + W-)*mu0 + B^2)
+    dB=sqrt(SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2));
+    break;
+  case Jokopii1966AJ::_fraction: 
+    dB=Jokopii1966AJ::FractionValue*pow(r2/(_AU_*_AU_),Jokopii1966AJ::FractionPowerIndex/2.0)*absB;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+  
+  if (dB>absB) dB=absB;
+}
+  
 
-  GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu,vParallel,absB2,r2,spec,SummW); 
+
+void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+  namespace FL = PIC::FieldLine;
+  namespace MD = PIC::MolecularData;
+  
+  double k,P,c,absB,dB,SummW,omega,dB2,absB2,r2;
+  int iR;
+  double dR=1.0/nR;
+  
+  GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
+  absB2=absB*absB;
+  dB2=dB*dB;
+  
+  //reference values of k_max and k_min at 1 AU
+  //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
+  double k_min,k_max;
+  double t=k_ref_R*k_ref_R/r2;
+
+  k_min=t*k_ref_min;
+  k_max=t*k_ref_max;
+  
+  omega=fabs(MD::GetElectricCharge(spec))*absB/MD::GetMass(spec);
+ 
+  k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
+
+  if (isfinite(k)==false) {
+    k=k_max;
+  }
+  else if (k>k_max) {
+    k=k_max; 
+  } 
+
+  P=A[iR]*Lambda[iR]/(1.0+pow(k*Lambda[iR],5.0/3.0))*dB2;
+  c=Pi/4.0*omega*k*P/absB2;
+
+  D=c*(1.0-mu*mu);
+  dD_dmu=-c*2*mu;
+
+  if ((SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn)&& (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)) {
+    double mu_abs=1.0-SEP::Diffusion::LimitSpecialMuPointsDistance;
+  
+    D=c*(1.0-mu_abs*mu_abs);
+    dD_dmu=0.0; 
+  }
 }
 
 
@@ -228,6 +284,8 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   }
 
 
+  dB2=dB*dB;
+  
   k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
 
   if (isfinite(k)==false) {
