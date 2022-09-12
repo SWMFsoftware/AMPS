@@ -151,7 +151,7 @@ void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldL
   switch (Jokopii1966AJ::Mode) {
   case Jokopii1966AJ::_awsom:
     //(db/b)^2 = (W+ + W-)*mu0 / {(W+ + W-)*mu0 + B^2)
-    dB=sqrt(SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2));
+    dB=sqrt(SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2))*absB;
     break;
   case Jokopii1966AJ::_fraction: 
     dB=Jokopii1966AJ::FractionValue*pow(r2/(_AU_*_AU_),Jokopii1966AJ::FractionPowerIndex/2.0)*absB;
