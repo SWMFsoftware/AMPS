@@ -12537,7 +12537,7 @@ if (TmpAllocationCounter==2437) {
     auto CommunicateBlocks = [&] (int *MoveOutNodeTableSize,cTreeNodeAMR<cBlockAMR> ***MoveOutNodeTable,unsigned long int **MoveOutDataSizeTable,long unsigned int* SendBlockMaxMessageSize,
         cTreeNodeAMR<cBlockAMR> ***MoveInNodeTable,unsigned long int **MoveInDataSizeTable,int *MoveInNodeTableSize,unsigned long int* RecvBlockMaxMessageSize,unsigned int TotalBufferSize) {
       int To,From;
-      unsigned long from_complete,to_complete,Size;
+      long from_complete,to_complete,Size;
 
       int MoveInRequestTableSize=0,MoveOutRequestTableSize=0;
       MPI_Request *MoveOutRequestTable=new MPI_Request [nTotalThreads];
