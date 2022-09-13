@@ -1035,18 +1035,30 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
 
   Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
   Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+
+  if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
+    dP=0.0,dLogP=0.0;
+    return;
+  }  
+
   DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
   DivVsw0=-DivVsw0;
 
   Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
   Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+
+  if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
+    dP=0.0,dLogP=0.0;
+    return;
+  }
+
   DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
   DivVsw1=-DivVsw1;
 
   if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
-    dP=0.0,dLogP=0.0;
+    dLogP=0.0;
     return;
-  }
+  } 
 
   double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
   double weight1=1.0-weight0;
@@ -1351,11 +1363,23 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
 
     Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
     Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+
+    if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
+      dLogP=0.0;
+      return;
+    }
+
     DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     DivVsw0=-DivVsw0;
 
     Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
     Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+
+    if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
+      dLogP=0.0;
+      return;
+    }
+
     DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     DivVsw1=-DivVsw1;
 
