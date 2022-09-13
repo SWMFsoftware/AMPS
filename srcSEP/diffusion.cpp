@@ -170,8 +170,11 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   namespace MD = PIC::MolecularData;
   
   double k,P,c,absB,dB,SummW,omega,dB2,absB2,r2;
-  int iR;
-  double dR=1.0/nR;
+  double dR=Rmax/nR;
+  int iR=sqrt(r2)/dR;
+
+  if (iR<0) iR=0;
+  if (iR>=nR) iR=nR-1;
   
   GetIMF(absB,dB,SummW,FieldLineCoord,Segment,r2);
   absB2=absB*absB;
@@ -216,12 +219,12 @@ double SEP::Diffusion::Jokopii1966AJ::A[SEP::Diffusion::Jokopii1966AJ::nR];
 
 //Zhao-2014-JGR
 void SEP::Diffusion::Jokopii1966AJ::Init() {
-   double dR=1.0/nR;
+   double dR=Rmax/nR;
    double dK,t;
    double k_min,k_max,gamma;
 
   for (int iR=0;iR<nR;iR++) {
-    t=nR*dR/((iR+0.5)*dR);
+    t=_AU_/((iR+0.5)*dR);
 
     k_min=t*t*k_ref_min;
     k_max=t*t*k_ref_max;
@@ -253,14 +256,14 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
   k_max=t*k_ref_max;
 
 
-  double dR=1.0/nR;
+  double dR=Rmax/nR;
 
   double dK;
   double omega,k,P,c;
 
   omega=fabs(MD::GetElectricCharge(spec))*sqrt(absB2)/MD::GetMass(spec);
 
-  int iR=sqrt(r2)/(_AU_*dR);
+  int iR=sqrt(r2)/(dR);
 
   if (iR>=nR) iR=nR-1; 
   if (iR<0) iR=0; 

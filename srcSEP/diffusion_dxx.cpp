@@ -20,6 +20,11 @@ namespace DxxInternalNumerics {
 
     SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu[0],vParallel,vNorm,spec,FieldLineCoord,Segment);
 
+    if (D==0.0) {
+      //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
+      SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D,dD_dmu,mu[0],vParallel,vNorm,spec,FieldLineCoord,Segment);
+    }
+
     return t*t/D;
   }
 } 

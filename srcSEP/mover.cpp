@@ -935,9 +935,15 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   mu+=dmu;
   dmu=0.0; 
   
-  if (mu<-0.999) mu=-0.999;
-  if (mu>0.999) mu=0.999;
- 
+  if (mu>1.0) {
+    double d=mu-1.0;
+    mu=1.0-d;
+  }
+  else if (mu<-1.0) {
+    double d=1.0-mu;
+    mu=-1.0-d;
+  }
+
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v;
 
@@ -951,8 +957,14 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
   time_counter+=dt;
   dmu=0.0;
 
-  if (mu<-1.0) mu=-1.0;
-  if (mu>1.0) mu=1.0; 
+  if (mu>1.0) {
+    double d=mu-1.0;
+    mu=1.0-d;
+  }
+  else if (mu<-1.0) {
+    double d=1.0-mu;
+    mu=-1.0-d;
+  }
 
   vParallel=mu*v;
   vNormal=sqrt(1.0-mu*mu)*v;
@@ -1223,8 +1235,15 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       mu+=dmu;
       dmu=0.0;
 
-      if (mu>0.999) mu=0.999; 
-      if (mu<-0.999) mu=-0.999;
+  if (mu>1.0) {
+    double d=mu-1.0;
+    mu=1.0-d;
+  }
+  else if (mu<-1.0) {
+    double d=1.0-mu;
+    mu=-1.0-d;
+  }
+
     }
 
 

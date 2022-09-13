@@ -250,8 +250,9 @@ namespace SEP {
       const int _fraction=1;
       extern double FractionValue,FractionPowerIndex;
 
-      const int nR=100;
+      const int nR=1000;
       const int nK=1000;
+      const double Rmax=10.0*_AU_;
 
       extern double Lambda[nR],A[nR];
   
