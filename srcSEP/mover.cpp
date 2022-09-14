@@ -1023,11 +1023,17 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
 
   L=-Vector3D::Length(B)/AbsBDeriv;
 
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   if (::AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==false) {
     dLogP=0.0,dP=0.0;
     dmu=(1.0-mu*mu)/2.0*v/L*dt; 
     return;
   }
+  #else 
+  dLogP=0.0,dP=0.0;
+  dmu=(1.0-mu*mu)/2.0*v/L*dt;
+  return;
+  #endif
 
   //calculate dVsw_dz
   double vSolarWind[3],vSW1,vSW0,dVz_dz; 
@@ -1053,6 +1059,7 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
     return;
   }  
 
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
   DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
   DivVsw0=-DivVsw0;
 
@@ -1071,6 +1078,10 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
     dLogP=0.0;
     return;
   } 
+  #else 
+  dLogP=0.0;
+  return;
+  #endif
 
   double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
   double weight1=1.0-weight0;
@@ -1388,6 +1399,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
       return;
     }
 
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     DivVsw0=-DivVsw0;
 
@@ -1406,6 +1418,10 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
       dLogP=0.0;
       return;
     } 
+    #else
+    dLogP=0.0;
+    return;
+    #endif
 
     double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
     double weight1=1.0-weight0;
