@@ -663,15 +663,29 @@ namespace PIC {
 
 
     //=========================================================================
-    void cFieldLine::Output(FILE* fout, bool GeometryOnly=false) {
+    void cFieldLine::Output(FILE* fout, bool OutputGeometryOnly=false) {
       namespace PB = PIC::ParticleBuffer;
-      
-      if (!GeometryOnly)	exit(__LINE__, __FILE__,"Not implemented for multiple processors");
-      
+
       cFieldLineVertex *Vertex=FirstVertex;
       int nVertex = (is_loop()) ? nSegment : nSegment+1;
       int iVertex,iSegment;
 
+      if (OutputGeometryOnly==true) { 
+        for (int iVertex=0; iVertex<nVertex; iVertex++) {
+          //print coordinates
+          double x[DIM];
+
+          Vertex->GetX(x);
+
+          for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
+
+          fprintf(fout,"\n");
+          Vertex = Vertex->GetNext();
+        }
+
+        return;
+      }
+      
       int nSegmentParticles[nSegment],nSegmentParticles_mu_negative[nSegment],nSegmentParticles_mu_positive[nSegment];
       double ModelParticleSpeedTable[nSegment],v[3];
       cFieldLineSegment* Segment;
@@ -847,7 +861,7 @@ namespace PIC {
     }
     
     //=========================================================================
-    void Output(const char* fname, bool GeometryOnly) {
+    void Output(const char* fname, bool OutputGeometryOnly) {
 
       //swap sampling offsets
       cFieldLineVertex::swapSamplingBuffers();
@@ -857,23 +871,22 @@ namespace PIC {
       fprintf(fout, "TITLE=\"Field line geometry\"");
       
 #if DIM == 3 
-      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\"");//,\"Bx\",\"By\",\"Bz\"");
+      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\"");
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
-      //      double* Value;
-      //
       
+      if (OutputGeometryOnly==false) {
+        if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
+          fprintf(fout,",\"nSegmentParticles\",\"nSegmentParticles_mu_positive\", \"nSegmentParticles_mu_negative\",\"Model Particle Speed\",\"iSegment\"");
+        }
 
-      if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
-        fprintf(fout,",\"nSegmentParticles\",\"nSegmentParticles_mu_positive\", \"nSegmentParticles_mu_negative\",\"Model Particle Speed\",\"iSegment\"");
-      }
+        for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end(); itrDatumStored++) {
+          if ((*itrDatumStored)->doPrint) (*itrDatumStored)->PrintName(fout);
+        }
 
-      for (itrDatumStored = DataStoredAtVertex.begin();itrDatumStored!= DataStoredAtVertex.end(); itrDatumStored++) {
-        if ((*itrDatumStored)->doPrint) (*itrDatumStored)->PrintName(fout);
-      }
-
-      for (itrDatum = DataSampledAtVertex.begin(); itrDatum!= DataSampledAtVertex.end(); itrDatum++) {
-        if ((*itrDatum)->doPrint) (*itrDatum)->PrintName(fout);
+        for (itrDatum = DataSampledAtVertex.begin(); itrDatum!= DataSampledAtVertex.end(); itrDatum++) {
+          if ((*itrDatum)->doPrint) (*itrDatum)->PrintName(fout);
+        }
       }
 
       fprintf(fout,"\n");
