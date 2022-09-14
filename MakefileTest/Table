@@ -4936,6 +4936,93 @@ Check=
 -----------------------------------------------------------------------------------------------------------------------------
 
 #>
+Name=SEP-SC-IH--FL--FL-attachment--He_diffusion 
+Time=5
+Type=swmf
+
+Compile=
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_compile..." > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF-IH/*),)
+>>>mkdir -p SWMF-IH
+>>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_compile... done" >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
+
+
+Rundir=
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_rundir..." >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion$(TESTSEP-SC-IH--FL--FL-attachment--He_diffusion-REF).diff
+>>>mkdir -p $(TESTSEP-SC-IH--FL--FL-attachment--He_diffusionDIR)
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_rundir... done" >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion$(TESTSEP-SC-IH--FL--FL-attachment--He_diffusion-REF).diff
+
+
+Run=
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_run..." >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
+>>>@echo Test test_SEP-SC-IH--FL--FL-attachment--He_diffusion has started: `date`
+
+>>>-cd SWMF-IH/SWMF/PT/AMPS/input/test;mv sep_focused_transport-ih--fl-He__diffusion.input sep_focused_transport-ih--fl-he__diffusion.input
+
+>>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
+>>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih--fl-He__diffusion,amps-test=on
+>>>-cd SWMF-IH/SWMF;${MAKE} SWMF
+>>>-cd SWMF-IH/SWMF;make PIDL
+
+>>>-cd SWMF-IH/SWMF;$(MAKE) test15_pt_rundir 
+>>>cp data/input/SEP/SC-IH--FL--PT/PARAM.in SWMF-IH/SWMF/run_test
+>>>cd SWMF-IH/SWMF/PT/AMPS;./Config.pl -application=test/sep_focused_transport-ih--fl-He__diffusion 
+>>>cd SWMF-IH/SWMF;make -j
+>>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_run... done" >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
+
+
+Check=
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_check..." >> test_SEP-SC-IH--FL--FL-attachment--HE_diffusion.diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.density.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.flux.diff)
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.return_flux.diff)
+
+
+
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.density.diff
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.flux.diff
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.return_flux.diff
+
+>>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
+
+>>>@echo Test test_SEP-SC-IH--FL--FL-attachment--He_diffusion has finished: `date`
+<#
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+#>
 Name=SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov 
 Time=5
 Type=swmf
