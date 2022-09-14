@@ -631,6 +631,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test 
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -701,6 +702,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -922,6 +924,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -993,6 +996,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -1062,6 +1066,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -1132,6 +1137,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -1201,6 +1207,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -1268,6 +1275,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -1336,6 +1344,7 @@ Compile=
 >>>rm -rf SWMF-IH/SWMF/run_test
 <<<endif
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -4812,6 +4821,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -4832,13 +4842,17 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.return_flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge.return_flux.diff)
 
 
 
@@ -4893,6 +4907,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -4977,6 +4992,7 @@ Run=
 
 >>>-cd SWMF-IH/SWMF/PT/AMPS/input/test;mv sep_focused_transport-ih--fl-He__diffusion.input sep_focused_transport-ih--fl-he__diffusion.input
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -5062,6 +5078,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -5144,6 +5161,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -5227,6 +5245,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
@@ -5310,6 +5329,7 @@ Run=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin_run..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.diff
 >>>@echo Test test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin has started: `date`
 
+>>>-cd SWMF-IH/SWMF;rm -rf run_test
 >>>-cd SWMF-IH/SWMF;Scripts/Configure.pl -on=SP,SC,IH,PT -off=IM,IE,RB
 >>>-cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,SP/MFLAMPA,PT/AMPS
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
