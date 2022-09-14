@@ -896,7 +896,7 @@ namespace PIC {
       
       for (int iFieldLine=0; iFieldLine<nFieldLine; iFieldLine++) {
         fprintf(fout,"ZONE T=\"Field-line %i\" F=POINT\n",iFieldLine);
-        FieldLinesAll[iFieldLine].Output(fout, true);
+        FieldLinesAll[iFieldLine].Output(fout, OutputGeometryOnly);
       }
       
       //reset the sanple counpter 
