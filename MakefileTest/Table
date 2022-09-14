@@ -4928,14 +4928,18 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.return_flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.flux.diff)
 
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.return_flux.diff)
 
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.density.diff
@@ -5011,17 +5015,19 @@ Run=
 
 
 Check=
->>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_check..." >> test_SEP-SC-IH--FL--FL-attachment--HE_diffusion.diff
+>>>@echo "test_SEP-SC-IH--FL--FL-attachment--He_diffusion_check..." >> test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/He_diffusion.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/He_diffusion.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/He_diffusion.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/he_diffusion.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.return_flux.diff)
-
-
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/He_diffusion.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--He_diffusion.return_flux.diff)
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.density.diff
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--He_diffusion.flux.diff
@@ -5099,14 +5105,17 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov__check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.return_flux.diff)
-
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Borovikov.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.return_flux.diff)
 
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Borovikov.density.diff
@@ -5182,14 +5191,17 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE__check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.return_flux.diff)
-
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_FTE.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.return_flux.diff)
 
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_FTE.density.diff
@@ -5266,15 +5278,17 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker__check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.return_flux.diff)
-
-
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Parker.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.return_flux.diff)
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.density.diff
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Parker.flux.diff
@@ -5350,14 +5364,17 @@ Run=
 Check=
 >>>@echo "test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin__check..." >> test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.diff
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/exported-field-lines.thread=0.cnt=170.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.exported-field-lines.thread=0.cnt=170.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/amps.FieldLines.out=6.dat > SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.AMPS.FieldLines.out=6.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.all.AMPS.FieldLines.out=6.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.density.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.density.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.density.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.all.sample.density.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.density.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.flux.diff)
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.all.sample.flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.flux.diff)
 
->>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/amps-out.thread=0/sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.return_flux.diff)
-
+>>>@cat SWMF-IH/SWMF/run_test/amps-out.thread=*/sample.return_flux.field-line=0.r=2.000000e-01.dat > SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/all.sample.return_flux.field-line=0.r=2.000000e-01.dat output/test_SEP3D/SC-IH--FL--PT/droge_diffusion_Qin.all.sample.return_flux.field-line=0.r=2.000000e-01.dat  > test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.return_flux.diff)
 
 
 >>>@ls -l test_SEP-SC-IH--FL--FL-attachment--Droge_diffusion_Qin.density.diff
