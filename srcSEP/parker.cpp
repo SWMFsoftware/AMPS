@@ -65,3 +65,31 @@ void SEP::ParkerSpiral::CreateFileLine(list<SEP::cFieldLine> *field_line,double 
     field_line->push_back(p);
   }
 }
+
+void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun) {
+  double l[3]={1.0,0.0,0.0},dl;
+  int idim;
+  SEP::cFieldLine p;
+
+  const int npoints=4000;
+
+  double u_sw=400.0E3;
+
+  dl=length_rsun*_RADIUS_(_SUN_)/npoints;
+
+  for (idim=0;idim<3;idim++) {
+    p.x[idim]=xstart[idim]*_RADIUS_(_SUN_);
+    l[idim]=xstart[idim];
+  }
+
+  GetB(p.B,p.x,u_sw);
+  field_line->push_back(p);
+
+  Vector3D::Normalize(l,dl);
+
+  for (int ipoint=0;ipoint<npoints;ipoint++) {
+    for (idim=0;idim<3;idim++) p.x[idim]+=l[idim];
+
+    field_line->push_back(p);
+  }
+}

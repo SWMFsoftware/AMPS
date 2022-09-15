@@ -27,6 +27,9 @@ void TestManager();
 
 void DiffusionCoefficient_const(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment); 
 
+void DxxTest();
+void ParkerModelMoverTest();
+void ParkerModelMoverTest_const_plasma_field();
 
 
 

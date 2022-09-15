@@ -257,6 +257,21 @@ void amps_init_mesh() {
     }
 
     break;
+  case SEP::DomainType_StraitLine:
+    PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true;
+
+    PIC::FieldLine::VertexAllocationManager.PlasmaWaves=true;
+    PIC::FieldLine::VertexAllocationManager.MagneticField=true;
+    PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
+
+    field_line.clear();
+
+    SEP::ParkerSpiral::CreateStraitFileLine(&field_line,xmin,250.0);
+    SEP::Mesh::ImportFieldLine(&field_line);
+
+    if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) SEP::Mesh::InitFieldLineAMPS(&field_line);
+  
+    break;      
   case SEP::DomainType_FLAMPA_FieldLines:
     PIC::ParticleBuffer::OptionalParticleFieldAllocationManager.MomentumParallelNormal=true; 
 

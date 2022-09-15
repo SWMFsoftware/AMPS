@@ -641,6 +641,7 @@ double e_mev=e*J2MeV;
   const int DomainType_ParkerSpiral=0;
   const int DomainType_MultipleParkerSpirals=1; 
   const int DomainType_FLAMPA_FieldLines=2;
+  const int DomainType_StraitLine=3; 
   extern int DomainType;
   extern int Domain_nTotalParkerSpirals;
 
@@ -935,6 +936,7 @@ double e_mev=e*J2MeV;
     namespace ParkerSpiral {
       void GetB(double *B,double *x,double u_sw=400.0E3);
       void CreateFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun);
+      void CreateStraitFileLine(list<SEP::cFieldLine> *field_line,double *xstart,double length_rsun);
     }
 
     namespace Mesh {

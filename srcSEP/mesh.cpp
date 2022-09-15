@@ -16,7 +16,7 @@ double** SEP::Mesh::FieldLineTable=NULL;
 int SEP::Mesh::FieldLineTableLength=0;
 
 int SEP::ParticleTrajectoryCalculation=SEP::ParticleTrajectoryCalculation_RelativisticBoris;
-int SEP::DomainType=SEP::DomainType_ParkerSpiral;
+int SEP::DomainType=DomainType_ParkerSpiral;
 int SEP::Domain_nTotalParkerSpirals=1;
 
 
