@@ -129,13 +129,13 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   n_sw_end=AMPS2SWMF::ShockData[iFieldLine].DownStreamDensity;
-#else 
-  n_sw_end=1.0;
-#endif
 
   anpart=vol*SEP::FieldLine::InjectionParameters::InjectionEfficiency*n_sw_end;
   anpart/=node->block->GetLocalParticleWeight(spec);
-
+#else 
+  n_sw_end=1.0;
+  anpart=InjectionParameters::nParticlesPerIteration;
+#endif
 
   double GlobalWeightCorrectionFactor=1.0;
 
