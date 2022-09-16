@@ -30,6 +30,7 @@ void DiffusionCoefficient_const(double& D,double &dD_dmu,double mu,double vParal
 void DxxTest();
 void ParkerModelMoverTest();
 void ParkerModelMoverTest_const_plasma_field();
+void ParkerModelMoverTest_convection();
 
 
 

@@ -1385,48 +1385,45 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
 
-  auto GetTransportCoefficients = [] (double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
+  auto GetTransportCoefficients = [&] (double& dLogP,double v,FL::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel) { 
     //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
-    double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw0,DivVsw1;
+    double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw,PlasmaDensityCurrentParticle=0.0,PlasmaDensityOldParticle=0.0;
     auto Vertex0=Segment->GetBegin();
     auto Vertex1=Segment->GetEnd(); 
+
+    double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord));
+    double weight1=1.0-weight0;
 
     Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
     Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
 
-    if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
+    PlasmaDensityCurrentParticle=weight0*PlasmaDensityCurrent;
+    PlasmaDensityOldParticle=weight0*PlasmaDensityOld;
+
+    Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
+    Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+
+    PlasmaDensityCurrentParticle+=weight1*PlasmaDensityCurrent;
+    PlasmaDensityOldParticle+=weight1*PlasmaDensityOld;
+
+    if ((PlasmaDensityCurrentParticle==0.0)||(PlasmaDensityOldParticle==0.0)) {
       dLogP=0.0;
       return;
     }
 
     #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
-    DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
-    DivVsw0=-DivVsw0;
+    DivVsw=-log(PlasmaDensityCurrentParticle/PlasmaDensityOldParticle)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+    #else 
+    DivVsw=-log(PlasmaDensityCurrentParticle/PlasmaDensityOld)/dtTotal;
+    #endif
 
-    Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
-    Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
+    
 
-    if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
-      dLogP=0.0;
-      return;
-    }
-
-    DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
-    DivVsw1=-DivVsw1;
-
-    if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
+    if (isfinite(DivVsw)==false) {
       dLogP=0.0;
       return;
     } 
-    #else
-    dLogP=0.0;
-    return;
-    #endif
 
-    double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
-    double weight1=1.0-weight0;
-
-    double DivVsw=DivVsw0*weight0+DivVsw1*weight1;
     dLogP=-(DivVsw)*dt/3.0;
   };
 
@@ -1505,7 +1502,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dlogp,v,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
-    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dx+dt*vSolarWindParallel); 
+    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dx); 
 
     double p=Relativistic::Speed2Momentum(v,_H__MASS_); 
     p*=exp(dlogp);

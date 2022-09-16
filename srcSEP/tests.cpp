@@ -27,6 +27,7 @@ using namespace std;
 
 void TestManager() {
   DxxTest();
+  ParkerModelMoverTest_convection();
   ParkerModelMoverTest_const_plasma_field();
 }
 
@@ -139,14 +140,143 @@ void ParkerModelMoverTest_const_plasma_field() {
 }  
 
 
+//====================================================================================
+void ParkerModelMoverTest_convection() {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
 
+  struct cVertexData {
+    double Vsw,DensityOld,DensityCurrent,v[3];
+  };
+  
+  const bool _pass=true;
+  const bool _fail=false;
 
+  bool res=_pass;
 
+  list <cVertexData> VertexData;
+  double DensityOld=1.0,DensityCurrent=4.0;
+  double SolarWindVelocityOld[3]={1.0E3,0.0,0.0};
+  double SolarWindVelocityCurrent[3]={4.0E3,0.0,0.0};
+  double dtTotal=1.0;
+  
+  auto DiffusionCoeffcient=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=NULL;   
+  
+  //determine the particle location and the starting node 
+  double xTestSegment=67.5;
+  int iSegment=(int)xTestSegment;
+  double s0,x0[3];
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+  auto Segment=FL::FieldLinesAll[0].GetSegment(xTestSegment);; 
 
+  auto Vertex0=Segment->GetBegin(); 
+  auto Vertex1=Vertex0->GetNext();
 
+  int nTotalTests=10000;
+  double logEmin=log(100.0*KeV2J);
+  double logEmax=log(10.0*MeV2J); 
 
+  long int ptr;
+  double mu,vNorm,vParallel,e,speed,s1,vNormInit,vParallelInit;
+  double mass=PIC::MolecularData::GetMass(0);
 
+  ptr=PB::GetNewParticle();
+  PB::SetI(0,ptr);
 
+  bool shock_reached=false;
+
+  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;Vertex=Vertex->GetNext()) {
+    cVertexData t;
+
+    Vertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&t.DensityCurrent);
+    Vertex->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&t.DensityOld);
+    Vertex->GetPlasmaVelocity(t.v);
+
+    VertexData.push_back(t);
+
+    if (shock_reached==false) {
+      Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityCurrent);
+      Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
+      Vertex->SetPlasmaVelocity(SolarWindVelocityCurrent);
+
+      if (Vertex==Vertex0) shock_reached=true;
+    }
+    else {
+      Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityOld);
+      Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
+      Vertex->SetPlasmaVelocity(SolarWindVelocityOld);
+    }
+  }
+
+  for (int ntest=0;ntest<nTotalTests;ntest++) {
+    mu=-1.0+2.0*rnd();
+    e=exp(logEmin+rnd()*(logEmax-logEmin));
+
+    speed=Relativistic::E2Speed(e,mass); 
+    vParallel=speed*mu;
+    vNorm=speed*sqrt(1.0-mu*mu);
+    
+    vParallelInit=vParallel,vNormInit=vNorm;
+
+    PB::SetVParallel(vParallel,ptr);
+    PB::SetVNormal(vNorm,ptr);
+
+    s0=iSegment+rnd();
+    PB::SetFieldLineCoord(s0,ptr);
+    
+    FL::FieldLinesAll[0].GetCartesian(x0,s0);
+    node=PIC::Mesh::mesh->findTreeNode(x0);
+
+    SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
+
+    //check the new particle location: it sould no change 
+    s1=PB::GetFieldLineCoord(ptr);
+    
+    if (s1!=s0) {
+      res=_fail;
+    }
+
+    //check the new particle velocity: it sould changes as in Sokolov-2004-AJ
+    double p0,p1,p1_theory;
+
+    p0=Relativistic::Speed2Momentum(speed,mass);
+
+    vParallel=PB::GetVParallel(ptr);
+    vNorm=PB::GetVNormal(ptr); 
+    p1=Relativistic::Speed2Momentum(sqrt(vParallel*vParallel+vNorm*vNorm),mass);
+
+    //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
+    double w0,w1,d_ln_rho_dt;
+
+    w1=s0-((int)s0);
+    w0=1.0-w1;
+
+    d_ln_rho_dt=log((w0*DensityCurrent+w1*DensityOld)/DensityOld)/dtTotal;  
+    p1_theory=p0*exp(d_ln_rho_dt*dtTotal/3.0);
+
+    if (fabs(1.0-p1_theory/p1)>1.0E-5) {
+      res=_fail;
+      
+      PB::SetVParallel(vParallel,ptr);
+      PB::SetVNormal(vNorm,ptr);
+      SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
+    } 
+  }
+
+  //return the original parameters of the field line
+  auto p=VertexData.begin();
+  
+  for (auto Vertex=FL::FieldLinesAll[0].GetFirstVertex();Vertex!=NULL;p++,Vertex=Vertex->GetNext()) {
+    Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,p->DensityCurrent);
+    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,p->DensityOld);
+    Vertex->SetPlasmaVelocity(p->v);
+  }
+  
+  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoeffcient;
+}
+
+   
 
 
 
