@@ -203,6 +203,16 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
     
     //command related to the SEP model
+    else if (Command == "#SEP_FREEZE_SOLAR_WIND_MODEL_TIME") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      SEP::FreezeSolarWindModelTime=atof(t.c_str());
+      #endif
+    } 
+
     else if (Command == "#SEP_PITCH_ANGLE_SCATTERING_FUCTION") {
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;

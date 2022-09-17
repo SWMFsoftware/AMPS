@@ -557,10 +557,12 @@ void amps_time_step(){
     //make the time advance
     static int LastDataOutputFileNumber=0;
 
+start:
+
     //make the time advance
      PIC::TimeStep();
 
-     PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(SEP::MinParticleLimit,SEP::MaxParticleLimit);
+     PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 
 
      // write output file
@@ -573,6 +575,11 @@ void amps_time_step(){
        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
      
+  //check the simulation time
+  if ((SEP::FreezeSolarWindModelTime>0.0)&&(SEP::FreezeSolarWindModelTime<AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime)) {
+    goto start;
+  }
+
 }
 
 

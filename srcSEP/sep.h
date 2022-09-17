@@ -132,6 +132,10 @@ namespace SEP {
   //min/max particle number limit per segment of a field line 
   extern int MinParticleLimit,MaxParticleLimit;
 
+  //in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the 
+  //model run is not returned to the SWMF and the sumulation continues with AMPS only and "freezed" MHD solar wind
+  extern double FreezeSolarWindModelTime; 
+
   void Init();
 
   //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high

@@ -6,6 +6,10 @@ int SEP::Offset::CosPitchAngle=-1;
 int SEP::Offset::p_par=-1;
 int SEP::Offset::p_norm=-1;
 
+//in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the
+//model run is not returned to the SWMF and the sumulation continues with AMPS only and "freezed" MHD solar wind
+double SEP::FreezeSolarWindModelTime=-1.0;
+
 //composition table of the GCR composition
 cCompositionGroupTable *SEP::CompositionGroupTable=NULL;
 int *SEP::CompositionGroupTableIndex=NULL;
