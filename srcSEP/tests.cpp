@@ -296,9 +296,8 @@ void FTE_Convectoin() {
   bool res=_pass;
 
   list <cVertexData> VertexData;
-  double DensityOld=1.0,DensityCurrent=4.0;
-  double SolarWindVelocityOld[3]={1.0E3,0.0,0.0};
-  double SolarWindVelocityCurrent[3]={4.0E3,0.0,0.0};
+  double Density=1.0;
+  double SolarWindVelocity[3]={0.0,0.0,0.0};
   double dtTotal=1.0;
 
   auto DiffusionCoeffcient=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
@@ -335,9 +334,9 @@ void FTE_Convectoin() {
 
     VertexData.push_back(t);
 
-    Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,DensityCurrent);
-    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,DensityOld);
-    Vertex->SetPlasmaVelocity(SolarWindVelocityCurrent);
+    Vertex->SetDatum(FL::DatumAtVertexPlasmaDensity,Density);
+    Vertex->SetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,Density);
+    Vertex->SetPlasmaVelocity(SolarWindVelocity);
   }
 
 
@@ -381,9 +380,14 @@ void FTE_Convectoin() {
     s=sqrt(s); 
 
     double diff=1.0-s/(dtTotal*fabs(vParallel));
+    double ds=s1-s0;
 
     if (mu!=1.0) if ((fabs(1.0-s/(dtTotal*fabs(vParallel)))>1.0E-2)||(fabs(vParallel_new-vParallel)>1.0E-5)||(fabs(vNorm_new-vNorm)>1.0E-5)) { 
       res=_fail;
+   
+      PB::SetFieldLineCoord(s0,ptr);
+      SEP::ParticleMover_He_2011_AJ(ptr,dtTotal,node);
+      s1=PB::GetFieldLineCoord(ptr);
     }
   }
 

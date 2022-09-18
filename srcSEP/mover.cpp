@@ -1283,7 +1283,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
     GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
-    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel)); 
+    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*vParallel); 
 
 
     if ((first_transport_coeffcient==true)&&(SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL)) {
