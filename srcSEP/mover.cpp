@@ -940,7 +940,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     mu=1.0-d;
   }
   else if (mu<-1.0) {
-    double d=1.0-mu;
+    double d=1.0+mu;
     mu=-1.0-d;
   }
 
@@ -962,7 +962,7 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     mu=1.0-d;
   }
   else if (mu<-1.0) {
-    double d=1.0-mu;
+    double d=1.0+mu;
     mu=-1.0-d;
   }
 
@@ -1251,7 +1251,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     mu=1.0-d;
   }
   else if (mu<-1.0) {
-    double d=1.0-mu;
+    double d=1.0+mu;
     mu=-1.0-d;
   }
 
