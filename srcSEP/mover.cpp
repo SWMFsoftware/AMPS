@@ -1047,46 +1047,42 @@ void SEP::GetTransportCoefficients (double& dP,double& dLogP,double& dmu,double 
   dVz_dz=(vSW1-vSW0)/FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord); 
 
   //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
-  double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw0,DivVsw1;
+  double PlasmaDensityCurrent,PlasmaDensityOld,DivVsw,PlasmaDensityCurrentParticle=0.0,PlasmaDensityOldParticle=0.0;
   auto Vertex0=Segment->GetBegin();
   auto Vertex1=Segment->GetEnd(); 
+
+  double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord));
+  double weight1=1.0-weight0;
 
   Vertex0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);  
   Vertex0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
 
-  if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
-    dP=0.0,dLogP=0.0;
-    return;
-  }  
-
-  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
-  DivVsw0=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
-  DivVsw0=-DivVsw0;
+  PlasmaDensityCurrentParticle=weight0*PlasmaDensityCurrent;
+  PlasmaDensityOldParticle=weight0*PlasmaDensityOld;
 
   Vertex1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensityCurrent);
   Vertex1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityOld);
 
-  if ((PlasmaDensityCurrent==0.0)||(PlasmaDensityOld==0.0)) {
-    dP=0.0,dLogP=0.0;
+  PlasmaDensityCurrentParticle+=weight1*PlasmaDensityCurrent;
+  PlasmaDensityOldParticle+=weight1*PlasmaDensityOld;
+
+  if ((PlasmaDensityCurrentParticle==0.0)||(PlasmaDensityOldParticle==0.0)) {
+    dLogP=0.0,dP=0.0,dmu=0.0;
     return;
   }
 
-  DivVsw1=log(PlasmaDensityCurrent/PlasmaDensityOld)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
-  DivVsw1=-DivVsw1;
-
-  if ((isfinite(DivVsw0)==false)||(isfinite(DivVsw1)==false)) {
-    dLogP=0.0;
-    return;
-  } 
-  #else 
-  dLogP=0.0;
-  return;
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  DivVsw=-log(PlasmaDensityCurrentParticle/PlasmaDensityOldParticle)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+  #else
+  DivVsw=-log(PlasmaDensityCurrentParticle/PlasmaDensityOld)/dt;
   #endif
 
-  double weight0=1.0-(FieldLineCoord-floor(FieldLineCoord)); 
-  double weight1=1.0-weight0;
 
-  double DivVsw=DivVsw0*weight0+DivVsw1*weight1;
+  if (isfinite(DivVsw)==false) {
+    dLogP=0.0,dP=0.0,dmu=0.0;
+    return;
+   }
+
   double mu2=mu*mu;
 
   if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
