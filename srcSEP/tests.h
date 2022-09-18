@@ -32,7 +32,9 @@ void ParkerModelMoverTest();
 void ParkerModelMoverTest_const_plasma_field();
 void ParkerModelMoverTest_convection();
 
-
+void FTE_Convectoin();
+void FTE_Acceleration();
+void FTE_Diffusion();
 
 
 #endif

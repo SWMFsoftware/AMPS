@@ -1130,10 +1130,31 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   double time_counter=0.0;
   double dt=dtTotal;
   double dmu=0.0,dv;
-  double delta,vSolarWindParallel;
+  double delta;
 
   bool first_pass_flag=true;
   bool first_transport_coeffcient=true;
+
+  //calculate B and L
+  double B[3],B0[3],B1[3], AbsBDeriv;
+
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B0, (int)FieldLineCoord);
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B,       FieldLineCoord);
+  FL::FieldLinesAll[iFieldLine].GetMagneticField(B1, (int)FieldLineCoord+1-1E-7);
+  AbsB   = pow(B[0]*B[0] + B[1]*B[1] + B[2]*B[2], 0.5);
+
+  AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+    pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+//  L=-Vector3D::Length(B)/AbsBDeriv;
+
+
+  //calculate solarwind velocity,particle velocity and mu in the frame moving with solar wind
+  double vSolarWind[3],vSolarWindParallel;
+
+  FL::FieldLinesAll[iFieldLine].GetPlasmaVelocity(vSolarWind,FieldLineCoord);
+  vSolarWindParallel=Vector3D::DotProduct(vSolarWind,B)/AbsB;
+
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
 
@@ -1265,7 +1286,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*(vParallel+vSolarWindParallel)); 
 
 
-    if (first_transport_coeffcient==true) {
+    if ((first_transport_coeffcient==true)&&(SEP::Diffusion::GetPitchAngleDiffusionCoefficient!=NULL)) {
       first_transport_coeffcient=false;
 
       double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
