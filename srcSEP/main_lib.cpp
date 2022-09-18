@@ -576,10 +576,11 @@ start:
      }
      
   //check the simulation time
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   if ((SEP::FreezeSolarWindModelTime>0.0)&&(SEP::FreezeSolarWindModelTime<AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime)) {
     goto start;
   }
-
+  #endif
 }
 
 

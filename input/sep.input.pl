@@ -132,6 +132,9 @@ while ($line=<InputFile>) {
    elsif ($InputLine eq "FLAMPA") {
      ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_FLAMPA_FieldLines","main/mesh.cpp");
    }
+   elsif ($InputLine eq "STRAITLINE") {
+     ampsConfigLib::ChangeValueOfVariable("int SEP::DomainType","SEP::DomainType_StraitLine","main/mesh.cpp");
+   }
    else {
      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
    }
