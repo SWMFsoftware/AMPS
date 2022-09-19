@@ -154,7 +154,7 @@ void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldL
     dB=sqrt(SummW*VacuumPermeability/(SummW*VacuumPermeability+absB2))*absB;
     break;
   case Jokopii1966AJ::_fraction: 
-    dB=Jokopii1966AJ::FractionValue*pow(r2/(_AU_*_AU_),Jokopii1966AJ::FractionPowerIndex/2.0)*absB;
+    dB=Jokopii1966AJ::FractionValue/pow(r2/(_AU_*_AU_),Jokopii1966AJ::FractionPowerIndex/2.0)*absB;
     break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
