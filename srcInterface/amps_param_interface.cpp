@@ -232,6 +232,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else if (t=="Borovikov") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Borovokov_2019_ARXIV::GetPitchAngleDiffusionCoefficient;
       }
+      else if (t=="Constant") {
+        SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient;
+      }
       else if (t=="Qin") {
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Qin2013AJ::GetPitchAngleDiffusionCoefficient;
       }
@@ -301,7 +304,24 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
       #endif
     }
-    
+
+    else if (Command == "#SEP_TRANSPORT_FORCE") { 
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        SEP::AccountTransportCoefficient=true;
+      }
+      else if (t=="F") {
+        SEP::AccountTransportCoefficient=false;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    }     
     
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
@@ -337,43 +357,87 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       }
       #endif    
     }
-    
-    else if (Command == "#SEP_INJECTION_TYPE_FL") {
+
+
+    else if (Command == "#SEP_INJECTION_TYPE_FL_POWER_LAW") {
       cout << "PT: "  << param_list.front().second << endl;
-     
-      t=param_list.front().first;
-      param_list.pop_front();
-      
+
       #ifdef _SEP_MODEL_ON_
-      if (t == "PowerLaw") {
-        t=param_list.front().first;
-        cout << "PT: "  << param_list.front().second << endl; 
-        param_list.pop_front();
-        SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
 
-        t=param_list.front().first;
-        cout << "PT: "  << param_list.front().second << endl;
-        param_list.pop_front();
-        SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str()); 
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+        
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
+      #endif
+    }
 
-        SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
-      }
-      else if (t=="Sokolov2004AJ") {
-        t=param_list.front().first;
-        cout << "PT: "  << param_list.front().second << endl;
-        param_list.pop_front();
-        SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
+    else if (Command == "#SEP_INJECTION_TYPE_FL_SOKOLOV_2004AJ") {
+      cout << "PT: "  << param_list.front().second << endl;
 
-        t=param_list.front().first;
-        cout << "PT: "  << param_list.front().second << endl;
-        param_list.pop_front();
-        SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
 
-        SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_sokolov2004aj; 
-      }
-      else {
-        exit(__LINE__,__FILE__,"Error: the option is not recognized");
-      } 
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_sokolov2004aj;
+      #endif
+    }
+
+    else if (Command == "#SEP_INJECTION_TYPE_FL_CONST_ENERGY") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue=atof(t.c_str());
+
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::ConstMuInjectionValue=atof(t.c_str());
+
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_const_energy;
+      #endif
+    }
+
+    else if (Command == "#SEP_INJECTION_TYPE_FL_CONST_SPEED") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::ConstSpeedInjectionValue=atof(t.c_str());
+
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::ConstMuInjectionValue=atof(t.c_str());
+
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_const_speed;
       #endif
     }
     

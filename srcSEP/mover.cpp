@@ -8,6 +8,8 @@
 #include "sep.h"
 #include "amps2swmf.h"
 
+bool SEP::AccountTransportCoefficient=true;
+
 int SEP::ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
   double xInit[3];
   int res;
@@ -1162,6 +1164,12 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     vNormal*=t;
   }
 
+
+if (Relativistic::Speed2E(v,_H__MASS_)>100.0*MeV2J) {
+cout << "found" << endl;
+} 
+
+
   mu=vParallel/v;
 
   static long int ncall=0,loop_cnt=0;
@@ -1243,7 +1251,7 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
           }
         }
 
-        if (fabs(delta)>0.1) {
+        if (sqrt(2.0*D*dt)>0.1) { // fabs(delta)>0.1) {
           double t=dt*pow(0.1/fabs(delta),2);
 
           if (t<dt) dt=t;
@@ -1265,11 +1273,15 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   if (mu>1.0) {
     double d=mu-1.0;
-    mu=1.0-d;
+//    mu=1.0-d;
+
+    mu=(mu>=1.01) ? -1.0+2*rnd() : 1.0-d;
   }
   else if (mu<-1.0) {
     double d=1.0+mu;
-    mu=-1.0-d;
+    //mu=-1.0-d;
+
+    mu=(mu<-1.01) ? -1.0+2*rnd() : -1.0-d; 
   }
 
     }
@@ -1278,7 +1290,14 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     double dlogp,dp;
     if (v>=SpeedOfLight) v=0.99*SpeedOfLight;
 
-    GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
+    if (AccountTransportCoefficient==true) {
+      GetTransportCoefficients(dp,dlogp,dmu,v,mu,Segment,FieldLineCoord,dt,iFieldLine,vSolarWindParallel);
+    }
+    else {
+      dp=0.0,dlogp=0.0;
+    }
+
+
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*vParallel); 
 
 

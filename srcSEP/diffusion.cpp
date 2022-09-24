@@ -18,6 +18,13 @@ SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngle
 int SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOff;
 double SEP::Diffusion::LimitSpecialMuPointsDistance=0.05;
 
+double SEP::Diffusion::ConstPitchAngleDiffusionValue=0;
+
+//========= Constant pitch angle diffusion  =============================
+void SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
+   D=0.0,dD_dmu=0.0;
+}
+
 //========= Roux2004AJ (LeRoux-2004-AJ) =============================
 void SEP::Diffusion::Roux2004AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
   static double c=7.0*Pi/8.0*2.0E3/(0.01*_AU_)*(0.2*0.2);

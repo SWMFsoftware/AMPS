@@ -190,6 +190,10 @@ namespace SEP {
       extern double PowerIndex,emin,emax;
       extern double InjectionEfficiency;
 
+      extern double ConstEnergyInjectionValue;
+      extern double ConstSpeedInjectionValue;
+      extern double ConstMuInjectionValue;
+
       extern int InjectLocation;
       const int _InjectShockLocations=0;
       const int _InjectBegginingFL=1;
@@ -198,6 +202,8 @@ namespace SEP {
       extern int InjectionMomentumModel;
       const int _tenishev2005aiaa=0;
       const int _sokolov2004aj=1; 
+      const int _const_energy=2;
+      const int _const_speed=3;
     }
 
 
@@ -208,6 +214,8 @@ namespace SEP {
 
   //the namespace contains the diffution models
   namespace Diffusion {
+    //costant value of the pitch angle diffusion coeffcient 
+    extern double ConstPitchAngleDiffusionValue;
 
     //avoid "special" points in the pitch angle diffusion coefficient 
     const int LimitSpecialMuPointsModeOff=0;
@@ -230,6 +238,11 @@ namespace SEP {
     //calculate Dxx
     void GetDxx(double& D,double &dDxx_dx,double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine);
     double GetMeanFreePath(double v,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine);
+
+    //constant pitch angle diffusion coefficient
+    namespace Constant {
+      void GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment);
+    }
 
     //Qin-2013-AJ 
     namespace Qin2013AJ {
@@ -675,6 +688,7 @@ double e_mev=e*J2MeV;
   void GetDriftVelocity(double *v_drift,double *x,double v_parallel,double v_perp,double ElectricCharge,double mass,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node,PIC::InterpolationRoutines::CellCentered::cStencil& Stencil);
   void InitDriftVelData();
 
+  extern bool AccountTransportCoefficient;
 
   int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);

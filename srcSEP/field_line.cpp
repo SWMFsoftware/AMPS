@@ -9,6 +9,10 @@ double SEP::FieldLine::InjectionParameters::PowerIndex=4.0;
 double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionParameters::emax=500;
 double SEP::FieldLine::InjectionParameters::InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
 
+double SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue=0.0;
+double SEP::FieldLine::InjectionParameters::ConstSpeedInjectionValue=0.0;
+double SEP::FieldLine::InjectionParameters::ConstMuInjectionValue=0.5;
+
 int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectInputFileAMPS;
 int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
 
@@ -144,6 +148,10 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     anpart=InjectionParameters::nParticlesPerIteration;
   }
 
+  //in case particle are injected at the beginning of the field line, the actual plasma density is not used -> set the particle weight == 1
+  if (InjectionParameters::InjectLocation==InjectionParameters::_InjectBegginingFL) {
+    GlobalWeightCorrectionFactor=1.0;
+  }
  
   npart=(int)anpart;
   if (anpart-npart>rnd()) npart++; 
@@ -200,6 +208,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   double *pAbsTable=new double [npart];
   double *WeightCorrectionTable=new double [npart];
+  double p_const;
 
   switch (InjectionParameters::InjectionMomentumModel) {
   case InjectionParameters::_tenishev2005aiaa: 
@@ -208,12 +217,38 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   case InjectionParameters::_sokolov2004aj:
     GetMomentum_Sokolov2004AJ(pAbsTable,WeightCorrectionTable,npart);
     break;
+  case InjectionParameters::_const_speed:
+    p_const=Relativistic::Speed2Momentum(SEP::FieldLine::InjectionParameters::ConstSpeedInjectionValue,PIC::MolecularData::GetMass(spec)); 
+
+    for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;  
+    break;
+  case InjectionParameters::_const_energy:
+     p_const=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue,PIC::MolecularData::GetMass(spec));
+
+    for (int i=0;i<npart;i++) pAbsTable[i]=p_const,WeightCorrectionTable[i]=1.0;
+    break;
   defaut:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }  
 
   for (int i=0;i<npart;i++) {
-    Vector3D::Distribution::Uniform(p,pAbsTable[i]);
+    if ((InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_speed)||(InjectionParameters::InjectionMomentumModel==InjectionParameters::_const_energy)) {
+      double p_parallel[3],p_norm[3];
+      double l[3];
+      double e0[3],e1[3],c,mu;
+
+      Segment->GetDir(l);
+      Vector3D::GetRandomNormFrame(e0,e1,l);
+
+      mu=SEP::FieldLine::InjectionParameters::ConstMuInjectionValue;
+      c=sqrt(1.0-mu*mu);
+
+      for (int idim=0;idim<3;idim++) p[idim]=pAbsTable[i]*(mu*l[idim]+c*e0[idim]);
+    }
+    else {
+      Vector3D::Distribution::Uniform(p,pAbsTable[i]);
+    } 
+
 
     if (PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
   }
