@@ -101,8 +101,8 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift(int particle_num_limi
   cVelocitySpaceElement **VelocitySpaceTable=NULL;
   const int nSerachLevels=6;
 
-  const int nVelCells1d=1<<nSerachLevels;
-  const int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
+  int nVelCells1d=1<<nSerachLevels;
+  int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
 
 
   //create the initial velovity space table
@@ -818,8 +818,8 @@ void PIC::ParticleSplitting::Split::Scatter(int particle_num_limit_min,int parti
   cVelocitySpaceElement **VelocitySpaceTable=NULL;
   const int nSerachLevels=6;
 
-  const int nVelCells1d=1<<nSerachLevels;
-  const int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
+  int nVelCells1d=1<<nSerachLevels;
+  int nVelCells=nVelCells1d*nVelCells1d*nVelCells1d;
 
 
   //create the initial velovity space table
@@ -1348,8 +1348,8 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
   cVelocitySpaceElement **VelocitySpaceTable=NULL;
   const int nSerachLevels=6;
 
-  const int nVelCells1d=1<<nSerachLevels;
-  const int nVelCells=nVelCells1d*nVelCells1d;
+  int nVelCells1d=1<<nSerachLevels;
+  int nVelCells=nVelCells1d*nVelCells1d;
 
 
   //create the initial velovity space table
@@ -1370,7 +1370,12 @@ void PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(int particle_num_l
         v[1]=PB::GetVNormal(p);
         v[2]=0.0;
 
-        for (idim=0;idim<2;idim++) iv[idim]=(int)((v[idim]-vmin[idim])/dv[idim]); 
+        for (idim=0;idim<2;idim++) {
+          iv[idim]=(int)((v[idim]-vmin[idim])/dv[idim]); 
+
+          if (iv[idim]<0) iv[idim]=0;
+          if (iv[idim]>=nVelCells1d) iv[idim]=nVelCells1d-1;   
+        } 
 
         iVelCell=iv[0]+nVelCells1d*iv[1];  
 
