@@ -58,6 +58,7 @@ namespace PIC {
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
     cDatumTimed DatumAtVertexNumberDensity(1,"\"Number Density[1/m^3]\"",true);
     cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [MeV]\"",true);
+    cDatumWeighted DatumAtVertexParticleSpeed(1,"\"Speed [m/s]\"",true);
 
 
     cDatumTimed DatumAtVertexNumberDensity_mu_positive(1,"\"Number Density (mu positive) [1/m^3]\"",true); 
@@ -669,6 +670,17 @@ namespace PIC {
       cFieldLineVertex *Vertex=FirstVertex;
       int nVertex = (is_loop()) ? nSegment : nSegment+1;
       int iVertex,iSegment;
+      cFieldLineSegment* Segment;
+
+      double *DistanceTable=new double [nVertex]; 
+
+      DistanceTable[0]=0.0;
+
+      //calculate length of vertexes from the beginning of the field line 
+      for (iSegment=0,Segment=FirstSegment; iSegment<nSegment; iSegment++,Segment=Segment->GetNext()) {
+        DistanceTable[iSegment+1]=DistanceTable[iSegment]+Segment->GetLength();
+      } 
+
 
       if (OutputGeometryOnly==true) { 
         for (int iVertex=0; iVertex<nVertex; iVertex++) {
@@ -679,16 +691,16 @@ namespace PIC {
 
           for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
 
-          fprintf(fout,"\n");
+          fprintf(fout,"%e \n",DistanceTable[iVertex]);
           Vertex = Vertex->GetNext();
         }
 
+        delete [] DistanceTable;
         return;
       }
       
       int nSegmentParticles[nSegment],nSegmentParticles_mu_negative[nSegment],nSegmentParticles_mu_positive[nSegment];
       double ModelParticleSpeedTable[nSegment],v[3];
-      cFieldLineSegment* Segment;
 
       for (iSegment=0;iSegment<nSegment; iSegment++) {
         nSegmentParticles[iSegment]=0,nSegmentParticles_mu_negative[iSegment]=0,nSegmentParticles_mu_positive[iSegment]=0;
@@ -739,6 +751,8 @@ namespace PIC {
         Vertex->GetX(x);
 
         for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
+
+        fprintf(fout, "%e ", DistanceTable[iVertex]);
 
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
           if (iVertex==0) {
@@ -791,6 +805,8 @@ namespace PIC {
         Vertex->flushCollectingSamplingBuffer();
         Vertex = Vertex->GetNext();
       }
+
+      delete [] DistanceTable;
     }
     
     //=========================================================================
@@ -837,6 +853,7 @@ namespace PIC {
       DatumAtVertexParticleNumber.  activate(Offset, &DataSampledAtVertex);
       DatumAtVertexNumberDensity.   activate(Offset, &DataSampledAtVertex);
       DatumAtVertexParticleEnergy.  activate(Offset, &DataSampledAtVertex);
+      DatumAtVertexParticleSpeed.   activate(Offset, &DataSampledAtVertex); 
 
       DatumAtVertexNumberDensity_mu_positive.activate(Offset, &DataSampledAtVertex);
       DatumAtVertexNumberDensity_mu_negative.activate(Offset, &DataSampledAtVertex);
@@ -871,7 +888,7 @@ namespace PIC {
       fprintf(fout, "TITLE=\"Field line geometry\"");
       
 #if DIM == 3 
-      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\"");
+      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\",\"Distance from the beginning\"");
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
       
@@ -964,7 +981,7 @@ namespace PIC {
       //magnetic moment, mass, velocity and energy
       double mu = PB::GetMagneticMoment(ptr);
       int spec = PB::GetI(ptr);
-      double v[3];
+      double v[3],Speed;
       double x[3];
 
       //PB::GetV(v, ptr);
@@ -973,6 +990,8 @@ namespace PIC {
       v[0]=PB::GetVParallel(ptr);
       v[1]=PB::GetVNormal(ptr);
       v[2]=0.0;
+      
+      Speed=Vector3D::Length(v);  
 
       double CosPitchAngleSign=(v[0]*Vector3D::DotProduct(B,l)>0.0) ? 1.0 : -1.0;
 
@@ -981,6 +1000,8 @@ namespace PIC {
       double m0= PIC::MolecularData::GetMass(spec);
       double absv=pow(v[0]*v[0]+v[1]*v[1]+v[2]*v[2], 0.5);
       double E = mu*AbsB + 0.5 * m0 * (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+
+      E=Relativistic::Speed2E(Speed,m0);
 
       // volume
       double volume = FieldLinesAll[iFieldLine].GetSegment(S)->GetLength();
@@ -999,6 +1020,7 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
+      V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
@@ -1023,6 +1045,7 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexParticleWeight,Weight,spec, (w));
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
+      V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, w);
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));

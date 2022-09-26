@@ -1165,9 +1165,10 @@ int SEP::ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   }
 
 
+/*
 if (Relativistic::Speed2E(v,_H__MASS_)>100.0*MeV2J) {
 cout << "found" << endl;
-} 
+}*/ 
 
 
   mu=vParallel/v;
