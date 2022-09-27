@@ -138,6 +138,9 @@ namespace SEP {
 
   void Init();
 
+  //title that will be printed inn Tecplot output file (simuation time)
+  void TecplotFileTitle(char*);  
+
   //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high
   extern double TimeStepRatioSwitch_FTE2PE;
   

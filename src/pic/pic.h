@@ -451,6 +451,11 @@ namespace PIC {
     extern bool IsUsedInSimulation; 
     extern int ParticleDataOffset;
 
+    //user-defined function that defiens an title that is printed in the Tecplot output file (e.g., simulation time of the file)
+    typedef void (*fUserDefinedTecplotFileTitle)(char*); 
+
+    extern fUserDefinedTecplotFileTitle UserDefinedTecplotFileTitle; 
+
     //check consistency of the particles lists in case the particles lists are attached to the field line segments 
     void CheckParticleList();
 

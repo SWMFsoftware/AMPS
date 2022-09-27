@@ -36,7 +36,16 @@ double SEP::TimeStepRatioSwitch_FTE2PE=-1.0;
 int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
 
 
+//title that will be printed inn Tecplot output file (simuation time)
+void SEP::TecplotFileTitle(char* title) {
+  sprintf(title,"time=%e",PIC::SimulationTime::Get());
+}  
+
+
 void SEP::Init() {
+  //title that will be printed inn Tecplot output file (simuation time)
+  PIC::FieldLine::UserDefinedTecplotFileTitle=TecplotFileTitle;
+
   //composition of the GCRs
   nCompositionGroups=1;
   CompositionGroupTable=new cCompositionGroupTable[nCompositionGroups];

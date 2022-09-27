@@ -10,6 +10,9 @@ int PIC::FieldLine::cFieldLineVertex::sampleDataLength=-1;
 int PIC::FieldLine::cFieldLineVertex::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 
+//user-defined function that defiens an title that is printed in the Tecplot output file (e.g., simulation time of the file)
+PIC::FieldLine::fUserDefinedTecplotFileTitle PIC::FieldLine::UserDefinedTecplotFileTitle=NULL; 
+
 //sample cycle counter 
 int PIC::FieldLine::SampleCycleCounter=0;
 
@@ -907,6 +910,14 @@ namespace PIC {
       }
 
       fprintf(fout,"\n");
+
+      //output title of the output file if such is defined 
+      if (UserDefinedTecplotFileTitle!=NULL) {
+        char title[_MAX_STRING_LENGTH_PIC_];
+ 
+        UserDefinedTecplotFileTitle(title);
+        fprintf(fout, "TITLE=\"%s\"\n",title);
+      } 
 #else 
       exit(__LINE__,__FILE__,"not implemented");
 #endif
