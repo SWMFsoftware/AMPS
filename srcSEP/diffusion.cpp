@@ -13,6 +13,8 @@ double SEP::Diffusion::Jokopii1966AJ::FractionValue=0.05;
 double SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex=0.0;
 int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
 
+double SEP::Diffusion::muNumericalDifferentiationStep=0.01;
+
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
 int SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOff;

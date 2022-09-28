@@ -220,6 +220,9 @@ namespace SEP {
     //costant value of the pitch angle diffusion coeffcient 
     extern double ConstPitchAngleDiffusionValue;
 
+    //the step in the mu-space used in the numerical differentiation 
+    extern double muNumericalDifferentiationStep;
+
     //avoid "special" points in the pitch angle diffusion coefficient 
     const int LimitSpecialMuPointsModeOff=0;
     const int LimitSpecialMuPointsModeOn=1;

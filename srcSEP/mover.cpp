@@ -1194,11 +1194,20 @@ cout << "found" << endl;
       if (SEP::Diffusion::PitchAngleDifferentialMode==SEP::Diffusion::PitchAngleDifferentialModeNumerical) {
         double t,mu_plus,mu_minus,D_plus,D_minus,D_mu_mu_numerical;
 
-        mu_plus=mu+0.01;
+        mu_plus=mu+SEP::Diffusion::muNumericalDifferentiationStep;
         if (mu_plus>1.0) mu_plus=1.0;
 
-        mu_minus=mu-0.01;
+        mu_minus=mu-SEP::Diffusion::muNumericalDifferentiationStep;
         if (mu_minus<-1.0) mu_minus=-1.0;
+
+        if (mu_plus*mu_minus<0.0) {
+           if (fabs(mu_minus)<fabs(mu_plus)) {
+             mu_minus=0.0;
+           }
+           else {
+             mu_plus=0.0;
+           }
+        }
 
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_plus,t,mu_plus,vParallel,vNormal,spec,FieldLineCoord,Segment);
         SEP::Diffusion::GetPitchAngleDiffusionCoefficient(D_minus,t,mu_minus,vParallel,vNormal,spec,FieldLineCoord,Segment);
@@ -1244,16 +1253,16 @@ cout << "found" << endl;
           return ParticleMover_ParkerEquation(ptr,dtTotal,node);
         }
 
-        if (fabs(dD_dmu*dt)>0.1) {
-          dt=0.1/fabs(dD_dmu);
+        if (fabs(dD_dmu*dt)>0.05) {
+          dt=0.05/fabs(dD_dmu);
 
           if (dt/dtTotal<TimeStepRatioSwitch_FTE2PE) {
             return ParticleMover_ParkerEquation(ptr,dtTotal,node);
           }
         }
 
-        if (sqrt(2.0*D*dt)>0.1) { // fabs(delta)>0.1) {
-          double t=dt*pow(0.1/fabs(delta),2);
+        if (sqrt(2.0*D*dt)>0.05) { // fabs(delta)>0.1) {
+          double t=dt*pow(0.05/fabs(delta),2);
 
           if (t<dt) dt=t;
 
