@@ -63,6 +63,8 @@ namespace PIC {
     cDatumWeighted DatumAtVertexParticleEnergy(1,"\"Kinetic energy [MeV]\"",true);
     cDatumWeighted DatumAtVertexParticleSpeed(1,"\"Speed [m/s]\"",true);
 
+    cDatumWeighted DatumAtVertexParticleCosPitchAngle(1,"\"Cos Pitch Angle\"",true);
+    cDatumWeighted DatumAtVertexParticleAbsCosPitchAngle(1,"\"Abs Cos Pitch Angle\"",true);
 
     cDatumTimed DatumAtVertexNumberDensity_mu_positive(1,"\"Number Density (mu positive) [1/m^3]\"",true); 
     cDatumTimed DatumAtVertexNumberDensity_mu_negative(1,"\"Number Density (mu negative) [1/m^3]\"",true);
@@ -858,6 +860,9 @@ namespace PIC {
       DatumAtVertexParticleEnergy.  activate(Offset, &DataSampledAtVertex);
       DatumAtVertexParticleSpeed.   activate(Offset, &DataSampledAtVertex); 
 
+      DatumAtVertexParticleCosPitchAngle.   activate(Offset, &DataSampledAtVertex);
+      DatumAtVertexParticleAbsCosPitchAngle.activate(Offset, &DataSampledAtVertex);
+
       DatumAtVertexNumberDensity_mu_positive.activate(Offset, &DataSampledAtVertex);
       DatumAtVertexNumberDensity_mu_negative.activate(Offset, &DataSampledAtVertex);
 
@@ -1011,6 +1016,9 @@ namespace PIC {
       double m0= PIC::MolecularData::GetMass(spec);
       double absv=pow(v[0]*v[0]+v[1]*v[1]+v[2]*v[2], 0.5);
       double E = mu*AbsB + 0.5 * m0 * (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+      
+      double CosPitchAngle=v[0]/absv; 
+     
 
       E=Relativistic::Speed2E(Speed,m0);
 
@@ -1032,6 +1040,9 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, (1-w));
       V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, (1-w));
+
+      V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, (1-w));
+      V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, (1-w));
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (1-w));
@@ -1057,6 +1068,9 @@ namespace PIC {
       V->SampleDatum(DatumAtVertexParticleNumber,1.0,spec, (w));
       V->SampleDatum(DatumAtVertexParticleEnergy,Weight*E*J2MeV,spec, w);
       V->SampleDatum(DatumAtVertexParticleSpeed,Weight*Speed,spec, w);
+
+      V->SampleDatum(DatumAtVertexParticleCosPitchAngle,Weight*CosPitchAngle,spec, w);
+      V->SampleDatum(DatumAtVertexParticleAbsCosPitchAngle,Weight*fabs(CosPitchAngle),spec, w);
 
       if (CosPitchAngleSign>0.0) {
         V->SampleDatum(DatumAtVertexNumberDensity_mu_positive,Weight/volume, spec, (w));

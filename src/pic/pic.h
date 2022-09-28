@@ -511,6 +511,9 @@ namespace PIC {
     extern cDatumTimed    DatumAtVertexNumberDensity;
     extern cDatumWeighted DatumAtVertexParticleEnergy;
     extern cDatumWeighted DatumAtVertexParticleSpeed;
+    extern cDatumWeighted DatumAtVertexParticleCosPitchAngle;
+    extern cDatumWeighted DatumAtVertexParticleAbsCosPitchAngle;
+
     extern cDatumWeighted DatumAtGridParticleEnergy;
 
     extern cDatumTimed    DatumAtVertexNumberDensity_mu_positive,DatumAtVertexNumberDensity_mu_negative;
