@@ -1952,6 +1952,9 @@ void PIC::Init_BeforeParser() {
   }
 
 
+  //init particle mover 
+  PIC::Mover::Init_BeforeParser();
+
   //init coupler 
   if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__KMAG_)) {
     PIC::CPLR::DATAFILE::Init();

@@ -31,6 +31,9 @@ _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::Mover::cExternalBoundaryFace PIC::Mover::Ext
     {{0.0,0.0,-1.0}, {0,0,0}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}, {{0.0,0.0,1.0}, {0,0,1}, {1,0,0},{0,1,0},{0,0,0}, 0.0,0.0}
 };
 
+int PIC::Mover::MoverDataLength=0;
+PIC::Datum::cDatumStored PIC::Mover::MoverData;
+
 //====================================================
 //init the particle mover
 void PIC::Mover::Init_BeforeParser(){
@@ -38,6 +41,12 @@ void PIC::Mover::Init_BeforeParser(){
   GuidingCenter::Init_BeforeParser();
 #endif //_PIC_MOVER_INTEGRATOR_MODE_
 
+  if (MoverDataLength!=0) {
+    long int offset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    MoverData.SetDatum(MoverDataLength,"",false);
+    MoverData.activate(offset,NULL);  
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength=offset;
+  }
 }
 
 void PIC::Mover::Init() {

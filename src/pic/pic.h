@@ -339,7 +339,7 @@ namespace PIC {
 
       // constructor
       //......................................................................
-      cDatum(int lengthIn, const char* nameIn, bool doPrintIn = true) {
+      void SetDatum(int lengthIn, const char* nameIn, bool doPrintIn = true) {
 	      // nameIn must be in the format acceptable for printing output:
 	      //   "\"var_1\", \"var_2\""
 	      length = lengthIn;
@@ -347,8 +347,12 @@ namespace PIC {
 
 	      // mark as inactive by default
 	      offset = -1;
-	      type = Unset_;
 	      doPrint= doPrintIn;
+      }
+
+      cDatum(int lengthIn, const char* nameIn, bool doPrintIn = true) {
+        type = Unset_;
+        SetDatum(lengthIn,nameIn,doPrintIn);
       }
     };
     // class cDatum -----------------------------------------------------------
@@ -380,11 +384,19 @@ namespace PIC {
         offsetInOut+=length*sizeof(double);
 
         // add this datum to the provided cDatum vector
-        DatumVector->push_back(this);
+        if (DatumVector!=NULL) DatumVector->push_back(this);
+
+        if (doPrint==true) {
+          exit(__LINE__,__FILE__,"Error: not implemented:: the data output need to be implemented in PIC::Mesh::cDataCenterNode");
+        }
       }
 
       // constructor is inherited
       cDatumStored(int lengthIn, const char* nameIn, bool doPrintIn = true) : cDatum(lengthIn, nameIn, doPrintIn) {
+        type = Stored_;
+      }
+
+      cDatumStored() : cDatum() {
         type = Stored_;
       }
 
@@ -3417,8 +3429,10 @@ void DeleteAttachedParticles();
         }
       }
 
-
-
+      template<class T>
+      double* GetDatum_ptr(T* Datum) {
+        return (double*)(associatedDataPointer+Datum->offset);
+      }
 
 
       /*
@@ -4996,6 +5010,11 @@ void DeleteAttachedParticles();
 
 
   namespace Mover {
+
+    //mover data stored in cells
+    extern int MoverDataLength;
+    extern Datum::cDatumStored MoverData;
+
 
     //the pointer to a function that replaces the build-in mover procedure with that provided by a user
      typedef void (*fUserDefinedMoverManager)(void);

@@ -580,6 +580,13 @@ sub ReadMainBlock {
       }
     }       
 
+    #the number of variables that a particle mover need to keep in a cell (important for the relativistic guiding ceneted mover)
+    elsif ($s0 eq "MOVERDATALENGTH") {
+      ($s0,$s1)=split(' ',$s1,2);
+
+      ampsConfigLib::ChangeValueOfVariable("int PIC::Mover::MoverDataLength",$s0,"pic/pic_mover.cpp");
+    }
+
     #the number of the background ion fluids used in PIC::CPLR::DATAFILE
     elsif ($s0 eq "COUPLER") {
       ($s0,$s1)=split(' ',$s1,2);
