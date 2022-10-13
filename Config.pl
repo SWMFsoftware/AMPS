@@ -44,7 +44,7 @@ if (! -e "Makefile.local") {
 # build AMPS' Makefile.test
 foreach (@Arguments) { 
     if(/^-install/) {
-      `g++ utility/TestScripts/table_parser.cpp -o table_parser`;      
+      `g++ -std=c++14 utility/TestScripts/table_parser.cpp -o table_parser`;      
       `cp MakefileTest/Table .`;
       `table_parser 2`;
       `rm Table`; 
