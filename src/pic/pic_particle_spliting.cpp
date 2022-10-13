@@ -589,8 +589,8 @@ if (ncall==10792) {
         int ip_wmax=-1;
         w_max=-1.0;
  
-        for (int i=0;i<nModelParticles;i++) {
-          if (w_max<ParticleList[i].w) w_max=ParticleList[i].w,ip_wmax=i;
+        for (int ii=0;ii<nModelParticles;ii++) {
+          if (w_max<ParticleList[ii].w) w_max=ParticleList[ii].w,ip_wmax=ii;
         } 
 
         ip=ip_wmax;
