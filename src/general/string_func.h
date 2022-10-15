@@ -79,7 +79,7 @@ inline void rtrim(string& s) {
   s= (end == std::string::npos) ? "" : s.substr(0, end + 1);
 }
 
-void trim(std::string &s) {
+inline void trim(std::string &s) {
   ltrim(s);
   rtrim(s);
 }
