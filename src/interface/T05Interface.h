@@ -45,6 +45,41 @@ namespace T05 {
   extern double UserFrame2GSE[3][3],GSE2UserFrame[3][3]; 
   extern bool Rotate2GSE;
 
+  //data structure 
+  class cT05Data {
+  public:
+    int IYEAR,IDAY,IHOUR,MIN;
+    double BXGSM,BYGSM,BZGSM,VXGSE,VYGSE,VZGSE,DEN,TEMP,SYMH,IMFFLAG,ISWFLAG,TILT,Pdyn,W1,W2,W3,W4,W5,W6;
+    double et;
+
+    static int GetParameterNumber() {return 19;} 
+
+    void Save(double* Data) {
+      BXGSM=Data[0];
+      BYGSM=Data[1];
+      BZGSM=Data[2];
+      VXGSE=Data[3];
+      VYGSE=Data[4];
+      VZGSE=Data[5];
+      DEN=Data[6];
+      TEMP=Data[7];
+      SYMH=Data[8];
+      IMFFLAG=Data[9];
+      ISWFLAG=Data[10];
+      TILT=Data[11];
+      Pdyn=Data[12];
+      W1=Data[13];
+      W2=Data[14];
+      W3=Data[15];
+      W4=Data[16];
+      W5=Data[17];
+      W6=Data[18];
+    }
+  };
+
+  extern vector<cT05Data> Data; 
+  void LoadDataFile(const char* fname);
+
   void inline Init(const char* Epoch, std::string FrameNameIn) {
     Geopack::Init(Epoch,FrameNameIn); 
 
@@ -83,12 +118,20 @@ namespace T05 {
 
   //PDYN=solar wind pressure
   void SetSolarWindPressure(double SolarWindPressure); 
+  void SetSolarWindPressure_nano(double SolarWindPressure);
+
   //DST=disturbance storm time
   void SetDST(double DST);
+  void SetDST_nano(double DST); 
+
   //BYIMF=y-component of IMF
   void SetBYIMF(double BYIMF);
+  void SetBYIMF_nano(double BYIMF);  
+
   //BZIMF=z-component of IMF
   void SetBZIMF(double BZIMF);
+  void SetBZIMF_nano(double BZIMF); 
+
   //W1-W6=time integrals from start of storm. These are defined in detiai in Tsyganenko 2005.
   void SetW1(double W1);
   void SetW2(double W2);

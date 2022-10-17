@@ -43,6 +43,11 @@ public:
    size_dim1=n1;
   };
 
+  int GetDim0() {return size_dim0;}
+  int GetDim1() {return size_dim1;}
+  int GetElementNumber() {return size_dim0*size_dim1;}
+  T* GetBufferPointer() {return data;};
+
   void Deallocate() {
     if ((data!=NULL)&&(locally_allocated_data_buiffer==true)) delete [] data;
 

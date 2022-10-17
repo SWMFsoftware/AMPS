@@ -12,6 +12,59 @@
 #include "constants.h"
 #include "constants.PlanetaryData.h"
 #include "T05Interface.h"
+#include "string_func.h"
+
+vector<T05::cT05Data> T05::Data;
+
+//locad the model parameter file
+void T05::LoadDataFile(const char* fname) {
+  ifstream fin(fname);
+  int i,nparam=cT05Data::GetParameterNumber();
+
+  cT05Data t;
+  double d[nparam];
+  int id[4];
+  string str,s;
+
+  while (getline(fin,str)) {
+    CutFirstWord(s,str);
+    t.IYEAR=stoi(s);
+
+    CutFirstWord(s,str);
+    t.IDAY=stoi(s);
+
+    CutFirstWord(s,str);
+    t.IHOUR=stoi(s);
+
+    CutFirstWord(s,str);
+    t.MIN=stoi(s);
+
+    for (i=0;i<nparam;i++) {
+      CutFirstWord(s,str);
+      d[i]=stod(s);
+    }
+
+    t.Save(d);
+    Data.push_back(t);
+  }
+
+  //calcualte et and order the data vector        
+  for (auto& el : Data) {
+    char line[100];
+    double et;
+
+    sprintf(line,"%i-%iT%i:%i:00",el.IYEAR,el.IDAY,el.IHOUR,el.MIN);
+    str2et_c(line,&et);
+
+    el.et=et;
+  }
+
+  //sort the data vector according to et
+  auto SortData= [] (cT05Data a,cT05Data b) -> bool 
+    {return a.et<b.et;}; 
+
+  sort(Data.begin(),Data.end(),SortData); 
+}
 
 /* 05::PARMOD:
  * c--------------------------------------------------------------------
@@ -91,6 +144,11 @@ void T05::SetSolarWindPressure(double PDYN) {PARMOD[0]=PDYN/_NANO_;}
 void T05::SetDST(double DST) {PARMOD[1]=DST/_NANO_;}
 void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_;}
 void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_;}
+
+void T05::SetSolarWindPressure_nano(double PDYN) {PARMOD[0]=PDYN;}
+void T05::SetDST_nano(double DST) {PARMOD[1]=DST;}
+void T05::SetBYIMF_nano(double BYIMF) {PARMOD[2]=BYIMF;}
+void T05::SetBZIMF_nano(double BZIMF) {PARMOD[3]=BZIMF;} 
 
 void T05::SetW1(double W1) {PARMOD[4]=W1;}
 void T05::SetW2(double W2) {PARMOD[5]=W2;}
