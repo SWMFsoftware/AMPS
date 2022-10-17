@@ -5115,6 +5115,11 @@ void DeleteAttachedParticles();
 
     namespace Relativistic {
       int Boris(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
+      namespace GuidingCenter{
+	void InitiateMagneticMoment(int spec, double *x, double *v, PIC::ParticleBuffer::byte *ParticleData, void *node);
+	void InitiateMagneticMoment(int spec, double *x, double *v, long int ptr, void *node);
+	int  Mover_FirstOrder(long int ptr,double dtTotalIn,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);	
+      }      
     }
 
 
@@ -6732,6 +6737,12 @@ void DeleteAttachedParticles();
         extern cOffsetElement MagneticFieldGradient;
         extern cOffsetElement MagneticFluxFunction;
 
+	extern cOffsetElement Current;
+	//offset to store variables for relativistic gca
+	extern cOffsetElement b_dot_grad_b, vE_dot_grad_b, b_dot_grad_vE;
+	extern cOffsetElement vE_dot_grad_vE, grad_kappaB;
+
+	
 
         inline void SetAllocate(bool flag,cOffsetElement* offset) {
           if (InitFlag==false) {
@@ -6756,6 +6767,12 @@ void DeleteAttachedParticles();
           SetAllocate(flag,&MagneticField);
           SetAllocate(flag,&ElectricField);
           SetAllocate(flag,&MagneticFieldGradient);
+	  SetAllocate(flag,&Current);
+	  SetAllocate(flag,&b_dot_grad_b);
+	  SetAllocate(flag,&vE_dot_grad_b);
+	  SetAllocate(flag,&b_dot_grad_vE);
+	  SetAllocate(flag,&vE_dot_grad_vE);
+	  SetAllocate(flag,&grad_kappaB);
         }
 
         inline void SetActiveAll(bool flag) {
@@ -6767,6 +6784,12 @@ void DeleteAttachedParticles();
           SetActive(flag,&MagneticField);
           SetActive(flag,&ElectricField);
           SetActive(flag,&MagneticFieldGradient);
+	  SetActive(flag,&Current);
+	  SetActive(flag,&b_dot_grad_b);
+	  SetActive(flag,&vE_dot_grad_b);
+	  SetActive(flag,&b_dot_grad_vE);
+	  SetActive(flag,&vE_dot_grad_vE);
+	  SetActive(flag,&grad_kappaB);
         }
       }
 
@@ -6775,7 +6798,7 @@ void DeleteAttachedParticles();
 
       //routines to generate additional data
       void GenerateMagneticFieldGradient(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-
+      void GenerateVarForRelativisticGCA(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
       //return the interpolated value of the background data
       _TARGET_HOST_ _TARGET_DEVICE_
       inline void GetBackgroundData(double *DataVector,int DataVectorLength,int BackgroundDataOffset,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -6854,6 +6877,14 @@ void DeleteAttachedParticles();
       inline void GetBackgroundMagneticField(double *B,PIC::Mesh::cDataCenterNode *cell, double Time) {
       	GetBackgroundValue(B,Offset::MagneticField.nVars,Offset::MagneticField.RelativeOffset, cell, Time);
       }
+
+      inline void GetBackgroundCurrent(double *J,PIC::Mesh::cDataCenterNode *cell, double Time) {
+      	GetBackgroundValue(J,Offset::Current.nVars,Offset::Current.RelativeOffset, cell, Time);
+      }
+      
+      inline void GetVarForRelativisticGCA(double *v15,PIC::Mesh::cDataCenterNode *cell, double Time) {
+	GetBackgroundValue(v15,15,Offset::b_dot_grad_b.RelativeOffset, cell, Time);
+      }// the 15 variables starting with b_dot_grad_b
 
       inline void GetBackgroundMagneticFieldGradient(double *gradB,PIC::Mesh::cDataCenterNode *cell, double Time) {
         GetBackgroundValue(gradB,Offset::MagneticFieldGradient.nVars,Offset::MagneticFieldGradient.RelativeOffset, cell, Time);
@@ -7116,10 +7147,10 @@ void DeleteAttachedParticles();
           }
         };
 
-        extern cLoadedVariableData ElectronPressure,MagneticField;
+        extern cLoadedVariableData ElectronPressure,MagneticField, Current;
         inline void SetLoadedElectronPressureVariableData(int offset,double ScaleFactor) {ElectronPressure.offset=offset-1,ElectronPressure.ScaleFactor=ScaleFactor;}
         inline void SetLoadedMagneticFieldVariableData(int offset,double ScaleFactor) {MagneticField.offset=offset-1,MagneticField.ScaleFactor=ScaleFactor;}
-
+	inline void SetLoadedCurrentVariableData(int offset,double ScaleFactor) {Current.offset=offset-1,Current.ScaleFactor=ScaleFactor;}
         void Init();
 
         void SetDomainLimitsXYZ(double *xmin,double *xmax);
@@ -7404,6 +7435,88 @@ void DeleteAttachedParticles();
 
      }*/
 
+          inline void GetBackgroundCurrent(double *J, double Time = NAN) {
+       double t[3];
+       int idim,iStencil,Length;
+       PIC::InterpolationRoutines::CellCentered::cStencil* Stencil;
+       double *Weight;
+       PIC::Mesh::cDataCenterNode **cell;
+
+       for (idim=0;idim<3;idim++) J[idim]=0.0;
+
+       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num();
+       #else
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable;
+       #endif
+
+       Length=Stencil->Length;
+       Weight=Stencil->Weight;
+       cell=Stencil->cell;
+
+       for (iStencil=0;iStencil<Length;iStencil++) {
+	 switch (_PIC_COUPLER_MODE_) {
+	   /*
+	 case  _PIC_COUPLER_MODE__SWMF_: 
+           SWMF::GetBackgroundMagneticField(t,cell[iStencil]);
+	   break;
+	 case  _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
+           DATAFILE::GetBackgroundData(t,3,DATAFILE::Offset::MagneticField.RelativeOffset,cell[iStencil]);
+           break;
+	   */
+	 case _PIC_COUPLER_MODE__DATAFILE_: 
+           DATAFILE::GetBackgroundCurrent(t,cell[iStencil], Time);
+	   break;
+         default: 
+           t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
+           exit(__LINE__,__FILE__,"not implemented");
+         } 
+
+         for (idim=0;idim<3;idim++) J[idim]+=Weight[iStencil]*t[idim];
+       }
+      }
+
+      inline void GetVarForRelativisticGCA(double *v15, double Time = NAN) {
+       double t[15];
+       int idim,iStencil,Length;
+       PIC::InterpolationRoutines::CellCentered::cStencil* Stencil;
+       double *Weight;
+       PIC::Mesh::cDataCenterNode **cell;
+
+       for (int iVar=0; iVar<15; iVar++) v15[iVar]=0.0;
+
+       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable+omp_get_thread_num();
+       #else
+       Stencil=PIC::InterpolationRoutines::CellCentered::StencilTable;
+       #endif
+
+       Length=Stencil->Length;
+       Weight=Stencil->Weight;
+       cell=Stencil->cell;
+
+       for (iStencil=0;iStencil<Length;iStencil++) {
+	 switch (_PIC_COUPLER_MODE_) {
+	   /*
+	 case  _PIC_COUPLER_MODE__SWMF_: 
+           SWMF::GetBackgroundMagneticField(t,cell[iStencil]);
+	   break;
+	 case  _PIC_COUPLER_MODE__T96_: case _PIC_COUPLER_MODE__T05_: case _PIC_COUPLER_MODE__KMAG_: 
+           DATAFILE::GetBackgroundData(t,3,DATAFILE::Offset::MagneticField.RelativeOffset,cell[iStencil]);
+           break;
+	   */
+	 case _PIC_COUPLER_MODE__DATAFILE_: 
+           DATAFILE::GetVarForRelativisticGCA(t,cell[iStencil], Time);
+	   break;
+         default: 
+           t[0]=0.0; //t[0] is set to make CRAY C++ compiler happy
+           exit(__LINE__,__FILE__,"not implemented");
+         } 
+
+         for (int iVar=0;iVar<15;iVar++) v15[iVar]+=Weight[iStencil]*t[iVar];
+       }
+      }
+    
      inline void GetBackgroundPlasmaVelocity(int iBackgroundPlasmaSpec,double *vel, double Time = NAN) {
        double t[3];
        int idim,iStencil;

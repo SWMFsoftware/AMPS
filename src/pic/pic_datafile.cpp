@@ -54,6 +54,13 @@ PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaElectronP
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::MagneticField={false,false,3,"\"Bx\", \"By\", \"Bz\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::ElectricField={false,false,3,"\"Ex\", \"Ey\", \"Ez\"",-1};
 
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::Current={false,false,3,"\"Jx\", \"Jy\", \"Jz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::b_dot_grad_b={false,false,3,"\"b_dot_grad_bx\", \"b_dot_grad_by\", \"b_dot_grad_bz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b={false,false,3,"\"vE_dot_grad_bx\", \"vE_dot_grad_by\", \"vE_dot_grad_bz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE={false,false,3,"\"b_dot_grad_vEx\", \"b_dot_grad_vEy\", \"b_dot_grad_vEz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE={false,false,3,"\"vE_dot_grad_vEx\", \"vE_dot_grad_vEy\", \"vE_dot_grad_vEz\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::grad_kappaB={false,false,3,"\"grad_kappaBx\", \"grad_kappaBy\", \"grad_kappaBz\"",-1};
+
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient={false,false,9,"\"dBx/dx\", \"dBx/dy\", \"dBx/dz\", \"dBy/dx\", \"dBy/dy\", \"dBy/dz\", \"dBz/dx\", \"dBz/dy\", \"dBz/dz\"",-1};
 
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::MagneticFluxFunction={false,false,1,"\"FluxFunction\"",-1};
@@ -273,6 +280,13 @@ void PIC::CPLR::DATAFILE::ImportData(const char *fname) {
       GenerateMagneticFieldGradient(node);
     }
   }
+
+  if ( _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_){
+    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+      GenerateVarForRelativisticGCA(node);
+    }   
+  }
+
 }
 
 //initialize the data reading namespace
@@ -296,6 +310,14 @@ void PIC::CPLR::DATAFILE::Init() {
 
   PIC::CPLR::DATAFILE::Offset::ElectricField.allocate=true;
   PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
+  PIC::CPLR::DATAFILE::Offset::Current.allocate=true;
+  
+  PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.allocate=true;
+  PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.allocate=true;   
+  PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.allocate=true;   
+  PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.allocate=true;   
+  PIC::CPLR::DATAFILE::Offset::grad_kappaB.allocate=true; 
+
   PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.allocate=true;
@@ -305,6 +327,8 @@ void PIC::CPLR::DATAFILE::Init() {
   if ((_PIC_MOVER_INTEGRATOR_MODE_==_PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_)||(_PIC_OUTPUT__DRIFT_VELOCITY__MODE_==_PIC_MODE_ON_)) { 
     PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate=true;
   }
+
+  printf("PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate:%s\n",PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate?"T":"F");
 
   if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_) {
     switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
@@ -395,6 +419,72 @@ void PIC::CPLR::DATAFILE::Init() {
     PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaElectronPressure.nVars*sizeof(double);
     RelativeOffset+=Offset::PlasmaElectronPressure.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::PlasmaElectronPressure.nVars;
+  }
+
+  if (Offset::Current.allocate==true) {
+    if (Offset::Current.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::Current.active=true;
+    Offset::Current.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::Current.nVars*sizeof(double);
+    RelativeOffset+=Offset::Current.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::Current.nVars;
+  }
+
+  if (Offset::b_dot_grad_b.allocate==true) {
+    if (Offset::b_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::b_dot_grad_b.active=true;
+    Offset::b_dot_grad_b.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::b_dot_grad_b.nVars*sizeof(double);
+    RelativeOffset+=Offset::b_dot_grad_b.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::b_dot_grad_b.nVars;
+  }
+  
+  if (Offset::vE_dot_grad_b.allocate==true) {
+    if (Offset::vE_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::vE_dot_grad_b.active=true;
+    Offset::vE_dot_grad_b.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::vE_dot_grad_b.nVars*sizeof(double);
+    RelativeOffset+=Offset::vE_dot_grad_b.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::vE_dot_grad_b.nVars;
+  }
+
+  if (Offset::b_dot_grad_vE.allocate==true) {
+    if (Offset::b_dot_grad_vE.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::b_dot_grad_vE.active=true;
+    Offset::b_dot_grad_vE.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::b_dot_grad_vE.nVars*sizeof(double);
+    RelativeOffset+=Offset::b_dot_grad_vE.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::b_dot_grad_vE.nVars;
+  }
+  
+  if (Offset::vE_dot_grad_vE.allocate==true) {
+    if (Offset::vE_dot_grad_vE.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::vE_dot_grad_vE.active=true;
+    Offset::vE_dot_grad_vE.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::vE_dot_grad_vE.nVars*sizeof(double);
+    RelativeOffset+=Offset::vE_dot_grad_vE.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::vE_dot_grad_vE.nVars;
+  }
+
+  if (Offset::grad_kappaB.allocate==true) {
+    if (Offset::grad_kappaB.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    
+    Offset::grad_kappaB.active=true;
+    Offset::grad_kappaB.RelativeOffset=RelativeOffset;
+    
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::grad_kappaB.nVars*sizeof(double);
+    RelativeOffset+=Offset::grad_kappaB.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::grad_kappaB.nVars;
   }
 
 
@@ -659,7 +749,18 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
       PIC::Mesh::mesh->ParallelBlockDataExchange();
     }
 
-  }
+    if ( _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_){
+      for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
+        PIC::CPLR::DATAFILE::GenerateVarForRelativisticGCA(node);
+      }      
+      
+      PIC::Mesh::mesh->ParallelBlockDataExchange();
+    }
+
+
+  }//if (startNode==PIC::Mesh::mesh->rootTree)
+  
+  
 }
 
 //====================================================
@@ -688,6 +789,14 @@ void PIC::CPLR::DATAFILE::PrintVariableList(FILE* fout,int DataSetNumber) {
   if (Offset::PlasmaElectronPressure.active) fprintf(fout,", %s",Offset::PlasmaElectronPressure.VarList);
   if (Offset::MagneticField.active) fprintf(fout,", %s",Offset::MagneticField.VarList);
   if (Offset::ElectricField.active) fprintf(fout,", %s",Offset::ElectricField.VarList);
+  if (Offset::Current.active) fprintf(fout,", %s",Offset::Current.VarList);
+  
+  if (Offset::b_dot_grad_b.active) fprintf(fout,", %s",Offset::b_dot_grad_b.VarList);
+  if (Offset::vE_dot_grad_b.active) fprintf(fout,", %s",Offset::vE_dot_grad_b.VarList);
+  if (Offset::b_dot_grad_vE.active) fprintf(fout,", %s",Offset::b_dot_grad_vE.VarList);
+  if (Offset::vE_dot_grad_vE.active) fprintf(fout,", %s",Offset::vE_dot_grad_vE.VarList);
+  if (Offset::grad_kappaB.active) fprintf(fout,", %s",Offset::grad_kappaB.VarList);
+
   if (Offset::MagneticFieldGradient.active) fprintf(fout,", %s",Offset::MagneticFieldGradient.VarList);
   if (Offset::MagneticFluxFunction.active) fprintf(fout,", %s",Offset::MagneticFluxFunction.VarList);
 }
@@ -1037,6 +1146,190 @@ void PIC::CPLR::DATAFILE::GenerateMagneticFieldGradient(cTreeNodeAMR<PIC::Mesh::
     #endif
   }
 }
+
+
+void PIC::CPLR::DATAFILE::GenerateVarForRelativisticGCA(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+
+  // variables to access data storage
+  int nd;
+  PIC::Mesh::cDataCenterNode *CenterNode;
+  char* offset;
+
+  //block's mesh parameters
+  double  *xNodeMin=node->xmin;
+  double  *xNodeMax=node->xmax;
+  double  dXCell[3]= {(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_,(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_,(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_};
+
+  //  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+  //  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+  //  const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+
+  const int iMin=0,iMax=_BLOCK_CELLS_X_-1;
+  const int jMin=0,jMax=_BLOCK_CELLS_Y_-1;
+  const int kMin=0,kMax=_BLOCK_CELLS_Z_-1;
+
+
+  double xCenter[3]={0.0,0.0,0.0},x[3]={0.0,0.0,0.0};   //locations
+  double Bplus[3]={0.0,0.0,0.0}, Bminus[3]={0.0,0.0,0.0}; //values of the field
+  double Eplus[3]={0.0,0.0,0.0}, Eminus[3]={0.0,0.0,0.0}; //values of the field
+  for (int k=kMin;k<=kMax;k++) for (int j=jMin;j<=jMax;j++) for (int i=iMin;i<=iMax;i++) {
+	double grad_b[9], grad_vE[9], grad_kappaB[3];
+	//cell center
+	xCenter[0]=xNodeMin[0]+dXCell[0]*(0.5+i);
+	xCenter[1]=xNodeMin[1]+dXCell[1]*(0.5+j);
+	xCenter[2]=xNodeMin[2]+dXCell[2]*(0.5+k);
+
+	//get data storage location
+	nd=_getCenterNodeLocalNumber(i,j,k);
+	if ((CenterNode=node->block->GetCenterNode(nd))==NULL) continue;
+
+	offset=CenterNode->GetAssociatedDataBufferPointer()+CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset;
+	
+	// compute components of the gradient
+	for (int idim=0; idim < DIM; idim++) {
+	  x[0]=xCenter[0],x[1]=xCenter[1],x[2]=xCenter[2];
+	  
+	  // value of B on face in -idim direction
+	  x[idim] -= dXCell[idim]*0.5;
+	  PIC::CPLR::InitInterpolationStencil(x,node);
+	  PIC::CPLR::GetBackgroundMagneticField(Bminus);
+	  PIC::CPLR::GetBackgroundElectricField(Eminus);
+	    
+	  // value of B on face in +idim direction
+	  x[idim] += dXCell[idim]*1.0;
+	  PIC::CPLR::InitInterpolationStencil(x,node);
+	  PIC::CPLR::GetBackgroundMagneticField(Bplus);
+	  PIC::CPLR::GetBackgroundElectricField(Eplus);
+
+	  double Bminus_norm = Vector3D::Length(Bminus);
+	  double Bplus_norm = Vector3D::Length(Bplus);
+	  if (Bminus_norm==0) Bminus_norm +=1e-15;
+	  if (Bplus_norm==0) Bplus_norm +=1e-15;
+	  double vE_plus[3], vE_minus[3];
+	  Vector3D::CrossProduct(vE_plus, Eplus, Bplus);
+	  Vector3D::CrossProduct(vE_minus, Eminus, Bminus);
+	  double B2plus = Bplus_norm *Bplus_norm;
+	  double B2minus= Bminus_norm*Bminus_norm;
+
+	  for (int ii=0; ii<3; ii++){
+	    vE_plus[ii] /= (B2plus+1e-15);
+	    vE_minus[ii] /= (B2minus+1e-15);
+	  }
+	  double vE_plus_norm = Vector3D::Length(vE_plus);
+	  double vE_minus_norm =Vector3D::Length(vE_minus);
+	  double c2 =  SpeedOfLight* SpeedOfLight;
+	  double kappa_plus = sqrt(1- vE_plus_norm*vE_plus_norm/c2 );
+	  double kappa_minus = sqrt(1- vE_minus_norm*vE_minus_norm/c2 );
+
+	  //compute and write gradient's components
+	  /*
+	  *(0+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.RelativeOffset))=(Bplus[0]-Bminus[0]) / dXCell[idim];
+	  *(3+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.RelativeOffset))=(Bplus[1]-Bminus[1]) / dXCell[idim];
+	  *(6+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.RelativeOffset))=(Bplus[2]-Bminus[2]) / dXCell[idim];
+	  */
+	  grad_b[0+idim] = (Bplus[0]/Bplus_norm-Bminus[0]/Bminus_norm) / dXCell[idim];
+	  grad_b[3+idim] = (Bplus[1]/Bplus_norm-Bminus[1]/Bminus_norm) / dXCell[idim];
+	  grad_b[6+idim] = (Bplus[2]/Bplus_norm-Bminus[2]/Bminus_norm) / dXCell[idim];
+
+	  grad_vE[0+idim] =  (vE_plus[0]-vE_minus[0])/ dXCell[idim];
+	  grad_vE[3+idim] =  (vE_plus[1]-vE_minus[1])/ dXCell[idim];
+	  grad_vE[6+idim] =  (vE_plus[2]-vE_minus[2])/ dXCell[idim];
+
+	  grad_kappaB[idim] = (kappa_plus*Bplus_norm - kappa_minus*Bminus_norm) / dXCell[idim];
+
+	}
+	
+	double B[3],E[3];
+	PIC::CPLR::InitInterpolationStencil(xCenter,node);
+	PIC::CPLR::GetBackgroundMagneticField(B);
+	PIC::CPLR::GetBackgroundElectricField(E);
+
+	double b_norm = Vector3D::Length(B);
+	double vE[3];
+	Vector3D::CrossProduct(vE,E,B);
+	
+	
+	for (int ii=0;ii<3; ii++) {
+	  B[ii] /= b_norm+1e-15; //get unit vector of b
+	  vE[ii] /= b_norm*b_norm+1e-15;
+	}
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) bx
+	*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.RelativeOffset)) = B[0]*grad_b[0]+B[1]*grad_b[1]+B[2]*grad_b[2];
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) by    
+	*(1+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.RelativeOffset)) = B[0]*grad_b[3]+B[1]*grad_b[4]+B[2]*grad_b[5];
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) bz
+	*(2+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.RelativeOffset)) = B[0]*grad_b[6]+B[1]*grad_b[7]+B[2]*grad_b[8];
+	/*
+	if (isnan(*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.RelativeOffset)))) {
+	  printf("b_dot_grad_b is nan\n");
+	  printf("xCenter:%e,%e,%e\n", xCenter[0],xCenter[1],xCenter[2]);
+	  printf("B:%e,%e,%e, grad_b:%e,%e,%e,%e,%e,%e,%e,%e,%e\n",B[0], B[1],B[2], grad_b[0],grad_b[1],grad_b[2],
+		 grad_b[3],grad_b[4],grad_b[5],grad_b[6],grad_b[7],grad_b[8] );
+	}
+	*/
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) bx
+	*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.RelativeOffset)) = vE[0]*grad_b[0]+vE[1]*grad_b[1]+vE[2]*grad_b[2];
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) by  
+	*(1+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.RelativeOffset)) = vE[0]*grad_b[3]+vE[1]*grad_b[4]+vE[2]*grad_b[5];
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) bz
+	*(2+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.RelativeOffset)) = vE[0]*grad_b[6]+vE[1]*grad_b[7]+vE[2]*grad_b[8];
+	
+	/*
+	if (isnan(*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.RelativeOffset)))) {
+	  printf("vE_dot_grad_b is nan\n");
+	  printf("xCenter:%e,%e,%e\n", xCenter[0],xCenter[1],xCenter[2]);
+	}
+	*/
+	
+	
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) vEx
+	*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.RelativeOffset)) = B[0]*grad_vE[0]+B[1]*grad_vE[1]+B[2]*grad_vE[2];
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) vEy    
+	*(1+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.RelativeOffset)) = B[0]*grad_vE[3]+B[1]*grad_vE[4]+B[2]*grad_vE[5];
+	//(bx*d/dx  + by* d/dy+ bz*b/dz) vEz
+	*(2+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.RelativeOffset)) = B[0]*grad_vE[6]+B[1]*grad_vE[7]+B[2]*grad_vE[8];
+
+	/*
+	if (isnan(*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.RelativeOffset)))) {
+	  printf("b_dot_grad_vE is nan\n");
+	  printf("xCenter:%e,%e,%e\n", xCenter[0],xCenter[1],xCenter[2]);
+	}
+	*/
+
+
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) vEx
+	*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.RelativeOffset)) = vE[0]*grad_vE[0]+vE[1]*grad_vE[1]+vE[2]*grad_vE[2];
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) vEy    
+	*(1+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.RelativeOffset)) = vE[0]*grad_vE[3]+vE[1]*grad_vE[4]+vE[2]*grad_vE[5];
+	//(vEx*d/dx  + vEy* d/dy+ vEz*b/dz) vEz
+	*(2+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.RelativeOffset)) = vE[0]*grad_vE[6]+vE[1]*grad_vE[7]+vE[2]*grad_vE[8];
+	
+	/*
+	if (isnan(*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.RelativeOffset)))) {
+	  printf("vE_dot_grad_vE is nan\n");
+	  printf("xCenter:%e,%e,%e\n", xCenter[0],xCenter[1],xCenter[2]);
+	}
+	*/
+
+
+	//grad_kappaB
+	*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::grad_kappaB.RelativeOffset)) = grad_kappaB[0];
+	*(1+(double*)(offset+PIC::CPLR::DATAFILE::Offset::grad_kappaB.RelativeOffset)) = grad_kappaB[1];
+	*(2+(double*)(offset+PIC::CPLR::DATAFILE::Offset::grad_kappaB.RelativeOffset)) = grad_kappaB[2];
+
+	/*
+	if (isnan(*(0+(double*)(offset+PIC::CPLR::DATAFILE::Offset::grad_kappaB.RelativeOffset)))) {
+	  printf("grad_kappaB is nan\n");
+	  printf("xCenter:%e,%e,%e\n", xCenter[0],xCenter[1],xCenter[2]);
+	}
+	*/
+	
+#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+	PIC::Debugger::CatchOutLimitValue((double*)(offset+PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.RelativeOffset),15,__LINE__,__FILE__);
+#endif
+      }
+}
+
 
 //=====================================================================================================
 //calculate drift velocity

@@ -46,7 +46,7 @@ foreach (@Arguments) {
     if(/^-install/) {
       `g++ -std=c++14 utility/TestScripts/table_parser.cpp -o table_parser`;      
       `cp MakefileTest/Table .`;
-      `table_parser 2`;
+      `./table_parser 2`;
       `rm Table`; 
 
       #create .general.conf if not exists

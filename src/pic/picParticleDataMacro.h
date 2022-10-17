@@ -88,7 +88,11 @@
 #if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__FIELD_LINE_
     #undef  _USE_MAGNETIC_MOMENT_
     #define _USE_MAGNETIC_MOMENT_ _PIC_MODE_ON_
-#endif//_PIC_MOVER_INTEGRATOR_MODE_ 
+#endif//_PIC_MOVER_INTEGRATOR_MODE_
+#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_
+    #undef  _USE_MAGNETIC_MOMENT_
+    #define _USE_MAGNETIC_MOMENT_ _PIC_MODE_ON_
+#endif//_PIC_MOVER_INTEGRATOR_MODE_
 //.............................................................................
 // Optional parameter: field line ID and field line coordinate
 #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
@@ -219,7 +223,7 @@
 #else
     #define _PIC_PARTICLE_DATA__FIELD_LINE_COORD_OFFSET_   -1
     #define _PIC_PARTICLE_DATA__FIELD_LINE_COORD_LENGTH_    0
-#endif//_USE_FIELD_LINE_ID_ 
+#endif//_USE_FIELD_LINE_COORD_ 
 
 
     // Total space occupied by data carried by a particle

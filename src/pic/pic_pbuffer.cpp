@@ -981,7 +981,11 @@ int PIC::ParticleBuffer::InitiateParticle(double *x,double *v,double *WeightCorr
 						    ptr, node);
 #endif //_PIC_MOVER_INTEGRATOR_MODE_
   
-
+#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_
+  PIC::Mover::Relativistic::GuidingCenter::InitiateMagneticMoment(GetI(ptr),
+								  GetX(ptr),GetV(ptr),
+								  ptr, node);
+#endif
 
   //add the paticle to the cell's particle list
   long int FirstCellParticle;

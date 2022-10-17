@@ -18,7 +18,7 @@ int PIC::CPLR::DATAFILE::TECPLOT::maxScriptPointNumber=15000;
 int PIC::CPLR::DATAFILE::TECPLOT::nTotalVarlablesTECPLOT=0;
 int PIC::CPLR::DATAFILE::TECPLOT::DataMode=-1;
 
-PIC::CPLR::DATAFILE::TECPLOT::cLoadedVariableData PIC::CPLR::DATAFILE::TECPLOT::ElectronPressure,PIC::CPLR::DATAFILE::TECPLOT::MagneticField;
+PIC::CPLR::DATAFILE::TECPLOT::cLoadedVariableData PIC::CPLR::DATAFILE::TECPLOT::ElectronPressure,PIC::CPLR::DATAFILE::TECPLOT::MagneticField, PIC::CPLR::DATAFILE::TECPLOT::Current;
 
 //rotation matrixes
 double PIC::CPLR::DATAFILE::TECPLOT::RotationMatrix_LocalFrame2DATAFILE[3][3]={{1.0,0.0,0.0},{0.0,1.0,0.0},{0.0,0.0,1.0}};
@@ -450,6 +450,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
             if (PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.active) {
               *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset))=
                   data[IonFluidDescriptorTable[iFluid].Density.Index]*IonFluidDescriptorTable[iFluid].Density.ScaleFactor;
+	      //printf("thread id:%d iFluid:%d, number density:%e \n", PIC::ThisThread, iFluid,  *(iFluid+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset)));
             }
   
             if (PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.active) {
@@ -468,6 +469,8 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
               if (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active) {             
                 *(3*iFluid+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset))=
                   data[idim+IonFluidDescriptorTable[iFluid].BulkVelocity.Index]*IonFluidDescriptorTable[iFluid].BulkVelocity.ScaleFactor;
+		//printf("thread id:%d iFluid:%d, idim:%d, velocity:%e \n", PIC::ThisThread, iFluid,idim,  *(3*iFluid+idim+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset)));
+        
               }
             }
           }
@@ -476,6 +479,14 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
           if (PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.active) {
             *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure.RelativeOffset))=data[ElectronPressure.offset]*ElectronPressure.ScaleFactor;
           }
+
+	  //electric current
+	  for (idim=0;idim<3;idim++) {
+            if (PIC::CPLR::DATAFILE::Offset::Current.active) {
+              *((double*)(offset+PIC::CPLR::DATAFILE::Offset::Current.RelativeOffset+idim*sizeof(double)))=data[idim+Current.offset]*Current.ScaleFactor;
+            }
+          }
+
 
           //magnetic field
           for (idim=0;idim<3;idim++) {
@@ -487,8 +498,9 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
           //calculate the electric field
           if ((PIC::CPLR::DATAFILE::Offset::MagneticField.active) && (PIC::CPLR::DATAFILE::Offset::ElectricField.active) && (PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.active)) {
             double *E,*B,*v;
-
-            //get thet fields in the TECPLOT frame of reference
+	    
+	    if (PIC::CPLR::DATAFILE::nIonFluids==1){
+	    //get thet fields in the TECPLOT frame of reference
             v=(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
             B=(double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
             E=(double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
@@ -513,7 +525,84 @@ void PIC::CPLR::DATAFILE::TECPLOT::LoadDataFile(const char *fname,int nTotalOutp
 
             //copy the transform values into AMPS buffers
             for (idim=0;idim<3;idim++) v[idim]=vLOCAL[idim],E[idim]=eLOCAL[idim],B[idim]=bLOCAL[idim];
-          }
+	    }else{
+	      double uIon[3]={0.0,0.0,0.0};
+	      double electronDensity = 0.0, e_bulk_velocity[3];
+	      double charge_conv=1.0/ElectronCharge;
+	      for (int iIon=0; iIon<PIC::CPLR::DATAFILE::nIonFluids; iIon++){
+		double *tempV, ionDensity, prod;
+		//double ionCharge = PIC::MolecularData::GetElectricCharge(iIon)*charge_conv;
+		//ionDensity = PIC::CPLR::GetBackgroundPlasmaNumberDensity(iIon);
+		double ionCharge = 1.0;
+		ionDensity= *(iIon+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.RelativeOffset));
+		prod = ionDensity*ionCharge;
+		electronDensity += prod;
+		tempV = 3*iIon+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+		
+		for (int idim=0; idim<3; idim++)
+		  uIon[idim] += prod * tempV[idim];
+		/*
+		printf("iIon:%d,ionDensity:%e, ionCharge:%e, prod:%e, electronDensity:%e, tempV:%e,%e,%e, uIon:%e,%e,%e\n",
+		       iIon,ionDensity, ionCharge, prod, electronDensity, tempV[0],tempV[1],tempV[2],
+		       uIon[0], uIon[1], uIon[2]);
+		*/
+	      }
+	      
+	      for (int idim=0; idim<3; idim++) uIon[idim] /= electronDensity;
+	      double *current;
+	      
+	      current = (double*)(offset+PIC::CPLR::DATAFILE::Offset::Current.RelativeOffset);
+	      for (int idim=0; idim<3; idim++) {
+		e_bulk_velocity[idim] = uIon[idim]-current[idim]*charge_conv/electronDensity;
+		if (isnan(e_bulk_velocity[idim])) {
+		  //printf("ebulkvelocoity nan\n");
+		  //printf("uIon:%e, current:%e,charge_conv:%e, electronDensity:%e\n", uIon[idim], current[idim], charge_conv, electronDensity);
+		  exit(__LINE__,__FILE__,"ebulkvelocoity nan");
+		}
+	      }
+	      B=(double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+	      E=(double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset);
+	      
+	      E[0]=-(e_bulk_velocity[1]*B[2]-B[1]*e_bulk_velocity[2]);
+	      E[1]=+(e_bulk_velocity[0]*B[2]-B[0]*e_bulk_velocity[2]);
+	      E[2]=-(e_bulk_velocity[0]*B[1]-B[0]*e_bulk_velocity[1]);
+	      
+	      //convert velocity and the fields vectors in the local frame of reference
+	      double vLOCAL[3],bLOCAL[3],eLOCAL[3];
+	     
+	      
+	      for (int idim=0;idim<3;idim++) {
+		  bLOCAL[idim]=0.0,eLOCAL[idim]=0.0;
+		
+		for (int ii=0;ii<3;ii++) {
+		  //vLOCAL[idim]+=RotationMatrix_DATAFILE2LocalFrame[idim][ii]*v[ii];
+		  eLOCAL[idim]+=RotationMatrix_DATAFILE2LocalFrame[idim][ii]*E[ii];
+		  bLOCAL[idim]+=RotationMatrix_DATAFILE2LocalFrame[idim][ii]*B[ii];
+		  //if (isnan(eLOCAL[idim]) || isnan(bLOCAL[idim]))  printf("eLocal or blocal nan\n");
+	
+		}
+	      }
+	      
+	      //copy the transform values into AMPS buffers
+	      for (int idim=0;idim<3;idim++) E[idim]=eLOCAL[idim],B[idim]=bLOCAL[idim];
+	      
+	      for (int iIon=0; iIon<PIC::CPLR::DATAFILE::nIonFluids; iIon++){
+		double *tempV, vLocal[3]={0.0,0.0,0.0};
+		tempV = 3*iIon+(double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.RelativeOffset);
+
+		for (int idim=0;idim<3;idim++){
+		  for (int ii=0;ii<3;ii++) {
+		    vLocal[idim]+=RotationMatrix_DATAFILE2LocalFrame[idim][ii]*tempV[ii];
+		  }
+		  //if (isnan(vLocal[idim])) printf("vLocal nan\n");
+	
+		}
+
+		for (int idim=0;idim<3;idim++) tempV[idim] = vLocal[idim]; 
+	      }
+	      
+	    }
+	  }
 
           //increment the point counter
           nLoadedDataPoints++;
