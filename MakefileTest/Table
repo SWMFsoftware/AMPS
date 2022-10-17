@@ -3931,7 +3931,20 @@ Check=
 >>>@ls -l test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
 >>>@echo Test test_Mover-Boris-relativistic has finished: `date`
 <#
+---------------------------------------------------------------------------
+#>
+Name=Mover-gca-relativistic
+Time=20
 
+Ref=2{gcc}@@(0+stampede)
+
+Compile=
+>>>@echo "test_Mover-gca-relativistic_compile..." > test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+>>>./Config.pl -application=gca_mover -spice-path=nospice -spice-kernels=nospice
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_Mover-gca-relativistic_compile... done" >> test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+<#
 -------------------------------------------------------------------------------
 #>
 Name=Europa-test1
