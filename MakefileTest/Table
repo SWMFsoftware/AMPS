@@ -3938,12 +3938,25 @@ Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Relativistic-Guiding-Center@@(0+amps-gpu)
+
 Compile=
 >>>@echo "test_Mover-gca-relativistic_compile..." > test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
 >>>./Config.pl -application=gca_mover -spice-path=nospice -spice-kernels=nospice
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_Mover-gca-relativistic_compile... done" >> test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+
+
+Check=
+>>>@echo "test_Mover-gca-relativistic_check..." >> test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+>>>cat  ${TESTMover-gca-relativisticDIR}/PT/plots/amps.TrajectoryTracking.out=5*.dat > ${TESTMover-gca-relativisticDIR}/PT/plots/all.dat
+>>>-${SCRIPTDIR}/DiffNum.pl ${TESTMover-gca-relativisticDIR}/PT/plots/all.dat          \
+>>>${TESTMover-gca-relativisticKEYS}/all.dat${TESTMover-gca-relativistic-REF}.ref_np`ls ${TESTMover-gca-relativisticDIR}/PT/thread* |wc -l |tr -d ' '` > test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+
+
+>>>@ls -l test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
+>>>@echo Test test_Mover-gca-relativistic has finished: `date`
 <#
 -------------------------------------------------------------------------------
 #>
