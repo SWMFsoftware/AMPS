@@ -310,13 +310,6 @@ void PIC::CPLR::DATAFILE::Init() {
 
   PIC::CPLR::DATAFILE::Offset::ElectricField.allocate=true;
   PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
-  PIC::CPLR::DATAFILE::Offset::Current.allocate=true;
-  
-  PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.allocate=true;
-  PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.allocate=true;   
-  PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.allocate=true;   
-  PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.allocate=true;   
-  PIC::CPLR::DATAFILE::Offset::grad_kappaB.allocate=true; 
 
   PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.allocate=true;
@@ -328,7 +321,16 @@ void PIC::CPLR::DATAFILE::Init() {
     PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate=true;
   }
 
-  printf("PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate:%s\n",PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate?"T":"F");
+  if ( _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_){
+    PIC::CPLR::DATAFILE::Offset::Current.allocate=true;
+  
+    PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.allocate=true;
+    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::grad_kappaB.allocate=true; 
+    
+  }
 
   if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_) {
     switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
