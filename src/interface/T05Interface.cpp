@@ -89,6 +89,7 @@ bool T05::Rotate2GSM=false;
 double T05::UserFrame2GSE[3][3]={{1,0,0},{0,1,0},{0,0,1}}; 
 double T05::GSE2UserFrame[3][3]={{1,0,0},{0,1,0},{0,0,1}};
 bool T05::Rotate2GSE=false;
+double T05::IMF[3]={0.0,0.0,0.0};
 
 
 extern "C"{
@@ -142,13 +143,27 @@ void T05::GetMagneticField(double *B,double *x) {
   
 void T05::SetSolarWindPressure(double PDYN) {PARMOD[0]=PDYN/_NANO_;}
 void T05::SetDST(double DST) {PARMOD[1]=DST/_NANO_;}
-void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_;}
-void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_;}
+
+void T05::SetBXIMF(double BXIMF) {IMF[0]=BXIMF;}
+void T05::SetBYIMF(double BYIMF) {PARMOD[2]=BYIMF/_NANO_,IMF[1]=BYIMF;}
+void T05::SetBZIMF(double BZIMF) {PARMOD[3]=BZIMF/_NANO_,IMF[2]=BZIMF;}
 
 void T05::SetSolarWindPressure_nano(double PDYN) {PARMOD[0]=PDYN;}
 void T05::SetDST_nano(double DST) {PARMOD[1]=DST;}
-void T05::SetBYIMF_nano(double BYIMF) {PARMOD[2]=BYIMF;}
-void T05::SetBZIMF_nano(double BZIMF) {PARMOD[3]=BZIMF;} 
+
+void T05::SetBXIMF_nano(double BXIMF) {PARMOD[3]=BXIMF*_NANO_;}
+void T05::SetBYIMF_nano(double BYIMF) {PARMOD[2]=BYIMF,IMF[1]=BYIMF*_NANO_;}
+void T05::SetBZIMF_nano(double BZIMF) {PARMOD[3]=BZIMF,IMF[2]=BZIMF*_NANO_;} 
+
+void T05::SetIMF_nano(double BXIMF,double BYIMF,double BZIMF) {
+  IMF[0]=BXIMF*_NANO_;
+  IMF[1]=BYIMF*_NANO_;
+  IMF[2]=BZIMF*_NANO_;
+}
+
+void T05::GetIMF(double *b) {
+  for (int i=0;i<3;i++) b[i]=IMF[i];
+}
 
 void T05::SetW1(double W1) {PARMOD[4]=W1;}
 void T05::SetW2(double W2) {PARMOD[5]=W2;}

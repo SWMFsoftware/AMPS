@@ -124,6 +124,15 @@ namespace T05 {
   void SetDST(double DST);
   void SetDST_nano(double DST); 
 
+  //background magnetic field outside of the magnetosphere
+  extern double IMF[3];
+  void SetIMF_nano(double BXIMF,double BYIMF,double BZIMF);
+  void GetIMF(double *B); 
+
+  //BXIMF=x-component of IMF
+  void SetBXIMF(double BXIMF); 
+  void SetBXIMF_nano(double BXIMF);
+
   //BYIMF=y-component of IMF
   void SetBYIMF(double BYIMF);
   void SetBYIMF_nano(double BYIMF);  
@@ -131,6 +140,7 @@ namespace T05 {
   //BZIMF=z-component of IMF
   void SetBZIMF(double BZIMF);
   void SetBZIMF_nano(double BZIMF); 
+
 
   //W1-W6=time integrals from start of storm. These are defined in detiai in Tsyganenko 2005.
   void SetW1(double W1);
