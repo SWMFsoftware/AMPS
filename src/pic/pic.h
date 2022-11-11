@@ -4523,6 +4523,10 @@ void DeleteAttachedParticles();
       void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
       void Init();
 
+      //a user-defined function to accept a cell for modeling collisions
+      typedef bool (*fDoSimulateCellCollisions)(PIC::Mesh::cDataCenterNode *CenterNode);
+      extern fDoSimulateCellCollisions DoSimulateCellCollisions;
+
       //model of the particle collisions
       void ntc();
       void mf();

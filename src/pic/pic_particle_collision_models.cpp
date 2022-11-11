@@ -11,6 +11,10 @@ int PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling
 //the limit of the collisions per a single particles
 double PIC::MolecularCollisions::ParticleCollisionModel::CollisionLimitingThrehold=20.0;
 
+//a user-defined function to accept a cell for modeling collisions
+PIC::MolecularCollisions::ParticleCollisionModel::fDoSimulateCellCollisions PIC::MolecularCollisions::ParticleCollisionModel::DoSimulateCellCollisions=NULL;
+
+
 
 //request the sampling data
 int PIC::MolecularCollisions::ParticleCollisionModel::RequestSamplingData(int offset) {
@@ -182,6 +186,15 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
             FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
             cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+
+            if (cell==NULL) continue;
+
+            //call a user-feficed funstion to verify whether collision should be modeled in the cell
+            if (DoSimulateCellCollisions!=NULL) {
+              if (DoSimulateCellCollisions(cell)==false) continue;
+            }
+
+
             cellMeasure=cell->Measure;
 
             if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
@@ -589,6 +602,14 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
             FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
             cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+
+            if (cell==NULL) continue;
+
+            //call a user-feficed funstion to verify whether collision should be modeled in the cell
+            if (DoSimulateCellCollisions!=NULL) {
+              if (DoSimulateCellCollisions(cell)==false) continue;
+            } 
+
             cellMeasure=cell->Measure;
 
             if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
