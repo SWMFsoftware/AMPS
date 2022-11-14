@@ -4524,7 +4524,7 @@ void DeleteAttachedParticles();
       void Init();
 
       //a user-defined function to accept a cell for modeling collisions
-      typedef bool (*fDoSimulateCellCollisions)(PIC::Mesh::cDataCenterNode *CenterNode);
+      typedef bool (*fDoSimulateCellCollisions)(PIC::Mesh::cDataCenterNode *CenterNode, int spec);
       extern fDoSimulateCellCollisions DoSimulateCellCollisions;
 
       //model of the particle collisions

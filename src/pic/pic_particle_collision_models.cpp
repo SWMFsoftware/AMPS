@@ -189,11 +189,6 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
 
             if (cell==NULL) continue;
 
-            //call a user-feficed funstion to verify whether collision should be modeled in the cell
-            if (DoSimulateCellCollisions!=NULL) {
-              if (DoSimulateCellCollisions(cell)==false) continue;
-            }
-
 
             cellMeasure=cell->Measure;
 
@@ -227,6 +222,15 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
               PIC::ParticleBuffer::byte *ParticleData;
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
+
+		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		  
+		  if (DoSimulateCellCollisions!=NULL) {
+		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
+		  }
+		  
+
+		  
                 m0=PIC::MolecularData::GetMass(s0);
                 LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
                 LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
@@ -258,6 +262,15 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
 
                 //loop through the second speices
                 for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
+
+		    
+		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		   
+		    if (DoSimulateCellCollisions!=NULL) {
+		      if (DoSimulateCellCollisions(cell,s1)==false) continue;
+		    }
+		    
+
                   m1=PIC::MolecularData::GetMass(s1);
                   am=m0+m1;
                   LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
@@ -605,10 +618,6 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 
             if (cell==NULL) continue;
 
-            //call a user-feficed funstion to verify whether collision should be modeled in the cell
-            if (DoSimulateCellCollisions!=NULL) {
-              if (DoSimulateCellCollisions(cell)==false) continue;
-            } 
 
             cellMeasure=cell->Measure;
 
@@ -642,6 +651,14 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
               PIC::ParticleBuffer::byte *ParticleData;
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
+
+		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		  
+		  if (DoSimulateCellCollisions!=NULL) {
+		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
+		  }
+		  
+		  
                 m0=PIC::MolecularData::GetMass(s0);
                 LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
                 LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
@@ -673,6 +690,14 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 
                 //loop through the second speices
                 for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
+
+		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		    
+		      if (DoSimulateCellCollisions!=NULL) {
+			if (DoSimulateCellCollisions(cell,s1)==false) continue;
+		      }
+		      
+
                   m1=PIC::MolecularData::GetMass(s1);
                   am=m0+m1;
                   LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
@@ -983,11 +1008,11 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf_new() {
 #if _PIC__OPENMP_THREAD_SPLIT_MODE_ == _PIC__OPENMP_THREAD_SPLIT_MODE__BLOCKS_
     const int TotalCell= _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 #pragma omp parallel for schedule(dynamic,TotalCell) default (none) firstprivate (ParticleDataListLength,SigmaCrMax_nTest,SigmaCrMax_SafetyMargin) \
-    private (k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
+    private (DoSimulateCellCollisions,k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
     shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleDataList,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::Mesh::mesh,PIC::ParticleWeightTimeStep::LocalTimeStep,PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset,LoadBalancingMeasureOffset)
 #else
 #pragma omp parallel for schedule(dynamic,1) default (none) firstprivate (ParticleDataListLength,SigmaCrMax_nTest,SigmaCrMax_SafetyMargin) \
-private (k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
+  private (DoSimulateCellCollisions,k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
 shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleDataList,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::Mesh::mesh,PIC::ParticleWeightTimeStep::LocalTimeStep,PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset,LoadBalancingMeasureOffset)
 #endif  // _PIC__OPENMP_THREAD_SPLIT_MODE_
 
@@ -1059,6 +1084,14 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
               PIC::ParticleBuffer::byte *ParticleData;
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
+
+		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		  
+		  if (DoSimulateCellCollisions!=NULL) {
+		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
+		  }
+		  
+
                 m0=PIC::MolecularData::GetMass(s0);
                 LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
                 LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
@@ -1090,6 +1123,15 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 
                 //loop through the second speices
                 for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
+
+
+		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
+		    
+		    if (DoSimulateCellCollisions!=NULL) {
+		      if (DoSimulateCellCollisions(cell,s1)==false) continue;
+		    }
+		    
+
                   m1=PIC::MolecularData::GetMass(s1);
                   am=m0+m1;
                   LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
