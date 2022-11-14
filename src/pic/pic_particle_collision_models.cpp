@@ -223,12 +223,6 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
 
-		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
-		  
-		  if (DoSimulateCellCollisions!=NULL) {
-		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
-		  }
-		  
 
 		  
                 m0=PIC::MolecularData::GetMass(s0);
@@ -267,7 +261,7 @@ shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleData
 		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
 		   
 		    if (DoSimulateCellCollisions!=NULL) {
-		      if (DoSimulateCellCollisions(cell,s1)==false) continue;
+		      if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
 		    }
 		    
 
@@ -652,11 +646,6 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
 
-		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
-		  
-		  if (DoSimulateCellCollisions!=NULL) {
-		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
-		  }
 		  
 		  
                 m0=PIC::MolecularData::GetMass(s0);
@@ -694,7 +683,7 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
 		    
 		      if (DoSimulateCellCollisions!=NULL) {
-			if (DoSimulateCellCollisions(cell,s1)==false) continue;
+			if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
 		      }
 		      
 
@@ -1085,12 +1074,6 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 
               for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
 
-		  //call a user-feficed funstion to verify whether collision should be modeled in the cell
-		  
-		  if (DoSimulateCellCollisions!=NULL) {
-		    if (DoSimulateCellCollisions(cell,s0)==false) continue;
-		  }
-		  
 
                 m0=PIC::MolecularData::GetMass(s0);
                 LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
@@ -1128,7 +1111,7 @@ shared (CollisionLimitingThrehold,DomainBlockDecomposition::nLocalBlocks,s0Parti
 		    //call a user-feficed funstion to verify whether collision should be modeled in the cell
 		    
 		    if (DoSimulateCellCollisions!=NULL) {
-		      if (DoSimulateCellCollisions(cell,s1)==false) continue;
+		      if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
 		    }
 		    
 
