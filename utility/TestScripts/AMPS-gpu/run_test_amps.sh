@@ -149,7 +149,7 @@ mv Makefile.bak Makefile
 
 ./Config.pl -cuda
 ./Config.pl -compiler-option=-I/opt/nvidia/hpc_sdk/Linux_x86_64/20.7/comm_libs/openmpi/openmpi-3.1.5/include
-./Config.pl -compiler-option=-I/usr/include/openmpi-x86_64
+./Config.pl -compiler-option=-I/opt/openmpi/openmpi-4.1.4/include
 ./Config.pl -compiler-option=-ccbin:g++
 ./Config.pl -compiler-option=-x:cu
 
@@ -157,7 +157,7 @@ mv Makefile.bak Makefile
 
 ./Config.pl -cpp-compiler=nvcc
 ./Config.pl -cpp-link-option=-lcudart
-./Config.pl -f-link-option=-lcudart:-L/usr/local/cuda-11.1/lib64
+./Config.pl -f-link-option=-lcudart:-L/usr/local/cuda/lib64
 
 ./Config.pl -test-blocks=10
 #utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
