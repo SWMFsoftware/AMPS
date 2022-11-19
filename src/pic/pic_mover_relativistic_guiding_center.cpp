@@ -227,6 +227,9 @@ int PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(long int ptr,doubl
     printf("test gca ptr:%d, dtTotal:%e,xInit:%e,%e,%e, u:%e,%e,%e\n", ptr, dtTotal,xInit[0],xInit[1],xInit[2], u[0],u[1],u[2]);
   }
   */
+
+
+  #if  _TARGET_ID_(_TARGET_) != _TARGET_NONE__ID_ && _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_ 
   double rFinal = sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
   if (rFinal<_RADIUS_(_TARGET_))  { 
     static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
@@ -239,6 +242,7 @@ int PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(long int ptr,doubl
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;
   }
+  #endif
   
   newNode=PIC::Mesh::mesh->findTreeNode(xFinal,startNode);
 
