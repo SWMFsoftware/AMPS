@@ -1783,6 +1783,93 @@ Check=
 
 
 #>
+Name=Earth-cutoff-rigidity-points_t05
+Time=15
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+
+Compile=
+>>>@echo "test_Earth-cutoff-rigidity-points_t05_compile..." > test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+>>>rm -rf earth_cutoff_rigidity_model
+>>>mkdir earth_cutoff_rigidity_model
+>>>cd earth_cutoff_rigidity_model; git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>cp -r share earth_cutoff_rigidity_model/AMPS
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-geospace_boundary_injection_sep_t96
+
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-cutoff-rigidity_t05
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity-points_t05KEYS}
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in
+>>>-cd earth_cutoff_rigidity_model/AMPS; make -j8
+>>>-cp earth_cutoff_rigidity_model/AMPS/amps .
+
+>>>@echo "test_Earth-cutoff-rigidity-points_t05_compile... done" >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+
+Rundir=
+>>>@echo "test_Earth-cutoff-rigidity-points_t05_rundir..." >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+>>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
+>>>@mkdir -p $(TESTEarth-cutoff-rigidity-points_t05DIR)
+>>>@mv amps $(TESTEarth-cutoff-rigidity-points_t05DIR)
+>>>@cp earth_cutoff_rigidity_model/AMPS/input/test/geospace-rigidity.in--cutoff-sphere $(TESTEarth-cutoff-rigidity-points_t05DIR)/geospace-rigidity.in
+>>>@cp earth_cutoff_rigidity_model/AMPS/input/sep-spectrum-09102017-event.dat $(TESTEarth-cutoff-rigidity-points_t05DIR)
+>>>@cp -Lr data $(TESTEarth-cutoff-rigidity-points_t05DIR)
+
+>>>@echo "test_Earth-cutoff-rigidity-points_t05_rundir... done" >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+<#
+
+
+#>
+Name=Earth-geo_t05
+Time=15
+
+Ref=2{icc}@@(0+valeriy)
+Ref=1{gcc}@@(0+valeriy)
+
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
+
+Compile=
+>>>@echo "test_Earth-geo_t05_compile..." > test_Earth-geo_t05$(TESTEarth-geo-points_t05-REF).diff
+
+>>>rm -rf earth_cutoff_rigidity_model
+>>>mkdir earth_cutoff_rigidity_model
+>>>cd earth_cutoff_rigidity_model; git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>cp -r share earth_cutoff_rigidity_model/AMPS
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
+>>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-geospace_boundary_injection_sep_t96
+
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-geo_t05KEYS}
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in
+>>>-cd earth_cutoff_rigidity_model/AMPS; make -j8
+>>>-cp earth_cutoff_rigidity_model/AMPS/amps .
+
+>>>@echo "test_Earth-geo_t05_compile... done" >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
+
+
+Rundir=
+>>>@echo "test_Earth-geo_t05_rundir..." >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
+>>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
+>>>@mkdir -p $(TESTEarth-geo_t05DIR)
+>>>@mv amps $(TESTEarth-geo_t05DIR)
+>>>@cp earth_cutoff_rigidity_model/AMPS/input/geospace-rigidity.in $(TESTEarth-geo_t05DIR)/geospace-rigidity.in
+>>>@cp earth_cutoff_rigidity_model/AMPS/input/sep-spectrum-09102017-event.dat $(TESTEarth-geo_t05DIR)
+>>>@cp -Lr data $(TESTEarth-geo_t05DIR)
+
+>>>@echo "test_Earth-geo_t05_rundir... done" >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
+
+<#
+
+
+#>
 Name=Earth-cutoff-rigidity_t96
 Time=15
 
