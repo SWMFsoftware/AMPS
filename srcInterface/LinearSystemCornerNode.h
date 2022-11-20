@@ -16,10 +16,6 @@
 #include <immintrin.h>
 #endif
 
-#ifndef __PGI
-#include <immintrin.h>
-#endif
-
 #ifndef _LINEARSYSTEMCORNERNODE_H_
 #define _LINEARSYSTEMCORNERNODE_H_
 
