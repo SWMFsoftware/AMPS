@@ -1870,7 +1870,7 @@ Check=
 >>>@echo "test_Earth-geo_t05_check..." >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
 >>>$(TESTEarth-geo_t05DIR)/../utility/ReduceFile.pl $(TESTEarth-geo_t05DIR)/PT/plots/pic.H_PLUS1.s=0.out=4.dat 1000 
->>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 $(TESTEarth-geo_t05DIR)/PT/plots/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000 output/test_Earth-geo_t05/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff 
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 $(TESTEarth-geo_t05DIR)/PT/plots/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000 output/test_Earth-geo_t05/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-geo_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff 
 
 >>>@ls -l test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 >>>@echo Test test_Earth-geo_t05 has finished: `date`
@@ -1915,7 +1915,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #> 
-Name=test/Earth-T96
+Name=test/Earth-T96@@(0+) 
 Time=3
 
 CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
@@ -4616,7 +4616,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/CG-BATSRUS-dust-coupling 
+Name=test/CG-BATSRUS-dust-coupling@@(0+) 
 Time=2
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
