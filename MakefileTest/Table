@@ -1845,7 +1845,7 @@ Compile=
 >>>cp -r share earth_cutoff_rigidity_model/AMPS
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
 >>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-geospace_boundary_injection_sep_t96
+>>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=test/earth-geospace_boundary_injection_sep_t96
 
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-geo_t05KEYS}
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in
@@ -1866,6 +1866,14 @@ Rundir=
 
 >>>@echo "test_Earth-geo_t05_rundir... done" >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
+Check=
+>>>@echo "test_Earth-geo_t05_check..." >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
+
+>>>$(TESTEarth-geo_t05DIR)/../utility/ReduceFile.pl $(TESTEarth-geo_t05DIR)/PT/plots/pic.H_PLUS1.s=0.out=4.dat 1000 
+>>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 $(TESTEarth-geo_t05DIR)/PT/plots/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000 output/test_Earth-geo_t05/pic.H_PLUS1.s=0.out=4.dat.Reduced.Step=1000.ref_np`ls $(TESTEarth-cutoff-rigidity_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff 
+
+>>>@ls -l test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
+>>>@echo Test test_Earth-geo_t05 has finished: `date`
 <#
 
 
