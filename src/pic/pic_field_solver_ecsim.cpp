@@ -2044,7 +2044,7 @@ pthread_setaffinity_np(current_thread,sizeof(cpu_set_t),&cpuset);
             double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
 #ifndef __CUDA_ARCH__
-            #ifndef __PGI
+            #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
             if (jCorner+1<=iCorner) {
                char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner+1];
 
@@ -2459,7 +2459,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
         PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
-        #ifndef __PGI
+        #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_ 
         _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
         #endif
 
@@ -2564,7 +2564,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
           double tempWeightProduct = WeightPG[jCorner]*tempWeightConst;
           double *tmpPtr =MassMatrix_GGD[iCorner][jCorner];
 
-          #ifndef __PGI
+          #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
           if (jCorner>1) {
              char *ptr=(char*)MassMatrix_GGD[iCorner][jCorner-1];
 
@@ -2639,7 +2639,7 @@ bool PIC::FieldSolver::Electromagnetic::ECSIM::ProcessCell(int iCellIn,int jCell
 
         PIC::InterpolationRoutines::CornerBased::InitStencil(xInit,node,CornerBasedStencil,WeightPG);
 
-        #ifndef __PGI
+        #if _PIC_MEMORY_PREFETCH_MODE_ == _PIC_MEMORY_PREFETCH_MODE__ON_
         _mm_prefetch((char*)WeightPG,_MM_HINT_NTA);
         #endif
 
