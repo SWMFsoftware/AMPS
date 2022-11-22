@@ -25,6 +25,7 @@
 #include <fstream>
 #include <signal.h>
 #include <string>
+#include <vector>
 
 #include "SpiceUsr.h"
 
@@ -77,7 +78,7 @@ namespace T05 {
     }
   };
 
-  extern vector<cT05Data> Data; 
+  extern std::vector<cT05Data> Data; 
   void LoadDataFile(const char* fname);
 
   void inline Init(const char* Epoch, std::string FrameNameIn) {
