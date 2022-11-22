@@ -388,6 +388,10 @@ else
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}
 endif
 
+share_lib:
+	@mkdir -p share/lib
+	@cd share/Library/src;make LIB
+
 .PHONY: test
 test:
 	echo "Use make test_all to run the AMPS tests"
