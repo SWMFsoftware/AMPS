@@ -92,7 +92,7 @@ void amps_init_mesh() {
 	//init the particle solver
 	PIC::Init_BeforeParser();
 
-	PIC::Mover::Init_BeforeParser();
+	//PIC::Mover::Init_BeforeParser();
 
 #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
 	// initialize field lines
@@ -196,7 +196,7 @@ void amps_init(){
   {  // prepopulate the domain
     double NDensity=1.0E+10, Temperature=6000, Velocity[3]={1.0E6,0.0,0.0};
     for (int s=0;s<PIC::nTotalSpecies;s++)
-      PIC::InitialCondition::PrepopulateDomain(s,NDensity, Velocity, Temperature);
+      PIC::InitialCondition::PrepopulateDomain(s,NDensity, Velocity, Temperature,false);
   }
 #endif
     
