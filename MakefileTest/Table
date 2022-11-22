@@ -3206,7 +3206,7 @@ Check=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=SEP3D
+Name=SEP3D-ARMS-coupling 
 Time=2
 
 Ref=2{icc}@@(0+valeriy)
@@ -3216,11 +3216,21 @@ Ref=2{icc}@@(0+stampede)
 Ref=2{icc}@@(0+pleiades)
 
 Keys=-cplr-data-path=${PTDIR}/data/input/SEP/ARMS/Converted2ASCII
-Run=
->>>@echo "test_SEP3D_run..." >> test_SEP3D${TESTSEP3D-REF}.diff
->>>@echo Test test_SEP3D has started: `date`
->>>cd ${TESTSEP3DDIR}; ${TESTMPIRUN4} ./amps
->>>@echo "test_SEP3D_run... done" >> test_SEP3D${TESTSEP3D-REF}.diff
+
+Compile=
+>>>@echo "test_SEP3D-ARMS-coupling_compile..." > test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
+>>>./Config.pl -application=SEP3D -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/SEP3D  -amps-test=on $(TESTSEP3DKEYS)
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP3D-ARMS-coupling_compile... done" >> test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
+
+Check=
+>>>@echo "test_SEP3D-ARMS-coupling_check..." >> test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
+>>>@(${SCRIPTDIR}/DiffNum.pl $(TESTSEP3D-ARMS-couplingDIR)/PT/plots/test_SEP3D.dat         \
+>>>output/test_SEP3D/test_SEP3D$(TESTSEP3D-ARMS-coupling-REF).ref_np`ls $(TESTSEP3D-ARMS-couplingDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff);  
+
+>>>@ls -l test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
+>>>@echo Test test_SEP3D-ARMS-coupling has finished: `date`
 <#
 -------------------------------------------------------------------------------
 #>
