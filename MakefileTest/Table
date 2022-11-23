@@ -1585,7 +1585,7 @@ Compile=
 
 
 #>
-Name=Earth
+Name=Earth@@(0+) 
 Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
@@ -1644,7 +1644,7 @@ Check=
 
 
 #>
-Name=Earth-cutoff-rigidity 
+Name=Earth-cutoff-rigidity@@(0+) 
 Time=15 
 
 Ref=2{icc}@@(0+valeriy)
@@ -1889,7 +1889,7 @@ Check=
 
 
 #>
-Name=Earth-cutoff-rigidity_t96
+Name=Earth-cutoff-rigidity_t96@@(0+) 
 Time=15
 
 Ref=2{icc}@@(0+valeriy)
