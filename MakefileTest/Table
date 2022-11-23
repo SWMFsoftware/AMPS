@@ -3787,11 +3787,10 @@ Check=
 #>
 Name=CCMC-Individual_Trajectories
 Time=4
-Keys= -model-data-path=${PTDIR}/input
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC@@(0+pleiades)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC@@(0+stampede)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC@@(0+pleiades)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC@@(0+stampede)
 
 Check=
 >>>-@${SCRIPTDIR}/DiffNum.pl ${TESTCCMC-Individual_TrajectoriesDIR}/PT/plots/amps.TrajectoryTracking.out=4.s=0.O2_PLUS.dat         \
