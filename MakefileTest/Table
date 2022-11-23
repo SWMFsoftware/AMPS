@@ -1817,11 +1817,29 @@ Rundir=
 >>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
 >>>@mkdir -p $(TESTEarth-cutoff-rigidity-points_t05DIR)
 >>>@mv amps $(TESTEarth-cutoff-rigidity-points_t05DIR)
->>>@cp earth_cutoff_rigidity_model/AMPS/input/test/geospace-rigidity.in--cutoff-sphere $(TESTEarth-cutoff-rigidity-points_t05DIR)/geospace-rigidity.in
+>>>@cp earth_cutoff_rigidity_model/AMPS/input/test/geospace-rigidity.in--cutoff-points $(TESTEarth-cutoff-rigidity-points_t05DIR)/geospace-rigidity.in
 >>>@cp earth_cutoff_rigidity_model/AMPS/input/sep-spectrum-09102017-event.dat $(TESTEarth-cutoff-rigidity-points_t05DIR)
 >>>@cp -Lr data $(TESTEarth-cutoff-rigidity-points_t05DIR)
 
 >>>@echo "test_Earth-cutoff-rigidity-points_t05_rundir... done" >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+Check=
+>>>@echo "test_Earth-cutoff-rigidity-points_t05_check..." >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+
+>>>-${SCRIPTDIR}/DiffNum.pl $(TESTEarth-cutoff-rigidity-points_t05DIR)/res.dat output/test_Earth-cutoff-rigidity-points_t05/res$(TESTEarth-cutoff-rigidity-points_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-points_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+
+>>>-${SCRIPTDIR}/DiffNum.pl $(TESTEarth-cutoff-rigidity-points_t05DIR)/PT/plots/directional-rigidity-cutoff--point-3.dat.2d.dat output/test_Earth-cutoff-rigidity-points_t05/directional-rigidity-cutoff--point-3.dat.2d$(TESTEarth-cutoff-rigidity-points_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-points_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+
+>>>-${SCRIPTDIR}/DiffNum.pl $(TESTEarth-cutoff-rigidity-points_t05DIR)/PT/plots/directional-rigidity-cutoff--point-3.dat output/test_Earth-cutoff-rigidity-points_t05/directional-rigidity-cutoff--point-3$(TESTEarth-cutoff-rigidity-points_t05-REF).ref_np`ls $(TESTEarth-cutoff-rigidity-points_t05DIR)/PT/thread* |wc -l |tr -d ' '` > test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+
+
+
+>>>@ls -l test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
+>>>@echo Test test_Earth-cutoff-rigidity-points_t05 has finished: `date`
+
 
 <#
 
