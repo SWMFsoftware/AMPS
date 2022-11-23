@@ -3226,11 +3226,12 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=2{icc}@@(0+stampede)
 Ref=2{icc}@@(0+pleiades)
 
-Keys=-cplr-data-path=${PTDIR}/data/input/SEP/ARMS/Converted2ASCII
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII@@(0+amps-gpu)
+Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII -model-data-path=//Users/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII@@(0+valeriy)
 
 Compile=
 >>>@echo "test_SEP3D-ARMS-coupling_compile..." > test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
->>>./Config.pl -application=SEP3D -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/SEP3D  -amps-test=on $(TESTSEP3DKEYS)
+>>>./Config.pl -application=SEP3D -spice-path=nospice -spice-kernels=nospice -amps-test=on $(TESTSEP3D-ARMS-couplingKEYS)
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_SEP3D-ARMS-coupling_compile... done" >> test_SEP3D-ARMS-coupling$(TESTSEP3D-ARMS-coupling-REF).diff
