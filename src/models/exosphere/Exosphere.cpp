@@ -2041,21 +2041,31 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
   }
 
 
-#if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-  ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-#else
-  ParticleWeight=0.0;
-  exit(__LINE__,__FILE__,"Error: the weight mode is node defined");
-#endif
+  switch(_SIMULATION_PARTICLE_WEIGHT_MODE_) {
+  case  _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_: 
+    ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+    break;
+  case _SINGLE_GLOBAL_PARTICLE_WEIGHT_:
+    ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the weight mode is node defined");
+  }
 
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-#elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  LocalTimeStep=Sphere->maxIntersectedNodeTimeStep[spec];
-#else
-  LocalTimeStep=0.0;
-  exit(__LINE__,__FILE__,"Error: the time step node is not defined");
-#endif
+  switch(_SIMULATION_TIME_STEP_MODE_) {
+  case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_: 
+    LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+    break;
+  case _SPECIES_DEPENDENT_LOCAL_TIME_STEP_: 
+    LocalTimeStep=Sphere->maxIntersectedNodeTimeStep[spec];
+    break;
+  case _SINGLE_GLOBAL_TIME_STEP_:
+    LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    break;
+  default:
+    LocalTimeStep=0.0;
+    exit(__LINE__,__FILE__,"Error: the time step node is not defined");
+  }
 
   ModelParticlesInjectionRate=totalProductionRate(spec,BoundaryElementType,BoundaryElement)/ParticleWeight;
 

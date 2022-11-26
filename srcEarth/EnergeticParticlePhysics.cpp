@@ -76,13 +76,19 @@ void Earth::ProtonPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<
 
 void Earth::NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double dt=node->block->GetLocalTimeStep(_ELECTRON_SPEC_);
-  double v[3],n,x[3],freq_total,freq_collision;
+  double v[3],n,x[3],freq_total,freq_collision,primary_weight;
 
   const double CrossSection=1.5E-19; 
   const double BetaDecayLifetime=879.6;  
    
   //two parallel processes can occur: 1. interaction with the atmosphere, and 2. beta-decay
   const double freq_decay=1.0/BetaDecayLifetime;
+
+  if ((_SIMULATION_TIME_STEP_MODE_!=_SINGLE_GLOBAL_TIME_STEP_)||(_SIMULATION_PARTICLE_WEIGHT_MODE_!=_SINGLE_GLOBAL_PARTICLE_WEIGHT_)) {
+    exit(__LINE__,__FILE__,"Error: the oprion is not implemented");
+  } 
+ 
+ 
   
   PIC::ParticleBuffer::GetX(x,ptr);
   PIC::ParticleBuffer::GetV(v,ptr);
@@ -103,6 +109,10 @@ ncall++;
 
       ptr_electron=PIC::ParticleBuffer::GetNewParticle();
       ptr_proton=PIC::ParticleBuffer::GetNewParticle();
+
+      primary_weight=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(primary_weight,ptr_electron);
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(primary_weight,ptr_proton);
 
       PIC::ParticleBuffer::SetNext(FirstParticleCell,ptr_electron);
       PIC::ParticleBuffer::SetPrev(-1,ptr_electron);

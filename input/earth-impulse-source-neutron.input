@@ -37,15 +37,15 @@ OutputDirectory=PT/plots
 
 
 DebuggerMode=off !on,off
-ForceRepeatableSimulationPath=off ! on,off
+!ForceRepeatableSimulationPath=off ! on,off
 
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
 
 CouplerMode=T96 !!!file(batsrus) !file(batsrus) !!T96 !!geopack !!!!(batsrus) !!!ices !!off, ices, swmf
 
-TimeStepMode=SpeciesGlobalTimeStep
-ParticleWeightMode=SpeciesGlobalParticleWeight
+TimeStepMode=SingleGlobalTimeStep
+ParticleWeightMode=SingleGlobalParticleWeight
 ParticleWeightCorrectionMode=on !!on
 
 MoverIntegratorMode=Boris-relativistic
@@ -75,8 +75,8 @@ MoverIntegratorMode=Boris-relativistic
 
   define _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_ 10
   define _PIC_RUNTIME_STAT_OUTPUT__MAX_ITERATION_NUMBER_ 5
-  define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-  ! define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_ 
+  !define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+   define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_PARTICLE_NUMBER_ 
 
   
 ! define _PIC_STORE_PREVIOUS_CYCLE_SAMPLE_MODE_ _PIC_MODE_OFF_ 
