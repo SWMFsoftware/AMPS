@@ -2134,16 +2134,13 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-
-//  if (PIC::ParticleWeightTimeStep::GlobalParticleWeight==NULL) {
-//    PIC::ParticleWeightTimeStep::GlobalParticleWeight=new double [PIC::nTotalSpecies];
-//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalParticleWeight[s]=-1.0;
-//  }
-
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
   }
-
+  #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_
+  if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]>weight)) {
+    PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]=weight;
+  }
   #else
   exit(__LINE__,__FILE__,"not implemented");
   #endif
@@ -2155,8 +2152,9 @@ double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
   res=spec+(double *)(associatedDataPointer+LocalParticleWeightOffset);
   return *res;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-
   return PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+  #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_
+  return PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
   #else
   exit(__LINE__,__FILE__,"not implemented");
   return 0.0;
@@ -2168,27 +2166,13 @@ void PIC::Mesh::cDataBlockAMR::SetLocalTimeStep(double dt, int spec) {
   #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalTimeStepOffset))=dt;
   #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-
-//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [PIC::nTotalSpecies];
-//    for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::GlobalTimeStep[s]=-1.0;
-//  }
-
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]=dt;
   }
-  
   #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
-  
-//  if (PIC::ParticleWeightTimeStep::GlobalTimeStep==NULL) {
-//    PIC::ParticleWeightTimeStep::GlobalTimeStep=new double [1];
-//    PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=-1.0;
-//  }
-
   if ((PIC::ParticleWeightTimeStep::GlobalTimeStep[0]<0.0)||(PIC::ParticleWeightTimeStep::GlobalTimeStep[0]>dt)) {
     PIC::ParticleWeightTimeStep::GlobalTimeStep[0]=dt;
   }
-
   #else
   exit(__LINE__,__FILE__,"not implemented");
   #endif
