@@ -385,10 +385,6 @@ namespace PIC {
 
         // add this datum to the provided cDatum vector
         if (DatumVector!=NULL) DatumVector->push_back(this);
-
-        if (doPrint==true) {
-          exit(__LINE__,__FILE__,"Error: not implemented:: the data output need to be implemented in PIC::Mesh::cDataCenterNode");
-        }
       }
 
       // constructor is inherited
