@@ -224,7 +224,7 @@ int MarsIon::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 
   PIC::ParticleBuffer::GetX(xInit,ptr);
 
-  switch (PIC::ParticleBuffer::GetI(ptr)) {
+  switch ((int)PIC::ParticleBuffer::GetI(ptr)) {
   case _ELECTRON_SPEC_:
     res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
     break;
