@@ -31,10 +31,8 @@ set WorkDir = $HOME
 #set WorkDir = /Volumes/Data01
 
 #update the data file repository 
-echo -n "Update AMPS_DATA_TEST...     "
-cd /Users/vtenishe/AMPS_DATA_TEST
-git pull
-echo "done." 
+#cd /Users/vtenishe/AMPS_DATA_TEST
+#git pull
 
 #Go to your home directory
 cd $WorkDir
@@ -46,18 +44,15 @@ cd Tmp_AMPS_test
 #checkout the new copy of AMPS if needed otherwise update the existing copy 
 set CheckoutTime = `date`
 
-rm -rf AMPS
-rm -rf AMPS_Legacy
-rm -rf BATL
-rm -rf SWMF_data  
-
 if (-e AMPS) then 
   cd AMPS_Legacy; git pull 
   cd ../BATL; git pull 
   cd ../AMPS; git pull 
-  cd SWMF_data; git pull 
 
-  cd ../../
+  rm -rf SWMF_data 
+  gitclone SWMF_data
+  
+  cd ../
 else  
   gitclone AMPS_Legacy
   gitclone AMPS
@@ -75,9 +70,9 @@ rm -rf GNU
 mkdir -p GNU;   cp -r AMPS GNU/; 
 cp -r BATL GNU/AMPS/
 
-rm -rf Intel
-mkdir -p Intel; cp -r AMPS Intel/; 
-cp -r BATL Intel/AMPS/
+#rm -rf Intel
+#mkdir -p Intel; cp -r AMPS Intel/; 
+#cp -r BATL Intel/AMPS/
 
 #rm -rf PGI
 #mkdir -p PGI;   cp -r AMPS PGI/; 
@@ -89,10 +84,10 @@ echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
-cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
-echo AMPS was checked out on $CheckoutTime > test_amps.log
-./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
-utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
+#cd $WorkDir/Tmp_AMPS_test/Intel/AMPS                                       
+#echo AMPS was checked out on $CheckoutTime > test_amps.log
+#./Config.pl -f-link-option=-lc++ -install -compiler=ifort,iccmpicxx   >>& test_amps.log
+#utility/TestScripts/MultiThreadLocalTestExecution.pl -nthreads=10
 
 #cd $WorkDir/Tmp_AMPS_test/PGI/AMPS                                         
 #echo AMPS was checked out on $CheckoutTime > test_amps.log
@@ -104,7 +99,9 @@ rm -rf Amps*Complete
 rm -rf runlog scheduler
 
 cp AMPS/utility/TestScripts/Valeriy/scheduler.cpp .
-g++ ./scheduler.cpp -o scheduler -lpthread
+#g++ ./scheduler.cpp -o scheduler -lpthread
+source ~/module/gnu
+mpicxx ./scheduler.cpp -o scheduler -lpthread
 
 ./scheduler -threads 10  -path /Users/vtenishe/Tmp_AMPS_test -TestScriptsPath Valeriy -ParallelTestExecutionThreads 6  -gcc > runlog 
 
