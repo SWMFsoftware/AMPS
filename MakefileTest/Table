@@ -1840,7 +1840,7 @@ Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 
 Compile=
->>>@echo "test_Earth-geo_t05_compile..." > test_Earth-geo_t05$(TESTEarth-geo-points_t05-REF).diff
+>>>@echo "test_Earth-geo_t05_compile..." > test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
 >>>rm -rf earth_cutoff_rigidity_model
 >>>mkdir earth_cutoff_rigidity_model
