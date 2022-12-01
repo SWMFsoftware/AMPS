@@ -141,6 +141,18 @@ void ParkerModelMoverTest_const_plasma_field() {
   } 
 
   fout.close();
+
+  //cleanup
+  PB::DeleteParticle(ptr);
+
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      Segment->FirstParticleIndex=-1;
+      Segment->tempFirstParticleIndex=-1;
+    }
+  }
+
+  PIC::TimeStepInternal::CheckParticleLists();
 }  
 
 
@@ -278,6 +290,18 @@ void ParkerModelMoverTest_convection() {
   }
   
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoeffcient;
+
+  //cleanup
+  PB::DeleteParticle(ptr);
+
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      Segment->FirstParticleIndex=-1;
+      Segment->tempFirstParticleIndex=-1;
+    }
+  }
+
+  PIC::TimeStepInternal::CheckParticleLists();
 }
 
    
@@ -402,6 +426,18 @@ void FTE_Convectoin() {
   }
 
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoeffcient;
+
+  //cleanup
+  PB::DeleteParticle(ptr); 
+
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      Segment->FirstParticleIndex=-1;
+      Segment->tempFirstParticleIndex=-1;
+    }
+  }
+
+  PIC::TimeStepInternal::CheckParticleLists(); 
 }
 
 
