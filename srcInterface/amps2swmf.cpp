@@ -665,6 +665,7 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
       VertexAllocationManager.PlasmaPressure=true;
       VertexAllocationManager.MagneticFluxFunction=true;
       VertexAllocationManager.PlasmaWaves=true;
+      VertexAllocationManager.ShockLocation=true;
 
 
       VertexAllocationManager.PreviousVertexData.MagneticField=true;
@@ -796,10 +797,15 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
         auto DensityTemporalVariation = [&] () {
           int imin=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;
+          double shock_flag=0.0;
+          cFieldLineVertex *VertexShock=NULL;
 
           for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine]-1;i++,Vertex=Vertex->GetNext()) if ((i>0)&&(i>=imin)) {
             int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
             double rho_new,rho_prev;
+
+            shock_flag=0.0;
+            Vertex->SetDatum(PIC::FieldLine::DatumAtVertexShockLocation,&shock_flag); 
 
             if (MHData_VIB[StateVectorOffset]>=PreviousMinLagrIndex) {
               Vertex->GetDatum(DatumAtVertexPlasmaDensity,&rho_new);
@@ -832,10 +838,19 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
                 t->GetDatum(DatumAtVertexPlasmaDensity,&n);
 
+                VertexShock=Vertex;
                 AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
                 AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=Vector3D::Length(v);
                 AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=n;
               }
+            }
+          }
+
+          if (VertexShock!=NULL) {
+            shock_flag=1.0;
+           
+            for (;VertexShock!=NULL;VertexShock=VertexShock->GetPrev()) {
+              VertexShock->SetDatum(PIC::FieldLine::DatumAtVertexShockLocation,&shock_flag);
             }
           }
         }; 

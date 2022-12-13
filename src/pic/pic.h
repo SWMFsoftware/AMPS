@@ -385,6 +385,10 @@ namespace PIC {
 
         // add this datum to the provided cDatum vector
         if (DatumVector!=NULL) DatumVector->push_back(this);
+
+//        if (doPrint==true) {
+//          exit(__LINE__,__FILE__,"Error: not implemented:: the data output need to be implemented in PIC::Mesh::cDataCenterNode");
+//        }
       }
 
       // constructor is inherited
@@ -528,6 +532,7 @@ namespace PIC {
     extern cDatumTimed    DatumAtVertexParticleFlux_mu_positive,DatumAtVertexParticleFlux_mu_negative;
 
     extern cDatumStored   DatumAtVertexFluence;
+    extern cDatumStored   DatumAtVertexShockLocation;
 
     namespace DatumAtVertexPrevious {
       extern cDatumStored   DatumAtVertexElectricField;
@@ -545,6 +550,7 @@ namespace PIC {
       bool ElectricField,MagneticField,PlasmaVelocity,PlasmaDensity;
       bool PlasmaTemperature,PlasmaPressure,MagneticFluxFunction;
       bool PlasmaWaves,Fluence;
+      bool ShockLocation;
 
       class cPreviousVertexData {
       public:
@@ -564,6 +570,7 @@ namespace PIC {
         ElectricField=false,MagneticField=false,PlasmaVelocity=false,PlasmaDensity=false;
         PlasmaTemperature=false,PlasmaPressure=false,MagneticFluxFunction=false;
         PlasmaWaves=false,Fluence=true;
+        ShockLocation=false;
       }
     };
 

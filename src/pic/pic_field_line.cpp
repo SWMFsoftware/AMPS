@@ -45,6 +45,7 @@ namespace PIC {
     cDatumStored DatumAtVertexPlasmaPressure(1,"\"Plasma pressure [Pa]\"", true);
     cDatumStored DatumAtVertexMagneticFluxFunction(1,"\"MagneticFluxFunction [nT*m]\"", true);
     cDatumStored DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",true);
+    cDatumStored DatumAtVertexShockLocation(1,"\"Shock Location\"",true);
 
     cDatumStored DatumAtVertexPrevious::DatumAtVertexElectricField(3,"\"Ex [V/m]\",\"Ey [V/m]\",\"Ez [V/m]\",",false);
     cDatumStored DatumAtVertexPrevious::DatumAtVertexMagneticField(3,"\"Bx [nT]\",\"By [nT]\",\"Bz [nT]\",",false);
@@ -55,7 +56,6 @@ namespace PIC {
     cDatumStored DatumAtVertexPrevious::DatumAtVertexPlasmaWaves(2,"\"Wave1\",\"Wave2\"",false);
 
     cDatumStored DatumAtVertexFluence(1,"\"Fluence\"", true); 
-
 
     cDatumTimed DatumAtVertexParticleWeight(1,"\"Particle Weight\"",false);
     cDatumTimed DatumAtVertexParticleNumber(1,"\"Particle Number\"",true);
@@ -839,6 +839,7 @@ namespace PIC {
       if (VertexAllocationManager.PlasmaPressure==true)       DatumAtVertexPlasmaPressure.      activate(Offset, &DataStoredAtVertex);
       if (VertexAllocationManager.MagneticFluxFunction==true) DatumAtVertexMagneticFluxFunction.activate(Offset, &DataStoredAtVertex);
       if (VertexAllocationManager.PlasmaWaves==true)          DatumAtVertexPlasmaWaves.         activate(Offset, &DataStoredAtVertex);
+      if (VertexAllocationManager.ShockLocation==true)        DatumAtVertexShockLocation.       activate(Offset, &DataStoredAtVertex);
 
       if (VertexAllocationManager.PreviousVertexData.MagneticField==true)        DatumAtVertexPrevious::DatumAtVertexMagneticField.       activate(Offset, &DataStoredAtVertex);
       if (VertexAllocationManager.PreviousVertexData.ElectricField==true)        DatumAtVertexPrevious::DatumAtVertexElectricField.       activate(Offset, &DataStoredAtVertex);
