@@ -791,14 +791,13 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
       if (AMPS2SWMF::FieldLineUpdateCounter>0) {
         //determine location of shock wave
-        double max_ratio=1.4;
+        double max_ratio=1.2;
         int i;
         cFieldLineVertex *Vertex;
 
         auto DensityTemporalVariation = [&] () {
           int imin=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;
           double shock_flag=0.0;
-          cFieldLineVertex *VertexShock=NULL;
 
           for (i=0,Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex();i<nVertex_B[iImportFieldLine]-1;i++,Vertex=Vertex->GetNext()) if ((i>0)&&(i>=imin)) {
             int StateVectorOffset=(i+(*nVertexMax)*iImportFieldLine)*((*nMHData)+1);
@@ -838,7 +837,6 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
 
                 t->GetDatum(DatumAtVertexPlasmaDensity,&n);
 
-                VertexShock=Vertex;
                 AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegmentShock;
                 AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=Vector3D::Length(v);
                 AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=n;
@@ -846,11 +844,12 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
             }
           }
 
-          if (VertexShock!=NULL) {
+          if (AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock!=-1) {
+            int cnt;
             shock_flag=1.0;
-           
-            for (;VertexShock!=NULL;VertexShock=VertexShock->GetPrev()) {
-              VertexShock->SetDatum(PIC::FieldLine::DatumAtVertexShockLocation,&shock_flag);
+
+            for (Vertex=FieldLinesAll[iImportFieldLine].GetFirstVertex(),cnt=0;cnt<=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;cnt++,Vertex=Vertex->GetNext()) {
+              Vertex->SetDatum(PIC::FieldLine::DatumAtVertexShockLocation,&shock_flag);
             }
           }
         }; 
