@@ -49,24 +49,55 @@ void DxxTest() {
   const bool _fail=false;
 
   bool res=_pass;
+  auto DiffCoeffFunct=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
   
-  //1. constant D_mu_mu 
-  v=1.0E6; 
-  spec=0;
-  FieldLineCoord=1.5;
+  for (int iround=0;iround<4;iround++) {
+    v=1.0E5*pow(10,iround); 
+    spec=0;
+    FieldLineCoord=1.5;
 
-  Segment=PIC::FieldLine::FieldLinesAll[0].GetFirstSegment();  
-  iFieldLine=0; 
+    Segment=PIC::FieldLine::FieldLinesAll[0].GetFirstSegment();  
+    iFieldLine=0; 
 
-  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoefficient_const;
-  SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine); 
+    //constant D_mu_mu
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffusionCoefficient_const;
+    SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine); 
+   
+    double D_mu_mu=1.0; //as defined in DiffusionCoefficient_const() 
+    cout << v <<  "  " << D << "  " << v*v/8.0*(2.0-2.0*2.0/3.0+2.0/5.0)/D_mu_mu  << endl;
 
-  if ((fabs(dDxx_dx)>1.0E-5)||(c=fabs(1.0-D/(v*v/8.0*16.0/15.0))>1.0E-5)) {
-    res=_fail;
+    if ((fabs(dDxx_dx)>1.0E-5)||(c=fabs(1.0-D/(v*v/8.0*16.0/15.0))>1.0E-5)) {
+      res=_fail;
 
-    //debugging:
-    c=v*v/8.0*16.0/15.0;
-    c-=D; 
+      //debugging:
+      c=v*v/8.0*16.0/15.0;
+      c-=D; 
+    }
+
+    //original D_mu_mu
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=DiffCoeffFunct; 
+    SEP::Diffusion::GetDxx(D,dDxx_dx,v,spec,FieldLineCoord,Segment,iFieldLine);
+
+    const int nIntervals=1000000;
+    double dmu=2.0/nIntervals,mu,dD_dmu; 
+    double D_test=0.0,t,v_norm,v_parallel;
+ 
+    for (int i=0;i<nIntervals;i++) {
+      mu=-1.0+dmu*(i+0.5);
+
+      t=1.0-mu*mu;
+      v_norm=v*t;
+      v_parallel=v*mu;
+      DiffCoeffFunct(D_mu_mu,dD_dmu,mu,v_parallel,v_norm,spec,FieldLineCoord,Segment); 
+
+      D_test+=t*t*dmu/D_mu_mu;
+    }
+
+    D_test*=v*v/8.0;
+
+    cout << v << "  " << D << "   " << D_test << endl;
+
+
   }
 }
   

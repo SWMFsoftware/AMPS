@@ -27,6 +27,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "tests.h"
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
 #include "amps2swmf.h"
@@ -557,6 +558,14 @@ void amps_time_step(){
 
     //make the time advance
     static int LastDataOutputFileNumber=0;
+
+    //perform test after the first coupling with the SWMF
+    static bool TestCompleted=false;
+
+    if ((TestCompleted==false)&&(AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==true)) {
+      TestCompleted=true;
+      TestManager();
+    } 
 
 start:
 
