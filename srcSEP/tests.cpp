@@ -95,7 +95,7 @@ void DxxTest() {
 
     D_test*=v*v/8.0;
 
-    cout << v << "  " << D << "   " << D_test << endl;
+    cout << v << "  " << D << "   " << D_test <<  "   "  << fabs(D-D_test)*2.0/(D+D_test) << endl;
 
 
   }

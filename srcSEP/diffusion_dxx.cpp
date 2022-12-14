@@ -41,7 +41,15 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
   double xmin[]={-1.0};
   double xmax[]={1.0};
 
-  D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);  
+  if (v<1.0E6) {     
+    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,DxxInternalNumerics::Integrant,xmin,xmax);
+  } 
+  else if (v<1.0E7) {
+    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+  }
+  else {
+    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,DxxInternalNumerics::Integrant,xmin,xmax);  
+  }
 
   ds=Segment->GetLength();
 
