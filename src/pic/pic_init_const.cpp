@@ -5,7 +5,7 @@
 #include "pic.h"
 
 //int PIC::nTotalSpecies=0;
-int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::nTotalThreadsOpenMP=1;
+_TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::nTotalThreadsOpenMP=1;
 
 
 int PIC::CPU::ThisThread=0,PIC::CPU::nTotalThreads=1;
