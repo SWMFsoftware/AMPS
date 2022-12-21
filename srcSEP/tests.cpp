@@ -22,6 +22,7 @@
 #include "specfunc.h"
 
 #include "tests.h"
+#include "amps2swmf.h"
 
 using namespace std;
 
@@ -257,6 +258,11 @@ void ParkerModelMoverTest_convection() {
   }
 
   for (int ntest=0;ntest<nTotalTests;ntest++) {
+    s0=iSegment+rnd();
+    PB::SetFieldLineCoord(s0,ptr);
+
+    Segment=FL::FieldLinesAll[0].GetSegment(s0);
+
     mu=-1.0+2.0*rnd();
     e=exp(logEmin+rnd()*(logEmax-logEmin));
 
@@ -269,20 +275,8 @@ void ParkerModelMoverTest_convection() {
     PB::SetVParallel(vParallel,ptr);
     PB::SetVNormal(vNorm,ptr);
 
-    s0=iSegment+rnd();
-    PB::SetFieldLineCoord(s0,ptr);
-    
     FL::FieldLinesAll[0].GetCartesian(x0,s0);
     node=PIC::Mesh::mesh->findTreeNode(x0);
-
-    SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
-
-    //check the new particle location: it sould no change 
-    s1=PB::GetFieldLineCoord(ptr);
-    
-    if (s1!=s0) {
-      res=_fail;
-    }
 
     //check the new particle velocity: it sould changes as in Sokolov-2004-AJ
     double p0,p1,p1_theory;
@@ -293,6 +287,27 @@ void ParkerModelMoverTest_convection() {
     vNorm=PB::GetVNormal(ptr); 
     p1=Relativistic::Speed2Momentum(sqrt(vParallel*vParallel+vNorm*vNorm),mass);
 
+    auto v0=Segment->GetBegin();
+    auto v1=Segment->GetEnd();
+    double PlasmaDensity0_old,PlasmaDensity0_new,PlasmaDensity1_old,PlasmaDensity1_new;
+
+    v0->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0_new);  
+    v0->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensity0_old);
+
+    v1->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1_new);           
+    v1->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensity1_old);
+
+    if ((PlasmaDensity1_old!=DensityOld)||(PlasmaDensity0_old!=DensityOld)) {
+      exit(__LINE__,__FILE__,"Error: density is inconsistent");
+    }
+
+    if ((PlasmaDensity1_new!=DensityOld)||(PlasmaDensity0_new!=DensityCurrent)) {
+      exit(__LINE__,__FILE__,"Error: density is inconsistent");
+    }
+
+    ::AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime=0.0;
+    ::AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=dtTotal;
+
     //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
     double w0,w1,d_ln_rho_dt;
 
@@ -301,6 +316,16 @@ void ParkerModelMoverTest_convection() {
 
     d_ln_rho_dt=log((w0*DensityCurrent+w1*DensityOld)/DensityOld)/dtTotal;  
     p1_theory=p0*exp(d_ln_rho_dt*dtTotal/3.0);
+
+    //simulate Parker equation
+    SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node);
+
+    //check the new particle location: it sould no change
+    s1=PB::GetFieldLineCoord(ptr);
+
+    if (s1!=s0) {
+      res=_fail;
+    }
 
     if (fabs(1.0-p1_theory/p1)>1.0E-5) {
       res=_fail;
