@@ -311,6 +311,16 @@ void PIC::CPLR::DATAFILE::Init() {
   PIC::CPLR::DATAFILE::Offset::ElectricField.allocate=true;
   PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
 
+  if ( _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_){
+    PIC::CPLR::DATAFILE::Offset::Current.allocate=true;
+    
+    PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.allocate=true;
+    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.allocate=true;   
+    PIC::CPLR::DATAFILE::Offset::grad_kappaB.allocate=true; 
+  }
+  
   PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.allocate=true;
@@ -321,16 +331,6 @@ void PIC::CPLR::DATAFILE::Init() {
     PIC::CPLR::DATAFILE::Offset::MagneticFieldGradient.allocate=true;
   }
 
-  if ( _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__RELATIVISTIC_GCA_){
-    PIC::CPLR::DATAFILE::Offset::Current.allocate=true;
-  
-    PIC::CPLR::DATAFILE::Offset::b_dot_grad_b.allocate=true;
-    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_b.allocate=true;   
-    PIC::CPLR::DATAFILE::Offset::b_dot_grad_vE.allocate=true;   
-    PIC::CPLR::DATAFILE::Offset::vE_dot_grad_vE.allocate=true;   
-    PIC::CPLR::DATAFILE::Offset::grad_kappaB.allocate=true; 
-    
-  }
 
   if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__DATAFILE_) {
     switch (_PIC_COUPLER_DATAFILE_READER_MODE_) {
@@ -423,8 +423,31 @@ void PIC::CPLR::DATAFILE::Init() {
     nTotalBackgroundVariables+=Offset::PlasmaElectronPressure.nVars;
   }
 
+  if (Offset::MagneticField.allocate==true) {
+    if (Offset::MagneticField.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::MagneticField");
+    
+    Offset::MagneticField.active=true;
+    Offset::MagneticField.RelativeOffset=RelativeOffset;
+
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::MagneticField.nVars*sizeof(double);
+    RelativeOffset+=Offset::MagneticField.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::MagneticField.nVars;
+  }
+
+  if (Offset::ElectricField.allocate==true) {
+    if (Offset::ElectricField.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::ElectricField");
+
+    Offset::ElectricField.active=true;
+    Offset::ElectricField.RelativeOffset=RelativeOffset;
+
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::ElectricField.nVars*sizeof(double);
+    RelativeOffset+=Offset::ElectricField.nVars*sizeof(double);
+    nTotalBackgroundVariables+=Offset::ElectricField.nVars;
+  }
+
+
   if (Offset::Current.allocate==true) {
-    if (Offset::Current.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    if (Offset::Current.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::Current");
     
     Offset::Current.active=true;
     Offset::Current.RelativeOffset=RelativeOffset;
@@ -435,7 +458,7 @@ void PIC::CPLR::DATAFILE::Init() {
   }
 
   if (Offset::b_dot_grad_b.allocate==true) {
-    if (Offset::b_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    if (Offset::b_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::b_dot_grad_b");
     
     Offset::b_dot_grad_b.active=true;
     Offset::b_dot_grad_b.RelativeOffset=RelativeOffset;
@@ -446,7 +469,7 @@ void PIC::CPLR::DATAFILE::Init() {
   }
   
   if (Offset::vE_dot_grad_b.allocate==true) {
-    if (Offset::vE_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    if (Offset::vE_dot_grad_b.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::vE_dot_grad_b");
     
     Offset::vE_dot_grad_b.active=true;
     Offset::vE_dot_grad_b.RelativeOffset=RelativeOffset;
@@ -457,7 +480,7 @@ void PIC::CPLR::DATAFILE::Init() {
   }
 
   if (Offset::b_dot_grad_vE.allocate==true) {
-    if (Offset::b_dot_grad_vE.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    if (Offset::b_dot_grad_vE.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::b_dot_grad_vE");
     
     Offset::b_dot_grad_vE.active=true;
     Offset::b_dot_grad_vE.RelativeOffset=RelativeOffset;
@@ -479,7 +502,7 @@ void PIC::CPLR::DATAFILE::Init() {
   }
 
   if (Offset::grad_kappaB.allocate==true) {
-    if (Offset::grad_kappaB.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
+    if (Offset::grad_kappaB.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::grad_kappaB");
     
     Offset::grad_kappaB.active=true;
     Offset::grad_kappaB.RelativeOffset=RelativeOffset;
@@ -487,29 +510,6 @@ void PIC::CPLR::DATAFILE::Init() {
     PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::grad_kappaB.nVars*sizeof(double);
     RelativeOffset+=Offset::grad_kappaB.nVars*sizeof(double);
     nTotalBackgroundVariables+=Offset::grad_kappaB.nVars;
-  }
-
-
-  if (Offset::MagneticField.allocate==true) {
-    if (Offset::MagneticField.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::MagneticField");
-
-    Offset::MagneticField.active=true;
-    Offset::MagneticField.RelativeOffset=RelativeOffset;
-
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::MagneticField.nVars*sizeof(double);
-    RelativeOffset+=Offset::MagneticField.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::MagneticField.nVars;
-  }
-
-  if (Offset::ElectricField.allocate==true) {
-    if (Offset::ElectricField.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::ElectricField");
-
-    Offset::ElectricField.active=true;
-    Offset::ElectricField.RelativeOffset=RelativeOffset;
-
-    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::ElectricField.nVars*sizeof(double);
-    RelativeOffset+=Offset::ElectricField.nVars*sizeof(double);
-    nTotalBackgroundVariables+=Offset::ElectricField.nVars;
   }
 
 
@@ -789,6 +789,7 @@ void PIC::CPLR::DATAFILE::PrintVariableList(FILE* fout,int DataSetNumber) {
   }
 
   if (Offset::PlasmaElectronPressure.active) fprintf(fout,", %s",Offset::PlasmaElectronPressure.VarList);
+
   if (Offset::MagneticField.active) fprintf(fout,", %s",Offset::MagneticField.VarList);
   if (Offset::ElectricField.active) fprintf(fout,", %s",Offset::ElectricField.VarList);
   if (Offset::Current.active) fprintf(fout,", %s",Offset::Current.VarList);
