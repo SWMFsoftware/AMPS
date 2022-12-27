@@ -4069,15 +4069,36 @@ void collectNeibCenterNodes_3D_deleteTreeNode(cTreeNodeAMR<cBlockAMR> *startNode
 
 class cFraction {
 public:
-  long int Nominator,Denominator;
+  int Nominator,Denominator;
 
   _TARGET_HOST_ _TARGET_DEVICE_
   cFraction () {
     Nominator=0.0,Denominator=1.0;
   }
 
+  ////implementation of the Euclidean algorithm
+  int gcd(int a , int b) { 
+    if(b==0) return a;
+    a%=b;
+    return gcd(b,a);
+  }
+
   _TARGET_HOST_ _TARGET_DEVICE_
   inline void Simplify() {
+
+    int  a=abs(Nominator);
+    int  b=Denominator;
+
+    //implementation of the Euclidean algorithm (also implemented in std::__gcd(a,b))
+    while(b) a %= b, swap(a, b);
+
+    Nominator/=a;
+    Denominator/=a;
+
+
+
+
+    /*
     int n,t;
 
     static const int nPrimeNumberList=168;
@@ -4096,6 +4117,7 @@ public:
 
       if ((Nominator<t)||(Denominator<t)) break;
     }
+*/
   }
 
 
