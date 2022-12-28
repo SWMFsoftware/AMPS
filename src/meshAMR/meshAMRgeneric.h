@@ -4343,42 +4343,300 @@ void AddNodeNeighborList(cTreeNodeAMR<cBlockAMR>* neibNode,cNeibDescriptor *Neib
 }
 
 
+
 _TARGET_HOST_ _TARGET_DEVICE_ 
 void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
   int ioffset,joffset,koffset;
 
-
-
-
-//#####################  DEBUG #################
-
-
-static long int nCallCounter=0;
-
-++nCallCounter;
-
-/*
-if (startNode->Temp_ID==77) {
-// if (nCallCounter==34) {
-  *DiagnospticMessageStream << __LINE__ << std::endl;
-}
-*/
-
-//################### END DEBUG  #############3
-
-
+  static long int nCallCounter=0;
+  ++nCallCounter;
 
   //the block cannot be allocated twice AND the block's allocation must be permitted AND the block need to be actively used in calcualtions
   if ((AllowBlockAllocation==false)||(startNode->block!=NULL)||(startNode->IsUsedInCalculationFlag==false)) return;
   nMeshModificationCounter++,meshModifiedFlag=true,meshModifiedFlag_CountMeshElements=true;
 
+  //create tables that connects neib block's nodes 
+  class cNodeCommectionMap {
+  public:
+    int i,j,k,iNeib,jNeib,kNeib;
+  };
+
+  static vector<cNodeCommectionMap> FaceConnectionMap_CenterNode[6],EdgeConnectionMap_CenterNode[12],CornerConnectionMap_CenterNode[8];
+  static vector<cNodeCommectionMap> FaceConnectionMap_CornerNode[6],EdgeConnectionMap_CornerNode[12],CornerConnectionMap_CornerNode[8];
+
+  static bool init_flag=false;
+
+  if (init_flag==false) {
+    int ioffset,joffset,koffset;
+    i,j,k;
+
+    init_flag=true;
+
+    auto AddNewNeibCenterNodeData = [] (int ioffset,int joffset,int koffset,vector<cNodeCommectionMap>& ConnectionMap) {
+      int i,j,k;
+    
+      for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+        if ((i+ioffset<-_GHOST_CELLS_X_)||(i+ioffset>=_BLOCK_CELLS_X_+_GHOST_CELLS_X_)) continue;  
+
+        for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) { 
+          if ((j+joffset<-_GHOST_CELLS_Y_)||(j+joffset>=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_)) continue;
+
+          for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) { 
+            if ((k+koffset<-_GHOST_CELLS_Z_)||(k+koffset>=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_)) continue;
+
+            cNodeCommectionMap t;
+
+            t.iNeib=i,t.jNeib=j,t.kNeib=k; 
+            t.i=i+ioffset;
+            t.j=j+joffset;
+            t.k=k+koffset;
+
+            ConnectionMap.push_back(t);
+          }
+        }
+     }
+   };
+
+    auto AddNewNeibCornerNodeData = [] (int ioffset,int joffset,int koffset,vector<cNodeCommectionMap>& ConnectionMap) {
+      int i,j,k;
+
+      for (i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+        if ((i+ioffset<-_GHOST_CELLS_X_)||(i+ioffset>_BLOCK_CELLS_X_+_GHOST_CELLS_X_)) continue;
+
+        for (j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+          if ((j+joffset<-_GHOST_CELLS_Y_)||(j+joffset>_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_)) continue;
+
+          for (k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+            if ((k+koffset<-_GHOST_CELLS_Z_)||(k+koffset>_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_)) continue;
+
+            cNodeCommectionMap t;
+
+            t.iNeib=i,t.jNeib=j,t.kNeib=k;
+            t.i=i+ioffset;
+            t.j=j+joffset;
+            t.k=k+koffset;
+
+            ConnectionMap.push_back(t);
+          }
+        }
+     }
+   };
+
+
+
+    //connection through faces 
+    int FaceNeibOffsetTable[6][3]={{-_BLOCK_CELLS_X_,0,0},{_BLOCK_CELLS_X_,0,0}, 
+                                   {0,-_BLOCK_CELLS_Y_,0},{0,_BLOCK_CELLS_Y_,0},  
+                                   {0,0,-_BLOCK_CELLS_Z_},{0,0,_BLOCK_CELLS_Z_}};
+ 
+    for (int iface=0;iface<6;iface++) {
+      AddNewNeibCenterNodeData(FaceNeibOffsetTable[iface][0],FaceNeibOffsetTable[iface][1],FaceNeibOffsetTable[iface][2],FaceConnectionMap_CenterNode[iface]);
+      AddNewNeibCornerNodeData(FaceNeibOffsetTable[iface][0],FaceNeibOffsetTable[iface][1],FaceNeibOffsetTable[iface][2],FaceConnectionMap_CornerNode[iface]);
+    }
+
+    //connection throught edges
+    int EdgeNeibOffsetTable[12][3]={{0,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{0,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{0,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{0,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},
+                                    {-_BLOCK_CELLS_X_,0,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,0,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,0,_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,0,_BLOCK_CELLS_Z_},
+                                    {-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,0},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,0},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,0},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,0}};
+ 
+   for (int iedge=0;iedge<12;iedge++) {
+     AddNewNeibCenterNodeData(EdgeNeibOffsetTable[iedge][0],EdgeNeibOffsetTable[iedge][1],EdgeNeibOffsetTable[iedge][2],EdgeConnectionMap_CenterNode[iedge]);      
+     AddNewNeibCornerNodeData(EdgeNeibOffsetTable[iedge][0],EdgeNeibOffsetTable[iedge][1],EdgeNeibOffsetTable[iedge][2],EdgeConnectionMap_CornerNode[iedge]);
+   }
+
+   //connection through corners 
+   int CornerNeibOffsetTable[8][3]={{-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
+                                    {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
+                                    {-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},
+                                    {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_}}; 
+
+   for (int icorner=0;icorner<8;icorner++) {
+     AddNewNeibCenterNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerConnectionMap_CenterNode[icorner]); 
+     AddNewNeibCornerNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerConnectionMap_CornerNode[icorner]);
+   } 
+  }
+
+
+  //allocate the new block
+  startNode->block=blocks.newElement();
+  startNode->block->SetRefinmentLevel(startNode->RefinmentLevel);
+
+  //search face neib blocks
+  auto SearchCommentionCenterNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,vector<cNodeCommectionMap>& ConnectionMap) {
+    long int nd;
+    cCenterNode *CenerNode;
+
+    if (Neib==NULL) return;
+    if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) return;
+
+    for (auto& t : ConnectionMap) {
+      nd=getCenterNodeLocalNumber(t.iNeib,t.jNeib,t.kNeib);
+      CenerNode=Neib->block->GetCenterNode(nd);
+
+      if (CenerNode!=NULL) {
+        nd=getCenterNodeLocalNumber(t.i,t.j,t.k);
+        startNode->block->SetCenterNode(CenerNode,nd);
+      }
+    }
+  };
+
+
+  auto SearchCommentionCornerNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,vector<cNodeCommectionMap>& ConnectionMap) {
+    long int nd;
+    cCornerNode *CornerNode;
+
+    if (Neib==NULL) return;
+    if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) return;
+
+    for (auto& t : ConnectionMap) {
+      nd=getCornerNodeLocalNumber(t.iNeib,t.jNeib,t.kNeib);
+      CornerNode=Neib->block->GetCornerNode(nd);
+
+      if (CornerNode!=NULL) {
+        nd=getCornerNodeLocalNumber(t.i,t.j,t.k);
+        startNode->block->SetCornerNode(CornerNode,nd);
+      }
+    }
+  };
+
+
+  for (int iface=0;iface<6;iface++) {
+    cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibFace(iface,0,0,this);
+
+    if (Neib==NULL) continue;
+    if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) continue;
+
+    SearchCommentionCenterNodeMap(Neib,FaceConnectionMap_CenterNode[iface]);
+    SearchCommentionCornerNodeMap(Neib,FaceConnectionMap_CornerNode[iface]);
+  }
+
+
+  for (int iedge=0;iedge<12;iedge++) {
+    cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibEdge(iedge,0,this);
+
+    if (Neib==NULL) continue;
+    if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) continue;
+
+    SearchCommentionCenterNodeMap(Neib,EdgeConnectionMap_CenterNode[iedge]);
+    SearchCommentionCornerNodeMap(Neib,EdgeConnectionMap_CornerNode[iedge]);
+  }
+
+  for (int icorner=0;icorner<8;icorner++) {
+    cTreeNodeAMR<cBlockAMR> *Neib=startNode->GetNeibCorner(icorner,this); 
+
+    if (Neib==NULL) continue;
+    if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) continue;
+
+    SearchCommentionCenterNodeMap(Neib,CornerConnectionMap_CenterNode[icorner]);
+    SearchCommentionCornerNodeMap(Neib,CornerConnectionMap_CornerNode[icorner]);
+  }
+
+  //allocate center nodes that are inside the block or can not be accesses throught the neighbors
+  for (int  i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+    double x[3],dxBlock[3],*xminBlock=startNode->xmin,*xmaxBlock=startNode->xmax;
+    int idim;
+    bool OutsideDomainFlag;
+
+    dxBlock[0]=(xmaxBlock[0]-xminBlock[0])/_BLOCK_CELLS_X_;
+    if (_MESH_DIMENSION_>1) dxBlock[1]=(xmaxBlock[1]-xminBlock[1])/_BLOCK_CELLS_Y_;
+    if (_MESH_DIMENSION_>2) dxBlock[2]=(xmaxBlock[2]-xminBlock[2])/_BLOCK_CELLS_Z_;
+
+    for (int j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+      for (int  k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+        long int nd=getCenterNodeLocalNumber(i,j,k);
+        auto  CenterNode=startNode->block->GetCenterNode(nd);
+
+        if (CenterNode==NULL) {
+          //generate the coordinates of the new node
+          x[0]=xminBlock[0]+(i+0.5)*dxBlock[0];
+          if (_MESH_DIMENSION_>1) x[1]=xminBlock[1]+(j+0.5)*dxBlock[1];
+          if (_MESH_DIMENSION_>2) x[2]=xminBlock[2]+(k+0.5)*dxBlock[2];
+
+          //check if the node is within the domain
+          for (OutsideDomainFlag=false,idim=0;idim<_MESH_DIMENSION_;idim++) {
+            if ((x[idim]<xGlobalMin[idim]-EPS)||(xGlobalMax[idim]+EPS<x[idim])) {
+              OutsideDomainFlag=true;
+              break;
+            }
+          }
+
+          if ((OutsideDomainFlag==true)&&(PopulateOutsideDomainNodesFlag==false)) {
+            startNode->block->SetCenterNode(NULL,nd);
+            continue;
+          }
+
+          CenterNode=CenterNodes.newElement();
+          CenterNode->SetX(x);
+          CenterNode->Measure=-1.0;
+          CenterNode->nodeDescriptor.nNodeConnections=0;
+          startNode->block->SetCenterNode(CenterNode,nd);
+        }
+      }
+    }
+  }
+
+  //allocated corner nodes that are inside the block or can not ne accesses via neighbors
+  for (int  i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
+    double x[3],dxBlock[3],*xminBlock=startNode->xmin,*xmaxBlock=startNode->xmax;
+    int idim;
+    bool OutsideDomainFlag;
+
+    dxBlock[0]=(xmaxBlock[0]-xminBlock[0])/_BLOCK_CELLS_X_;
+    if (_MESH_DIMENSION_>1) dxBlock[1]=(xmaxBlock[1]-xminBlock[1])/_BLOCK_CELLS_Y_;
+    if (_MESH_DIMENSION_>2) dxBlock[2]=(xmaxBlock[2]-xminBlock[2])/_BLOCK_CELLS_Z_;
+
+    for (int j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
+      for (int  k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
+        long int nd=getCornerNodeLocalNumber(i,j,k);
+        auto  CornerNode=startNode->block->GetCornerNode(nd);
+
+
+        if (CornerNode==NULL) {
+          //generate the coordinates ofthe new node
+          x[0]=xminBlock[0]+i*dxBlock[0];
+          if (_MESH_DIMENSION_>1) x[1]=xminBlock[1]+j*dxBlock[1];
+          if (_MESH_DIMENSION_>2) x[2]=xminBlock[2]+k*dxBlock[2];
+
+          //check if the node is within the domain
+          for (OutsideDomainFlag=false,idim=0;idim<_MESH_DIMENSION_;idim++) if ((x[idim]<xGlobalMin[idim]-EPS)||(xGlobalMax[idim]+EPS<x[idim])) {
+            OutsideDomainFlag=true;
+            break;
+          }
+
+          if ((OutsideDomainFlag==true)&&(PopulateOutsideDomainNodesFlag==false)) {
+            startNode->block->SetCornerNode(NULL,nd);
+            continue;
+          }
+
+          CornerNode=CornerNodes.newElement();
+          CornerNode->SetX(x);
+          CornerNode->nodeDescriptor.nNodeConnections=0;
+
+          startNode->block->SetCornerNode(CornerNode,nd);
+          CornerNode->incrementConnectionCounter();
+        }
+      }
+    }
+  }
+}
+
+
+_TARGET_HOST_ _TARGET_DEVICE_ 
+void AllocateBlock_implementation_with_fractions(cTreeNodeAMR<cBlockAMR> *startNode) {
+  int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
+  int ioffset,joffset,koffset;
+
+  static long int nCallCounter=0;  
+  ++nCallCounter;
+
+  //the block cannot be allocated twice AND the block's allocation must be permitted AND the block need to be actively used in calcualtions
+  if ((AllowBlockAllocation==false)||(startNode->block!=NULL)||(startNode->IsUsedInCalculationFlag==false)) return;
+  nMeshModificationCounter++,meshModifiedFlag=true,meshModifiedFlag_CountMeshElements=true;
 
   //collect all nodes that can intersect 'startNode'
   const int nNeibListMax=1250;
   int nNeibListCounter=0,nlist;
-
-
 
   cNeibDescriptor *neibptr; //,NeibList[nNeibListMax];
   array_1d<cNeibDescriptor> NeibList(nNeibListMax);
@@ -4421,19 +4679,7 @@ if (startNode->Temp_ID==77) {
   }
 
   //determine the node to start the search
-//  while (searchNode->upNode!=NULL) {
-
   for (int nSearchLevelUp=0;(nSearchLevelUp<StartSearchLevelOffset)&&(searchNode->upNode!=NULL);nSearchLevelUp++) {
-//    nConditionsMet=0;
-
-    /*
-    if (_BLOCK_CELLS_X_*(1<<(startNode->RefinmentLevel-searchNode->RefinmentLevel))>_BLOCK_CELLS_X_+6*_GHOST_CELLS_X_) nConditionsMet++;
-    if ((_MESH_DIMENSION_<2)||(_BLOCK_CELLS_Y_*(1<<(startNode->RefinmentLevel-searchNode->RefinmentLevel))>_BLOCK_CELLS_Y_+6*_GHOST_CELLS_Y_)) nConditionsMet++;
-    if ((_MESH_DIMENSION_<3)||(_BLOCK_CELLS_Z_*(1<<(startNode->RefinmentLevel-searchNode->RefinmentLevel))>_BLOCK_CELLS_Z_+6*_GHOST_CELLS_Z_)) nConditionsMet++;
-
-    if (nConditionsMet==3) break;
-*/
-
     t=searchNode;
     searchNode=searchNode->upNode;
 
@@ -4446,9 +4692,6 @@ if (startNode->Temp_ID==77) {
 
     SearchNodeSize*=2;
   }
-
-
-//  double xSearchNode[_MESH_DIMENSION_];
 
 
   array_1d<double> xSearchNode(_MESH_DIMENSION_);
@@ -4490,175 +4733,6 @@ if (startNode->Temp_ID==77) {
   }
 
 
-
-  /*
-  //add the upNode to the list
-  cTreeNodeAMR<cBlockAMR> *upNode=startNode->upNode;
-
-  if (upNode!=NULL) if (upNode->block!=NULL) {
-    for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (upNode->downNode[nDownNode]==startNode) break;
-
-    if (nDownNode==1<<_MESH_DIMENSION_) exit(__LINE__,__FILE__,"Error: the mesh is inconsistent");
-
-    k=nDownNode/4;
-    nDownNode-=4*k;
-
-    j=nDownNode/2;
-    nDownNode-=2*j;
-
-    i=nDownNode;
-
-    NeibList[nNeibListCounter].iOffset=-2*i*_BLOCK_CELLS_X_;
-    NeibList[nNeibListCounter].jOffset=-2*j*_BLOCK_CELLS_Y_;
-    NeibList[nNeibListCounter].kOffset=-2*k*_BLOCK_CELLS_Z_;
-    NeibList[nNeibListCounter].rLevelStep=4;
-    NeibList[nNeibListCounter].node=upNode;
-    ++nNeibListCounter;
-  }
-
-  //add the down nodes to the list
-  for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) if (startNode->downNode[nDownNode]!=NULL) if (startNode->downNode[nDownNode]->block!=NULL) {
-    nDownNodeTemp=nDownNode;
-    k=nDownNodeTemp/4;
-    nDownNodeTemp-=4*k;
-
-    j=nDownNodeTemp/2;
-    nDownNodeTemp-=2*j;
-
-    i=nDownNodeTemp;
-
-    NeibList[nNeibListCounter].iOffset=i*_BLOCK_CELLS_X_;
-    NeibList[nNeibListCounter].jOffset=j*_BLOCK_CELLS_Y_;
-    NeibList[nNeibListCounter].kOffset=k*_BLOCK_CELLS_Z_;
-    NeibList[nNeibListCounter].rLevelStep=1;
-    NeibList[nNeibListCounter].node=startNode->downNode[nDownNode];
-    ++nNeibListCounter;
-  }
-
-  //add neighbors to the list
-  int iNeibNode,jNeibNode,kNeibNode;
-  cTreeNodeAMR<cBlockAMR> *neibNode;
-  bool found;
-
-#if _MESH_DIMENSION_ == 3
-  const int iNeibNodeMin=-1,iNeibNodeMax=1,jNeibNodeMin=-1,jNeibNodeMax=1,kNeibNodeMin=-1,kNeibNodeMax=1;
-#elif _MESH_DIMENSION_ == 2
-  const int iNeibNodeMin=-1,iNeibNodeMax=1,jNeibNodeMin=-1,jNeibNodeMax=1,kNeibNodeMin=0,kNeibNodeMax=0;
-#elif _MESH_DIMENSION_ == 1
-  const int iNeibNodeMin=-1,iNeibNodeMax=1,jNeibNodeMin=0,jNeibNodeMax=0,kNeibNodeMin=0,kNeibNodeMax=0;
-#endif
-
-  for (kNeibNode=kNeibNodeMin;kNeibNode<=kNeibNodeMax;kNeibNode++) {
-    for (jNeibNode=jNeibNodeMin;jNeibNode<=jNeibNodeMax;jNeibNode++) {
-      for (iNeibNode=iNeibNodeMin;iNeibNode<=iNeibNodeMax;iNeibNode++) if (abs(iNeibNode)+abs(jNeibNode)+abs(kNeibNode)!=0) if ((neibNode=getNeibNode(iNeibNode,jNeibNode,kNeibNode,startNode))!=NULL) {
-
-        //check if 'neibNode' is not in the list already
-        for (found=false,i=0;i<nNeibListCounter;i++) if (NeibList[i].node==neibNode) {
-          found=true;
-          break;
-        }
-
-        //add the 'neibNode' to the list
-        if (found==false) {
-          if (neibNode->RefinmentLevel==startNode->RefinmentLevel) {
-            if (neibNode->block!=NULL) {
-              NeibList[nNeibListCounter].iOffset=2*iNeibNode*_BLOCK_CELLS_X_;
-              NeibList[nNeibListCounter].jOffset=2*jNeibNode*_BLOCK_CELLS_Y_;
-              NeibList[nNeibListCounter].kOffset=2*kNeibNode*_BLOCK_CELLS_Z_;
-              NeibList[nNeibListCounter].rLevelStep=2;
-              NeibList[nNeibListCounter].node=neibNode;
-              ++nNeibListCounter;
-              if (nNeibListCounter>=nNeibListMax) exit(__LINE__,__FILE__,"Error: nNeibListCounter exeeds nNeibListMax -> inxrease the value of nNeibListMax");
-            }
-          }
-          else if (neibNode->RefinmentLevel==startNode->RefinmentLevel+1) {
-            upNode=neibNode->upNode;
-            if (upNode==NULL) continue;
-
-            for (k=0;k<=kNeibNodeMax;k++) { //if ((kNeibNode==0) ||((kNeibNode==-1)&&(k==1)) || ((kNeibNode==1)&&(k==0)) ) {
-              for (j=0;j<=jNeibNodeMax;j++) { //if ((jNeibNode==0) ||((jNeibNode==-1)&&(j==1)) || ((jNeibNode==1)&&(j==0)) ) {
-                for (i=0;i<=iNeibNodeMax;i++) { //if ((iNeibNode==0) ||((iNeibNode==-1)&&(i==1)) || ((iNeibNode==1)&&(i==0)) ) {
-                  if (upNode->downNode[i+2*(j+2*k)]!=NULL) if (upNode->downNode[i+2*(j+2*k)]->block!=NULL) {
-                    NeibList[nNeibListCounter].iOffset=_BLOCK_CELLS_X_*(i+2*iNeibNode);
-                    NeibList[nNeibListCounter].jOffset=_BLOCK_CELLS_Y_*(j+2*jNeibNode);
-                    NeibList[nNeibListCounter].kOffset=_BLOCK_CELLS_Z_*(k+2*kNeibNode);
-                    NeibList[nNeibListCounter].rLevelStep=1;
-                    NeibList[nNeibListCounter].node=upNode->downNode[i+2*(j+2*k)];
-                    ++nNeibListCounter;
-                    if (nNeibListCounter>=nNeibListMax) exit(__LINE__,__FILE__,"Error: nNeibListCounter exeeds nNeibListMax -> inxrease the value of nNeibListMax");
-                  }
-
-                }
-              }
-            }
-
-          }
-          else if (neibNode->RefinmentLevel==startNode->RefinmentLevel-1) {
-            //find all blocks with the lower resolution level that can intersect 'startNode'
-            //1. find the coordinates and offset of 'startNode' in 'startNode->upNode'
-            //2. Go thought all neib's of 'startNode->upNode' and recover all its neib's that have the same resolution level
-            //3. Add to the list those of the neib's that can intersect 'startNode'
-
-            int nIntersection,iStartNodeOffset=-1,jStartNodeOffset=-1,kStartNodeOffset=-1;
-
-            upNode=startNode->upNode;
-            if (upNode==NULL) continue;
-
-            for (k=0;k<=kNeibNodeMax;k++) for (j=0;j<=jNeibNodeMax;j++) for (i=0;i<=iNeibNodeMax;i++) {
-              nDownNode=i+2*(j+2*k);
-
-              if (upNode->downNode[nDownNode]==startNode) {
-                iStartNodeOffset=-2*i*_BLOCK_CELLS_X_;
-                jStartNodeOffset=-2*j*_BLOCK_CELLS_Y_;
-                kStartNodeOffset=-2*k*_BLOCK_CELLS_Z_;
-                break;
-              }
-            }
-
-            if (iStartNodeOffset==-1) exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
-
-            for (k=kNeibNodeMin;k<=kNeibNodeMax;k++) {
-               for (j=jNeibNodeMin;j<=jNeibNodeMax;j++) {
-                 for (i=iNeibNodeMin;i<=iNeibNodeMax;i++) if (abs(i)+abs(j)+abs(k)!=0) if ((neibNode=getNeibNode(i,j,k,upNode))!=NULL) if (neibNode->block!=NULL) {
-                   if (neibNode->RefinmentLevel==startNode->RefinmentLevel-1) {
-                     nIntersection=0;
-                     ioffset=4*i*_BLOCK_CELLS_X_+iStartNodeOffset;
-                     joffset=4*j*_BLOCK_CELLS_Y_+jStartNodeOffset;
-                     koffset=4*k*_BLOCK_CELLS_Z_+kStartNodeOffset;
-
- //                    if ((ioffset==0)||(ioffset==-4*_BLOCK_CELLS_X_)||(ioffset==2*_BLOCK_CELLS_X_)||(ioffset==-2*_BLOCK_CELLS_X_)) nIntersection++;
- //                    if ((joffset==0)||(joffset==-4*_BLOCK_CELLS_Y_)||(joffset==2*_BLOCK_CELLS_Y_)||(joffset==-2*_BLOCK_CELLS_Y_)) nIntersection++;
- //                    if ((koffset==0)||(koffset==-4*_BLOCK_CELLS_Z_)||(koffset==2*_BLOCK_CELLS_Z_)||(koffset==-2*_BLOCK_CELLS_Z_)) nIntersection++;
-
- //                    if (nIntersection==3) {
-                       //add the block to the list
-                       NeibList[nNeibListCounter].iOffset=ioffset;
-                       NeibList[nNeibListCounter].jOffset=joffset;
-                       NeibList[nNeibListCounter].kOffset=koffset;
-                       NeibList[nNeibListCounter].rLevelStep=4;
-                       NeibList[nNeibListCounter].node=neibNode;
-                       ++nNeibListCounter;
-                       if (nNeibListCounter>=nNeibListMax) exit(__LINE__,__FILE__,"Error: nNeibListCounter exeeds nNeibListMax -> inxrease the value of nNeibListMax");
-//                     }
-                   }
-
-                 }
-               }
-            }
-
-
-          }
-          else exit(__LINE__,__FILE__,"Error: the mesh is not consistent");
-
-        }
-
-      }
-    }
-  }
-
-
-
-*/
   if (nNeibListCounter>=nNeibListMax) exit(__LINE__,__FILE__,"Error: nNeibListCounter exeeds nNeibListMax -> inxrease the value of nNeibListMax");
 
 
@@ -4690,14 +4764,10 @@ if (startNode->Temp_ID==77) {
 #endif
 
   long int nd;
-//  cCornerNode *CornerNodeMap[1+iCornerMax-iCornerMin][1+jCornerMax-jCornerMin][1+kCornerMax-kCornerMin],*ptrCornerNode=NULL;
-
   cCornerNode *ptrCornerNode=NULL;
   array_3d<cCornerNode *>CornerNodeMap(1+iCornerMax-iCornerMin,1+jCornerMax-jCornerMin,1+kCornerMax-kCornerMin);
 
-//  for (k=0;k<1+kCornerMax-kCornerMin;k++) for (j=0;j<1+jCornerMax-jCornerMin;j++) for (i=0;i<1+iCornerMax-iCornerMin;i++) CornerNodeMap[i][j][k]=NULL;
-
-CornerNodeMap=NULL;
+  CornerNodeMap=NULL;
 
   for (nlist=0;nlist<nNeibListCounter;nlist++) {
     neibptr=NeibList.get_data_ptr()+nlist;
@@ -4789,10 +4859,6 @@ CornerNodeMap=NULL;
   static const int jCenterMin=0,jCenterMax=0;
   static const int kCenterMin=0,kCenterMax=0;
 #endif
-
-  //cCenterNode *CenterNodeMap[1+iCenterMax-iCenterMin][1+jCenterMax-jCenterMin][1+kCenterMax-kCenterMin],*ptrCenterNode;
-
-  //for (k=0;k<1+kCenterMax-kCenterMin;k++) for (j=0;j<1+jCenterMax-jCenterMin;j++) for (i=0;i<1+iCenterMax-iCenterMin;i++) CenterNodeMap[i][j][k]=NULL;
 
   cCenterNode *ptrCenterNode;
   array_3d<cCenterNode*> CenterNodeMap(1+iCenterMax-iCenterMin,1+jCenterMax-jCenterMin,1+kCenterMax-kCenterMin);   
