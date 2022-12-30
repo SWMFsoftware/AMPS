@@ -4447,13 +4447,13 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 
    //connection through corners 
    int CornerNeibOffsetTable[8][3]={{-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
-                                    {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
+                                    {-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
                                     {-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},
-                                    {_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_}}; 
+                                    {-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_}};
 
    for (int icorner=0;icorner<8;icorner++) {
-     AddNewNeibCenterNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerConnectionMap_CenterNode[icorner]); 
-     AddNewNeibCornerNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][0],CornerConnectionMap_CornerNode[icorner]);
+     AddNewNeibCenterNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][1],CornerNeibOffsetTable[icorner][2],CornerConnectionMap_CenterNode[icorner]); 
+     AddNewNeibCornerNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][1],CornerNeibOffsetTable[icorner][2],CornerConnectionMap_CornerNode[icorner]);
    } 
   }
 
@@ -4476,7 +4476,10 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 
       if (CenerNode!=NULL) {
         nd=getCenterNodeLocalNumber(t.i,t.j,t.k);
+        if (startNode->block->GetCenterNode(nd)!=NULL) continue;
+
         startNode->block->SetCenterNode(CenerNode,nd);
+        CenerNode->incrementConnectionCounter();
       }
     }
   };
@@ -4495,7 +4498,10 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
 
       if (CornerNode!=NULL) {
         nd=getCornerNodeLocalNumber(t.i,t.j,t.k);
+        if (startNode->block->GetCornerNode(nd)!=NULL) continue;
+
         startNode->block->SetCornerNode(CornerNode,nd);
+        CornerNode->incrementConnectionCounter();
       }
     }
   };
@@ -4570,7 +4576,9 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
           CenterNode->SetX(x);
           CenterNode->Measure=-1.0;
           CenterNode->nodeDescriptor.nNodeConnections=0;
+
           startNode->block->SetCenterNode(CenterNode,nd);
+          CenterNode->incrementConnectionCounter();
         }
       }
     }
