@@ -43,6 +43,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   if ((ParticleDataBuffer!=NULL)||(MaxNPart!=0)) exit(__LINE__,__FILE__,"Reallocation of the particle data buffer");
   if (sizeof(byte)!=1) exit(__LINE__,__FILE__,"The size of 'byte' is diferent from 1");
   if (BufrerLength<=0) exit(__LINE__,__FILE__,"BufrerLength is less that zero");
+  if (ParticleDataLength==0) exit(__LINE__,__FILE__,"Error: the particle basic offsets are not initialized");
 
   //reserve space for optional parameters
   if (OptionalParticleFieldAllocationManager.MomentumParallelNormal==true) {
@@ -57,6 +58,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
   //allocate the memory for the buffer
   MaxNPart=BufrerLength;
+  PIC::ParticleBuffer::ParticleDataLength=8*(1+PIC::ParticleBuffer::ParticleDataLength/8);
 //  ParticleDataBuffer=(PIC::ParticleBuffer::byte*) malloc(ParticleDataLength*MaxNPart);
 
 //  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
@@ -68,8 +70,7 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
   else {
     switch (_ALIGN_STATE_VECTORS_) {
     case _ON_ :
-      ParticleDataLength=64*(1+(ParticleDataLength/64));
-      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(64,ParticleDataLength*MaxNPart));
+      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(_ALIGN_STATE_VECTORS_BASE_,ParticleDataLength*MaxNPart));
       break;
 
     default:
