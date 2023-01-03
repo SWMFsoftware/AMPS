@@ -33,7 +33,7 @@
 #include <sstream>
 
 
-#include "picParticleDataMacro.h"
+
 
 #include "logger.h"
 
@@ -2075,8 +2075,7 @@ void DeleteAttachedParticles();
 
     //get particle data offset (pass next ans prev)
     inline int GetParticleDataOffset(long int ptr) {
- //     return _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_+ptr*ParticleDataLength; 
-      return _PIC_PARTICLE_DATA__VELOCITY_OFFSET_+ptr*ParticleDataLength;
+      return _PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_+ptr*ParticleDataLength; 
     }
 
     //check the total particles number
@@ -3035,7 +3034,6 @@ void DeleteAttachedParticles();
       t|=0b1000'0000;
 
       *((unsigned char*)(ParticleDataStart+_PIC_PARTICLE_DATA__SPECIES_ID_OFFSET_))=t;
-
     }
 
     _TARGET_HOST_ _TARGET_DEVICE_

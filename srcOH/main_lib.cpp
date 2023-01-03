@@ -238,7 +238,6 @@ void init_from_restart(){
 
 
 void amps_init_mesh(){
-  InitBasicParticleOffset();
 
 #if defined(__linux__)
     feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);

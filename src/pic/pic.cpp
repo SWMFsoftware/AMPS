@@ -1641,9 +1641,6 @@ void PIC::InitMPI() {
 //init the particle solver
 void PIC::Init_BeforeParser() {
 
-  //init basic offsets in the particle state vector
-  InitBasicParticleOffset();
-
   //initiate MPI
   InitMPI();
 

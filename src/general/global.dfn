@@ -32,7 +32,7 @@
 #define _AVX_MATMUL_ _ON_
 
 //Align state vectors/arrays when possible and needed
-#define _ALIGN_STATE_VECTORS_ _ON_
-#define _ALIGN_STATE_VECTORS_BASE_ 8
+#define _ALIGN_STATE_VECTORS_ _OFF_
+
 
 
