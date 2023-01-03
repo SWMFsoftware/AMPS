@@ -122,6 +122,12 @@ void InitBasicParticleOffset () {
 
   int AlightmentMode=AlightmentVariable; 
 
+  static bool init_flag=false;
+
+  if (init_flag==true) return;
+  init_flag=true;  
+    
+
   if (PIC::ParticleBuffer::ParticleDataLength!=0) {
     exit(__LINE__,__FILE__,"Error: something wrong with the order of calls that initialize offsetess in the particle state vector. InitBasicParticleOffset() need to be called first.");
   }
