@@ -1624,6 +1624,17 @@ public:
   //extra parallel load "window" allowed when rebalancing the parallel load 
   double ParallelLoadEPS;
 
+  //init the static tables used in AllocateBlock()
+  //create tables that connects neib block's nodes 
+  class cNodeCommectionMap {
+  public:
+    int i,j,k,iNeib,jNeib,kNeib;
+  };
+
+  amps_vector<cNodeCommectionMap> FaceConnectionMap_CenterNode[6],EdgeConnectionMap_CenterNode[12],CornerConnectionMap_CenterNode[8];
+  amps_vector<cNodeCommectionMap> FaceConnectionMap_CornerNode[6],EdgeConnectionMap_CornerNode[12],CornerConnectionMap_CornerNode[8];
+  void InitAllocateBlock();
+
   //the function that calculates the interpolation coefficients to get an interpolated value for the block's nodes
   //return the number of the interpolation coefficients that was used in the stencil. if the return value <=0 -> the operation is not succesful
   typedef int (*cGetCornerNodesInterpolationCoefficients)(double *x,double *CoefficientsList,cCornerNode **InterpolationStencil,cTreeNodeAMR<cBlockAMR>* startNode,int nMaxCoefficients);
@@ -2502,6 +2513,9 @@ public:
      GetCenterNodesInterpolationCoefficients=NULL;
      GetCornerNodesInterpolationCoefficients=NULL;
      localResolution=NULL;
+     
+     //init internals of AllocateBlock()
+     InitAllocateBlock();
 
      //extra parallel load "window" allowed when rebalancing the parallel load 
      ParallelLoadEPS=0.1;
@@ -4349,128 +4363,29 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
   int i,j,k,idim; //nDownNode,nDownNodeTemp,idim;
   int ioffset,joffset,koffset;
 
+  #ifndef __CUDA_ARCH__
   static long int nCallCounter=0;
   ++nCallCounter;
+  #endif
 
   //the block cannot be allocated twice AND the block's allocation must be permitted AND the block need to be actively used in calcualtions
   if ((AllowBlockAllocation==false)||(startNode->block!=NULL)||(startNode->IsUsedInCalculationFlag==false)) return;
   nMeshModificationCounter++,meshModifiedFlag=true,meshModifiedFlag_CountMeshElements=true;
-
-  //create tables that connects neib block's nodes 
-  class cNodeCommectionMap {
-  public:
-    int i,j,k,iNeib,jNeib,kNeib;
-  };
-
-  static vector<cNodeCommectionMap> FaceConnectionMap_CenterNode[6],EdgeConnectionMap_CenterNode[12],CornerConnectionMap_CenterNode[8];
-  static vector<cNodeCommectionMap> FaceConnectionMap_CornerNode[6],EdgeConnectionMap_CornerNode[12],CornerConnectionMap_CornerNode[8];
-
-  static bool init_flag=false;
-
-  if (init_flag==false) {
-    int ioffset,joffset,koffset;
-    i,j,k;
-
-    init_flag=true;
-
-    auto AddNewNeibCenterNodeData = [] (int ioffset,int joffset,int koffset,vector<cNodeCommectionMap>& ConnectionMap) {
-      int i,j,k;
-    
-      for (i=-_GHOST_CELLS_X_;i<_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-        if ((i+ioffset<-_GHOST_CELLS_X_)||(i+ioffset>=_BLOCK_CELLS_X_+_GHOST_CELLS_X_)) continue;  
-
-        for (j=-_GHOST_CELLS_Y_;j<_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) { 
-          if ((j+joffset<-_GHOST_CELLS_Y_)||(j+joffset>=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_)) continue;
-
-          for (k=-_GHOST_CELLS_Z_;k<_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) { 
-            if ((k+koffset<-_GHOST_CELLS_Z_)||(k+koffset>=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_)) continue;
-
-            cNodeCommectionMap t;
-
-            t.iNeib=i,t.jNeib=j,t.kNeib=k; 
-            t.i=i+ioffset;
-            t.j=j+joffset;
-            t.k=k+koffset;
-
-            ConnectionMap.push_back(t);
-          }
-        }
-     }
-   };
-
-    auto AddNewNeibCornerNodeData = [] (int ioffset,int joffset,int koffset,vector<cNodeCommectionMap>& ConnectionMap) {
-      int i,j,k;
-
-      for (i=-_GHOST_CELLS_X_;i<=_BLOCK_CELLS_X_+_GHOST_CELLS_X_;i++) {
-        if ((i+ioffset<-_GHOST_CELLS_X_)||(i+ioffset>_BLOCK_CELLS_X_+_GHOST_CELLS_X_)) continue;
-
-        for (j=-_GHOST_CELLS_Y_;j<=_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_;j++) {
-          if ((j+joffset<-_GHOST_CELLS_Y_)||(j+joffset>_BLOCK_CELLS_Y_+_GHOST_CELLS_Y_)) continue;
-
-          for (k=-_GHOST_CELLS_Z_;k<=_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_;k++) {
-            if ((k+koffset<-_GHOST_CELLS_Z_)||(k+koffset>_BLOCK_CELLS_Z_+_GHOST_CELLS_Z_)) continue;
-
-            cNodeCommectionMap t;
-
-            t.iNeib=i,t.jNeib=j,t.kNeib=k;
-            t.i=i+ioffset;
-            t.j=j+joffset;
-            t.k=k+koffset;
-
-            ConnectionMap.push_back(t);
-          }
-        }
-     }
-   };
-
-
-
-    //connection through faces 
-    int FaceNeibOffsetTable[6][3]={{-_BLOCK_CELLS_X_,0,0},{_BLOCK_CELLS_X_,0,0}, 
-                                   {0,-_BLOCK_CELLS_Y_,0},{0,_BLOCK_CELLS_Y_,0},  
-                                   {0,0,-_BLOCK_CELLS_Z_},{0,0,_BLOCK_CELLS_Z_}};
- 
-    for (int iface=0;iface<6;iface++) {
-      AddNewNeibCenterNodeData(FaceNeibOffsetTable[iface][0],FaceNeibOffsetTable[iface][1],FaceNeibOffsetTable[iface][2],FaceConnectionMap_CenterNode[iface]);
-      AddNewNeibCornerNodeData(FaceNeibOffsetTable[iface][0],FaceNeibOffsetTable[iface][1],FaceNeibOffsetTable[iface][2],FaceConnectionMap_CornerNode[iface]);
-    }
-
-    //connection throught edges
-    int EdgeNeibOffsetTable[12][3]={{0,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{0,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{0,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{0,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},
-                                    {-_BLOCK_CELLS_X_,0,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,0,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,0,_BLOCK_CELLS_Z_},{-_BLOCK_CELLS_X_,0,_BLOCK_CELLS_Z_},
-                                    {-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,0},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,0},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,0},{-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,0}};
- 
-   for (int iedge=0;iedge<12;iedge++) {
-     AddNewNeibCenterNodeData(EdgeNeibOffsetTable[iedge][0],EdgeNeibOffsetTable[iedge][1],EdgeNeibOffsetTable[iedge][2],EdgeConnectionMap_CenterNode[iedge]);      
-     AddNewNeibCornerNodeData(EdgeNeibOffsetTable[iedge][0],EdgeNeibOffsetTable[iedge][1],EdgeNeibOffsetTable[iedge][2],EdgeConnectionMap_CornerNode[iedge]);
-   }
-
-   //connection through corners 
-   int CornerNeibOffsetTable[8][3]={{-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
-                                    {-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,-_BLOCK_CELLS_Z_},
-                                    {-_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,-_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},
-                                    {-_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_},{_BLOCK_CELLS_X_,_BLOCK_CELLS_Y_,_BLOCK_CELLS_Z_}};
-
-   for (int icorner=0;icorner<8;icorner++) {
-     AddNewNeibCenterNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][1],CornerNeibOffsetTable[icorner][2],CornerConnectionMap_CenterNode[icorner]); 
-     AddNewNeibCornerNodeData(CornerNeibOffsetTable[icorner][0],CornerNeibOffsetTable[icorner][1],CornerNeibOffsetTable[icorner][2],CornerConnectionMap_CornerNode[icorner]);
-   } 
-  }
-
 
   //allocate the new block
   startNode->block=blocks.newElement();
   startNode->block->SetRefinmentLevel(startNode->RefinmentLevel);
 
   //search face neib blocks
-  auto SearchCommentionCenterNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,vector<cNodeCommectionMap>& ConnectionMap) {
+  auto SearchCommentionCenterNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,amps_vector<cNodeCommectionMap>& ConnectionMap) {
     long int nd;
     cCenterNode *CenerNode;
 
     if (Neib==NULL) return;
     if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) return;
 
-    for (auto& t : ConnectionMap) {
+    for (int ii=0;ii<ConnectionMap.size();ii++) {  
+      cNodeCommectionMap t=ConnectionMap[ii];
       nd=getCenterNodeLocalNumber(t.iNeib,t.jNeib,t.kNeib);
       CenerNode=Neib->block->GetCenterNode(nd);
 
@@ -4482,17 +4397,40 @@ void AllocateBlock(cTreeNodeAMR<cBlockAMR> *startNode) {
         CenerNode->incrementConnectionCounter();
       }
     }
+
+
+/*
+    for (typename amps_vector<cNodeCommectionMap>::iterator t=ConnectionMap.begin();t!=ConnectionMap.end();t++) {
+      nd=getCenterNodeLocalNumber((*t).iNeib,(*t).jNeib,(*t).kNeib);
+      CenerNode=Neib->block->GetCenterNode(nd);
+
+      if (CenerNode!=NULL) {
+        nd=getCenterNodeLocalNumber((*t).i,(*t).j,(*t).k);
+        if (startNode->block->GetCenterNode(nd)!=NULL) continue;
+
+        startNode->block->SetCenterNode(CenerNode,nd);
+        CenerNode->incrementConnectionCounter();
+      }
+    } 
+
+*/
+
+
+
+
+
   };
 
 
-  auto SearchCommentionCornerNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,vector<cNodeCommectionMap>& ConnectionMap) {
+  auto SearchCommentionCornerNodeMap = [&] (cTreeNodeAMR<cBlockAMR> *Neib,amps_vector<cNodeCommectionMap>& ConnectionMap) {
     long int nd;
     cCornerNode *CornerNode;
 
     if (Neib==NULL) return;
     if ((Neib->RefinmentLevel!=startNode->RefinmentLevel)||(Neib->block==NULL)) return;
 
-    for (auto& t : ConnectionMap) {
+    for (int ii=0;ii<ConnectionMap.size();ii++) {
+      cNodeCommectionMap t=ConnectionMap[ii];
       nd=getCornerNodeLocalNumber(t.iNeib,t.jNeib,t.kNeib);
       CornerNode=Neib->block->GetCornerNode(nd);
 
@@ -11818,7 +11756,7 @@ if (TmpAllocationCounter==2437) {
 
   void CreateNewParallelDistributionLists(int userDefinedCodeForSendingBlockData=-1) {
     double LoadMeasureNormal;
-    long int nTotalBlocks,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
+    long int nTotalBlocks=0,nResolutionLevelBlocks[_MAX_REFINMENT_LEVEL_+1];
     int i,nLevel;
 
     static cTreeNodeAMR<cBlockAMR> *startNodeFillingCurve=NULL;
@@ -14727,7 +14665,7 @@ CutCell::cTriangleFaceDescriptor *cTreeNodeAMR<T>::neibFirstTriangleCutFace=NULL
 //class cMeshAMRgeneric
 
 #include "cut_cell.hpp"
-
+#include "allocate_block.hpp"
 
 #endif 
 
