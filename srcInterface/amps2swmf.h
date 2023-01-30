@@ -23,6 +23,11 @@ namespace AMPS2SWMF {
   extern char ComponentName[10];
   extern int ComponentID;
 
+  //import plasma DivU mode
+  extern bool ImportPlasmaDivUFlag; 
+  inline void SetImportPlasmaDivUFlag(bool flag) {ImportPlasmaDivUFlag=flag;}
+  inline bool GetImportPlasmaDivUFlag() {return ImportPlasmaDivUFlag;}
+
   //step in importing the magnetic field line point
   extern int bl_import_point_step;
 

@@ -53,6 +53,8 @@ PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaIonPressu
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaElectronPressure={false,false,1,"\"Plasma electron pressure\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::MagneticField={false,false,3,"\"Bx\", \"By\", \"Bz\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::DATAFILE::Offset::ElectricField={false,false,3,"\"Ex\", \"Ey\", \"Ez\"",-1};
+PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::PlasmaDivU={false,false,1,"\"Plasma DivU\"",-1};
+
 
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::Current={false,false,3,"\"Jx\", \"Jy\", \"Jz\"",-1};
 PIC::CPLR::DATAFILE::cOffsetElement PIC::CPLR::DATAFILE::Offset::b_dot_grad_b={false,false,3,"\"b_dot_grad_bx\", \"b_dot_grad_by\", \"b_dot_grad_bz\"",-1};
@@ -411,6 +413,16 @@ void PIC::CPLR::DATAFILE::Init() {
     nTotalBackgroundVariables+=nIonFluids*Offset::PlasmaIonPressure.nVars;
   }
 
+  if (Offset::PlasmaDivU.allocate==true) {
+    if (Offset::PlasmaDivU.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaIonPressure");
+
+    Offset::PlasmaDivU.active=true;
+    Offset::PlasmaDivU.RelativeOffset=RelativeOffset;
+
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=Offset::PlasmaDivU.nVars*sizeof(double);
+    RelativeOffset+=sizeof(double);
+    nTotalBackgroundVariables+=Offset::PlasmaDivU.nVars;
+  }
 
   if (Offset::PlasmaElectronPressure.allocate==true) {
     if (Offset::PlasmaElectronPressure.RelativeOffset!=-1) exit(__LINE__,__FILE__,"Error: reinitialization of Offset::PlasmaElectronPressure");
@@ -787,6 +799,8 @@ void PIC::CPLR::DATAFILE::PrintVariableList(FILE* fout,int DataSetNumber) {
     if (nIonFluids!=1) for (int i=0;i<nIonFluids;i++) fprintf(fout,", \"%s[%i]\"",Offset::PlasmaIonPressure.VarList,i);
     else fprintf(fout,", \"%s\"",Offset::PlasmaIonPressure.VarList);
   }
+
+  if (Offset::PlasmaDivU.active) fprintf(fout,", %s",Offset::PlasmaDivU.VarList);  
 
   if (Offset::PlasmaElectronPressure.active) fprintf(fout,", %s",Offset::PlasmaElectronPressure.VarList);
 

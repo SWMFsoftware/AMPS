@@ -54,6 +54,7 @@ int PIC::CPLR::DATAFILE::BATSRUS::bxBATSRUS2AMPS =-2;
 int PIC::CPLR::DATAFILE::BATSRUS::byBATSRUS2AMPS =-2;
 int PIC::CPLR::DATAFILE::BATSRUS::bzBATSRUS2AMPS =-2;
 int PIC::CPLR::DATAFILE::BATSRUS::pBATSRUS2AMPS  =-2;
+int PIC::CPLR::DATAFILE::BATSRUS::divuBATSRUS2AMPS  =-2;
 
 //reserve memory to store the interpolated background data
 void PIC::CPLR::DATAFILE::BATSRUS::Init() {
@@ -64,6 +65,12 @@ void PIC::CPLR::DATAFILE::BATSRUS::Init() {
   PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.allocate=true;
+
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_  
+  if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) { 
+    PIC::CPLR::DATAFILE::Offset::PlasmaDivU.allocate=true;
+  }
+  #endif
 }
 
 //init the BATSRUS data file AMR information
@@ -95,6 +102,7 @@ void PIC::CPLR::DATAFILE::BATSRUS::Init(const char *fname) {
   byBATSRUS2AMPS =-2;
   bzBATSRUS2AMPS =-2;
   pBATSRUS2AMPS  =-2;
+  divuBATSRUS2AMPS=-2;
 
 } 
 
@@ -171,6 +179,8 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
       
       if (strcmp(vname,"p")==0) pBATSRUS2AMPS=n;
 
+      if (PIC::CPLR::DATAFILE::Offset::PlasmaDivU.active==true)&&(strcmp(vname,"divu")==0)) divuBATSRUS2AMPS=n;
+
       i0=i1;
       while ((NameVar[i0]!=0)&&(NameVar[i0]==' ')) i0++;
     }
@@ -189,6 +199,8 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
       exit(__LINE__,__FILE__,"Error:_PIC_COUPLER_DATAFILE_READ_B_FIELD_ is not well defined.");
     }
 
+    if (PIC::CPLR::DATAFILE::Offset::PlasmaDivU.active==true) divuBATSRUS2AMPS++;
+
     //check whether the state vector containes all nessesary physical quantaties
     if (rhoBATSRUS2AMPS==-1) exit(__LINE__,__FILE__,"Error: rho is not present in the BARSRUS .idl file. Please add this variable to the .idl file.");
 
@@ -203,6 +215,8 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
     }
 
     if (pBATSRUS2AMPS==-1) exit(__LINE__,__FILE__,"Error: p is not present in the BARSRUS .idl file. Please add this variable to the .idl file.");
+
+    
   
     //parse the unit line
     char UnitVar[_MAX_STRING_LENGTH_PIC_],uname[200];
@@ -328,6 +342,11 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
 
         //get pressure
         *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaIonPressure.RelativeOffset))=State[pBATSRUS2AMPS]*PhysicalVariableUnitConversionTable[pBATSRUS2AMPS];
+
+        //get div u
+        if (PIC::CPLR::DATAFILE::Offset::PlasmaDivU.active==true) {
+          *((double*)(offset+PIC::CPLR::DATAFILE::Offset::PlasmaDivU.RelativeOffset))=State[divuBATSRUS2AMPS];
+        }
 
         //bulk velocity and magnetic field
         for (idim=0;idim<3;idim++) {

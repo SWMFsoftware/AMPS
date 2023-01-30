@@ -6743,6 +6743,7 @@ void DeleteAttachedParticles();
         extern _TARGET_DEVICE_ _CUDA_MANAGED_ cOffsetElement ElectricField;
         extern cOffsetElement MagneticFieldGradient;
         extern cOffsetElement MagneticFluxFunction;
+        extern cOffsetElement PlasmaDivU;
 
 	extern cOffsetElement Current;
 	//offset to store variables for relativistic gca
@@ -7101,7 +7102,7 @@ void DeleteAttachedParticles();
         extern int mxBATSRUS2AMPS,myBATSRUS2AMPS,mzBATSRUS2AMPS;
         extern int uxBATSRUS2AMPS,uyBATSRUS2AMPS,uzBATSRUS2AMPS;
         extern int bxBATSRUS2AMPS,byBATSRUS2AMPS,bzBATSRUS2AMPS;
-        extern int pBATSRUS2AMPS;
+        extern int pBATSRUS2AMPS,divuBATSRUS2AMPS;
       }
 
       namespace TECPLOT {

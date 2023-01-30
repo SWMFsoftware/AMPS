@@ -39,6 +39,9 @@ module PT_wrapper
   public:: PT_put_from_sc
   public:: PT_put_from_sc_dt
 
+  !return state of calculating plasma div u
+  public:: PT_divu_coupling_state
+
   ! codes describing status of coupling with the SWMF components (OH, Ih, Sc)
   integer:: IhCouplingCode
   integer:: OhCouplingCode
@@ -77,6 +80,16 @@ module PT_wrapper
   logical          :: DoCheck = .true., DoInit = .true.
 contains
   !============================================================================
+
+  subroutine PT_divu_coupling_state(flag)
+    logical,intent(out)::flag 
+    integer::f
+
+    flag=.true.
+    call amps_get_divu_flag(f)
+
+    if (f==0) flag=.false.
+  end subroutine 
 
   subroutine PT_set_param(CompInfo, TypeAction)
 
