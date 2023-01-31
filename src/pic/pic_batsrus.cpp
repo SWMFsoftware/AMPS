@@ -179,7 +179,7 @@ void PIC::CPLR::DATAFILE::BATSRUS::LoadDataFile(cTreeNodeAMR<PIC::Mesh::cDataBlo
       
       if (strcmp(vname,"p")==0) pBATSRUS2AMPS=n;
 
-      if (PIC::CPLR::DATAFILE::Offset::PlasmaDivU.active==true)&&(strcmp(vname,"divu")==0)) divuBATSRUS2AMPS=n;
+      if ((PIC::CPLR::DATAFILE::Offset::PlasmaDivU.active==true)&&(strcmp(vname,"divu")==0)) divuBATSRUS2AMPS=n;
 
       i0=i1;
       while ((NameVar[i0]!=0)&&(NameVar[i0]==' ')) i0++;
