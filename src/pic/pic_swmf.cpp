@@ -25,6 +25,10 @@
 
 #include "pic.h"
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "amps2swmf.h"
+#endif
+
 //using namespace std;
 
 int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::MagneticFieldOffset=-1;
@@ -33,6 +37,7 @@ int _TARGET_DEVICE_ _CUDA_MANAGED_ PIC::CPLR::SWMF::BulkVelocityOffset=-1;
 int PIC::CPLR::SWMF::PlasmaPressureOffset=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
+int PIC::CPLR::SWMF::PlasmaDivUOffset=-1;
 
 int PIC::CPLR::SWMF::MagneticFieldOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaNumberDensityOffset_last=-1;
@@ -40,6 +45,7 @@ int PIC::CPLR::SWMF::BulkVelocityOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaPressureOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset_last=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset_last=-1;
+int PIC::CPLR::SWMF::PlasmaDivUOffset_last=-1;
 
 
 bool PIC::CPLR::SWMF::OhCouplingFlag=false;
@@ -97,6 +103,14 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     TotalDataLength+=2;
   }
 
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) {
+    PlasmaDivUOffset=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=1;
+  }
+  #endif
+
+
   //keep two data sets exported from the SWMF for calculating time-derivatives
   if (_PIC_SWMF_COUPLER__SAVE_TWO_DATA_SETS_== _PIC_MODE_ON_) {
     MagneticFieldOffset_last=offset+TotalDataLength*sizeof(double);
@@ -118,6 +132,14 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
       AlfvenWaveI01Offset_last=offset+TotalDataLength*sizeof(double);
       TotalDataLength+=2;
     }
+
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) {
+      PlasmaDivUOffset_last=offset+TotalDataLength*sizeof(double);
+      TotalDataLength+=1;
+    }
+    #endif 
+
   }
   else {
     MagneticFieldOffset_last=MagneticFieldOffset;
@@ -131,6 +153,8 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     if (IhCouplingFlag==true) {
       AlfvenWaveI01Offset_last=AlfvenWaveI01Offset;
     }
+
+    PlasmaDivUOffset_last=PlasmaDivUOffset;
   } 
      
 
@@ -145,10 +169,13 @@ void PIC::CPLR::SWMF::PrintVariableList(FILE* fout,int DataSetNumber) {
      fprintf(fout,",\"AlfvenWaveI01\", \"AlfvenWaveI02\"");
   } 
 
+  if (PIC::CPLR::SWMF::PlasmaDivUOffset>0) {
+    fprintf(fout,",\"Plasma Div U\"");
+  }
 }
 
 void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode) {
-  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0;
+  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0,DivU=0.0;
   int i,idim;
   char *SamplingBuffer;
 
@@ -164,6 +191,10 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
       i01+=((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[0]*InterpolationCoeficients[i];
       i02+=((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]*InterpolationCoeficients[i];
     }
+
+    if (PlasmaDivUOffset>=0) {
+      DivU+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUOffset)))*InterpolationCoeficients[i];
+    }
   }
 
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+MagneticFieldOffset,B,3*sizeof(double));
@@ -175,6 +206,11 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
     ((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[0]=i01;
     ((double*)(CenterNode->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]=i02;
   }
+
+  if (PlasmaDivUOffset>=0) {
+    memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset,&DivU,sizeof(double));
+  }
+
 }
 
 void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode) {
@@ -255,6 +291,19 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
     else pipe->send(tt,2);
   }
 
+  //DivU
+  if (PlasmaDivUOffset>=0) {
+    if (gather_print_data==true) { 
+      t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset));
+    }
+
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
+
+      fprintf(fout,"%e ",t);
+    }
+    else pipe->send(t);
+  }
 }
 
 
@@ -490,6 +539,10 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     t=AlfvenWaveI01Offset_last;
     AlfvenWaveI01Offset_last=AlfvenWaveI01Offset;
     AlfvenWaveI01Offset=t;
+
+    t=PlasmaDivUOffset_last; 
+    PlasmaDivUOffset_last=PlasmaDivUOffset;
+    PlasmaDivUOffset=t; 
   }
 
   //set up the 'first coupling occuerd' flag
@@ -499,7 +552,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
   ResetCenterPointProcessingFlag();
 
   //determine the relation between SWMF's AMPS' variables
-  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1,I01_SWMF2AMPS=-1;
+  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1,I01_SWMF2AMPS=-1,DIVU_SWMF2AMPS=-1;
   int i0=0,i1=0,n=0;
   char vname[200];
 
@@ -520,6 +573,8 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     if ((strcmp(vname,"bx")==0)||(strcmp(vname,"swhbx")==0))  Bx_SWMF2AMPS=n;
     if ((strcmp(vname,"p")==0)||(strcmp(vname,"swhp")==0))   P_SWMF2AMPS=n;
     if (strcmp(vname,"i01")==0)   I01_SWMF2AMPS=n;
+    if (strcmp(vname,"divu")==0)  DIVU_SWMF2AMPS=n;
+
 
     n++;
     i0=i1;
@@ -583,6 +638,12 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
               ((double*)(cell->GetAssociatedDataBufferPointer()+AlfvenWaveI01Offset))[1]=data[offset+I01_SWMF2AMPS+1];
             }
 
+            //DivU
+            if ((DIVU_SWMF2AMPS>0)&&(PlasmaDivUOffset>=0)) {
+              *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUOffset))=data[offset+DIVU_SWMF2AMPS];
+
+//*((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUOffset))=1.0;
+            } 
 
             //bulk velocity and magnetic field
             for (idim=0;idim<3;idim++) {
