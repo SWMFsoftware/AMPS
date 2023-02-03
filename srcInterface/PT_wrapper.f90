@@ -4,7 +4,7 @@
 module PT_wrapper
   use ModConst, ONLY: cDegToRad
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC, Grid_C, &
-       iCompSourceCouple
+       iCompSourceCouple, set_coord_system
   use CON_time
   use,intrinsic :: ieee_arithmetic
   implicit none
@@ -29,18 +29,12 @@ module PT_wrapper
   ! OH coupling
   public:: PT_put_from_oh
   public:: PT_get_for_oh
-  public:: PT_put_from_oh_dt
 
   ! IH coupling
   public:: PT_put_from_ih
-  public:: PT_put_from_ih_dt
 
   ! SC coupling
   public:: PT_put_from_sc
-  public:: PT_put_from_sc_dt
-
-  !return state of calculating plasma div u
-  public:: PT_divu_coupling_state
 
   ! codes describing status of coupling with the SWMF components (OH, Ih, Sc)
   integer:: IhCouplingCode
@@ -80,17 +74,6 @@ module PT_wrapper
   logical          :: DoCheck = .true., DoInit = .true.
 contains
   !============================================================================
-
-  subroutine PT_divu_coupling_state(flag)
-    logical,intent(out)::flag 
-    integer::f
-
-    flag=.true.
-    call amps_get_divu_flag(f)
-
-    if (f==0) flag=.false.
-  end subroutine 
-
   subroutine PT_set_param(CompInfo, TypeAction)
 
     use CON_comp_info
@@ -164,8 +147,11 @@ contains
           ! provided by PT/AMPS
           !
           call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
+          call set_coord_system(PT_, TypeCoord='HGI', &
+               nVar=10, NameVar='Rho Ux Uy Uz Bx By Bz p I01 I02')
        else
-          Grid_C(PT_)%TypeCoord='HGI'
+          call set_coord_system(PT_, TypeCoord='HGI', &
+               nVar=12, NameVar='Rho Ux Uy Uz Bx By Bz p I01 I02 DivU DivUDx')
        end if
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
@@ -548,40 +534,6 @@ contains
     end if
   end subroutine PT_put_from_sc
   !============================================================================
-
-  subroutine PT_put_from_oh_dt(Dt)
-
-    real,    intent(in):: Dt
-
-    character(len=*), parameter:: NameSub = 'PT_put_from_oh_dt'
-    !--------------------------------------------------------------------------
-    call amps_impose_global_time_step(Dt)
-
-  end subroutine PT_put_from_oh_dt
-  !============================================================================
-
-  subroutine PT_put_from_ih_dt(Dt)
-
-    real,    intent(in):: Dt
-
-    !   call amps_impose_global_time_step(Dt)
-
-    character(len=*), parameter:: NameSub = 'PT_put_from_ih_dt'
-    !--------------------------------------------------------------------------
-  end subroutine PT_put_from_ih_dt
-  !============================================================================
-
-  subroutine PT_put_from_sc_dt(Dt)
-
-    real,    intent(in):: Dt
-
-    !   call amps_impose_global_time_step(Dt)
-
-    character(len=*), parameter:: NameSub = 'PT_put_from_sc_dt'
-    !--------------------------------------------------------------------------
-  end subroutine PT_put_from_sc_dt
-  !============================================================================
-
   subroutine PT_get_for_oh(IsNew, NameVar, nVarIn, nDimIn, nPoint, Xyz_DI, &
        Data_VI)
 
