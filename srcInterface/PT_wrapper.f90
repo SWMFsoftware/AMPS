@@ -147,11 +147,11 @@ contains
           ! provided by PT/AMPS
           !
           call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
-          call set_coord_system(PT_, TypeCoord='HGI', &
-               nVar=10, NameVar='Rho Ux Uy Uz Bx By Bz p I01 I02')
        else
-          call set_coord_system(PT_, TypeCoord='HGI', &
-               nVar=12, NameVar='Rho Ux Uy Uz Bx By Bz p I01 I02 DivU DivUDx')
+          Grid_C(PT_)%TypeCoord='HGI'
+
+          Grid_C(PT_)%nVar=12
+          Grid_C(PT_)%NameVar="Rho Mx My Mz Bx By Bz p pe I01 I02 DivU"
        end if
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
