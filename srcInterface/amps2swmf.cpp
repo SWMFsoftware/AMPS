@@ -44,6 +44,7 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 
 //import plasma DivU mode
 bool AMPS2SWMF::ImportPlasmaDivUFlag=false;
+bool AMPS2SWMF::ImportPlasmaDivUdXFlag=false;
 
 //step in importing the magnetic field line point
 int AMPS2SWMF::bl_import_point_step=1;
@@ -134,8 +135,12 @@ extern "C" {
     *step_out=AMPS2SWMF::bl_import_point_step;
   } 
 
-  void amps_get_divu_flag_(int* flag) {
+  void amps_get_divu_status_(int* flag) {
     *flag=(AMPS2SWMF::ImportPlasmaDivUFlag==true) ? 1 : 0;
+  }
+
+  void amps_get_divudx_status_(int* flag) {
+    *flag=(AMPS2SWMF::ImportPlasmaDivUdXFlag==true) ? 1 : 0;
   }
 
   //set the component name 

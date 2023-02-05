@@ -28,6 +28,11 @@ namespace AMPS2SWMF {
   inline void SetImportPlasmaDivUFlag(bool flag) {ImportPlasmaDivUFlag=flag;}
   inline bool GetImportPlasmaDivUFlag() {return ImportPlasmaDivUFlag;}
 
+  extern bool ImportPlasmaDivUdXFlag;
+  inline void SetImportPlasmaDivUdXFlag(bool flag) {ImportPlasmaDivUdXFlag=flag;}
+  inline bool GetImportPlasmaDivUdXFlag() {return ImportPlasmaDivUdXFlag;}
+
+
   //step in importing the magnetic field line point
   extern int bl_import_point_step;
 

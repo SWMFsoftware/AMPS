@@ -38,6 +38,7 @@ int PIC::CPLR::SWMF::PlasmaPressureOffset=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
 int PIC::CPLR::SWMF::PlasmaDivUOffset=-1;
+int PIC::CPLR::SWMF::PlasmaDivUdXOffset=-1;
 
 int PIC::CPLR::SWMF::MagneticFieldOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaNumberDensityOffset_last=-1;
@@ -46,6 +47,7 @@ int PIC::CPLR::SWMF::PlasmaPressureOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaTemperatureOffset_last=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset_last=-1;
 int PIC::CPLR::SWMF::PlasmaDivUOffset_last=-1;
+int PIC::CPLR::SWMF::PlasmaDivUdXOffset_last=-1;
 
 
 bool PIC::CPLR::SWMF::OhCouplingFlag=false;
@@ -108,6 +110,11 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     PlasmaDivUOffset=offset+TotalDataLength*sizeof(double);
     TotalDataLength+=1;
   }
+
+  if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
+    PlasmaDivUdXOffset=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=1;
+  }
   #endif
 
 
@@ -138,6 +145,11 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
       PlasmaDivUOffset_last=offset+TotalDataLength*sizeof(double);
       TotalDataLength+=1;
     }
+
+    if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
+      PlasmaDivUdXOffset_last=offset+TotalDataLength*sizeof(double);
+      TotalDataLength+=1;
+    }
     #endif 
 
   }
@@ -155,6 +167,7 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     }
 
     PlasmaDivUOffset_last=PlasmaDivUOffset;
+    PlasmaDivUdXOffset_last=PlasmaDivUdXOffset;
   } 
      
 
@@ -172,10 +185,15 @@ void PIC::CPLR::SWMF::PrintVariableList(FILE* fout,int DataSetNumber) {
   if (PIC::CPLR::SWMF::PlasmaDivUOffset>0) {
     fprintf(fout,",\"Plasma Div U\"");
   }
+
+  if (PIC::CPLR::SWMF::PlasmaDivUdXOffset>0) {
+    fprintf(fout,",\"Plasma Div U dX\"");
+  }
+
 }
 
 void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode) {
-  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0,DivU=0.0;
+  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0,DivU=0.0,DivUdX=0.0;
   int i,idim;
   char *SamplingBuffer;
 
@@ -195,6 +213,11 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
     if (PlasmaDivUOffset>=0) {
       DivU+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUOffset)))*InterpolationCoeficients[i];
     }
+
+    if (PlasmaDivUdXOffset>=0) {
+      DivUdX+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset)))*InterpolationCoeficients[i];
+    }
+
   }
 
   memcpy(CenterNode->GetAssociatedDataBufferPointer()+MagneticFieldOffset,B,3*sizeof(double));
@@ -209,6 +232,10 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
 
   if (PlasmaDivUOffset>=0) {
     memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset,&DivU,sizeof(double));
+  }
+
+  if (PlasmaDivUdXOffset>=0) {
+    memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset,&DivUdX,sizeof(double));
   }
 
 }
@@ -304,6 +331,21 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
     }
     else pipe->send(t);
   }
+
+  //DivUdX 
+  if (PlasmaDivUdXOffset>=0) {
+    if (gather_print_data==true) {
+      t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset));
+    }
+
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
+
+      fprintf(fout,"%e ",t);
+    }
+    else pipe->send(t);
+  }
+
 }
 
 
@@ -543,6 +585,10 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     t=PlasmaDivUOffset_last; 
     PlasmaDivUOffset_last=PlasmaDivUOffset;
     PlasmaDivUOffset=t; 
+
+    t=PlasmaDivUdXOffset_last;
+    PlasmaDivUdXOffset_last=PlasmaDivUdXOffset;
+    PlasmaDivUdXOffset=t;
   }
 
   //set up the 'first coupling occuerd' flag
@@ -552,7 +598,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
   ResetCenterPointProcessingFlag();
 
   //determine the relation between SWMF's AMPS' variables
-  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1,I01_SWMF2AMPS=-1,DIVU_SWMF2AMPS=-1;
+  int Rho_SWMF2AMPS=-1,Vx_SWMF2AMPS=-1,Bx_SWMF2AMPS=-1,P_SWMF2AMPS=-1,I01_SWMF2AMPS=-1,DIVU_SWMF2AMPS=-1,DIVUDX_SWMF2AMPS=-1;
   int i0=0,i1=0,n=0;
   char vname[200];
 
@@ -574,7 +620,7 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     if ((strcmp(vname,"p")==0)||(strcmp(vname,"swhp")==0))   P_SWMF2AMPS=n;
     if (strcmp(vname,"i01")==0)   I01_SWMF2AMPS=n;
     if (strcmp(vname,"divu")==0)  DIVU_SWMF2AMPS=n;
-
+    if (strcmp(vname,"divudx")==0)  DIVUDX_SWMF2AMPS=n;
 
     n++;
     i0=i1;
@@ -641,9 +687,13 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
             //DivU
             if ((DIVU_SWMF2AMPS>0)&&(PlasmaDivUOffset>=0)) {
               *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUOffset))=data[offset+DIVU_SWMF2AMPS];
-
-//*((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUOffset))=1.0;
             } 
+
+            //DivUdX 
+            if ((DIVUDX_SWMF2AMPS>0)&&(PlasmaDivUdXOffset>=0)) {
+              *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset))=data[offset+DIVUDX_SWMF2AMPS];
+            }
+
 
             //bulk velocity and magnetic field
             for (idim=0;idim<3;idim++) {

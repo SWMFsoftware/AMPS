@@ -81,7 +81,7 @@ contains
     use CON_bline,   ONLY: BL_set_grid, UseBLine_C
     use ModConst,    ONLY: rSun
     use CON_physics, ONLY: get_time
-    integer :: iComm,iProc,nProc, nThread
+    integer :: iComm,iProc,nProc,f,nThread
 
     ! Arguments
     type(CompInfoType), intent(inout) :: CompInfo   ! Information for this comp
@@ -150,8 +150,23 @@ contains
        else
           Grid_C(PT_)%TypeCoord='HGI'
 
-          Grid_C(PT_)%nVar=12
-          Grid_C(PT_)%NameVar="Rho Mx My Mz Bx By Bz p pe I01 I02 DivU"
+          Grid_C(PT_)%nVar=11
+          Grid_C(PT_)%NameVar="Rho Mx My Mz Bx By Bz p pe I01 I02"
+ 
+          call amps_get_divu_status(f)
+
+          if (f==1) then 
+            Grid_C(PT_)%nVar=Grid_C(PT_)%nVar+1
+            Grid_C(PT_)%NameVar=trim(Grid_C(PT_)%NameVar)//" DivU"
+          end if
+
+          call amps_get_divudx_status(f)
+
+
+          if (f==1) then
+            Grid_C(PT_)%nVar=Grid_C(PT_)%nVar+1
+            Grid_C(PT_)%NameVar=trim(Grid_C(PT_)%NameVar)//" DivUdX"
+          end if
        end if
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)

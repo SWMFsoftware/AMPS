@@ -6461,11 +6461,11 @@ void DeleteAttachedParticles();
     namespace SWMF {
       extern int _TARGET_DEVICE_ _CUDA_MANAGED_ MagneticFieldOffset,TotalDataLength,BulkVelocityOffset,PlasmaPressureOffset;
       extern int PlasmaNumberDensityOffset,PlasmaTemperatureOffset;
-      extern int AlfvenWaveI01Offset,PlasmaDivUOffset;
+      extern int AlfvenWaveI01Offset,PlasmaDivUOffset,PlasmaDivUdXOffset;
 
       extern int MagneticFieldOffset_last,BulkVelocityOffset_last,PlasmaPressureOffset_last;
       extern int PlasmaNumberDensityOffset_last,PlasmaTemperatureOffset_last;
-      extern int AlfvenWaveI01Offset_last,PlasmaDivUOffset_last;
+      extern int AlfvenWaveI01Offset_last,PlasmaDivUOffset_last,PlasmaDivUdXOffset_last;
 
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
