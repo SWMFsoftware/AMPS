@@ -91,7 +91,7 @@ contains
     character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     integer :: iComm, iProc, nProc, nThread, iTrue, nVar
-    character(len=lStringLine):: NameVar
+    character(len=20):: NameVar
     
     character(len=*), parameter:: NameSub = 'PT_set_param'
     !--------------------------------------------------------------------------
@@ -150,17 +150,17 @@ contains
           call amps_get_divu_status(iTrue)
           if (iTrue==1) then 
              nVar = 1
-             NameVar = "DivUdX"
+             NameVar = " divu"
           end if
 
           call amps_get_divudx_status(iTrue)
           if (iTrue==1) then
              nVar = nVar + 1
-             NameVar = trim(NameVar)//" DivUdX"
+             NameVar = trim(NameVar)//" divudx"
           end if
+          call init_decomposition(PT_, PT_, 3)
+          call set_coord_system(PT_, TypeCoord='HGI', nVar=nVar, NameVar=NameVar)
        end if
-       call init_decomposition(PT_, PT_, 3)
-       call set_coord_system(PT_, TypeCoord='HGI', nVar=nVar, NameVar=NameVar)
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
     end select
