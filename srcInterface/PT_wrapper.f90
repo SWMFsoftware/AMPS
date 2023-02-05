@@ -4,7 +4,7 @@
 module PT_wrapper
   use ModConst, ONLY: cDegToRad
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC, Grid_C, &
-       iCompSourceCouple, set_coord_system
+       iCompSourceCouple, init_decomposition, set_coord_system
   use CON_time
   use,intrinsic :: ieee_arithmetic
   implicit none
@@ -81,8 +81,8 @@ contains
     use CON_bline,   ONLY: BL_set_grid, UseBLine_C
     use ModConst,    ONLY: rSun
     use CON_physics, ONLY: get_time
-    integer :: iComm,iProc,nProc,f,nThread
-
+    
+    
     ! Arguments
     type(CompInfoType), intent(inout) :: CompInfo   ! Information for this comp
     character (len=*), intent(in)     :: TypeAction ! What to do
@@ -90,15 +90,12 @@ contains
     ! Contains the PARAM.in segment
     character(len=lStringLine), allocatable :: StringLineF_I(:)
 
-    !--------------------------------------------------------------------------
-    character (len=2) ComponentName
+    integer :: iComm, iProc, nProc, nThread, iTrue, nVar
+    character(len=lStringLine):: NameVar
+    
     character(len=*), parameter:: NameSub = 'PT_set_param'
     !--------------------------------------------------------------------------
-    ComponentName=CompInfo%name
-
-    if (CompInfo%use) then
-       call amps_set_component_name(ComponentName)
-    endif
+    if(CompInfo%use) call amps_set_component_name('PT')
 
     select case(TypeAction)
     case('VERSION')
@@ -148,26 +145,22 @@ contains
           !
           call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
        else
-          Grid_C(PT_)%TypeCoord='HGI'
-
-          Grid_C(PT_)%nVar=11
-          Grid_C(PT_)%NameVar="Rho Mx My Mz Bx By Bz p pe I01 I02"
- 
-          call amps_get_divu_status(f)
-
-          if (f==1) then 
-            Grid_C(PT_)%nVar=Grid_C(PT_)%nVar+1
-            Grid_C(PT_)%NameVar=trim(Grid_C(PT_)%NameVar)//" DivU"
+          nVar = 0
+          NameVar = " "
+          call amps_get_divu_status(iTrue)
+          if (iTrue==1) then 
+             nVar = 1
+             NameVar = "DivUdX"
           end if
 
-          call amps_get_divudx_status(f)
-
-
-          if (f==1) then
-            Grid_C(PT_)%nVar=Grid_C(PT_)%nVar+1
-            Grid_C(PT_)%NameVar=trim(Grid_C(PT_)%NameVar)//" DivUdX"
+          call amps_get_divudx_status(iTrue)
+          if (iTrue==1) then
+             nVar = nVar + 1
+             NameVar = trim(NameVar)//" DivUdX"
           end if
        end if
+       call init_decomposition(PT_, PT_, 3)
+       call set_coord_system(PT_, TypeCoord='HGI', nVar=nVar, NameVar=NameVar)
     case default
        call CON_stop(NameSub//': PT_ERROR: unknown TypeAction='//TypeAction)
     end select
