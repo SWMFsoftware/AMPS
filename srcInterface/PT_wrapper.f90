@@ -4,7 +4,7 @@
 module PT_wrapper
   use ModConst, ONLY: cDegToRad
   use CON_coupler, ONLY: OH_,IH_,PT_,SC_, Couple_CC, Grid_C, &
-       iCompSourceCouple, init_decomposition, set_coord_system
+       iCompSourceCouple, set_coord_system
   use CON_time
   use,intrinsic :: ieee_arithmetic
   implicit none
@@ -158,7 +158,6 @@ contains
              nVar = nVar + 1
              NameVar = trim(NameVar)//" divudx"
           end if
-          call init_decomposition(PT_, PT_, 3)
           call set_coord_system(PT_, TypeCoord='HGI', nVar=nVar, NameVar=NameVar)
        end if
     case default
