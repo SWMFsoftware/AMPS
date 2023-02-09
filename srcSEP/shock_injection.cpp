@@ -2,6 +2,10 @@
 
 #include "sep.h"
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "amps2swmf.h" 
+#endif
+
 int SEP::ParticleSource::ShockWave::ShockStateFlag_offset=-1;
 
 //condition for presence of a shock in a given cell
@@ -20,6 +24,15 @@ bool SEP::ParticleSource::ShockWave::IsShock(PIC::Mesh::cDataCenterNode *CenterN
   if ((density_last>0.0)&&(density_current>0.0)) {
     flag=(density_current/density_last>min_ratio) ? true : false;
   }
+
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  flag=false;
+
+  if ((PIC::CPLR::SWMF::PlasmaDivUdXOffset>0)&&(AMPS2SWMF::DivUdXShockLocationThrehold>0.0)) {
+    flag=(fabs(*((double*)(CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::PlasmaDivUdXOffset)))>AMPS2SWMF::DivUdXShockLocationThrehold); 
+  }
+  #endif
+
 
   if (flag==true) {
     *((double*)(SamplingBuffer+ShockStateFlag_offset))=1.0;
