@@ -91,7 +91,7 @@ contains
     character(len=lStringLine), allocatable :: StringLineF_I(:)
 
     integer :: iComm, iProc, nProc, nThread, iTrue, nVar
-    character(len=200):: NameVar
+    character(len=20):: NameVar
     
     character(len=*), parameter:: NameSub = 'PT_set_param'
     !--------------------------------------------------------------------------
@@ -145,13 +145,12 @@ contains
           !
           call BL_set_grid(TypeCoordSystem='HGR', UnitX=rSun)
        else
-          nVar = 11 
-          NameVar = "Rho Mx My Mz Bx By Bz p pe I01 I02" 
-
+          nVar = 0
+          NameVar = " "
           call amps_get_divu_status(iTrue)
           if (iTrue==1) then 
-             nVar = nVar + 1
-             NameVar = trim(NameVar)//" divu"
+             nVar = 1
+             NameVar = " divu"
           end if
 
           call amps_get_divudx_status(iTrue)
