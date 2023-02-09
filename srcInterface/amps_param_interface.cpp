@@ -615,6 +615,56 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
     }
 
+    else if (Command == "#COUPLE_DIVU") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      param_list.pop_front();
+
+      if (t == "T") {
+        AMPS2SWMF::ImportPlasmaDivUFlag=true;
+
+        if ((AMPS2SWMF::ImportPlasmaDivUFlag==true)&&(AMPS2SWMF::ImportPlasmaDivUdXFlag==true)) {
+          exit(__LINE__,__FILE__,"Error: only DivUF or DivUdX can be exported, not both together becuase of the limitations in the coupler"); 
+        }
+      }
+      else if (t=="F") {
+        AMPS2SWMF::ImportPlasmaDivUFlag=false;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+    }
+
+    else if (Command == "#COUPLE_DIVUDX") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      param_list.pop_front();
+
+      if (t == "T") {
+        AMPS2SWMF::ImportPlasmaDivUdXFlag=true;
+
+        if ((AMPS2SWMF::ImportPlasmaDivUFlag==true)&&(AMPS2SWMF::ImportPlasmaDivUdXFlag==true)) {
+          exit(__LINE__,__FILE__,"Error: only DivUF or DivUdX can be exported, not both together becuase of the limitations in the coupler");
+        }
+      }
+      else if (t=="F") {
+        AMPS2SWMF::ImportPlasmaDivUdXFlag=false;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+    }
+
+    else if (Command == "#SHOCK_DIVUDX_THREHOLD") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      param_list.pop_front();
+
+      AMPS2SWMF::DivUdXShockLocationThrehold=atof(t.c_str());
+    }
 
     else {
       if ((Command.c_str()[0]!='!')&&(StrictCommandCheck==true)) {

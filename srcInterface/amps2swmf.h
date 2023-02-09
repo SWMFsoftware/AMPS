@@ -66,6 +66,9 @@ namespace AMPS2SWMF {
   //speed of the CME driven shock
   extern double MinShockSpeed;
 
+  //shock DivUdX threhold
+  extern double DivUdXShockLocationThrehold;
+
   //the counter of the field line update events since beginning of a new session
   extern int FieldLineUpdateCounter; 
 

@@ -46,6 +46,9 @@ double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_;
 bool AMPS2SWMF::ImportPlasmaDivUFlag=false;
 bool AMPS2SWMF::ImportPlasmaDivUdXFlag=false;
 
+//shock DivUdX threhold
+double AMPS2SWMF::DivUdXShockLocationThrehold=-1.0;
+
 //step in importing the magnetic field line point
 int AMPS2SWMF::bl_import_point_step=1;
 
