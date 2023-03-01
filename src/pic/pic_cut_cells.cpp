@@ -60,7 +60,8 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   nStartFace=nFaceThread*ThisThread;
   nFinishFace=nStartFace+nFaceThread;
   if (ThisThread==nTotalThreads-1) nFinishFace=nBoundaryTriangleFaces;
-
+  int nFaceLastThread = nBoundaryTriangleFaces - nFaceThread*(nTotalThreads-1);
+  
   //evaluate the distance size of the domain
   double lDomain=2.0*sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
       pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
@@ -70,6 +71,7 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
 #pragma omp parallel for schedule(dynamic,1) default (none) shared(nStartFace,nFinishFace,BoundaryTriangleFaces,lDomain) \
   private (nface,fcptr,norm,idim,xFinish,xStart,l,l0,iIntersections)
 #endif
+  //determine the direction of the surface normal
   for (nface=nStartFace;nface<nFinishFace;nface++) {
     fcptr=BoundaryTriangleFaces+nface;
 
@@ -106,7 +108,8 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
   }
 
   //collect the surface normals
-  double *sendBuffer=new double[3*2*nFaceThread];
+  int nFaceBuffer = max(nFaceThread,nFaceLastThread);
+  double *sendBuffer=new double[3*2*nFaceBuffer];
   int thread,cnt;
 
   for (thread=0;thread<nTotalThreads;thread++) {
