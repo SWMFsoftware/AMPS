@@ -1931,13 +1931,17 @@ void DeleteAttachedParticles();
 
     //molecular models
     namespace MolecularModels {
+      //total collision cross section
+      typedef double (*fGetTotalCrossSection) (int,double*,int,double*);
+      extern fGetTotalCrossSection GetTotalCrossSection;
+
       namespace HS {
         //the table of the constant collsion cross sections and reference diameter
         static const double ConstantCollisionCrossSectionTable[1][1]={{0.0}};
         static const double ConstantReferenceDiameter[1][1]={{0.0}};
 
 
-        inline double GetTotalCrossSection(int s0,int s1) {return ConstantCollisionCrossSectionTable[s0][s1];}
+        inline double GetTotalCrossSection(int s0,double* v0,int s1,double* v1) {return ConstantCollisionCrossSectionTable[s0][s1];}
         inline double GetDiam(int s0,int s1) {return ConstantReferenceDiameter[s0][s1];}
         inline double GetRefDiam(int s0,int s1) {return ConstantReferenceDiameter[s0][s1];}
 
@@ -1971,16 +1975,6 @@ void DeleteAttachedParticles();
       return 1.0;
 #endif
     }
-
-    inline double GetTotalCrossSect(double Vrel,int ptr0,int s0,int ptr1,int s1,long int ncell) {
-#if _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
-      return MolecularModels::HS::GetTotalCrossSection(s0,s1);
-#else
-      exit(__LINE__,__FILE__,"not implemented");
-      return 1.0;
-#endif
-    }
-
 
     //init the molecular data buffers
     void Init();

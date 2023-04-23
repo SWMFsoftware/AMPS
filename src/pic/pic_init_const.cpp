@@ -4,6 +4,11 @@
 
 #include "pic.h"
 
+//Total collision cross section
+PIC::MolecularData::MolecularModels::fGetTotalCrossSection  
+  PIC::MolecularData::MolecularModels::GetTotalCrossSection=PIC::MolecularData::MolecularModels::HS::GetTotalCrossSection; 
+
+
 //int PIC::nTotalSpecies=0;
 _TARGET_DEVICE_ _CUDA_MANAGED_ int PIC::nTotalThreadsOpenMP=1;
 
