@@ -79,9 +79,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
   static long int nCall=0;
   nCall++;
 
-  #if _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
   double dtTotalInit=dtTotalIn;
-  #endif
 
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   PIC::ParticleBuffer::GetV(vInit,ParticleData);
@@ -127,11 +125,11 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
 
 #if _AVX_INSTRUCTIONS_USAGE_MODE_ == _AVX_INSTRUCTIONS_USAGE_MODE__OFF_
-    #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-      for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
+    if (_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_) {
+      if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+        for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
+      }
     }
-    #endif
 
     //convert velocity into momentum and advance particle half time step
     QdT_over_twoM=ElectricCharge*dt/(2.0*mass);
@@ -168,28 +166,28 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
       xFinal[idim]=xInit[idim]+vFinal[idim]*dt;
     }
 
-#if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-      for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
+    if (_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_) {
+      if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+        for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
+      }
     }
-#endif
 
 
 
 #else //_AVX_INSTRUCTIONS_USAGE_MODE_
 
-    #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-//    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-//      for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
-//    }
+    if (_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_) {
+      //    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+      //      for (idim=0;idim<3;idim++) vInit[idim]=-vInit[idim],B[idim]=-B[idim];
+      //    }
 
-    vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
-    B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(-1.0));
-    #endif
+      vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
+      B_v=_mm256_mul_pd(B_v,_mm256_set1_pd(-1.0));
+    }
 
     //convert velocity into momentum and advance particle half time step
     QdT_over_twoM=ElectricCharge*dt/(2.0*mass);
- //   for (idim=0;idim<3;idim++) uMinus[idim]=gamma*vInit[idim]+QdT_over_twoM*E[idim];
+    //   for (idim=0;idim<3;idim++) uMinus[idim]=gamma*vInit[idim]+QdT_over_twoM*E[idim];
 
     uMinus_v=_mm256_add_pd( _mm256_mul_pd(_mm256_set1_pd(gamma),vInit_v), _mm256_mul_pd(_mm256_set1_pd(QdT_over_twoM),E_v));
 
@@ -200,10 +198,10 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
     uMinus2_v=_mm256_mul_pd(uMinus_v,uMinus_v);
     gamma=sqrt(1.0+(uMinus2_v[0]+uMinus2_v[1]+uMinus2_v[2])/(SpeedOfLight*SpeedOfLight));
 
-//    for (idim=0;idim<3;idim++) {
-//      t[idim]=QdT_over_twoM/gamma*B[idim];
-//      l+=pow(t[idim],2);
-//    }
+    //    for (idim=0;idim<3;idim++) {
+    //      t[idim]=QdT_over_twoM/gamma*B[idim];
+    //      l+=pow(t[idim],2);
+    //    }
 
     __m256d t_v,t2_v,uPrime_v,s_v,uPlus_v;
 
@@ -213,55 +211,55 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
     l=t2_v[0]+t2_v[1]+t2_v[2];
 
 
-//    Vector3D::CrossProduct(uPrime,uMinus,t);
-//    for (idim=0;idim<3;idim++) uPrime[idim]+=uMinus[idim];
+    //    Vector3D::CrossProduct(uPrime,uMinus,t);
+    //    for (idim=0;idim<3;idim++) uPrime[idim]+=uMinus[idim];
 
     Vector3D::CrossProduct(uPrime_v,uMinus_v,t_v);
     uPrime_v=_mm256_add_pd(uPrime_v,uMinus_v);
 
 
     //second rotation
-//    for (idim=0;idim<3;idim++) s[idim]=2.0*t[idim]/(1.0+l);
+    //    for (idim=0;idim<3;idim++) s[idim]=2.0*t[idim]/(1.0+l);
 
     s_v=_mm256_mul_pd(_mm256_set1_pd(2.0/(1.0+l)),t_v);
 
-//    Vector3D::CrossProduct(uPlus,uPrime,s);
-//    for (idim=0;idim<3;idim++) uPlus[idim]+=uMinus[idim];
+    //    Vector3D::CrossProduct(uPlus,uPrime,s);
+    //    for (idim=0;idim<3;idim++) uPlus[idim]+=uMinus[idim];
 
     Vector3D::CrossProduct(uPlus_v,uPrime_v,s_v);
     uPlus_v=_mm256_add_pd(uPlus_v,uMinus_v);
 
     //second half-time electric field acceleration
-//    double uFinal[3];
-//
-//    for (idim=0;idim<3;idim++) uFinal[idim]=uPlus[idim]+QdT_over_twoM*E[idim];
-//    gamma=sqrt(1.0+(uFinal[0]*uFinal[0]+uFinal[1]*uFinal[1]+uFinal[2]*uFinal[2])/(SpeedOfLight*SpeedOfLight));
+    //    double uFinal[3];
+    //
+    //    for (idim=0;idim<3;idim++) uFinal[idim]=uPlus[idim]+QdT_over_twoM*E[idim];
+    //    gamma=sqrt(1.0+(uFinal[0]*uFinal[0]+uFinal[1]*uFinal[1]+uFinal[2]*uFinal[2])/(SpeedOfLight*SpeedOfLight));
 
     __m256d uFinal_v,uFinal2_v;
 
     uFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(QdT_over_twoM),E_v,uPlus_v);
     uFinal2_v=_mm256_mul_pd(uFinal_v,uFinal_v);
 
-//    gamma=sqrt(1.0+(uFinal2_v[0]+uFinal2_v[1]+uFinal2_v[2])/(SpeedOfLight*SpeedOfLight));
-//
-//    for (idim=0;idim<3;idim++) {
-//      vFinal[idim]=uFinal[idim]/gamma;
-//      xFinal[idim]=xInit[idim]+vFinal[idim]*dt;
-//    }
+    //    gamma=sqrt(1.0+(uFinal2_v[0]+uFinal2_v[1]+uFinal2_v[2])/(SpeedOfLight*SpeedOfLight));
+    //
+    //    for (idim=0;idim<3;idim++) {
+    //      vFinal[idim]=uFinal[idim]/gamma;
+    //      xFinal[idim]=xInit[idim]+vFinal[idim]*dt;
+    //    }
 
 
     vFinal_v=_mm256_div_pd(uFinal_v,_mm256_set1_pd(gamma));
     xFinal_v=_mm256_fmadd_pd(_mm256_set1_pd(dt),vFinal_v,xInit_v);
 
 
-    #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
-    if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
-  //    for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
+    if (_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_) {
+      if  (BackwardTimeIntegrationMode==_PIC_MODE_ON_) {
+        //    for (idim=0;idim<3;idim++) vFinal[idim]=-vFinal[idim],vInit[idim]=-vInit[idim];
 
-      vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
-      vFinal_v=_mm256_mul_pd(vFinal_v,_mm256_set1_pd(-1.0));
+        vInit_v=_mm256_mul_pd(vInit_v,_mm256_set1_pd(-1.0));
+        vFinal_v=_mm256_mul_pd(vFinal_v,_mm256_set1_pd(-1.0));
+      }
     }
-    #endif
 
 
 #endif //_AVX_INSTRUCTIONS_USAGE_MODE_
@@ -279,7 +277,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
       int code;
 
       static cInternalSphericalData_UserDefined::fParticleSphereInteraction ParticleSphereInteraction=
-        ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
+          ((cInternalSphericalData*)(PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement))->ParticleSphereInteraction;
       static void* BoundaryElement=PIC::Mesh::mesh->InternalBoundaryList.front().BoundaryElement;
 
       //move the particle location at the surface of the sphere
@@ -309,122 +307,125 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
       int code=_PARTICLE_DELETED_ON_THE_FACE_;
 
       //call the function that process particles that leaved the coputational domain
-      #if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_
-      //do nothing -> the particle deleting code is already set
-      #else
-       //call the function that process particles that leaved the coputational domain
-//       if (ProcessOutsideDomainParticles!=NULL) {
-         //determine through which face the particle left the domain
-
-      int nface,nIntersectionFace;
-      double tVelocityIncrement,cx,cv,r0[3],dtEffective,vEffective[3]={0.5*(vInit[0]+vFinal[0]),0.5*(vInit[1]+vFinal[1]),0.5*(vInit[2]+vFinal[2])},c,dtIntersection=-1.0;
-
-      switch (BackwardTimeIntegrationMode) {
-      case _PIC_MODE_ON_:
-        for (idim=0;idim<3;idim++) vEffective[idim]=xInit[idim]-xFinal[idim];
+      switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
+      case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE_:
+        code=_PARTICLE_DELETED_ON_THE_FACE_;
         break;
+      
       default:
-        for (idim=0;idim<3;idim++) vEffective[idim]=xFinal[idim]-xInit[idim];
-      }
+        //call the function that process particles that leaved the coputational domain
+        //       if (ProcessOutsideDomainParticles!=NULL) {
+        //determine through which face the particle left the domain
 
-      for (nface=0;nface<6;nface++) {
+        int nface,nIntersectionFace;
+        double tVelocityIncrement,cx,cv,r0[3],dtEffective,vEffective[3]={0.5*(vInit[0]+vFinal[0]),0.5*(vInit[1]+vFinal[1]),0.5*(vInit[2]+vFinal[2])},c,dtIntersection=-1.0;
 
-       #if _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_
         switch (BackwardTimeIntegrationMode) {
         case _PIC_MODE_ON_:
-          for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
-            r0[idim]=xFinal[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
-            cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
-            cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
-          }
-
-          dtEffective=(cv<0.0) ? -cx/cv : -1.0;
-
+          for (idim=0;idim<3;idim++) vEffective[idim]=xInit[idim]-xFinal[idim];
           break;
         default:
-          for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
-            r0[idim]=xInit[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
-            cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
-            cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
-          }
-
-          dtEffective=(cv>0.0) ? -cx/cv : -1.0;
-        }
-        #else  //_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_
-        for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
-          r0[idim]=xInit[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
-          cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
-          cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+          for (idim=0;idim<3;idim++) vEffective[idim]=xFinal[idim]-xInit[idim];
         }
 
-        dtEffective=(cv>0.0) ? -cx/cv : -1.0;
-        #endif  //_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_
+        for (nface=0;nface<6;nface++) {
 
-        if (dtEffective>0.0) {
-          if ((dtIntersection<0.0)||(dtEffective<dtIntersection)&&(dtEffective>0.0)) {
-            double cE0=0.0,cE1=0.0;
+          if (_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_ == _PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE__ENABLED_) {
+            switch (BackwardTimeIntegrationMode) {
+            case _PIC_MODE_ON_:
+              for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
+                r0[idim]=xFinal[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
+                cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+                cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+              }
 
-            for (idim=0;idim<3;idim++) {
-              c=r0[idim]+dtEffective*vEffective[idim];
+              dtEffective=(cv<0.0) ? -cx/cv : -1.0;
 
-              cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
+              break;
+            default:
+              for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
+                r0[idim]=xInit[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
+                cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+                cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+              }
+
+              dtEffective=(cv>0.0) ? -cx/cv : -1.0;
+            }
+          } else {  //_PIC_PARTICLE_MOVER__BACKWARD_TIME_INTEGRATION_MODE_
+            for (idim=0,cx=0.0,cv=0.0;idim<3;idim++) {
+              r0[idim]=xInit[idim]-ExternalBoundaryFaceTable[nface].x0[idim];
+              cx+=r0[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
+              cv+=vEffective[idim]*ExternalBoundaryFaceTable[nface].norm[idim];
             }
 
-            if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
+            dtEffective=(cv>0.0) ? -cx/cv : -1.0;
+          }
 
-            nIntersectionFace=nface,dtIntersection=dtEffective;
+          if (dtEffective>0.0) {
+            if ((dtIntersection<0.0)||(dtEffective<dtIntersection)&&(dtEffective>0.0)) {
+              double cE0=0.0,cE1=0.0;
+
+              for (idim=0;idim<3;idim++) {
+                c=r0[idim]+dtEffective*vEffective[idim];
+
+                cE0+=c*ExternalBoundaryFaceTable[nface].e0[idim],cE1+=c*ExternalBoundaryFaceTable[nface].e1[idim];
+              }
+
+              if ((cE0<-PIC::Mesh::mesh->EPS)||(cE0>ExternalBoundaryFaceTable[nface].lE0+PIC::Mesh::mesh->EPS) || (cE1<-PIC::Mesh::mesh->EPS)||(cE1>ExternalBoundaryFaceTable[nface].lE1+PIC::Mesh::mesh->EPS)) continue;
+
+              nIntersectionFace=nface,dtIntersection=dtEffective;
+            }
           }
         }
-      }
 
-      if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
+        if (nIntersectionFace==-1) exit(__LINE__,__FILE__,"Error: cannot find the face of the intersection");
 
 
-      switch (BackwardTimeIntegrationMode) {
-      case _PIC_MODE_ON_:
-        for (idim=0;idim<3;idim++) {
-          xInit[idim]=xFinal[idim]+dtIntersection*(xInit[idim]-xFinal[idim])-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh->EPS;
-          vInit[idim]=vFinal[idim]+dtIntersection*(vInit[idim]-vFinal[idim]);
-        }
-        break;
-      default:
-        for (idim=0;idim<3;idim++) {
-          xInit[idim]+=dtIntersection*(xFinal[idim]-xInit[idim])-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh->EPS;
-          vInit[idim]+=dtIntersection*(vFinal[idim]-vInit[idim]);
-        }
-      }
-
-      newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
-
-      if (newNode==NULL) {
-        //the partcle is outside of the domain -> correct particle location and determine the newNode;
-        double xmin[3],xmax[3];
-        int ii;
-
-        memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
-        memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
-
-        for (ii=0;ii<3;ii++) {
-          if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;
-          if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
+        switch (BackwardTimeIntegrationMode) {
+        case _PIC_MODE_ON_:
+          for (idim=0;idim<3;idim++) {
+            xInit[idim]=xFinal[idim]+dtIntersection*(xInit[idim]-xFinal[idim])-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh->EPS;
+            vInit[idim]=vFinal[idim]+dtIntersection*(vInit[idim]-vFinal[idim]);
+          }
+          break;
+        default:
+          for (idim=0;idim<3;idim++) {
+            xInit[idim]+=dtIntersection*(xFinal[idim]-xInit[idim])-ExternalBoundaryFaceTable[nface].norm[idim]*PIC::Mesh::mesh->EPS;
+            vInit[idim]+=dtIntersection*(vFinal[idim]-vInit[idim]);
+          }
         }
 
         newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
 
-        if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
-      }
+        if (newNode==NULL) {
+          //the partcle is outside of the domain -> correct particle location and determine the newNode;
+          double xmin[3],xmax[3];
+          int ii;
 
-      switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
-      case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_:
-        code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,newNode);
-        break;
+          memcpy(xmin,PIC::Mesh::mesh->xGlobalMin,3*sizeof(double));
+          memcpy(xmax,PIC::Mesh::mesh->xGlobalMax,3*sizeof(double));
 
-      case  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
-        exit(__LINE__,__FILE__,"Error: not implemented");
-        break;
+          for (ii=0;ii<3;ii++) {
+            if (xmin[ii]>=xInit[ii]) xInit[ii]=xmin[ii]+PIC::Mesh::mesh->EPS;
+            if (xmax[ii]<=xInit[ii]) xInit[ii]=xmax[ii]-PIC::Mesh::mesh->EPS;
+          }
 
-      case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
-        //reflect the particle back into the domain
+          newNode=PIC::Mesh::mesh->findTreeNode(xInit,startNode);
+
+          if (newNode==NULL) exit(__LINE__,__FILE__,"Error: cannot find the node");
+        }
+
+        switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
+        case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_:
+          code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,newNode);
+          break;
+
+        case  _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
+          exit(__LINE__,__FILE__,"Error: not implemented");
+          break;
+
+        case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
+          //reflect the particle back into the domain
         {
           double c=0.0;
           for (int idim=0;idim<3;idim++) c+=ExternalBoundaryFaceTable[nIntersectionFace].norm[idim]*vInit[idim];
@@ -433,15 +434,15 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
         code=_PARTICLE_REJECTED_ON_THE_FACE_;
         break;
-      default:
-        exit(__LINE__,__FILE__,"Error: the option is unknown");
-      }
+        default:
+          exit(__LINE__,__FILE__,"Error: the option is unknown");
+        }
 
 
 
-      memcpy(vFinal,vInit,3*sizeof(double));
-      memcpy(xFinal,xInit,3*sizeof(double));
-#endif //_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE
+        memcpy(vFinal,vInit,3*sizeof(double));
+        memcpy(xFinal,xInit,3*sizeof(double));
+      } //_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__DELETE
 
 
       switch(code) {
@@ -466,48 +467,69 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
     memcpy(vInit,vFinal,3*sizeof(double));
   }  //end of the particle Trajectory Integration Loop
   //save the trajectory point
- #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
+  if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+    PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
 
-   #if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
-   PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)newNode);
-   #endif
- #endif
+    if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+          xFinal, 
+          vFinal, 
+          spec, 
+          ParticleData, 
+          (void*)newNode
+      );
+    }
+  }
 
-
-#if _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
+  if (_PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_) { 
     //model the generic particle transformation
     int GenericParticleTransformationReturnCode,specInit=spec;
 
-    GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(xInit,xFinal,vFinal,spec,ptr,ParticleData,dtTotalInit,startNode);   //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
 
-    if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__PARTICLE_REMOVED_) {
+    GenericParticleTransformationReturnCode = _PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(
+        xInit,
+        xFinal,
+        vFinal,
+        spec,
+        ptr,
+        ParticleData,
+        dtTotalInit,
+        startNode
+    );   //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
+
+    if (GenericParticleTransformationReturnCode == _GENERIC_PARTICLE_TRANSFORMATION_CODE__PARTICLE_REMOVED_) {
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
 
     //adjust the value of the dtLeft to match the time step for the species 'spec'
-    if (spec!=specInit) {
-      #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-      #if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__CHEMISTRY_ == _PIC_MODE_ON_
-      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)startNode);
-      #endif
-      #endif
+    if (spec != specInit) {
+      if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+        if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__CHEMISTRY_ ==
+            _PIC_MODE_ON_) {
+          PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(
+              xFinal,
+              vFinal,
+              spec,
+              ParticleData,
+              (void*) startNode
+          );
+        }
+      }
     }
-#endif //_PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-
+  }
 
 
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-  PIC::Debugger::CatchOutLimitValue(vFinal,DIM,__LINE__,__FILE__);
-  PIC::Debugger::CatchOutLimitValue(xFinal,DIM,__LINE__,__FILE__);
-#endif
-#endif
+  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
+    if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) {
+      PIC::Debugger::CatchOutLimitValue(vFinal, DIM, __LINE__, __FILE__);
+      PIC::Debugger::CatchOutLimitValue(xFinal, DIM, __LINE__, __FILE__);
+    }
+  }
 
   if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
@@ -516,7 +538,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
   }
 
 
-  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+#if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
   long int tempFirstCellParticle=atomic_exchange(block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k),ptr);
@@ -527,7 +549,7 @@ int PIC::Mover::Relativistic::Boris(long int ptr,double dtTotalIn,cTreeNodeAMR<P
 
 #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   long int tempFirstCellParticle,*tempFirstCellParticlePtr;
-    
+
   tempFirstCellParticlePtr=block->tempParticleMovingListTable+i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k);
   tempFirstCellParticle=(*tempFirstCellParticlePtr);
 
