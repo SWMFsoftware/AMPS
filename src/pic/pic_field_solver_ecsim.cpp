@@ -694,7 +694,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
 
   }
 
-#if _PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_ 
+if (_PIC_BC__PERIODIC_MODE_==_PIC_BC__PERIODIC_MODE_OFF_) {
  
   if (isBoundaryCorner(x,node)) {  
     MatrixRowNonZeroElementTable[0].i=i;
@@ -716,7 +716,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     return;
   }
 
-#endif
+}
 
 
   if (!initMassMatrixOffsetTable) computeMassMatrixOffsetTable(); 
@@ -752,12 +752,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   }
     
 
-#if _PIC_STENCIL_NUMBER_==375  
   int indexOffset[5] = {0,-1,1,-2,2};
 
   int reversed_indexOffset[5]={3,1,0,2,4}; //table to convert i,j,k ->ii,jj,kk
 
-
+if (_PIC_STENCIL_NUMBER_==375) {
   for (int iVarIndex=0; iVarIndex<3; iVarIndex++){
     int cntTemp =0;
     
@@ -784,7 +783,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
-#endif
+}
 
 
   //laplacian
@@ -842,9 +841,11 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
 
-#if _PIC_STENCIL_NUMBER_==375   
+
+int OrderingOffsetTable[5][5][5];
+
+if (_PIC_STENCIL_NUMBER_==375) {   
   int cntTemp = 0;
-  int OrderingOffsetTable[5][5][5];
 
   for (int kk=0;kk<5;kk++){
     for (int jj=0;jj<5;jj++){
@@ -873,7 +874,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       MatrixRowNonZeroElementTable[iElement].MatrixElementParameterTable[0]+=corrCoeff*st375->Data[it].a*coeff[iVar]*coeff[iVarIndex];
     }
   }
-#endif
+}
 
 
   //find corners outside the boundary
@@ -1010,7 +1011,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
   //  bool isTest=false;
   //if (fabs(x[0]-1.0)<0.1 && fabs(x[1]-1.0)<0.1 && fabs(x[2]-1.0)<0.1)
   //  isTest = true;
-#if _PIC_STENCIL_NUMBER_==375  
+if (_PIC_STENCIL_NUMBER_==375) {  
   for (int iVarIndex=0; iVarIndex<1; iVarIndex++){
     int cntTemp = 0;
 
@@ -1062,7 +1063,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
       }
     }
   }
-#endif
+}
     
 
   //laplacian
@@ -1100,7 +1101,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
 
-#if _PIC_STENCIL_NUMBER_==375
+if (_PIC_STENCIL_NUMBER_==375) {
   for (int iVarIndex=0;iVarIndex<3;iVarIndex++){
     cStencil::cStencilData *st375=&GradDivStencil375[iVar][iVarIndex];
 
@@ -1137,7 +1138,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     }
   }
 
-#endif
+}
 
 
   RhsSupportTable_CornerNodes[_PIC_STENCIL_NUMBER_].AssociatedDataPointer=RhsSupportTable_CornerNodes[iVar*27].AssociatedDataPointer;
