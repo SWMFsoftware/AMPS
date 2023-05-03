@@ -31,7 +31,7 @@ void PIC::CPLR::DATAFILE::ICES::SetLocationICES(const char* loc) {
 //====================================================
 void PIC::CPLR::DATAFILE::ICES::Init() {
 
-#if _PIC_ICES_SWMF_MODE_ == _PIC_ICES_MODE_ON_
+if (_PIC_ICES_SWMF_MODE_ == _PIC_ICES_MODE_ON_) {
   //reserve the data fields
   PIC::CPLR::DATAFILE::Offset::ElectricField.allocate=true;
   PIC::CPLR::DATAFILE::Offset::MagneticField.allocate=true;
@@ -39,9 +39,9 @@ void PIC::CPLR::DATAFILE::ICES::Init() {
   PIC::CPLR::DATAFILE::Offset::PlasmaNumberDensity.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaTemperature.allocate=true;
   PIC::CPLR::DATAFILE::Offset::PlasmaBulkVelocity.allocate=true;
-#endif
+}
 
-#if _PIC_ICES_DSMC_MODE_ == _PIC_ICES_MODE_ON_
+if (_PIC_ICES_DSMC_MODE_ == _PIC_ICES_MODE_ON_) {
   exit(__LINE__,__FILE__,"Error: the DSMC part is not updated for using ICES as PIC::CPLR::DATAFILE::ICES ");
 
 
@@ -75,7 +75,8 @@ void PIC::CPLR::DATAFILE::ICES::Init() {
   DataStatusOffsetDSMC=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
   PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double);
   TotalAssociatedDataLength+=sizeof(double);
-#endif
+}
+
 
 }
 
@@ -248,6 +249,7 @@ void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeA
   long int nd;
   int status,idim,i,j,k;
   char *offset;
+  int iMin,iMax,jMin,jMax,kMin,kMax;
 
   PIC::Mesh::cDataCenterNode *CenterNode;
   char str[_MAX_STRING_LENGTH_PIC_],str1[_MAX_STRING_LENGTH_PIC_],*endptr;
@@ -256,19 +258,23 @@ void PIC::CPLR::DATAFILE::ICES::readSWMFdata(const double MeanIonMass,cTreeNodeA
   if (PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset==-1) exit(__LINE__,__FILE__,"Error: the model is not initialied");
 
 
-#if DIM == 3
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
-#elif DIM == 2
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=0,kMax=0;
-#elif DIM == 1
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=0,jMax=0;
-  const int kMin=0,kMax=0;
-#endif
+switch (DIM) {
+  case 3:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+    break;
+  case 2:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=0,kMax=0;
+    break;
+  case 1:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=0,jMax=0;
+    kMin=0,kMax=0;
+    break;
+}
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
     ices.openfile("icesCellCenterCoordinates.MHD.dat");
@@ -379,6 +385,7 @@ void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockA
   long int nd;
   int status,idim,i,j,k;
   char *offset;
+  int iMin,iMax,jMin,jMax,kMin,kMax;
 
   exit(__LINE__,__FILE__,"Error: the DSMC part is not updated for using ICES as PIC::CPLR::DATAFILE::ICES ");
 
@@ -389,19 +396,23 @@ void PIC::CPLR::DATAFILE::ICES::readDSMCdata(cTreeNodeAMR<PIC::Mesh::cDataBlockA
   if (NeutralBullVelocityOffset==-1) exit(__LINE__,__FILE__,"Error: the model is already initialied");
 
 
-#if DIM == 3
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
-#elif DIM == 2
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=0,kMax=0;
-#elif DIM == 1
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=0,jMax=0;
-  const int kMin=0,kMax=0;
-#endif
+switch (DIM) {
+  case 3:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+    break;
+  case 2:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=0,kMax=0;
+    break;
+  case 1:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=0,jMax=0;
+    kMin=0,kMax=0;
+    break;
+}
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
     ices.openfile("icesCellCenterCoordinates.DSMC.dat");
@@ -502,22 +513,27 @@ void PIC::CPLR::DATAFILE::ICES::createCellCenterCoordinateList(cTreeNodeAMR<PIC:
   char fname[_MAX_STRING_LENGTH_PIC_];
   double x[3]={0.0,0.0,0.0},*xNodeMin,*xNodeMax;
   int idim,i,j,k;
+  int iMin,iMax,jMin,jMax,kMin,kMax;
 
   static long int nTotalCellNumber,startCellNumber,stopCellNumber,CellCounter;
 
-#if DIM == 3
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
-#elif DIM == 2
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
-  const int kMin=0,kMax=0;
-#elif DIM == 1
-  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
-  const int jMin=0,jMax=0;
-  const int kMin=0,kMax=0;
-#endif
+switch (DIM) {
+  case 3:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+    break;
+  case 2:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+    kMin=0,kMax=0;
+    break;
+  case 1:
+    iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+    jMin=0,jMax=0;
+    kMin=0,kMax=0;
+    break;
+}
 
   if (startNode==PIC::Mesh::mesh->rootTree) {
     //generate the total file name and open the file
