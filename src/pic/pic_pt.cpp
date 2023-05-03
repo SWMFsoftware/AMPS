@@ -195,7 +195,7 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
   TrajectoryRecord->data.Speed=sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
   TrajectoryRecord->data.spec=spec;
 
-  #if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
+#if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
   //convert pinter to the block
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *)nodeIn;
 
@@ -207,15 +207,15 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
     else TrajectoryRecord->data.ParticleWeightOverLocalTimeStepRatio=1.0;
   }
   else TrajectoryRecord->data.ParticleWeightOverLocalTimeStepRatio=1.0;
-  #endif  //_PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
+#endif  //_PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
 
   //save the time stamp of the trajectory point
-  #if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_
+#if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_ 
   TrajectoryRecord->data.TimeStamp=PIC::SimulationTime::Get();
-  #endif
+#endif
 
   //save the electric charge carried by the particle
-  #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
+#if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
   double ParticleElectricCharge=0.0,ParticleSize=0.0;
 
   if ((spec>=_DUST_SPEC_) && (spec<_DUST_SPEC_+ElectricallyChargedDust::GrainVelocityGroup::nGroups)) {
@@ -235,15 +235,16 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
 #endif //_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
 
   //save total kinetic energy
-#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_   
   double KinEnergy=0.0;
   double m0=PIC::MolecularData::GetMass(spec); 
   // contribution of guiding center motion
-#if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
-  exit(__LINE__,__FILE__,"ERROR:not implemented");
-#else
-  KinEnergy+=0.5*m0*(v[0]*v[0]+ v[1]*v[1]+ v[2]*v[2]);
-#endif //_PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
+
+  if (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_) {
+    exit(__LINE__,__FILE__,"ERROR:not implemented");
+  } else {
+    KinEnergy+=0.5*m0*(v[0]*v[0]+ v[1]*v[1]+ v[2]*v[2]);
+  }
 
 
   // contribtion of gyrations
@@ -255,11 +256,12 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
   PIC::CPLR::InitInterpolationStencil(x);
   PIC::CPLR::GetBackgroundMagneticField(B);
   AbsB = pow(B[0]*B[0]+B[1]*B[1]+B[2]*B[2],0.5)+1E-15;
-#if _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
-  exit(__LINE__,__FILE__,"ERROR:not implemented");
-#else
-  KinEnergy+= AbsB*mu;
-#endif //_PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_
+
+  if (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_ == _PIC_MODE_ON_) {
+    exit(__LINE__,__FILE__,"ERROR:not implemented");
+  } else {
+    KinEnergy+= AbsB*mu;
+  }
 
   //record the energy value
   TrajectoryRecord->data.KineticEnergy=KinEnergy;
@@ -270,7 +272,6 @@ void PIC::ParticleTracker::RecordTrajectoryPoint(double *x,double *v,int spec,vo
 #if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_
   TrajectoryRecord->data.InjectionFaceNumber=PIC::ParticleBuffer::GetInjectionFaceNumber((PIC::ParticleBuffer::byte*)ParticleData);
 #endif
-
 
   //the counting number of the point along this trajectory
   TrajectoryRecord->offset=ParticleTrajectoryRecord->nSampledTrajectoryPoints;
@@ -526,25 +527,25 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     fout[spec]=fopen(str,"w");
     fprintf(fout[spec],"VARIABLES=\"x\", \"y\", \"z\", \"spec\", \"Speed\", \"vx\", \"vy\", \"vz\", \"Kinetic Energy [eV]\"");
 
-    #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
-    fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
-    #endif
+    if (_PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_) {
+      fprintf(fout[spec],", \"Electric Charge\", \"Particle Size\"");
+    }
 
-    #if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
-    fprintf(fout[spec],", \"Total kinetic energy [J]\"");
-    #endif //_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+    if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
+      fprintf(fout[spec],", \"Total kinetic energy [J]\"");
+    }
 
-    #if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_
-    fprintf(fout[spec],", \"Time Stamp\"");
-    #endif
+    if (_PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_) {
+      fprintf(fout[spec],", \"Time Stamp\"");
+    }
 
-    #if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_
-    fprintf(fout[spec],", \"Injection Face Number\"");
-    #endif
+    if (_PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_) {
+      fprintf(fout[spec],", \"Injection Face Number\"");
+    }
 
-    #if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
-    fprintf(fout[spec],", \"Particle Weight Over Time Step Ratio\"");
-    #endif
+    if (_PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_) {
+      fprintf(fout[spec],", \"Particle Weight Over Time Step Ratio\"");
+    }
 
     fprintf(fout[spec],"\n");
   }
@@ -561,7 +562,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   //2. Read the table of the sampled trajectory numbers
   int nfile;
   FILE *fTrajectoryList;
-//  PIC::ParticleTracker::cTrajectoryID Trajectory;
+  //  PIC::ParticleTracker::cTrajectoryID Trajectory;
   unsigned long int i,length,nReadTrajectoryNumber=0;
 
   int *nSampledTrajectoryPoints=new int [nTotalTracedTrajectories];
@@ -593,7 +594,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
 
       nSampledTrajectoryPoints[el]=Record.nSampledTrajectoryPoints;
       nReadTrajectoryNumber++;
-     }
+    }
 
     fclose(fTrajectoryList);
   }
@@ -689,31 +690,35 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
 
       for (i=0;i<nReadSampledTrajectoryPoints[tr];i++) {
         TrajectoryData=TempTrajectoryBuffer+offset+i;
+        
+        switch(_PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE_) {
+        case _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE__ENTIRE_TRAJECTORY_:
+          if (StartTrajectorySpec==-1) {
+            trOut=fout[TrajectoryData->spec];
 
-        #if _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE_ == _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE__ENTIRE_TRAJECTORY_
-        if (StartTrajectorySpec==-1) {
-          trOut=fout[TrajectoryData->spec];
+            //print the header of the new trajectory
+            fprintf(trOut,"ZONE T=\"Trajectory=%i\" F=POINT\n",TrajectoryCounter[TrajectoryData->spec]);
+            ++TrajectoryCounter[TrajectoryData->spec];
+            StartTrajectorySpec=TrajectoryData->spec;
+          }
+          break;
+        case _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE__SPECIES_TYPE_SEGMENTS_:
+          if ((StartTrajectorySpec==-1)||(StartTrajectorySpec!=TrajectoryData->spec)) {
+            trOut=fout[TrajectoryData->spec];
 
-          //print the header of the new trajectory
-          fprintf(trOut,"ZONE T=\"Trajectory=%i\" F=POINT\n",TrajectoryCounter[TrajectoryData->spec]);
-          ++TrajectoryCounter[TrajectoryData->spec];
-          StartTrajectorySpec=TrajectoryData->spec;
+            //print the header of the new trajectory
+            fprintf(trOut,"ZONE T=\"Trajectory=%i\" F=POINT\n",TrajectoryCounter[TrajectoryData->spec]);
+            ++TrajectoryCounter[TrajectoryData->spec];
+            StartTrajectorySpec=TrajectoryData->spec;
+          }
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: unknown option");
+          break;
         }
-        #elif _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE_ == _PIC_PARTICLE_TRACKER__TRAJECTORY_OUTPUT_MODE__SPECIES_TYPE_SEGMENTS_
-        if ((StartTrajectorySpec==-1)||(StartTrajectorySpec!=TrajectoryData->spec)) {
-          trOut=fout[TrajectoryData->spec];
-
-          //print the header of the new trajectory
-          fprintf(trOut,"ZONE T=\"Trajectory=%i\" F=POINT\n",TrajectoryCounter[TrajectoryData->spec]);
-          ++TrajectoryCounter[TrajectoryData->spec];
-          StartTrajectorySpec=TrajectoryData->spec;
-        }
-        #else
-        exit(__LINE__,__FILE__,"Error: unknown option");
-        #endif
 
         fprintf(trOut,"%e  %e  %e  %i  %e   %e  %e  %e",TrajectoryData->x[0],TrajectoryData->x[1],TrajectoryData->x[2],
-          TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
+            TrajectoryData->spec,TrajectoryData->Speed,TrajectoryData->v[0],TrajectoryData->v[1],TrajectoryData->v[2]);
 
         double KineticEnergy;
 
@@ -726,25 +731,25 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
 
         fprintf(trOut," %e",KineticEnergy/ElectronCharge);
 
-        #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
+#if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_ 
         fprintf(trOut," %e  %e ",TrajectoryData->ElectricCharge,TrajectoryData->ParticleSize);
-        #endif
+#endif
 
-        #if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_  
         fprintf(trOut," %e ",TrajectoryData->KineticEnergy);
-        #endif //#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+#endif 
 
-        #if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_
+#if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_  
         fprintf(trOut," %e ",TrajectoryData->TimeStamp);
-        #endif
+#endif 
 
-        #if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_
+#if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_  
         fprintf(trOut," %i ",TrajectoryData->InjectionFaceNumber);
-        #endif
+#endif
 
-        #if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
+#if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_  
         fprintf(trOut," %e ",TrajectoryData->ParticleWeightOverLocalTimeStepRatio);
-        #endif
+#endif 
 
         fprintf(trOut,"\n");
       }
@@ -859,9 +864,9 @@ void PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(double *x,double *v,
     if (flag==true) {
       int threadOpenMP=0;
 
-      #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
       threadOpenMP=omp_get_thread_num();
-      #endif
+#endif
 
       DataRecord->nSampledTrajectoryPoints=0;
       DataRecord->Trajectory.StartingThread=threadOpenMP+PIC::nTotalThreadsOpenMP*PIC::ThisThread;
