@@ -1361,7 +1361,7 @@ switch (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_) {
     code=ProcessOutsideDomainParticles(ptr,xInit,vInit,nIntersectionFace,newNode);
     break;
   case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__PERIODIC_CONDITION_:
-    exit(_LINE__,__FILE__,"Error: not implemented");
+    exit(__LINE__,__FILE__,"Error: not implemented");
     break;
   case _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__SPECULAR_REFLECTION_:
     //reflect the particle back into the domain
