@@ -224,12 +224,15 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
   for (nptr=0;nptr<2;nptr++) {
 
 //Vibrational-Translational (VT) relaxaton
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_
+if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_) {
     if (PIC::IDF::nTotalVibtationalModes[s[nptr]]!=0) {
       double Evib,ThetaVib,EtaVib,VibDF;
 
+      exit(__LINE__,__FILE__,"Error: the next two lines in the code need to be implemented");
+      /* the part is the comment need to be implemented in AMPS 
       Evib=GetVibE(0,ptr[nptr]);
       ThetaVib=mol.GetThetaVib(0,s[nptr]);
+      */
 
   //Bird, Eq.5.52 , 1.31
       double a,Tvib; //,Temp_coll;
@@ -304,15 +307,15 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
           break;
         }
       }
-#endif
+}
 
   //Vibrational-Vibrational (VV) relaxation
-#if  _PIC_INTERNAL_DEGREES_OF_FREEDOM__VV_RELAXATION_MODE_  == _PIC_MODE_ON_
+if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VV_RELAXATION_MODE_ == _PIC_MODE_ON_) {
     exit(__LINE__,__FILE__,"not implemented");
-#endif
+}
 
   //Rotational-Translational (TR) relaxation
-#if  _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
+if  (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_) {
     double RotDF=PIC::IDF::nTotalRotationalModes[s[nptr]];
     double Zrot=PIC::IDF::RotationZnumber[s[nptr]];
 
@@ -354,7 +357,7 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
       RedistributionEnergyFlag=true;
       break;
     }
-#endif
+}
 
   }
 
