@@ -305,8 +305,10 @@ void ParkerModelMoverTest_convection() {
       exit(__LINE__,__FILE__,"Error: density is inconsistent");
     }
 
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     ::AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime=0.0;
     ::AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime=dtTotal;
+    #endif
 
     //calculate div(vSW) : Dln(Rho)=-div(vSW)*dt
     double w0,w1,d_ln_rho_dt;

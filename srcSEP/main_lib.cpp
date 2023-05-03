@@ -562,10 +562,12 @@ void amps_time_step(){
     //perform test after the first coupling with the SWMF
     static bool TestCompleted=false;
 
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     if ((TestCompleted==false)&&(AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==true)) {
       TestCompleted=true;
       TestManager();
     } 
+    #endif
 
 start:
 
