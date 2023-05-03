@@ -896,11 +896,13 @@ namespace PIC {
       
       fprintf(fout, "TITLE=\"Field line geometry\"");
       
-#if DIM == 3 
+switch (DIM) {
+  case 3:
+    {
       fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\",\"Distance from the beginning\"");
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
-      
+
       if (OutputGeometryOnly==false) {
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
           fprintf(fout,",\"nSegmentParticles\",\"nSegmentParticles_mu_positive\", \"nSegmentParticles_mu_negative\",\"Model Particle Speed\",\"iSegment\"");
@@ -920,13 +922,16 @@ namespace PIC {
       //output title of the output file if such is defined 
       if (UserDefinedTecplotFileTitle!=NULL) {
         char title[_MAX_STRING_LENGTH_PIC_];
- 
+
         UserDefinedTecplotFileTitle(title);
         fprintf(fout, "TITLE=\"%s\"\n",title);
       } 
-#else 
+    }
+      break;
+  default:
       exit(__LINE__,__FILE__,"not implemented");
-#endif
+      break;
+}
       
       for (int iFieldLine=0; iFieldLine<nFieldLine; iFieldLine++) {
         fprintf(fout,"ZONE T=\"Field-line %i\" F=POINT\n",iFieldLine);
@@ -1113,9 +1118,9 @@ namespace PIC {
       // loop is a line of constant value
       //-----------------------------------------------------------------------
       // check correctness
-      #if _PIC_SYMMETRY_MODE_ != _PIC_SYMMETRY_MODE__AXIAL_
+      if (_PIC_SYMMETRY_MODE_ != _PIC_SYMMETRY_MODE__AXIAL_) {
       exit(__LINE__, __FILE__,"ERROR: implemented only for axial symmetry!");
-      #endif
+      }
 
       // check for limit of number of field lines allowed
       if (nFieldLine == nFieldLineMax) exit(__LINE__,__FILE__,"ERROR: reached limit for field line number");
@@ -1378,13 +1383,13 @@ namespace PIC {
 
           for (int i=0; i<DIM; i++) X[i] += V[i] * dt;
 
-          #if _PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_
+          if (_PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_) {
           // rotate to the y=0 plane
           X[0] = pow(X[0]*X[0]+X[1]*X[1], 0.5);
           X[1] = 0.0;
-          #endif //_PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_
+          } //if (_PIC_SYMMETRY_MODE_ == _PIC_SYMMETRY_MODE__AXIAL_)
 
-          #if _PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
+          if (_PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_) {
            // flux function
           CPLR::InitInterpolationStencil(X);
           CPLR::GetBackgroundMagneticField(B);
@@ -1407,7 +1412,7 @@ namespace PIC {
             Psi = CPLR::GetBackgroundMagneticFluxFunction();
           }
 	        //------------------------------------------------------------------
-         #endif//_PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
+         }//_PIC_DATAFILE__TIME_INTERPOLATION_MODE_ == _PIC_MODE_ON_
 
           Vertex->SetX(X);
 
@@ -1434,9 +1439,9 @@ namespace PIC {
     //=========================================================================
     void InitSimpleParkerSpiral(double *xStart) {
       
-#if DIM != 3
+if (DIM != 3) {
       exit(__LINE__,__FILE__,"Implemetned only for 3D case");
-#endif
+}
 
       if(nFieldLine == nFieldLineMax) exit(__LINE__,__FILE__,"ERROR: reached limit for field line number");
 
@@ -1776,9 +1781,9 @@ int _process_mode=_process_by_segments;
     // namespace alias
     namespace FL = PIC::FieldLine;
 
-    #if _PIC__IDEAL_MHD_MODE_ == _PIC_MODE_OFF_
+if (_PIC__IDEAL_MHD_MODE_ == _PIC_MODE_OFF_) {
     exit(__LINE__,__FILE__,"Error: calculation of the electric field component of the Lorentz force is not implemented");
-    #endif
+}
 
     double B[3],B0[3],B1[3], AbsBDeriv;
     double mu     = PIC::ParticleBuffer::GetMagneticMoment(ptr);
@@ -1793,12 +1798,14 @@ int _process_mode=_process_by_segments;
         pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
 
     //parallel force
-    #if _PIC__IDEAL_MHD_MODE_ == _PIC_MODE_ON_
-    // in this case E = - V \cross B => E_{\paral} = E*b = 0
-    ForceParal = - mu * AbsBDeriv;
-    #else
-    exit(__LINE__, __FILE__, "not implemented");
-    #endif//_PIC__IDEAL_MHD_MODE_ == _PIC_MODE_ON_
+switch(_PIC__IDEAL_MHD_MODE_) {
+    case _PIC_MODE_ON_:
+        // in this case E = - V \cross B => E_{\paral} = E*b = 0
+        ForceParal = - mu * AbsBDeriv;
+        break;
+    default:
+        exit(__LINE__, __FILE__, "not implemented");
+}
   }
   
   // mover itself
@@ -1845,9 +1852,9 @@ int _process_mode=_process_by_segments;
     nCall++;
     
     // predictor step
-    #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
+if (_PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_) {
     GuidingCenterMotion(ForceParalInit,AbsBInit,spec,ptr,iFieldLine,FieldLineCoordInit);
-    #endif
+}
     
     FL::FieldLinesAll[iFieldLine].GetSegmentDirection(dirInit, FieldLineCoordInit);
 
@@ -1890,9 +1897,9 @@ int _process_mode=_process_by_segments;
     
     
     // corrector step
-    #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
+if (_PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_) {
     GuidingCenterMotion(ForceParalMiddle,AbsBMiddle,spec,ptr,iFieldLine,FieldLineCoordMiddle);
-    #endif
+}
     
 
     // advance coordinates full-step
@@ -1979,16 +1986,16 @@ int _process_mode=_process_by_segments;
     startNode=newNode;
 
   //save the trajectory point
-#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)startNode);
-#endif
+}
 
 
-#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-#if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
-  PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)startNode);
-#endif
-#endif
+if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) {
+  if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) {
+    PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)startNode);
+  }
+}
 
 
     if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cell where the particle is located");
