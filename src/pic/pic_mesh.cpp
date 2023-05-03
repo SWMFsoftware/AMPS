@@ -8,36 +8,36 @@
 #include "pic.h"
 
 namespace PIC {
-  namespace Mesh {
-    //basic macroscopic parameters sampled in the simulation
-    cDatumTimed DatumParticleWeight(1,"\"Particle Weight\"",false);
-    cDatumTimed DatumParticleNumber(1,"\"Particle Number\"",true);
-    cDatumTimed DatumNumberDensity(1,"\"Number Density[1/m^3]\"",true);
+namespace Mesh {
+//basic macroscopic parameters sampled in the simulation
+cDatumTimed DatumParticleWeight(1,"\"Particle Weight\"",false);
+cDatumTimed DatumParticleNumber(1,"\"Particle Number\"",true);
+cDatumTimed DatumNumberDensity(1,"\"Number Density[1/m^3]\"",true);
 
-    cDatumWeighted DatumParticleSpeed(1,"\"|V| [m/s]\"",true);
+cDatumWeighted DatumParticleSpeed(1,"\"|V| [m/s]\"",true);
 
-    cDatumWeighted DatumParticleVelocity(3, "\"Vx [m/s]\", \"Vy [m/s]\", \"Vz [m/s]\"", true);
-    cDatumWeighted DatumParticleVelocity2(3,"\"Vx^2 [(m/s)^2]\", \"Vy^2 [(m/s)^2]\", \"Vz^2 [(m/s)^2]\"", false);
-    cDatumWeighted DatumParticleVelocity2Tensor(3,"\"VxVy [(m/s)^2]\", \"VyVz [(m/s)^2]\", \"VzVx [(m/s)^2]\"", false);
-    //-------------------------------------------------------------------------
-    // IMPORTANT: some data may be oncluded only for certain species!!!!
-    //if(GetSpecieType(DataSetNumber)==_PIC_SPECIE_TYPE__GAS_)
-    //-------------------------------------------------------------------------
-    cDatumDerived DatumTranslationalTemperature(1, "\"Translational Temperature [K]\"", true);
-    cDatumDerived DatumParallelTranslationalTemperature(1, "\"Parallel Translational Temperature [K]\"", true);
-    cDatumDerived DatumTangentialTranslationalTemperature(1, "\"Tangential Translational Temperature [K]\"", true);
+cDatumWeighted DatumParticleVelocity(3, "\"Vx [m/s]\", \"Vy [m/s]\", \"Vz [m/s]\"", true);
+cDatumWeighted DatumParticleVelocity2(3,"\"Vx^2 [(m/s)^2]\", \"Vy^2 [(m/s)^2]\", \"Vz^2 [(m/s)^2]\"", false);
+cDatumWeighted DatumParticleVelocity2Tensor(3,"\"VxVy [(m/s)^2]\", \"VyVz [(m/s)^2]\", \"VzVx [(m/s)^2]\"", false);
+//-------------------------------------------------------------------------
+// IMPORTANT: some data may be oncluded only for certain species!!!!
+//if(GetSpecieType(DataSetNumber)==_PIC_SPECIE_TYPE__GAS_)
+//-------------------------------------------------------------------------
+cDatumDerived DatumTranslationalTemperature(1, "\"Translational Temperature [K]\"", true);
+cDatumDerived DatumParallelTranslationalTemperature(1, "\"Parallel Translational Temperature [K]\"", true);
+cDatumDerived DatumTangentialTranslationalTemperature(1, "\"Tangential Translational Temperature [K]\"", true);
 
-    cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity(3,"\"Vpar [m/s]\", \"Vt0 [m/s]\", \"Vt1 [m/s]\"",false);
-    cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2(3,"\"Vpar^2 [(m/s)^2]\", \"Vt0^2 [(m/s)^2]\", \"Vt1^2 [(m/s)^2]\"",false);
+cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity(3,"\"Vpar [m/s]\", \"Vt0 [m/s]\", \"Vt1 [m/s]\"",false);
+cDatumWeighted DatumParallelTantentialTemperatureSample_Velocity2(3,"\"Vpar^2 [(m/s)^2]\", \"Vt0^2 [(m/s)^2]\", \"Vt1^2 [(m/s)^2]\"",false);
 
-    //Datum table to be used on GPU
-    _TARGET_DEVICE_ _CUDA_MANAGED_ cDatumTableGPU *DatumTableGPU=NULL;
+//Datum table to be used on GPU
+_TARGET_DEVICE_ _CUDA_MANAGED_ cDatumTableGPU *DatumTableGPU=NULL;
 
-    // vector of active sampling data
-    vector<PIC::Datum::cDatumSampled*> DataSampledCenterNodeActive;
-    // vector of active derived data
-    vector<cDatumDerived*> DataDerivedCenterNodeActive;
-  }
+// vector of active sampling data
+vector<PIC::Datum::cDatumSampled*> DataSampledCenterNodeActive;
+// vector of active derived data
+vector<cDatumDerived*> DataDerivedCenterNodeActive;
+}
 }
 
 //init the block's global data
@@ -133,7 +133,7 @@ void PIC::Mesh::cDataCenterNode::PrintVariableList(FILE* fout,int DataSetNumber)
   //print the user defind 'center node' data
   vector<fPrintVariableListCenterNode>::iterator fptr;
   for (fptr=PrintVariableListCenterNode.begin();fptr!=PrintVariableListCenterNode.end();fptr++) (*fptr)(fout,DataSetNumber);
-  
+
   //if drift velocity is output -> print the variable name here
   if (_PIC_OUTPUT__DRIFT_VELOCITY__MODE_==_PIC_MODE_ON_) fprintf(fout, ", \"vxDrift\", \"vyDrift\", \"vzDrift\"");
 
@@ -152,10 +152,8 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   static vector<cDatumWeighted*> DataWeightedPrint;
   static vector<cDatumDerived*>  DataDerivedPrint;
 
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   static unsigned long int nCallCounter=0;
   ++nCallCounter;
-  #endif
 
   // find size of message at the first call
   if (IsFirstCall==true) {
@@ -166,16 +164,16 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 
     for(itrDatumSampled = DataSampledCenterNodeActive.begin();itrDatumSampled!= DataSampledCenterNodeActive.end();itrDatumSampled++) {
       if ((*itrDatumSampled)->doPrint==true) {
-	      nOutput+=(*itrDatumSampled)->length;
+        nOutput+=(*itrDatumSampled)->length;
 
-	      if((*itrDatumSampled)->type == PIC::Datum::cDatumSampled::Timed_) {
-	        ptrDatumTimed = static_cast<cDatumTimed*> ((*itrDatumSampled));
-	        DataTimedPrint.push_back(ptrDatumTimed);
-	      }
-	      else {
-	        ptrDatumWeighted = static_cast<cDatumWeighted*> ((*itrDatumSampled));
-	        DataWeightedPrint.push_back(ptrDatumWeighted);
-	      }
+        if((*itrDatumSampled)->type == PIC::Datum::cDatumSampled::Timed_) {
+          ptrDatumTimed = static_cast<cDatumTimed*> ((*itrDatumSampled));
+          DataTimedPrint.push_back(ptrDatumTimed);
+        }
+        else {
+          ptrDatumWeighted = static_cast<cDatumWeighted*> ((*itrDatumSampled));
+          DataWeightedPrint.push_back(ptrDatumWeighted);
+        }
       }
     }
 
@@ -183,8 +181,8 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
     vector<cDatumDerived*>::iterator itrDatumDerived;
 
     for(itrDatumDerived = DataDerivedCenterNodeActive.begin();itrDatumDerived!= DataDerivedCenterNodeActive.end(); itrDatumDerived++) if ((*itrDatumDerived)->doPrint) {
-	    nOutput+=(*itrDatumDerived)->length;
-	    DataDerivedPrint.push_back((*itrDatumDerived));
+      nOutput+=(*itrDatumDerived)->length;
+      DataDerivedPrint.push_back((*itrDatumDerived));
     }
 
     // allocate memory for output
@@ -198,7 +196,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 
   if (pipe==NULL) gather_print_data=true;
   else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
-  
+
   if (gather_print_data==true) { // (pipe->ThisThread==CenterNodeThread) {
     // compose a message
     int iOutput=0;
@@ -222,7 +220,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
       iOutput += (*itrDatumDerived)->length;
     }
   }
-  
+
   if ((PIC::ThisThread==0)||(pipe==NULL)) {
     //print values to the output file
     if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv((char*)OutputData,nOutput*sizeof(double),CenterNodeThread);
@@ -240,10 +238,10 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
   if (_PIC_OUTPUT__DRIFT_VELOCITY__MODE_==_PIC_MODE_ON_) {
     double vDrift[3];
 
-  bool gather_print_data=false;
+    bool gather_print_data=false;
 
-  if (pipe==NULL) gather_print_data=true;
-  else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
+    if (pipe==NULL) gather_print_data=true;
+    else if (pipe->ThisThread==CenterNodeThread) gather_print_data=true;
 
     if (gather_print_data==true) { //(pipe->ThisThread==CenterNodeThread) {
       //calculate the drift velocity
@@ -283,9 +281,7 @@ void PIC::Mesh::cDataCenterNode::PrintData(FILE* fout,int DataSetNumber,CMPI_cha
 void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList,double *InterpolationCoefficients,int nInterpolationCoefficients) {
   int s;
 
-  #if _PIC_DEBUGGER_MODE_ ==  _PIC_DEBUGGER_MODE_ON_
   if (associatedDataPointer==NULL) exit(__LINE__,__FILE__,"Error: The associated data buffer is not initialized");
-  #endif
 
   for (s=0;s<PIC::nTotalSpecies;s++) {
     // interpolate all sampled data
@@ -300,9 +296,7 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
     //temeprature is exeption: it needs avaraging of the mean velocity and mean squate of velocity are not
     //interpolated using the interpolation weights but are averaged
     double TotalParticleWeight=0.0,v[3]={0.0,0.0,0.0},v2[3]={0.0,0.0,0.0},vtemp[3],v2temp[3],w;
-#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
     double v2Tensor[3]={0,0,0}, v2TensorTemp[3];
-#endif
 
     double vParallelTangentialTemperatureSample[3]={0.0,0.0,0.0},v2ParallelTangentialTemperatureSample[3]={0.0,0.0,0.0};
     int iStencil,idim;
@@ -313,23 +307,25 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
       InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity, vtemp, s);
       InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity2,v2temp,s);
-#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
-      InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity2Tensor,v2TensorTemp,s);
-#endif
+
+      if  (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) {
+        InterpolationList[iStencil]->GetDatumCumulative(DatumParticleVelocity2Tensor,v2TensorTemp,s);
+      }
 
       for (idim=0;idim<3;idim++) v[idim]+=vtemp[idim],v2[idim]+=v2temp[idim];
-#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
-      for (idim=0;idim<3;idim++) v2Tensor[idim]+=v2TensorTemp[idim];
-#endif
+
+      if  (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) {
+        for (idim=0;idim<3;idim++) v2Tensor[idim]+=v2TensorTemp[idim];
+      }
 
       if ((w>0.0)&&(_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_)) {
-         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity,vtemp,s);
-         InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity2,v2temp,s);
+        InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity,vtemp,s);
+        InterpolationList[iStencil]->GetDatumCumulative(DatumParallelTantentialTemperatureSample_Velocity2,v2temp,s);
 
-         for (idim=0;idim<3;idim++) {
-           vParallelTangentialTemperatureSample[idim]+=pow(vtemp[idim]/w,2)*w;  //get mean of <v>^2 over the satencil
-           v2ParallelTangentialTemperatureSample[idim]+=v2temp[idim];           // get mean <v^2> over the stencil
-         }
+        for (idim=0;idim<3;idim++) {
+          vParallelTangentialTemperatureSample[idim]+=pow(vtemp[idim]/w,2)*w;  //get mean of <v>^2 over the satencil
+          v2ParallelTangentialTemperatureSample[idim]+=v2temp[idim];           // get mean <v^2> over the stencil
+        }
       }
     }
 
@@ -339,14 +335,14 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
 
       c=GetDatumCumulative(DatumParticleWeight,s)/TotalParticleWeight;
       for (idim=0;idim<3;idim++) v[idim]*=c,v2[idim]*=c;
-      
+
       SetDatum(&DatumParticleVelocity,v,s);
       SetDatum(&DatumParticleVelocity2,v2,s);
 
-#if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
-      for (idim=0;idim<3;idim++) v2Tensor[idim]*=c;
-      SetDatum(&DatumParticleVelocity2Tensor,v2Tensor,s);
-#endif
+      if  (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) {
+        for (idim=0;idim<3;idim++) v2Tensor[idim]*=c;
+        SetDatum(&DatumParticleVelocity2Tensor,v2Tensor,s);
+      }
 
       if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
         for (idim=0;idim<3;idim++) {
@@ -365,9 +361,9 @@ void PIC::Mesh::cDataCenterNode::Interpolate(cDataCenterNode** InterpolationList
       SetDatum(&DatumParticleVelocity,v3temp,s);
       SetDatum(&DatumParticleVelocity2,v3temp,s);
 
-      #if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
-      SetDatum(&DatumParticleVelocity2Tensor,v3temp,s);
-      #endif
+      if  (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) {
+        SetDatum(&DatumParticleVelocity2Tensor,v3temp,s);
+      }
 
       if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!= _PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
         SetDatum(&DatumParallelTantentialTemperatureSample_Velocity,v3temp,s);
@@ -402,34 +398,34 @@ void PIC::Mesh::AllocateMesh() {
     #endif
   }
 }
-*/
+ */
 
 void PIC::Mesh::initCellSamplingDataBuffer() {
-//  if (cDataBlockAMR::totalAssociatedDataLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the blocks associated data offsets");
+  //  if (cDataBlockAMR::totalAssociatedDataLength!=0) exit(__LINE__,__FILE__,"Error: reinitialization of the blocks associated data offsets");
 
   //local time step
-  #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
+#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   if (PIC::ThisThread==0) cout << "$PREFIX:Time step mode: specie dependent local time step" << endl;
   cDataBlockAMR_static_data::LocalTimeStepOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
-  #elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+#elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
   //do nothing for _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+#elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
   //do nothing for _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
-  #else
+#else
   exit(__LINE__,__FILE__,"not implemented");
-  #endif
+#endif
 
   //local particle weight
-  #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
+#if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   if (PIC::ThisThread==0) cout << "$PREFIX:Particle weight mode: specie dependent local weight" << endl;
   cDataBlockAMR::LocalParticleWeightOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
-  #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+#elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
   //do nothing for _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-  #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SINGLE_GLOBAL_PARTICLE_WEIGHT_
+#elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SINGLE_GLOBAL_PARTICLE_WEIGHT_
   //do nothing for _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SINGLE_GLOBAL_PARTICLE_WEIGHT_
-  #else
+#else
   exit(__LINE__,__FILE__,"not implemented");
-  #endif
+#endif
 
   //set up the offsets for 'center node' sampled data
   long int offset=0;
@@ -480,10 +476,10 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
 
 
   //the volume partilce injection: save the volume particle injection rate
-#if _PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_
-  PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
-  PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double)*PIC::nTotalSpecies;
-#endif
+  if (_PIC_VOLUME_PARTICLE_INJECTION_MODE_ == _PIC_VOLUME_PARTICLE_INJECTION_MODE__ON_) {
+    PIC::Mesh::cDataCenterNode_static_data::LocalParticleVolumeInjectionRateOffset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
+    PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+=sizeof(double)*PIC::nTotalSpecies;
+  }
 
   //allocate the model requested static (not sampling) cell data
   if (PIC::IndividualModelSampling::RequestStaticCellData.size()!=0) {
@@ -550,10 +546,10 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
-   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&BlockUserDataLength,1);
+  return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
+      &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&BlockUserDataLength,1);
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
@@ -561,12 +557,12 @@ int PIC::Mesh::PackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeTab
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
-   return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
-       BlockCenterNodeMask,BlockCornerNodeMask, 
-       SendDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&BlockUserDataLength,1);
+  return PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,
+      BlockCenterNodeMask,BlockCornerNodeMask, 
+      SendDataBuffer,
+      &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&BlockUserDataLength,1);
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
@@ -576,9 +572,9 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
     int* iBlockUserDataStateVectorIntervalBegin,int *iBlockUserDataStateVectorIntervalLength,int nBlocktateVectorIntervals) {
 
   return PIC::Mesh::PackBlockData_Internal(NodeTable,NodeTableLength,NodeDataLength,NULL,NULL,SendDataBuffer,
-    iCornerNodeStateVectorIntervalBegin,CornerNodeStateVectorIntervalLength,nCornerNodeStateVectorIntervals,
-    iCenterNodeStateVectorIntervalBegin,CenterNodeStateVectorIntervalLength,nCenterNodeStateVectorIntervals,
-    iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
+      iCornerNodeStateVectorIntervalBegin,CornerNodeStateVectorIntervalLength,nCornerNodeStateVectorIntervals,
+      iCenterNodeStateVectorIntervalBegin,CenterNodeStateVectorIntervalLength,nCenterNodeStateVectorIntervals,
+      iBlockUserDataStateVectorIntervalBegin,iBlockUserDataStateVectorIntervalLength,nBlocktateVectorIntervals);
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
@@ -591,11 +587,11 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
   using namespace PIC::Mesh::cDataBlockAMR_static_data;
 
-//  #ifdef __CUDA_ARCH__ 
-//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
-//  #else
-//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
-//  #endif
+  //  #ifdef __CUDA_ARCH__ 
+  //  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+  //  #else
+  //  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+  //  #endif
 
 
   int SendBufferIndex=0;
@@ -615,16 +611,22 @@ int PIC::Mesh::PackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,in
 
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NodeTable[iNode];
     cDataBlockAMR* block=Node->block;
+    int iCellMax,jCellMax,kCellMax;
 
-    #if DIM == 3
-    static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-    #elif DIM == 2
-    static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-    #elif DIM == 1
-    static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-    #else
-    exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-    #endif
+    switch (DIM) {
+    case 3:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+      break;
+    case 2:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+      break;
+    case 1:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+      break;
+    }
 
     //send the center node associated data
     if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
@@ -802,10 +804,10 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
-   return UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&BlockUserDataLength,1);
+  return UnpackBlockData_Internal(NodeTable,NodeTableLength,RecvDataBuffer,
+      &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&BlockUserDataLength,1);
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
@@ -813,12 +815,12 @@ int PIC::Mesh::UnpackBlockData(cTreeNodeAMR<cDataBlockAMR>** NodeTable,int NodeT
   int ibegin=0;
   int BlockUserDataLength=PIC::Mesh::cDataBlockAMR_static_data::totalAssociatedDataLength-PIC::Mesh::cDataBlockAMR_static_data::UserAssociatedDataOffset;
 
-   return UnpackBlockData_Internal(NodeTable,NodeTableLength,
-       BlockCenterNodeMask,BlockCornerNodeMask,
-       RecvDataBuffer,
-       &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
-       &ibegin,&BlockUserDataLength,1);
+  return UnpackBlockData_Internal(NodeTable,NodeTableLength,
+      BlockCenterNodeMask,BlockCornerNodeMask,
+      RecvDataBuffer,
+      &ibegin,&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,1,
+      &ibegin,&BlockUserDataLength,1);
 }
 
 _TARGET_DEVICE_ _TARGET_HOST_
@@ -846,195 +848,201 @@ int PIC::Mesh::UnpackBlockData_Internal(cTreeNodeAMR<cDataBlockAMR>** NodeTable,
   int CenterNodeSendMaskLength=BlockElementSendMask::CenterNode::GetSize();
   int CornerNodeSendMaskLength=BlockElementSendMask::CornerNode::GetSize();
 
-//  #ifdef __CUDA_ARCH__ 
-//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
-//  #else
-//  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
-//  #endif
+  //  #ifdef __CUDA_ARCH__ 
+  //  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=GPU::mesh;
+  //  #else
+  //  cAmpsMesh<cDataCornerNode,cDataCenterNode,cDataBlockAMR>  *mesh=CPU::mesh;
+  //  #endif
 
 
   for (int iNode=0;iNode<NodeTableLength;iNode++) if (NodeTable[iNode]->block!=NULL) {
-     int iCell,jCell,kCell,iDataInterval;
-     long int LocalCellNumber;
-     PIC::Mesh::cDataCenterNode *CenterNode=NULL;
-     PIC::Mesh::cDataCornerNode *CornerNode=NULL;
+    int iCell,jCell,kCell,iDataInterval;
+    long int LocalCellNumber;
+    PIC::Mesh::cDataCenterNode *CenterNode=NULL;
+    PIC::Mesh::cDataCornerNode *CornerNode=NULL;
 
-     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NodeTable[iNode];
-     PIC::Mesh::cDataBlockAMR *block=Node->block;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node=NodeTable[iNode];
+    PIC::Mesh::cDataBlockAMR *block=Node->block;
 
-     unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
-     unsigned char* CurrentBlockCornerNodeMask=(BlockCornerNodeMask!=NULL) ? BlockCornerNodeMask+iNode*CornerNodeSendMaskLength : NULL;
+    unsigned char* CurrentBlockCenterNodeMask=(BlockCenterNodeMask!=NULL) ? BlockCenterNodeMask+iNode*CenterNodeSendMaskLength : NULL;
+    unsigned char* CurrentBlockCornerNodeMask=(BlockCornerNodeMask!=NULL) ? BlockCornerNodeMask+iNode*CornerNodeSendMaskLength : NULL;
+    int iCellMax,jCellMax,kCellMax;
 
-     #if DIM == 3
-     static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-     #elif DIM == 2
-     static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-     #elif DIM == 1
-     static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-     #else
-     exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-     #endif
+    switch (DIM) {
+    case 3:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+      break;
+    case 2:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+      break;
+    case 1:
+      iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+      break;
+    }
 
-     //recieve the center node associeated data
-     if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
-       LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
-       CenterNode=block->GetCenterNode(LocalCellNumber);
+    //recieve the center node associeated data
+    if (nCenterNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+      LocalCellNumber=_getCenterNodeLocalNumber(iCell,jCell,kCell);
+      CenterNode=block->GetCenterNode(LocalCellNumber);
 
-       if (BlockCenterNodeMask!=NULL) {
-         if (BlockElementSendMask::CenterNode::Test(iCell,jCell,kCell,CurrentBlockCenterNodeMask)==false) {
-           continue;
-         }
-       }
+      if (BlockCenterNodeMask!=NULL) {
+        if (BlockElementSendMask::CenterNode::Test(iCell,jCell,kCell,CurrentBlockCenterNodeMask)==false) {
+          continue;
+        }
+      }
 
-       if (RecvDataBuffer!=NULL) {
-         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
-           memcpy(CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CenterNodeStateVectorIntervalLength[iDataInterval]);
-           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
-         }
+      if (RecvDataBuffer!=NULL) {
+        for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+          memcpy(CenterNode->associatedDataPointer+iCenterNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CenterNodeStateVectorIntervalLength[iDataInterval]);
+          RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+        }
 
-         memcpy(&CenterNode->Measure,RecvDataBuffer+RecvDataBufferIndex,sizeof(double));
-         RecvDataBufferIndex+=sizeof(double);
-       }
-       else {
-         for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
-           RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
-         }
+        memcpy(&CenterNode->Measure,RecvDataBuffer+RecvDataBufferIndex,sizeof(double));
+        RecvDataBufferIndex+=sizeof(double);
+      }
+      else {
+        for (iDataInterval=0;iDataInterval<nCenterNodeStateVectorIntervals;iDataInterval++) {
+          RecvDataBufferIndex+=CenterNodeStateVectorIntervalLength[iDataInterval];
+        }
 
-         RecvDataBufferIndex+=sizeof(double);
-       }
-     }
+        RecvDataBufferIndex+=sizeof(double);
+      }
+    }
 
 
-     if (BlockCornerNodeMask!=NULL) {
-       if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax+1;kCell++) for (jCell=0;jCell<jCellMax+1;jCell++) for (iCell=0;iCell<iCellMax+1;iCell++) {
-         int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-         CornerNode=block->GetCornerNode(nd);
+    if (BlockCornerNodeMask!=NULL) {
+      if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax+1;kCell++) for (jCell=0;jCell<jCellMax+1;jCell++) for (iCell=0;iCell<iCellMax+1;iCell++) {
+        int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+        CornerNode=block->GetCornerNode(nd);
 
-         if (BlockElementSendMask::CornerNode::Test(iCell,jCell,kCell,CurrentBlockCornerNodeMask)==false) {
-           continue;
-         }
+        if (BlockElementSendMask::CornerNode::Test(iCell,jCell,kCell,CurrentBlockCornerNodeMask)==false) {
+          continue;
+        }
 
-         if (RecvDataBuffer!=NULL) {
-           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-             memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-           }
-         }
-         else {
-           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-           }
-         }
-       }
-     }
-     else {
-       //recieve the 'internal' corner node associated data
-       if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
-         int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-         CornerNode=block->GetCornerNode(nd);
+        if (RecvDataBuffer!=NULL) {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+            RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
+        }
+        else {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
+        }
+      }
+    }
+    else {
+      //recieve the 'internal' corner node associated data
+      if (nCornerNodeStateVectorIntervals!=0) for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
+        int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+        CornerNode=block->GetCornerNode(nd);
 
-         if (RecvDataBuffer!=NULL) {
-           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-             memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-           }
-         }
-         else {
-           for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-             RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-           }
-         }
-       }
+        if (RecvDataBuffer!=NULL) {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+            RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
+        }
+        else {
+          for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+            RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+          }
+        }
+      }
 
-       //recv 'corners' from the 'right' boundary of the block
-       int iface,iFaceTable[3]={1,3,5};
-       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
+      //recv 'corners' from the 'right' boundary of the block
+      int iface,iFaceTable[3]={1,3,5};
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *NeibNode,*ThisNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*) Node;
 
-       if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
-         iface=iFaceTable[i];
+      if (nCornerNodeStateVectorIntervals!=0) for (int i=0;i<3;i++) {
+        iface=iFaceTable[i];
 
-         if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
-           //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
+        if ((NeibNode=ThisNode->GetNeibFace(iface,0,0,mesh))!=NULL) if (NeibNode->RefinmentLevel<ThisNode->RefinmentLevel) {
+          //the current block has more points than the neibour -> need to send the point that exist in the current block but not exist in the neib block
 
-           switch (iface) {
-           case 1:
-             //the plane normal to 'x' and at the maximum 'x'
-             for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
-               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-               CornerNode=block->GetCornerNode(nd);
+          switch (iface) {
+          case 1:
+            //the plane normal to 'x' and at the maximum 'x'
+            for (iCell=iCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (jCell=1;jCell<jCellMax+1;jCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
 
-               if (RecvDataBuffer!=NULL) {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
-               else {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
+              if (RecvDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
 
-             }
-             break;
+            }
+            break;
 
-           case 3:
-             //the plane is normal to the 'y' direction, and is at maximum 'y'
-             for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
-               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-               CornerNode=block->GetCornerNode(nd);
+          case 3:
+            //the plane is normal to the 'y' direction, and is at maximum 'y'
+            for (jCell=jCellMax,kCell=1;kCell<kCellMax+1;kCell+=2) for (iCell=1;iCell<iCellMax+1;iCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
 
-               if (RecvDataBuffer!=NULL) {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
-               else {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
+              if (RecvDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
 
-             }
-             break;
+            }
+            break;
 
-           case 5:
-             //the plane normal to 'z' and at the maximum 'z'
-             for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
-               int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
-               CornerNode=block->GetCornerNode(nd);
+          case 5:
+            //the plane normal to 'z' and at the maximum 'z'
+            for (kCell=kCellMax,jCell=0;jCell<jCellMax;jCell+=2) for (iCell=0;iCell<iCellMax;iCell+=2) {
+              int nd=_getCornerNodeLocalNumber(iCell,jCell,kCell);
+              CornerNode=block->GetCornerNode(nd);
 
-               if (RecvDataBuffer!=NULL) {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
-               else {
-                 for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
-                   RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
-                 }
-               }
-             }
-             break;
-           }
-         }
+              if (RecvDataBuffer!=NULL) {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  memcpy(CornerNode->associatedDataPointer+iCornerNodeStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,CornerNodeStateVectorIntervalLength[iDataInterval]);
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+              else {
+                for (iDataInterval=0;iDataInterval<nCornerNodeStateVectorIntervals;iDataInterval++) {
+                  RecvDataBufferIndex+=CornerNodeStateVectorIntervalLength[iDataInterval];
+                }
+              }
+            }
+            break;
+          }
+        }
 
-       }
-     }
+      }
+    }
 
-     if (RecvDataBuffer!=NULL) {
-       for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
-         memcpy(block->associatedDataPointer+UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,iBlockUserDataStateVectorIntervalLength[iDataInterval]);
-         RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
-       }
-     }
-     else {
-       for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
-         RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
-       }
-     }
+    if (RecvDataBuffer!=NULL) {
+      for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+        memcpy(block->associatedDataPointer+UserAssociatedDataOffset+iBlockUserDataStateVectorIntervalBegin[iDataInterval],RecvDataBuffer+RecvDataBufferIndex,iBlockUserDataStateVectorIntervalLength[iDataInterval]);
+        RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+      }
+    }
+    else {
+      for (iDataInterval=0;iDataInterval<nBlocktateVectorIntervals;iDataInterval++) {
+        RecvDataBufferIndex+=iBlockUserDataStateVectorIntervalLength[iDataInterval];
+      }
+    }
   }
 
 
@@ -1050,26 +1058,32 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
   int SendBufferIndex=0;
+  int iCellMax,jCellMax,kCellMax;
 
-  #if DIM == 3
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-  #elif DIM == 2
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-  #elif DIM == 1
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-  #else
-  exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-  #endif
+  switch (DIM) {
+  case 3:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+    break;
+  case 2:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+    break;
+  case 1:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+    break;
+  }
 
   //send the center node associated data
   for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
-/*
+    /*
     pipe->send(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
     pipe->send(CenterNode->Measure);
-*/
+     */
 
     if (pipe!=NULL) {
       pipe->send(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength);
@@ -1096,9 +1110,9 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
-/*
+    /*
     pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-*/
+     */
 
     if (pipe!=NULL) {
       pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
@@ -1134,20 +1148,20 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-*/
+           */
 
-    if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-    }
-    else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
-    else {
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+          }
+          else if (SendDataBuffer!=NULL) {
+            memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
+          else {
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
 
         }
         break;
@@ -1158,20 +1172,20 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-*/
+           */
 
-    if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-    }
-    else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
-    else {
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+          }
+          else if (SendDataBuffer!=NULL) {
+            memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
+          else {
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
 
         }
         break;
@@ -1182,20 +1196,20 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-*/
+           */
 
-    if (pipe!=NULL) {
-      pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-    }
-    else if (SendDataBuffer!=NULL) {
-      memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
-    else {
-      SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
-    }
+          if (pipe!=NULL) {
+            pipe->send(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+          }
+          else if (SendDataBuffer!=NULL) {
+            memcpy(SendDataBuffer+SendBufferIndex,CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength);
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
+          else {
+            SendBufferIndex+=cDataCornerNode_static_data::totalAssociatedDataLength;
+          }
 
 
         }
@@ -1205,9 +1219,9 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
 
   }
 
-/*
+  /*
   pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
-*/
+   */
 
   if (pipe!=NULL) {
     pipe->send(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset);
@@ -1226,18 +1240,24 @@ int PIC::Mesh::cDataBlockAMR::sendBoundaryLayerBlockData(CMPI_channel *pipe,void
 void PIC::Mesh::cDataBlockAMR::sendMoveBlockAnotherProcessor(CMPI_channel *pipe,void *Node) {
   int iCell,jCell,kCell;
   long int LocalCellNumber;
+  int iCellMax,jCellMax,kCellMax;
 
   sendBoundaryLayerBlockData(pipe,Node,NULL);
 
-  #if DIM == 3
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-  #elif DIM == 2
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-  #elif DIM == 1
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-  #else
-  exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-  #endif
+  switch (DIM) {
+  case 3:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+    break;
+  case 2:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+    break;
+  case 1:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+    break;
+  }
 
   //send all blocks' data when the blocks is moved to another processor
   long int Particle,NextParticle;
@@ -1282,26 +1302,32 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
   PIC::Mesh::cDataCenterNode *CenterNode=NULL;
   PIC::Mesh::cDataCornerNode *CornerNode=NULL;
   int RecvDataBufferIndex=0;
+  int iCellMax,jCellMax,kCellMax;
 
-  #if DIM == 3
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
-  #elif DIM == 2
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
-  #elif DIM == 1
-  static const int iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
-  #else
-  exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
-  #endif
+  switch (DIM) {
+  case 3:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=_BLOCK_CELLS_Z_;
+    break;
+  case 2:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=_BLOCK_CELLS_Y_,kCellMax=1;
+    break;
+  case 1:
+    iCellMax=_BLOCK_CELLS_X_,jCellMax=1,kCellMax=1;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the value of the parameter is not recognized");
+    break;
+  }
 
   //recieve the center node associeated data
   for (kCell=0;kCell<kCellMax;kCell++) for (jCell=0;jCell<jCellMax;jCell++) for (iCell=0;iCell<iCellMax;iCell++) {
     LocalCellNumber=getCenterNodeLocalNumber(iCell,jCell,kCell);
     CenterNode=GetCenterNode(LocalCellNumber);
 
-/*
+    /*
     pipe->recv(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength,From);
     pipe->recv(CenterNode->Measure,From);
-*/
+     */
 
     if (pipe!=NULL) {
       pipe->recv(CenterNode->associatedDataPointer,cDataCenterNode_static_data::totalAssociatedDataLength,From);
@@ -1324,9 +1350,9 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
     int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
     CornerNode=GetCornerNode(nd);
 
-/*
+    /*
     pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
-*/
+     */
 
     if (pipe!=NULL) {
       pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
@@ -1357,9 +1383,9 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
-*/
+           */
 
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
@@ -1381,9 +1407,9 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
-*/
+           */
 
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
@@ -1405,9 +1431,9 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
           int nd=getCornerNodeLocalNumber(iCell,jCell,kCell);
           CornerNode=GetCornerNode(nd);
 
-/*
+          /*
           pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
-*/
+           */
 
           if (pipe!=NULL) {
             pipe->recv(CornerNode->associatedDataPointer,cDataCornerNode_static_data::totalAssociatedDataLength,From);
@@ -1429,9 +1455,9 @@ int PIC::Mesh::cDataBlockAMR::recvBoundaryLayerBlockData(CMPI_channel *pipe,int 
 
   }
 
-/*
+  /*
   pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
-*/
+   */
 
   if (pipe!=NULL) {
     pipe->recv(associatedDataPointer+UserAssociatedDataOffset,totalAssociatedDataLength-UserAssociatedDataOffset,From);
@@ -1496,8 +1522,8 @@ void PIC::DomainBlockDecomposition::UpdateBlockTable() {
   }
 
   //deallocate and allocat the block pointe buffer
-//  if (BlockTable!=NULL) delete [] BlockTable;
-//  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
+  //  if (BlockTable!=NULL) delete [] BlockTable;
+  //  BlockTable=new cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* [nLocalBlocks];
 
   if (BlockTable!=NULL) amps_free_managed(BlockTable);
   amps_malloc_managed<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*>(BlockTable,nLocalBlocks);
@@ -1521,16 +1547,16 @@ int PIC::Mesh::GetCenterNodesInterpolationCoefficients(double *x,double *Coeffic
   int iCell,cnt=0;
   double SumWeight=0.0;
 
-//  if (_PIC_COUPLER__INTERPOLATION_MODE_ != _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
-//    exit(__LINE__,__FILE__,"Error: the function should be used only when the linear interpolation routine is set");
-//  }
+  //  if (_PIC_COUPLER__INTERPOLATION_MODE_ != _PIC_COUPLER__INTERPOLATION_MODE__CELL_CENTERED_LINEAR_) {
+  //    exit(__LINE__,__FILE__,"Error: the function should be used only when the linear interpolation routine is set");
+  //  }
 
   //construct the interpolation stencil
-  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   int ThreadOpenMP=omp_get_thread_num();
-  #else
+#else
   int ThreadOpenMP=0;
-  #endif
+#endif
 
   PIC::CPLR::InitInterpolationStencil(x,startNode);
 
@@ -1562,19 +1588,19 @@ int PIC::Mesh::GetCenterNodesInterpolationCoefficients(double *x,double *Coeffic
 /*
 void PIC::Mesh::cDataCenterNode::SampleDatum(Datum::cDatumSampled Datum, double* In, int spec, double weight) {
   for(int i=0; i<Datum.length; i++) {
-    *(i + Datum.length * spec + (double*)(associatedDataPointer + collectingCellSampleDataPointerOffset+Datum.offset))+= In[i] * weight;
+ *(i + Datum.length * spec + (double*)(associatedDataPointer + collectingCellSampleDataPointerOffset+Datum.offset))+= In[i] * weight;
   }
 }
 
 void PIC::Mesh::cDataCenterNode::SampleDatum(Datum::cDatumSampled Datum, double In, int spec,  double weight) {
-  *(spec + (double*)(associatedDataPointer + collectingCellSampleDataPointerOffset+Datum.offset))+= In * weight;
+ *(spec + (double*)(associatedDataPointer + collectingCellSampleDataPointerOffset+Datum.offset))+= In * weight;
 }
 
 //.......................................................................
 void PIC::Mesh::cDataCenterNode::SetDatum(Datum::cDatumSampled Datum, double* In, int spec) {
   for(int i=0; i<Datum.length; i++) *(i + Datum.length * spec + (double*)(associatedDataPointer + completedCellSampleDataPointerOffset+Datum.offset)) = In[i];
 }
-*/
+ */
 
 //get accumulated data
 //.......................................................................
@@ -1666,11 +1692,14 @@ void PIC::Mesh::cDataCenterNode::InterpolateDatum(Datum::cDatumSampled Datum, cD
 
     SetDatum(&Datum, interpolated, spec);
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-    for(int i=0; i<Datum.length; i++) if (isfinite(interpolated[i])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exception");
-    #endif
-    #endif
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)
+      if (_PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_) {
+        for(int i=0; i<Datum.length; i++) {
+          if (isfinite(interpolated[i])==false) {
+            exit(__LINE__,__FILE__,"Error: Floating Point Exception");
+          }
+        }
+      }
   }
 }
 
@@ -1717,7 +1746,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
     }
 
     //add the list of the cut-faces accessable throught the block neibours
-    #if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
+#if _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ == _USER_DEFINED_INTERNAL_BOUNDARY_NASTRAN_SURFACE_MODE_ON_
     if (startNode->neibCutFaceListDescriptorList!=NULL) {
       int cnt=0;
 
@@ -1726,7 +1755,7 @@ unsigned int PIC::Mesh::GetMeshTreeSignature(void *startNodeIn,int nline,const c
       NeibCutFaceListDescriptorList.add(BottomNodeCounter);
       NeibCutFaceListDescriptorList.add(cnt);
     }
-    #endif
+#endif
   }
 
   //output calculated signatures
@@ -1870,7 +1899,7 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
 
   bool next_tree_level_exists=true;
   int iCurrentTreeLevel=0; 
- 
+
   //prepare the tree structure
   if (PIC::Mesh::mesh->rootTree!=NULL) {
     new_entry.clear();
@@ -1890,17 +1919,17 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
         Node=PIC::Mesh::mesh->findAMRnodeWithID(it->NodeId);  
 
         for (i=0;i<(1<<DIM);i++) if ((DownNode=Node->downNode[i])!=NULL) {
-           //the next level exists
-           next_tree_level_exists=true;
-           it->SplitFlag=true;
-           
-           //add the new node in the list
-           new_entry.clear();
-    
-           PIC::Mesh::mesh->GetAMRnodeID(new_entry.NodeId,DownNode);
-           if (DownNode->block!=NULL) new_entry.AllocatedFlag=true;
-           
-           TreeLevelList.push_back(new_entry);
+          //the next level exists
+          next_tree_level_exists=true;
+          it->SplitFlag=true;
+
+          //add the new node in the list
+          new_entry.clear();
+
+          PIC::Mesh::mesh->GetAMRnodeID(new_entry.NodeId,DownNode);
+          if (DownNode->block!=NULL) new_entry.AllocatedFlag=true;
+
+          TreeLevelList.push_back(new_entry);
         }
       }
 
@@ -1913,7 +1942,7 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
   for (int iLevel=0;iLevel<iCurrentTreeLevel;iLevel++) {
     int i,nNodes;
     PIC::Mesh::GPU::cNodeData *buffer,*buffer_dev;
-   
+
     nNodes=TreeStructureTable[iLevel].size();
     buffer=new cNodeData [nNodes];
     amps_new_device(buffer_dev,nNodes);
@@ -1930,10 +1959,10 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
 
       for (i=0;i<nNodes;i++) {
         Node=PIC::Mesh::GPU::mesh->findAMRnodeWithID(buffer[i].NodeId);
-      
+
         if (buffer[i].SplitFlag==true) {
           PIC::Mesh::GPU::mesh->splitTreeNode(Node);
-  
+
           if (buffer[i].AllocatedFlag==true) {
             PIC::Mesh::GPU::mesh->AllocateBlock(Node);
           }
@@ -1943,7 +1972,7 @@ void PIC::Mesh::GPU::CopyMeshHost2Device() {
 
     kernel_2<<<1,1>>>(SplitDeviceMeshBlocks,buffer,nNodes);
     cudaDeviceSynchronize();
-  
+
     delete [] buffer;
     amps_free_device(buffer_dev); 
   }
