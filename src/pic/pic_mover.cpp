@@ -8,9 +8,6 @@
 #include "pic.h"
 
 
-//PIC::Mover::fSpeciesDependentParticleMover *PIC::Mover::MoveParticleTimeStep=NULL;
-//PIC::Mover::fTotalParticleAcceleration PIC::Mover::TotalParticleAcceleration=PIC::Mover::TotalParticleAcceleration_default;
-//PIC::Mover::fSpeciesDependentParticleMover_BoundaryInjection *PIC::Mover::MoveParticleBoundaryInjection=NULL;
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 
@@ -222,7 +219,6 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
 
   data.E_Corner=E_corner;
   data.B_C=B_C;
-//  data.B_Corner=B_C;
   data.MolMass=MolMass;
   data.ElectricChargeTable=ElectricChargeTable;
   data.TimeStepTable=TimeStepTable;
@@ -332,12 +328,6 @@ void LapentaMultiThreadedMoverGPU() {
   int nlocal_blocks=PIC::DomainBlockDecomposition::nLocalBlocks;
 
   int this_thread_id=0,thread_id_table_size=1;
-
-//  #ifndef __CUDA_ARCH__
-//  PIC::ParticleBuffer::CreateParticleTable();
-//  #endif
-
-
   double MolMass[_TOTAL_SPECIES_NUMBER_],ElectricChargeTable[_TOTAL_SPECIES_NUMBER_],TimeStepTable[_TOTAL_SPECIES_NUMBER_];
 
   memcpy(MolMass,PIC::MolecularData::MolMass,sizeof(double)*_TOTAL_SPECIES_NUMBER_);
@@ -1113,34 +1103,8 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
 
-
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  double xInit[3];
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-  double xInit[3];
-#endif
-*/
-  //=====================  DEBUG =========================
-
-
-
-
-//########## DEBUG ############
-
 static long int nCallCounter=0;
-
 nCallCounter++;
-
-/*
-if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
-  cout << __FILE__ << "@" << __LINE__ << endl;
-}
-*/
-
-//########## END DEBUG ##########
-
-
 
   //the descriptors of the internal surfaces
   cInternalBoundaryConditionsDescriptor *InternalBoundaryDescriptor,*InternalBoundaryDescriptor_dtMin=NULL,*lastInternalBoundaryDescriptor=NULL;
@@ -1171,16 +1135,6 @@ if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
   ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   PIC::ParticleBuffer::GetV(v,ParticleData);
   PIC::ParticleBuffer::GetX(x,ParticleData);
-//  spec=PIC::ParticleBuffer::GetI(ParticleData);
-
-
-
-//#######  DEBUG #########
-//double xpinit[3];
-//for (idim=0;idim<3;idim++) xpinit[idim]=x[idim];
-
-//=====================  DEBUG =========================
-
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
@@ -1207,26 +1161,6 @@ if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
   }
 #endif
 
-
-/*
-if (sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])<1737.0E3) {
-  cout << __FILE__ << __LINE__ << endl;
-}
-
-*/
-
-  /*
-  if ((nCallCounter==1057317)&&(PIC::Mesh::mesh->ThisThread==5)) {
-    cout << __FILE__ << "@" << __LINE__ << endl;
-  }
-  */
-//===================== END DEBUG ==================
-
-
-
-//####### END DEBUG #########
-
-//  while (dtTotal>0.0) {
   while (MovingTimeFinished==false) {
 MovingLoop:
 
@@ -1374,16 +1308,6 @@ int iTemp,jTemp,kTemp;
         c=dx*dx+dy*dy+dz*dz-radiusSphere*radiusSphere;
 
         if (c<0.0) {
-          /*
-          double r=sqrt(dx*dx+dy*dy+dz*dz);
-
-          if (radiusSphere-r>PIC::Mesh::mesh->EPS) {
-            cout << "r=" << r << ",  Rsphere=" << radiusSphere << endl;
-            exit(__LINE__,__FILE__,"Error: the particle inside the sphere");
-          }
-          else c=0.0;
-          */
-
           //the particle is inside the sphese
           //1. project the particle on the surface of the spehre
           //2. apply boundary conditions
@@ -1424,12 +1348,10 @@ int iTemp,jTemp,kTemp;
 
         sqrt_d=sqrt(d);
         dtTemp=-(b+sqrt_d)/(2.0*a);
-//        if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh->EPS*PIC::Mesh::mesh->EPS)) dtTemp=-1.0;
 
         dt1=-2.0*c/(b+sqrt_d);
         if ((dtTemp<0.0)||((dt1>0.0)&&(dt1<dtTemp))) {
           dtTemp=dt1;
-//          if ((dtTemp>0.0)&&(dtTemp*dtTemp*a<PIC::Mesh::mesh->EPS*PIC::Mesh::mesh->EPS)) dtTemp=-1.0;
         }
 
         if ((0.0<dtTemp)&&(dtTemp<dtMin)) {
@@ -1456,27 +1378,8 @@ int iTemp,jTemp,kTemp;
     }
     #endif
 
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-    //check if a photolytic reaction is possible and get the time interval before the transformation occures
-    int PhotolyticReactionsReturnCode=PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(x,ptr,spec,dtMin,startNode);
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-    bool TransformationTimeStepLimitFlag=false;
-
-    int GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_INDICATOR_(x,v,spec,ptr,ParticleData,dtMin,TransformationTimeStepLimitFlag,startNode);
-#endif
-*/
-
     //advance the particle's position
     for (idim=0;idim<3;idim++) {
-
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-      xInit[idim]=x[idim];
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-      xInit[idim]=x[idim];
-#endif
-*/
 
       x[idim]+=dtMin*v[idim];
     }
@@ -1486,59 +1389,6 @@ int iTemp,jTemp,kTemp;
 #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
     v[0]+=dtMin*accl[0],v[1]+=dtMin*accl[1],v[2]+=dtMin*accl[2];
 #endif
-
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-    //model the photolytic transformation
-    if (PhotolyticReactionsReturnCode==_PHOTOLYTIC_REACTION_OCCURES_) {
-      int specInit=spec;
-
-      //PhotolyticReactionsReturnCode=PIC::ChemicalReactions::PhotolyticReactions::ReactionProcessorTable[specInit](xInit,x,ptr,spec,ParticleData);
-      PhotolyticReactionsReturnCode=_PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(xInit,x,v,ptr,spec,ParticleData,dtMin,dtTotal,startNode);
-
-      //adjust the value of the dtLeft to match the time step for the species 'spec'
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-      dtTotal*=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/PIC::ParticleWeightTimeStep::GlobalTimeStep[specInit];
-#else
-      exit(__LINE__,__FILE__,"Error: not implemeted");
-#endif
-
-
-      if (PhotolyticReactionsReturnCode==_PHOTOLYTIC_REACTIONS_PARTICLE_REMOVED_) {
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-      }
-
-      MovingTimeFinished=false;
-      ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
-    }
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-   //model the generic particle transformation
-   if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_) {
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-     int specInit=spec;
-#endif
-
-     GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(xInit,x,v,spec,ptr,ParticleData,dtMin,startNode);   //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
-
-     //adjust the value of the dtLeft to match the time step for the species 'spec'
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-     dtTotal*=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/PIC::ParticleWeightTimeStep::GlobalTimeStep[specInit];
-#else
-     exit(__LINE__,__FILE__,"Error: not implemeted");
-#endif
-
-
-     if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__PARTICLE_REMOVED_) {
-       PIC::ParticleBuffer::DeleteParticle(ptr);
-       return _PARTICLE_LEFT_THE_DOMAIN_;
-     }
-
-//     MovingTimeFinished=false;
-//     ParticleIntersectionCode=_UNDEFINED_MIN_DT_INTERSECTION_CODE_UTSNFTT_;
-   }
-#endif
-*/
 
     //adjust the particle moving time
     dtTotal-=dtMin;
@@ -1558,9 +1408,6 @@ int iTemp,jTemp,kTemp;
 #else
       code=((cInternalSphere1DData*)(InternalBoundaryDescriptor_dtMin->BoundaryElement))->ParticleSphereInteraction(spec,ptr,x,v,dtTotal,(void*)startNode,InternalBoundaryDescriptor_dtMin->BoundaryElement);
 #endif
-
-//      code=PIC::BC::InternalBoundary::Sphere::ParticleSphereInteraction(spec,ptr,x,v,dtTotal,startNode,InternalBoundaryDescriptor_dtMin);
-
 
       if (code==_PARTICLE_DELETED_ON_THE_FACE_) return _PARTICLE_LEFT_THE_DOMAIN_;
 
@@ -1595,13 +1442,6 @@ int iTemp,jTemp,kTemp;
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
 
-
-//      newNode=PIC::Mesh::mesh->getNeibNode(iNeibNode[0],iNeibNode[1],iNeibNode[2],startNode);
-
-
-
-
-
       if (newNode==NULL) {
         //the particle left the computational domain
         PIC::ParticleBuffer::DeleteParticle(ptr);
@@ -1613,8 +1453,6 @@ int iTemp,jTemp,kTemp;
 
       #if _PIC_DEBUGGER_MODE_ ==  _PIC_DEBUGGER_MODE_ON_
       //check if the new particle coordiname is within the new block
-
-//      for (idim=0;idim<DIM;idim++) if ((x[idim]<xminBlock[idim]-PIC::Mesh::mesh->EPS)||(x[idim]>xmaxBlock[idim]+PIC::Mesh::mesh->EPS)) {
 
 #if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
       if ((x[0]<xminBlock[0]-PIC::Mesh::mesh->EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
@@ -1651,9 +1489,6 @@ int iTemp,jTemp,kTemp;
 #else
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
-//      x[neibNodeDirection]=(iNeibNode[neibNodeDirection]==-1) ? xmaxBlock[neibNodeDirection] : xminBlock[neibNodeDirection];
-
-      //reserve the place for particle's cloning
 
       //adjust the value of 'startNode'
       startNode=newNode;
@@ -1670,20 +1505,9 @@ int iTemp,jTemp,kTemp;
       exit(__LINE__,__FILE__,"Error: the option is nor defined");
 #endif
     }
-
-
-
   }
 
 
-
-
-  //the particle is still within the computational domain:
-  //place it to the local list of particles related to the new block and cell
-//  long int LocalCellNumber;
-//  int i,j,k;
-
-//  PIC::Mesh::cDataCenterNode *cell;
 
 
   //Rotate particle position and velocity when symmetry is accounted
@@ -1721,32 +1545,6 @@ switch (_AMR_SYMMETRY_MODE_) {
   default:
     exit(__LINE__,__FILE__,"Error: the option is not found");
 }
-
-
-
-
-/*
-  =====
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-//  cell=startNode->block->GetCenterNode(LocalCellNumber);
-
-  PIC::Mesh::cDataBlockAMR *block=startNode->block;
-  long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-  PIC::ParticleBuffer::SetV(v,ParticleData);
-  PIC::ParticleBuffer::SetX(x,ParticleData);
-
-  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
-
-  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
-  block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=ptr;
-
-
-
- // =====
-*/
-
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
@@ -1832,20 +1630,7 @@ switch (_AMR_SYMMETRY_MODE_) {
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
 #endif
-  //===================   END DEBUG ==============================
-
-
-  /*
-
-  if (sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])<1737.0E3) {
-    cout << __FILE__ << __LINE__ << endl;
-  }
-*/
-  //===================== END DEBUG ==================
-
-
-
-
+ 
   return _PARTICLE_MOTION_FINISHED_;
 }
 
@@ -1861,23 +1646,8 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   int i,j,k;
   PIC::Mesh::cDataCenterNode *cell;
 
-
-  //########## DEBUG ############
-
   static long int nCallCounter=0;
-
   nCallCounter++;
-
-
-  /*
-  if (nCallCounter==5053963) {
-    cout << __LINE__ << __FILE__<< endl;
-  }
-  */
-  //########## END DEBUG ##########
-
-
-
 
   #if  _SIMULATION_TIME_STEP_MODE_ ==  _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
   exit(__LINE__,__FILE__,"Error: the function cannot be applied for such configuration");
@@ -1924,9 +1694,6 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 #endif
 
 
-  //===================== END DEBUG ==================
-
-
 #if _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_
   if (startNode->InternalBoundaryDescriptorList!=NULL) {
    return UniformWeight_UniformTimeStep_noForce_TraceTrajectory(ptr,dt,startNode);
@@ -1961,44 +1728,6 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
     memcpy(vinit,v,3*sizeof(double));
     memcpy(xinit,x,3*sizeof(double));
 
-    //Check if the startNode has cut cells
-    /*
-#if _INTERNAL_BOUNDARY_MODE_ ==  _INTERNAL_BOUNDARY_MODE_ON_
-    if (startNode->InternalBoundaryDescriptorList!=NULL) {
-      PIC::ParticleBuffer::SetV(v,ParticleData);
-      PIC::ParticleBuffer::SetX(x,ParticleData);
-
-     return UniformWeight_UniformTimeStep_noForce_TraceTrajectory(ptr,dt+dtLeft,startNode);
-    }
-#endif
-*/
-
-
-    //check the occurence of photolytic reactions
-    //1. check if a reaction is possible
-    //2. move the particle for the time interval before the reaction has occured
-    //3. model the particle transformation
-
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-    //check if a photolytic reaction is possible and get the time interval before the transformation occures
-    double dtInit;
-    int PhotolyticReactionsReturnCode;
-
-    dtInit=dt;
-    PhotolyticReactionsReturnCode=PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(x,ptr,spec,dt,startNode);
-
-    if (PhotolyticReactionsReturnCode==_PHOTOLYTIC_REACTION_OCCURES_) dtLeft+=dtInit-dt;
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-    int GenericParticleTransformationReturnCode;
-    bool TransformationTimeStepLimitFlag=false;
-
-    dtLeft+=dt;
-    GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_INDICATOR_(x,v,spec,ptr,ParticleData,dt,TransformationTimeStepLimitFlag,startNode);
-    dtLeft-=dt;
-#endif
-*/
-
     //advance the particle positions
 
     x[0]+=dt*v[0],x[1]+=dt*v[1],x[2]+=dt*v[2];
@@ -2007,57 +1736,6 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
     #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
     v[0]+=dt*accl[0],v[1]+=dt*accl[1],v[2]+=dt*accl[2];
     #endif
-
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-    //model the photolytic transformation
-    if (PhotolyticReactionsReturnCode==_PHOTOLYTIC_REACTION_OCCURES_) {
-      int specInit=spec;
-
-//      PhotolyticReactionsReturnCode=PIC::ChemicalReactions::PhotolyticReactions::ReactionProcessorTable[specInit](xinit,x,ptr,spec,ParticleData);
-      PhotolyticReactionsReturnCode=_PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(xinit,x,v,ptr,spec,ParticleData,dt,dtLeft+dt,startNode);
-
-      //adjust the value of the dtLeft to match the time step for the species 'spec'
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-      dtLeft*=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/PIC::ParticleWeightTimeStep::GlobalTimeStep[specInit];
-#else
-      exit(__LINE__,__FILE__,"Error: not implemeted");
-#endif
-
-      if (PhotolyticReactionsReturnCode==_PHOTOLYTIC_REACTIONS_PARTICLE_REMOVED_) {
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-      }
-    }
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-    //model the generic particle transformation
-    if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__TRANSFORMATION_OCCURED_) {
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-      int specInit=spec;
-#endif
-
-      GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(xinit,x,v,spec,ptr,ParticleData,dt,startNode);  //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
-
-      //adjust the value of the dtLeft to match the time step for the species 'spec'
- #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-      dtLeft*=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec]/PIC::ParticleWeightTimeStep::GlobalTimeStep[specInit];
- #else
-      exit(__LINE__,__FILE__,"Error: not implemeted");
- #endif
-
-
-      if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__PARTICLE_REMOVED_) {
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-      }
-    }
-
-
-#endif
-*/
-
-
-
 
     //determine the new particle location
 switch (_AMR_SYMMETRY_MODE_) {
@@ -2076,7 +1754,6 @@ switch (_AMR_SYMMETRY_MODE_) {
         exit(__LINE__,__FILE__,"Error: the option is nor defined");
         break;
 }
-
 
     if (newNode==NULL) {
       //the particle left the computational domain
@@ -2129,25 +1806,6 @@ switch (_AMR_SYMMETRY_MODE_) {
   exit(__LINE__,__FILE__,"Error: the option is not found");
 #endif
 
-
- /* //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-  //cell=newNode->block->GetCenterNode(LocalCellNumber);
-
-  PIC::Mesh::cDataBlockAMR *block=startNode->block;
-  long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-  PIC::ParticleBuffer::SetV(v,ParticleData);
-  PIC::ParticleBuffer::SetX(x,ParticleData);
-
-  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
-
-  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
-  block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=ptr;*/
-
-
-
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
   
@@ -2191,17 +1849,8 @@ switch (_AMR_SYMMETRY_MODE_) {
 #error The option is unknown
 #endif
 
-
-
   PIC::ParticleBuffer::SetV(v,ParticleData);
   PIC::ParticleBuffer::SetX(x,ParticleData);
-
-
-
-
-
-  //=====================  DEBUG =========================
-
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   cell=newNode->block->GetCenterNode(LocalCellNumber);
@@ -2211,17 +1860,6 @@ switch (_AMR_SYMMETRY_MODE_) {
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
 #endif
-
-
-
-  /*
-  if (sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2])<1737.0E3) {
-    cout << __FILE__ << __LINE__ << endl;
-  }
-*/
-  //===================== END DEBUG ==================
-
-
 
   return _PARTICLE_MOTION_FINISHED_;
 }
@@ -2391,35 +2029,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
     }
     #endif
 
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-exit(__LINE__,__FILE__,"not implemented");
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-exit(__LINE__,__FILE__,"not implemented");
-#endif
-*/
-
     //prepare for the next pass of the loop
     startNode=newNode;
     memcpy(vInit,vFinal,3*sizeof(double));
     memcpy(xInit,xFinal,3*sizeof(double));
   }
-
-/*  //place it to the local list of particles related to the new block and cell
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-
-
-  PIC::Mesh::cDataBlockAMR *block=startNode->block;
-  long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-  PIC::ParticleBuffer::SetV(vFinal,ParticleData);
-  PIC::ParticleBuffer::SetX(xFinal,ParticleData);
-
-  PIC::ParticleBuffer::SetNext(tempFirstCellParticle,ParticleData);
-  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
-
-  if (tempFirstCellParticle!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstCellParticle);
-  block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=ptr;*/
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
@@ -2463,15 +2077,9 @@ exit(__LINE__,__FILE__,"not implemented");
 #error The option is unknown
 #endif
 
-
-
   PIC::ParticleBuffer::SetV(vInit,ParticleData);
   PIC::ParticleBuffer::SetX(xInit,ParticleData);
 
-
-
-
-  //=====================  DEBUG =========================
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
   cell=newNode->block->GetCenterNode(LocalCellNumber);
 
@@ -2480,7 +2088,6 @@ exit(__LINE__,__FILE__,"not implemented");
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
 #endif
-  //====================  END DEBUG ======================
 
   return _PARTICLE_MOTION_FINISHED_;
 }
@@ -2499,14 +2106,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   PIC::Mesh::cDataCenterNode *cell;
   bool MovingTimeFinished=false;
 
-//  double xInitOriginal[3];
-
   CutCell::cTriangleFace *lastIntersectedTriangleFace_LastCycle=NULL;
 
   //the descriptors of the internal surfaces
   cInternalBoundaryConditionsDescriptor *InternalBoundaryDescriptor,*InternalBoundaryDescriptor_dtMin=NULL,*lastInternalBoundaryDescriptor=NULL;
   CutCell::cTriangleFace *IntersectionFace=NULL;
-//  CutCell::cTriangleFace *lastIntersectedTriangleFace=NULL;
 
   //the description of the boundaries of the block faces
   struct cExternalBoundaryFace {
@@ -2671,36 +2275,13 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   }
 #endif
 
-
-
-
   static long int nCall=0;
-
-
   nCall++;
-
-
-/*  if ((nCall==117771926)||(ptr==72941)) {
-    cout << __FILE__ << "@" << __LINE__ << endl;
-  }*/
-
-
-
-/*  if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-    cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-   // exit(__LINE__,__FILE__,"The point is outside of the domain");
-  }*/
-
-//===================== END DEBUG ==================
 
 int nLoopCycle=0;
 
   while (MovingTimeFinished==false) {
 MovingLoop:
-
-  //reset the counter
-//  PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IncrementCounter();
 
   nLoopCycle++;
 
@@ -2720,17 +2301,6 @@ if (nLoopCycle>100) {
   }
 }
 
-
-//    DEBUG
-/*{
-  double R,R1;
-
-  R=sqrt(pow(xInit[1],2)+pow(xInit[2],2));
-  R1=R;
-}*/
-
-
-//===================== DEBUG ==================
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
    //check the consistency of the particle mover
    int iTemp,jTemp,kTemp;
@@ -3158,49 +2728,6 @@ if (nLoopCycle>100) {
       }
     }
 
-
-/////////////////
-
-/*
-    if ((startNode->FirstTriangleCutFace!=NULL)||(startNode->neibFirstTriangleCutFace!=NULL)) {
-      CutCell::cTriangleFaceDescriptor *t;
-      double TimeOfFlight;
-      double xLocalIntersection[2],xIntersection[3];
-
-      for (int iTestNode=0;iTestNode<2;iTestNode++)  
-      for (t=((iTestNode==0) ?  startNode->FirstTriangleCutFace : startNode->neibFirstTriangleCutFace);t!=NULL;t=t->next) if (t->TriangleFace!=lastIntersectedTriangleFace) {
-        if (t->TriangleFace->RayIntersection(xInit,vInit,TimeOfFlight,xLocalIntersection,xIntersection,PIC::Mesh::mesh->EPS)==true) {
-          if ((TimeOfFlight<dtMin)&&(TimeOfFlight>0.0)) {
-
-            //the intersection location has to be on the positive side of the previously intersected face
-            bool FaceIntersectionAccetanceFlag=true;
-
-            if (lastIntersectedTriangleFace!=NULL) {
-              double c=0.0;
-              int idim;
-
-              for (idim=0;idim<3;idim++) c+=(xIntersection[idim]-lastIntersectedTriangleFace->x0Face[idim])*lastIntersectedTriangleFace->ExternalNormal[idim];
-
-              if (c<=0.0) FaceIntersectionAccetanceFlag=false;
-            }
-
-
-            if (FaceIntersectionAccetanceFlag==true) {
-              dtMin=TimeOfFlight;
-              IntersectionFace=t->TriangleFace;
-
-              memcpy(xLocalIntersectionFace,xLocalIntersection,2*sizeof(double));
-              memcpy(xIntersectionFace,xIntersection,3*sizeof(double));
-
-
-              ParticleIntersectionCode=_BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
-            }
-          }
-        }
-      }
-    }
-*/
-
     //adjust the particle moving time
     dtTotal-=dtMin;
 
@@ -3289,13 +2816,6 @@ if (nLoopCycle>100) {
         }
         while (ExitFlag==false);
 
-
-/*        if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-          cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-         // exit(__LINE__,__FILE__,"The point is outside of the domain");
-        }*/
-
       }
       else if (r0<0.0) {
 
@@ -3351,59 +2871,11 @@ if (nLoopCycle>100) {
         IntersectionFace=ClosestFace;
         memcpy(xFinal,xInit,3*sizeof(double));
         dtMin=0.0;
-
-
-        //-------------------------------------------
-/*
-        if (r0>-PIC::Mesh::mesh->EPS) {
-          for (int idim=0;idim<DIM;idim++) xInit[idim]+=(0.0*PIC::Mesh::mesh->EPS-r0)*FaceNorm[idim];
-
-          memcpy(xFinal,xInit,3*sizeof(double));
-          dtMin=0.0;
-        }
-        else {
-          double dtRecalculated,xIntersection[3],xIntersectionLocal[2];
-          bool IntersectionCode;
-
-          IntersectionCode=IntersectionFace->RayIntersection(xInit,vInit,dtRecalculated,PIC::Mesh::mesh->EPS);
-
-          if (IntersectionCode==true) {
-            for (int idim=0;idim<3;idim++) xIntersection[idim]=xInit[idim]+dtRecalculated*vInit[idim];
-
-            IntersectionFace->GetProjectedLocalCoordinates(xIntersectionLocal,xIntersection);
-
-            printf("$PREFIX: ptr=%ld, r0=%e, dtMin=%e, dtRecalculated=%e (%i,%s)\n",ptr,r0,dtMin,dtRecalculated,__LINE__,__FILE__);
-            printf("$PREFIX: The \"global\" coordinates of the intersection: xIntersection[]=(%e,%e,%e)  (%i,%s)\n",xIntersection[0],xIntersection[1],xIntersection[2],__LINE__,__FILE__);
-            printf("$PREFIX: The \"local\" coordinates of the intersection: xIntersectionLocal[]=(%e,%e)  (%i,%s)\n",xIntersectionLocal[0],xIntersectionLocal[1],__LINE__,__FILE__);
-            printf("$PREFIX: e0Length*xLocal[0]=%e, e1Length*xLocal[1]=%e, EPS=%e (%i,%s)\n",IntersectionFace->e0Length*xIntersectionLocal[0],IntersectionFace->e1Length*xIntersectionLocal[1],PIC::Mesh::mesh->EPS,__LINE__,__FILE__);
-            printf("$PREFIX: e0Length=%e, e1Length=%e (%i,%s)\n",IntersectionFace->e0Length,IntersectionFace->e1Length,__LINE__,__FILE__);
-          }
-          else {
-            printf("$PREFIX: the intersection is not found (%i,%s)\n",__LINE__,__FILE__);
-          }
-
-          if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-            cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-           // exit(__LINE__,__FILE__,"The point is outside of the domain");
-          }
-
-          exit(__LINE__,__FILE__,"error: the point is inside the body");
-        }
-*/
-        //================================================
-
-
       }
       else {
         memcpy(xFinal,xInit,3*sizeof(double));
         dtMin=0.0;
       }
-
-/*      xFinal[0]=xInit[0]+dtMin*vInit[0];
-      xFinal[1]=xInit[1]+dtMin*vInit[1];
-      xFinal[2]=xInit[2]+dtMin*vInit[2];*/
-
 
       vFinal[0]=vInit[0]+dtMin*acclInit[0];
       vFinal[1]=vInit[1]+dtMin*acclInit[1];
@@ -3423,12 +2895,6 @@ if (nLoopCycle>100) {
       do {
         code=(ProcessTriangleCutFaceIntersection!=NULL) ? ProcessTriangleCutFaceIntersection(ptr,xFinal,vFinal,IntersectionFace,newNode) : _PARTICLE_DELETED_ON_THE_FACE_;
 
-
-/*      double c=vFinal[0]*IntersectionFace->ExternalNormal[0]+vFinal[1]*IntersectionFace->ExternalNormal[1]+vFinal[2]*IntersectionFace->ExternalNormal[2];
-      vFinal[0]-=2.0*c*IntersectionFace->ExternalNormal[0];
-      vFinal[1]-=2.0*c*IntersectionFace->ExternalNormal[1];
-      vFinal[2]-=2.0*c*IntersectionFace->ExternalNormal[2];*/
-
         if (code==_PARTICLE_DELETED_ON_THE_FACE_) {
           PIC::ParticleBuffer::DeleteParticle(ptr);
           return _PARTICLE_LEFT_THE_DOMAIN_;
@@ -3436,27 +2902,6 @@ if (nLoopCycle>100) {
       } while (vFinal[0]*IntersectionFace->ExternalNormal[0]+vFinal[1]*IntersectionFace->ExternalNormal[1]+vFinal[2]*IntersectionFace->ExternalNormal[2]<=0.0);
 
     }
-/*    else if (startNode->FirstTriangleCutFace!=NULL) {
-    	//use the first order integration if 'startNode' contains cut-faces, but no intersection with them is determened for the 1st order scheme
-
-        xFinal[0]=xInit[0]+dtMin*vInit[0];
-        xFinal[1]=xInit[1]+dtMin*vInit[1];
-        xFinal[2]=xInit[2]+dtMin*vInit[2];
-
-        vFinal[0]=vInit[0]+dtMin*acclInit[0];
-        vFinal[1]=vInit[1]+dtMin*acclInit[1];
-        vFinal[2]=vInit[2]+dtMin*acclInit[2];
-
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
-
-    }*/
-
-
-
     else if (ParticleIntersectionCode==_INTERNAL_SPHERE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
       int code;
 
@@ -3467,13 +2912,6 @@ if (nLoopCycle>100) {
       vFinal[0]=vInit[0]+dtMin*acclInit[0];
       vFinal[1]=vInit[1]+dtMin*acclInit[1];
       vFinal[2]=vInit[2]+dtMin*acclInit[2];
-
-
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-        cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-       // exit(__LINE__,__FILE__,"The point is outside of the domain");
-      }*/
 
       FirstBoundaryFlag=true;
 
@@ -3503,19 +2941,6 @@ if (nLoopCycle>100) {
         PIC::ParticleBuffer::DeleteParticle(ptr);
         return _PARTICLE_LEFT_THE_DOMAIN_;
       }
-
-/*
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-      double r[3]={0.0,0.0,0.0};
-
-      r[0]=sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
-      newNode=PIC::Mesh::mesh->findTreeNode(r,middleNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
-*/
     }
     else if (ParticleIntersectionCode==_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
 
@@ -3539,12 +2964,6 @@ if (nLoopCycle>100) {
         vFinal[1]=vInit[1]+dtMin*acclMiddle[1];
         vFinal[2]=vInit[2]+dtMin*acclMiddle[2];
       }
-
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-        cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-       // exit(__LINE__,__FILE__,"The point is outside of the domain");
-      }*/
 
       FirstBoundaryFlag=false;
 
@@ -3631,12 +3050,6 @@ exit(__LINE__,__FILE__,"Error: not implemented");
         vFinal[1]=vInit[1]+dtMin*acclMiddle[1];
         vFinal[2]=vInit[2]+dtMin*acclMiddle[2];
       }
-
-/*      if (CutCell::CheckPointInsideDomain(xFinal,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-        cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-       // exit(__LINE__,__FILE__,"The point is outside of the domain");
-      }*/
 
       FirstBoundaryFlag=false;
 
@@ -3763,77 +3176,7 @@ exit(__LINE__,__FILE__,"not implemented");
 
     //check the possible photolytic reactions
 ProcessPhotoChemistry:
-/*
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-    //model the photolytic transformation
-    if (PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(xFinal,ptr,spec,dtMin,newNode)==_PHOTOLYTIC_REACTION_OCCURES_) {
-      int PhotolyticReactionsReturnCode,specInit=spec;
 
-      //PhotolyticReactionsReturnCode=PIC::ChemicalReactions::PhotolyticReactions::ReactionProcessorTable[specInit](xInit,xFinal,ptr,spec,ParticleData);
-      PhotolyticReactionsReturnCode=_PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(xInit,xFinal,vFinal,ptr,spec,ParticleData,dtMin,dtMin+dtTotal,newNode);
-
-      //adjust the value of the dtLeft to match the time step for the species 'spec'
-      switch (PhotolyticReactionsReturnCode) {
-      case _PHOTOLYTIC_REACTIONS_PARTICLE_REMOVED_:  
-        PIC::ParticleBuffer::DeleteParticle(ptr);
-        return _PARTICLE_LEFT_THE_DOMAIN_;
-
-      case _PHOTOLYTIC_REACTIONS_PARTICLE_SPECIE_CHANGED_:  
-        spec=PIC::ParticleBuffer::GetI(ParticleData);
-        dtTotal*=newNode->block->GetLocalTimeStep(spec)/newNode->block->GetLocalTimeStep(specInit);
-
-        //check the probability for the new-species particle tostay in the system
-#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-        double Correction,Rate;
-
-        Rate=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData)*newNode->block->GetLocalParticleWeight(specInit)/newNode->block->GetLocalTimeStep(specInit);
-        Correction=Rate*newNode->block->GetLocalTimeStep(spec)/newNode->block->GetLocalParticleWeight(spec);
-
-        PIC::ParticleBuffer::SetIndividualStatWeightCorrection(Correction,ParticleData);
-#elif _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
-        exit(__LINE__,__FILE__,"Accounting for the possible difference in the time steps and weights have not been inplemented when the individual particle weight corraction factor is off");
-
-#else
-     exit(__LINE__,__FILE__,"The option is unknown");
-#endif
-
-        #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-        #if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__CHEMISTRY_ == _PIC_MODE_ON_
-        PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData);
-        #endif
-        #endif
- 
-        break;
-      case _PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_:
-        //do nothing
-        break;
-      default:
-        exit(__LINE__,__FILE__,"Error: the option is unknown");
-      }
-    }
-#elif _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_
-    //model the generic particle transformation
-    int GenericParticleTransformationReturnCode,specInit=spec;
-
-    GenericParticleTransformationReturnCode=_PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode);   //xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode
-
-    if (GenericParticleTransformationReturnCode==_GENERIC_PARTICLE_TRANSFORMATION_CODE__PARTICLE_REMOVED_) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
-
-    //adjust the value of the dtLeft to match the time step for the species 'spec'
-    if (spec!=specInit) {
-      dtTotal*=newNode->block->GetLocalTimeStep(spec)/newNode->block->GetLocalTimeStep(specInit);
-
-      #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-      #if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__CHEMISTRY_ == _PIC_MODE_ON_
-      PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData);
-      #endif
-      #endif
-    }
-#endif
-*/
 
 
 
@@ -3911,14 +3254,10 @@ ProcessPhotoChemistry:
       }
     }
 
-//////////////////////////////////////////////////////
-
    //verify that sign of the time of flight before and after particle moving step has not changed
     if ((startNode->FirstTriangleCutFace!=NULL)||(startNode->neibCutFaceListDescriptorList!=NULL)) {
       CutCell::cTriangleFaceDescriptor *t;
       CutCell::cTriangleFace *TriangleFace;
-//      double TimeOfFlight;
-//      double xLocalIntersection[2],xIntersection[3];
 
       //reset the counter
       PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IncrementCounter(); 
@@ -3975,27 +3314,10 @@ ProcessPhotoChemistry:
     ExitCorrections:
 
 
-//////////////////////////////////////////////////////
-
     //adjust the value of 'startNode'
     startNode=newNode;
     memcpy(vInit,vFinal,3*sizeof(double));
     memcpy(xInit,xFinal,3*sizeof(double));
-
-/*    if (CutCell::CheckPointInsideDomain(xInit,CutCell::BoundaryTriangleFaces,CutCell::nBoundaryTriangleFaces,false,0.0*PIC::Mesh::mesh->EPS)==false) {
-
-      cout << "AMPS:: xInit is outside of the domain (file=" << __FILE__ << ", line=" << __FILE__ << ")" << endl;
-     // exit(__LINE__,__FILE__,"The point is outside of the domain");
-    }*/
-
-
-/*
-    //save the trajectory point
-    #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
-    PIC::ParticleTracker::RecordTrajectoryPoint(xInit,vInit,spec,ParticleData);
-    #endif
-*/
-
 
   }
 
@@ -4131,10 +3453,6 @@ ProcessPhotoChemistry:
     cout << "$PREFIX: startNode->xmax=" << startNode->xmax[0] << ", " << startNode->xmax[1] << ", " << startNode->xmax[2] << endl;
   }
 
-
-/*  PIC::Mesh::cDataBlockAMR *block=startNode->block;
-  long int tempFirstCellParticle=block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];*/
-
   PIC::ParticleBuffer::SetV(vFinal,ParticleData);
   PIC::ParticleBuffer::SetX(xFinal,ParticleData);
 
@@ -4177,8 +3495,6 @@ ProcessPhotoChemistry:
 #else
 #error The option is unknown
 #endif
-
-
 
   //save the trajectory point
   #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
@@ -4303,10 +3619,7 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
     }
 
     l=sqrt(l);
-    
-
-    //printf("Characteristic cell size=%e\n",startNode->GetCharacteristicCellSize());
-    //printf("Path passed by the particle=%e\n",l);
+  
     
     //call the function that process particles that leaved the coputational domain
     switch (code) {
