@@ -37,9 +37,9 @@ PIC::Datum::cDatumStored PIC::Mover::MoverData;
 //====================================================
 //init the particle mover
 void PIC::Mover::Init_BeforeParser(){
-#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
   GuidingCenter::Init_BeforeParser();
-#endif //_PIC_MOVER_INTEGRATOR_MODE_
+}
 
   if (MoverDataLength!=0) {
     long int offset=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength;
@@ -50,27 +50,14 @@ void PIC::Mover::Init_BeforeParser(){
 }
 
 void PIC::Mover::Init() {
-/*
-  int s;
-
-
-  //allocate the mover functions array
-  if ((MoveParticleTimeStep!=NULL)||(PIC::nTotalSpecies==0)) exit(__LINE__,__FILE__,"Error: the initialization of PIC::Mover is failed");
-
-  MoveParticleTimeStep=new fSpeciesDependentParticleMover[PIC::nTotalSpecies];
-  MoveParticleBoundaryInjection=new fSpeciesDependentParticleMover_BoundaryInjection[PIC::nTotalSpecies];
-  for (s=0;s<PIC::nTotalSpecies;s++) MoveParticleTimeStep[s]=NULL,MoveParticleBoundaryInjection[s]=NULL;
-  */
-
   // check if guiding center motion is used
-#if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
+if (_PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_) {
   GuidingCenter::Init();
-#endif //_PIC_MOVER_INTEGRATOR_MODE_
-  
+}
   //verify that the user-defined function for processing of the particles that leave the domain is defined
-#if _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_
+if (_PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE_ == _PIC_PARTICLE_DOMAIN_BOUNDARY_INTERSECTION_PROCESSING_MODE__USER_FUNCTION_) {
    if (ProcessOutsideDomainParticles==NULL) exit(__LINE__,__FILE__,"Error: ProcessOutsideDomainParticles is not initiated. Function that process particles that leave the computational domain is not set");
-#endif
+}
 
    //the description of the boundaries of the block faces
    if (PIC::Mesh::mesh==NULL) exit(__LINE__,__FILE__,"Error: PIC::Mesh::mesh needs to be generated for the following initializations");
@@ -1700,35 +1687,40 @@ int iTemp,jTemp,kTemp;
 
 
   //Rotate particle position and velocity when symmetry is accounted
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  //do nothing
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-  double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    //do nothing
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+    double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
 
-  r=sqrt(pow(x[0],2)+pow(x[1],2)+pow(x[2],2));
+    r=sqrt(pow(x[0],2)+pow(x[1],2)+pow(x[2],2));
 
-  if (r>1.0E-20) {
-    double xfinal[3];
+    if (r>1.0E-20) {
+      double xfinal[3];
 
-    xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
-    l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
-    if (l>1.0E-20) {
-      cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
-      cosTy=l,sinTy=xfinal[2];
+      if (l>1.0E-20) {
+        cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
+        cosTy=l,sinTy=xfinal[2];
+      }
+      else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
+
+      v1[0]=cosTy*cosTz*v[0]+cosTy*sinTz*v[1]+sinTy*v[2];
+      v1[1]=-sinTz*v[0]+cosTz*v[1];
+      v1[2]=-sinTy*cosTz*v[0]-sinTy*sinTz*v[1]+cosTy*v[2];
+
+      v[0]=v1[0],v[1]=v1[1],v[2]=v1[2];
+      x[0]=r,x[1]=0.0,x[2]=0.0;
     }
-    else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
-
-    v1[0]=cosTy*cosTz*v[0]+cosTy*sinTz*v[1]+sinTy*v[2];
-    v1[1]=-sinTz*v[0]+cosTz*v[1];
-    v1[2]=-sinTy*cosTz*v[0]-sinTy*sinTz*v[1]+cosTy*v[2];
-
-    v[0]=v1[0],v[1]=v1[1],v[2]=v1[2];
-    x[0]=r,x[1]=0.0,x[2]=0.0;
-  }
-#else
-  exit(__LINE__,__FILE__,"Error: the option is not found");
-#endif
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is not found");
+}
 
 
 
@@ -2068,16 +2060,22 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
 
 
     //determine the new particle location
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-    double r[3]={0.0,0.0,0.0};
+switch (_AMR_SYMMETRY_MODE_) {
+    case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+        newNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+        break;
+    case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+        double r[3]={0.0,0.0,0.0};
 
-    r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    newNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
-#else
-    exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+        r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+        newNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
+    }
+        break;
+    default:
+        exit(__LINE__,__FILE__,"Error: the option is nor defined");
+        break;
+}
 
 
     if (newNode==NULL) {
