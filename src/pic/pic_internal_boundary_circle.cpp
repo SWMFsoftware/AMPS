@@ -213,9 +213,9 @@ int PIC::BC::InternalBoundary::Circle::ParticleCircleInteraction_SpecularReflect
    startNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)NodeDataPointer;
 
 
-   #if DIM != 3
-   exit(__LINE__,__FILE__,"Error: wrong dimension");
-   #endif
+   if (DIM != 3) { 
+     exit(__LINE__,__FILE__,"Error: wrong dimension");
+   } 
 
 
    Circle->GetCircleGeometricalParameters(x0Circle,radiusCircle);

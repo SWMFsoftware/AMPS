@@ -217,9 +217,9 @@ int PIC::BC::InternalBoundary::Sphere::ParticleSphereInteraction_SpecularReflect
    startNode=(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)NodeDataPointer;
 
 
-   #if DIM != 3
-   exit(__LINE__,__FILE__,"Error: wrong dimension");
-   #endif
+   if (DIM != 3) { 
+     exit(__LINE__,__FILE__,"Error: wrong dimension");
+   } 
 
 
    Sphere->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
