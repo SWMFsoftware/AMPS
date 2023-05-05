@@ -271,7 +271,7 @@ int PIC::TimeStep() {
   else if (PIC::CPLR::DATAFILE::MULTIFILE::IsTimeToUpdate()==true) {
     PIC::CPLR::DATAFILE::MULTIFILE::UpdateDataFile();
   }
-#if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
+if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
   // update field lines
   auto DoUpdateFieldLine = [=] () {
     PIC::FieldLine::Update();
@@ -283,7 +283,7 @@ int PIC::TimeStep() {
   //exit(__LINE__,__FILE__,"Error: not implemented");
   //#endif
 
-#endif//_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
+}
   
 #endif//_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
 #endif//_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
@@ -804,14 +804,16 @@ if (ptr!=-1) {
     s=PIC::ParticleBuffer::GetI(ParticleData);
 
 
-    if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) {
-      PIC::ParticleBuffer::GetV(v,ParticleData);
-    }
-    else {
-      v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
-      v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
-      v[2]=0.0;
-    }
+switch (_PIC_FIELD_LINE_MODE_) {
+  case _PIC_MODE_OFF_:
+    PIC::ParticleBuffer::GetV(v,ParticleData);
+    break;
+  default:
+    v[0]=PIC::ParticleBuffer::GetVParallel(ParticleData);
+    v[1]=PIC::ParticleBuffer::GetVNormal(ParticleData);
+    v[2]=0.0;
+    break;
+}
 
     localSimulatedSpeciesParticleNumber[iThread][s]++;
 
@@ -924,9 +926,9 @@ if (ptr!=-1) {
     PIC::Mover::GuidingCenter::Sampling::SampleParticleData((char*)ParticleData,LocalParticleWeight, SamplingData, s);//tempSamplingBuffer, s);
     #endif //_PIC_MOVER_INTEGRATOR_MODE_
 
-    #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-    PIC::FieldLine::Sampling(ptr,LocalParticleWeight, SamplingData);
-    #endif//_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
+    if(_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
+        PIC::FieldLine::Sampling(ptr,LocalParticleWeight, SamplingData);
+    }
 
     //call user defined particle sampling procedure
     #ifdef _PIC_USER_DEFING_PARTICLE_SAMPLING_
@@ -1298,11 +1300,11 @@ void PIC::Sampling::Sampling() {
       if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::ParticleTracker::OutputTrajectory(fname);
       #endif
 
-      #if _PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_
-      //print sampled data along field lines
-      sprintf(fname,"%s/amps.FieldLines.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
-      if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname, false);
-      #endif
+      if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
+        //print sampled data along field lines
+        sprintf(fname,"%s/amps.FieldLines.out=%ld.dat",OutputDataFileDirectory,DataOutputFileNumber);
+        if ((SupressOutputFlag==false)&&(DataOutputFileNumber%SkipOutputStep==0)) PIC::FieldLine::Output(fname, false);
+      }
 
       //print the macroscopic parameters of the flow
       for (s=0;s<PIC::nTotalSpecies;s++) if (SaveOutputDataFile[s]==true) {
@@ -1962,29 +1964,29 @@ void PIC::Init_BeforeParser() {
 
 
   //init the background atmosphere model
-#if _PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_
-  PIC::MolecularCollisions::BackgroundAtmosphere::Init_BeforeParser();
-#endif
+  if (_PIC_BACKGROUND_ATMOSPHERE_MODE_ == _PIC_BACKGROUND_ATMOSPHERE_MODE__ON_) {
+    PIC::MolecularCollisions::BackgroundAtmosphere::Init_BeforeParser();  
+  }
 
-  //init the stopping power model
-#if  _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_
-  PIC::MolecularCollisions::StoppingPowerModel::Init_BeforeParser();
-#endif
+  //init the stopping power model 
+  if  (_PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL_ == _PIC_BACKGROUND_ATMOSPHERE__COLLISION_MODEL__STOPPING_POWER_) {
+    PIC::MolecularCollisions::StoppingPowerModel::Init_BeforeParser();
+  }
 
   //init the particle collision procedure
-#if _PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_
-  PIC::MolecularCollisions::ParticleCollisionModel::Init();
-#endif
+  if (_PIC__PARTICLE_COLLISION_MODEL__MODE_ == _PIC_MODE_ON_) {
+    PIC::MolecularCollisions::ParticleCollisionModel::Init();
+  }
 
   //init the model of internal degrees of freedom
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
-  PIC::IDF::Init();
-#endif
+  if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {
+    PIC::IDF::Init();
+  }
 
   //Init the photolytic reaction model
-#if _PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
-  ::PhotolyticReactions::Init();
-#endif
+  if (_PIC_PHOTOLYTIC_REACTIONS_MODE_ == _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_) {
+    ::PhotolyticReactions::Init();
+  }
 
   if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
     PIC::FieldLine::Init();
