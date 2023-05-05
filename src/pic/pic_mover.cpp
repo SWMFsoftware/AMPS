@@ -1137,21 +1137,21 @@ nCallCounter++;
   PIC::ParticleBuffer::GetX(x,ParticleData);
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-
-  {
-    double r[3]={0.0,0.0,0.0};
-
-    r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-  }
-
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
-
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(x,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+      double r[3]={0.0,0.0,0.0};
+      r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+      if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+    break;
+}
 
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
@@ -1168,14 +1168,13 @@ MovingLoop:
     //check the consistency of the particle mover
 int iTemp,jTemp,kTemp;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-
-
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
     if (PIC::Mesh::mesh->FindCellIndex(x,iTemp,jTemp,kTemp,startNode,false)==-1) {
       exit(__LINE__,__FILE__,"Error: the cell is not found");
     }
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
     {
       double r[3]={0.0,0.0,0.0};
 
@@ -1184,10 +1183,10 @@ int iTemp,jTemp,kTemp;
         exit(__LINE__,__FILE__,"Error: the cell is not found");
       }
     }
-
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+}
 
     if (startNode->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not initialized");
 #endif
@@ -1218,7 +1217,8 @@ int iTemp,jTemp,kTemp;
     //Calculate the time of flight to the nearest block's face
 #if DIM == 1
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
     if (fabs(v[0])>0.0) {
       dtTemp=(xminBlock[0]-x[0])/v[0];
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
@@ -1226,8 +1226,8 @@ int iTemp,jTemp,kTemp;
       dtTemp=(xmaxBlock[0]-x[0])/v[0];
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
     }
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
     //nface=0 -> rmin
     a=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
     b=2.0*v[0]*x[0];
@@ -1259,10 +1259,11 @@ int iTemp,jTemp,kTemp;
       dtTemp=-2.0*c/(b+sqrt_d);
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
     }
-
-#else
+    break;
+  default:
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
-#endif
+    break;
+}
 
 #elif DIM == 2
     exit(__LINE__,__FILE__,"not implemented");
@@ -1411,16 +1412,20 @@ int iTemp,jTemp,kTemp;
 
       if (code==_PARTICLE_DELETED_ON_THE_FACE_) return _PARTICLE_LEFT_THE_DOMAIN_;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
       double r[3]={0.0,0.0,0.0};
-
-      r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      startNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+    r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
+    startNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is not defined");
+}
     }
     else if (ParticleIntersectionCode==_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_) {
       iNeibNode[0]=0,iNeibNode[1]=0,iNeibNode[2]=0;
@@ -1431,16 +1436,20 @@ int iTemp,jTemp,kTemp;
       double xProbe[3]={x[0],x[1],x[2]};
       xProbe[neibNodeDirection]+=(startNode->xmax[neibNodeDirection]-startNode->xmin[neibNodeDirection])*iNeibNode[neibNodeDirection]/100.0;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xProbe,startNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_: 
+    newNode=PIC::Mesh::mesh->findTreeNode(xProbe,startNode);
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
       double rProbe[3]={0.0,0.0,0.0};
-
-      rProbe[0]=sqrt(xProbe[0]*xProbe[0]+xProbe[1]*xProbe[1]+xProbe[2]*xProbe[2]);
-      newNode=PIC::Mesh::mesh->findTreeNode(rProbe,startNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+    rProbe[0]=sqrt(xProbe[0]*xProbe[0]+xProbe[1]*xProbe[1]+xProbe[2]*xProbe[2]);
+    newNode=PIC::Mesh::mesh->findTreeNode(rProbe,startNode);
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+}
 
       if (newNode==NULL) {
         //the particle left the computational domain
@@ -1454,8 +1463,7 @@ int iTemp,jTemp,kTemp;
       #if _PIC_DEBUGGER_MODE_ ==  _PIC_DEBUGGER_MODE_ON_
       //check if the new particle coordiname is within the new block
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      if ((x[0]<xminBlock[0]-PIC::Mesh::mesh->EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
+if ((x[0]<xminBlock[0]-PIC::Mesh::mesh->EPS)||(x[0]>xmaxBlock[0]+PIC::Mesh::mesh->EPS)
 #if DIM > 1
           || (x[1]<xminBlock[1]-PIC::Mesh::mesh->EPS)||(x[1]>xmaxBlock[1]+PIC::Mesh::mesh->EPS)
 #endif
@@ -1465,45 +1473,55 @@ int iTemp,jTemp,kTemp;
       ) {
         exit(__LINE__,__FILE__,"Error: the new particles' coordinates are outside of the block");
       }
-#endif
       #endif
 
       //move the particle's position exactly to the block's face
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      for (idim=0;idim<DIM;idim++) {
-        if (x[idim]<=xminBlock[idim]) x[idim]=xminBlock[idim]+PIC::Mesh::mesh->EPS;
-        if (x[idim]>=xmaxBlock[idim]) x[idim]=xmaxBlock[idim]-PIC::Mesh::mesh->EPS;
-      }
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    for (idim=0;idim<DIM;idim++) {
+      if (x[idim]<=xminBlock[idim]) x[idim]=xminBlock[idim]+PIC::Mesh::mesh->EPS;
+      if (x[idim]>=xmaxBlock[idim]) x[idim]=xmaxBlock[idim]-PIC::Mesh::mesh->EPS;
+    }
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
       double r2=x[0]*x[0]+x[1]*x[1]+x[2]*x[2];
 
-      if (r2<=xminBlock[0]*xminBlock[0]) {
-        double c=(xminBlock[0]+PIC::Mesh::mesh->EPS)/sqrt(r2);
-        x[0]*=c,x[1]*=c,x[2]*=c;
-      }
+    if (r2<=xminBlock[0]*xminBlock[0]) {
+      double c=(xminBlock[0]+PIC::Mesh::mesh->EPS)/sqrt(r2);
+      x[0]*=c,x[1]*=c,x[2]*=c;
+    }
 
-      if (r2>=xmaxBlock[0]*xmaxBlock[0]){
-        double c=(xmaxBlock[0]-PIC::Mesh::mesh->EPS)/sqrt(r2);
-        x[0]*=c,x[1]*=c,x[2]*=c;
-      }
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+    if (r2>=xmaxBlock[0]*xmaxBlock[0]){
+      double c=(xmaxBlock[0]-PIC::Mesh::mesh->EPS)/sqrt(r2);
+      x[0]*=c,x[1]*=c,x[2]*=c;
+    }
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+    break;
+}
 
       //adjust the value of 'startNode'
       startNode=newNode;
     }
     else {
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      startNode=PIC::Mesh::mesh->findTreeNode(x,startNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-      double r[3]={0.0,0.0,0.0};
-
-      r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      startNode=PIC::Mesh::mesh->findTreeNode(r,startNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    startNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+      double r[3] = {0.0, 0.0, 0.0};
+    r[0] = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    startNode = PIC::Mesh::mesh->findTreeNode(r, startNode);
+    }
+    break;
+  default:
+    exit(__LINE__, __FILE__, "Error: the option is nor defined");
+    break;
+}
     }
   }
 
@@ -1776,35 +1794,41 @@ switch (_AMR_SYMMETRY_MODE_) {
 
   //the particle is still within the computational domain:
   //Rotate particle position and velocity when symmetry is accounted
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  //do nothing
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-  double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    //do nothing
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+      double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
 
-  r=sqrt(pow(x[0],2)+pow(x[1],2)+pow(x[2],2));
+    r=sqrt(pow(x[0],2)+pow(x[1],2)+pow(x[2],2));
 
-  if (r>1.0E-20) {
-    double xfinal[3];
+    if (r>1.0E-20) {
+      double xfinal[3];
 
-    xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
-    l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
+      xfinal[0]=x[0]/r,xfinal[1]=x[1]/r,xfinal[2]=x[1]/r;
+      l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
-    if (l>1.0E-20) {
-      cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
-      cosTy=l,sinTy=xfinal[2];
+      if (l>1.0E-20) {
+        cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
+        cosTy=l,sinTy=xfinal[2];
+      }
+      else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
+
+      v1[0]=cosTy*cosTz*v[0]+cosTy*sinTz*v[1]+sinTy*v[2];
+      v1[1]=-sinTz*v[0]+cosTz*v[1];
+      v1[2]=-sinTy*cosTz*v[0]-sinTy*sinTz*v[1]+cosTy*v[2];
+
+      v[0]=v1[0],v[1]=v1[1],v[2]=v1[2];
+      x[0]=r,x[1]=0.0,x[2]=0.0;
     }
-    else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
-
-    v1[0]=cosTy*cosTz*v[0]+cosTy*sinTz*v[1]+sinTy*v[2];
-    v1[1]=-sinTz*v[0]+cosTz*v[1];
-    v1[2]=-sinTy*cosTz*v[0]-sinTy*sinTz*v[1]+cosTy*v[2];
-
-    v[0]=v1[0],v[1]=v1[1],v[2]=v1[2];
-    x[0]=r,x[1]=0.0,x[2]=0.0;
-  }
-#else
-  exit(__LINE__,__FILE__,"Error: the option is not found");
-#endif
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is not found");
+    break;
+}
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
@@ -2004,13 +2028,17 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
     vFinal[2]=vInit[2]+dt*accl[2];
 
     //in the case when a symmetry has to be considered, transfer the particle position and velcoty accordinly
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-    exit(__LINE__,__FILE__,"not implemented");
-#else
-    exit(__LINE__,__FILE__,"Error: the option is not recognized");
-#endif
+switch(_AMR_SYMMETRY_MODE_) {
+    case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+        newNode = PIC::Mesh::mesh->findTreeNode(xFinal, middleNode);
+        break;
+    case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+        exit(__LINE__, __FILE__, "not implemented");
+        break;
+    default:
+        exit(__LINE__, __FILE__, "Error: the option is not recognized");
+        break;
+}
 
 
     if (newNode==NULL) {
@@ -2182,20 +2210,21 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 	  exit(__LINE__,__FILE__,"Error: an unallocated particle is intercepted");
   }
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+      double r[3]={0.0,0.0,0.0};
 
-  {
-    double r[3]={0.0,0.0,0.0};
-
-    r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-    if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
-  }
-
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+      r[0]=sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2]);
+      if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(r,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+}
 
 
   cell=startNode->block->GetCenterNode(LocalCellNumber);
@@ -2305,24 +2334,25 @@ if (nLoopCycle>100) {
    //check the consistency of the particle mover
    int iTemp,jTemp,kTemp;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-    if (PIC::Mesh::mesh->FindCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
-      exit(__LINE__,__FILE__,"Error: the cell is not found");
-    }
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
+switch (_AMR_SYMMETRY_MODE_) {
+    case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+        if (PIC::Mesh::mesh->FindCellIndex(xInit,iTemp,jTemp,kTemp,startNode,false)==-1) {
+          exit(__LINE__,__FILE__,"Error: the cell is not found");
+        }
+        break;
+    case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+        {
+          double r[3]={0.0,0.0,0.0};
 
-    {
-      double r[3]={0.0,0.0,0.0};
-
-      r[0]=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
-      if (PIC::Mesh::mesh->FindCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
-        exit(__LINE__,__FILE__,"Error: the cell is not found");
-      }
-    }
-
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+          r[0]=sqrt(xInit[0]*xInit[0]+xInit[1]*xInit[1]+xInit[2]*xInit[2]);
+          if (PIC::Mesh::mesh->FindCellIndex(r,iTemp,jTemp,kTemp,startNode,false)==-1) {
+            exit(__LINE__,__FILE__,"Error: the cell is not found");
+          }
+        }
+        break;
+    default:
+        exit(__LINE__,__FILE__,"Error: the option is nor defined");
+}
 
     if (startNode->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not initialized");
 #endif
@@ -2484,10 +2514,8 @@ if (nLoopCycle>100) {
 
 #if DIM == 1
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-
-    !!!!! NOT ADJESTED FOR THE NEW PROCEDURE !!!!!
-
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
     if (fabs(v[0])>0.0) {
       dtTemp=(xminBlock[0]-x[0])/v[0];
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=0,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
@@ -2495,10 +2523,8 @@ if (nLoopCycle>100) {
       dtTemp=(xmaxBlock[0]-x[0])/v[0];
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
     }
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-
-    !!!!! NOT ADJESTED FOR THE NEW PROCEDURE !!!!!
-
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
     //nface=0 -> rmin
     a=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
     b=2.0*v[0]*x[0];
@@ -2530,10 +2556,10 @@ if (nLoopCycle>100) {
       dtTemp=-2.0*c/(b+sqrt_d);
       if ((0.0<dtTemp)&&(dtTemp<dtMin)) dtMin=dtTemp,nface_dtMin=1,ParticleIntersectionCode=_BLOCK_FACE_MIN_DT_INTERSECTION_CODE_UTSNFTT_,MovingTimeFinished=false;
     }
-
-#else
+    break;
+  default: 
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
-#endif
+}
 
 #elif DIM == 2
     exit(__LINE__,__FILE__,"not implemented");
@@ -2699,16 +2725,6 @@ if (nLoopCycle>100) {
 
                 //the intersection location has to be on the positive side of the previously intersected face
                 bool FaceIntersectionAccetanceFlag=true;
-
-    /*            if (lastIntersectedTriangleFace!=NULL) {
-                  double c=0.0;
-                  int idim;
-
-                  for (idim=0;idim<3;idim++) c+=(xIntersection[idim]-lastIntersectedTriangleFace->x0Face[idim])*lastIntersectedTriangleFace->ExternalNormal[idim];
-
-                  if (c<=0.0) FaceIntersectionAccetanceFlag=false;
-                }*/
-
 
                 if (FaceIntersectionAccetanceFlag==true) {
                   dtMin=TimeOfFlight;
@@ -2885,11 +2901,13 @@ if (nLoopCycle>100) {
 
       lastIntersectedTriangleFace=IntersectionFace;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    newNode = PIC::Mesh::mesh->findTreeNode(xFinal, middleNode);
+    break;
+  default:
+    exit(__LINE__, __FILE__, "Error: the option is not defined");
+}
 
 
       do {
@@ -2917,16 +2935,20 @@ if (nLoopCycle>100) {
 
       lastInternalBoundaryDescriptor=InternalBoundaryDescriptor_dtMin;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-      double r[3]={0.0,0.0,0.0};
+double r[3] = {0.0, 0.0, 0.0};
 
-      r[0]=sqrt(xFinal[0]*xFinal[0]+xFinal[1]*xFinal[1]+xFinal[2]*xFinal[2]);
-      newNode=PIC::Mesh::mesh->findTreeNode(r,middleNode);
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    newNode = PIC::Mesh::mesh->findTreeNode(xFinal, middleNode);
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    r[0] = sqrt(xFinal[0] * xFinal[0] + xFinal[1] * xFinal[1] + xFinal[2] * xFinal[2]);
+    newNode = PIC::Mesh::mesh->findTreeNode(r, middleNode);
+    break;
+  default:
+    exit(__LINE__, __FILE__, "Error: the option is nor defined");
+    break;
+}
 
 #if DIM == 3
       code=((cInternalSphericalData*)(InternalBoundaryDescriptor_dtMin->BoundaryElement))->ParticleSphereInteraction(spec,ptr,xFinal,vFinal,dtTotal,(void*)newNode,InternalBoundaryDescriptor_dtMin->BoundaryElement);
@@ -2968,41 +2990,42 @@ if (nLoopCycle>100) {
       FirstBoundaryFlag=false;
 
       //check if the particle is outside ofthe block - force the particle outside of the block if its needed
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      double EPS=PIC::Mesh::mesh->EPS;
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+     for (idim=0;idim<DIM;idim++) {
+       double EPS=PIC::Mesh::mesh->EPS;
 
-      for (idim=0;idim<DIM;idim++) {
-        if (xFinal[idim]<xminBlock[idim]+EPS) xFinal[idim]=xminBlock[idim]-EPS;
-        if (xFinal[idim]>xmaxBlock[idim]-EPS) xFinal[idim]=xmaxBlock[idim]+EPS;
+      if (xFinal[idim]<xminBlock[idim]+EPS) xFinal[idim]=xminBlock[idim]-EPS;
+      if (xFinal[idim]>xmaxBlock[idim]-EPS) xFinal[idim]=xmaxBlock[idim]+EPS;
 
+    }
+
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
+
+    if (newNode!=NULL) {
+      if (newNode->IsUsedInCalculationFlag==false) {
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
       }
-
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-
-      if (newNode!=NULL) {
-        if (newNode->IsUsedInCalculationFlag==false) {
-          PIC::ParticleBuffer::DeleteParticle(ptr);
-          return _PARTICLE_LEFT_THE_DOMAIN_;
-        }
-        else if (newNode->block==NULL) {
-          cout << "$PREFIX: Most probably the time step is too large. Error at " << __FILE__ << "@" << __LINE__  << endl;
-          cout << "$PREFIX: newNode->block==NULL" << endl;
-          cout << "$PREFIX: ThisThread=" << PIC::ThisThread << ", newNode->Thread=" << newNode->Thread << endl;
-          cout << "$PREFIX: x=" << xFinal[0] << ", " << xFinal[1] << ", " << xFinal[2] << endl;
-          cout << "$PREFIX: v=" << vFinal[0] << ", " << vFinal[1] << ", " << vFinal[2] << endl;
-          cout << "$PREFIX: spec=" << spec << endl;
-          cout << "$PREFIX: newNode->xmin=" << newNode->xmin[0] << ", " << newNode->xmin[1] << ", " << newNode->xmin[2] << endl;
-          cout << "$PREFIX: newNode->xmax=" << newNode->xmax[0] << ", " << newNode->xmax[1] << ", " << newNode->xmax[2] << endl;
-        }
+      else if (newNode->block==NULL) {
+        cout << "$PREFIX: Most probably the time step is too large. Error at " << __FILE__ << "@" << __LINE__  << endl;
+        cout << "$PREFIX: newNode->block==NULL" << endl;
+        cout << "$PREFIX: ThisThread=" << PIC::ThisThread << ", newNode->Thread=" << newNode->Thread << endl;
+        cout << "$PREFIX: x=" << xFinal[0] << ", " << xFinal[1] << ", " << xFinal[2] << endl;
+        cout << "$PREFIX: v=" << vFinal[0] << ", " << vFinal[1] << ", " << vFinal[2] << endl;
+        cout << "$PREFIX: spec=" << spec << endl;
+        cout << "$PREFIX: newNode->xmin=" << newNode->xmin[0] << ", " << newNode->xmin[1] << ", " << newNode->xmin[2] << endl;
+        cout << "$PREFIX: newNode->xmax=" << newNode->xmax[0] << ", " << newNode->xmax[1] << ", " << newNode->xmax[2] << endl;
       }
-
-
-
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-exit(__LINE__,__FILE__,"Error: not implemented");
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+    }
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    exit(__LINE__,__FILE__,"Error: not implemented");
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+    break;
+}
 
 
       //reserve the place for particle's cloning:
@@ -3053,13 +3076,17 @@ exit(__LINE__,__FILE__,"Error: not implemented");
 
       FirstBoundaryFlag=false;
 
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-      newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-exit(__LINE__,__FILE__,"not implemented");
-#else
-      exit(__LINE__,__FILE__,"Error: the option is nor defined");
-#endif
+switch (_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    newNode=PIC::Mesh::mesh->findTreeNode(xFinal,middleNode);
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    exit(__LINE__,__FILE__,"not implemented");
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is nor defined");
+    break;
+}
 
     }
     else {
@@ -3407,36 +3434,41 @@ ProcessPhotoChemistry:
 
 
   //Rotate particle position and velocity when symmetry is accounted
-#if _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_
-  //do nothing
-#elif _AMR_SYMMETRY_MODE_ == _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_
-  double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
+switch(_AMR_SYMMETRY_MODE_) {
+  case _AMR_SYMMETRY_MODE_PLANAR_SYMMETRY_:
+    //do nothing
+    break;
+  case _AMR_SYMMETRY_MODE_SPHERICAL_SYMMETRY_:
+    {
+      double r,l,v1[3],cosTz,sinTz,cosTy,sinTy;
 
-  r=sqrt(pow(xFinal[0],2)+pow(xFinal[1],2)+pow(xFinal[2],2));
+    r=sqrt(pow(xFinal[0],2)+pow(xFinal[1],2)+pow(xFinal[2],2));
 
-  if (r>1.0E-20) {
-    double xfinal[3];
+    if (r>1.0E-20) {
+      double xfinal[3];
 
-    xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[1]/r;
-    l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
+      xfinal[0]=xFinal[0]/r,xfinal[1]=xFinal[1]/r,xfinal[2]=xFinal[1]/r;
+      l=sqrt(pow(xfinal[0],2)+pow(xfinal[1],2));
 
-    if (l>1.0E-20) {
-      cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
-      cosTy=l,sinTy=xfinal[2];
+      if (l>1.0E-20) {
+        cosTz=xfinal[0]/l,sinTz=xfinal[1]/l;
+        cosTy=l,sinTy=xfinal[2];
+      }
+      else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
+
+      v1[0]=cosTy*cosTz*vFinal[0]+cosTy*sinTz*vFinal[1]+sinTy*vFinal[2];
+      v1[1]=-sinTz*vFinal[0]+cosTz*vFinal[1];
+      v1[2]=-sinTy*cosTz*vFinal[0]-sinTy*sinTz*vFinal[1]+cosTy*vFinal[2];
+
+      vFinal[0]=v1[0],vFinal[1]=v1[1],vFinal[2]=v1[2];
+      xFinal[0]=r,xFinal[1]=0.0,xFinal[2]=0.0;
     }
-    else cosTz=1.0,sinTz=0.0,sinTy=xfinal[2],cosTy=0.0;
-
-    v1[0]=cosTy*cosTz*vFinal[0]+cosTy*sinTz*vFinal[1]+sinTy*vFinal[2];
-    v1[1]=-sinTz*vFinal[0]+cosTz*vFinal[1];
-    v1[2]=-sinTy*cosTz*vFinal[0]-sinTy*sinTz*vFinal[1]+cosTy*vFinal[2];
-
-    vFinal[0]=v1[0],vFinal[1]=v1[1],vFinal[2]=v1[2];
-    xFinal[0]=r,xFinal[1]=0.0,xFinal[2]=0.0;
-  }
-#else
-  exit(__LINE__,__FILE__,"Error: the option is not found");
-#endif
-
+    }
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is not found");
+    break;
+}
 
   if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
 
