@@ -65,15 +65,15 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticles() {
       if (GhostBlockThread==RealBlockThread) {
 
 
-       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPairTable[iBlockPair].GhostBlock;
-       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock=BlockPairTable[iBlockPair].RealBlock;
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPairTable[iBlockPair].GhostBlock;
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock=BlockPairTable[iBlockPair].RealBlock;
 
-        #if _CUDA_MODE_ == _ON_
+#if _CUDA_MODE_ == _ON_
         ExchangeParticlesLocal<<<1,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_>>>(RealBlock,GhostBlock);
         cudaDeviceSynchronize();
-        #else
+#else
         ExchangeParticlesLocal(RealBlock,GhostBlock);
-        #endif
+#endif
       }
       else {
         ExchangeParticlesMPI(BlockPairTable[iBlockPair]);
@@ -88,28 +88,28 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cTreeNodeAMR<PI
   long int ptr,NextPtr;
   double *x;
 
-  #ifdef __CUDA_ARCH__
+#ifdef __CUDA_ARCH__
   int id=blockIdx.x*blockDim.x+threadIdx.x;
   int increment=gridDim.x*blockDim.x;
-  #else
+#else
   int id=0,increment=1;
-  #endif
+#endif
 
   double dx[3]; //displacement from realblock to ghostbloock
 
   for (int i=0;i<3;i++) dx[i]=RealBlock->xmin[i]-GhostBlock->xmin[i];
 
-//  #ifdef __CUDA_ARCH__
-//   __syncthreads();
-//  #endif
+  //  #ifdef __CUDA_ARCH__
+  //   __syncthreads();
+  //  #endif
 
 
   //attach particle list from the 'ghost' block to the 'real block'
-  
+
   for (int icell=id;icell<_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;icell+=increment) {
     int t,ii=icell; 
     double x[3];
-  
+
     t=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_;
     k=ii/t;
     ii=ii%t;
@@ -118,60 +118,60 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesLocal(cTreeNodeAMR<PI
     i=ii%_BLOCK_CELLS_X_; 
 
     if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
-  
-//  for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
-    //find the last particle in the block
-    NextPtr=PIC::ParticleBuffer::GetNext(ptr);
 
-    //shift the location of the first particle
-    PIC::ParticleBuffer::GetX(x,ptr);
+      //  for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (i=0;i<_BLOCK_CELLS_X_;i++) if ((ptr=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)])!=-1) {
+      //find the last particle in the block
+      NextPtr=PIC::ParticleBuffer::GetNext(ptr);
 
-    for (idim=0;idim<3;idim++) {
-      x[idim]+=dx[idim];
+      //shift the location of the first particle
+      PIC::ParticleBuffer::GetX(x,ptr);
 
-      if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
-      if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
-    }  
+      for (idim=0;idim<3;idim++) {
+        x[idim]+=dx[idim];
 
-    PIC::ParticleBuffer::SetX(x,ptr);
+        if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
+        if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
+      }  
 
-    if (NextPtr!=-1) {
-      //the list containes more than one particle => process them
-      do {
-        ptr=NextPtr;
+      PIC::ParticleBuffer::SetX(x,ptr);
 
-        //shift location of the particle
-        PIC::ParticleBuffer::GetX(x,ptr); 
-        
-        for (idim=0;idim<3;idim++) {
-          x[idim]+=dx[idim];
- 
-          if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
-          if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
+      if (NextPtr!=-1) {
+        //the list containes more than one particle => process them
+        do {
+          ptr=NextPtr;
+
+          //shift location of the particle
+          PIC::ParticleBuffer::GetX(x,ptr); 
+
+          for (idim=0;idim<3;idim++) {
+            x[idim]+=dx[idim];
+
+            if (x[idim]<RealBlock->xmin[idim]) x[idim]=RealBlock->xmin[idim];
+            if (x[idim]>=RealBlock->xmax[idim]) x[idim]=RealBlock->xmax[idim]-1.0E-10*(RealBlock->xmax[idim]-RealBlock->xmin[idim]);
+          }
+
+          PIC::ParticleBuffer::SetX(x,ptr);
+
+          //get the next particle in the list
+          NextPtr=PIC::ParticleBuffer::GetNext(ptr);
         }
-
-        PIC::ParticleBuffer::SetX(x,ptr);
-
-        //get the next particle in the list
-        NextPtr=PIC::ParticleBuffer::GetNext(ptr);
+        while (NextPtr!=-1);
       }
-      while (NextPtr!=-1);
+
+      //reconnect the lists
+      PIC::ParticleBuffer::SetNext(RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr);
+
+      if (RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
+        PIC::ParticleBuffer::SetPrev(ptr,RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+      }
+
+      RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+      GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
     }
 
-    //reconnect the lists
-    PIC::ParticleBuffer::SetNext(RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],ptr);
-
-    if (RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]!=-1) {
-      PIC::ParticleBuffer::SetPrev(ptr,RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
-    }
-
-    RealBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-    GhostBlock->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
-  }
-
-  #ifdef __CUDA_ARCH__
-   __syncwarp;
-  #endif
+#ifdef __CUDA_ARCH__
+    __syncwarp;
+#endif
 
 
   }
@@ -195,7 +195,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
   const int NewParticelDataSignal=1;
   const int ParticleSendCompleteSignal=2;
   int Signal;
-  
+
   CMPI_channel pipe(1000000);
 
   //send the particles associated with the block
@@ -213,13 +213,13 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
         while (PIC::ParticleBuffer::GetNext(ptr)!=-1) {
           ptr=PIC::ParticleBuffer::GetNext(ptr);
         }
-        
+
         while (ptr!=-1) {
           long int t;
-          
+
           pipe.send(NewParticelDataSignal);
           pipe.send((char*)PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
-          
+
           t=PIC::ParticleBuffer::GetPrev(ptr);
           PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr,true);
           ptr=t;
@@ -275,7 +275,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeParticlesMPI(cBlockPairTable& 
       }
       while (Signal!=ParticleSendCompleteSignal);
     }
-    
+
     pipe.closeRecv(GhostBlockThread);
   }
 }
@@ -295,8 +295,6 @@ void PIC::BC::ExternalBoundary::UpdateData(int (*fPackBlockData)(cTreeNodeAMR<PI
   ExchangeParticles();
 
   PIC::Parallel::ProcessBlockBoundaryNodes();
-
-
   PIC::Parallel::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
 }
 
@@ -308,10 +306,10 @@ void PIC::Parallel::UpdateGhostBlockData() {
 void PIC::Parallel::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) { 
 
-    if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
+  if (_PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_) PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(fPackBlockData,fUnpackBlockData);
 
-    //update the associated data in the subdomain 'boundary layer' of blocks
-    PIC::Mesh::mesh->ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
+  //update the associated data in the subdomain 'boundary layer' of blocks
+  PIC::Mesh::mesh->ParallelBlockDataExchange(fPackBlockData,fUnpackBlockData);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
@@ -321,51 +319,49 @@ void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData() {
 void PIC::BC::ExternalBoundary::Periodic::UpdateGhostBlockData(int (*fPackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned long int* NodeDataLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* SendDataBuffer),
     int (*fUnpackBlockData)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>** NodeTable,int NodeTableLength,unsigned char* BlockCenterNodeMask,unsigned char* BlockCornerNodeMask,char* RecvDataBuffer)) {
 
-#if _PIC_BC__PERIODIC_MODE_== _PIC_BC__PERIODIC_MODE_ON_
-  int iBlockPair,RealBlockThread,GhostBlockThread;  
+  if (_PIC_BC__PERIODIC_MODE_ == _PIC_BC__PERIODIC_MODE_ON_) {
+    int iBlockPair,RealBlockThread,GhostBlockThread;  
 
 
-  int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+
-      _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
+    int BlockDataLength=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength+
+        _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength;
 
-  char *TargetDataBuffer=new char [BlockDataLength];
-  char *SourceDataBuffer=new char [BlockDataLength];
+    char *TargetDataBuffer=new char [BlockDataLength];
+    char *SourceDataBuffer=new char [BlockDataLength];
 
-  //loop through all blocks
-  for (iBlockPair=0;iBlockPair<BlockPairTableLength;iBlockPair++) {
-    GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
-    RealBlockThread=BlockPairTable[iBlockPair].RealBlock->Thread;
+    //loop through all blocks
+    for (iBlockPair=0;iBlockPair<BlockPairTableLength;iBlockPair++) {
+      GhostBlockThread=BlockPairTable[iBlockPair].GhostBlock->Thread;
+      RealBlockThread=BlockPairTable[iBlockPair].RealBlock->Thread;
 
-    //prepare the data
-    if (RealBlockThread==PIC::ThisThread) {
-      ExchangeBlockDataLocal(BlockPairTable[iBlockPair],TargetDataBuffer,NULL);
-     
-      //send the data
-      if (RealBlockThread!=GhostBlockThread) {
-        MPI_Send(TargetDataBuffer,BlockDataLength,MPI_CHAR,GhostBlockThread,0,MPI_GLOBAL_COMMUNICATOR);
+      //prepare the data
+      if (RealBlockThread==PIC::ThisThread) {
+        ExchangeBlockDataLocal(BlockPairTable[iBlockPair],TargetDataBuffer,NULL);
+
+        //send the data
+        if (RealBlockThread!=GhostBlockThread) {
+          MPI_Send(TargetDataBuffer,BlockDataLength,MPI_CHAR,GhostBlockThread,0,MPI_GLOBAL_COMMUNICATOR);
+        }
+      }
+
+      //read the data
+      if (GhostBlockThread==PIC::ThisThread) {
+
+        //recive the data
+        if (RealBlockThread!=GhostBlockThread) {
+          MPI_Status status;
+
+          MPI_Recv(SourceDataBuffer,BlockDataLength,MPI_CHAR,RealBlockThread,0,MPI_GLOBAL_COMMUNICATOR,&status);
+        }
+        else memcpy(SourceDataBuffer,TargetDataBuffer,BlockDataLength);
+
+        ExchangeBlockDataLocal(BlockPairTable[iBlockPair],NULL,SourceDataBuffer);
       }
     }
 
-   //read the data
-    if (GhostBlockThread==PIC::ThisThread) {
-
-      //recive the data
-      if (RealBlockThread!=GhostBlockThread) {
-        MPI_Status status;
-        
-        MPI_Recv(SourceDataBuffer,BlockDataLength,MPI_CHAR,RealBlockThread,0,MPI_GLOBAL_COMMUNICATOR,&status);
-      }
-      else memcpy(SourceDataBuffer,TargetDataBuffer,BlockDataLength);
-      
-      ExchangeBlockDataLocal(BlockPairTable[iBlockPair],NULL,SourceDataBuffer);
-    }
+    delete [] TargetDataBuffer;
+    delete [] SourceDataBuffer;
   }
-
-  delete [] TargetDataBuffer;
-  delete [] SourceDataBuffer;
-
-
-#endif
 }
 
 //process the data update for the 'ghost' block
@@ -374,7 +370,7 @@ void PIC::BC::ExternalBoundary::Periodic::ExchangeBlockDataLocal(cBlockPairTable
 
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *GhostBlock=BlockPair.GhostBlock;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>  *RealBlock=BlockPair.RealBlock;
-  
+
   //copy the associated data from 'RealBlock' to the 'GhostBlock
   PIC::Mesh::cDataCenterNode *CenterNodeGhostBlock,*CenterNodeRealBlock;
   PIC::Mesh::cDataCornerNode *CornerNodeGhostBlock,*CornerNodeRealBlock;
@@ -540,7 +536,7 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
 
   localUserResolutionFunction=localRequestedResolutionFunction;
   GetBoundaryExtensionLength();
-  
+
 
   if (PIC::ThisThread==0) printf("$PREFIX: BoundaryDx: ");
 
@@ -551,14 +547,14 @@ void PIC::BC::ExternalBoundary::Periodic::Init(double* xmin,double* xmax,double 
   }
 
   if (PIC::ThisThread==0) printf("\n");
-  
+
   //initiate the mesh  
   PIC::Mesh::mesh->init(xminDomain,xmaxDomain,ModifiedLocalResolution);
 }
 
 void PIC::BC::ExternalBoundary::Periodic::InitBlockPairTable(bool RebuildBlockPairTable){
   std::vector<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *> GhostBlockVector;
-  
+
   if ((RebuildBlockPairTable==false)&&(BlockPairTableLength!=0)) return;
 
   PopulateGhostBlockVector(GhostBlockVector,NULL);
@@ -584,19 +580,19 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
 
   InitBlockPairTable();
 
-/* Setting of the "ghost" block with the "real" block at the same thread is removed. Because the "ghost" blocks topologycally separated
+  /* Setting of the "ghost" block with the "real" block at the same thread is removed. Because the "ghost" blocks topologycally separated
  from the "real" ones, the procexdure it causes creating a block layer around the "ghost" blocks. that increase the memory consumption as well as the communication time
  to syncronize the layer blocks.
- 
+
   for (int i=0; i<PIC::nTotalThreads;i++) countMovingBlocks[i]=0;
-  
+
   for (int iPair=0; iPair<BlockPairTableLength; iPair++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* GhostBlock = BlockPairTable[iPair].GhostBlock;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* RealBlock  = BlockPairTable[iPair].RealBlock;
     GhostTrueBlockMap[GhostBlock]=-1;
     GhostTrueBlockMap[RealBlock]=-1;    
   }
-  
+
   for (int iThread=0; iThread<PIC::nTotalThreads; iThread++){
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * node = ParallelNodesDistributionList[iThread];  
     while (node!=NULL){
@@ -607,12 +603,12 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
       node = node->nextNodeThisThread;
     }
   }
-  
+
 
   for (int iPair=0; iPair<BlockPairTableLength; iPair++) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* GhostBlock = BlockPairTable[iPair].GhostBlock;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* RealBlock  = BlockPairTable[iPair].RealBlock;
-    
+
     int GhostThread = GhostTrueBlockMap[GhostBlock];
     int RealThread = GhostTrueBlockMap[RealBlock];
     if (GhostThread!=RealThread){
@@ -629,7 +625,7 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * nextNode = node->nextNodeThisThread;
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> * prevNode = node->prevNodeThisThread;
       if (it!=GhostNodeMovingMap[iThread].end()){
-       
+
         int destThread = it->second;
 
         node->nextNodeThisThread=ParallelNodesDistributionList[destThread];
@@ -651,8 +647,8 @@ void PIC::BC::ExternalBoundary::Periodic::AssignGhostBlockThreads(cTreeNodeAMR<P
       node = nextNode;
     }
   }
- */
-  
+   */
+
 
 }
 
@@ -718,13 +714,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
   }
 
   double rCell = sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
-  
-  
-  /*
-    for (int iDim=0;iDim<3;iDim++){
-    level[iDim]=log2((xmaxOriginal[iDim]-xminOriginal[iDim]+2.*HighestBoundaryResolution*dx[iDim]*nBlkArr[iDim])/(2*HighestBoundaryResolution*dx[iDim]*nBlkArr[iDim]));
-  }
-  */
+
   //double maxLevel= *std::max_element(level,level+3);
   int nLevel=ceil(log2(rCell/HighestBoundaryResolution));
 
@@ -737,7 +727,7 @@ void PIC::BC::ExternalBoundary::Periodic::GetBoundaryExtensionLength() {
       BoundaryDx[i]=(xmaxOriginal[i]-xminOriginal[i])/(pow(2.,iLevel)-1.)/2;
       dx[i]=BoundaryDx[i]/nBlkArr[i];
     }
-    
+
     double HighestBoundaryResolutionCopy = sqrt(dx[0]*dx[0]+dx[1]*dx[1]+dx[2]*dx[2]);
     printf("Highest Boundary Resolution2:%f\n", HighestBoundaryResolutionCopy);
     for (int i=0;i<3;i++){
