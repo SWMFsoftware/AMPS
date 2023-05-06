@@ -8,12 +8,8 @@
 #include "pic.h"
 
 double *PIC::ChemicalReactions::PhotolyticReactions::ConstantTotalLifeTime=NULL;
-//PIC::ChemicalReactions::PhotolyticReactions::fReactionProcessor *PIC::ChemicalReactions::PhotolyticReactions::ReactionProcessorTable=NULL;
-//PIC::ChemicalReactions::PhotolyticReactions::fTotalLifeTime *PIC::ChemicalReactions::PhotolyticReactions::TotalLifeTime=NULL;
-
 
 void PIC::ChemicalReactions::PhotolyticReactions::Init() {
-
   //only one particle transformation model can be used
   if (_PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ == _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_ON_) exit(__LINE__,__FILE__,"Error: only one particle transformation model can be used");
 
@@ -29,21 +25,6 @@ double PIC::ChemicalReactions::PhotolyticReactions::TotalLifeTime_default(double
   ReactionAllowedFlag=(ConstantTotalLifeTime[spec]>0.0) ? true : false;
   return ConstantTotalLifeTime[spec];
 }
-
-/*
-void PIC::ChemicalReactions::PhotolyticReactions::SetReactionProcessor(fReactionProcessor f,int spec) {
-  if (TotalLifeTime==NULL) Init();
-  if ((spec<0)||(spec>=PIC::nTotalSpecies)) exit(__LINE__,__FILE__,"Error: out of range");
-
-  ReactionProcessorTable[spec]=f;
-}
-void PIC::ChemicalReactions::PhotolyticReactions::SetSpeciesTotalPhotolyticLifeTime(fTotalLifeTime f,int spec) {
-  if (TotalLifeTime==NULL) Init();
-  if ((spec<0)||(spec>=PIC::nTotalSpecies)) exit(__LINE__,__FILE__,"Error: out of range");
-
-  TotalLifeTime[spec]=f;
-}
-*/
 
 int PIC::ChemicalReactions::PhotolyticReactions::PhotolyticReaction(double *x,long int ptr,int &spec,double &TimeInterval,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int code=_PHOTOLYTIC_REACTIONS_NO_TRANSPHORMATION_;
@@ -107,7 +88,6 @@ void PIC::ChemicalReactions::PhotolyticReactions::InitProductStatWeight() {
         }
       }
 
-
       memcpy(UnknownWeightTableBefore,UnknownWeightTableAfter,PIC::nTotalSpecies*sizeof(bool));
     }
     while (NewWeightFound==true);
@@ -136,43 +116,6 @@ void PIC::ChemicalReactions::PhotolyticReactions::ExecutePhotochemicalModel() {
   long int oldFirstCellParticle,newFirstCellParticle,p,pnext;
 
 
-
-  //simulate particle's collisions
-  /*
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-    //reset the balancing counters
-    for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-      node=DomainBlockDecomposition::BlockTable[nLocalNode];
-      if (node->block!=NULL) *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))=0.0;
-    }
-#endif //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-
-#if _PIC__OPENMP_THREAD_SPLIT_MODE_ == _PIC__OPENMP_THREAD_SPLIT_MODE__BLOCKS_
-#pragma omp parallel for schedule(dynamic,_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) default (none)  \
-    private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
-    shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable)
-#else
-#pragma omp parallel for schedule(dynamic,1) default (none) \
-private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
-shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable)
-#endif  // _PIC__OPENMP_THREAD_SPLIT_MODE_
-
-#endif  //_COMPILATION_MODE_
-    for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
-    int nLocalNode,ii=CellCounter;
-
-    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-
-    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
-    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
-
-    j=ii/_BLOCK_CELLS_X_;
-    ii-=j*_BLOCK_CELLS_X_;
-
-    i=ii;*/
-
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none)  \
     private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
@@ -180,34 +123,23 @@ shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::Bl
 #endif
 
 for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
-
-
     double StartTime=MPI_Wtime();
 
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block!=NULL) {
+       oldFirstCellParticle=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+       newFirstCellParticle=-1;
 
-/*      for (k=0;k<_BLOCK_CELLS_Z_;k++) {
-         for (j=0;j<_BLOCK_CELLS_Y_;j++) {
-            for (i=0;i<_BLOCK_CELLS_X_;i++) {*/
+       if (oldFirstCellParticle!=-1) {
+         p=oldFirstCellParticle;
 
-      {{{
-              oldFirstCellParticle=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-              newFirstCellParticle=-1;
-
-              if (oldFirstCellParticle!=-1) {
-                p=oldFirstCellParticle;
-
-                while (p!=-1) {
-                  pnext=PIC::ParticleBuffer::GetNext(p);
-                  _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(p,newFirstCellParticle,node);
-                  p=pnext;
-                }
-
-                node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=newFirstCellParticle;
-              }
-           }
+         while (p!=-1) {
+           pnext=PIC::ParticleBuffer::GetNext(p);
+           _PIC_PHOTOLYTIC_REACTIONS__REACTION_PROCESSOR_(p,newFirstCellParticle,node);
+           p=pnext;
          }
+
+         node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=newFirstCellParticle;
       }
 
     if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
