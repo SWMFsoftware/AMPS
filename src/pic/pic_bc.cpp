@@ -58,10 +58,11 @@ void PIC::BC::InjectionBoundaryConditions() {
 
   //model the particle injection through the face of the bounding box
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+  double EndTime,StartTime;
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-  double EndTime,StartTime=MPI_Wtime();
-#endif
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+  StartTime=MPI_Wtime();
+}
 
   int test_cnt=0;
 
@@ -72,11 +73,11 @@ void PIC::BC::InjectionBoundaryConditions() {
     if (node->Thread==PIC::Mesh::mesh->ThisThread) {
       nTotalInjectedParticles+=userDefinedBoundingBlockInjectionFunction(node);
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
       EndTime=MPI_Wtime();
       node->ParallelLoadMeasure+=EndTime-StartTime;
       StartTime=EndTime;
-#endif
+}
     }
   }
 
@@ -127,16 +128,14 @@ void PIC::BC::InjectionBoundaryConditions() {
         Sphere=(cInternalSphericalData*)(bc->BoundaryElement);
 
         if (Sphere->ProcessedBCflag==false) {
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           StartTime=MPI_Wtime();
-#endif
 
           Sphere->ProcessedBCflag=true;
           if (Sphere->InjectionBoundaryCondition!=NULL) nTotalInjectedParticles+=Sphere->InjectionBoundaryCondition(bc->BondaryType,(void*)Sphere);
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
         }
 
         break;
@@ -144,16 +143,14 @@ void PIC::BC::InjectionBoundaryConditions() {
         Circle=(cInternalCircleData*)(bc->BoundaryElement);
 
         if (Circle->ProcessedBCflag==false) {
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           StartTime=MPI_Wtime();
-#endif
 
           Circle->ProcessedBCflag=true;
           if (Circle->InjectionBoundaryCondition!=NULL) nTotalInjectedParticles+=Circle->InjectionBoundaryCondition(bc->BondaryType,(void*)Circle);
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
         }
 
         break;
@@ -161,32 +158,30 @@ void PIC::BC::InjectionBoundaryConditions() {
         Sphere1D=(cInternalSphere1DData*)(bc->BoundaryElement);
 
         if (Sphere1D->ProcessedBCflag==false) {
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
           StartTime=MPI_Wtime();
-#endif
+}
 
           Sphere1D->ProcessedBCflag=true;
           if (Sphere1D->InjectionBoundaryCondition!=NULL) nTotalInjectedParticles+=Sphere1D->InjectionBoundaryCondition(bc->BondaryType,(void*)Sphere1D);
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
         }
         break;
       case _INTERNAL_BOUNDARY_TYPE_BODY_OF_ROTATION_:
         RotationBody=(cInternalRotationBodyData*)(bc->BoundaryElement);
 	
         if (RotationBody->ProcessedBCflag==false) {
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
           StartTime=MPI_Wtime();
-#endif
+}
 	  
           RotationBody->ProcessedBCflag=true;
           if (RotationBody->InjectionBoundaryCondition!=NULL) nTotalInjectedParticles+=RotationBody->InjectionBoundaryCondition(bc->BondaryType,(void*)RotationBody);
 	  
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
 	     }
 	     break;
 
@@ -194,16 +189,15 @@ void PIC::BC::InjectionBoundaryConditions() {
         NastranSurface=(cInternalNastranSurfaceData*)(bc->BoundaryElement);
 
         if (NastranSurface->ProcessedBCflag==false) {
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
           StartTime=MPI_Wtime();
-#endif
+}
 
           NastranSurface->ProcessedBCflag=true;
           if (NastranSurface->InjectionBoundaryCondition!=NULL) nTotalInjectedParticles+=NastranSurface->InjectionBoundaryCondition(bc->BondaryType,(void*)NastranSurface);
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
           node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
        }
        break;
 
@@ -426,10 +420,11 @@ void PIC::BC::ExternalBoundary::OpenFlow::Inject() {
   //model the particle injection through the face of the bounding box
   list<cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* >::iterator end,nodeptr;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+  double EndTime,StartTime;
 
-  #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-  double EndTime,StartTime=MPI_Wtime();
-  #endif
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+  StartTime=MPI_Wtime();
+}
 
   for (nodeptr=InjectionBlocksList.begin(),end=InjectionBlocksList.end();nodeptr!=end;nodeptr++) {
     node=*nodeptr;
@@ -446,11 +441,11 @@ void PIC::BC::ExternalBoundary::OpenFlow::Inject() {
       PIC::BC::ParticleProductionRate[spec]+=nInjectedParticles/LocalTimeStep;
       PIC::BC::ParticleMassProductionRate[spec]+=nInjectedParticles/LocalTimeStep*PIC::MolecularData::GetMass(spec);
 
-      #if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      EndTime=MPI_Wtime();
-      node->ParallelLoadMeasure+=EndTime-StartTime;
-      StartTime=EndTime;
-      #endif
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+          EndTime=MPI_Wtime();
+          node->ParallelLoadMeasure+=EndTime-StartTime;
+          StartTime=EndTime;
+      }
     }
   }
 }
