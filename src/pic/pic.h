@@ -1562,25 +1562,11 @@ void DeleteAttachedParticles();
       double x[3],v[3],Speed;
       int spec;
 
-      #if _PIC_PARTICLE_TRACKER__TRAJECTORY_TIME_STAMP_MODE_ == _PIC_MODE_ON_
       double TimeStamp;
-      #endif
-
-      #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
       double ElectricCharge,ParticleSize;
-      #endif
-
-      #if _PIC_MOVER_INTEGRATOR_MODE_ == _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
       double KineticEnergy;
-      #endif
-
-      #if _PIC_PARTICLE_TRACKER__INJECTION_FACE_MODE_ ==  _PIC_MODE_ON_
       int InjectionFaceNumber;
-      #endif
-
-      #if _PIC_PARTICLE_TRACKER__PARTICLE_WEIGHT_OVER_LOCAL_TIME_STEP_MODE_ == _PIC_MODE_ON_
       double ParticleWeightOverLocalTimeStepRatio;
-      #endif
     };
 
     struct cTrajectoryDataRecord {
