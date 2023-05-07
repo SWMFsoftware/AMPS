@@ -274,9 +274,8 @@ void LapentaMultiThreadedMover(int this_thread_id,int thread_id_table_size) {
       }
 
       //update time counter
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)
       node->ParallelLoadMeasure+=(chrono::duration_cast<chrono::duration<double>>(chrono::high_resolution_clock::now()-start_time)).count();
-#endif
     }
   }
   while (iblock_max_thread<nlocal_blocks);
@@ -723,10 +722,11 @@ void PIC::Mover::MoveParticles() {
       long int *FirstCellParticleTable;
       long int ParticleList,ptr;
       double LocalTimeStep;
+      double StartTime;
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      double StartTime=MPI_Wtime();
-#endif
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+      StartTime=MPI_Wtime();
+    }
 
       block=node->block;
       if ((block=node->block)==NULL) continue;
@@ -755,9 +755,9 @@ void PIC::Mover::MoveParticles() {
         }
       }
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
       node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
+}
     }
   };
 
@@ -932,6 +932,8 @@ void PIC::Mover::MoveParticles() {
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       node=DomainBlockDecomposition::BlockTable[nLocalNode];
       block=node->block;
+      double StartTime;
+
       if (!block) continue;
 
       if  (_PIC_FIELD_SOLVER_MODE_==_PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_) {
@@ -939,9 +941,9 @@ void PIC::Mover::MoveParticles() {
         PIC::Mover::SetBlock_B(node);
       }
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      double StartTime=MPI_Wtime();
-#endif
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+        StartTime=MPI_Wtime();
+      }
 
       //block=node->block;
       long int *FirstCellParticleTable=block->FirstCellParticleTable; 
@@ -967,9 +969,9 @@ void PIC::Mover::MoveParticles() {
         }
       }
 
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
-      node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
-#endif
+      if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
+        node->ParallelLoadMeasure+=MPI_Wtime()-StartTime;
+      }
     }
   };
 

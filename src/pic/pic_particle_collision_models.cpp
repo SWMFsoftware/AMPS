@@ -562,13 +562,13 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf() {
 
   //simulate particle's collisions
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
   //reset the balancing counters
   for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block!=NULL) *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))=0.0;
   }
-#endif //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+}
 
 #if _PIC__OPENMP_THREAD_SPLIT_MODE_ == _PIC__OPENMP_THREAD_SPLIT_MODE__BLOCKS_
   const int TotalCell= _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
@@ -1007,13 +1007,13 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf_new() {
 
   //simulate particle's collisions
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#if _PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
   //reset the balancing counters
   for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block!=NULL) *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))=0.0;
   }
-#endif //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
+}
 
 #if _PIC__OPENMP_THREAD_SPLIT_MODE_ == _PIC__OPENMP_THREAD_SPLIT_MODE__BLOCKS_
   const int TotalCell= _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
