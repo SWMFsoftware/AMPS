@@ -1873,14 +1873,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce(long int ptr,double dt,cTr
   PIC::ParticleBuffer::SetV(v,ParticleData);
   PIC::ParticleBuffer::SetX(x,ParticleData);
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
   cell=newNode->block->GetCenterNode(LocalCellNumber);
 
   if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-#endif
+}
 
   return _PARTICLE_MOTION_FINISHED_;
 }
@@ -1908,7 +1908,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
   PIC::ParticleBuffer::GetV(vInit,ParticleData);
   PIC::ParticleBuffer::GetX(xInit,ParticleData);
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
   if ((LocalCellNumber=PIC::Mesh::mesh->FindCellIndex(xInit,i,j,k,startNode,false))==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located4");
   cell=startNode->block->GetCenterNode(LocalCellNumber);
 
@@ -1938,7 +1938,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
 
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-#endif
+}
 
 
 
@@ -2105,14 +2105,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_SecondOrder(long int ptr,double dt
   PIC::ParticleBuffer::SetV(vInit,ParticleData);
   PIC::ParticleBuffer::SetX(xInit,ParticleData);
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
   cell=newNode->block->GetCenterNode(LocalCellNumber);
 
   if ((cell->Measure<=0.0)&&(newNode->Thread==PIC::Mesh::mesh->ThisThread)) {
     cout << "$PREFIX:" << __FILE__<< __LINE__ << endl;
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-#endif
+}
 
   return _PARTICLE_MOTION_FINISHED_;
 }
@@ -2201,7 +2201,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
 
   //=====================  DEBUG ==================
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
 
   if (PIC::ParticleBuffer::IsParticleAllocated(ParticleData)==false) {
     exit(__LINE__,__FILE__,"Error: an unallocated particle is intercepted");
@@ -2299,7 +2299,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-#endif
+}
 
   static long int nCall=0;
   nCall++;
@@ -2327,7 +2327,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
       }
     }
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
     //check the consistency of the particle mover
     int iTemp,jTemp,kTemp;
 
@@ -2352,7 +2352,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
     }
 
     if (startNode->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not initialized");
-#endif
+}
     //===================== END DEBUG ==================
 
 
@@ -3204,12 +3204,11 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
 
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
     PIC::Debugger::CatchOutLimitValue(vFinal,DIM,__LINE__,__FILE__);
     PIC::Debugger::CatchOutLimitValue(xFinal,DIM,__LINE__,__FILE__);
-#endif
-#endif
+}}
 
 
     //check whether a partice is inside the body
@@ -3530,18 +3529,17 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)startNode);
 #endif
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-#if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
   PIC::Debugger::CatchOutLimitValue(vFinal,DIM,__LINE__,__FILE__);
-#endif
-#endif
+}}
 
 
 
 
 
   //=====================  DEBUG =========================
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
 
   if (PIC::ParticleBuffer::IsParticleAllocated(ParticleData)==false) {
     exit(__LINE__,__FILE__,"Error: an unallocated particle is intercepted");
@@ -3598,7 +3596,7 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-#endif
+}
   //===================   END DEBUG ==============================
 
 
