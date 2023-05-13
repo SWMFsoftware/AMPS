@@ -494,9 +494,9 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
       }
       else nExchangeStatisticsIterationNumberSteps=_PIC_RUNTIME_STAT_OUTPUT__MIN_ITERATION_NUMBER_;
 
-#if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
       nExchangeStatisticsIterationNumberSteps=_PIC_RUNTIME_STAT_OUTPUT__MAX_ITERATION_NUMBER_;
-#endif
+}
 
       cStatExchangeControlParameters StatExchangeControlParameters;
       StatExchangeControlParameters.nExchangeStatisticsIterationNumberSteps=nExchangeStatisticsIterationNumberSteps;
@@ -697,11 +697,11 @@ if (ptr!=-1) {
   cell=block->GetCenterNode(LocalCellNumber);
   SamplingData=cell->GetAssociatedDataBufferPointer() + PIC::Mesh::collectingCellSampleDataPointerOffset;
 
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-  for (s=0;s<PIC::nTotalSpecies;s++) PIC::Debugger::CatchOutLimitValue((s+(double*)(SamplingData+PIC::Mesh::sampledParticleWeghtRelativeOffset)),1,__LINE__,__FILE__);
-  #endif
-  #endif
+  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+  if (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
+  for (s=0;s<PIC::nTotalSpecies;s++) PIC::Debugger::CatchOutLimitValue(cell->GetSampleDatum_ptr(&DatumParticleWeight,s),1,__LINE__,__FILE__); 
+  } 
+  }  
 
   //determine the direction of the parallel temeprature sampling
   if (_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE_!=_PIC_SAMPLE__PARALLEL_TANGENTIAL_TEMPERATURE__MODE__OFF_) {
@@ -729,11 +729,11 @@ if (ptr!=-1) {
   ParticleDataNext=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
   //===================    DEBUG ==============================
-  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
   if (cell->Measure<=0.0) {
     exit(__LINE__,__FILE__,"Error: the cell measure is not initialized");
   }
-  #endif
+  }
   //===================   END DEBUG ==============================
 
   while (ptrNext!=-1) {
@@ -760,8 +760,8 @@ if (ptr!=-1) {
 
     //================ End prefetch particle data
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__SAMPLING__PARTICLE_COORDINATES_ == _PIC_DEBUGGER_MODE_ON_
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+    if (_PIC_DEBUGGER_MODE__SAMPLING__PARTICLE_COORDINATES_ == _PIC_DEBUGGER_MODE_ON_) { 
     //check position of the particle:
     //the particle must be within the computational domain and outside of the internal boundarues
     list<cInternalBoundaryConditionsDescriptor>::iterator InternalBoundaryListIterator;
@@ -796,8 +796,8 @@ if (ptr!=-1) {
 
       for (idim=0;idim<DIM;idim++) if ((x[idim]<node->xmin[idim])||(x[idim]>node->xmax[idim])) exit(__LINE__,__FILE__,"Error: particle is outside of the block");
     }
-    #endif //_PIC_DEBUGGER_MODE__SAMPLING__PARTICLE_COORDINATES_
-    #endif //_PIC_DEBUGGER_MODE_
+    } //_PIC_DEBUGGER_MODE__SAMPLING__PARTICLE_COORDINATES_
+    } //_PIC_DEBUGGER_MODE_
 
     Speed2=0.0;
 
@@ -820,12 +820,12 @@ switch (_PIC_FIELD_LINE_MODE_) {
     LocalParticleWeight=block->GetLocalParticleWeight(s);
     LocalParticleWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+    if (_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
     PIC::Debugger::CatchOutLimitValue(v,DIM,__LINE__,__FILE__);
     PIC::Debugger::CatchOutLimitValue(LocalParticleWeight,__LINE__,__FILE__);
-    #endif //_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_
-    #endif //_PIC_DEBUGGER_MODE_ON_
+    } //_PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_
+    } //_PIC_DEBUGGER_MODE_ON_
 
 
     //sample data
@@ -854,14 +854,14 @@ switch (_PIC_FIELD_LINE_MODE_) {
     cell->SampleDatum(&DatumParticleVelocity2Tensor,v2tensor, s, LocalParticleWeight);
     #endif
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
-    PIC::Debugger::CatchOutLimitValue((s+(double*)(tempSamplingBuffer+PIC::Mesh::sampledParticleWeghtRelativeOffset)),1,__LINE__,__FILE__);
-    PIC::Debugger::CatchOutLimitValue(PIC::Mesh::sampledVelocityOffset,DIM,__LINE__,__FILE__);
-    PIC::Debugger::CatchOutLimitValue(PIC::Mesh::sampledVelocity2Offset,DIM,__LINE__,__FILE__);
-    PIC::Debugger::CatchOutLimitValue((s+(double*)(tempSamplingBuffer+PIC::Mesh::sampledParticleSpeedRelativeOffset)),1,__LINE__,__FILE__);
-    #endif //_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_
-    #endif // _PIC_DEBUGGER_MODE_
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+    if (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
+    PIC::Debugger::CatchOutLimitValue(cell->GetSampleDatum_ptr(&DatumParticleWeight,s),1,__LINE__,__FILE__);
+    PIC::Debugger::CatchOutLimitValue(cell->GetSampleDatum_ptr(&DatumParticleVelocity,s),DIM,__LINE__,__FILE__);
+    PIC::Debugger::CatchOutLimitValue(cell->GetSampleDatum_ptr(&DatumParticleVelocity2,s),1,__LINE__,__FILE__);
+    PIC::Debugger::CatchOutLimitValue(cell->GetSampleDatum_ptr(&DatumParticleSpeed,s),1,__LINE__,__FILE__);
+    } //_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_
+    } // _PIC_DEBUGGER_MODE_
 
 
     //sample the data for calculation the normal and tangential kinetic temepratures
@@ -1188,11 +1188,11 @@ void PIC::Sampling::Sampling() {
     #endif
 
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_
+    if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
+    if (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
     CatchOutLimitSampledValue();
-    #endif
-    #endif
+    } 
+    }
 
     //check if the number of sampled particles coinsides with the number of particles in the buffer
     if ((nTotalSampledParticles!=ParticleBuffer::GetAllPartNum())&&(_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_)) {

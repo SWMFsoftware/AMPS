@@ -3401,6 +3401,18 @@ void DeleteAttachedParticles();
         if (Datum->offset>=0) *(spec + (double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset))+= In*weight;
       }
 
+      inline double* GetSampleDatum_ptr(Datum::cDatumSampled* Datum,int spec) {
+        int length=Datum->length;
+        double* ptr=NULL;
+
+        if (Datum->offset>=0) {
+          ptr=(double*)(associatedDataPointer+collectingCellSampleDataPointerOffset+Datum->offset);
+          ptr+=length*spec;
+        } 
+
+        return ptr;
+      }
+
       //.......................................................................
       inline void SetDatum(Datum::cDatumSampled* Datum, double* In, int spec) {
         int length=Datum->length;
