@@ -239,7 +239,7 @@ int PIC::TimeStep() {
   }
 
   //call user defined MPI procedure
-#if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_
+if (_PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_) { 
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime();
@@ -247,10 +247,10 @@ int PIC::TimeStep() {
 
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime()-UserDefinedMPI_RoutineExecutionTime;
   RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime+=UserDefinedMPI_RoutineExecutionTime;
-#endif
+}
 
   //update the glabal time counter if needed
-#if _PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
+if (_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_) { 
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
   auto DoUpdateSimulationTime=[=] () {
@@ -263,7 +263,7 @@ int PIC::TimeStep() {
   //exit(__LINE__,__FILE__,"Error: not implemented");
   //#endif
 
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
+if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_) { 
   //update data
   if (PIC::CPLR::DATAFILE::MULTIFILE::ReachedLastFile==true) {
     if (PIC::CPLR::DATAFILE::MULTIFILE::BreakAtLastFile==true) return _PIC_TIMESTEP_RETURN_CODE__END_SIMULATION_;
@@ -285,8 +285,8 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
 
 }
   
-#endif//_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
-#endif//_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
+}//_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__DATAFILE_
+}//_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_
 
    SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
@@ -560,11 +560,11 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 
       //check if the number of iterations between the load rebalancing exeeds 
       //the minimum number '_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_'
-      #ifdef _PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_
+      if (_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) { 
       if (PIC::Parallel::IterationNumberAfterRebalancing<_PIC_DYNAMIC_LOAD_BALANCING__MIN_ITERATION_BETWEEN_LOAD_REBALANCING_) {
         EmergencyLoadRebalancingFlag=false;
       }
-      #endif
+      }
 
       MPI_Bcast(&EmergencyLoadRebalancingFlag,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
@@ -750,9 +750,7 @@ if (ptr!=-1) {
       int iPrefetch,iPrefetchMax=1+(int)(PIC::ParticleBuffer::ParticleDataLength/_PIC_MEMORY_PREFETCH__CACHE_LINE_);
 
       for (iPrefetch=0;iPrefetch<iPrefetchMax;iPrefetch++) {
-        #ifndef __PGI
         _mm_prefetch(iPrefetch*_PIC_MEMORY_PREFETCH__CACHE_LINE_+(char*)ptrNext,_MM_HINT_NTA);
-        #endif
       }
       #endif
     }
@@ -846,13 +844,13 @@ switch (_PIC_FIELD_LINE_MODE_) {
     cell->SampleDatum(&DatumParticleVelocity2,miscv2, s, LocalParticleWeight);
     cell->SampleDatum(&DatumParticleSpeed,sqrt(Speed2), s, LocalParticleWeight);
 
-    #if  _PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_
+    if (_PIC_SAMPLE__VELOCITY_TENSOR_MODE_==_PIC_MODE_ON_) { 
     double v2tensor[3];
     for (idim=0;idim<3;idim++) {
       v2tensor[idim]=v[idim]*v[(idim+1)%3];
     }
     cell->SampleDatum(&DatumParticleVelocity2Tensor,v2tensor, s, LocalParticleWeight);
-    #endif
+    }
 
     if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) { 
     if (_PIC_DEBUGGER_MODE__SAMPLING_BUFFER_VALUE_RANGE_CHECK_ == _PIC_DEBUGGER_MODE__VARIABLE_VALUE_RANGE_CHECK_ON_) { 
