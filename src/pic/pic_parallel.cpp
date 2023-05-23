@@ -13,6 +13,9 @@ double PIC::Parallel::RebalancingTime=0.0,PIC::Parallel::CumulativeLatency=0.0;
 double PIC::Parallel::EmergencyLoadRebalancingFactor=3.0;
 double PIC::Parallel::Latency=0.0;
 
+//the user-defiend function to perform MPI exchange of the model data
+PIC::Parallel::fUserDefinedMpiModelDataExchage PIC::Parallel::UserDefinedMpiModelDataExchage=NULL;
+
 //processing 'corner' and 'center' node associated data vectors when perform syncronization
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::ProcessCornerNodeAssociatedData=NULL;
 PIC::Parallel::CornerBlockBoundaryNodes::fUserDefinedProcessNodeAssociatedData PIC::Parallel::CornerBlockBoundaryNodes::CopyCornerNodeAssociatedData=NULL;

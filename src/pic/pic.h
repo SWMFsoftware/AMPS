@@ -5256,6 +5256,10 @@ void DeleteAttachedParticles();
      extern long int sendParticleCounter,recvParticleCounter,IterationNumberAfterRebalancing;
      extern double RebalancingTime,CumulativeLatency;
 
+     //the user-defiend function to perform MPI exchange of the model data
+     typedef void (*fUserDefinedMpiModelDataExchage)();
+     extern fUserDefinedMpiModelDataExchage UserDefinedMpiModelDataExchage;
+
      //the factor the trrigeres the emergency load rebalancing. The condition for the rebalancing:
      //(PIC::Parallel::CumulativeLatency>PIC::Parallel::EmergencyLoadRebalancingFactor*PIC::Parallel::RebalancingTime)
      extern double EmergencyLoadRebalancingFactor;
