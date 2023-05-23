@@ -332,13 +332,13 @@ int PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(long int ptr,doubl
   }
 
     //save the trajectory point
-#if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+if (_PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_) { 
   PIC::ParticleTracker::RecordTrajectoryPoint(xFinal,vFinal,spec,ParticleData,(void*)newNode);
 
-#if _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_
+if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) { 
   PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(xFinal,vFinal,spec,ParticleData,(void*)newNode);
-#endif
-#endif
+}
+}
 
   //finish the trajectory integration procedure
   PIC::Mesh::cDataBlockAMR *block;
