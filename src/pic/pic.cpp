@@ -239,15 +239,15 @@ int PIC::TimeStep() {
   }
 
   //call user defined MPI procedure
-if (PIC::Parallel::UserDefinedMpiModelDataExchage!=NULL) { 
+#if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_   
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
 
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime();
-  PIC::Parallel::UserDefinedMpiModelDataExchage();
+  _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_();
 
   UserDefinedMPI_RoutineExecutionTime=MPI_Wtime()-UserDefinedMPI_RoutineExecutionTime;
   RunTimeSystemState::CumulativeTiming::UserDefinedMPI_RoutineExecutionTime+=UserDefinedMPI_RoutineExecutionTime;
-}
+#endif
 
   //update the glabal time counter if needed
 if (_PIC_GLOBAL_TIME_COUNTER_MODE_ == _PIC_MODE_ON_) { 
@@ -1643,11 +1643,6 @@ void PIC::Init_BeforeParser() {
 
   //initiate MPI
   InitMPI();
-
-  //the user-defiend function to perform MPI exchange of the model data
-  #if _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE_ == _PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_MODE__ON_ 
-  PIC::Parallel::UserDefinedMpiModelDataExchage=_PIC__USER_DEFINED__MPI_MODEL_DATA_EXCHANGE_;
-  #endif 
 
 //  PIC::IndividualModelSampling::RequestStaticCellData=new amps_vector<PIC::IndividualModelSampling::fRequestStaticCellData>;
 //  PIC::IndividualModelSampling::RequestStaticCellData->clear();
