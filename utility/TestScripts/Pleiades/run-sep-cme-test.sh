@@ -7,7 +7,7 @@ mkdir -p /nobackup/vtenishe/Tmp_AMPS_Test
 cd /nobackup/vtenishe/Tmp_AMPS_Test
 rm -rf SWMF
 
-git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 
 cd SWMF
 ln -s /nobackup/vtenishe/SWMF_data .

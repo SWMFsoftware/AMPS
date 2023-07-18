@@ -187,7 +187,7 @@ Compile=
 >>>@echo "test_CG-Rosina-Liouville--Trajectory_compile..." > test_CG-Rosina-Liouville--Trajectory$(TESTCG-Rosina-Liouville--Trajectory-REF).diff
 
 >>>@mkdir -p ../TempSourceDir  
->>>@cd ../TempSourceDir;git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>@cd ../TempSourceDir;git clone git@github.com:SWMFsoftware/AMPS
 >>>@cd ../TempSourceDir/AMPS;git checkout ROSINA-END-OF-MISSION
 
 >>>@mv srcCG srcCG--original
@@ -250,7 +250,7 @@ Compile=
 >>>@echo "test_CG-Rosina-Liouville_compile..." > test_CG-Rosina-Liouville$(TESTCG-Rosina-Liouville-REF).diff
 
 >>>@mkdir -p ../TempSourceDir
->>>@cd ../TempSourceDir;git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>@cd ../TempSourceDir;git clone git@github.com:SWMFsoftware/AMPS
 >>>@cd ../TempSourceDir/AMPS;git checkout ROSINA-END-OF-MISSION
 
 >>>@mv src src--original
@@ -605,7 +605,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -676,7 +676,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -898,7 +898,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -970,7 +970,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1040,7 +1040,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1111,7 +1111,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1181,7 +1181,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1249,7 +1249,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1318,7 +1318,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1550,7 +1550,7 @@ Compile=
 
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+>>>git clone --depth 1 git@github.com:SWMFsoftware/BATL
 <<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1592,7 +1592,7 @@ Compile=
 
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+>>>git clone --depth 1 git@github.com:SWMFsoftware/BATL
 <<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1652,7 +1652,7 @@ Compile=
 
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+>>>git clone --depth 1 git@github.com:SWMFsoftware/BATL
 <<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -1723,7 +1723,7 @@ Compile=
 
 >>>rm -rf earth_cutoff_rigidity_model
 >>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@gitlab.umich.edu:swmf_software/AMPS  
+>>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS  
 >>>cp -r share earth_cutoff_rigidity_model/AMPS
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
 >>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model  
@@ -1776,7 +1776,7 @@ Compile=
 
 >>>rm -rf earth_cutoff_rigidity_model
 >>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS
 >>>cp -r share earth_cutoff_rigidity_model/AMPS
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
 >>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
@@ -1844,7 +1844,7 @@ Compile=
 
 >>>rm -rf earth_cutoff_rigidity_model
 >>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS
 >>>cp -r share earth_cutoff_rigidity_model/AMPS
 >>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
 >>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
@@ -3177,7 +3177,7 @@ ExeptionCode=SKIP{gcc}@@(0+valeriy)
 
 Compile=
 >>>@echo "test_Legacy_2dCG_compile..." > test_Legacy_2dCG.diff
->>>@git clone git@gitlab.umich.edu:swmf_software/AMPS_Legacy
+>>>@git clone git@github.com:SWMFsoftware/AMPS_Legacy
 >>>@cd AMPS_Legacy/;./getmakefile -project dsmc -mdir main/;make 
 >>>@echo "test_Legacy_2dCG_compile... done" >> test_Legacy_2dCG.diff
 
@@ -4338,7 +4338,7 @@ Compile=
 >>>./Config.pl -application=test/Mars-Hot-Oxygen -spice-path=nospice -spice-kernels=nospice  -amps-test=on ${TESTMars-Hot-OxygenKEYS}
 
 >>>@mkdir -p ../TempSourceDir
->>>@cd ../TempSourceDir;git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>@cd ../TempSourceDir;git clone git@github.com:SWMFsoftware/AMPS
 >>>@cd ../TempSourceDir/AMPS;git checkout Mars_HotO_DRofO2p_PERMAX 
 
 >>>@mv srcMars srcMars--original
@@ -4396,7 +4396,7 @@ Compile=
 >>>./Config.pl -application=test/Mars-Hot-Carbon -spice-path=nospice -spice-kernels=nospice  -amps-test=on -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS 
 
 >>>@mkdir -p ../TempSourceDir
->>>@cd ../TempSourceDir;git clone git@gitlab.umich.edu:swmf_software/AMPS
+>>>@cd ../TempSourceDir;git clone git@github.com:SWMFsoftware/AMPS
 >>>@cd ../TempSourceDir/AMPS;git checkout HotC_DRofCOp_EL 
 
 >>>@mv srcMars srcMars--original
@@ -4642,7 +4642,7 @@ Compile=
 
 <<<ifeq ($(wildcard BATL/*),)
 >>>echo "Installing BATL....."
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/BATL
+>>>git clone --depth 1 git@github.com:SWMFsoftware/BATL
 <<<endif
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -4729,7 +4729,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF 
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF 
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -4812,7 +4812,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -4883,7 +4883,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -4950,7 +4950,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5036,7 +5036,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5123,7 +5123,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5213,7 +5213,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5299,7 +5299,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5386,7 +5386,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5472,7 +5472,7 @@ Compile=
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
 >>>mkdir -p SWMF-IH
->>>cd SWMF-IH;git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5560,7 +5560,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5622,7 +5622,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5677,7 +5677,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)
@@ -5735,7 +5735,7 @@ Compile=
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF/*),)
->>>git clone --depth 1 git@gitlab.umich.edu:swmf_software/SWMF
+>>>git clone --depth 1 git@github.com:SWMFsoftware/SWMF
 >>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF/SWMF_data
 
 <<<ifeq ($(COMPILE.c),icc)

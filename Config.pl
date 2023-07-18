@@ -28,7 +28,7 @@ our @Compilers;
 
 my $config     = "share/Scripts/Config.pl";
 #check util and share
-my $GITCLONE = "git clone"; my $GITDIR = "git\@gitlab.umich.edu:swmf_software";
+my $GITCLONE = "git clone"; my $GITDIR = "git\@github.com:SWMFsoftware";
 
 if (-f $config or -f "../../$config"){
 }else{
