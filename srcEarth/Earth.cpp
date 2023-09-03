@@ -18,11 +18,23 @@ void amps_time_step();
 
 
 char Earth::Mesh::sign[_MAX_STRING_LENGTH_PIC_]="";
-char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="EARTH";
+char Exosphere::ObjectName[_MAX_STRING_LENGTH_PIC_]="Earth";
 char Exosphere::SO_FRAME[_MAX_STRING_LENGTH_PIC_]="GSE";
 
-//solar wind velocity
-double Earth::SolarWindVelocity[3]={-400.0E3,0.0,0.0};
+double Exosphere::GetSurfaceTemperature(double CosSubSolarAngle,double *x_LOCAL_SO_OBJECT) {
+  static const double Tn=110.0;
+  static const double Td0_Aphelion=590.0,Td0_Perihelion=725.0;
+  static const double TAA_Aphelion=Pi,TAA_Perihelion=0.0;
+  static const double alpha=(Td0_Aphelion-Td0_Perihelion)/(TAA_Aphelion-TAA_Perihelion);
+
+  double Td,Angle;
+
+  Angle=(OrbitalMotion::TAA<Pi) ? OrbitalMotion::TAA : 2.0*Pi-OrbitalMotion::TAA;
+  Td=Td0_Perihelion+alpha*(Angle-TAA_Perihelion);
+
+  return (CosSubSolarAngle>0.0) ? Tn+(Td-Tn)*pow(CosSubSolarAngle,0.25) : Tn;
+}
+
 
 //parameters of the T96 model
 bool Earth::T96::active_flag=false;
@@ -39,8 +51,39 @@ double Earth::T05::by=0.0;
 double Earth::T05::bz=0.0;
 double Earth::T05::W[6]={0,0,0, 0,0,0};
 
-//simulation physics time 
-double Earth::SimulationPhysicsTime=0.0;
+//heliosphere/geospace flag
+int Earth::GeospaceFlag::offset=-1;
+
+void DebuggerTrap() {
+  cout << "sdsadfsdaf" << endl;
+}
+
+//the maximum integration path that is simulated for a particle
+double Earth::CutoffRigidity::MaxIntegrationLength=50.*_EARTH__RADIUS_;
+
+//continue modeling particles if their trajectory length is below MaxIntegrationLength
+bool Earth::CutoffRigidity::SearchShortTrajectory=true;
+
+
+int Earth::GeospaceFlag::RequestDataBuffer(int OffsetIn) {
+  offset=OffsetIn;
+  return sizeof (double);
+}
+
+//data file that serts the parames of the background magnetic field model
+string Earth::BackgroundMagneticFieldT05Data="";
+
+//model mode
+int Earth::ModelMode=Earth::CutoffRigidityMode; 
+
+//background magnetic field model
+int Earth::BackgroundMagneticFieldModelType=Earth::_undef;
+
+//rigidity calculation mode
+int Earth::RigidityCalculationMode=Earth::_sphere;
+
+//radius of the sphere where the rigidity is calculated
+double Earth::RigidityCalculationSphereRadius=0.0;
 
 
 //composition of the GCRs
@@ -73,8 +116,8 @@ void Earth::Sampling::PrintVariableList(FILE* fout) {
   }
 }
 
-void Earth::Sampling::PrintTitle(FILE* fout) {
-  fprintf(fout,"TITLE=\"Sampled particle flux and max rigidity\"");
+void Earth::Sampling::PrintTitle(FILE* fout) { //,cInternalSphericalData *Sphere) {
+  fprintf(fout,"TITLE=\"Sampled particle flux and min rigidity\"");
 }
 
 void Earth::Sampling::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,
@@ -193,25 +236,15 @@ int Earth::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDa
   PIC::ParticleBuffer::GetX(xInit,ptr);
 
 
-  switch (PIC::ParticleBuffer::GetI(ptr)) {
-  case _ELECTRON_SPEC_: case _H_PLUS_SPEC_:case _NEUTRON_SPEC_: 
-   // res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
-   res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
+
+  switch ((int)PIC::ParticleBuffer::GetI(ptr)) {
+  case _ELECTRON_SPEC_:
+//    res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
+    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
 
     break;
   default:
-   // res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
-
-   if (_EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_ == _PIC_MODE_ON_) {
-     double dx,v[3];
-
-     PIC::ParticleBuffer::GetV(v,ptr);
-     dx=startNode->GetCharacteristicCellSize(); 
-
-     res=PIC::Mover::Boris(ptr,dx/Vector3D::Length(v),startNode);
-   }
-   else res=PIC::Mover::Boris(ptr,dtTotal,startNode);
-
+    res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
   }
 
   if ((Sampling::SamplingMode==true)&&(res==_PARTICLE_MOTION_FINISHED_)) {
@@ -370,7 +403,7 @@ void Earth::Sampling::Init() {
   int iShell;
 
 
-  if (Earth::Sampling::SamplingMode==true) {
+  if ((Earth::RigidityCalculationMode==Earth::_sphere)&&(Earth::Sampling::SamplingMode==true)) {
     //set the user-function for output of the data files in the core
     PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(SamplingManager,PrintManager);
 
@@ -431,9 +464,9 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec,double& Reemi
   return res;
 }
 
-double Exosphere::GetSurfaceTemperature(double cosSubsolarAngle,double *x) {
-  return 300.0;
-}
+//double Exosphere::GetSurfaceTemeprature(double cosSubsolarAngle,double *x) {
+//  return 300.0;
+//}
 
 void Exosphere::ColumnIntegral::CoulumnDensityIntegrant(double *res,int resLength,double* x,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   //do nothing
@@ -466,8 +499,10 @@ void Earth::Init() {
     ::T05::SetDST(T05::dst);
     ::T05::SetBYIMF(T05::by);
     ::T05::SetBZIMF(T05::bz);
-    ::T05::SetW(T05::W[0],T05::W[1],T05::W[2],T05::W[3],T05::W[4],T05::W[5]); 
+    ::T05::SetW(T05::W[0],T05::W[1],T05::W[2],T05::W[3],T05::W[4],T05::W[5]);
   }
+
+
 
   //init the composition gourp tables
   //!!!!!!!!!!!!! For now only hydrogen is considered !!!!!!!!!!!!!!!!!
@@ -509,6 +544,14 @@ void Earth::Init() {
   if (_PIC_EARTH_SEP__MODE_==_PIC_MODE_ON_) BoundingBoxInjection::SEP::Init();
   if (_PIC_EARTH_GCR__MODE_==_PIC_MODE_ON_) BoundingBoxInjection::GCR::Init();
   if (_PIC_EARTH_ELECTRON__MODE_==_PIC_MODE_ON_) BoundingBoxInjection::Electrons::Init();
+
+  //init sampling of individual locations
+  Earth::IndividualPointSample::Parser();
+
+  //load SEP energy spectrum if needed 
+  if (Earth::BoundingBoxInjection::SEP::SepEnergySpecrumFile!="") {
+    Earth::BoundingBoxInjection::SEP::LoadEnergySpectrum();
+  }
 }
 
 //forward integration of the energetic particles starting from the boundary of the computational domain
@@ -572,6 +615,101 @@ void Earth::ForwardParticleModeling(int nTotalInteractions) {
        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
      }
   }
-
 }
+
+//--------------------------------------------------------------------------------
+//set the magnetic filed with T06,T96, etc...
+void Earth::InitMagneticField(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
+  const int iMin=-_GHOST_CELLS_X_,iMax=_GHOST_CELLS_X_+_BLOCK_CELLS_X_-1;
+  const int jMin=-_GHOST_CELLS_Y_,jMax=_GHOST_CELLS_Y_+_BLOCK_CELLS_Y_-1;
+  const int kMin=-_GHOST_CELLS_Z_,kMax=_GHOST_CELLS_Z_+_BLOCK_CELLS_Z_-1;
+
+  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    int ii,S=(kMax-kMin+1)*(jMax-jMin+1)*(iMax-iMin+1);
+
+    if (startNode->block!=NULL) {
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp parallel for schedule(dynamic,1) default (none) shared (PIC::Mesh::mesh,iMin,jMin,kMin,S,PIC::CPLR::DATAFILE::Offset::MagneticField, \
+    PIC::CPLR::DATAFILE::Offset::ElectricField,startNode,PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin,PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset)
+#endif
+
+      for (ii=0;ii<S;ii++) {
+        int i,j,k;
+        double *xNodeMin=startNode->xmin;
+        double *xNodeMax=startNode->xmax;
+        double x[3],B[3],xCell[3];
+        PIC::Mesh::cDataCenterNode *CenterNode;
+
+        //set the value of the geomagnetic field calculated at the centers of the cells
+        int nd,idim;
+        char *offset;
+
+        //determine the coordinates of the cell
+        int S1=ii;
+
+        i=iMin+S1/((kMax-kMin+1)*(jMax-jMin+1));
+        S1=S1%((kMax-kMin+1)*(jMax-jMin+1));
+
+        j=jMin+S1/(kMax-kMin+1);
+        k=kMin+S1%(kMax-kMin+1);
+
+        //locate the cell
+        nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+        if ((CenterNode=startNode->block->GetCenterNode(nd))==NULL) continue;
+        offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+        //the interpolation location
+        xCell[0]=(xNodeMin[0]+(xNodeMax[0]-xNodeMin[0])/_BLOCK_CELLS_X_*(0.5+i));
+        xCell[1]=(xNodeMin[1]+(xNodeMax[1]-xNodeMin[1])/_BLOCK_CELLS_Y_*(0.5+j));
+        xCell[2]=(xNodeMin[2]+(xNodeMax[2]-xNodeMin[2])/_BLOCK_CELLS_Z_*(0.5+k));
+
+        //calculate the geomagnetic field
+        if (Earth::BackgroundMagneticFieldModelType==Earth::_undef) {
+          switch (_PIC_COUPLER_MODE_) {
+          case _PIC_COUPLER_MODE__T96_:
+            ::T96::GetMagneticField(B,xCell);
+            break;
+          case _PIC_COUPLER_MODE__T05_:
+            ::T05::GetMagneticField(B,xCell);
+            break;
+          default:
+            exit(__LINE__,__FILE__,"Error: the option is unknown");
+          }
+        }
+        else {
+          switch (Earth::BackgroundMagneticFieldModelType) {
+          case Earth::_t96:
+            ::T96::GetMagneticField(B,xCell);
+            break;
+          case Earth::_t05:
+            ::T05::GetMagneticField(B,xCell);
+            break;
+          default:
+            exit(__LINE__,__FILE__,"Error: the option is unknown");
+          }
+        }
+
+        //save E and B
+        for (idim=0;idim<3;idim++) {
+          if (PIC::CPLR::DATAFILE::Offset::MagneticField.active==true) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset+idim*sizeof(double)))=B[idim];
+          }
+
+          if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
+            *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
+          }
+        }
+      }
+
+    }
+  }
+  else {
+    int i;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+    for (i=0;i<(1<<DIM);i++) if ((downNode=startNode->downNode[i])!=NULL) InitMagneticField(downNode);
+  }
+}
+
+
 

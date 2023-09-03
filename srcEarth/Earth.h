@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <algorithm> 
+#include <cctype>
+#include <locale>
+
 using namespace std;
 
 
@@ -30,18 +34,7 @@ using namespace std;
 
 #include "GCR_Badavi2011ASR.h"
 
-#ifndef _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_
-#define _EARTH_INDIVIDUAL_PARTICLE_TIME_STEP_  _PIC_MODE_OFF_
-#endif
-
-//application of the Earth model
-#define _MODEL_APPLICATION_RIGIDITY_CUTOFF_  0
-#define _MODEL_APPLICATION_POINT_SOURCE_     1
-
-#ifndef _MODEL_APPLICATION_
-#define _MODEL_APPLICATION_ _MODEL_APPLICATION_RIGIDITY_CUTOFF_ 
-#endif
-
+void DebuggerTrap();
 
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
@@ -85,8 +78,65 @@ public:
 namespace Earth {
   using namespace Exosphere;
 
-  //simulation physics time 
-  extern double SimulationPhysicsTime;
+  //the model description
+  extern int ModelMode;
+  const int ImpulseSourceMode=0;
+  const int CutoffRigidityMode=1;
+  const int BoundaryInjectionMode=2;
+
+  namespace GeospaceFlag {
+    extern int offset;
+    int RequestDataBuffer(int offset);
+  }
+
+
+  namespace ParticleTracker {
+    bool TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData);  
+  }
+
+
+  //set the magnetic filed with T06,T96, etc...
+  void InitMagneticField(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode=PIC::Mesh::mesh->rootTree); 
+
+  namespace IndividualPointSample {
+    //class containing sampling of individual points, which coordinated are passed in a file
+
+    class cIndividualPointSampleElement {
+    public:
+      double Density,Flux[3];
+      int niter;
+      array_1d<double> EnergyDistribution;
+      double x[3];
+
+      int i,j,k;
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
+
+      cIndividualPointSampleElement() {
+        Density=0.0;
+        Flux[0]=0.0,Flux[1]=0.0,Flux[2]=0.0;
+        node=NULL;
+        i=-1,j=-1,k=-1;
+        EnergyDistribution=0.0;
+      }
+    };
+
+    //energy sampling parameters
+    extern double Emin,Emax,dE;
+    extern double LogEmin,LogEmax,dLogE;
+    extern int nSampleIntervals;
+
+    extern int SamplingMode;
+    const int ModeLinear=0;
+    const int ModeLogarithmic=1;
+
+    extern string fname;
+    void Parser();
+
+    extern vector <cIndividualPointSampleElement> SamplePointTable;
+  }
+
+  //particle flux outside of the magnetispheres
+  double OutsideParticleFlux(double ParticleEnergy);
   
   //the function that created the SampledDataRecoveryTable
   void DataRecoveryManager(list<pair<string,list<int> > >&,int,int);
@@ -96,10 +146,78 @@ namespace Earth {
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
 
-  //velocity of the solar wind
-  extern double SolarWindVelocity[3];
+  //parser of the post-compile input file
+  namespace Parser {
+    //reading mode of the input file
+    const int _reading_mode_pre_init=0;
+    const int _reading_mode_post_init=1;
+    extern int _reading_mode;
 
-  //parameterd of the T96 model
+
+    // trim from start (in place)
+    static inline void ltrim(std::string &s) {
+      s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+      }));
+    }
+
+    // trim from end (in place)
+    static inline void rtrim(std::string &s) {
+      s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
+          return !std::isspace(ch);
+      }).base(), s.end());
+    }
+
+    // trim from both ends (in place)
+    static inline void trim(std::string &s) {
+      ltrim(s);
+      rtrim(s);
+    }
+    
+    // trim from start (copying)
+    static inline std::string ltrim_copy(std::string s) {
+      ltrim(s);
+      return s;
+    }
+
+    // trim from end (copying)
+    static inline std::string rtrim_copy(std::string s) {
+      rtrim(s);
+      return s;
+    }
+
+    // trim from both ends (copying)
+    static inline std::string trim_copy(std::string s) {
+      trim(s);
+      return s;
+    }
+
+    //replace substring
+    void inline replace(std::string& subject, const std::string& search,const std::string& replace) { 
+      size_t pos = 0;
+      while ((pos = subject.find(search, pos)) != std::string::npos) {
+        subject.replace(pos, search.length(), replace);
+        pos += replace.length();
+      }
+    }
+
+    void ReadFile(string fname,int mode);
+    void SelectCommand(vector<string>&);
+    
+    void BackgroundModelT96(vector<string>&);
+    void BackgroundModelT05(vector<string>&); 
+    void SetT05DataFile(vector<string>&);
+    void TestLocation(vector<string>&);
+    void TestSphere(vector<string>&);
+    void InjectionLimit(vector<string>&);
+    void SetTimeStep(vector<string>&);
+    void SetBoundaryInjectionEnergyRange(vector<string>&);
+    void SetInjectionMode(vector<string>&);
+    
+    double Evaluate(string s);
+  }
+
+  //parameters of the T96 model
   namespace T96 {
     extern bool active_flag;
     extern double solar_wind_pressure;
@@ -117,14 +235,31 @@ namespace Earth {
     extern double W[6];
   }
 
-  //model of the atmosphere 
+  //type of the background magnetic field model used in the calcualtions 
+  extern int BackgroundMagneticFieldModelType; 
+  const int _undef=0;
+  const int _t96=1;
+  const int _t05=2;
+
+  //data file that serts the parames of the background magnetic field model
+  extern string BackgroundMagneticFieldT05Data;
+
+  //rigidity calculation mode
+  extern int RigidityCalculationMode;
+  const int _sphere=0;
+  const int _point=1;
+
+  //radius of the sphere where the rigidity is calculated
+  extern double RigidityCalculationSphereRadius;
+
+  //model of the atmosphere
   double GetAtmosphereTotalNumberDensity(double *x);
 
-  //physics of the ebergetic particles  
-  void NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
+  //physics of the ebergetic particles
+  void NeutronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   void ProtonPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   void ElectronPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
-  void EnergeticParticlesPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
+  void EnergeticParticlesPhysics(long int ptr,long int& FirstParticleCell,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   //the mesh parameters
   namespace Mesh {
@@ -156,7 +291,7 @@ namespace Earth {
 
     //output sampled data
     void PrintVariableList(FILE*);
-    void PrintTitle(FILE*);
+    void PrintTitle(FILE*); //,cInternalSphericalData *Sphere);
     void PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
 
     //the function that will be called to print sampled data
@@ -194,28 +329,38 @@ namespace Earth {
 
   //calculation of the cutoff rigidity
   namespace CutoffRigidity {
-    const double RigidityTestRadiusVector=400.0E3+_RADIUS_(_TARGET_);
+    const double RigidityTestRadiusVector=400.0E3+_RADIUS_(_EARTH_);
     const double RigidityTestMinEnergy=1.0*MeV2J;
     const double RigidityTestMaxEnergy=1.0E4*MeV2J;
-    
-    //manager of the regidity cutoff model that controls all elements of the model execution
-    void Run();
 
-    //the distribution of the injected particles velocity vector 
-    extern int ParticleVelocityDirectionMode;
-    const int ParticleVelocityDirectionUniform=0;
-    const int ParticleVelocityDirectionVertical=1;
-    
-    //the maximum number of iteractions
-    extern int nMaxIteractions;
+    //the total nuimber of iteration used for calcualting rigidity cutoff
+    extern int nTotalIterations;
+
+    //the maximum integration path that is simulated for a particle 
+    extern double MaxIntegrationLength;
+
+    //continue modeling particles if their trajectory length is below MaxIntegrationLength
+    extern bool SearchShortTrajectory;  
 
     //calculation of the cutoff rigidity in discrete locations
     namespace IndividualLocations {
       extern int xTestLocationTableLength;
       extern double** xTestLocationTable;
       extern array_2d<double> CutoffRigidityTable; //[spec][location];
+      extern array_2d<double> SampledFluxTable; //[spec][location];
       extern double MaxEnergyLimit;
       extern double MinEnergyLimit;
+
+      extern double MinInjectionRigidityLimit,MaxInjectionRigidityLimit;
+      extern int nRigiditySearchIntervals; 
+
+      extern cInternalSphericalData *SamplingSphereTable;
+
+      //injection mode
+      extern int InjectionMode;
+      const int _energy_injection=0;
+      const int _rigidity_injection=1;
+      const int _rigidity_grid_injection=2;
 
       extern int nTotalTestParticlesPerLocations;  //the total number of model particles ejected from a test location
 
@@ -224,16 +369,11 @@ namespace Earth {
       extern int nParticleInjectionIterations;
     }
 
-    //calculate the cutoff regidity for spherical shells 
-    namespace ShericalShells {
-      extern int rTestSphericalShellTableLength;
-      extern double rTestSphericalShellTable[];
-    }
-
     //offset in the particle state vector pointing to the index describing the index of the origin location of the particles
     namespace ParticleDataOffset {
       extern long int OriginLocationIndex;
       extern long int OriginalSpeed;
+      extern long int OriginalVelocityDirectionID;
     }
 
     namespace OutputDataFile {
@@ -253,13 +393,16 @@ namespace Earth {
     }
 
     //save the location of the particle origin, and the particle rigidity
-    extern long int InitialRigidityOffset,InitialLocationOffset,IntegratedPathLengthOffset;
+    extern long int InitialRigidityOffset,InitialLocationOffset,IntegratedPathLengthOffset,IntegratedTimeOffset;
 
     //sample the rigidity mode
     extern bool SampleRigidityMode;
 
     //sphere for sampling of the cutoff regidity
     extern array_2d<double> CutoffRigidityTable;
+
+    //sampled flux
+    extern array_2d<double> SampledFluxTable;
 
     extern array_2d<int> InjectedParticleMap;
     extern array_2d<double> MaxEnergyInjectedParticles;
@@ -360,9 +503,22 @@ namespace Earth {
 
     extern bool BoundaryInjectionMode;
 
+    extern double EnergyRangeMax;
+    extern double EnergyRangeMin;
+
+    //Injection mode: debault - account for the direction of the magnetic field, uniform - do not account for the direction of the magnetic field
+    const int InjectionModeDefault=0;
+    const int InjectionModeUniform=1;
+    extern int InjectionMode;
+
+
     //the list of the faces located on the domain boundary through which particles can be injected
     extern cBoundaryFaceDescriptor *BoundaryFaceDescriptor;
     extern int nTotalBoundaryInjectionFaces;
+
+    //determine the direction of the IMF
+    extern double b[3];
+    void InitDirectionIMF();
 
 /*
     //init and populate the tables used by the particle injectino procedure
@@ -399,6 +555,23 @@ namespace Earth {
     //model that specifies injectino of SEP
     namespace SEP {
 
+      //file name of the file with the energy spectrum
+      extern string SepEnergySpecrumFile;
+
+      struct cSpectrumElement {
+        double e,f;
+      };
+
+      extern vector<cSpectrumElement> SepEnergySpectrum; 
+      void LoadEnergySpectrum();
+
+      extern bool InergySpectrumInitializedFlag;
+      void InitEnergySpectrum();
+      void InitEnergySpectrum(double *b,double *ExternalNormal,int iface);
+
+      extern cSingleVariableDiscreteDistribution<int> EnergyDistributor[6];
+      extern double IntegratedSpectrum[6];
+
       //source rate and generation of SEP
       double InjectionRate(int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
       void GetNewParticle(PIC::ParticleBuffer::byte *ParticleData,double *x,int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,double *ExternalNormal);
@@ -415,6 +588,13 @@ namespace Earth {
 
       //init the model
       void Init();
+    }
+
+    //injection of solar wind in the magnetosphere
+    namespace SW {
+      //source rate and generation of the electrons
+      double InjectionRate(int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode);
+       void GetNewParticle(PIC::ParticleBuffer::byte *ParticleData,double *x,int spec,int nface,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode,double *ExternalNormal);
     }
 
     //general injection functions

@@ -102,8 +102,10 @@ void Earth::BoundingBoxInjection::GCR::GetNewParticle(PIC::ParticleBuffer::byte 
 
   //save parameters of the new particle
   PIC::ParticleBuffer::SetV(v,ParticleData);
-  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightCorrectionFactor,ParticleData);
 
+  if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightCorrectionFactor,ParticleData);
+  }
 }
 
 //init the SEP injection model

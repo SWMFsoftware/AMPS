@@ -18,11 +18,6 @@ double Earth::ImpulseSource::EnergySpectrum::Constant::e=1.0*MeV2J;
 int Earth::ImpulseSource::EnergySpectrum::Mode=Earth::ImpulseSource::EnergySpectrum::Mode_Constatant;
 bool Earth::ImpulseSource::Mode=false;
 
-
-void amps_init();
-void amps_init_mesh();
-void amps_time_step();
-
 //inject the energetic particles
 long int Earth::ImpulseSource::InjectParticles() {
   int nTotalInjectedParticles=0;
@@ -32,17 +27,27 @@ long int Earth::ImpulseSource::InjectParticles() {
   long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp parallel
+  {
+  #pragma omp single
+  {
+#endif
+
+  //the number of the OpenMP threads
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  int nThreadsOpenMP=omp_get_num_threads();
+  #else
+  int nThreadsOpenMP=1;
+  #endif
+
   //sampling buffer of the gyro-frequency and gyro-radii
-  double *GyroFrequencySample=new double[PIC::nTotalThreadsOpenMP];
-  double *GyroRadiiSample=new double [PIC::nTotalThreadsOpenMP];
-  int *SampleCounter=new int [PIC::nTotalThreadsOpenMP];
-
-  for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-    SampleCounter[thread]=0;
-    GyroFrequencySample[thread]=0.0,GyroRadiiSample[thread]=0.0;
-  }
-
+  double *GyroFrequencySample=new double[nThreadsOpenMP];
+  double *GyroRadiiSample=new double [nThreadsOpenMP];
+  int *SampleCounter=new int [nThreadsOpenMP];
   double SourceLocationB[3];
+
   TimeCounter+=PIC::ParticleWeightTimeStep::GetGlobalTimeStep(0);
 
   for (iSource=0;iSource<nTotalSourceLocations;iSource++) {
@@ -68,28 +73,20 @@ long int Earth::ImpulseSource::InjectParticles() {
       PIC::CPLR::GetBackgroundMagneticField(SourceLocationB);
 
       //reset the sampling buffers
-      for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
+      for (int thread=0;thread<nThreadsOpenMP;thread++) {
         GyroFrequencySample[thread]=0.0,GyroRadiiSample[thread]=0.0;
         SampleCounter[thread]=0;
       }
 
-
-      long int *ParticleTable=new long int [nTotalInjectedParticles];
-
-      
       for (int iPart=0;iPart<nTotalInjectedParticles;iPart++) {
         //generate particles' velocity
-        ParticleTable[iPart]=PIC::ParticleBuffer::GetNewParticle(true);
-      }
+        newParticle=PIC::ParticleBuffer::GetNewParticle(true);
 
-       #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-       #pragma omp parallel for firstprivate (newParticle) private (idim,newParticleData)  \
-       firstprivate (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Constant::e,ImpulseSourceData)
-       #endif
-      for (int iPart=0;iPart<nTotalInjectedParticles;iPart++) {
-        //generate particles' velocity
-        newParticle=ParticleTable[iPart]; 
-//PIC::ParticleBuffer::GetNewParticle(true);
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+       #pragma omp task default (none) firstprivate (newParticle) private (idim,newParticleData)  \
+        shared (SourceLocationB,GyroFrequencySample,GyroRadiiSample,SampleCounter,TimeCounter,iSource,nTotalInjectedParticles,startNode,spec,mass,ElectricCharge,EnergySpectrum::Mode,EnergySpectrum::Mode_Constatant,EnergySpectrum::Constant::e,ImpulseSourceData)
+        {
+#endif
 
         //generate new particle velocity
         double v[3],speed;
@@ -126,18 +123,21 @@ long int Earth::ImpulseSource::InjectParticles() {
 
         //inject the particle into the system
         _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,TimeCounter-ImpulseSourceData[iSource].time,startNode);
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+        }
+#endif
+
       }
 
       //end of the particle injetion loop
 
       //output sampled information
-      for (int thread=1;thread<PIC::nTotalThreadsOpenMP;thread++) {
+      for (int thread=1;thread<nThreadsOpenMP;thread++) {
         GyroFrequencySample[0]+=GyroFrequencySample[thread];
         GyroRadiiSample[0]+=GyroRadiiSample[thread];
         SampleCounter[0]+=SampleCounter[thread];
       }
-
-      delete [] ParticleTable;
 
       if (SampleCounter[0]!=0) GyroRadiiSample[0]/=SampleCounter[0],GyroFrequencySample[0]/=SampleCounter[0];
       printf("$PREFIX: Impulse source location %i:  spec=%i\n",iSource,spec);
@@ -150,10 +150,15 @@ long int Earth::ImpulseSource::InjectParticles() {
   }
 
 
+
   //deallocate the sampling buffers
   delete [] GyroFrequencySample;
   delete [] GyroRadiiSample;
   delete [] SampleCounter;
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+     }}
+#endif
 
   return nTotalInjectedParticles;
 }
@@ -186,48 +191,3 @@ void Earth::ImpulseSource::InitParticleWeight() {
   }
 }
 
-//run the impulse source model
-void RunImpulseSource() {
-  Earth::ImpulseSource::Mode==true; 
-
-  amps_init_mesh();
-  amps_init();
-
-
-  int nTotalIterations=1000000;
-  int LastDataOutputFileNumber=0;
-
-  if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
-    nTotalIterations=100;
-    PIC::RequiredSampleLength=50;
-  } 
-  
-  for (long int niter=0;niter<nTotalIterations;niter++) {
-    amps_time_step();
-
-    if (PIC::Mesh::mesh->ThisThread==0) {
-      time_t TimeValue=time(NULL);
-      tm *ct=localtime(&TimeValue);
-      printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",
-             ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,
-             PIC::RequiredSampleLength,
-             PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
-    }
-
-     if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-//       PIC::RequiredSampleLength*=2;
-       if (PIC::RequiredSampleLength>50000) PIC::RequiredSampleLength=50000;
-
-
-       LastDataOutputFileNumber=PIC::DataOutputFileNumber;
-       if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
-     }
-  }
-
-  char fname[400];
-
-  sprintf(fname,"%s/test_Earth-Impulse-Neutron.dat",PIC::OutputDataFileDirectory);
-  PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
-
-
-}

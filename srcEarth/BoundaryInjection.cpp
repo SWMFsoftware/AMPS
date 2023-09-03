@@ -11,6 +11,39 @@
 #include "pic.h"
 #include "Earth.h"
 
+#include "GeopackInterface.h"
+#include "T96Interface.h"
+#include "T05Interface.h"
+
+//determine the direction of the IMF
+double Earth::BoundingBoxInjection::b[3]={0.0,0.0,0.0};
+double Earth::BoundingBoxInjection::EnergyRangeMax=-1.0;
+double Earth::BoundingBoxInjection::EnergyRangeMin=-1.0;
+
+//Injection mode: debault - account for the direction of the magnetic field, uniform - do not account for the direction of the magnetic field
+int Earth::BoundingBoxInjection::InjectionMode=Earth::BoundingBoxInjection::InjectionModeDefault;
+
+
+
+void Earth::BoundingBoxInjection::InitDirectionIMF() {
+  double l;
+
+  switch (_PIC_COUPLER_MODE_) {
+  case _PIC_COUPLER_MODE__T96_:
+    exit(__LINE__,__FILE__,"Error: not implemented");
+    break;
+  case _PIC_COUPLER_MODE__T05_:
+    ::T05::GetIMF(b);
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  l=Vector3D::Normalize(b); 
+
+  if (l==0.0) exit(__LINE__,__FILE__,"Error: IMF is not sep"); 
+} 
+
 //enable/disable injection of the particles from the boundary of the computational domain
 bool Earth::BoundingBoxInjection::BoundaryInjectionMode=true;
 
@@ -27,6 +60,7 @@ bool Earth::BoundingBoxInjection::InjectionIndicator(cTreeNodeAMR<PIC::Mesh::cDa
        if (_PIC_EARTH_SEP__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=SEP::InjectionRate(spec,nface,startNode);
        if (_PIC_EARTH_GCR__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=GCR::InjectionRate(spec,nface,startNode);
        if (_PIC_EARTH_ELECTRON__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=Electrons::InjectionRate(spec,nface,startNode);
+       if (_PIC_EARTH_SW__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=SW::InjectionRate(spec,nface,startNode);
 
        if (ModelParticlesInjectionRate>0.0) return true;
      }
@@ -47,7 +81,7 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
  double v[3];
  double ModelParticlesInjectionRate;
 
- if ((Earth::CutoffRigidity::DomainBoundaryParticleProperty::ApplyInjectionPhaseSpaceLimiting==true)&&(PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_)) {
+ if (PIC::Mesh::mesh->ExternalBoundaryBlock(startNode,ExternalFaces)==_EXTERNAL_BOUNDARY_BLOCK_) {
    ParticleWeight=startNode->block->GetLocalParticleWeight(spec);
    LocalTimeStep=startNode->block->GetLocalTimeStep(spec);
 
@@ -56,10 +90,11 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
      startNode->GetExternalNormal(ExternalNormal,nface);
      TimeCounter=0.0;
 
-     for (int nModel=0;nModel<3;nModel++)  {
+     for (int nModel=0;nModel<4;nModel++)  {
        //nModel==0 -> SEP
        //nModel==1 -> GCR
        //nModel==2 -> Electrons
+       //nModel==3 -> SW
 
        switch (nModel) {
        case 0:
@@ -71,6 +106,9 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
        case 2:
          ModelParticlesInjectionRate=(_PIC_EARTH_ELECTRON__MODE_==_PIC_MODE_ON_) ? Electrons::InjectionRate(spec,nface,startNode) : 0.0;
          break;
+       case 3:
+         ModelParticlesInjectionRate=(_PIC_EARTH_SW__MODE_==_PIC_MODE_ON_) ? SW::InjectionRate(spec,nface,startNode) : 0.0;
+         break;
        default:
          exit(__LINE__,__FILE__,"Error: the option is not recognized");
        }
@@ -78,9 +116,6 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
        if (ModelParticlesInjectionRate>0.0) {
          ModelParticlesInjectionRate*=startNode->GetBlockFaceSurfaceArea(nface)/ParticleWeight;
          PIC::Mesh::mesh->GetBlockFaceCoordinateFrame_3D(x0,e0,e1,nface,startNode);
-
-         //shift the initial value of the BlockSurfaceArea
-         TimeCounter=rnd()*log(rnd())/ModelParticlesInjectionRate;
 
          while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
            //generate the new particle position on the face
@@ -108,15 +143,18 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
            case 2:
              Electrons::GetNewParticle(tempParticleData,x,spec,nface,startNode,ExternalNormal);
              break;
+           case 3:
+             SW::GetNewParticle(tempParticleData,x,spec,nface,startNode,ExternalNormal);
+             break;
            default:
              exit(__LINE__,__FILE__,"Error: the option is not recognized");
            }
 
            //apply the injection phase space limiting condition
            if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::ApplyInjectionPhaseSpaceLimiting==true) {
-             double v[3];
+             double *v;
 
-             PIC::ParticleBuffer::GetV(v,tempParticleData);
+             v=PIC::ParticleBuffer::GetV(tempParticleData);
 
              if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::TestInjectedParticleProperties(spec,x,v,0,nface)==false) continue;
            }
@@ -126,11 +164,20 @@ long int Earth::BoundingBoxInjection::InjectionProcessor(int spec,cTreeNodeAMR<P
            newParticleData=PIC::ParticleBuffer::GetParticleDataPointer(newParticle);
 
            PIC::ParticleBuffer::CloneParticle(newParticleData,(PIC::ParticleBuffer::byte*)tempParticleData);
-           PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
-           nInjectedParticles++;
 
+           //if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+           //  PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+           //}
+
+           nInjectedParticles++;
            PIC::ParticleBuffer::SetX(x,newParticleData);
            PIC::ParticleBuffer::SetI(spec,newParticleData);
+
+           //apply condition of tracking the particle
+           #if _PIC_PARTICLE_TRACKER_MODE_ == _PIC_MODE_ON_
+           PIC::ParticleTracker::InitParticleID(newParticleData);
+           PIC::ParticleTracker::ApplyTrajectoryTrackingCondition(x,v,spec,newParticleData,(void*)startNode);
+           #endif
 
            //inject the particle into the system
            _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,rnd()*LocalTimeStep,startNode);
@@ -169,6 +216,7 @@ double Earth::BoundingBoxInjection::InjectionRate(int spec,cTreeNodeAMR<PIC::Mes
       if (_PIC_EARTH_SEP__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=SEP::InjectionRate(spec,nface,startNode)*BlockSurfaceArea;
       if (_PIC_EARTH_GCR__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=GCR::InjectionRate(spec,nface,startNode)*BlockSurfaceArea;
       if (_PIC_EARTH_ELECTRON__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=Electrons::InjectionRate(spec,nface,startNode)*BlockSurfaceArea;
+      if (_PIC_EARTH_SW__MODE_==_PIC_MODE_ON_) ModelParticlesInjectionRate+=SW::InjectionRate(spec,nface,startNode)*BlockSurfaceArea;
     }
   }
 

@@ -28,10 +28,10 @@
 #include "T96Interface.h"
 #include "T05Interface.h"
 
+extern int nZenithElements;
+extern int nAzimuthalElements;
+
 namespace MAIN_LIB_GEO {
-  void amps_init_mesh();
-  void amps_init();
-} 
 
 const double rSphere=_EARTH__RADIUS_;
 
@@ -41,10 +41,6 @@ double yMaxDomain=5; //the minimum size of the domain in the direction perpendic
 
 double dxMinSphere=0.5,dxMaxSphere=0.5;
 double dxMinGlobal=1,dxMaxGlobal=1;
-
-extern int nZenithElements;
-extern int nAzimuthalElements;
-
 
 //sodium surface production
 double sodiumTotalProductionRate(int SourceProcessCode=-1) {
@@ -58,6 +54,7 @@ double localSphericalSurfaceResolution(double *x) {
   double res,r,l[3] = {1.0,0.0,0.0};
 
 
+/*
   if ( (strcmp(Earth::Mesh::sign,"0x301020156361a50")!=0)) {
     //test mesh
     return 0.1*_RADIUS_(_EARTH_);
@@ -65,7 +62,7 @@ double localSphericalSurfaceResolution(double *x) {
   else {
     return 0.5*_RADIUS_(_EARTH_);
   }
-
+*/
 
 
 
@@ -76,12 +73,7 @@ double localSphericalSurfaceResolution(double *x) {
   res*=2.1;
   
   if ((_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)&&(_PIC_NIGHTLY_TEST__REDUCE_RESOLUTION_MODE_==_PIC_MODE_ON_)) { 
-    if (Earth::ModelMode==Earth::CutoffRigidityMode) {
-      return 5.5* 2.5*rSphere*res;
-    }
-    else {
-      return 2.0*5.5* 2.5*rSphere*res;
-    }
+    return 2.0*5.5* 2.5*rSphere*res;
   }
 
   return 0.3* 5.5* 2.5*rSphere*res;
@@ -112,26 +104,12 @@ double localResolution(double *x) {
       if (r<0.98*rSphere) res=rSphere;
       else if (r<1.05*rSphere) res=localSphericalSurfaceResolution(x);
       else if (r<2.0*rSphere) res=2.5* rSphere * dxMinGlobal;
-      else {
-        if (Earth::ModelMode==Earth::CutoffRigidityMode) {
-          res=6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
-        }
-        else {
-           res=0.4*6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
-        }
-      }
+      else res=0.4*6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
     } else {
       if (r<0.98*rSphere) res=rSphere;
       else if (r<2*1.05*rSphere) res=localSphericalSurfaceResolution(x);
       else if (r<3.0*rSphere) res=2.5* rSphere * dxMinGlobal;
-      else {
-        if (Earth::ModelMode==Earth::CutoffRigidityMode) {
-          res=6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
-        }
-        else {
-          res=0.4*6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
-        }
-      }
+      else res=0.3*0.4*6.0*rSphere*dxMinGlobal*max(1.0+(5.0-1.0)/((6.0-2.0)*_RADIUS_(_EARTH_))*(r-2.0*_RADIUS_(_EARTH_)),1.0);
     }
   }
 
@@ -158,9 +136,11 @@ double localTimeStep(int spec, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode
     /*  //evaluate the maximum particle speed with the energy limit used in the Earth magnetosphere model
     mass=PIC::MolecularData::GetMass(spec);
     maxSpeed=Relativistic::E2Speed(Earth::BoundingBoxInjection::maxEnergy,mass);*/
+
+   maxSpeed=1.0E7;
   }
 
-  return 0.2*CellSize/maxSpeed;
+  return 0.1*0.2*CellSize/maxSpeed;
 }
 
 
@@ -178,15 +158,6 @@ double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
 
 
 void amps_init_mesh() {
-
-  if (Earth::ModelMode==Earth::BoundaryInjectionMode) {
-    MAIN_LIB_GEO::amps_init_mesh();    
-    return;
-  }     
-
-  //request space in a cell to store geospace flag
-  PIC::IndividualModelSampling::RequestStaticCellData.push_back(Earth::GeospaceFlag::RequestDataBuffer);
-
   //init Earth magnetosphere model
   Earth::Init();
   Earth::Sampling::ParticleData::Init();
@@ -289,14 +260,8 @@ void amps_init_mesh() {
  double xmax[3]={0.0,0.0,0.0},xmin[3]={0.0,0.0,0.0};
 
  for (idim=0;idim<DIM;idim++) {
-   if (Earth::ModelMode==Earth::CutoffRigidityMode) {
-     xmax[idim]= 29 * _RADIUS_(_EARTH_);
-     xmin[idim]=-29 * _RADIUS_(_EARTH_);
-   }
-   else {
-     xmax[idim]= 29*1.5 * _RADIUS_(_EARTH_);
-     xmin[idim]=-29*1.5 * _RADIUS_(_EARTH_);
-   }
+   xmax[idim]= 29*1.5*1.5 * _RADIUS_(_EARTH_);
+   xmin[idim]=-29*1.5*1.5 * _RADIUS_(_EARTH_);
  }
  
  
@@ -400,11 +365,6 @@ void amps_init_mesh() {
  
  void amps_init() {
    int idim;
-
-  if (Earth::ModelMode==Earth::BoundaryInjectionMode) {
-    MAIN_LIB_GEO::amps_init();
-    return;
-  }
    
    //init the PIC solver
    PIC::Init_AfterParser ();
@@ -443,6 +403,20 @@ void amps_init_mesh() {
      for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::SetGlobalParticleWeight(s,1.0);
      break;
    case Earth::BoundaryInjectionMode:
+
+         switch (_PIC_COUPLER_MODE_) {
+         case _PIC_COUPLER_MODE__T96_:
+           T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           break;
+         case _PIC_COUPLER_MODE__T05_:
+            T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           break;
+         default:
+           exit(__LINE__,__FILE__,"Error: the option is unknown");
+         }
+
+     Earth::BoundingBoxInjection::InitDirectionIMF();
+
      PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=Earth::BoundingBoxInjection::InjectionRate;
      for (int s=0;s<PIC::nTotalSpecies;s++) PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(s);
      break;
@@ -463,6 +437,18 @@ void amps_init_mesh() {
    case Earth::CutoffRigidityMode:
      break; 
    case Earth::BoundaryInjectionMode:
+
+         switch (_PIC_COUPLER_MODE_) {
+         case _PIC_COUPLER_MODE__T96_:
+           T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           break;
+         case _PIC_COUPLER_MODE__T05_:
+            T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+           break;
+         default:
+           exit(__LINE__,__FILE__,"Error: the option is unknown");
+         }
+
      Earth::BoundingBoxInjection::InitDirectionIMF();
 
      PIC::BC::BlockInjectionBCindicatior=Earth::BoundingBoxInjection::InjectionIndicator;
@@ -589,8 +575,6 @@ void amps_init_mesh() {
                  int nd,idim;
                  char *offset;
 
-                 double GeospaceFlag=1.0;
-
                  //determine the coordinates of the cell
                  int S1=ii;
 
@@ -618,8 +602,6 @@ void amps_init_mesh() {
                      break;
                    case _PIC_COUPLER_MODE__T05_:
                      T05::GetMagneticField(B,xCell);
-
-                     GeospaceFlag=(Vector3D::DotProduct(B,B)>Vector3D::DotProduct(T05::IMF,T05::IMF)) ? 1.0 : 0.0;
                      break;
                    default:
                      exit(__LINE__,__FILE__,"Error: the option is unknown");
@@ -632,8 +614,6 @@ void amps_init_mesh() {
                      break;
                    case Earth::_t05:
                      T05::GetMagneticField(B,xCell);
-
-                     GeospaceFlag=(Vector3D::DotProduct(B,B)>Vector3D::DotProduct(T05::IMF,T05::IMF)) ? 1.0 : 0.0;
                      break;
                    default:
                      exit(__LINE__,__FILE__,"Error: the option is unknown");
@@ -649,11 +629,6 @@ void amps_init_mesh() {
                    if (PIC::CPLR::DATAFILE::Offset::ElectricField.active==true) {
                      *((double*)(offset+PIC::CPLR::DATAFILE::Offset::ElectricField.RelativeOffset+idim*sizeof(double)))=0.0;
                    }
-                 }
-
-                 //save geospace flag
-                 if (Earth::GeospaceFlag::offset!=-1) {
-                   *((double*)(offset+Earth::GeospaceFlag::offset))=GeospaceFlag;
                  }
                }
 
@@ -695,10 +670,4 @@ void amps_init_mesh() {
 
 }
 
- //time step
-
-void amps_time_step () {
-  
-  PIC::TimeStep();
-  
 }

@@ -13,13 +13,11 @@
 #include <iostream>
 #include <fstream>
 #include <time.h>
+#include <cstdlib>
 
 
 #include <sys/time.h>
 #include <sys/resource.h>
-
-#include "T05Interface.h"
-#include "T96Interface.h"
 
 //$Id$
 
@@ -30,15 +28,16 @@
 #include "constants.h"
 #include "Earth.h"
 
-extern int nZenithElements;
-extern int nAzimuthalElements;
+#include "GeopackInterface.h"
+#include "T96Interface.h"
+#include "T05Interface.h"
+
+int nZenithElements=200;
+int nAzimuthalElements=200;
 
 void amps_init();
 void amps_init_mesh();
 void amps_time_step();
-
-void RunCutoffRigidity();
-void RunImpulseSource();
 
 #define _NIGHTLY_TEST__CUTOFF_  0
 #define _NIGHTLY_TEST__LEGACY_ 1
@@ -48,14 +47,88 @@ void RunImpulseSource();
 #endif
 
 
+#undef _USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ 
+#define _USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_  _USER_DEFINED_INTERNAL_BOUNDARY_SPHERE_MODE_ON_ 
+
+
+//output directional cutoff rigidity and min energy 
+void PrintDirectionalRegidityCutoffTitle(FILE* fout) {
+  fprintf(fout,"TITLE=\"%s\"","DirectionalRegidityCutoff");
+}
+
+void PrintDirectionalRegidityCutoffVariableList(FILE* fout) {
+  if (Earth::ModelMode!=Earth::CutoffRigidityMode) return;
+
+  for (int i=0;i<PIC::nTotalSpecies;i++) fprintf(fout,", \"Cutoff Rigidity[%i]\", \"Min Energy(spec=%i)[MeV]\"",i,i);
+}
+
+void PrintDirectionalRigidityCutoffDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
+  int nInterpolationElement,nSurfaceElement,iZenith,iAzimuth;
+  double InterpolationNormalization=0.0,InterpolationCoefficient;
+
+  double CutoffRigidity=0.0;
+  double InterpolatedInjectedParticleNumber=0.0,normInterpolatedInjectedParticleNumber=0.0;
+  int InjectedParticleNumber;
+
+  if (Earth::ModelMode!=Earth::CutoffRigidityMode) return;
+
+  for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
+    double t;
+
+    CutoffRigidity=-1.0;
+
+    for (nInterpolationElement=0;nInterpolationElement<SurfaceElementsInterpolationListLength;nInterpolationElement++) {
+      nSurfaceElement=SurfaceElementsInterpolationList[nInterpolationElement];
+      Sphere->GetSurfaceElementIndex(iZenith,iAzimuth,nSurfaceElement);
+
+      t=Sphere->minRigidity[spec][nSurfaceElement];
+ 
+      if (PIC::ThisThread!=0) {
+        pipe->send(t);
+      }
+      else {
+        if ((t>=0.0) && ((CutoffRigidity<0.0)||(t<CutoffRigidity)) ) CutoffRigidity=t;
+
+        for (int thread=1;thread<PIC::nTotalThreads;thread++) {
+          t=pipe->recv<double>(thread);
+
+          if ((t>=0.0) && ((CutoffRigidity<0.0)||(t<CutoffRigidity)) ) CutoffRigidity=t;
+        }
+      }
+    }
+
+    if (PIC::ThisThread==0) {
+      double momentum=-1.0,energy=-1.0; 
+
+      if (CutoffRigidity>0.0) {
+        momentum=CutoffRigidity*fabs(PIC::MolecularData::GetElectricCharge(spec))*1.0E9/SpeedOfLight;
+        energy=Relativistic::Momentum2Energy(momentum,PIC::MolecularData::GetMass(spec))*J2MeV; 
+      }
+
+      fprintf(fout," %e  %e ",CutoffRigidity,energy);
+    }
+  }
+}
+
+
+
+
 void SampleIndividualLocations(int nMaxIterations) {
   int IterationCounter=0,localParticleGenerationFlag=0,globalParticleGenerationFlag;
+
+  bool ShortTrajectoryFound=false;
+  int ShortTrajectoryIndex,ShortTrajectoryIndexAll;
+
+
+    PIC::SamplingMode=_TEMP_DISABLED_SAMPLING_MODE_;
 
   //estimate the total flux and rigidity in a set of the defined locations
   if (Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength!=0) {
     int LacalParticleNumber,GlobalParticleNumber;
     int nIngectedParticlePerIteration=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations/Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations;
     int nTotalInjectedParticles=0;
+
+    if (nIngectedParticlePerIteration==0) nIngectedParticlePerIteration=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations;
 
     if (PIC::ThisThread==0) {
       cout << "nTotalTestParticlesPerLocations=" << Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
@@ -74,13 +147,65 @@ void SampleIndividualLocations(int nMaxIterations) {
 
     Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable=-1.0;
 
+    //allocate spherical objects for sampling directional rigidity cutoff
+    cInternalSphericalData::SetGeneralSurfaceMeshParameters(150,150);
+    Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable=new cInternalSphericalData[Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength];
+
+    for (int i=0;i<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;i++) {
+      double x[3]={0.0,0.0,0.0};
+
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].SetSphereGeometricalParameters(x,1.0);
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].TotalSurfaceElementNumber=Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].GetTotalSurfaceElementsNumber();  
+
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].PrintDataStateVector=PrintDirectionalRigidityCutoffDataStateVector;
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].PrintVariableList=PrintDirectionalRegidityCutoffVariableList; 
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].PrintTitle=PrintDirectionalRegidityCutoffTitle;
+
+      double *xp=Earth::CutoffRigidity::IndividualLocations::xTestLocationTable[i];
+
+      sprintf(Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].TitleMessage,
+        "Directional rigidity cutoff: x=%e,%e,%e[m] (%e,%e,%e)R_Earth",
+         xp[0],xp[1],xp[2],xp[0]/_RADIUS_(_EARTH_),xp[1]/_RADIUS_(_EARTH_),xp[2]/_RADIUS_(_EARTH_)); 
+
+
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].minRigidity=new double* [PIC::nTotalSpecies];
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].minRigidity[0]=new double[PIC::nTotalSpecies*Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].GetTotalSurfaceElementsNumber()];
+
+      for (int spec=1;spec<PIC::nTotalSpecies;spec++) {
+        Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].minRigidity[spec]=Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].minRigidity[spec-1]+Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].GetTotalSurfaceElementsNumber();
+      }
+
+      for (int ii=0;ii<PIC::nTotalSpecies*Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].TotalSurfaceElementNumber;ii++) {
+        Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[i].minRigidity[0][ii]=-1.0;
+      }
+    }
+
+    int nInjectionRounds=0;
+    int iInjectedParticle;
+    
+    double dRlog=log(Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit/Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit)/
+        Earth::CutoffRigidity::IndividualLocations::nRigiditySearchIntervals;
+        
     do {
       //reset the partilce generation flag
       localParticleGenerationFlag=0;
+      
+      //redefine nTotalTestParticlesPerLocations in case of Earth::CutoffRigidity::IndividualLocations::InjectionMode==Earth::CutoffRigidity::IndividualLocations::_rigidity_mesh
+      if (Earth::CutoffRigidity::IndividualLocations::InjectionMode==Earth::CutoffRigidity::IndividualLocations::_rigidity_grid_injection) {
+        Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=Earth::CutoffRigidity::IndividualLocations::nRigiditySearchIntervals*
+            Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[0].GetTotalSurfaceElementsNumber();
+      }
 
       //Inject new particles
       if (nTotalInjectedParticles<Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations) {
         nTotalInjectedParticles+=nIngectedParticlePerIteration;
+        nInjectionRounds++;
+        
+        int nParticles2Inject=nIngectedParticlePerIteration;
+       
+        if (nTotalInjectedParticles>Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations) {
+          nParticles2Inject=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations-(nTotalInjectedParticles-nIngectedParticlePerIteration);
+        }
 
         //inject the new portion of the particles
         for (int spec=0;spec<PIC::nTotalSpecies;spec++) for (int iLocation=0;iLocation<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iLocation++) {
@@ -102,11 +227,65 @@ void SampleIndividualLocations(int nMaxIterations) {
 
             if (PIC::Mesh::mesh->FindCellIndex(x,iCell,jCell,kCell,startNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
 
-            for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
-              energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
+            for (int iNewParticle=0;iNewParticle<nParticles2Inject;iNewParticle++) {
+              double momentum,rigidity;
+              int iR,t;
+              long int nZenithElement,nAzimuthalElement;
+              
+              iInjectedParticle=(nInjectionRounds-1)*nIngectedParticlePerIteration+iNewParticle;
 
-              speed=Relativistic::E2Speed(energy,mass);
-              Vector3D::Distribution::Uniform(v,speed);
+              switch(Earth::CutoffRigidity::IndividualLocations::InjectionMode) {
+              case Earth::CutoffRigidity::IndividualLocations::_rigidity_grid_injection:                
+                //determine the velocity direction
+                iR=iInjectedParticle/Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetTotalSurfaceElementsNumber();
+                t=iInjectedParticle%Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetTotalSurfaceElementsNumber();
+                
+                nZenithElement=t/Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].nAzimuthalSurfaceElements;
+                nAzimuthalElement=t%Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].nAzimuthalSurfaceElements;
+                
+                Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetSurfaceElementRandomDirection(v,nZenithElement,nAzimuthalElement);
+                
+                //determine the velocity vector
+                rigidity=Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit*exp(dRlog*(iR+rnd()));
+
+                if (rigidity>Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit) {
+                  exit(__LINE__,__FILE__,"Error: the rigidity value exeeds the limit");
+                }
+       
+                momentum=rigidity*fabs(PIC::MolecularData::GetElectricCharge(spec))*1.0E9/SpeedOfLight;
+                speed=Relativistic::Momentum2Speed(momentum,mass);
+                
+                Vector3D::MultiplyScalar(speed,v);
+                break;
+                
+              case Earth::CutoffRigidity::IndividualLocations::_energy_injection:
+                energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
+
+                speed=Relativistic::E2Speed(energy,mass);
+                Vector3D::Distribution::Uniform(v,speed);
+                Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetSurfaceElementProjectionIndex(v,nZenithElement,nAzimuthalElement);
+                break;
+              case Earth::CutoffRigidity::IndividualLocations::_rigidity_injection:
+                //def:          rigidity=(charge>0.0) ? momentum*SpeedOfLight/charge/1.0E9 : 0.0; //cutoff rigidity in SI -> GV (Moraal-2013-SSR)
+                rigidity=Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit+
+                         rnd()*(Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit-Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit);
+
+                if (rigidity>Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit) {
+                  exit(__LINE__,__FILE__,"Error: the rigidity value exeeds the limit");
+                }
+
+                
+                momentum=rigidity*fabs(PIC::MolecularData::GetElectricCharge(spec))*1.0E9/SpeedOfLight;
+                speed=Relativistic::Momentum2Speed(momentum,mass);
+                Vector3D::Distribution::Uniform(v,speed);
+                Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetSurfaceElementProjectionIndex(v,nZenithElement,nAzimuthalElement);
+                break;
+              }
+
+
+              //at this point, 'v' point into the direction from where the particles came. Hence, the velocity of the particles sgould be -v
+              Vector3D::MultiplyScalar(-1.0,v);
+   
 
               //generate a new particle
               long int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
@@ -133,6 +312,23 @@ void SampleIndividualLocations(int nMaxIterations) {
                 *((double*)(newParticleData+Earth::CutoffRigidity::IntegratedPathLengthOffset))=0.0;
               }
 
+              //set initial value for the integration time 
+              if (Earth::CutoffRigidity::IntegratedTimeOffset!=-1) {
+                *((double*)(newParticleData+Earth::CutoffRigidity::IntegratedTimeOffset))=0.0;
+              }
+
+              //set the velocity direction ID
+              if (Earth::CutoffRigidity::ParticleDataOffset::OriginalVelocityDirectionID!=-1) {
+                int id;
+               // long int nZenithElement,nAzimuthalElement;
+
+                //Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetSurfaceElementProjectionIndex(v,nZenithElement,nAzimuthalElement);
+                id=Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].GetLocalSurfaceElementNumber(nZenithElement,nAzimuthalElement); 
+
+                *((int*)(newParticleData+Earth::CutoffRigidity::ParticleDataOffset::OriginalVelocityDirectionID))=id;
+              }
+   
+
               //set up the particle rigidity
               if (Earth::CutoffRigidity::InitialRigidityOffset!=-1) {
                 double momentum,charge,rigidity;
@@ -140,7 +336,16 @@ void SampleIndividualLocations(int nMaxIterations) {
                 charge=fabs(PIC::MolecularData::GetElectricCharge(spec));
 
                 momentum=Relativistic::Speed2Momentum(speed,mass);
-                rigidity=(charge>0.0) ? momentum/charge : 0.0;
+                rigidity=(charge>0.0) ? momentum*SpeedOfLight/charge/1.0E9 : 0.0; //cutoff rigidity in SI -> GV (Moraal-2013-SSR) 
+
+                //rigidity=(charge>0.0) ? momentum/charge : 0.0;
+
+
+                if (Earth::CutoffRigidity::IndividualLocations::InjectionMode==Earth::CutoffRigidity::IndividualLocations::_rigidity_grid_injection) {
+                  if (rigidity>Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit) {
+                    exit(__LINE__,__FILE__,"Error: the rigidity value exeeds the limit");
+                  }
+                }
 
                 *((double*)(newParticleData+Earth::CutoffRigidity::InitialRigidityOffset))=rigidity;
               }
@@ -157,72 +362,101 @@ void SampleIndividualLocations(int nMaxIterations) {
       }
 
 
-/*      //limit the integration time (remove particle moving in trapped orbits)
-      if ((true)&&(Earth::CutoffRigidity::InitialLocationOffset!=-1)) {
-        //determine min altitude;
-        static double rMax=-1.0;
-        double r;
-        int idim;
-
-        if (rMax<0.0) {
-          for (int iLocation=0;iLocation<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iLocation++) {
-            r=Vector3D::Length(Earth::CutoffRigidity::IndividualLocations::xTestLocationTable[iLocation]);
-
-            if ((rMax<0.0)||(r>rMax)) rMax=r;
-          }
-        }
-
-        //estimation of the domain length
-        double IntegratioinLengthMax=sqrt(pow(PIC::Mesh::mesh->xGlobalMax[0]-PIC::Mesh::mesh->xGlobalMin[0],2)+
-            pow(PIC::Mesh::mesh->xGlobalMax[1]-PIC::Mesh::mesh->xGlobalMin[1],2)+
-            pow(PIC::Mesh::mesh->xGlobalMax[2]-PIC::Mesh::mesh->xGlobalMin[2],2));
-
-        //increase the limit of the total integrated oath length
-        IntegratioinLengthMax/=4.0;
-
-        IntegratioinLengthMax=2.0*Pi*rMax;
-
-        //loop through all blocks
-        for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->BranchBottomNodeList;node!=NULL;node=node->nextBranchBottomNode) {
-          int ptr,next;
-          PIC::Mesh::cDataBlockAMR *block=node->block;
-          double dt,l,v;
-          PIC::ParticleBuffer::byte *ParticleData;
-
-          if (sqrt(pow(node->xmax[0]+node->xmin[0],2)+pow(node->xmax[1]+node->xmin[1],2)+pow(node->xmax[2]+node->xmin[2],2))/2.0>rMax) continue;
-
-          if (block!=NULL) for (int i=0;i<_BLOCK_CELLS_X_;i++) for (int j=0;j<_BLOCK_CELLS_Y_;j++) for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
-             ptr=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-             while (ptr!=-1) {
-               //loop through all particles and determin which are trapped and does not contribute to the incoming radiation
-               ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
-               v=Vector3D::Length(PIC::ParticleBuffer::GetV(ParticleData));
-               next=PIC::ParticleBuffer::GetNext(ParticleData);
-
-               dt=block->GetLocalTimeStep(PIC::ParticleBuffer::GetI(ParticleData));
-
-               //update estimation of the total integration path length
-               l=*((double*)(ParticleData+Earth::CutoffRigidity::IntegratedPathLengthOffset));
-               l+=v*dt;
-               *((double*)(ParticleData+Earth::CutoffRigidity::IntegratedPathLengthOffset))=l;
-
-
-               if (l>IntegratioinLengthMax) {
-                 //the particle is below the minimum altitude
-                 PIC::ParticleBuffer::DeleteParticle(ptr,block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
-               }
-
-               ptr=next;
-             }
-
-          }
-        }
-      }*/
-
       //preform the next iteration
       amps_time_step();
+
+    //search for particles that left geospace
+    if (Earth::GeospaceFlag::offset!=-1) {
+      //loop through all cells
+      for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+        PIC::Mesh::cDataBlockAMR *block;
+        PIC::Mesh::cDataCenterNode *CenterNode;
+        long int ParticleList,ptr;
+        int i,j,k,nd;
+        char *offset;
+
+        block=node->block;
+        if ((block=node->block)==NULL) continue;
+
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+            for (i=0;i<_BLOCK_CELLS_X_;i++) {
+              nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+
+              if ((CenterNode=node->block->GetCenterNode(nd))==NULL) continue;
+              offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+              if (*((double*)(offset+Earth::GeospaceFlag::offset))==0.0) {
+                //the cell is outside of the geospace: search for particles and removed those found
+
+                ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+                while (ParticleList!=-1) {
+                  ptr=ParticleList;
+                  ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+
+                  //account for the particle in calculation of the rigidity
+                  double x[3],v[3];
+
+                  PIC::ParticleBuffer::GetV(v,ptr);
+                  PIC::ParticleBuffer::GetX(x,ptr);
+
+                  Earth::CutoffRigidity::ProcessOutsideDomainParticles(ptr,x,v,-1,node);
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                }
+
+                block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1;
+              }
+            }
+          }
+        }
+      }
+    }
+
+        //search for particles that spend too much time in the simulation
+        ShortTrajectoryFound=false;
+
+      for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode];
+        PIC::Mesh::cDataBlockAMR *block;
+        PIC::Mesh::cDataCenterNode *CenterNode;
+        long int ParticleList,ptr;
+        int i,j,k,nd;
+        char *offset;
+        double x[3];
+
+        block=node->block;
+        if ((block=node->block)==NULL) continue;
+
+
+        for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (int j=0;j<_BLOCK_CELLS_Y_;j++) {
+            for (int i=0;i<_BLOCK_CELLS_X_;i++) {
+              long int ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+              while (ParticleList!=-1) {
+                ptr=ParticleList;
+                ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+
+                double t,l,v[3];
+                PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+                t=*((double*)(ParticleData+Earth::CutoffRigidity::IntegratedTimeOffset));
+                PIC::ParticleBuffer::GetX(x,ptr);
+
+                if (t*t*Vector3D::DotProduct(v,v)>Earth::CutoffRigidity::MaxIntegrationLength*Earth::CutoffRigidity::MaxIntegrationLength) {
+                  PIC::ParticleBuffer::DeleteParticle(ptr,block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+                }
+                else {
+                 *((double*)(ParticleData+Earth::CutoffRigidity::IntegratedTimeOffset))+=PIC::ParticleWeightTimeStep::GlobalTimeStep[PIC::ParticleBuffer::GetI(ptr)];
+                 if (Earth::CutoffRigidity::SearchShortTrajectory==true) ShortTrajectoryFound=true;
+              }
+            }
+         }
+       }
+     }
+   }
 
       static int LastDataOutputFileNumber=-1;
 
@@ -252,15 +486,80 @@ void SampleIndividualLocations(int nMaxIterations) {
         IterationCounter++;
       }
 
-      if (PIC::ThisThread==0) {
-        cout << "IterationCounter=" << IterationCounter << ", GlobalParticleNumber=" << GlobalParticleNumber << endl;
-      }
+
+    ShortTrajectoryIndex=(ShortTrajectoryFound==true) ? 1 : 0;
+    MPI_Allreduce(&ShortTrajectoryIndex,&ShortTrajectoryIndexAll,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+    if (PIC::ThisThread==0) cout << "IterationCounter=" << IterationCounter << ", nMaxIterations=" << nMaxIterations << ", GlobalParticleNumber=" << GlobalParticleNumber << ", ShortTrajectoryIndexAll=" << ShortTrajectoryIndexAll << endl;
+
 
     }
-    while ((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations));
+    while (((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations)) || (ShortTrajectoryIndexAll>0));
 
     //delete all particles that still present in the system
     PIC::ParticleBuffer::DeleteAllParticles();
+
+    //print out the results 
+    //output directional regidity cutoff
+    for (int iLocation=0;iLocation<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iLocation++) {
+      char fname[200];
+
+      sprintf(fname,"%s/directional-rigidity-cutoff--point-%i.dat",PIC::OutputDataFileDirectory,iLocation);
+      Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].PrintSurfaceData(fname,0,true);
+    }
+
+    int nel=Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.GetElementNumber();
+    double *buff=new double [PIC::nTotalThreads*nel];
+    
+    MPI_Gather(Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.GetBufferPointer(),nel,MPI_DOUBLE,buff,nel,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR);
+
+if (PIC::nTotalSpecies!=1) exit(__LINE__,__FILE__,"Error: heen to be generalized from more then 1 species");
+
+    for (int el=0;el<nel;el++) {
+      for (int thread=1;thread<PIC::nTotalThreads;thread++) {
+        if ((buff[el]<=0.0)||(buff[el]>buff[el+thread*nel])) buff[el]=buff[el+thread*nel];
+      }
+    }
+
+    if (PIC::ThisThread==0) {
+      memcpy(Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.GetBufferPointer(),buff,nel*sizeof(double));
+    }
+
+    delete [] buff;
+
+    MPI_Bcast(Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.GetBufferPointer(),nel,MPI_DOUBLE,0,MPI_GLOBAL_COMMUNICATOR); 
+  
+    if (PIC::ThisThread==0) {
+      ofstream fout("res.dat"); 
+
+      cout << "iloc\tspec\tcutoff rigidity\n";
+      fout << "iloc\tspec\tcutoff rigidity\n";
+
+      for (int iloc=0;iloc<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iloc++) {
+        for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
+          cout << iloc << "\t" << spec << "\t" << Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable(spec,iloc) << endl; 
+          fout << iloc << "\t" << spec << "\t" << Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable(spec,iloc) << endl;
+        }
+      }
+
+      if (Earth::CutoffRigidity::IndividualLocations::InjectionMode==Earth::CutoffRigidity::IndividualLocations::_energy_injection) {
+        cout << "iloc\tspec\tflux\n";
+        fout << "iloc\tspec\tflux\n";
+
+        for (int iloc=0;iloc<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iloc++) {
+          for (int spec=0;spec<PIC::nTotalSpecies;spec++) {
+           cout << iloc << "\t" << spec << "\t" <<
+             Earth::CutoffRigidity::IndividualLocations::SampledFluxTable(spec,iloc)*4.0*Pi/Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl; 
+
+           fout << iloc << "\t" << spec << "\t" <<
+             Earth::CutoffRigidity::IndividualLocations::SampledFluxTable(spec,iloc)*4.0*Pi/Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations << endl;
+          }
+        }
+      }
+
+      fout.close();
+    }
+
 
     //determine the flux and eneregy spectra of the energetic particles in the poins of the observation
     if (Earth::CutoffRigidity::DomainBoundaryParticleProperty::SampleDomainBoundaryParticleProperty==true) {
@@ -348,6 +647,7 @@ void SampleIndividualLocations(int nMaxIterations) {
         }
       }
 
+
       //output sampled particles flux and energy spectrum
       if (PIC::ThisThread==0) {
         //sampled energy spectrum
@@ -385,10 +685,22 @@ void SampleIndividualLocations(int nMaxIterations) {
     }
     else {
       //non-uniform distribution of the injected particles
-      exit(__LINE__,__FILE__,"Error: not implemented");
+      if (PIC::ThisThread==0) printf("%i, %s: Error: not implemented\n",__LINE__,__FILE__); //exit(__LINE__,__FILE__,"Error: not implemented");
+      return; 
     }
 
   }
+
+
+/*
+  //output directional regidity cutoff
+  for (int iLocation=0;iLocation<Earth::CutoffRigidity::IndividualLocations::xTestLocationTableLength;iLocation++) {
+    char fname[200];
+
+    sprintf(fname,"directional-rigidity-cutoff--point-%i.dat",iLocation); 
+    Earth::CutoffRigidity::IndividualLocations::SamplingSphereTable[iLocation].PrintSurfaceData(fname,0,true);
+  }
+*/
 
   //release sampling buffers
  // Earth::CutoffRigidity::DomainBoundaryParticleProperty::Deallocate();
@@ -403,7 +715,10 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
   PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
 
-  //Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000;
+
+  int nTotalInjectedParticlePerPoint=25;
+
+//  Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations=2000;
 
   cInternalSphericalData Sphere;
   Sphere.SetGeneralSurfaceMeshParameters(nZenithElements,nAzimuthalElements);
@@ -433,6 +748,10 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   int LacalParticleNumber,GlobalParticleNumber=0;
   int nIngectedParticlePerIteration=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations/Earth::CutoffRigidity::IndividualLocations::nParticleInjectionIterations;
   int nTotalInjectedParticles=0;
+  bool ShortTrajectoryFound=false;
+  int ShortTrajectoryIndex,ShortTrajectoryIndexAll;
+
+  if (nIngectedParticlePerIteration==0) nIngectedParticlePerIteration=Earth::CutoffRigidity::IndividualLocations::nTotalTestParticlesPerLocations;
 
   PIC::Mover::BackwardTimeIntegrationMode=_PIC_MODE_ON_;
   Earth::CutoffRigidity::DomainBoundaryParticleProperty::EnableSampleParticleProperty=true;
@@ -466,11 +785,6 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
   //deallocate the individual location sampling buffer
   Earth::CutoffRigidity::IndividualLocations::CutoffRigidityTable.Deallocate();
 
-  //calculate the rotation matrix to transfer IAU_EARTH -> Exosphere::SO_FRAME
-  double x_iau_earth[3],et,IAU_EARTH2UserFrame[3][3]; 
-  
-  utc2et_c(Exosphere::SimulationStartTimeString,&et);
-  pxform_c("IAU_EARTH",Exosphere::SO_FRAME,et,IAU_EARTH2UserFrame);
 
   do { //while there are particles in the system
     localParticleGenerationFlag=0;
@@ -500,11 +814,7 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
         mass=PIC::MolecularData::GetMass(spec);
 
         for (int iNewParticle=0;iNewParticle<nIngectedParticlePerIteration;iNewParticle++) {
-          Sphere.GetSurfaceElementRandomPoint(x_iau_earth,iZenithElement,iAzimutalElement);
-
-          //convert 'x' from the frame related to the sphere to the frame related to the simulation domain 
-          mxv_c(IAU_EARTH2UserFrame,x_iau_earth,x); 
-
+          Sphere.GetSurfaceElementRandomPoint(x,iZenithElement,iAzimutalElement);
           startNode=PIC::Mesh::mesh->findTreeNode(x);
 
           if (startNode->Thread!=PIC::ThisThread) continue;
@@ -521,27 +831,35 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 #endif
 
           //generate energy of the new particle
-          double c;
+//          energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
 
-          energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
+ //         speed=Relativistic::E2Speed(energy,mass);
+ //         Vector3D::Distribution::Uniform(v,speed);
 
-////energy*=10000.0;
 
-          speed=Relativistic::E2Speed(energy,mass);
+              double momentum,rigidity;
 
-          switch (Earth::CutoffRigidity::ParticleVelocityDirectionMode) {
-          case Earth::CutoffRigidity::ParticleVelocityDirectionUniform: 
-            Vector3D::Distribution::Uniform(v,speed);
-            break;
+              switch(Earth::CutoffRigidity::IndividualLocations::InjectionMode) {
+              case Earth::CutoffRigidity::IndividualLocations::_energy_injection:
+                energy=exp(logMinEnergyLimit+rnd()*(logMaxEnergyLimit-logMinEnergyLimit));
 
-          case Earth::CutoffRigidity::ParticleVelocityDirectionVertical:
-            c=speed/Vector3D::Length(x);
-            for (int idim=0;idim<3;idim++) v[idim]=c*x[idim];
-            break;
-         
-          default:
-            exit(__LINE__,__FILE__,"Error: the option is not recognized");
-          }            
+                speed=Relativistic::E2Speed(energy,mass);
+                Vector3D::Distribution::Uniform(v,speed);
+                break;
+              case Earth::CutoffRigidity::IndividualLocations::_rigidity_injection:
+                rigidity=Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit+
+                         rnd()*(Earth::CutoffRigidity::IndividualLocations::MaxInjectionRigidityLimit-Earth::CutoffRigidity::IndividualLocations::MinInjectionRigidityLimit);
+
+
+  //def:          rigidity=(charge>0.0) ? momentum*SpeedOfLight/charge/1.0E9 : 0.0; //cutoff rigidity in SI -> GV (Moraal-2013-SSR)  
+
+
+                momentum=rigidity*fabs(PIC::MolecularData::GetElectricCharge(spec))*1.0E9/SpeedOfLight;
+                speed=Relativistic::Momentum2Speed(momentum,mass);
+                Vector3D::Distribution::Uniform(v,speed);
+                break;
+              }
+
 
           //generate a new particle
           long int newParticle=PIC::ParticleBuffer::GetNewParticle(startNode->block->FirstCellParticleTable[iCell+_BLOCK_CELLS_X_*(jCell+_BLOCK_CELLS_Y_*kCell)]);
@@ -575,6 +893,12 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
             *((double*)(newParticleData+Earth::CutoffRigidity::IntegratedPathLengthOffset))=0.0;
           }
 
+          //set initial value for the integration time
+          if (Earth::CutoffRigidity::IntegratedTimeOffset!=-1) {
+            *((double*)(newParticleData+Earth::CutoffRigidity::IntegratedTimeOffset))=0.0;
+          }
+
+
           //set up the particle rigidity
           if (Earth::CutoffRigidity::InitialRigidityOffset!=-1) {
             double momentum,charge,rigidity;
@@ -600,6 +924,85 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 
     //preform the next iteration
     amps_time_step();
+
+    //search for particles that left geospace 
+    if (Earth::GeospaceFlag::offset!=-1) {
+      //loop through all cells  
+      for (int iLocalNode=0;iLocalNode<PIC::DomainBlockDecomposition::nLocalBlocks;iLocalNode++) {
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::DomainBlockDecomposition::BlockTable[iLocalNode]; 
+        PIC::Mesh::cDataBlockAMR *block;
+        PIC::Mesh::cDataCenterNode *CenterNode;
+        long int ParticleList,ptr;
+        int i,j,k,nd;
+        char *offset;
+
+        block=node->block;
+        if ((block=node->block)==NULL) continue;
+
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+            for (i=0;i<_BLOCK_CELLS_X_;i++) {
+              nd=PIC::Mesh::mesh->getCenterNodeLocalNumber(i,j,k);
+
+              if ((CenterNode=node->block->GetCenterNode(nd))==NULL) continue;
+              offset=CenterNode->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::CenterNodeAssociatedDataOffsetBegin+PIC::CPLR::DATAFILE::MULTIFILE::CurrDataFileOffset;
+
+              if (*((double*)(offset+Earth::GeospaceFlag::offset))==0.0) {
+                //the cell is outside of the geospace: search for particles and removed those found 
+                 
+                ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+                while (ParticleList!=-1) { 
+                  ptr=ParticleList;
+                  ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+
+                  //account for the particle in calculation of the rigidity
+                  double x[3],v[3]; 
+
+                  PIC::ParticleBuffer::GetV(v,ptr);
+                  PIC::ParticleBuffer::GetX(x,ptr);
+
+                  Earth::CutoffRigidity::ProcessOutsideDomainParticles(ptr,x,v,-1,node);
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                }
+
+                block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]=-1; 
+              }
+            }
+          }
+        }
+
+        //search for particles that spend too much time in the simulation 
+        ShortTrajectoryFound=false;
+
+        for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+          for (j=0;j<_BLOCK_CELLS_Y_;j++) {
+            for (i=0;i<_BLOCK_CELLS_X_;i++) {
+              ParticleList=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+
+              while (ParticleList!=-1) {
+                ptr=ParticleList;
+                ParticleList=PIC::ParticleBuffer::GetNext(ParticleList);
+
+                double t,l,v[3];
+                PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+                t=*((double*)(ParticleData+Earth::CutoffRigidity::IntegratedTimeOffset));
+                PIC::ParticleBuffer::GetX(x,ptr);
+
+                if (t*t*Vector3D::DotProduct(v,v)>Earth::CutoffRigidity::MaxIntegrationLength*Earth::CutoffRigidity::MaxIntegrationLength) {
+                  PIC::ParticleBuffer::DeleteParticle(ptr,block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]); 
+                } 
+                else {
+                 *((double*)(ParticleData+Earth::CutoffRigidity::IntegratedTimeOffset))+=PIC::ParticleWeightTimeStep::GlobalTimeStep[PIC::ParticleBuffer::GetI(ptr)];
+                 if (Earth::CutoffRigidity::SearchShortTrajectory==true) ShortTrajectoryFound=true;
+              }
+            }
+         }
+       }
+     } 
+   }
+}
 
     static int LastDataOutputFileNumber=-1;
 
@@ -629,10 +1032,13 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
       IterationCounter++;
     }
 
-    if (PIC::ThisThread==0) cout << "IterationCounter=" << IterationCounter << ", nMaxIterations=" << nMaxIterations << ", GlobalParticleNumber=" << GlobalParticleNumber << endl;
+    ShortTrajectoryIndex=(ShortTrajectoryFound==true) ? 1 : 0;
+    MPI_Allreduce(&ShortTrajectoryIndex,&ShortTrajectoryIndexAll,1,MPI_INT,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+    if (PIC::ThisThread==0) cout << "IterationCounter=" << IterationCounter << ", nMaxIterations=" << nMaxIterations << ", GlobalParticleNumber=" << GlobalParticleNumber << ", ShortTrajectoryIndexAll=" << ShortTrajectoryIndexAll << endl;
 
   }
-  while ((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations));
+  while (((GlobalParticleNumber!=0)&&(IterationCounter<nMaxIterations))||(ShortTrajectoryIndexAll>0));
 
 
   //calculate the flux and energey spectrum
@@ -932,12 +1338,24 @@ void SampleSphericalMaplLocations(double Radius,int nMaxIterations) {
 }
 
 
-void CutoffRigidityCalculation(double TestShellRadius,int nMaxIterations) {
+void CutoffRigidityCalculation(int nMaxIterations) {
   //disable sampling
   PIC::Sampling::RuntimeSamplingSwitch=false;
 
   //estimate the total flux and rigidity at a sphere
-  SampleSphericalMaplLocations(TestShellRadius,nMaxIterations);
+
+  if (Earth::RigidityCalculationMode==Earth::_sphere) {
+    if (Earth::RigidityCalculationSphereRadius==0.0) {
+      exit(__LINE__,__FILE__,"The radius was not set");
+    }
+    else {
+      SampleSphericalMaplLocations(Earth::RigidityCalculationSphereRadius,nMaxIterations);
+    }
+  }
+  else {
+    SampleIndividualLocations(nMaxIterations);
+  }
+
 
   /*
   //start forward integration
@@ -1015,55 +1433,160 @@ void CutoffRigidityCalculation_Legacy(int nTotalIterations) {
 int main(int argc,char **argv) {
   static int LastDataOutputFileNumber=0;
 
+  Earth::CutoffRigidity::SampleRigidityMode=true;
 
-  //TEST T96/T05
-  if ((_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T05_)||(_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__T96_)) {
-    //SI unit are used
-    double xGSE[3]={4.0*_RADIUS_(_EARTH_),1.0E-5*_RADIUS_(_EARTH_),-1.0E-5*_RADIUS_(_EARTH_)};
-    double B[3];
+  //read post-compile input file  
+  if (PIC::PostCompileInputFileName!="") {
+    Earth::Parser::ReadFile(PIC::PostCompileInputFileName,Earth::Parser::_reading_mode_pre_init);
+  } 
 
-    Exosphere::Init_SPICE();
+  amps_init_mesh();
 
-    switch (_PIC_COUPLER_MODE_) {
-    case _PIC_COUPLER_MODE__T05_: 
-      T05::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+  if (PIC::PostCompileInputFileName!="") {
+    Earth::Parser::ReadFile(PIC::PostCompileInputFileName,Earth::Parser::_reading_mode_pre_init);
+  }
 
-      T05::SetSolarWindPressure(2.97*_NANO_); 
-      T05::SetDST(-10.0*_NANO_);
-      T05::SetBYIMF(-16.600000*_NANO_);
-      T05::SetBZIMF(-8.200000*_NANO_);
-      T05::SetW(1.022,0.874,0.807,1.657000,2.737,4.542000);
+  Earth::CutoffRigidity::Init_BeforeParser();
+  Earth::CutoffRigidity::AllocateCutoffRigidityTable();
 
-      T05::GetMagneticField(B,xGSE);
-      break;
-    case _PIC_COUPLER_MODE__T96_:
-      T96::Init(Exosphere::SimulationStartTimeString,Exosphere::SO_FRAME);
+  amps_init();
 
-      T96::SetSolarWindPressure(Earth::T96::solar_wind_pressure);
-      T96::SetDST(Earth::T96::dst);
-      T96::SetBYIMF(Earth::T96::by);
-      T96::SetBZIMF(Earth::T96::bz);
+/*
+  //read post-compile input file
+  if (PIC::PostCompileInputFileName!="") {
+    Earth::Parser::ReadFile(PIC::PostCompileInputFileName,Earth::Parser::_reading_mode_post_init);
+  }
+*/
 
-      T96::GetMagneticField(B,xGSE);
-    } 
-  
-    if (PIC::ThisThread==0) {
-      cout << "T05 test: x=" << xGSE[0] << ", " << xGSE[1] << ", " << xGSE[2] << ",  B=" << B[0] << ", " << B[1] << ",  " << B[2] << endl;
+
+
+  if (Earth::ModelMode==Earth::BoundaryInjectionMode) {
+    int nIterations,nTotalIterations=100000001;
+    double et;
+
+    if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_)  nTotalIterations=3200;
+
+    //load parameters of T05 model
+    if (Earth::BackgroundMagneticFieldT05Data!="") {
+      T05::LoadDataFile(Earth::BackgroundMagneticFieldT05Data.c_str()); 
+    }    
+
+    //init the simulation start time 
+    str2et_c(Exosphere::SimulationStartTimeString,&et); 
+
+    int iEtInterval=-1;
+
+    for (int i=0;i<T05::Data.size()-1;i++) {  
+      if ((T05::Data[i].et<=et)&&(et<=T05::Data[i+1].et)) {
+        iEtInterval=i;
+        break;
+      }
+    }
+
+    if (iEtInterval==-1) exit(__LINE__,__FILE__,"Error: the time intervais was not found");
+
+    T05::SetSolarWindPressure_nano(T05::Data[iEtInterval].Pdyn);
+    T05::SetDST_nano(T05::Data[iEtInterval].SYMH);
+    T05::SetBYIMF_nano(T05::Data[iEtInterval].BYGSM);
+    T05::SetBZIMF_nano(T05::Data[iEtInterval].BZGSM);
+
+    T05::SetW1(T05::Data[iEtInterval].W1);
+    T05::SetW2(T05::Data[iEtInterval].W2);
+    T05::SetW3(T05::Data[iEtInterval].W3);
+    T05::SetW4(T05::Data[iEtInterval].W4);
+    T05::SetW5(T05::Data[iEtInterval].W5);
+    T05::SetW6(T05::Data[iEtInterval].W6);
+
+    Earth::InitMagneticField();
+
+  //read post-compile input file
+  if (PIC::PostCompileInputFileName!="") {
+    Earth::Parser::ReadFile(PIC::PostCompileInputFileName,Earth::Parser::_reading_mode_post_init);
+  }
+
+
+    //time step
+    for (long int niter=0;niter<nTotalIterations;niter++) {
+      static int LastDataOutputFileNumber=-1;
+
+      PIC::TimeStep();
+
+      et+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+      int iEtInterval_prev=iEtInterval;
+      
+      for (;iEtInterval<T05::Data.size()-1;iEtInterval++) {  
+        if ((T05::Data[iEtInterval].et<=et)&&(et<=T05::Data[iEtInterval+1].et)) {
+          break;
+        }
+      }
+
+      if (iEtInterval_prev!=iEtInterval) {
+        //update magnetic field model
+        T05::SetSolarWindPressure_nano(T05::Data[iEtInterval].Pdyn);
+        T05::SetDST_nano(T05::Data[iEtInterval].SYMH);
+        T05::SetBYIMF_nano(T05::Data[iEtInterval].BYGSM);
+        T05::SetBZIMF_nano(T05::Data[iEtInterval].BZGSM);
+        T05::SetIMF_nano(T05::Data[iEtInterval].BXGSM,T05::Data[iEtInterval].BYGSM,T05::Data[iEtInterval].BZGSM);
+    
+        T05::SetW1(T05::Data[iEtInterval].W1);
+        T05::SetW2(T05::Data[iEtInterval].W2);
+        T05::SetW3(T05::Data[iEtInterval].W3);
+        T05::SetW4(T05::Data[iEtInterval].W4);
+        T05::SetW5(T05::Data[iEtInterval].W5);
+        T05::SetW6(T05::Data[iEtInterval].W6);
+
+        Earth::InitMagneticField();
+      }
+
+
+      if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
+        PIC::RequiredSampleLength*=2;
+        if (PIC::RequiredSampleLength>1000) PIC::RequiredSampleLength=1000;
+
+
+        LastDataOutputFileNumber=PIC::DataOutputFileNumber;
+        if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;
+      }
+
+      if (PIC::Mesh::mesh->ThisThread==0) {
+        time_t TimeValue=time(NULL);
+        tm *ct=localtime(&TimeValue);
+
+        printf(": (%i/%i %i:%i:%i), Iteration: %ld  (current sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+      }
     }
   }
+  else if (Earth::ModelMode==Earth::CutoffRigidityMode) {
+    if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) {
+      //execute the nightly test routine
 
-  //select a particular application
-  switch (_MODEL_APPLICATION_) {
-  case _MODEL_APPLICATION_RIGIDITY_CUTOFF_:
-    RunCutoffRigidity();
-    break;
-    
-  case _MODEL_APPLICATION_POINT_SOURCE_:
-    RunImpulseSource();
-    break;
-  default:
-    exit(__LINE__,__FILE__,"Error: not implemented");
+      int niter=(Earth::CutoffRigidity::nTotalIterations!=-1) ? Earth::CutoffRigidity::nTotalIterations : 10000;
+
+      switch (_NIGHTLY_TEST_) {
+      case _NIGHTLY_TEST__CUTOFF_:
+        if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__CUTOFF_" << endl;
+
+        CutoffRigidityCalculation(niter);
+        break;
+      case _NIGHTLY_TEST__LEGACY_:
+        if (PIC::ThisThread==0) cout << "_NIGHTLY_TEST_=_NIGHTLY_TEST__LEGACY_" << endl;
+
+        CutoffRigidityCalculation_Legacy(0);
+        break;
+       }
+
+      //output the particle statistics of the test run
+      char fname[300];
+      sprintf(fname,"%s/test_Earth.dat",PIC::OutputDataFileDirectory);
+      PIC::RunTimeSystemState::GetMeanParticleMicroscopicParameters(fname);
+    }
+    else {
+      int niter=(Earth::CutoffRigidity::nTotalIterations!=-1) ? Earth::CutoffRigidity::nTotalIterations : 10000;
+
+      CutoffRigidityCalculation(niter);
+    }
   }
+  else exit(__LINE__,__FILE__,"Error: the option is not recognized");
 
 
   //finish the run
