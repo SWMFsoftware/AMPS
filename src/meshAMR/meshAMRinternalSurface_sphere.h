@@ -41,6 +41,8 @@ public:
   typedef void (*fPrintTitle)(FILE*);
   fPrintTitle PrintTitle;
 
+  char TitleMessage[400];
+
   typedef void (*fPrintDataStateVector)(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads);
   fPrintDataStateVector PrintDataStateVector;
 
@@ -70,6 +72,9 @@ public:
   {
     cleanDataBuffer();
     SetGeneralSurfaceMeshParameters(nZenithSurfaceElements,nAzimuthalSurfaceElements);
+
+    //set up the default TitleMessage
+    TitleMessage[0]=0;
   }
 
   static void SetGeneralSurfaceMeshParameters(long int nZenithElements,long int nAzimuthalElements) {
@@ -375,6 +380,9 @@ public:
       if (PrintTitle!=NULL) {
         PrintTitle(fout);
         fprintf(fout,"\n");
+      }
+      else {
+        if (TitleMessage[0]!=0) fprintf(fout,"%s\n",TitleMessage);
       }
 
       //print the variable list

@@ -1721,19 +1721,10 @@ Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vten
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity_t05_compile..." > test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
->>>rm -rf earth_cutoff_rigidity_model
->>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS  
->>>cp -r share earth_cutoff_rigidity_model/AMPS
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
->>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model  
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-geospace_boundary_injection_sep_t96  
-
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=test/earth-cutoff-rigidity_t05 
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity_t05KEYS} 
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in 
->>>-cd earth_cutoff_rigidity_model/AMPS; make -j8
->>>-cp earth_cutoff_rigidity_model/AMPS/amps . 
+>>>./Config.pl -application=test/earth-cutoff-rigidity_t05 
+>>>./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity_t05KEYS} 
+>>>./Config.pl -input=geospace-rigidity.in 
+>>>make -j8
 
 >>>@echo "test_Earth-cutoff-rigidity_t05_compile... done" >> test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
 
@@ -1774,19 +1765,10 @@ Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vten
 Compile=
 >>>@echo "test_Earth-cutoff-rigidity-points_t05_compile..." > test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
 
->>>rm -rf earth_cutoff_rigidity_model
->>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS
->>>cp -r share earth_cutoff_rigidity_model/AMPS
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
->>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=earth-geospace_boundary_injection_sep_t96
-
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=test/earth-cutoff-rigidity_t05
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity-points_t05KEYS}
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in
->>>-cd earth_cutoff_rigidity_model/AMPS; make -j8
->>>-cp earth_cutoff_rigidity_model/AMPS/amps .
+>>>./Config.pl -application=test/earth-cutoff-rigidity_t05
+>>>./Config.pl -amps-test=on ${TESTEarth-cutoff-rigidity-points_t05KEYS}
+>>>./Config.pl -input=geospace-rigidity.in
+>>>make -j8
 
 >>>@echo "test_Earth-cutoff-rigidity-points_t05_compile... done" >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
 
@@ -1842,18 +1824,11 @@ Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vten
 Compile=
 >>>@echo "test_Earth-geo_t05_compile..." > test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
->>>rm -rf earth_cutoff_rigidity_model
->>>mkdir earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model; git clone git@github.com:SWMFsoftware/AMPS
->>>cp -r share earth_cutoff_rigidity_model/AMPS
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -install -compiler=gfortran,gcc_mpicc
->>>cd earth_cutoff_rigidity_model/AMPS; git checkout earth_cutoff_rigidity_model
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -application=test/earth-geospace_boundary_injection_sep_t96
+>>>./Config.pl -application=test/earth-geospace_boundary_injection_sep_t96
 
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -amps-test=on ${TESTEarth-geo_t05KEYS}
->>>cd earth_cutoff_rigidity_model/AMPS; ./Config.pl -input=geospace-rigidity.in
->>>-cd earth_cutoff_rigidity_model/AMPS; make -j8
->>>-cp earth_cutoff_rigidity_model/AMPS/amps .
+>>>./Config.pl -amps-test=on ${TESTEarth-geo_t05KEYS}
+>>>./Config.pl -input=geospace-rigidity.in
+>>> make -j8
 
 >>>@echo "test_Earth-geo_t05_compile... done" >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
 
