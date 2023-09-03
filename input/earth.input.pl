@@ -114,6 +114,19 @@ while ($line=<InputFile>) {
       die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
     }     
   }
+  elsif ($InputLine eq "SW") {
+    ($s0,$s1)=split(' ',$InputComment,2);
+
+    if ($s0 eq "ON") {
+      ampsConfigLib::RedefineMacro("_PIC_EARTH_SW__MODE_","_PIC_MODE_ON_","main/Earth.dfn");
+    }
+    elsif($s0 eq "OFF") {
+      ampsConfigLib::RedefineMacro("_PIC_EARTH_SW__MODE_","_PIC_MODE_OFF_","main/Earth.dfn");
+    }
+    else {
+      die "Cannot recognize line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }
+  }
   elsif ($InputLine eq "ELECTRON") {
     ($s0,$s1)=split(' ',$InputComment,2);
 
@@ -297,7 +310,97 @@ while ($line=<InputFile>) {
     }  
   }
   
+  #energy spectrum of SEPs
+  elsif ($InputLine eq "SEPENERGYSPECTRUMFILE") {
+    $line=~s/[(=)]/ /g;
+
+    ($InputLine,$line)=split(' ',$line,2); 
+    ($InputLine,$line)=split(' ',$line,2); 
+
+    ampsConfigLib::ChangeValueOfVariable("string Earth::BoundingBoxInjection::SEP::SepEnergySpecrumFile","\"".$InputLine."\"","main/BoundaryInjection_SEP.cpp");
+ }
+
+  #model mode: boundary injection vs cutoff rigidity calculation
+  elsif ($InputLine eq "MODELMODE") {
+    ($s0,$InputComment)=split(' ',$InputComment,2);
+
+    if ($s0 eq "RIGIDITYCUTOFF") {
+      ampsConfigLib::ChangeValueOfVariable("int Earth::ModelMode","Earth::CutoffRigidityMode","main/Earth.cpp");
+    }
+    elsif ($s0 eq "BOUNDARYINJECTION") {
+      ampsConfigLib::ChangeValueOfVariable("int Earth::ModelMode","Earth::BoundaryInjectionMode","main/Earth.cpp"); 
+    }
+    else {
+      die "Cannot recognize $s0, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+    }
+  }
   
+  #sample rigidity, density, flux, and energy spectrum in individual locations
+  elsif ($InputLine eq "SAMPLEINDIVIDUALPOINTS") {
+      $InputComment=~s/[()]/ /g;
+ 
+      my $cnt=0;
+      my ($s0,$s1);
+
+      $s1=$line; 
+      $s1=~s/[(=)]/ /g;
+
+      while (defined $InputComment) {
+        ($InputLine,$InputComment)=split(' ',$InputComment,2);
+        $cnt++;
+
+        $InputLine=uc($InputLine);
+
+        if ($InputLine eq "OFF") {
+          last;
+        }
+        if ($InputLine eq "ON") {
+        }
+        elsif ($InputLine eq "FILE") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $cnt++; 
+
+          for (my $ii=0;$ii<$cnt;$ii++) {
+            ($s0,$s1)=split(' ',$s1,2);
+          }
+
+          ($s0,$s1)=split(' ',$s1,2);
+          ampsConfigLib::ChangeValueOfVariable("string Earth::IndividualPointSample::fname","\"".$s0."\"","main/SamplingIndividualPoints.cpp");
+        }
+        elsif ($InputLine eq "EMIN") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $cnt++; 
+
+          ampsConfigLib::ChangeValueOfVariable("double Earth::IndividualPointSample::Emin",$InputLine,"main/SamplingIndividualPoints.cpp");
+        }
+        elsif ($InputLine eq "EMAX") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $cnt++; 
+
+          ampsConfigLib::ChangeValueOfVariable("double Earth::IndividualPointSample::Emax",$InputLine,"main/SamplingIndividualPoints.cpp");
+        }
+        elsif ($InputLine eq "SCALE") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $cnt++; 
+
+          if ($InputLine eq "LINEAR") {
+            ampsConfigLib::ChangeValueOfVariable("int Earth::IndividualPointSample::SamplingMode","Earth::IndividualPointSample::ModeLinear","main/SamplingIndividualPoints.cpp");
+          }
+          elsif ($InputLine eq "LOGARITHMIC") {
+            ampsConfigLib::ChangeValueOfVariable("int Earth::IndividualPointSample::SamplingMode","Earth::IndividualPointSample::ModeLogarithmic","main/SamplingIndividualPoints.cpp");
+          }
+        }
+        elsif ($InputLine eq "NSAMPLEINTERVALS") {
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $cnt++;
+
+           ampsConfigLib::ChangeValueOfVariable("int Earth::IndividualPointSample::nSampleIntervals",$InputLine,"main/SamplingIndividualPoints.cpp");
+        }
+         else {
+           die "Cannot recognize $InputLine, line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
+        }
+     }
+   } 
   
   
     #the number, locations, energy range, and the number of the energy intervals used in the spherical sampling surfaces 
@@ -436,12 +539,14 @@ while ($line=<InputFile>) {
   #parameters of the surface mesh when calcualting the cutoff rigidity
   elsif ($InputLine eq "NZENITHELEMENTS") {
    ($s0,$InputComment)=split(' ',$InputComment,2);
-    ampsConfigLib::ChangeValueOfVariable("int nZenithElements",$s0,"main/main_lib.cpp");
+    ampsConfigLib::ChangeValueOfVariable("int nZenithElements",$s0,"main/main.cpp");
   }
   elsif ($InputLine eq "NAZIMUTHALELEMENTS") {
     ($s0,$InputComment)=split(' ',$InputComment,2);
-    ampsConfigLib::ChangeValueOfVariable("int nAzimuthalElements",$s0,"main/main_lib.cpp");
+    ampsConfigLib::ChangeValueOfVariable("int nAzimuthalElements",$s0,"main/main.cpp");
   }
+
+
 
   #parameters of the T96 model 
   elsif ($InputLine eq "T96") {
