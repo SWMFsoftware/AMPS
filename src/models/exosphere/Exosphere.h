@@ -50,6 +50,8 @@ const char SPICE_Kernels_PATH[_MAX_STRING_LENGTH_PIC_]=".";
 #include "SpiceEmptyDefinitions.h"
 #endif
 
+#include "Dust.h"
+
 
 namespace Exosphere {
 
