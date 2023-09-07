@@ -39,7 +39,7 @@ double localResolution(double *x) {
   double rm = _RADIUS_(_TARGET_); // Mercury radius in meters
   double res;
   if (r<1*rm) {
-   res = .75*rm;
+   res = .5*rm;
    // printf("r<1, r=%e\n",r);
  } else if (r>=1*rm and r<2*rm){
    switch (_PIC_NIGHTLY_TEST_MODE_) {
