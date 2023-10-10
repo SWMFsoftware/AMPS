@@ -203,6 +203,33 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
     
     //command related to the SEP model
+    else if (Command == "#SEP_MOVER1D") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t=="HE_2019_AJL") SEP::ParticleMoverSet(SEP::_HE_2019_AJL_);
+      else if (t=="Kartavykh_2016_AJ") SEP::ParticleMoverSet(SEP::_Kartavykh_2016_AJ_);
+      else if (t=="BOROVIKOV_2019_ARXIV") SEP::ParticleMoverSet(SEP::_BOROVIKOV_2019_ARXIV_);
+      else if (t=="Droge_2009_AJ_") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ_);
+      else if (t=="Droge_2009_AJ1") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ1_);     
+      else if (t=="MeanFreePathScattering") SEP::ParticleMoverSet(SEP::_MeanFreePathScattering_);
+      else if (t=="Tenishev_2005_FL") SEP::ParticleMoverSet(SEP::_Tenishev_2005_FL_);
+      else exit(__LINE__,__FILE__,"Error: the parameter value is not recognized");
+      #endif
+    }
+
+    else if (Command == "#SEP_MAX_TURBUENCE_LEVEL") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      SEP::MaxTurbulenceLevel=atof(t.c_str());
+      #endif
+    }
+    
     else if (Command == "#SEP_FREEZE_SOLAR_WIND_MODEL_TIME") {
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;
@@ -322,6 +349,25 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else exit(__LINE__,__FILE__);
       #endif
     }     
+
+    else if (Command == "#SEP_LIMIT_MEAN_FREE_PATH") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        SEP::LimitMeanFreePath=true;
+      }
+      else if (t=="F") {
+        SEP::LimitMeanFreePath=false;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    }
+
     
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
