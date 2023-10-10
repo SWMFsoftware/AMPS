@@ -125,6 +125,12 @@ public:
 namespace SEP {
   using namespace Exosphere;
 
+  //max turbolence level
+  extern double MaxTurbulenceLevel;
+
+  //set the lower limit of the mean free path being the local Larmor radius of the particle
+  extern bool LimitMeanFreePath;
+
   //the type of the equation that is solved 
   const int ModelEquationParker=0,ModelEquationFTE=1;
   extern int ModelEquation;
@@ -696,12 +702,26 @@ double e_mev=e*J2MeV;
 
   extern bool AccountTransportCoefficient;
 
+  typedef int (*fParticleMover) (long int,double,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+  extern fParticleMover ParticleMoverPtr;
+
+  void ParticleMoverSet(int ParticleMoverModel);
+
+  const int _HE_2019_AJL_=0;
+  const int _Kartavykh_2016_AJ_=1;
+  const int _BOROVIKOV_2019_ARXIV_=2;
+  const int _Droge_2009_AJ_=3;
+  const int _Droge_2009_AJ1_=4;
+  const int _MeanFreePathScattering_=5;
+  const int _Tenishev_2005_FL_=6;
+
   int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover__He_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
   int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_MeanFreePathScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
@@ -726,22 +746,7 @@ double e_mev=e*J2MeV;
     } 
 
 
-    switch(_SEP_MOVER_) {
-    case _SEP_MOVER_DEFUALT_:
-      res=ParticleMover_default(ptr,dtTotal,startNode);
-      break;
-    case _SEP_MOVER_BOROVIKOV_2019_ARXIV_:
-      res=ParticleMover_BOROVIKOV_2019_ARXIV(ptr,dtTotal,startNode);
-      break;
-    case _SEP_MOVER_HE_2019_AJL_:
-      res=ParticleMover__He_2019_AJL(ptr,dtTotal,startNode);
-      break; 
-    case _SEP_MOVER_KARTAVYKH_2016_AJ_:
-      res=ParticleMover_Kartavykh_2016_AJ(ptr,dtTotal,startNode);
-      break;
-    default:
-      exit(__LINE__,__FILE__,"Error: the option is not found");
-    }
+    ParticleMoverPtr(ptr,dtTotal,startNode);
 
 
     if ((_SEP_DIFFUSION_MODEL_!=_DIFFUSION_NONE_)&&(res==_PARTICLE_MOTION_FINISHED_)) {
