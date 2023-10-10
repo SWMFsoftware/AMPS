@@ -928,6 +928,17 @@ namespace PIC {
 
     
       cFieldLineSegment() {cleanDataBuffer();}
+
+      //get cartesian coordinats of the location
+      inline void GetCartesian(double* xOut, double S) {
+        double w = fmod(S,1);
+        double *xBegin,*xEnd;
+
+        xBegin=begin->GetX();
+        xEnd=end->GetX();
+        for(int i=0; i<3; i++) xOut[i] = (1-w) * xBegin[i] + w * xEnd[i];
+      }
+
   
       //in case particles are attached to the field line segment -> remove them when a segment is deleted
       /*
