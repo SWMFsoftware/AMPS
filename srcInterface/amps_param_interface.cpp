@@ -227,6 +227,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
 
       SEP::MaxTurbulenceLevel=atof(t.c_str());
+      SEP::MaxTurbulenceEnforceLimit=true;
       #endif
     }
     
@@ -368,6 +369,27 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     }
 
+    else if (Command == "#SEP_SCATTER_ONLY_INCOMING_WAVES") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        SEP::LimitScatteringUpcomingWave=true;
+      }
+      else if (t=="F") {
+        SEP::LimitScatteringUpcomingWave=false;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    }
+
+
+
+
     
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
@@ -451,6 +473,19 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::Diffusion::muNumericalDifferentiationStep=atof(t.c_str());
       #endif
     }
+
+    else if (Command == "#SEP_LIMIT_SCATTERING_EVENT_NUMBER") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::NumericalScatteringEventLimiter=atof(t.c_str());
+      SEP::NumericalScatteringEventMode=true;
+      #endif
+    }
+
 
     else if (Command == "#SEP_INJECTION_TYPE_FL_CONST_ENERGY") {
       cout << "PT: "  << param_list.front().second << endl;
