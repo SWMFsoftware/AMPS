@@ -11,9 +11,18 @@
 bool SEP::AccountTransportCoefficient=true;
 SEP::fParticleMover SEP::ParticleMoverPtr=ParticleMover_Droge_2009_AJ;
 double SEP::MaxTurbulenceLevel=0.1;
+bool SEP::MaxTurbulenceEnforceLimit=false;
 
 //set the lower limit of the mean free path being the local Larmor radius of the particle
 bool SEP::LimitMeanFreePath=false;
+
+bool SEP::LimitScatteringUpcomingWave=false; 
+
+//set the numerical limit on the number of simulated scattering events
+bool SEP::NumericalScatteringEventMode=false;
+double SEP::NumericalScatteringEventLimiter=-1.0;
+
+
 
 
 void SEP::ParticleMoverSet(int ParticleMoverModel) {
@@ -51,8 +60,8 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   namespace FL = PIC::FieldLine;
 
   PIC::ParticleBuffer::byte *ParticleData;
-  double mu,AbsB,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
-  double FieldLineCoord;
+  double W[2],mu,AbsB,absB2,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
+  double FieldLineCoord,Lmax,vAlfven;
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment; 
 
@@ -97,42 +106,39 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   bool first_pass_flag=true;
   static long int loop_cnt=0;
+  
+  const double muLimit=0.01;
 
-  v=sqrt(vParallel*vParallel+vNormal*vNormal);
-  mu=vParallel/v;
-
-  if (v>0.99*SpeedOfLight) {
-    double t=0.99*SpeedOfLight/v;
-
-    v=0.99*SpeedOfLight;
-    vParallel*=t;
-    vNormal*=t; 
-  }
-
-   double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
-   ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
-
-  while (time_counter<dtTotal) { 
-   loop_cnt++;
-   
-   double x[3];
-   Segment->GetCartesian(x, FieldLineCoord);
-   
-   
-   double Lmax=0.03*Vector3D::Length(x);
-    
-   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
-   if (Segment==NULL) break;
-
-   FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
-   FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
-
-   double *B0,*B1,B[3],absB2=0.0,AbsB,r2;
-   double *W0,*W1,W[2];
+   double *B0,*B1,B[3],r2;
+   double *W0,*W1;
    double *x0,*x1;
    double w0,w1;
-   double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,vAlfven,LambdaPlus,LambdaMinus,NuPlus,NuMinus; 
+   double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,LambdaPlus,LambdaMinus,NuPlus,NuMinus; 
    
+   auto GetLarmorR = [&] (int spec, double vNormal) {
+     return PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+   }; 
+
+   auto GetLmax = [&] (double *x) {
+     Lmax=0.03*Vector3D::Length(x);
+     
+     return Lmax;
+   }; 
+   
+   auto Interpolate = [&] () {
+     
+     double x[3];
+      Segment->GetCartesian(x, FieldLineCoord);
+      
+      GetLmax(x);
+       
+      Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+      if (Segment==NULL) return false;
+
+      FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+      FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+     
+   absB2=0.0;
    
 
    //get the magnetic field and the plasma waves at the corners of the segment
@@ -172,45 +178,340 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    AbsB=sqrt(absB2);
    vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
    
-   double c=6.0/(Pi*pow(Lmax/PiTimes2,2.0/3.0));
-   double rLarmor=PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+   return true;
+};
+  
+
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/v;
+
+  if (v>0.99*SpeedOfLight) {
+    double t=0.99*SpeedOfLight/v;
+
+    v=0.99*SpeedOfLight;
+    vParallel*=t;
+    vNormal*=t; 
+  }
+
+   double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
+   ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
    
-   double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
+
+
+   auto GetLambda = [&] (double& LambdaPlus, double& LambdaMinus,double vNormal) {
+     double c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
+     double rLarmor=GetLarmorR(spec,vNormal); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+   
+     double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
      
-   TurbulenceLevel=((misc=VacuumPermeability*W[0]/absB2)<MaxTurbulenceLevel) ? misc : MaxTurbulenceLevel;
-   LambdaPlus=c1/TurbulenceLevel;
-   if ((LimitMeanFreePath==true)&&(LambdaPlus<rLarmor)) LambdaPlus=rLarmor; 
+     TurbulenceLevel=VacuumPermeability*W[0]/absB2;
+     if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+  
+     LambdaPlus=c1/TurbulenceLevel;
+     if ((LimitMeanFreePath==true)&&(LambdaPlus<rLarmor)) LambdaPlus=rLarmor; 
+
+     TurbulenceLevel=VacuumPermeability*W[1]/absB2;
+     if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+     LambdaMinus=c1/TurbulenceLevel;
+     if ((LimitMeanFreePath==true)&&(LambdaMinus<rLarmor)) LambdaMinus=rLarmor;
+   }; 
+
+   auto GetD_mu_mu = [&] (double& D_mu_mu_Plus, double& D_mu_mu_Minus,double vNormal,double vParallel) {
+     double speed=sqrt(vNormal*vNormal+vParallel*vParallel);  
+     double mu=vParallel/speed;
+     double LambdaPlus,LambdaMinus,t;
+
+     GetLambda(LambdaPlus,LambdaMinus,vNormal);
+
+     t=speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0); 
+     D_mu_mu_Plus=t/LambdaPlus;
+     D_mu_mu_Minus=t/LambdaMinus; 
+   };
+
+   auto Get_dD_mu_mu_dmu = [&] (double&dD_mu_mu_dmu_Plus,double& dD_mu_mu_dmu_Minus,double vNormal,double vParallel) {
+     double dmu,mu,speed,vp,vn,mu_min,mu_max,D_mu_mu_Plus,D_mu_mu_Minus; 
+
+     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+     mu=vParallel/speed;
+
+     dmu=muLimit/2.0;
+     
+     if (fabs(mu)<dmu) {
+       dD_mu_mu_dmu_Plus=0.0,dD_mu_mu_dmu_Minus=0.0; 
+       return;
+     }
+
+     mu_min=mu-dmu;
+     if (mu_min<-1.0+muLimit) mu_min=-1.0+muLimit;
+
+     mu_max=mu+dmu;
+     if (mu_max>1.0-muLimit) mu_max=1.0-muLimit;
+
+     dmu=mu_max-mu_min; 
+
+     //calculate D_mu_mu(mu_max);
+     vp=speed*mu_max;
+     vn=speed*sqrt(1.0-mu_max*mu_max);
+     GetD_mu_mu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vn,vp);
+     
+     //calculate D_mu_mu(mu_min);
+     vp=speed*mu_min;
+     vn=speed*sqrt(1.0-mu_min*mu_min);
+     GetD_mu_mu(D_mu_mu_Plus,D_mu_mu_Minus,vn,vp);
+
+     //calcualte the derivarive
+     dD_mu_mu_dmu_Plus-=D_mu_mu_Plus;
+     dD_mu_mu_dmu_Plus/=dmu;
+
+     dD_mu_mu_dmu_Minus-=D_mu_mu_Minus;
+     dD_mu_mu_dmu_Minus/=dmu;
+   };
+
+   auto GetMomentum = [&] (double& pPlus, double& pMinus,double vNormal,double vParallel) {
+     double t,mass=PIC::MolecularData::GetMass(spec); 
 
 
-   TurbulenceLevel=((misc=VacuumPermeability*W[1]/absB2)<MaxTurbulenceLevel) ? misc : MaxTurbulenceLevel;
-   LambdaMinus=c1/TurbulenceLevel;
-   if ((LimitMeanFreePath==true)&&(LambdaMinus<rLarmor)) LambdaMinus=rLarmor;
+     t=vParallel-vAlfven; 
+     pPlus=mass*sqrt(t*t+vNormal*vNormal); 
+
+     t=vParallel+vAlfven;
+     pMinus=mass*sqrt(t*t+vNormal*vNormal);
+   };
    
-   NuPlus=fabs(vParallel)/LambdaPlus; //*ParticleStatWeight);
-   NuMinus=fabs(vParallel)/LambdaMinus; //*ParticleStatWeight);
+   auto GetVelocity = [&] (double& vParallelPlus, double& vParallelMinus,double vParallel) {
+     vParallelPlus=vParallel-vAlfven; 
+     vParallelMinus=vParallel+vAlfven;
+   };
+
+   auto GetDeltaMu = [&] (double& dmu_plus,double& dmu_minus,double vNormal,double vParallel,double dt) {
+     double D_mu_mu_Plus,D_mu_mu_Minus;
+     double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+
+     GetD_mu_mu(D_mu_mu_Plus,D_mu_mu_Minus,vNormal,vParallel);
+     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+
+     dmu_plus=dD_mu_mu_dmu_Plus*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu_Plus*dt*log(rnd()));  
+     dmu_minus=dD_mu_mu_dmu_Minus*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu_Minus*dt*log(rnd()));
+   };
+
+   auto GetMu = [&] (double& muPlus, double& muMinus,double vNormal,double vParallel) {
+     double t; 
+
+     t=vParallel-vAlfven;
+     muPlus=t/sqrt(t*t+vNormal*vNormal);
+
+     t=vParallel+vAlfven;
+     muMinus=t/sqrt(t*t+vNormal*vNormal);
+   }; 
+   
+   auto GetD_SA = [&] (double vNormal,double vParallel) {
+     double speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+     double mu=vParallel/speed; 
+     double c=speed*(1.0-mu*mu)*pow(fabs(mu),2.0/3.0);
+     double Lambda[2];
+     double D_mu_mu[2];
+
+     GetLambda(Lambda[0],Lambda[1],vNormal); 
+
+     for (int i=0;i<2;i++) D_mu_mu[i]=c/Lambda[i];  
+
+     double t=PIC::MolecularData::GetMass(spec)*vAlfven; 
+
+     return t*t*4.0*D_mu_mu[0]*D_mu_mu[1]/(D_mu_mu[0]+D_mu_mu[1]);
+   };
+
+
+   auto UpdateVelocity = [&] (double& vNormal,double& vParallel,double dt) {
+     double mass=PIC::MolecularData::GetMass(spec);  
+     double dp,dpNormal,dpParallel,pParallel,pNormal;
+     double muPlus,muMinus,dmu_plus,dmu_minus,pPlus,pMinus;
+     double vp,p,speed=sqrt(vNormal*vNormal+vParallel*vParallel);
       
+     GetMu(muPlus,muMinus,vNormal,vParallel);
+     GetDeltaMu(dmu_plus,dmu_minus,vNormal,vParallel,dt); 
+     
+     
+     //scatering with muPlus 
+     vp=vParallel-vAlfven;
+     speed=sqrt(vp*vp+vNormal*vNormal);
+     mu=vp/speed;
+     mu+=dmu_plus;
+          
+     if (mu>1.0-muLimit) mu=1.0-muLimit;
+     if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+     
+     vParallel=speed*mu+vAlfven;
+     vNormal=speed*sqrt(1.0-mu*mu);
+     
+     
+     //scatering with muMinus 
+     vp=vParallel+vAlfven;
+     speed=sqrt(vp*vp+vNormal*vNormal);
+     mu=vp/speed;
+     mu+=dmu_minus;
+     
+     if (fabs(mu)>1.0) mu=(mu>0.0) ? 1.0 : -1.0;
+     
+     vParallel=speed*mu-vAlfven;
+     vNormal=speed*sqrt(1.0-mu*mu);   
+   };
+
+
+   auto ScatteringModel = [&] (double NuPlus, double NuMinus) {
+     if (rnd()<NuPlus/(NuPlus+NuMinus)) {
+       //scattering with (+) mode
+       double v=vParallel-vAlfven;
+       double speed,muScattered=rnd();
+
+       speed=sqrt(vNormal*vNormal+v*v);
+
+       if (speed<0.1*SpeedOfLight) { 
+         vNormal=speed*sqrt(1.0-muScattered*muScattered);
+         vParallel=vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
+       }
+       else {
+         //relativistic velocity transformations need to be used 
+         double vpSW[3]={vParallel,vNormal,0.0}; //spped of the solar wind reference frame in the frame moving with the wave  
+         double vSW[3]={-vAlfven,0.0,0.0};
+         double vpWave[3];
+
+         Relativistic::FrameVelocityTransformation(vpWave,vpSW,vSW);
+
+         vpWave[0]*=-1.0;
+
+         speed=sqrt(vpWave[0]*vpWave[0]+vpWave[1]*vpWave[1]);  
+         vpWave[0]=(vpWave[0]>0.0) ? speed*muScattered : -speed*muScattered; 
+         vpWave[1]=speed*sqrt(1.0-muScattered*muScattered);
+
+         vSW[0]*=-1.0;
+         Relativistic::FrameVelocityTransformation(vpSW,vpWave,vSW);
+
+         vParallel=vpSW[0];
+         vNormal=vpSW[1];
+       }
+     }
+     else {
+       //scattering with (-) mode
+       double v=vParallel+vAlfven;
+       double speed,muScattered=rnd();
+
+       speed=sqrt(vNormal*vNormal+v*v);
+
+       if (speed<0.1*SpeedOfLight) {  
+         vNormal=speed*sqrt(1.0-muScattered*muScattered);
+         vParallel=-vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
+       }
+       else {
+         //relativistic velocity transformations need to be used 
+         double vpSW[3]={vParallel,vNormal,0.0}; //spped of the solar wind reference frame in the frame moving with the wave  
+         double vSW[3]={vAlfven,0.0,0.0};
+         double vpWave[3];
+
+         Relativistic::FrameVelocityTransformation(vpWave,vpSW,vSW);
+
+         vpWave[0]*=-1.0;
+
+         speed=sqrt(vpWave[0]*vpWave[0]+vpWave[1]*vpWave[1]);
+         vpWave[0]=(vpWave[0]>0.0) ? speed*muScattered : -speed*muScattered;
+         vpWave[1]=speed*sqrt(1.0-muScattered*muScattered);
+
+         vSW[0]*=-1.0;
+         Relativistic::FrameVelocityTransformation(vpSW,vpWave,vSW);
+
+         vParallel=vpSW[0];
+         vNormal=vpSW[1];
+       }
+     }
+   };
+
+
+
+   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+   
+   double dtSubStep=dtTotal;
+   double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+   
+   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+   Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+   
+   if (fabs(dD_mu_mu_dmu_Plus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Plus);
+   if (fabs(dD_mu_mu_dmu_Minus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Minus);
+   
+   if ((std::isfinite(dD_mu_mu_dmu_Plus)==false)||(std::isfinite(dD_mu_mu_dmu_Minus))==false) {
+     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     exit(__LINE__,__FILE__,"Error: NAN is found");
+   }
+   
+   
+   const int CollisionIntegral_TwoWavesDiffusion=0;
+   const int CollisionIntegral_TwoWavesScattering=1;
+   const int CollisionIntegral_HighSpeed=2;
+   
+   int CollisionIntegralMode=CollisionIntegral_TwoWavesDiffusion;
+   
+
+  while (time_counter<dtTotal) { 
+   loop_cnt++;
+   
+   if (Interpolate()==false) break;
+
+
+   
+
+
+      
+    
+   if (CollisionIntegralMode==CollisionIntegral_TwoWavesScattering) {      
+     GetLambda(LambdaPlus,LambdaMinus,vNormal);
+     
+     NuPlus=fabs(vParallel)/LambdaPlus; 
+     NuMinus=fabs(vParallel)/LambdaMinus; 
+   }
+        
    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
      pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
 
    L=-Vector3D::Length(B)/AbsBDeriv;
-   
-   double MovingTime,ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
+
+   double MovingTime,ScatteringTime;
    bool ScatteringFlag;
-   
+
+
+   //set the numerical limit on the number of simulated scattering events
+   extern bool NumericalScatteringEventMode;
+   extern double NumericalScatteringEventLimiter;
+
    //decide is scattering occured
-   if (time_counter+ScatteringTime<dtTotal) {
-     //scattering occured
-     ScatteringFlag=true;
-     
-     MovingTime=ScatteringTime;
-     time_counter+=ScatteringTime;
+   if (CollisionIntegralMode==CollisionIntegral_TwoWavesScattering) {
+     ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
+
+     if (time_counter+ScatteringTime<dtTotal) {
+       //scattering occured
+       ScatteringFlag=true;
+
+       MovingTime=ScatteringTime;
+       time_counter+=ScatteringTime;
+     }
+     else {
+       //no scattering
+       ScatteringFlag=false;
+
+       MovingTime=dtTotal-time_counter;
+       time_counter=dtTotal;
+     }
    }
    else {
-     //no scattering
      ScatteringFlag=false;
      
-     MovingTime=dtTotal-time_counter;
-     time_counter=dtTotal;
+     if (time_counter+dtSubStep<dtTotal) {
+       MovingTime=dtSubStep;
+       time_counter+=dtSubStep;
+     }
+     else {
+       MovingTime=dtTotal-time_counter;
+       time_counter=dtTotal;
+     }
    }
    
    //determine the new particle pitch angle and location
@@ -228,37 +529,35 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    mu+=(1.0-mu*mu)/(2.0*L)*MovingTime;
    
-   if (mu<-1.0) mu=-1.0;
-   if (mu>1.0) mu=1.0;
+   if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+   if (mu>1.0-muLimit) mu=1.0-muLimit;
 
    vParallel=speed*mu;
-   vNormal=speed*(1.0-mu*mu);
+   vNormal=speed*sqrt(1.0-mu*mu);
   
    
    //update the particle location
    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*vParallel);
+
+   //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
+   if (LimitScatteringUpcomingWave==true) {
+     if (vParallel>=0.0) NuPlus=0.0;
+     else NuMinus=0.0;
+   }  
+   
    
    //model scattering
-   if (ScatteringFlag==true) {    
-     if (rnd()<NuPlus/(NuPlus+NuMinus)) {
-       //scattering with (+) mode
-       double v=vParallel-vAlfven;
-       double muScattered=rnd();
-       double speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-       
-       vNormal=speed*(1.0-muScattered*muScattered);
-       vParallel=vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
-     }
-     else {
-       //scattering with (-) mode
-       double v=vParallel+vAlfven;
-       double muScattered=rnd();
-       double speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-       
-       vNormal=speed*(1.0-muScattered*muScattered);
-       vParallel=-vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
-     }
+   switch (CollisionIntegralMode) {
+   case CollisionIntegral_TwoWavesScattering:
+     ScatteringModel(NuPlus,NuMinus);
+     break;
+   case CollisionIntegral_TwoWavesDiffusion:
+     UpdateVelocity(vNormal,vParallel,MovingTime);
+     break;
+   default:
+     exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
    }
+
   }
    
 
@@ -282,6 +581,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   //set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel,ParticleData);
   PB::SetVNormal(vNormal,ParticleData);
+
+  if (std::isfinite(vParallel)==false) exit(__LINE__,__FILE__);
+  if (std::isfinite(vNormal)==false) exit(__LINE__,__FILE__); 
 
   //set the new particle coordinate 
   PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
