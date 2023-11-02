@@ -127,9 +127,18 @@ namespace SEP {
 
   //max turbolence level
   extern double MaxTurbulenceLevel;
+  extern bool MaxTurbulenceEnforceLimit;
 
   //set the lower limit of the mean free path being the local Larmor radius of the particle
   extern bool LimitMeanFreePath;
+
+   //limit scattering only with the incoming wave 
+   //(if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven) 
+   extern bool LimitScatteringUpcomingWave; 
+
+   //set the numerical limit on the number of simulated scattering events
+   extern bool NumericalScatteringEventMode;
+   extern double NumericalScatteringEventLimiter;
 
   //the type of the equation that is solved 
   const int ModelEquationParker=0,ModelEquationFTE=1;
