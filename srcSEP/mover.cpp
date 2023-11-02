@@ -320,6 +320,27 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
      return t*t*4.0*D_mu_mu[0]*D_mu_mu[1]/(D_mu_mu[0]+D_mu_mu[1]);
    };
+   
+   auto Get_dD_SA_dp = [&] (double vNormal,double vParallel) {
+     double dv,vp,vn,speed,D_SA_Plus,D_SA_Minus,dp,p,mass=PIC::MolecularData::GetMass(spec); 
+     
+     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+     dv=0.01*speed;
+     dp=dv*mass;
+     
+     //Get D_SA_Plus
+     vp=vParallel*(1.0+dv),vn=vNormal*(1.0+dv);
+     D_SA_Plus=GetD_SA(vn,vp);
+     
+     
+     //Get D_SA_Minus
+     vp=vParallel*(1.0-dv),vn=vNormal*(1.0-dv);
+     if (vn<0.0) vn*=-1.0;
+     
+     D_SA_Minus=GetD_SA(vn,vp);
+     
+     return (D_SA_Plus-D_SA_Minus)/(2.0*dp);
+   };
 
 
    auto UpdateVelocity = [&] (double& vNormal,double& vParallel,double dt) {
@@ -425,22 +446,70 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      }
    };
 
+   auto UpdateVelocityFastParticle = [&] (double vNormal,double vParallel,double dt) {
+     double mass,speed,mu,dD_SA_dp,D_SA,D_mu_mu,dD_mu_mu_dmu,D_mu_mu_Plus,D_mu_mu_Minus;
+     double p,dmu,dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+     
+     mass=PIC::MolecularData::GetMass(spec); 
+     
+     //Increment pitch angle
+     GetD_mu_mu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     D_mu_mu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
+     
+     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     dD_mu_mu_dmu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
+     
+     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+     mu=vParallel/speed;
+          
+     dmu=dD_mu_mu_dmu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu*dt*log(rnd()));
+     
+     if (fabs(dmu)>1.0) mu=-1.0+2.0*rnd();
+     else {
+       mu+=dmu;
+     }
+     
+     if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+     if (mu>1.0-muLimit) mu=1.0-muLimit;
+         
+     //increment momentum
+     dD_SA_dp=Get_dD_SA_dp(vNormal,vParallel);
+     D_SA=GetD_SA(vNormal,vParallel);
+     
+     p=mass*speed;
+     p+=-(dD_SA_dp+2.0*D_SA/p)*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_SA*dt*log(rnd()));
+     
+     speed=p/mass;
+     vParallel=speed*mu;
+     vNormal=sqrt(1.0-mu*mu);
+   };
 
 
    if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
    
    double dtSubStep=dtTotal;
    double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+   bool FastParticleFlag=false;
    
    if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
-   Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
    
-   if (fabs(dD_mu_mu_dmu_Plus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Plus);
-   if (fabs(dD_mu_mu_dmu_Minus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Minus);
-   
-   if ((std::isfinite(dD_mu_mu_dmu_Plus)==false)||(std::isfinite(dD_mu_mu_dmu_Minus))==false) {
+   if (vNormal*vNormal+vParallel*vParallel>1000.0*vAlfven) {
+     //fast particle 
+     FastParticleFlag=true;
+   }
+   else {
+     FastParticleFlag=false;
+
+
      Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
-     exit(__LINE__,__FILE__,"Error: NAN is found");
+
+     if (fabs(dD_mu_mu_dmu_Plus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Plus);
+     if (fabs(dD_mu_mu_dmu_Minus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Minus);
+
+     if ((std::isfinite(dD_mu_mu_dmu_Plus)==false)||(std::isfinite(dD_mu_mu_dmu_Minus))==false) {
+       Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+       exit(__LINE__,__FILE__,"Error: NAN is found");
+     }
    }
    
    
@@ -549,10 +618,15 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    //model scattering
    switch (CollisionIntegralMode) {
    case CollisionIntegral_TwoWavesScattering:
-     ScatteringModel(NuPlus,NuMinus);
+     if (FastParticleFlag==false) { 
+       ScatteringModel(NuPlus,NuMinus);
+     }
+     else {
+       UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
+     }
      break;
    case CollisionIntegral_TwoWavesDiffusion:
-     UpdateVelocity(vNormal,vParallel,MovingTime);
+     UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
      break;
    default:
      exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
