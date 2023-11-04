@@ -110,6 +110,9 @@ namespace AMPS2SWMF {
   namespace FieldLineData {
     extern double ROrigin,LonMin,LonMax,LatMin,LatMax;
     extern int nLon,nLat; 
+
+    //prepopulate the field lines with particles after the first coupling 
+    extern bool ParticlePrepopulateFlag;
   } 
 
 

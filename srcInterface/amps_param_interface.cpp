@@ -220,6 +220,20 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     }
 
+    else if (Command == "#SEP_PREPOPULATE_FIELD_LINES") {
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=true;
+      }
+      else if (t=="F") {
+        AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
+      }
+      else exit(__LINE__,__FILE__,"Error: the command is not recognized");
+    }
+
     else if (Command == "#SEP_MAX_TURBUENCE_LEVEL") {
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;

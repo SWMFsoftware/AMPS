@@ -42,6 +42,9 @@ double AMPS2SWMF::FieldLineData::LonMax=10.0*_DEGREE_;
 double AMPS2SWMF::FieldLineData::LatMin=25.0*_DEGREE_; 
 double AMPS2SWMF::FieldLineData::LatMax=90.0*_DEGREE_; 
 
+//prepopulate the field lines with particles after the first coupling 
+bool AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
+
 //import plasma DivU mode
 bool AMPS2SWMF::ImportPlasmaDivUFlag=false;
 bool AMPS2SWMF::ImportPlasmaDivUdXFlag=false;
