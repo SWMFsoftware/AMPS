@@ -2075,3 +2075,208 @@ void PIC::FieldLine::CheckParticleList() {
 
   if (nTotalParticles!=PB::GetAllPartNum()) exit(__LINE__,__FILE__,"Error: the total number of particles stored in the lists is different from that stored in the particle buffer");
 } 
+
+void PIC::FieldLine::PopulateSegment(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double Volume,int iSegment,int iFieldLine,int nMaxInjectedParticles) {
+  namespace FL = PIC::FieldLine;
+  namespace PB = PIC::ParticleBuffer;
+
+  double l[3],anpart,ParticleWeight=0,x[3][3],WeightCorrectionFactor=1.0;
+  int npart,cnt=0;
+  cFieldLineSegment* Segment=FieldLinesAll[iFieldLine].GetSegment(iSegment);
+
+  //determine the injected particle number 
+  Segment->GetBegin()->GetX(x[0]);  
+  Segment->GetEnd()->GetX(x[1]); 
+
+  for (int idim=0;idim<3;idim++) {
+    x[2][idim]=0.5*(x[0][idim]+x[1][idim]); 
+    l[idim]=x[1][idim]-x[0][idim];
+  }    
+
+  for (int ip=0;ip<3;ip++) {
+    //determine the local particle weight at the point x[ip]
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->findTreeNode(x[ip],NULL);    
+
+    if (node!=NULL) {
+      cnt++;
+      ParticleWeight+=node->block->GetLocalParticleWeight(spec);
+    }
+  }
+
+  if (cnt==0) exit(__LINE__,__FILE__,"Error: no segment point is within the domain");
+
+  ParticleWeight/=cnt;      
+  anpart=NumberDensity*Volume/ParticleWeight; 
+
+  if ((nMaxInjectedParticles!=-1)&&(anpart>nMaxInjectedParticles)) {
+    //limit the number of injected particles 
+    WeightCorrectionFactor=anpart/nMaxInjectedParticles;
+    anpart=nMaxInjectedParticles;  
+
+    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_) exit(__LINE__,__FILE__,"Error: _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ must be set _INDIVIDUAL_PARTICLE_WEIGHT_ON_"); 
+  }
+
+  npart=(int)anpart;
+  if (anpart-npart>rnd()) npart++;
+
+
+  //populate new particles 
+  for (;npart>0;npart--) {
+    //get particle location 
+    double xp[3],vp[3],vParallel,vNormal,S=rnd();
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node;
+    
+    for (int idim=0;idim<3;idim++) xp[idim]=x[0][idim]+S*l[idim]; 
+ 
+    node=PIC::Mesh::mesh->findTreeNode(xp,NULL);     
+
+    if (node==NULL) continue; 
+    else if (node->Thread!=PIC::ThisThread) continue; 
+
+    //get porticle's microscopic properties 
+    PIC::Distribution::MaxwellianVelocityDistribution(vp,BulkVelocity,Temperature,spec);
+    Vector3D::GetComponents(vParallel,vNormal,vp,l);
+    
+    //add the particle to the particle list   
+    // pointer particle to the particle to be injected
+    PB::byte ptrData[PB::ParticleDataLength];
+
+    //default settings
+    PB::SetIndividualStatWeightCorrection(WeightCorrectionFactor,ptrData);
+    PB::SetI(spec, ptrData);
+
+    //set field line
+    PB::SetFieldLineId(iFieldLine, ptrData);
+
+    //set the localtion and velocity 
+    S+=iSegment;
+    PB::SetFieldLineCoord(S, ptrData);
+    PB::SetX(xp, ptrData);
+
+    PB::SetVParallel(vParallel,ptrData);
+    PB::SetVNormal(vNormal,ptrData);
+
+
+    long int NewParticle;
+    PB::byte* NewParticleData;
+
+    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+      NewParticle=PB::GetNewParticle(Segment->FirstParticleIndex);
+      NewParticleData=PB::GetParticleDataPointer(NewParticle);
+
+      PB::CloneParticle(NewParticleData,ptrData);
+      PB::SetParticleAllocated(NewParticleData);
+      break;
+    case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+      NewParticle=PB::InitiateParticle(xp,NULL,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
+  } 
+}
+
+//inject particles at the beginning of a segment
+int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles) {
+  namespace FL = PIC::FieldLine;
+  namespace PB = PIC::ParticleBuffer; 
+  
+  int nInjectedParticles=0;
+  int npart;
+  double dtTotal,SourceRate,n_sw,t_sw,v_v[3],l[3],anpart,ParticleWeight,*x,GlobalWeightCorrectionFactor=1.0;
+  auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
+  FL::cFieldLineVertex* FirstVertex=Segment->GetBegin();
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL;
+  
+  //get the direction of the first segment of the magnetic field line 
+  Segment->GetDir(l);
+
+  if (Vector3D::DotProduct(l,BulkVelocity)>0.0) { 
+    for (int idim=0;idim<3;idim++) l[idim]*=-1.0;
+  }
+
+  //determine the corresponding source rate 
+  SourceRate=PIC::BC::CalculateInjectionRate_MaxwellianDistribution(NumberDensity,Temperature,BulkVelocity,l,spec);
+
+  //determine the number of the injected model particles 
+  x=FirstVertex->GetX();
+  node=PIC::Mesh::mesh->findTreeNode(x,node);
+
+  if (node==NULL) exit(__LINE__,__FILE__,"Error: the location of the vertex is not found");
+  if (node->Thread!=PIC::ThisThread) return 0;
+  
+  if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated - something is wrong");
+  
+  dtTotal=node->block->GetLocalTimeStep(spec);
+  ParticleWeight=node->block->GetLocalParticleWeight(spec);
+  anpart=dtTotal*SourceRate/ParticleWeight*InjectionArea;
+
+  if ((nMaxInjectedParticles!=-1)&&(anpart>nMaxInjectedParticles)) {
+    //limit the number of injected particles 
+    GlobalWeightCorrectionFactor=anpart/nMaxInjectedParticles;
+    anpart=nMaxInjectedParticles;
+
+    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_) exit(__LINE__,__FILE__,"Error: _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ must be set _INDIVIDUAL_PARTICLE_WEIGHT_ON_");
+  }
+  
+  npart=(int)anpart;
+  if (anpart-npart>rnd()) npart++;
+  
+  nInjectedParticles=npart;
+
+  //populate new particles 
+  for (;npart>0;npart--) {
+    //get particle location 
+    double vp[3],vParallel,vNormal,WeightCorrectionFactor,S=0.0;
+
+    //get porticle's microscopic properties         
+    WeightCorrectionFactor=PIC::Distribution::InjectMaxwellianDistribution(vp,BulkVelocity,Temperature,l,spec,_PIC_DISTRIBUTION_WEIGHT_CORRECTION_MODE__NO_WEIGHT_CORRECTION_);
+    Vector3D::GetComponents(vParallel,vNormal,vp,l);
+    vParallel*=-1.0;
+    
+    //add the particle to the particle list   
+    // pointer particle to the particle to be injected
+    PB::byte ptrData[PB::ParticleDataLength];
+
+    //default settings
+    PB::SetIndividualStatWeightCorrection(WeightCorrectionFactor*GlobalWeightCorrectionFactor,ptrData);
+    PB::SetI(spec, ptrData);
+
+    //set field line
+    PB::SetFieldLineId(iFieldLine, ptrData);
+    
+    //move particle along the field line for a fraction of a time step
+    S=FL::FieldLinesAll[iFieldLine].move(S,dtTotal*rnd()*vParallel);
+    FL::FieldLinesAll[iFieldLine].GetCartesian(x,S);
+
+    //set the localtion and velocity 
+    PB::SetFieldLineCoord(S,ptrData);
+    PB::SetX(x, ptrData);
+
+    PB::SetVParallel(vParallel,ptrData);
+    PB::SetVNormal(vNormal,ptrData);
+
+    long int NewParticle;
+    PB::byte* NewParticleData;
+
+    switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+    case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+      NewParticle=PB::GetNewParticle(Segment->FirstParticleIndex);
+      NewParticleData=PB::GetParticleDataPointer(NewParticle);
+
+      PB::CloneParticle(NewParticleData,ptrData);
+      PB::SetParticleAllocated(NewParticleData);
+      break;
+    case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+      NewParticle=PB::InitiateParticle(x,NULL,NULL,NULL,ptrData,_PIC_INIT_PARTICLE_MODE__ADD2LIST_,(void*)node);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
+  } 
+  
+  return nInjectedParticles;
+}
+  
+  

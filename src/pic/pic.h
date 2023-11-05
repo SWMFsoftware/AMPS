@@ -471,6 +471,13 @@ namespace PIC {
     //check consistency of the particles lists in case the particles lists are attached to the field line segments 
     void CheckParticleList();
 
+    //populate particle for a given segment of the field line 
+    void PopulateSegment(int spec,double NumberDensity,double Temparature,double* BulkVelocity,double Volume,int iSegment,int iFieldLine,int nMaxInjectedParticles=-1);
+
+    //inject particles with Maxwellian distrivution at the beginning of a field line
+    int InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles);
+
+
     class cParticleFieldLineData {
     public:
       //local coordinate, and velocity along the field line 
