@@ -216,56 +216,89 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      LambdaMinus=c1/TurbulenceLevel;
      if ((LimitMeanFreePath==true)&&(LambdaMinus<rLarmor)) LambdaMinus=rLarmor;
    }; 
+   
+   
+   
+   auto GetMu = [&] (double& muPlus, double& muMinus,double vNormal,double vParallel) {
+     double t; 
 
+     t=vParallel-vAlfven;
+     muPlus=t/sqrt(t*t+vNormal*vNormal);
+
+     t=vParallel+vAlfven;
+     muMinus=t/sqrt(t*t+vNormal*vNormal);
+   }; 
+   
    auto GetD_mu_mu = [&] (double& D_mu_mu_Plus, double& D_mu_mu_Minus,double vNormal,double vParallel) {
      double speed=sqrt(vNormal*vNormal+vParallel*vParallel);  
-     double mu=vParallel/speed;
+     double mu=vParallel/speed,muPlus,muMinus;
      double LambdaPlus,LambdaMinus,t;
 
      GetLambda(LambdaPlus,LambdaMinus,vNormal);
+     GetMu(muPlus,muMinus,vNormal,vParallel);
 
-     t=speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0); 
-     D_mu_mu_Plus=t/LambdaPlus;
-     D_mu_mu_Minus=t/LambdaMinus; 
+     D_mu_mu_Plus=speed*(1-muPlus*muPlus)*pow(fabs(muPlus),2.0/3.0)/LambdaPlus;     
+     D_mu_mu_Minus=speed*(1-muMinus*muMinus)*pow(fabs(muMinus),2.0/3.0)/LambdaMinus; 
    };
 
    auto Get_dD_mu_mu_dmu = [&] (double&dD_mu_mu_dmu_Plus,double& dD_mu_mu_dmu_Minus,double vNormal,double vParallel) {
-     double dmu,mu,speed,vp,vn,mu_min,mu_max,D_mu_mu_Plus,D_mu_mu_Minus; 
+     double dmu,speed,vp,vn,mu_min,mu_max,D_mu_mu_Plus,D_mu_mu_Minus,muPlus,muMinus,p0,m0,p1,m1; 
 
      speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-     mu=vParallel/speed;
-
+     
+     GetMu(muPlus,muMinus,vNormal,vParallel);
+     
+     
+     //process muPlus
      dmu=muLimit/2.0;
      
-     if (fabs(mu)<dmu) {
+     if (fabs(muPlus)<dmu) {
        dD_mu_mu_dmu_Plus=0.0,dD_mu_mu_dmu_Minus=0.0; 
        return;
      }
 
-     mu_min=mu-dmu;
+     mu_min=muPlus-dmu;
      if (mu_min<-1.0+muLimit) mu_min=-1.0+muLimit;
-
-     mu_max=mu+dmu;
+     
+     mu_max=muPlus+dmu;
      if (mu_max>1.0-muLimit) mu_max=1.0-muLimit;
-
-     dmu=mu_max-mu_min; 
-
-     //calculate D_mu_mu(mu_max);
+     
+     dmu=mu_max-mu_min;
+     
      vp=speed*mu_max;
      vn=speed*sqrt(1.0-mu_max*mu_max);
-     GetD_mu_mu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vn,vp);
+     GetD_mu_mu(p1,m1,vn,vp);
      
+     //calculate dD_mu_mu_dmu_Plus=
+     vp=speed*mu_min;
+     vn=speed*sqrt(1.0-mu_min*mu_min);
+     GetD_mu_mu(p0,m0,vn,vp);
+     dD_mu_mu_dmu_Plus=(p1-p0)/dmu;
+     
+     
+     //process muMinus
+     dmu=muLimit/2.0;
+
+     mu_min=muMinus-dmu;
+     if (mu_min<-1.0+muLimit) mu_min=-1.0+muLimit;
+
+     mu_max=muMinus+dmu;
+     if (mu_max>1.0-muLimit) mu_max=1.0-muLimit;
+
+     dmu=mu_max-mu_min;
+     
+     //calculate dD_mu_mu_dmu_Minus
+     vp=speed*mu_max;
+     vn=speed*sqrt(1.0-mu_max*mu_max);
+     GetD_mu_mu(p1,m1,vn,vp);
+          
      //calculate D_mu_mu(mu_min);
      vp=speed*mu_min;
      vn=speed*sqrt(1.0-mu_min*mu_min);
-     GetD_mu_mu(D_mu_mu_Plus,D_mu_mu_Minus,vn,vp);
+     GetD_mu_mu(p0,m0,vn,vp);
 
      //calcualte the derivarive
-     dD_mu_mu_dmu_Plus-=D_mu_mu_Plus;
-     dD_mu_mu_dmu_Plus/=dmu;
-
-     dD_mu_mu_dmu_Minus-=D_mu_mu_Minus;
-     dD_mu_mu_dmu_Minus/=dmu;
+     dD_mu_mu_dmu_Minus=(m1-m0)/dmu;
    };
 
    auto GetMomentum = [&] (double& pPlus, double& pMinus,double vNormal,double vParallel) {
@@ -295,15 +328,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      dmu_minus=dD_mu_mu_dmu_Minus*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu_Minus*dt*log(rnd()));
    };
 
-   auto GetMu = [&] (double& muPlus, double& muMinus,double vNormal,double vParallel) {
-     double t; 
 
-     t=vParallel-vAlfven;
-     muPlus=t/sqrt(t*t+vNormal*vNormal);
-
-     t=vParallel+vAlfven;
-     muMinus=t/sqrt(t*t+vNormal*vNormal);
-   }; 
    
    auto GetD_SA = [&] (double vNormal,double vParallel) {
      double speed=sqrt(vNormal*vNormal+vParallel*vParallel);
@@ -352,6 +377,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      GetMu(muPlus,muMinus,vNormal,vParallel);
      GetDeltaMu(dmu_plus,dmu_minus,vNormal,vParallel,dt); 
      
+     double t0,t1,t2;
+     double DvP,DvN;
+     
+     t0=vNormal*vNormal+vParallel*vParallel;
      
      //scatering with muPlus 
      vp=vParallel-vAlfven;
@@ -362,9 +391,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      if (mu>1.0-muLimit) mu=1.0-muLimit;
      if (mu<-1.0+muLimit) mu=-1.0+muLimit;
      
-     vParallel=speed*mu+vAlfven;
-     vNormal=speed*sqrt(1.0-mu*mu);
+     DvP=speed*mu+vAlfven-vParallel;
+     DvN=speed*sqrt(1.0-mu*mu)-vNormal;
      
+     t1=vNormal*vNormal+vParallel*vParallel;
      
      //scatering with muMinus 
      vp=vParallel+vAlfven;
@@ -374,8 +404,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      
      if (fabs(mu)>1.0) mu=(mu>0.0) ? 1.0 : -1.0;
      
-     vParallel=speed*mu-vAlfven;
-     vNormal=speed*sqrt(1.0-mu*mu);   
+     vParallel=speed*mu-vAlfven+DvP;
+     vNormal=speed*sqrt(1.0-mu*mu)+DvN;   
+     
+     t2=vNormal*vNormal+vParallel*vParallel;
    };
 
 
@@ -493,7 +525,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
    
-   if (vNormal*vNormal+vParallel*vParallel>1000.0*vAlfven) {
+   if (vNormal*vNormal+vParallel*vParallel>10000.0*vAlfven*vAlfven) {
      //fast particle 
      FastParticleFlag=true;
    }
@@ -626,7 +658,12 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      }
      break;
    case CollisionIntegral_TwoWavesDiffusion:
-     UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
+     if (FastParticleFlag==false) {
+       UpdateVelocity(vNormal,vParallel,MovingTime);
+     }
+     else {
+       UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
+     }
      break;
    default:
      exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
