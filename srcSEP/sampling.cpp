@@ -8,7 +8,7 @@ array_4d<double>  SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable;
 array_3d<double>  SEP::Sampling::PitchAngle::PitchAngleRSamplingTable;
 array_5d<double>  SEP::Sampling::PitchAngle::DmumuSamplingTable;
 
-double SEP::Sampling::PitchAngle::emin=0.1*MeV2J;
+double SEP::Sampling::PitchAngle::emin=0.01*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
 int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=10;
 double SEP::Sampling::PitchAngle::dLogE; 
