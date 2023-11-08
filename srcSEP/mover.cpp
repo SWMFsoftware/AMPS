@@ -4,6 +4,8 @@
  *  Created on: May 16, 2020
  *      Author: vtenishe
  */
+#include <algorithm>
+#include <math.h>
 
 #include "sep.h"
 #include "amps2swmf.h"
@@ -219,8 +221,12 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    
    
-   auto GetMu = [&] (double& muPlus, double& muMinus,double vNormal,double vParallel) {
+   auto GetMu1 = [&] (double& muPlus, double& muMinus,double speed,double mu) {
      double t; 
+     double vNormal,vParallel;
+     
+     vParallel=speed*mu;
+     vNormal=speed*sqrt(1.0-mu*mu);
 
      t=vParallel-vAlfven;
      muPlus=t/sqrt(t*t+vNormal*vNormal);
@@ -229,195 +235,329 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      muMinus=t/sqrt(t*t+vNormal*vNormal);
    }; 
    
-   auto GetD_mu_mu = [&] (double& D_mu_mu_Plus, double& D_mu_mu_Minus,double vNormal,double vParallel) {
-     double speed=sqrt(vNormal*vNormal+vParallel*vParallel);  
-     double mu=vParallel/speed,muPlus,muMinus;
-     double LambdaPlus,LambdaMinus,t;
+   auto GetD_mu_mu1 = [&] (double& D_mu_mu_Plus, double& D_mu_mu_Minus, double speed, double mu) {
+       double muPlus, muMinus;
+       double LambdaPlus, LambdaMinus;
 
-     GetLambda(LambdaPlus,LambdaMinus,vNormal);
-     GetMu(muPlus,muMinus,vNormal,vParallel);
+       GetLambda(LambdaPlus, LambdaMinus, speed * sqrt(1.0-mu*mu));
+       GetMu1(muPlus, muMinus, speed, mu);
 
-     D_mu_mu_Plus=speed*(1-muPlus*muPlus)*pow(fabs(muPlus),2.0/3.0)/LambdaPlus;     
-     D_mu_mu_Minus=speed*(1-muMinus*muMinus)*pow(fabs(muMinus),2.0/3.0)/LambdaMinus; 
+       D_mu_mu_Plus = speed * (1 - muPlus * muPlus) * pow(fabs(muPlus), 2.0 / 3.0) / LambdaPlus;
+       D_mu_mu_Minus = speed * (1 - muMinus * muMinus) * pow(fabs(muMinus), 2.0 / 3.0) / LambdaMinus;
    };
 
-   auto Get_dD_mu_mu_dmu = [&] (double&dD_mu_mu_dmu_Plus,double& dD_mu_mu_dmu_Minus,double vNormal,double vParallel) {
-     double dmu,speed,vp,vn,mu_min,mu_max,D_mu_mu_Plus,D_mu_mu_Minus,muPlus,muMinus,p0,m0,p1,m1; 
 
-     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-     
-     GetMu(muPlus,muMinus,vNormal,vParallel);
-     
-     
-     //process muPlus
-     dmu=muLimit/2.0;
-     
-     if (fabs(muPlus)<dmu) {
-       dD_mu_mu_dmu_Plus=0.0,dD_mu_mu_dmu_Minus=0.0; 
-       return;
-     }
+   auto Get_dD_mu_mu_dmu1 = [&] (double& dD_mu_mu_dmu_Plus, double& dD_mu_mu_dmu_Minus, double speed, double mu) {
+       double dmu, mu_min, mu_max, D_mu_mu_Plus, D_mu_mu_Minus, muPlus, muMinus, p0, m0, p1, m1;
 
-     mu_min=muPlus-dmu;
-     if (mu_min<-1.0+muLimit) mu_min=-1.0+muLimit;
-     
-     mu_max=muPlus+dmu;
-     if (mu_max>1.0-muLimit) mu_max=1.0-muLimit;
-     
-     dmu=mu_max-mu_min;
-     
-     vp=speed*mu_max;
-     vn=speed*sqrt(1.0-mu_max*mu_max);
-     GetD_mu_mu(p1,m1,vn,vp);
-     
-     //calculate dD_mu_mu_dmu_Plus=
-     vp=speed*mu_min;
-     vn=speed*sqrt(1.0-mu_min*mu_min);
-     GetD_mu_mu(p0,m0,vn,vp);
-     dD_mu_mu_dmu_Plus=(p1-p0)/dmu;
-     
-     
-     //process muMinus
-     dmu=muLimit/2.0;
+       // No need to recalculate speed from vNormal and vParallel
 
-     mu_min=muMinus-dmu;
-     if (mu_min<-1.0+muLimit) mu_min=-1.0+muLimit;
+       GetMu1(muPlus, muMinus, speed, mu); // Adjusted to use speed and mu
 
-     mu_max=muMinus+dmu;
-     if (mu_max>1.0-muLimit) mu_max=1.0-muLimit;
+       // process muPlus
+       dmu = muLimit / 2.0;
 
-     dmu=mu_max-mu_min;
-     
-     //calculate dD_mu_mu_dmu_Minus
-     vp=speed*mu_max;
-     vn=speed*sqrt(1.0-mu_max*mu_max);
-     GetD_mu_mu(p1,m1,vn,vp);
-          
-     //calculate D_mu_mu(mu_min);
-     vp=speed*mu_min;
-     vn=speed*sqrt(1.0-mu_min*mu_min);
-     GetD_mu_mu(p0,m0,vn,vp);
+       if (fabs(muPlus) < dmu) {
+           dD_mu_mu_dmu_Plus = 0.0, dD_mu_mu_dmu_Minus = 0.0;
+           return;
+       }
 
-     //calcualte the derivarive
-     dD_mu_mu_dmu_Minus=(m1-m0)/dmu;
+       mu_min = muPlus - dmu;
+       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+       mu_max = muPlus + dmu;
+       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+      
+       if (mu_max<mu_min) {
+         double t=mu_min;
+         mu_min=mu_max;
+         mu_max=t;
+       }
+       else if (mu_max==mu_min) {
+         mu_max+=muLimit/10;
+         mu_min-=muLimit/10;
+       }
+       
+       dmu = mu_max - mu_min;
+
+       GetD_mu_mu1(p1, m1, speed,mu_max); // Adjusted to use speed and mu_max
+
+       // calculate dD_mu_mu_dmu_Plus=
+       GetD_mu_mu1(p0, m0, speed, mu_min); // Adjusted to use speed and mu_min
+       dD_mu_mu_dmu_Plus = (p1 - p0) / dmu;
+
+       // process muMinus
+       // The process is the same as for muPlus, just repeated for muMinus
+
+       dmu = muLimit / 2.0;
+       mu_min = muMinus - dmu;
+       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+       mu_max = muMinus + dmu;
+       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+
+       if (mu_max<mu_min) {
+         double t=mu_min;
+         mu_min=mu_max;
+         mu_max=t;
+       }
+       else if (mu_max==mu_min) {
+         mu_max+=muLimit/10;
+         mu_min-=muLimit/10;
+       }
+       
+       dmu = mu_max - mu_min;
+
+       // calculate dD_mu_mu_dmu_Minus
+       GetD_mu_mu1(p1, m1, speed, mu_max); // Adjusted to use speed and mu_max
+
+       // calculate D_mu_mu(mu_min);
+       GetD_mu_mu1(p0, m0, speed, mu_min); // Adjusted to use speed and mu_min
+
+       // calculate the derivative
+       dD_mu_mu_dmu_Minus = (m1 - m0) / dmu;
    };
 
-   auto GetMomentum = [&] (double& pPlus, double& pMinus,double vNormal,double vParallel) {
-     double t,mass=PIC::MolecularData::GetMass(spec); 
 
+   auto GetMomentum1 = [&] (double& pPlus, double& pMinus, double speed, double mu) {
+       double t, mass = PIC::MolecularData::GetMass(spec);
 
-     t=vParallel-vAlfven; 
-     pPlus=mass*sqrt(t*t+vNormal*vNormal); 
+       // Define vParallel and vNormal in terms of speed and mu
+       double vNormal = speed * mu;
+       double vParallel = speed * sqrt(1.0 - mu * mu);
 
-     t=vParallel+vAlfven;
-     pMinus=mass*sqrt(t*t+vNormal*vNormal);
+       t = vParallel - vAlfven; 
+       pPlus = mass * sqrt(t * t + vNormal * vNormal); 
+
+       t = vParallel + vAlfven;
+       pMinus = mass * sqrt(t * t + vNormal * vNormal);
    };
+
    
    auto GetVelocity = [&] (double& vParallelPlus, double& vParallelMinus,double vParallel) {
      vParallelPlus=vParallel-vAlfven; 
      vParallelMinus=vParallel+vAlfven;
    };
 
-   auto GetDeltaMu = [&] (double& dmu_plus,double& dmu_minus,double vNormal,double vParallel,double dt) {
-     double D_mu_mu_Plus,D_mu_mu_Minus;
-     double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+   auto GetDeltaMu1 = [&] (double& dmu_plus, double& dmu_minus, double speed, double mu, double dt) {
+       double D_mu_mu_Plus, D_mu_mu_Minus;
+       double dD_mu_mu_dmu_Plus, dD_mu_mu_dmu_Minus;
 
-     GetD_mu_mu(D_mu_mu_Plus,D_mu_mu_Minus,vNormal,vParallel);
-     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+       // Now calling the functions with 'speed' and 'mu' after refactoring them to accept these parameters
+       GetD_mu_mu1(D_mu_mu_Plus, D_mu_mu_Minus, speed, mu);
+       Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus, dD_mu_mu_dmu_Minus, speed, mu);
 
-     dmu_plus=dD_mu_mu_dmu_Plus*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu_Plus*dt*log(rnd()));  
-     dmu_minus=dD_mu_mu_dmu_Minus*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu_Minus*dt*log(rnd()));
+       // The rest of the calculation remains unchanged as it does not depend on vNormal or vParallel directly
+       dmu_plus = dD_mu_mu_dmu_Plus * dt + 2.0 * cos(PiTimes2 * rnd()) * sqrt(-D_mu_mu_Plus * dt * log(rnd()));  
+       dmu_minus = dD_mu_mu_dmu_Minus * dt + 2.0 * cos(PiTimes2 * rnd()) * sqrt(-D_mu_mu_Minus * dt * log(rnd()));
    };
+
 
 
    
-   auto GetD_SA = [&] (double vNormal,double vParallel) {
-     double speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-     double mu=vParallel/speed; 
-     double c=speed*(1.0-mu*mu)*pow(fabs(mu),2.0/3.0);
-     double Lambda[2];
-     double D_mu_mu[2];
+   auto GetD_SA1 = [&] (double speed, double mu) {
+       // 'c' calculation remains the same
+       double c = speed * (1.0 - mu * mu) * pow(fabs(mu), 2.0 / 3.0);
+       double Lambda[2];
+       double D_mu_mu[2];
 
-     GetLambda(Lambda[0],Lambda[1],vNormal); 
+       // Recalculate vNormal based on the new parameters
+       double vNormal = speed * sqrt(1.0 - mu * mu);
 
-     for (int i=0;i<2;i++) D_mu_mu[i]=c/Lambda[i];  
+       // GetLambda can now be called with vNormal which is derived from speed and mu
+       GetLambda(Lambda[0], Lambda[1], vNormal); 
 
-     double t=PIC::MolecularData::GetMass(spec)*vAlfven; 
+       // Calculate D_mu_mu using the newly calculated vNormal
+       for (int i = 0; i < 2; i++) {
+           D_mu_mu[i] = c / Lambda[i];
+       }
 
-     return t*t*4.0*D_mu_mu[0]*D_mu_mu[1]/(D_mu_mu[0]+D_mu_mu[1]);
+       // The calculation involving t assumes vAlfven and spec mass are available in the scope
+       double t = PIC::MolecularData::GetMass(spec) * vAlfven; 
+
+       // The return statement remains the same as the original lambda function
+       return t * t * 4.0 * D_mu_mu[0] * D_mu_mu[1] / (D_mu_mu[0] + D_mu_mu[1]);
    };
+
    
-   auto Get_dD_SA_dp = [&] (double vNormal,double vParallel) {
-     double dv,vp,vn,speed,D_SA_Plus,D_SA_Minus,dp,p,mass=PIC::MolecularData::GetMass(spec); 
-     
-     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-     dv=0.01*speed;
-     dp=dv*mass;
-     
-     //Get D_SA_Plus
-     vp=vParallel*(1.0+dv),vn=vNormal*(1.0+dv);
-     D_SA_Plus=GetD_SA(vn,vp);
-     
-     
-     //Get D_SA_Minus
-     vp=vParallel*(1.0-dv),vn=vNormal*(1.0-dv);
-     if (vn<0.0) vn*=-1.0;
-     
-     D_SA_Minus=GetD_SA(vn,vp);
-     
-     return (D_SA_Plus-D_SA_Minus)/(2.0*dp);
+   auto Get_dD_SA_dp1 = [&] (double speed, double mu) {
+       double dv, D_SA_Plus, D_SA_Minus, dp, mass = PIC::MolecularData::GetMass(spec); 
+       
+       // dv is a small change relative to speed
+       dv = 0.01 * speed;
+       dp = dv * mass; // dp is the change in momentum
+       
+       // Perturb speed for D_SA_Plus
+       double speedPlus = speed * (1.0 + dv);
+       D_SA_Plus = GetD_SA1(speedPlus, mu); // GetD_SA is now refactored to accept speed and mu
+       
+       // Perturb speed for D_SA_Minus
+       double speedMinus = speed * (1.0 - dv);
+       D_SA_Minus = GetD_SA1(speedMinus, mu); // GetD_SA is now refactored to accept speed and mu
+       
+       return (D_SA_Plus - D_SA_Minus) / (2.0 * dp);
    };
 
 
-   auto UpdateVelocity = [&] (double& vNormal,double& vParallel,double dt) {
-     double mass=PIC::MolecularData::GetMass(spec);  
-     double dp,dpNormal,dpParallel,pParallel,pNormal;
-     double muPlus,muMinus,dmu_plus,dmu_minus,pPlus,pMinus;
-     double vp,p,speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+   std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
+   
+   UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {
+       double mass=PIC::MolecularData::GetMass(spec);  
+       double dp,dpNormal,dpParallel,pParallel,pNormal;
+       double muPlus,muMinus,dmu_plus,dmu_minus,pPlus,pMinus;
+       double vp,p,dSpeed,dMu;
+        
+       GetMu1(muPlus,muMinus,speed,mu);
+       GetDeltaMu1(dmu_plus,dmu_minus,speed,mu,dt); 
+       
+       
+       GetMomentum1(pPlus,pMinus,speed,mu);
+       p=speed*mass;
+       
+       dSpeed=vAlfven/p*(pPlus*dmu_plus-pMinus*dmu_minus);
+       dMu=(pPlus*(1.0-mu*mass*vAlfven/p)*dmu_plus+pMinus*(1.0+mu*mass*vAlfven/p)*dmu_minus);
+       
+//       ///+
+//       double vn,vp,Mu,newSpeed;
+//       
+//       vp=speed*mu-vAlfven;
+//       vn=speed*sqrt(1.0-mu*mu);
+//       newSpeed=sqrt(vp*vp+vn*vn);
+//       Mu=vp/newSpeed;
+//       Mu+=dmu_plus;
+//       vp=newSpeed*Mu+vAlfven;
+//       vm=newSpeed*sqrt(1.0-Mu*Mu);
+//       dSpeed=sqrt(vp*vp-vm*vm)-speed;
+//       
+//       vp=speed*mu+vAlfven;
+//       vn=speed*sqrt(1.0-mu*mu);
+//       newSpeed=sqrt(vp*vp+vn*vn);
+//       Mu=vp/newSpeed;
+//       Mu+=dmu_minus;
+//       vp=newSpeed*Mu-vAlfven;
+//       vm=newSpeed*sqrt(1.0-Mu*Mu);
+//       dSpeed+=sqrt(vp*vp-vm*vm)-speed;     
+       
+       
+      double vNewParallel,vNewNormal,MuNewPlus,MuNewMinus;
       
-     GetMu(muPlus,muMinus,vNormal,vParallel);
-     GetDeltaMu(dmu_plus,dmu_minus,vNormal,vParallel,dt); 
+      static int cnt=0;
+      bool repeat_flag=false;
+      
+      MuNewPlus=muPlus+dmu_plus;
+      MuNewMinus=muMinus+dmu_minus;
+      
+      if ((isfinite(MuNewPlus)==false)||(isfinite(MuNewMinus)==false)) {
+        //call the functions in the debugger to see what is going on
+        GetMu1(muPlus,muMinus,speed,mu);
+        GetDeltaMu1(dmu_plus,dmu_minus,speed,mu,dt); 
+        
+        
+        GetMomentum1(pPlus,pMinus,speed,mu);
+        p=speed*mass;
+        
+        dSpeed=vAlfven/p*(pPlus*dmu_plus-pMinus*dmu_minus);
+        dMu=(pPlus*(1.0-mu*mass*vAlfven/p)*dmu_plus+pMinus*(1.0+mu*mass*vAlfven/p)*dmu_minus);
+        
+      }
+      
+      if (MuNewPlus>1.0) {        
+        if (cnt<5) repeat_flag=true;
+        MuNewPlus=1.0-muLimit;
+      }
+      
+      if (MuNewPlus<-1.0) {     
+        if (cnt<5) repeat_flag=true;
+        MuNewPlus=-1.0+muLimit;
+      }
+      
+      if (MuNewMinus>1.0) {      
+        if (cnt<5) repeat_flag=true;
+        MuNewMinus=1.0-muLimit;
+      }
+      
+      if (MuNewMinus<-1.0) {        
+        if (cnt<5) repeat_flag=true;
+        MuNewMinus=-1.0+muLimit;
+      }
+      
+      if (repeat_flag==false) {
+        vNewParallel=(pPlus*MuNewPlus+pMinus*MuNewMinus)/mass;
+        vNewNormal=(pPlus*sqrt(1.0-MuNewPlus*MuNewPlus)+pMinus*sqrt(1.0-MuNewMinus*MuNewMinus))/mass;
      
-     double t0,t1,t2;
-     double DvP,DvN;
-     
-     t0=vNormal*vNormal+vParallel*vParallel;
-     
-     //scatering with muPlus 
-     vp=vParallel-vAlfven;
-     speed=sqrt(vp*vp+vNormal*vNormal);
-     mu=vp/speed;
-     mu+=dmu_plus;
-          
-     if (mu>1.0-muLimit) mu=1.0-muLimit;
-     if (mu<-1.0+muLimit) mu=-1.0+muLimit;
-     
-     DvP=speed*mu+vAlfven-vParallel;
-     DvN=speed*sqrt(1.0-mu*mu)-vNormal;
-     
-     t1=vNormal*vNormal+vParallel*vParallel;
-     
-     //scatering with muMinus 
-     vp=vParallel+vAlfven;
-     speed=sqrt(vp*vp+vNormal*vNormal);
-     mu=vp/speed;
-     mu+=dmu_minus;
-     
-     if (fabs(mu)>1.0) mu=(mu>0.0) ? 1.0 : -1.0;
-     
-     vParallel=speed*mu-vAlfven+DvP;
-     vNormal=speed*sqrt(1.0-mu*mu)+DvN;   
-     
-     t2=vNormal*vNormal+vParallel*vParallel;
-   };
+        if ((isfinite(vNewParallel)==false)||(isfinite(vNewNormal)==false)) {
+          exit(__LINE__,__FILE__,"Error: NaN found");
+        }
+      
+        dSpeed=sqrt(vNewParallel*vNewParallel+vNewNormal*vNewNormal)-speed;
+      
+        speed=sqrt(vNewParallel*vNewParallel+vNewNormal*vNewNormal);
+        mu=vNewParallel/speed;
+       
+       speed+=dSpeed;
+       mu+=dMu;
+       
+       if (speed<0.0) speed*=-1;
+       if (mu>1.0-muLimit) mu=1.0-muLimit;
+       if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+       
+      } 
+      else {
+        cnt++;
+        UpdateVelocity1(speed,mu,dt/2.0);
+        UpdateVelocity1(speed,mu,dt/2.0);
+        cnt--;
+      }
+       
+    //   mu = std::clamp(mu, -1.0 + muLimit, 1.0 - muLimit);
+       
+       if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
+       if (mu>1.0 - muLimit) mu=1.0 - muLimit;
+       
+
+/*       
+       double t0,t1,t2;
+       double DvP,DvN;
+       
+       t0=vNormal*vNormal+vParallel*vParallel;
+       
+       //scatering with muPlus 
+       vp=vParallel-vAlfven;
+       speed=sqrt(vp*vp+vNormal*vNormal);
+       mu=vp/speed;
+       mu+=dmu_plus;
+            
+       if (mu>1.0-muLimit) mu=1.0-muLimit;
+       if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+       
+       DvP=speed*mu+vAlfven-vParallel;
+       DvN=speed*sqrt(1.0-mu*mu)-vNormal;
+       
+       t1=vNormal*vNormal+vParallel*vParallel;
+       
+       //scatering with muMinus 
+       vp=vParallel+vAlfven;
+       speed=sqrt(vp*vp+vNormal*vNormal);
+       mu=vp/speed;v
+       mu+=dmu_minus;
+       
+       if (fabs(mu)>1.0) mu=(mu>0.0) ? 1.0 : -1.0;
+       
+       vParallel=speed*mu-vAlfven+DvP;
+       vNormal=speed*sqrt(1.0-mu*mu)+DvN;   
+       
+       t2=vNormal*vNormal+vParallel*vParallel;
+       */
+     };
 
 
-   auto ScatteringModel = [&] (double NuPlus, double NuMinus) {
+   auto ScatteringModel1 = [&] (double NuPlus, double NuMinus,double speed,double mu) {
      if (rnd()<NuPlus/(NuPlus+NuMinus)) {
        //scattering with (+) mode
+       double vParallel=speed*mu;
+       double vNormal=speed*sqrt(1.0-mu*mu);
        double v=vParallel-vAlfven;
-       double speed,muScattered=rnd();
-
-       speed=sqrt(vNormal*vNormal+v*v);
+       double muScattered=rnd();
 
        if (speed<0.1*SpeedOfLight) { 
          vNormal=speed*sqrt(1.0-muScattered*muScattered);
@@ -447,9 +587,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      else {
        //scattering with (-) mode
        double v=vParallel+vAlfven;
-       double speed,muScattered=rnd();
+       double muScattered=rnd();
 
-       speed=sqrt(vNormal*vNormal+v*v);
+       //speed=sqrt(vNormal*vNormal+v*v);
 
        if (speed<0.1*SpeedOfLight) {  
          vNormal=speed*sqrt(1.0-muScattered*muScattered);
@@ -476,24 +616,24 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
          vNormal=vpSW[1];
        }
      }
+     
+     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+     mu=vParallel/speed;
    };
 
-   auto UpdateVelocityFastParticle = [&] (double vNormal,double vParallel,double dt) {
-     double mass,speed,mu,dD_SA_dp,D_SA,D_mu_mu,dD_mu_mu_dmu,D_mu_mu_Plus,D_mu_mu_Minus;
+   auto UpdateVelocityFastParticle1 = [&] (double& speed,double& mu,double dt) {
+     double mass,dD_SA_dp,D_SA,D_mu_mu,dD_mu_mu_dmu,D_mu_mu_Plus,D_mu_mu_Minus;
      double p,dmu,dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
      
      mass=PIC::MolecularData::GetMass(spec); 
      
      //Increment pitch angle
-     GetD_mu_mu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     GetD_mu_mu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
      D_mu_mu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
      
-     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
      dD_mu_mu_dmu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
-     
-     speed=sqrt(vNormal*vNormal+vParallel*vParallel);
-     mu=vParallel/speed;
-          
+               
      dmu=dD_mu_mu_dmu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu*dt*log(rnd()));
      
      if (fabs(dmu)>1.0) mu=-1.0+2.0*rnd();
@@ -501,19 +641,19 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        mu+=dmu;
      }
      
-     if (mu<-1.0+muLimit) mu=-1.0+muLimit;
-     if (mu>1.0-muLimit) mu=1.0-muLimit;
+  //   mu = clamp(mu, -1.0 + muLimit, 1.0 - muLimit);
+     
+     if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
+     if (mu>1.0 - muLimit) mu=1.0 - muLimit;
          
      //increment momentum
-     dD_SA_dp=Get_dD_SA_dp(vNormal,vParallel);
-     D_SA=GetD_SA(vNormal,vParallel);
+     dD_SA_dp=Get_dD_SA_dp1(speed,mu);
+     D_SA=GetD_SA1(speed,mu);
      
      p=mass*speed;
      p+=-(dD_SA_dp+2.0*D_SA/p)*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_SA*dt*log(rnd()));
      
      speed=p/mass;
-     vParallel=speed*mu;
-     vNormal=sqrt(1.0-mu*mu);
    };
 
 
@@ -525,6 +665,11 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
    
+   
+   double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+   mu=vParallel/speed;
+   
+   
    if (vNormal*vNormal+vParallel*vParallel>10000.0*vAlfven*vAlfven) {
      //fast particle 
      FastParticleFlag=true;
@@ -533,13 +678,13 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      FastParticleFlag=false;
 
 
-     Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+     Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
 
      if (fabs(dD_mu_mu_dmu_Plus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Plus);
      if (fabs(dD_mu_mu_dmu_Minus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Minus);
 
      if ((std::isfinite(dD_mu_mu_dmu_Plus)==false)||(std::isfinite(dD_mu_mu_dmu_Minus))==false) {
-       Get_dD_mu_mu_dmu(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,vNormal,vParallel);
+       Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
        exit(__LINE__,__FILE__,"Error: NAN is found");
      }
    }
@@ -551,6 +696,8 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    int CollisionIntegralMode=CollisionIntegral_TwoWavesDiffusion;
    
+   
+
 
   while (time_counter<dtTotal) { 
    loop_cnt++;
@@ -558,16 +705,15 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    if (Interpolate()==false) break;
 
 
-   
 
 
       
     
    if (CollisionIntegralMode==CollisionIntegral_TwoWavesScattering) {      
-     GetLambda(LambdaPlus,LambdaMinus,vNormal);
+     GetLambda(LambdaPlus,LambdaMinus,speed*sqrt(1.0-mu*mu));
      
-     NuPlus=fabs(vParallel)/LambdaPlus; 
-     NuMinus=fabs(vParallel)/LambdaMinus; 
+     NuPlus=fabs(speed*mu)/LambdaPlus; 
+     NuMinus=fabs(speed*mu)/LambdaMinus; 
    }
         
    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
@@ -616,7 +762,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    }
    
    //determine the new particle pitch angle and location
-   double L,AbsBDeriv,speed;
+   double L,AbsBDeriv;
 
    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
      pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
@@ -624,8 +770,8 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    L=-Vector3D::Length(B)/AbsBDeriv;
 
    
-   speed=sqrt(vParallel*vParallel+vNormal*vNormal);
-   mu=vParallel/speed;
+//   speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+ //  mu=vParallel/speed;
 
    
    mu+=(1.0-mu*mu)/(2.0*L)*MovingTime;
@@ -633,36 +779,52 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    if (mu<-1.0+muLimit) mu=-1.0+muLimit;
    if (mu>1.0-muLimit) mu=1.0-muLimit;
 
-   vParallel=speed*mu;
-   vNormal=speed*sqrt(1.0-mu*mu);
+//   vParallel=speed*mu;
+//   vNormal=speed*sqrt(1.0-mu*mu);
   
    
    //update the particle location
-   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*vParallel);
+   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
 
    //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
    if (LimitScatteringUpcomingWave==true) {
-     if (vParallel>=0.0) NuPlus=0.0;
+     if (mu>=0.0) NuPlus=0.0;
      else NuMinus=0.0;
    }  
    
+   
+   if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+     exit(__LINE__,__FILE__,"Error: NaN found");
+   }
    
    //model scattering
    switch (CollisionIntegralMode) {
    case CollisionIntegral_TwoWavesScattering:
      if (FastParticleFlag==false) { 
-       ScatteringModel(NuPlus,NuMinus);
+       ScatteringModel1(NuPlus,NuMinus,speed,mu);
+       
+       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+         exit(__LINE__,__FILE__,"Error: NaN found");
+       }
      }
      else {
-       UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
+       UpdateVelocityFastParticle1(speed,mu,MovingTime);
      }
      break;
    case CollisionIntegral_TwoWavesDiffusion:
      if (FastParticleFlag==false) {
-       UpdateVelocity(vNormal,vParallel,MovingTime);
+       UpdateVelocity1(speed,mu,MovingTime);
+       
+       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+         exit(__LINE__,__FILE__,"Error: NaN found");
+       }
      }
      else {
-       UpdateVelocityFastParticle(vNormal,vParallel,MovingTime);
+       UpdateVelocityFastParticle1(speed,mu,MovingTime);
+       
+       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+         exit(__LINE__,__FILE__,"Error: NaN found");
+       }
      }
      break;
    default:
@@ -688,6 +850,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
     }
   }
 
+
+  vParallel=speed*mu;
+  vNormal=speed*sqrt(1.0-mu*mu);
 
   //set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel,ParticleData);
