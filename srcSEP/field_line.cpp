@@ -13,7 +13,14 @@ double SEP::FieldLine::InjectionParameters::ConstEnergyInjectionValue=0.0;
 double SEP::FieldLine::InjectionParameters::ConstSpeedInjectionValue=0.0;
 double SEP::FieldLine::InjectionParameters::ConstMuInjectionValue=0.5;
 
-int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectInputFileAMPS;
+#if _SEP_FIELD_LINE_INJECTION_ == _SEP_FIELD_LINE_INJECTION__SHOCK_
+int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectShockLocations;
+#else 
+int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::InjectionParameters::_InjectBegginingFL;
+#endif
+
+
+
 int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
 
 
@@ -42,6 +49,25 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
    
   return nInjectedParticles;
 }
+
+long int InjectSolarWindIons(int spec,int iFieldLine) {
+  namespace FL = PIC::FieldLine;
+
+  double InjectionArea,n_sw,t_sw,v_sw[3];
+  auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
+  FL::cFieldLineVertex* FirstVertex=Segment->GetBegin();
+
+  //determine the parameters of of the solar wind at the beginning of the field line  
+  FirstVertex->GetDatum(FL::DatumAtVertexPlasmaTemperature,&t_sw);
+  FirstVertex->GetDatum(FL::DatumAtVertexPlasmaDensity,&n_sw);
+  FirstVertex->GetPlasmaVelocity(v_sw);
+  
+  InjectionArea=Pi*pow(SEP::FieldLine::MagneticTubeRadius(FirstVertex->GetX(),iFieldLine),2); 
+
+  //inject model partiles 
+  return PIC::FieldLine::InjectMaxwellianLineBeginning(spec,n_sw,t_sw,v_sw,InjectionArea,iFieldLine,200);
+}
+
 
 long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine) {
   namespace FL = PIC::FieldLine;
@@ -82,24 +108,18 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     }
   }
 
-
   //determine the radiaus of the magnetic tube at the middle of the magnetic tube
   FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iShockFieldLine); 
 
   if (Segment==NULL) return 0;
  
   //determine the volume swept by the shock wave during the time step 
-  double xBegin[3],xEnd[3],xMiddle[3],rMiddle,rMiddleTube,xFirstFieldLine[3];
+  double xBegin[3],xEnd[3],xMiddle[3],rMiddle,xFirstFieldLine[3];
 
   Segment->GetBegin()->GetX(xBegin);
   Segment->GetEnd()->GetX(xEnd);
 
   for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]);
-
-  rMiddle=Vector3D::Length(xMiddle);
-
-  FL::FieldLinesAll[iFieldLine].GetSegment(0)->GetBegin()->GetX(xFirstFieldLine);  
-  rMiddleTube=pow(rMiddle/Vector3D::Length(xFirstFieldLine),2); 
 
   //velocity of the shock wave
   double vol;
@@ -107,15 +127,15 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
   if (AMPS2SWMF::ShockData[iFieldLine].ShockSpeed>AMPS2SWMF::MinShockSpeed) {
-    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*rMiddleTube;
+    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::ShockData[iFieldLine].ShockSpeed*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   }
   else {
     if (AMPS2SWMF::MinShockSpeed==0.0) exit(__LINE__,__FILE__,"Error: AMPS2SWMF::MinShockSpeed is not set");
 
-    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*rMiddleTube;
+    vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   }
   #else 
-  vol=node->block->GetLocalTimeStep(spec)*rMiddleTube;
+    vol=node->block->GetLocalTimeStep(spec)*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   #endif
 
 
@@ -263,12 +283,18 @@ long int SEP::FieldLine::InjectParticles() {
   long int res=0;
 
   for (int spec=0;spec<PIC::nTotalSpecies;spec++) for (int iFieldLine=0;iFieldLine<PIC::FieldLine::nFieldLine;iFieldLine++) {
-    switch (_SEP_FIELD_LINE_INJECTION_) {
-    case _SEP_FIELD_LINE_INJECTION__SHOCK_:
+    switch (SEP::FieldLine::InjectionParameters::InjectLocation) {
+    case SEP::FieldLine::InjectionParameters::_InjectShockLocations:
       res+=InjectParticlesSingleFieldLine(spec,iFieldLine);
       break;
-    case _SEP_FIELD_LINE_INJECTION__BEGINNIG_:
-      res+=InjectParticleFieldLineBeginning(spec,iFieldLine);
+    
+    case SEP::FieldLine::InjectionParameters::_InjectBegginingFL: 
+      if (InjectionParameters::InjectionMomentumModel==SEP::FieldLine::InjectionParameters::_background_sw_temperature) {
+        res+=InjectSolarWindIons(spec,iFieldLine);
+      }
+      else {
+        res+=InjectParticleFieldLineBeginning(spec,iFieldLine);
+      }
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is unknown");
