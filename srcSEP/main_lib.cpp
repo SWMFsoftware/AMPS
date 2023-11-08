@@ -569,12 +569,19 @@ void amps_time_step(){
     } 
     #endif
 
+
+    //prepopulate the magnetic filed lines with particles if needed  
+    if ((AMPS2SWMF::MagneticFieldLineUpdate::FirstCouplingFlag==true)&&(AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag==true)) { 
+      AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
+      SEP::ParticleSource::PopulateAllFieldLines();
+    }
+
 start:
 
     //make the time advance
      PIC::TimeStep();
 
-     PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
+//     PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
 
 
      // write output file
