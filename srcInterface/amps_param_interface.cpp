@@ -546,6 +546,15 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_const_speed;
       #endif
     }
+
+    else if (Command == "#SEP_INJECTION_TYPE_BACKGROUND_SW") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_background_sw_temperature;
+      #endif
+    }
+
     
     else if (Command == "#SEP_SAMPLING_LOCATION_FL") {
       double r;
