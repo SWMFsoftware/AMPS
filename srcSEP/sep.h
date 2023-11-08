@@ -222,12 +222,18 @@ namespace SEP {
       const int _sokolov2004aj=1; 
       const int _const_energy=2;
       const int _const_speed=3;
+      const int _background_sw_temperature=4; 
     }
 
 
     long int InjectParticleFieldLineBeginning(int spec,int iFieldLine);    
     long int InjectParticlesSingleFieldLine(int spec,int iFieldLine);
     long int InjectParticles();
+
+    //calcualtion of the magnetic tube volume
+    double GetSegmentVolume(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine); 
+    double MagneticTubeRadius(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine);
+    double MagneticTubeRadius(double *x,int iFieldLine);
   }
 
   //the namespace contains the diffution models
@@ -879,6 +885,11 @@ double e_mev=e*J2MeV;
   }
 
   namespace ParticleSource {
+    //prepopolation of the field lines 
+    void PopulateAllFieldLines();
+    void PopulateFieldLine(int iFieldLine);
+
+
     namespace ShockWave {
       bool IsShock(PIC::Mesh::cDataCenterNode *CenterNode);
 
