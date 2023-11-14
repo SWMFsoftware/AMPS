@@ -22,6 +22,38 @@ double SEP::Diffusion::LimitSpecialMuPointsDistance=0.05;
 
 double SEP::Diffusion::ConstPitchAngleDiffusionValue=0;
 
+//========= Calculate matrix square root 
+void SEP::Diffusion::GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]) { 
+    // Assuming A is symmetric, so only A[0][0], A[1][1], and A[0][1] are needed
+    // Eigenvalues
+    double trace = A[0][0] + A[1][1];
+    double determinant = A[0][0]*A[1][1] - A[0][1]*A[0][1];
+    double eigenvalue1 = trace / 2 + sqrt(trace*trace / 4 - determinant);
+    double eigenvalue2 = trace / 2 - sqrt(trace*trace / 4 - determinant);
+
+    // Eigenvectors
+    double v1[2] = {A[0][1], eigenvalue1 - A[0][0]};
+    double v2[2] = {A[0][1], eigenvalue2 - A[0][0]};
+    double norm1 = sqrt(v1[0]*v1[0] + v1[1]*v1[1]);
+    double norm2 = sqrt(v2[0]*v2[0] + v2[1]*v2[1]);
+    v1[0] /= norm1; v1[1] /= norm1;
+    v2[0] /= norm2; v2[1] /= norm2;
+
+    // Compute P * sqrt(D) * P^-1
+    double sqrtD[2][2] = {{sqrt(eigenvalue1), 0}, {0, sqrt(eigenvalue2)}};
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            sqrtA[i][j] = 0;
+            for (int k = 0; k < 2; ++k) {
+                for (int l = 0; l < 2; ++l) {
+                    sqrtA[i][j] += v1[i] * (k == l ? sqrtD[k][l] : 0) * (l == 0 ? v1[j] : v2[j]);
+                }
+            }
+        }
+    }
+}
+
+
 //========= Constant pitch angle diffusion  =============================
 void SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
    D=0.0,dD_dmu=0.0;
