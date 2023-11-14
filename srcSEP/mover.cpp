@@ -388,11 +388,11 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        dp = dv * mass; // dp is the change in momentum
        
        // Perturb speed for D_SA_Plus
-       double speedPlus = speed * (1.0 + dv);
+       double speedPlus = speed + dv;
        D_SA_Plus = GetD_SA1(speedPlus, mu); // GetD_SA is now refactored to accept speed and mu
        
        // Perturb speed for D_SA_Minus
-       double speedMinus = speed * (1.0 - dv);
+       double speedMinus = speed - dv;
        D_SA_Minus = GetD_SA1(speedMinus, mu); // GetD_SA is now refactored to accept speed and mu
        
        return (D_SA_Plus - D_SA_Minus) / (2.0 * dp);
@@ -628,12 +628,17 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      mass=PIC::MolecularData::GetMass(spec); 
      
      //Increment pitch angle
+     //1. Determine D_mu_mu
+     //2. Determine dD_mu_mu_dmu
      GetD_mu_mu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
      D_mu_mu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
+     
+     
      
      Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
      dD_mu_mu_dmu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
                
+     //3. Determine dMu
      dmu=dD_mu_mu_dmu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu*dt*log(rnd()));
      
      if (fabs(dmu)>1.0) mu=-1.0+2.0*rnd();
