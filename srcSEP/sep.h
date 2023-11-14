@@ -244,6 +244,10 @@ namespace SEP {
     //the step in the mu-space used in the numerical differentiation 
     extern double muNumericalDifferentiationStep;
 
+    //calcualte square root of a matrix
+    void GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]);
+
+
     //avoid "special" points in the pitch angle diffusion coefficient 
     const int LimitSpecialMuPointsModeOff=0;
     const int LimitSpecialMuPointsModeOn=1;
