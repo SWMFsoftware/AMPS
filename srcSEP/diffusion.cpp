@@ -53,6 +53,63 @@ void SEP::Diffusion::GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]) {
     }
 }
 
+//========= calcualte partial derivatives ===============================
+double SEP::Diffusion::GetDdP(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec) {
+  double dv, f_Plus, f_Minus, dp, mass = PIC::MolecularData::GetMass(spec);
+
+  // dv is a small change relative to speed
+  dv = 0.01 * speed;
+  dp = dv * mass; // dp is the change in momentum
+
+  // Perturb speed for D_SA_Plus
+  double speedPlus = speed + dv;
+  f_Plus = f(speedPlus, mu); // GetD_SA is now refactored to accept speed and mu
+
+  // Perturb speed for D_SA_Minus
+  double speedMinus = speed - dv;
+  f_Minus = f(speedMinus, mu); // GetD_SA is now refactored to accept speed and mu
+
+  return (f_Plus - f_Minus) / (2.0 * dp);
+} 
+
+double SEP::Diffusion::GetDdMu(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec,double vAlfven) {
+  double dMu, mu_min, mu_max, f_Plus, f_Minus, muWaveFrame, p0, m0, p1, m1;
+
+//  MuWaveFrame=GetMu(speed, mu,vAlfven); // Adjusted to use speed and mu
+
+  // process muPlus
+  dMu = muLimit / 2.0;
+
+  if (fabs(muWaveFrame) < dMu) {
+     return 0.0;
+  }
+
+  mu_min = muWaveFrame - dMu;
+  if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+  mu_max = muWaveFrame + dMu;
+  if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+
+  if (mu_max<mu_min) {
+    double t=mu_min;
+
+    mu_min=mu_max;
+    mu_max=t;
+  }
+  else if (mu_max==mu_min) {
+    mu_max+=muLimit/10;
+    mu_min-=muLimit/10;
+  }
+
+  dMu = mu_max - mu_min;
+
+  f_Minus=f(speed,mu_min);
+  f_Plus=f(speed,mu_max); 
+
+  return (f_Plus-f_Minus)/dMu;
+} 
+
+
 
 //========= Constant pitch angle diffusion  =============================
 void SEP::Diffusion::Constant::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {

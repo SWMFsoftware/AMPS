@@ -109,8 +109,6 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   bool first_pass_flag=true;
   static long int loop_cnt=0;
   
-  const double muLimit=0.01;
-
    double *B0,*B1,B[3],r2;
    double *W0,*W1;
    double *x0,*x1;

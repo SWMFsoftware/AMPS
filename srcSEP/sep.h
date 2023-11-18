@@ -82,6 +82,9 @@
 #define _SEP_DIFFUSION_MODEL_  _DIFFUSION_NONE_
 #endif 
 
+//the limit of mu (closest mu ot the magnetic field line direction)
+const double muLimit=0.01;
+
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
 public:
@@ -246,6 +249,126 @@ namespace SEP {
 
     //calcualte square root of a matrix
     void GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]);
+
+    //calculate a partial derivative d/dp 
+    double GetDdP(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec);  
+
+    //calculate a particle derivative d/d_mu
+    double GetDdMu(std::function<double (double& speed,double& mu)> f,double speed,double mu,int spec,double vAlfven); 
+
+
+    //classes for claculation diffution coeffciients 
+    class cD_mu_mu {
+    public:
+      double speed,mu,L,max,W,Lmax,vAlfven,AbsB;  
+      int spec;
+
+     double GetLarmorR() {
+       return PIC::MolecularData::GetMass(spec)*speed*sqrt(1.0-mu*mu)/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+     } 
+
+
+     double GetLambda() {
+       double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
+       double vNormal=speed*sqrt(1.0-mu*mu);
+       double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+  
+       double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
+
+       TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
+       if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+       res=c1/TurbulenceLevel;
+       if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
+
+       return res;
+     }
+
+     double Get() {
+       return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
+     }
+
+
+     double GetPerturbSpeed(double dv) {
+       double res; 
+ 
+       speed+=dv;
+       res=Get();
+       speed-=dv;
+   
+       return res;
+     }
+
+     double GetPerturbMu(double Mu) {
+       double res,MuOrig=mu;
+
+       mu=Mu;
+       res=Get();
+       mu=MuOrig;
+
+       return res;
+     }
+
+
+     double GetDdP() {
+       double dv,dp,f_Plus,f_Minus;
+
+       // dv is a small change relative to speed
+       dv=0.01*speed;
+       dp=dv*PIC::MolecularData::GetMass(spec); // dp is the change in momentum
+
+       f_Plus = GetPerturbSpeed(dv);
+       f_Minus = GetPerturbSpeed(-dv); // GetD_SA is now refactored to accept speed and mu
+
+       return (f_Plus-f_Minus)/(2.0*dp);
+     }
+
+     double GetMuWaveFrame() {
+       double t;
+       double vNormal,vParallel;
+
+       vParallel=speed*mu;
+       vNormal=speed*sqrt(1.0-mu*mu);
+
+       t=vParallel-vAlfven;
+       return t/sqrt(t*t+vNormal*vNormal);
+     } 
+
+     double GetDpMu() {
+       double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
+
+       MuWaveFrame=GetMuWaveFrame(); 
+       if (fabs(MuWaveFrame) < dMu) {
+         return 0.0;
+       }
+
+       dMu = muLimit / 2.0;
+
+       mu_min = MuWaveFrame - dMu;
+       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+       mu_max = MuWaveFrame + dMu;
+       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+
+       if (mu_max<mu_min) {
+         double t=mu_min;
+
+         mu_min=mu_max;
+         mu_max=t;
+       }
+       else if (mu_max==mu_min) {
+         mu_max+=muLimit/10;
+         mu_min-=muLimit/10;
+       }
+
+       dMu=mu_max-mu_min;
+       f_Minus=GetPerturbMu(mu_min);
+       f_Plus=GetPerturbMu(mu_max);
+
+       return (f_Plus-f_Minus)/dMu;
+     }
+   };
+
 
 
     //avoid "special" points in the pitch angle diffusion coefficient 
