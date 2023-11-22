@@ -109,6 +109,7 @@ double SEP::Diffusion::GetDdMu(std::function<double (double& speed,double& mu)> 
   return (f_Plus-f_Minus)/dMu;
 } 
 
+//========= Model particle diffution in p-mu spaces =====================
 
 
 //========= Constant pitch angle diffusion  =============================

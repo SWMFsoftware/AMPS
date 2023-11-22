@@ -109,6 +109,114 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   bool first_pass_flag=true;
   static long int loop_cnt=0;
   
+  //declare the diffusion coefficient model
+ // class cD_mu_mu : public 
+  class cD_mu_mu_basic : public SEP::Diffusion::cDiffusionCoeffcient {
+  public:
+     double Lmax,*xLocation;
+     
+    double GetLambda() {
+      double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
+      double vNormal=speed*sqrt(1.0-mu*mu);
+      double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+ 
+      double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
+
+      TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
+      if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+      res=c1/TurbulenceLevel;
+      if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
+
+      return res;
+    }
+    
+    void Init() {
+      Lmax=0.03*Vector3D::Length(xLocation);
+    }
+
+    double GetDiffusionCoeffcient() {
+      return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
+    }
+  };
+  
+  class cD_SA : public SEP::Diffusion::cDiffusionCoeffcient {
+  public: 
+    cD_mu_mu_basic D_mu_mu_Minus,D_mu_mu_Plus;
+    
+    double GetDiffusionCoeffcient() {
+      double Dplus,Dminus;
+      
+      D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
+      D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+      
+      Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
+      Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
+      
+      double t=vAlfven*PIC::MolecularData::GetMass(spec);
+      
+      return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus); 
+    }
+    
+    void Init() {
+      D_mu_mu_Minus.Init();
+      D_mu_mu_Plus.Init();  
+    }
+    
+    void SetW(double *w) {
+      D_mu_mu_Minus.W=w[1];
+      D_mu_mu_Plus.W=w[0];
+    }
+    
+    void SetLocation(double *x) {
+      D_mu_mu_Minus.xLocation=x;
+      D_mu_mu_Plus.xLocation=x;
+    }
+    
+    void SetVelAlfven(double v) {
+      vAlfven=v;
+      D_mu_mu_Minus.vAlfven=-v;
+      D_mu_mu_Plus.vAlfven=v;
+    }
+    
+    void SetAbsB(double b) {
+      D_mu_mu_Minus.AbsB=b;
+      D_mu_mu_Plus.AbsB=b;
+    }
+    
+    void SetVelocity(double SpeedIn,double MuIn) {
+      speed=SpeedIn,mu=MuIn,InputMode=InputModeVelocity;
+      D_mu_mu_Minus.SetVelocity(SpeedIn,MuIn);
+      D_mu_mu_Plus.SetVelocity(SpeedIn,MuIn);
+    }
+    
+    void SetMomentum(double MomentumIn,double MuIn) {
+      p=MomentumIn,mu=MuIn,InputMode=InputModeMomentum;
+      D_mu_mu_Minus.SetMomentum(MomentumIn,MuIn);
+      D_mu_mu_Plus.SetMomentum(MomentumIn,MuIn);
+    }
+      };
+  
+  
+  class cD_mu_mu : public cD_SA {
+  public:     
+    double GetDiffusionCoeffcient() {
+      double Dplus,Dminus;
+      
+      D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
+      D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+      
+      Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
+      Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
+      
+      return Dplus+Dminus; 
+    }
+  };
+  
+  
+  cD_SA D_SA;
+  cD_mu_mu D_mu_mu;
+  
    double *B0,*B1,B[3],r2;
    double *W0,*W1;
    double *x0,*x1;
@@ -119,19 +227,19 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
      return PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
    }; 
 
-   auto GetLmax = [&] (double *x) {
-     Lmax=0.03*Vector3D::Length(x);
-     
-     return Lmax;
-   }; 
+
    
    auto Interpolate = [&] () {
      
      double x[3];
       Segment->GetCartesian(x, FieldLineCoord);
       
-      GetLmax(x);
-       
+      D_SA.SetLocation(x);
+      D_SA.Init();
+      
+      D_mu_mu.SetLocation(x);
+      D_mu_mu.Init();
+                 
       Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
       if (Segment==NULL) return false;
 
@@ -177,6 +285,14 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    AbsB=sqrt(absB2);
    vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
+   
+   D_SA.SetW(W);
+   D_SA.SetVelAlfven(vAlfven);
+   D_SA.SetAbsB(AbsB);
+   
+   D_mu_mu.SetW(W);
+   D_mu_mu.SetVelAlfven(vAlfven);
+   D_mu_mu.SetAbsB(AbsB);
    
    return true;
 };
@@ -400,100 +516,51 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
    
    UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {
-       double mass=PIC::MolecularData::GetMass(spec);  
-       double dp,dpNormal,dpParallel,pParallel,pNormal;
-       double muPlus,muMinus,dmu_plus,dmu_minus,pPlus,pMinus;
-       double vp,p,dSpeed,dMu;
-        
-       GetMu1(muPlus,muMinus,speed,mu);
-       GetDeltaMu1(dmu_plus,dmu_minus,speed,mu,dt); 
-       
-       
-       GetMomentum1(pPlus,pMinus,speed,mu);
-       p=speed*mass;
-       
-       dSpeed=vAlfven/p*(pPlus*dmu_plus-pMinus*dmu_minus);
-       dMu=(pPlus*(1.0-mu*mass*vAlfven/p)*dmu_plus+pMinus*(1.0+mu*mass*vAlfven/p)*dmu_minus);
-       
-//       ///+
-//       double vn,vp,Mu,newSpeed;
-//       
-//       vp=speed*mu-vAlfven;
-//       vn=speed*sqrt(1.0-mu*mu);
-//       newSpeed=sqrt(vp*vp+vn*vn);
-//       Mu=vp/newSpeed;
-//       Mu+=dmu_plus;
-//       vp=newSpeed*Mu+vAlfven;
-//       vm=newSpeed*sqrt(1.0-Mu*Mu);
-//       dSpeed=sqrt(vp*vp-vm*vm)-speed;
-//       
-//       vp=speed*mu+vAlfven;
-//       vn=speed*sqrt(1.0-mu*mu);
-//       newSpeed=sqrt(vp*vp+vn*vn);
-//       Mu=vp/newSpeed;
-//       Mu+=dmu_minus;
-//       vp=newSpeed*Mu-vAlfven;
-//       vm=newSpeed*sqrt(1.0-Mu*Mu);
-//       dSpeed+=sqrt(vp*vp-vm*vm)-speed;     
-       
-       
-      double vNewParallel,vNewNormal,MuNewPlus,MuNewMinus;
-      
+     double SpeedNew,MuNew;
+     
+     D_SA.SetVelocity(speed,mu);
+     D_SA.DistributeP(dt);
+     
+     D_SA.Convert2Velocity();
+     SpeedNew=D_SA.speed;
+     
+     D_mu_mu.SetVelocity(speed,mu);
+     D_mu_mu.DistributeMu(dt);
+     MuNew=D_mu_mu.mu;
+     
+            
       static int cnt=0;
       bool repeat_flag=false;
       
-      MuNewPlus=muPlus+dmu_plus;
-      MuNewMinus=muMinus+dmu_minus;
       
-      if ((isfinite(MuNewPlus)==false)||(isfinite(MuNewMinus)==false)) {
+      if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
         //call the functions in the debugger to see what is going on
-        GetMu1(muPlus,muMinus,speed,mu);
-        GetDeltaMu1(dmu_plus,dmu_minus,speed,mu,dt); 
+        D_SA.SetVelocity(speed,mu);
+        D_SA.DistributeP(dt);
         
+        D_SA.Convert2Velocity();
+        SpeedNew=D_SA.speed;
         
-        GetMomentum1(pPlus,pMinus,speed,mu);
-        p=speed*mass;
-        
-        dSpeed=vAlfven/p*(pPlus*dmu_plus-pMinus*dmu_minus);
-        dMu=(pPlus*(1.0-mu*mass*vAlfven/p)*dmu_plus+pMinus*(1.0+mu*mass*vAlfven/p)*dmu_minus);
-        
+        D_mu_mu.SetVelocity(speed,mu);
+        D_mu_mu.DistributeMu(dt);
+        MuNew=D_mu_mu.mu;      
       }
       
-      if (MuNewPlus>1.0) {        
+      if (MuNew>=1.0) {        
         if (cnt<5) repeat_flag=true;
-        MuNewPlus=1.0-muLimit;
+        MuNew=1.0-muLimit;
       }
       
-      if (MuNewPlus<-1.0) {     
+      if (MuNew<=-1.0) {     
         if (cnt<5) repeat_flag=true;
-        MuNewPlus=-1.0+muLimit;
+        MuNew=-1.0+muLimit;
       }
       
-      if (MuNewMinus>1.0) {      
-        if (cnt<5) repeat_flag=true;
-        MuNewMinus=1.0-muLimit;
-      }
-      
-      if (MuNewMinus<-1.0) {        
-        if (cnt<5) repeat_flag=true;
-        MuNewMinus=-1.0+muLimit;
-      }
+
       
       if (repeat_flag==false) {
-        vNewParallel=(pPlus*MuNewPlus+pMinus*MuNewMinus)/mass;
-        vNewNormal=(pPlus*sqrt(1.0-MuNewPlus*MuNewPlus)+pMinus*sqrt(1.0-MuNewMinus*MuNewMinus))/mass;
-     
-        if ((isfinite(vNewParallel)==false)||(isfinite(vNewNormal)==false)) {
-          exit(__LINE__,__FILE__,"Error: NaN found");
-        }
-      
-        dSpeed=sqrt(vNewParallel*vNewParallel+vNewNormal*vNewNormal)-speed;
-      
-        speed=sqrt(vNewParallel*vNewParallel+vNewNormal*vNewNormal);
-        mu=vNewParallel/speed;
-       
-       speed+=dSpeed;
-       mu+=dMu;
+       speed=SpeedNew;
+       mu=MuNew;
        
        if (speed<0.0) speed*=-1;
        if (mu>1.0-muLimit) mu=1.0-muLimit;
@@ -506,46 +573,12 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
         UpdateVelocity1(speed,mu,dt/2.0);
         cnt--;
       }
-       
-    //   mu = std::clamp(mu, -1.0 + muLimit, 1.0 - muLimit);
-       
+              
        if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
        if (mu>1.0 - muLimit) mu=1.0 - muLimit;
        
 
-/*       
-       double t0,t1,t2;
-       double DvP,DvN;
-       
-       t0=vNormal*vNormal+vParallel*vParallel;
-       
-       //scatering with muPlus 
-       vp=vParallel-vAlfven;
-       speed=sqrt(vp*vp+vNormal*vNormal);
-       mu=vp/speed;
-       mu+=dmu_plus;
-            
-       if (mu>1.0-muLimit) mu=1.0-muLimit;
-       if (mu<-1.0+muLimit) mu=-1.0+muLimit;
-       
-       DvP=speed*mu+vAlfven-vParallel;
-       DvN=speed*sqrt(1.0-mu*mu)-vNormal;
-       
-       t1=vNormal*vNormal+vParallel*vParallel;
-       
-       //scatering with muMinus 
-       vp=vParallel+vAlfven;
-       speed=sqrt(vp*vp+vNormal*vNormal);
-       mu=vp/speed;v
-       mu+=dmu_minus;
-       
-       if (fabs(mu)>1.0) mu=(mu>0.0) ? 1.0 : -1.0;
-       
-       vParallel=speed*mu-vAlfven+DvP;
-       vNormal=speed*sqrt(1.0-mu*mu)+DvN;   
-       
-       t2=vNormal*vNormal+vParallel*vParallel;
-       */
+
      };
 
 
@@ -672,6 +705,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
    mu=vParallel/speed;
    
+   D_SA.SetVelocity(speed,mu);
+   D_mu_mu.SetVelocity(speed,mu);
+   
    
    if (vNormal*vNormal+vParallel*vParallel>10000.0*vAlfven*vAlfven) {
      //fast particle 
@@ -679,15 +715,13 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    }
    else {
      FastParticleFlag=false;
+  
+     double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
 
+     if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
 
-     Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
-
-     if (fabs(dD_mu_mu_dmu_Plus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Plus);
-     if (fabs(dD_mu_mu_dmu_Minus)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dmu_Minus);
-
-     if ((std::isfinite(dD_mu_mu_dmu_Plus)==false)||(std::isfinite(dD_mu_mu_dmu_Minus))==false) {
-       Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
+     if (std::isfinite(dD_mu_mu_dMu)==false) {
+       dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
        exit(__LINE__,__FILE__,"Error: NAN is found");
      }
    }
@@ -811,8 +845,17 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        }
      }
      else {
-       UpdateVelocityFastParticle1(speed,mu,MovingTime);
-     }
+       double muNew,pNew;
+       
+       muNew=D_mu_mu.DistributeMu(MovingTime);
+       pNew=D_SA.DistributeP(MovingTime);
+       
+       if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+         exit(__LINE__,__FILE__,"Error: NaN found");
+       }
+       
+       D_mu_mu.SetMomentum(pNew,muNew);
+       D_SA.SetMomentum(pNew,muNew);     }
      break;
    case CollisionIntegral_TwoWavesDiffusion:
      if (FastParticleFlag==false) {
@@ -823,11 +866,19 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        }
      }
      else {
-       UpdateVelocityFastParticle1(speed,mu,MovingTime);
+ //      UpdateVelocityFastParticle1(speed,mu,MovingTime);
        
-       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+       double muNew,pNew;
+       
+       muNew=D_mu_mu.DistributeMu(MovingTime);
+       pNew=D_SA.DistributeP(MovingTime);
+       
+       if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
          exit(__LINE__,__FILE__,"Error: NaN found");
        }
+       
+       D_mu_mu.SetMomentum(pNew,muNew);
+       D_SA.SetMomentum(pNew,muNew);
      }
      break;
    default:

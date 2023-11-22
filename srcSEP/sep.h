@@ -83,7 +83,7 @@
 #endif 
 
 //the limit of mu (closest mu ot the magnetic field line direction)
-const double muLimit=0.01;
+const double muLimit=0.001;
 
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
@@ -258,42 +258,72 @@ namespace SEP {
 
 
     //classes for claculation diffution coeffciients 
-    class cD_mu_mu {
+    class cDiffusionCoeffcient {
     public:
-      double speed,mu,L,max,W,Lmax,vAlfven,AbsB;  
+      double speed,mu,L,max,W,vAlfven,AbsB,p;  
       int spec;
-
+      int InputMode;
+      
+      static const int InputModeUndefined=0;
+      static const int InputModeMomentum=1;
+      static const int InputModeVelocity=2;
+      
+      //user-defined function for calcuilating the diffusion coefficient may be set with a pointer
+      std::function<double (cDiffusionCoeffcient*)> fGetDiffusionCoeffcient;
+      
+      void Convert2Velocity() {
+        if (InputMode==InputModeUndefined) {
+          exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+        }
+        else if (InputMode==InputModeMomentum) {
+          InputMode=InputModeVelocity;
+          speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+        }
+      }
+      
+      void Convert2Momentum() {
+        if (InputMode==InputModeUndefined) {
+          exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+        }
+        else if (InputMode==InputModeVelocity) {
+          InputMode=InputModeMomentum;
+          p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+        }
+      }
+      
+      cDiffusionCoeffcient() {
+        InputMode=InputModeUndefined;
+        fGetDiffusionCoeffcient=NULL;
+        spec=0;
+      }
+      
+      void SetVelocity(double SpeedIn,double MuIn) {
+        speed=SpeedIn,mu=MuIn;
+        InputMode=InputModeVelocity;
+      }
+      
+      void SetMomentum(double MomentumIn,double MuIn) {
+        p=MomentumIn,mu=MuIn;
+        InputMode=InputModeMomentum;
+      }
+      
      double GetLarmorR() {
        return PIC::MolecularData::GetMass(spec)*speed*sqrt(1.0-mu*mu)/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
      } 
 
+     virtual double GetDiffusionCoeffcient() {
+       if (fGetDiffusionCoeffcient==NULL) exit(__LINE__,__FILE__,"Error: function is not defined");
 
-     double GetLambda() {
-       double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
-       double vNormal=speed*sqrt(1.0-mu*mu);
-       double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-  
-       double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
-
-       TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
-       if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
-
-       res=c1/TurbulenceLevel;
-       if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
-
-       return res;
+       return fGetDiffusionCoeffcient(this);
      }
 
-     double Get() {
-       return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
-     }
-
-
+     virtual void Init()=0;
+     
      double GetPerturbSpeed(double dv) {
        double res; 
  
        speed+=dv;
-       res=Get();
+       res=GetDiffusionCoeffcient();
        speed-=dv;
    
        return res;
@@ -303,15 +333,16 @@ namespace SEP {
        double res,MuOrig=mu;
 
        mu=Mu;
-       res=Get();
+       res=GetDiffusionCoeffcient();
        mu=MuOrig;
 
        return res;
      }
-
-
-     double GetDdP() {
+     
+     double GetdDdP() {
        double dv,dp,f_Plus,f_Minus;
+       
+       Convert2Velocity();
 
        // dv is a small change relative to speed
        dv=0.01*speed;
@@ -333,8 +364,8 @@ namespace SEP {
        t=vParallel-vAlfven;
        return t/sqrt(t*t+vNormal*vNormal);
      } 
-
-     double GetDpMu() {
+     
+     double GetdDdMuWaveFrame() {
        double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
 
        MuWaveFrame=GetMuWaveFrame(); 
@@ -367,7 +398,87 @@ namespace SEP {
 
        return (f_Plus-f_Minus)/dMu;
      }
-   };
+     
+     double GetdDdMuSolarFrame() {
+        double dMu, mu_min, mu_max, f_Plus, f_Minus,p0, m0, p1, m1;
+
+        dMu = muLimit / 2.0;
+
+        mu_min = mu - dMu;
+        if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+        mu_max = mu + dMu;
+        if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+
+        if (mu_max<mu_min) {
+          double t=mu_min;
+
+          mu_min=mu_max;
+          mu_max=t;
+        }
+        else if (mu_max==mu_min) {
+          mu_max+=muLimit/10;
+          mu_min-=muLimit/10;
+        }
+
+        dMu=mu_max-mu_min;
+        f_Minus=GetPerturbMu(mu_min);
+        f_Plus=GetPerturbMu(mu_max);
+
+        return (f_Plus-f_Minus)/dMu;
+      }
+     
+     double DistributeMu(double dt) {
+       double D,dD_dMu,dMu,res;
+       
+       D=GetDiffusionCoeffcient();
+       dD_dMu=GetdDdMuSolarFrame();     
+       dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+       
+       if (fabs(dMu)<0.2) {
+         res=mu+dMu;
+         
+         if (res>1.0) res=1.0;
+         if (res<-1.0) res=-1.0;
+         
+         mu=res;
+       }
+       else {
+         int nSteps=fabs(dMu)/0.2;
+         
+         for (int i=0;i<nSteps;i++) {
+           D=GetDiffusionCoeffcient();
+           dD_dMu=GetdDdMuSolarFrame();     
+           dMu=dD_dMu*dt/nSteps+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt/nSteps*log(rnd()));
+           
+           res=mu+dMu;
+           
+           if (res>1.0) res=1.0;
+           if (res<-1.0) res=-1.0;
+           
+           mu=res;
+         }
+       }
+       
+       return mu;
+     }
+     
+     double DistributeP(double dt) {
+       double D,dD_dP,dP;
+       
+       D=GetDiffusionCoeffcient();
+       dD_dP=GetdDdP();
+       
+       dP=dD_dP*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+
+       Convert2Momentum();
+       p+=dP;
+       
+       return p;
+     }  
+    };
+
+ 
 
 
 
