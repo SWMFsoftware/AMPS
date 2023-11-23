@@ -251,7 +251,10 @@ namespace SEP {
     const int AccelerationTypeDiffusion=0;
     const int AccelerationTypeScattering=1;
     extern int AccelerationType;
-        
+    
+    //scater particle due to particle interaction with the waves
+    void WaveScatteringModel(double vAlfven,double NuPlus, double NuMinus,double& speed,double& mu);
+    
     //limit the calculation for rotation of a partilce during a time step
     extern double muTimeStepVariationLimit;
     extern bool muTimeStepVariationLimitFlag;

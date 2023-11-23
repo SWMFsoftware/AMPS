@@ -32,6 +32,79 @@ double SEP::Diffusion::ConstPitchAngleDiffusionValue=0;
 
 double SEP::Diffusion::AccelerationModelVelocitySwitchFactor=1000.0;
 
+void SEP::Diffusion::WaveScatteringModel(double vAlfven,double NuPlus, double NuMinus,double& speed,double& mu) {
+  double vParallel=speed*mu;
+  double vNormal=speed*sqrt(1.0-mu*mu);
+  
+  if (rnd()<NuPlus/(NuPlus+NuMinus)) {
+    //scattering with (+) mode
+    double v=vParallel-vAlfven;
+    double muScattered=rnd();
+
+    if (speed<0.1*SpeedOfLight) { 
+      double t=sqrt(vNormal*vNormal+v*v);
+      
+      vNormal=t*sqrt(1.0-muScattered*muScattered);
+      vParallel=vAlfven+((v>0.0) ? -t*muScattered : t*muScattered);
+    }
+    else {
+      //relativistic velocity transformations need to be used 
+      double vpSW[3]={vParallel,vNormal,0.0}; //spped of the solar wind reference frame in the frame moving with the wave  
+      double vSW[3]={-vAlfven,0.0,0.0};
+      double vpWave[3];
+
+      Relativistic::FrameVelocityTransformation(vpWave,vpSW,vSW);
+
+      vpWave[0]*=-1.0;
+
+      speed=sqrt(vpWave[0]*vpWave[0]+vpWave[1]*vpWave[1]);  
+      vpWave[0]=(vpWave[0]>0.0) ? speed*muScattered : -speed*muScattered; 
+      vpWave[1]=speed*sqrt(1.0-muScattered*muScattered);
+
+      vSW[0]*=-1.0;
+      Relativistic::FrameVelocityTransformation(vpSW,vpWave,vSW);
+
+      vParallel=vpSW[0];
+      vNormal=vpSW[1];
+    }
+  }
+  else {
+    //scattering with (-) mode
+    double v=vParallel+vAlfven;
+    double muScattered=rnd();
+           
+    if (speed<0.1*SpeedOfLight) {  
+      double t=sqrt(vNormal*vNormal+v*v);
+      
+      vNormal=t*sqrt(1.0-muScattered*muScattered);
+      vParallel=-vAlfven+((v>0.0) ? -t*muScattered : t*muScattered);
+    }
+    else {
+      //relativistic velocity transformations need to be used 
+      double vpSW[3]={vParallel,vNormal,0.0}; //spped of the solar wind reference frame in the frame moving with the wave  
+      double vSW[3]={vAlfven,0.0,0.0};
+      double vpWave[3];
+
+      Relativistic::FrameVelocityTransformation(vpWave,vpSW,vSW);
+
+      vpWave[0]*=-1.0;
+
+      speed=sqrt(vpWave[0]*vpWave[0]+vpWave[1]*vpWave[1]);
+      vpWave[0]=(vpWave[0]>0.0) ? speed*muScattered : -speed*muScattered;
+      vpWave[1]=speed*sqrt(1.0-muScattered*muScattered);
+
+      vSW[0]*=-1.0;
+      Relativistic::FrameVelocityTransformation(vpSW,vpWave,vSW);
+
+      vParallel=vpSW[0];
+      vNormal=vpSW[1];
+    }
+  }
+  
+  speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+  mu=vParallel/speed;
+}
+
 //========= Calculate matrix square root 
 void SEP::Diffusion::GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]) { 
     // Assuming A is symmetric, so only A[0][0], A[1][1], and A[0][1] are needed
