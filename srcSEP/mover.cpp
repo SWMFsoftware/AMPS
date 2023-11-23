@@ -515,71 +515,61 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
    std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
    
-   UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {
+   UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {   
      double SpeedNew,MuNew;
-     
+
      D_SA.SetVelocity(speed,mu);
      D_SA.DistributeP(dt);
-     
+
+     D_mu_mu.SetVelocity(speed,mu);
+     MuNew=D_mu_mu.DistributeMu(dt);
+
      D_SA.Convert2Velocity();
      SpeedNew=D_SA.speed;
-     
-     D_mu_mu.SetVelocity(speed,mu);
-     D_mu_mu.DistributeMu(dt);
-     MuNew=D_mu_mu.mu;
-     
-            
-      static int cnt=0;
-      bool repeat_flag=false;
-      
-      
-      if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
-        //call the functions in the debugger to see what is going on
-        D_SA.SetVelocity(speed,mu);
-        D_SA.DistributeP(dt);
-        
-        D_SA.Convert2Velocity();
-        SpeedNew=D_SA.speed;
-        
-        D_mu_mu.SetVelocity(speed,mu);
-        D_mu_mu.DistributeMu(dt);
-        MuNew=D_mu_mu.mu;      
-      }
-      
-      if (MuNew>=1.0) {        
-        if (cnt<5) repeat_flag=true;
-        MuNew=1.0-muLimit;
-      }
-      
-      if (MuNew<=-1.0) {     
-        if (cnt<5) repeat_flag=true;
-        MuNew=-1.0+muLimit;
-      }
-      
 
-      
-      if (repeat_flag==false) {
+     static int cnt=0;
+     bool repeat_flag=false;
+
+     if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
+       //call the functions in the debugger to see what is going on
+       D_SA.SetVelocity(speed,mu);
+       D_SA.DistributeP(dt);
+
+       D_mu_mu.SetVelocity(speed,mu);
+       MuNew=D_mu_mu.DistributeMu(dt);
+
+       D_SA.Convert2Velocity();
+       SpeedNew=D_SA.speed;
+     }
+
+     if (MuNew>=1.0) {        
+       if (cnt<5) repeat_flag=true;
+       MuNew=1.0-muLimit;
+     }
+
+     if (MuNew<=-1.0) {     
+       if (cnt<5) repeat_flag=true;
+       MuNew=-1.0+muLimit;
+     }
+
+     if (repeat_flag==false) {
        speed=SpeedNew;
        mu=MuNew;
-       
+
        if (speed<0.0) speed*=-1;
        if (mu>1.0-muLimit) mu=1.0-muLimit;
-       if (mu<-1.0+muLimit) mu=-1.0+muLimit;
-       
-      } 
-      else {
-        cnt++;
-        UpdateVelocity1(speed,mu,dt/2.0);
-        UpdateVelocity1(speed,mu,dt/2.0);
-        cnt--;
-      }
-              
-       if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
-       if (mu>1.0 - muLimit) mu=1.0 - muLimit;
-       
+       if (mu<-1.0+muLimit) mu=-1.0+muLimit;    
+     } 
+     else {
+       cnt++;
+       UpdateVelocity1(speed,mu,dt/2.0);
+       UpdateVelocity1(speed,mu,dt/2.0);
+       cnt--;
+     }
 
-
-     };
+     if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
+     if (mu>1.0 - muLimit) mu=1.0 - muLimit;
+   };
 
 
    auto ScatteringModel1 = [&] (double NuPlus, double NuMinus,double speed,double mu) {

@@ -15,6 +15,12 @@ int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction
 
 double SEP::Diffusion::muNumericalDifferentiationStep=0.01;
 
+//limit the calculation for rotation of a partilce during a time step
+double SEP::Diffusion::muTimeStepVariationLimit=2.0;
+bool SEP::Diffusion::muTimeStepVariationLimitFlag=true;
+int SEP::Diffusion::muTimeStepVariationLimitMode=SEP::Diffusion::muTimeStepVariationLimitModeUniform;
+
+
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
 int SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPointsModeOff;

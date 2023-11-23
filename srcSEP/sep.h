@@ -83,7 +83,7 @@
 #endif 
 
 //the limit of mu (closest mu ot the magnetic field line direction)
-const double muLimit=0.001;
+const double muLimit=0.0001;
 
 //class that is used for keeping information of the injected faces
 class cBoundaryFaceDescriptor {
@@ -243,6 +243,14 @@ namespace SEP {
   namespace Diffusion {
     //costant value of the pitch angle diffusion coeffcient 
     extern double ConstPitchAngleDiffusionValue;
+    
+    //limit the calculation for rotation of a partilce during a time step
+    extern double muTimeStepVariationLimit;
+    extern bool muTimeStepVariationLimitFlag;
+    extern int muTimeStepVariationLimitMode;
+
+    const int muTimeStepVariationLimitModeUniform=0;
+    const int muTimeStepVariationLimitModeUniformReflect=1;
 
     //the step in the mu-space used in the numerical differentiation 
     extern double muNumericalDifferentiationStep;
@@ -428,18 +436,52 @@ namespace SEP {
         return (f_Plus-f_Minus)/dMu;
       }
      
+     
+     double DistributeMuUniform() {
+       mu=-1.0+2.0*rnd();
+       
+       return mu;
+     }
+     
+     double DistributeMuUniformReflect() {
+       mu=(mu>0.0) ? -rnd() : rnd();
+       
+       return mu;
+     }
+     
      double DistributeMu(double dt) {
        double D,dD_dMu,dMu,res;
        
        D=GetDiffusionCoeffcient();
        dD_dMu=GetdDdMuSolarFrame();     
        dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+
+       if (SEP::Diffusion::muTimeStepVariationLimitFlag==true) {
+         if (fabs(dMu)>SEP::Diffusion::muTimeStepVariationLimit) {
+           switch (SEP::Diffusion::muTimeStepVariationLimitMode) {
+           case SEP::Diffusion::muTimeStepVariationLimitModeUniform: 
+             return DistributeMuUniform();
+             break;
+           case muTimeStepVariationLimitModeUniformReflect:
+             return DistributeMuUniformReflect();
+             break;
+           }
+         }
+       }
+      
+       
+       
+       if (isfinite(dMu)==false) {
+         D=GetDiffusionCoeffcient();
+         dD_dMu=GetdDdMuSolarFrame();
+         exit(__LINE__,__FILE__,"Error: NAN is found");
+       }
        
        if (fabs(dMu)<0.2) {
          res=mu+dMu;
          
-         if (res>1.0) res=1.0;
-         if (res<-1.0) res=-1.0;
+         if (res>1.0-muLimit) res=1.0-muLimit;
+         if (res<-1.0+muLimit) res=-1.0+muLimit;
          
          mu=res;
        }
@@ -451,10 +493,16 @@ namespace SEP {
            dD_dMu=GetdDdMuSolarFrame();     
            dMu=dD_dMu*dt/nSteps+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt/nSteps*log(rnd()));
            
+           if (isfinite(dMu)==false) {
+             D=GetDiffusionCoeffcient();
+             dD_dMu=GetdDdMuSolarFrame();
+             exit(__LINE__,__FILE__,"Error: NAN is found");
+           }
+           
            res=mu+dMu;
            
-           if (res>1.0) res=1.0;
-           if (res<-1.0) res=-1.0;
+           if (res>1.0-muLimit) res=1.0-muLimit;
+           if (res<-1.0+muLimit) res=-1.0+muLimit;
            
            mu=res;
          }
@@ -467,10 +515,10 @@ namespace SEP {
        double D,dD_dP,dP;
        
        D=GetDiffusionCoeffcient();
-       dD_dP=GetdDdP();
-       
+     
+       dD_dP=GetdDdP();     
        dP=dD_dP*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
-
+      
        Convert2Momentum();
        p+=dP;
        
