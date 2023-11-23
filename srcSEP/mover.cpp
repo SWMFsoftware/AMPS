@@ -662,12 +662,16 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    
    if (Interpolate()==false) break;
 
-
-
+   double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
+   if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
+     //fast particle 
+     FastParticleFlag=true;
+     dtSubStep=dtTotal-time_counter;
+   }
 
       
     
-   if (SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering) {           
+   if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {           
      D_mu_mu.SetVelocity(speed,mu);
      NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
      NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
@@ -687,7 +691,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    extern double NumericalScatteringEventLimiter;
 
    //decide is scattering occured
-   if (SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering) {
+   if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {
      ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
 
      if (time_counter+ScatteringTime<dtTotal) {
