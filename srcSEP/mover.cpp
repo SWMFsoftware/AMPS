@@ -221,7 +221,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    double *W0,*W1;
    double *x0,*x1;
    double w0,w1;
-   double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,LambdaPlus,LambdaMinus,NuPlus,NuMinus; 
+   double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,NuPlus,NuMinus; 
    
    auto GetLarmorR = [&] (int spec, double vNormal) {
      return PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
@@ -572,7 +572,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    };
 
 
-   auto ScatteringModel1 = [&] (double NuPlus, double NuMinus,double speed,double mu) {
+   auto ScatteringModel1 = [&] (double NuPlus, double NuMinus,double& speed,double& mu) {
      if (rnd()<NuPlus/(NuPlus+NuMinus)) {
        //scattering with (+) mode
        double vParallel=speed*mu;
@@ -581,8 +581,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        double muScattered=rnd();
 
        if (speed<0.1*SpeedOfLight) { 
-         vNormal=speed*sqrt(1.0-muScattered*muScattered);
-         vParallel=vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
+         double t=sqrt(vNormal*vNormal+v*v);
+         
+         vNormal=t*sqrt(1.0-muScattered*muScattered);
+         vParallel=vAlfven+((v>0.0) ? -t*muScattered : t*muScattered);
        }
        else {
          //relativistic velocity transformations need to be used 
@@ -609,12 +611,16 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
        //scattering with (-) mode
        double v=vParallel+vAlfven;
        double muScattered=rnd();
-
+       double vParallel=speed*mu;
+       double vNormal=speed*sqrt(1.0-mu*mu);
+              
        //speed=sqrt(vNormal*vNormal+v*v);
 
        if (speed<0.1*SpeedOfLight) {  
-         vNormal=speed*sqrt(1.0-muScattered*muScattered);
-         vParallel=-vAlfven+((v>0.0) ? -speed*muScattered : speed*muScattered);
+         double t=sqrt(vNormal*vNormal+v*v);
+         
+         vNormal=t*sqrt(1.0-muScattered*muScattered);
+         vParallel=-vAlfven+((v>0.0) ? -t*muScattered : t*muScattered);
        }
        else {
          //relativistic velocity transformations need to be used 
@@ -698,8 +704,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    D_SA.SetVelocity(speed,mu);
    D_mu_mu.SetVelocity(speed,mu);
    
+   double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
    
-   if (vNormal*vNormal+vParallel*vParallel>10000.0*vAlfven*vAlfven) {
+   if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
      //fast particle 
      FastParticleFlag=true;
    }
@@ -719,11 +726,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    }
    
    
-   const int CollisionIntegral_TwoWavesDiffusion=0;
-   const int CollisionIntegral_TwoWavesScattering=1;
-   const int CollisionIntegral_HighSpeed=2;
-   
-   int CollisionIntegralMode=CollisionIntegral_TwoWavesDiffusion;
+
    
    
 
@@ -738,11 +741,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
       
     
-   if (CollisionIntegralMode==CollisionIntegral_TwoWavesScattering) {      
-     GetLambda(LambdaPlus,LambdaMinus,speed*sqrt(1.0-mu*mu));
-     
-     NuPlus=fabs(speed*mu)/LambdaPlus; 
-     NuMinus=fabs(speed*mu)/LambdaMinus; 
+   if (SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering) {           
+     D_mu_mu.SetVelocity(speed,mu);
+     NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
+     NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
    }
         
    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
@@ -759,7 +761,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    extern double NumericalScatteringEventLimiter;
 
    //decide is scattering occured
-   if (CollisionIntegralMode==CollisionIntegral_TwoWavesScattering) {
+   if (SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering) {
      ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
 
      if (time_counter+ScatteringTime<dtTotal) {
@@ -827,17 +829,22 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
    }
    
    //model scattering
-   switch (CollisionIntegralMode) {
-   case CollisionIntegral_TwoWavesScattering:
+   switch (SEP::Diffusion::AccelerationType) {
+   case SEP::Diffusion::AccelerationTypeScattering:
      if (FastParticleFlag==false) { 
-       ScatteringModel1(NuPlus,NuMinus,speed,mu);
+       if (ScatteringFlag==true) {
+         ScatteringModel1(NuPlus,NuMinus,speed,mu);
        
-       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
-         exit(__LINE__,__FILE__,"Error: NaN found");
+         if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+           exit(__LINE__,__FILE__,"Error: NaN found");
+         }
        }
      }
      else {
        double muNew,pNew;
+       
+       D_mu_mu.SetVelocity(speed,mu);
+       D_SA.SetVelocity(speed,mu);
        
        muNew=D_mu_mu.DistributeMu(MovingTime);
        pNew=D_SA.DistributeP(MovingTime);
@@ -846,21 +853,18 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
          exit(__LINE__,__FILE__,"Error: NaN found");
        }
        
-       D_mu_mu.SetMomentum(pNew,muNew);
-       D_SA.SetMomentum(pNew,muNew);     }
+       mu=D_mu_mu.mu;
+       
+       D_SA.Convert2Velocity();
+       speed=D_SA.speed;
+     }
      break;
-   case CollisionIntegral_TwoWavesDiffusion:
-     if (FastParticleFlag==false) {
-       UpdateVelocity1(speed,mu,MovingTime);
-       
-       if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
-         exit(__LINE__,__FILE__,"Error: NaN found");
-       }
-     }
-     else {
- //      UpdateVelocityFastParticle1(speed,mu,MovingTime);
-       
+   case SEP::Diffusion::AccelerationTypeDiffusion:
+     {       
        double muNew,pNew;
+       
+       D_mu_mu.SetVelocity(speed,mu);
+       D_SA.SetVelocity(speed,mu);
        
        muNew=D_mu_mu.DistributeMu(MovingTime);
        pNew=D_SA.DistributeP(MovingTime);
@@ -869,8 +873,10 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
          exit(__LINE__,__FILE__,"Error: NaN found");
        }
        
-       D_mu_mu.SetMomentum(pNew,muNew);
-       D_SA.SetMomentum(pNew,muNew);
+       mu=D_mu_mu.mu;
+       
+       D_SA.Convert2Velocity();
+       speed=D_SA.speed;
      }
      break;
    default:

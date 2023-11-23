@@ -244,6 +244,14 @@ namespace SEP {
     //costant value of the pitch angle diffusion coeffcient 
     extern double ConstPitchAngleDiffusionValue;
     
+    //when particle's velocity is below the factor times vAlfven, an interaction with two wave branches independently is considered
+    extern double AccelerationModelVelocitySwitchFactor;
+    
+    //the types of acceleration of the model particles 
+    const int AccelerationTypeDiffusion=0;
+    const int AccelerationTypeScattering=1;
+    extern int AccelerationType;
+        
     //limit the calculation for rotation of a partilce during a time step
     extern double muTimeStepVariationLimit;
     extern bool muTimeStepVariationLimitFlag;

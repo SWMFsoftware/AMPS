@@ -20,6 +20,8 @@ double SEP::Diffusion::muTimeStepVariationLimit=2.0;
 bool SEP::Diffusion::muTimeStepVariationLimitFlag=true;
 int SEP::Diffusion::muTimeStepVariationLimitMode=SEP::Diffusion::muTimeStepVariationLimitModeUniform;
 
+//the types of acceleration of the model particles 
+int SEP::Diffusion::AccelerationType=SEP::Diffusion::AccelerationTypeDiffusion;
 
 SEP::Diffusion::fGetPitchAngleDiffusionCoefficient SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
@@ -27,6 +29,8 @@ int SEP::Diffusion::LimitSpecialMuPointsMode=SEP::Diffusion::LimitSpecialMuPoint
 double SEP::Diffusion::LimitSpecialMuPointsDistance=0.05;
 
 double SEP::Diffusion::ConstPitchAngleDiffusionValue=0;
+
+double SEP::Diffusion::AccelerationModelVelocitySwitchFactor=1000.0;
 
 //========= Calculate matrix square root 
 void SEP::Diffusion::GetMatrixSquareRoot(double A[2][2], double sqrtA[2][2]) { 
