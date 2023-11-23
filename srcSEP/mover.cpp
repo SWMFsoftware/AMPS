@@ -708,7 +708,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   
      double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
 
-     if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
+     if (SEP::Diffusion::muTimeStepVariationLimitFlag==false) {
+       if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
+     }
 
      if (std::isfinite(dD_mu_mu_dMu)==false) {
        dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
