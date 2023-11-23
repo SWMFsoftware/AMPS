@@ -203,6 +203,26 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
     
     //command related to the SEP model
+    else if (Command == "#SEP_ACCELERATION_MODEL") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t=="scattering") SEP::Diffusion::AccelerationType=SEP::Diffusion::AccelerationTypeScattering;
+      else if (t=="diffusion") SEP::Diffusion::AccelerationType=SEP::Diffusion::AccelerationTypeDiffusion;
+      else exit(__LINE__,__FILE__,"Error: the option is unknown");
+      #endif
+    }
+    else if (Command == "#SEP_ACCELERATION_MODEL_VELOCITY_SWITCH_FACTOR") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      
+      SEP::Diffusion::AccelerationModelVelocitySwitchFactor=atof(t.c_str());
+      #endif
+    }
     else if (Command == "#SEP_SWITCH2_PITCH_ANGLE_SCATTERING") {
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;
