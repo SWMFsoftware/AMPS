@@ -82,20 +82,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
-  //calculate B and L
   double AbsBDeriv;
-
-
-
-  //calculate solarwind velocity,particle velocity and mu in the frame moving with solar wind
   double vSolarWind[3],vSolarWindParallel;
-
- // FL::FieldLinesAll[iFieldLine].GetPlasmaVelocity(vSolarWind,FieldLineCoord);
-  //vSolarWindParallel=Vector3D::DotProduct(vSolarWind,B)/AbsB; 
-  
-  //move the particle along the magnetic field line 
   double FieldLineCoord_init=FieldLineCoord;
- // FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dtTotal*(vParallel+vSolarWindParallel));
 
   //get the new value of 'mu'
   double D,dD_dmu;
@@ -108,195 +97,83 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   bool first_pass_flag=true;
   static long int loop_cnt=0;
-  
-  //declare the diffusion coefficient model
- // class cD_mu_mu : public 
-  class cD_mu_mu_basic : public SEP::Diffusion::cDiffusionCoeffcient {
-  public:
-     double Lmax,*xLocation;
-     
-    double GetLambda() {
-      double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
-      double vNormal=speed*sqrt(1.0-mu*mu);
-      double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
- 
-      double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
 
-      TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
-      if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+  SEP::Diffusion::cD_SA D_SA;
+  SEP::Diffusion::cD_mu_mu D_mu_mu;
 
-      res=c1/TurbulenceLevel;
-      if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
+  double *B0,*B1,B[3],r2;
+  double *W0,*W1;
+  double *x0,*x1;
+  double w0,w1;
+  double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,NuPlus,NuMinus; 
 
-      return res;
+  auto Interpolate = [&] () {
+    double x[3];
+    Segment->GetCartesian(x, FieldLineCoord);
+
+    D_SA.SetLocation(x);
+    D_SA.Init();
+
+    D_mu_mu.SetLocation(x);
+    D_mu_mu.Init();
+
+    Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+    if (Segment==NULL) return false;
+
+    FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+    FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
+    absB2=0.0;
+
+
+    //get the magnetic field and the plasma waves at the corners of the segment
+    B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+    B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+    W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+    W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+
+    VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
+    VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+
+    x0=VertexBegin->GetX();
+    x1=VertexEnd->GetX();
+
+    //determine the interpolation coefficients
+    w1=fmod(FieldLineCoord,1);
+    w0=1.0-w1;
+
+
+    int idim;
+
+    for (idim=0;idim<3;idim++) {
+      double t;
+
+      B[idim]=w0*B0[idim]+w1*B1[idim];
+      absB2+=B[idim]*B[idim];
+
+      t=w0*x0[idim]+w1*x1[idim]; 
+      r2+=t*t;
     }
-    
-    void Init() {
-      Lmax=0.03*Vector3D::Length(xLocation);
-    }
 
-    double GetDiffusionCoeffcient() {
-      return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
-    }
+    W[0]=w0*W0[0]+w1*W1[0];
+    W[1]=w0*W0[1]+w1*W1[1];
+    PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+
+    AbsB=sqrt(absB2);
+    vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
+
+    D_SA.SetW(W);
+    D_SA.SetVelAlfven(vAlfven);
+    D_SA.SetAbsB(AbsB);
+
+    D_mu_mu.SetW(W);
+    D_mu_mu.SetVelAlfven(vAlfven);
+    D_mu_mu.SetAbsB(AbsB);
+
+    return true;
   };
-  
-  class cD_SA : public SEP::Diffusion::cDiffusionCoeffcient {
-  public: 
-    cD_mu_mu_basic D_mu_mu_Minus,D_mu_mu_Plus;
-    
-    double GetDiffusionCoeffcient() {
-      double Dplus,Dminus;
-      
-      D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
-      D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
-      
-      Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
-      Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
-      
-      double t=vAlfven*PIC::MolecularData::GetMass(spec);
-      
-      return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus); 
-    }
-    
-    void Init() {
-      D_mu_mu_Minus.Init();
-      D_mu_mu_Plus.Init();  
-    }
-    
-    void SetW(double *w) {
-      D_mu_mu_Minus.W=w[1];
-      D_mu_mu_Plus.W=w[0];
-    }
-    
-    void SetLocation(double *x) {
-      D_mu_mu_Minus.xLocation=x;
-      D_mu_mu_Plus.xLocation=x;
-    }
-    
-    void SetVelAlfven(double v) {
-      vAlfven=v;
-      D_mu_mu_Minus.vAlfven=-v;
-      D_mu_mu_Plus.vAlfven=v;
-    }
-    
-    void SetAbsB(double b) {
-      D_mu_mu_Minus.AbsB=b;
-      D_mu_mu_Plus.AbsB=b;
-    }
-    
-    void SetVelocity(double SpeedIn,double MuIn) {
-      speed=SpeedIn,mu=MuIn,InputMode=InputModeVelocity;
-      D_mu_mu_Minus.SetVelocity(SpeedIn,MuIn);
-      D_mu_mu_Plus.SetVelocity(SpeedIn,MuIn);
-    }
-    
-    void SetMomentum(double MomentumIn,double MuIn) {
-      p=MomentumIn,mu=MuIn,InputMode=InputModeMomentum;
-      D_mu_mu_Minus.SetMomentum(MomentumIn,MuIn);
-      D_mu_mu_Plus.SetMomentum(MomentumIn,MuIn);
-    }
-      };
-  
-  
-  class cD_mu_mu : public cD_SA {
-  public:     
-    double GetDiffusionCoeffcient() {
-      double Dplus,Dminus;
-      
-      D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
-      D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
-      
-      Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
-      Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
-      
-      return Dplus+Dminus; 
-    }
-  };
-  
-  
-  cD_SA D_SA;
-  cD_mu_mu D_mu_mu;
-  
-   double *B0,*B1,B[3],r2;
-   double *W0,*W1;
-   double *x0,*x1;
-   double w0,w1;
-   double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,NuPlus,NuMinus; 
-   
-   auto GetLarmorR = [&] (int spec, double vNormal) {
-     return PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-   }; 
 
-
-   
-   auto Interpolate = [&] () {
-     
-     double x[3];
-      Segment->GetCartesian(x, FieldLineCoord);
-      
-      D_SA.SetLocation(x);
-      D_SA.Init();
-      
-      D_mu_mu.SetLocation(x);
-      D_mu_mu.Init();
-                 
-      Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
-      if (Segment==NULL) return false;
-
-      FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
-      FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
-     
-   absB2=0.0;
-   
-
-   //get the magnetic field and the plasma waves at the corners of the segment
-   B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-   B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-
-   W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
-   W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
-   
-   VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
-   VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
-
-   x0=VertexBegin->GetX();
-   x1=VertexEnd->GetX();
-
-   //determine the interpolation coefficients
-   w1=fmod(FieldLineCoord,1);
-   w0=1.0-w1;
-
-   
-   int idim;
-
-   for (idim=0;idim<3;idim++) {
-     double t;
-
-     B[idim]=w0*B0[idim]+w1*B1[idim];
-     absB2+=B[idim]*B[idim];
-
-     t=w0*x0[idim]+w1*x1[idim]; 
-     r2+=t*t;
-   }
-   
-   W[0]=w0*W0[0]+w1*W1[0];
-   W[1]=w0*W0[1]+w1*W1[1];
-   PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
-   
-   AbsB=sqrt(absB2);
-   vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
-   
-   D_SA.SetW(W);
-   D_SA.SetVelAlfven(vAlfven);
-   D_SA.SetAbsB(AbsB);
-   
-   D_mu_mu.SetW(W);
-   D_mu_mu.SetVelAlfven(vAlfven);
-   D_mu_mu.SetAbsB(AbsB);
-   
-   return true;
-};
-  
 
   v=sqrt(vParallel*vParallel+vNormal*vNormal);
   mu=vParallel/v;
@@ -309,518 +186,256 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
     vNormal*=t; 
   }
 
-   double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
-   ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
-   
-
-
-   auto GetLambda = [&] (double& LambdaPlus, double& LambdaMinus,double vNormal) {
-     double c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
-     double rLarmor=GetLarmorR(spec,vNormal); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-   
-     double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
-     
-     TurbulenceLevel=VacuumPermeability*W[0]/absB2;
-     if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
-  
-     LambdaPlus=c1/TurbulenceLevel;
-     if ((LimitMeanFreePath==true)&&(LambdaPlus<rLarmor)) LambdaPlus=rLarmor; 
-
-     TurbulenceLevel=VacuumPermeability*W[1]/absB2;
-     if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
-
-     LambdaMinus=c1/TurbulenceLevel;
-     if ((LimitMeanFreePath==true)&&(LambdaMinus<rLarmor)) LambdaMinus=rLarmor;
-   }; 
-   
-   
-   
-   auto GetMu1 = [&] (double& muPlus, double& muMinus,double speed,double mu) {
-     double t; 
-     double vNormal,vParallel;
-     
-     vParallel=speed*mu;
-     vNormal=speed*sqrt(1.0-mu*mu);
-
-     t=vParallel-vAlfven;
-     muPlus=t/sqrt(t*t+vNormal*vNormal);
-
-     t=vParallel+vAlfven;
-     muMinus=t/sqrt(t*t+vNormal*vNormal);
-   }; 
-   
-   auto GetD_mu_mu1 = [&] (double& D_mu_mu_Plus, double& D_mu_mu_Minus, double speed, double mu) {
-       double muPlus, muMinus;
-       double LambdaPlus, LambdaMinus;
-
-       GetLambda(LambdaPlus, LambdaMinus, speed * sqrt(1.0-mu*mu));
-       GetMu1(muPlus, muMinus, speed, mu);
-
-       D_mu_mu_Plus = speed * (1 - muPlus * muPlus) * pow(fabs(muPlus), 2.0 / 3.0) / LambdaPlus;
-       D_mu_mu_Minus = speed * (1 - muMinus * muMinus) * pow(fabs(muMinus), 2.0 / 3.0) / LambdaMinus;
-   };
-
-
-   auto Get_dD_mu_mu_dmu1 = [&] (double& dD_mu_mu_dmu_Plus, double& dD_mu_mu_dmu_Minus, double speed, double mu) {
-       double dmu, mu_min, mu_max, D_mu_mu_Plus, D_mu_mu_Minus, muPlus, muMinus, p0, m0, p1, m1;
-
-       // No need to recalculate speed from vNormal and vParallel
-
-       GetMu1(muPlus, muMinus, speed, mu); // Adjusted to use speed and mu
-
-       // process muPlus
-       dmu = muLimit / 2.0;
-
-       if (fabs(muPlus) < dmu) {
-           dD_mu_mu_dmu_Plus = 0.0, dD_mu_mu_dmu_Minus = 0.0;
-           return;
-       }
-
-       mu_min = muPlus - dmu;
-       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
-
-       mu_max = muPlus + dmu;
-       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
-      
-       if (mu_max<mu_min) {
-         double t=mu_min;
-         mu_min=mu_max;
-         mu_max=t;
-       }
-       else if (mu_max==mu_min) {
-         mu_max+=muLimit/10;
-         mu_min-=muLimit/10;
-       }
-       
-       dmu = mu_max - mu_min;
-
-       GetD_mu_mu1(p1, m1, speed,mu_max); // Adjusted to use speed and mu_max
-
-       // calculate dD_mu_mu_dmu_Plus=
-       GetD_mu_mu1(p0, m0, speed, mu_min); // Adjusted to use speed and mu_min
-       dD_mu_mu_dmu_Plus = (p1 - p0) / dmu;
-
-       // process muMinus
-       // The process is the same as for muPlus, just repeated for muMinus
-
-       dmu = muLimit / 2.0;
-       mu_min = muMinus - dmu;
-       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
-
-       mu_max = muMinus + dmu;
-       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
-
-       if (mu_max<mu_min) {
-         double t=mu_min;
-         mu_min=mu_max;
-         mu_max=t;
-       }
-       else if (mu_max==mu_min) {
-         mu_max+=muLimit/10;
-         mu_min-=muLimit/10;
-       }
-       
-       dmu = mu_max - mu_min;
-
-       // calculate dD_mu_mu_dmu_Minus
-       GetD_mu_mu1(p1, m1, speed, mu_max); // Adjusted to use speed and mu_max
-
-       // calculate D_mu_mu(mu_min);
-       GetD_mu_mu1(p0, m0, speed, mu_min); // Adjusted to use speed and mu_min
-
-       // calculate the derivative
-       dD_mu_mu_dmu_Minus = (m1 - m0) / dmu;
-   };
-
-
-   auto GetMomentum1 = [&] (double& pPlus, double& pMinus, double speed, double mu) {
-       double t, mass = PIC::MolecularData::GetMass(spec);
-
-       // Define vParallel and vNormal in terms of speed and mu
-       double vNormal = speed * mu;
-       double vParallel = speed * sqrt(1.0 - mu * mu);
-
-       t = vParallel - vAlfven; 
-       pPlus = mass * sqrt(t * t + vNormal * vNormal); 
-
-       t = vParallel + vAlfven;
-       pMinus = mass * sqrt(t * t + vNormal * vNormal);
-   };
-
-   
-   auto GetVelocity = [&] (double& vParallelPlus, double& vParallelMinus,double vParallel) {
-     vParallelPlus=vParallel-vAlfven; 
-     vParallelMinus=vParallel+vAlfven;
-   };
-
-   auto GetDeltaMu1 = [&] (double& dmu_plus, double& dmu_minus, double speed, double mu, double dt) {
-       double D_mu_mu_Plus, D_mu_mu_Minus;
-       double dD_mu_mu_dmu_Plus, dD_mu_mu_dmu_Minus;
-
-       // Now calling the functions with 'speed' and 'mu' after refactoring them to accept these parameters
-       GetD_mu_mu1(D_mu_mu_Plus, D_mu_mu_Minus, speed, mu);
-       Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus, dD_mu_mu_dmu_Minus, speed, mu);
-
-       // The rest of the calculation remains unchanged as it does not depend on vNormal or vParallel directly
-       dmu_plus = dD_mu_mu_dmu_Plus * dt + 2.0 * cos(PiTimes2 * rnd()) * sqrt(-D_mu_mu_Plus * dt * log(rnd()));  
-       dmu_minus = dD_mu_mu_dmu_Minus * dt + 2.0 * cos(PiTimes2 * rnd()) * sqrt(-D_mu_mu_Minus * dt * log(rnd()));
-   };
-
-
-
-   
-   auto GetD_SA1 = [&] (double speed, double mu) {
-       // 'c' calculation remains the same
-       double c = speed * (1.0 - mu * mu) * pow(fabs(mu), 2.0 / 3.0);
-       double Lambda[2];
-       double D_mu_mu[2];
-
-       // Recalculate vNormal based on the new parameters
-       double vNormal = speed * sqrt(1.0 - mu * mu);
-
-       // GetLambda can now be called with vNormal which is derived from speed and mu
-       GetLambda(Lambda[0], Lambda[1], vNormal); 
-
-       // Calculate D_mu_mu using the newly calculated vNormal
-       for (int i = 0; i < 2; i++) {
-           D_mu_mu[i] = c / Lambda[i];
-       }
-
-       // The calculation involving t assumes vAlfven and spec mass are available in the scope
-       double t = PIC::MolecularData::GetMass(spec) * vAlfven; 
-
-       // The return statement remains the same as the original lambda function
-       return t * t * 4.0 * D_mu_mu[0] * D_mu_mu[1] / (D_mu_mu[0] + D_mu_mu[1]);
-   };
-
-   
-   auto Get_dD_SA_dp1 = [&] (double speed, double mu) {
-       double dv, D_SA_Plus, D_SA_Minus, dp, mass = PIC::MolecularData::GetMass(spec); 
-       
-       // dv is a small change relative to speed
-       dv = 0.01 * speed;
-       dp = dv * mass; // dp is the change in momentum
-       
-       // Perturb speed for D_SA_Plus
-       double speedPlus = speed + dv;
-       D_SA_Plus = GetD_SA1(speedPlus, mu); // GetD_SA is now refactored to accept speed and mu
-       
-       // Perturb speed for D_SA_Minus
-       double speedMinus = speed - dv;
-       D_SA_Minus = GetD_SA1(speedMinus, mu); // GetD_SA is now refactored to accept speed and mu
-       
-       return (D_SA_Plus - D_SA_Minus) / (2.0 * dp);
-   };
-
-
-   std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
-   
-   UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {   
-     double SpeedNew,MuNew;
-
-     D_SA.SetVelocity(speed,mu);
-     D_SA.DistributeP(dt);
-
-     D_mu_mu.SetVelocity(speed,mu);
-     MuNew=D_mu_mu.DistributeMu(dt);
-
-     D_SA.Convert2Velocity();
-     SpeedNew=D_SA.speed;
-
-     static int cnt=0;
-     bool repeat_flag=false;
-
-     if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
-       //call the functions in the debugger to see what is going on
-       D_SA.SetVelocity(speed,mu);
-       D_SA.DistributeP(dt);
-
-       D_mu_mu.SetVelocity(speed,mu);
-       MuNew=D_mu_mu.DistributeMu(dt);
-
-       D_SA.Convert2Velocity();
-       SpeedNew=D_SA.speed;
-     }
-
-     if (MuNew>=1.0) {        
-       if (cnt<5) repeat_flag=true;
-       MuNew=1.0-muLimit;
-     }
-
-     if (MuNew<=-1.0) {     
-       if (cnt<5) repeat_flag=true;
-       MuNew=-1.0+muLimit;
-     }
-
-     if (repeat_flag==false) {
-       speed=SpeedNew;
-       mu=MuNew;
-
-       if (speed<0.0) speed*=-1;
-       if (mu>1.0-muLimit) mu=1.0-muLimit;
-       if (mu<-1.0+muLimit) mu=-1.0+muLimit;    
-     } 
-     else {
-       cnt++;
-       UpdateVelocity1(speed,mu,dt/2.0);
-       UpdateVelocity1(speed,mu,dt/2.0);
-       cnt--;
-     }
-
-     if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
-     if (mu>1.0 - muLimit) mu=1.0 - muLimit;
-   };
-
-
-
-
-   auto UpdateVelocityFastParticle1 = [&] (double& speed,double& mu,double dt) {
-     double mass,dD_SA_dp,D_SA,D_mu_mu,dD_mu_mu_dmu,D_mu_mu_Plus,D_mu_mu_Minus;
-     double p,dmu,dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
-     
-     mass=PIC::MolecularData::GetMass(spec); 
-     
-     //Increment pitch angle
-     //1. Determine D_mu_mu
-     //2. Determine dD_mu_mu_dmu
-     GetD_mu_mu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
-     D_mu_mu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
-     
-     
-     
-     Get_dD_mu_mu_dmu1(dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus,speed,mu);
-     dD_mu_mu_dmu=dD_mu_mu_dmu_Plus+dD_mu_mu_dmu_Minus;
-               
-     //3. Determine dMu
-     dmu=dD_mu_mu_dmu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_mu_mu*dt*log(rnd()));
-     
-     if (fabs(dmu)>1.0) mu=-1.0+2.0*rnd();
-     else {
-       mu+=dmu;
-     }
-     
-  //   mu = clamp(mu, -1.0 + muLimit, 1.0 - muLimit);
-     
-     if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
-     if (mu>1.0 - muLimit) mu=1.0 - muLimit;
-         
-     //increment momentum
-     dD_SA_dp=Get_dD_SA_dp1(speed,mu);
-     D_SA=GetD_SA1(speed,mu);
-     
-     p=mass*speed;
-     p+=-(dD_SA_dp+2.0*D_SA/p)*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D_SA*dt*log(rnd()));
-     
-     speed=p/mass;
-   };
-
-
-   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
-   
-   double dtSubStep=dtTotal;
-   double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
-   bool FastParticleFlag=false;
-   
-   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
-   
-   
-   double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
-   mu=vParallel/speed;
-   
-   D_SA.SetVelocity(speed,mu);
-   D_mu_mu.SetVelocity(speed,mu);
-   
-   double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
-   
-   if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
-     //fast particle 
-     FastParticleFlag=true;
-   }
-   else {
-     FastParticleFlag=false;
-  
-     double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
-
-     if (SEP::Diffusion::muTimeStepVariationLimitFlag==false) {
-       if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
-     }
-
-     if (std::isfinite(dD_mu_mu_dMu)==false) {
-       dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
-       exit(__LINE__,__FILE__,"Error: NAN is found");
-     }
-   }
-   
-   
-
-   
-   
-
-
-  while (time_counter<dtTotal) { 
-   loop_cnt++;
-   
-   if (Interpolate()==false) break;
-
-   double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
-   if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
-     //fast particle 
-     FastParticleFlag=true;
-     dtSubStep=dtTotal-time_counter;
-   }
-
-      
-    
-   if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {           
-     D_mu_mu.SetVelocity(speed,mu);
-     NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
-     NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
-   }
-        
-   AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
-     pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
-
-   L=-Vector3D::Length(B)/AbsBDeriv;
-
-   double MovingTime,ScatteringTime;
-   bool ScatteringFlag;
-
-
-   //set the numerical limit on the number of simulated scattering events
-   extern bool NumericalScatteringEventMode;
-   extern double NumericalScatteringEventLimiter;
-
-   //decide is scattering occured
-   if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {
-     ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
-
-     if (time_counter+ScatteringTime<dtTotal) {
-       //scattering occured
-       ScatteringFlag=true;
-
-       MovingTime=ScatteringTime;
-       time_counter+=ScatteringTime;
-     }
-     else {
-       //no scattering
-       ScatteringFlag=false;
-
-       MovingTime=dtTotal-time_counter;
-       time_counter=dtTotal;
-     }
-   }
-   else {
-     ScatteringFlag=false;
-     
-     if (time_counter+dtSubStep<dtTotal) {
-       MovingTime=dtSubStep;
-       time_counter+=dtSubStep;
-     }
-     else {
-       MovingTime=dtTotal-time_counter;
-       time_counter=dtTotal;
-     }
-   }
-   
-   //determine the new particle pitch angle and location
-   double L,AbsBDeriv;
-
-   AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
-     pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
-
-   L=-Vector3D::Length(B)/AbsBDeriv;
-
-   
-//   speed=sqrt(vParallel*vParallel+vNormal*vNormal);
- //  mu=vParallel/speed;
-
-   
-   mu+=(1.0-mu*mu)/(2.0*L)*MovingTime;
-   
-   if (mu<-1.0+muLimit) mu=-1.0+muLimit;
-   if (mu>1.0-muLimit) mu=1.0-muLimit;
-
-//   vParallel=speed*mu;
-//   vNormal=speed*sqrt(1.0-mu*mu);
-  
-   
-   //update the particle location
-   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
-
-   //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
-   if (LimitScatteringUpcomingWave==true) {
-     if (mu>=0.0) NuPlus=0.0;
-     else NuMinus=0.0;
-   }  
-   
-   
-   if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
-     exit(__LINE__,__FILE__,"Error: NaN found");
-   }
-   
-   //model scattering
-   switch (SEP::Diffusion::AccelerationType) {
-   case SEP::Diffusion::AccelerationTypeScattering:
-     if (FastParticleFlag==false) { 
-       if (ScatteringFlag==true) {
-         SEP::Diffusion::WaveScatteringModel(vAlfven,NuPlus,NuMinus,speed,mu);
-       
-         if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
-           exit(__LINE__,__FILE__,"Error: NaN found");
-         }
-       }
-     }
-     else {
-       double muNew,pNew;
-       
-       D_mu_mu.SetVelocity(speed,mu);
-       D_SA.SetVelocity(speed,mu);
-       
-       muNew=D_mu_mu.DistributeMu(MovingTime);
-       pNew=D_SA.DistributeP(MovingTime);
-       
-       if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
-         exit(__LINE__,__FILE__,"Error: NaN found");
-       }
-       
-       mu=D_mu_mu.mu;
-       
-       D_SA.Convert2Velocity();
-       speed=D_SA.speed;
-     }
-     break;
-   case SEP::Diffusion::AccelerationTypeDiffusion:
-     {       
-       double muNew,pNew;
-       
-       D_mu_mu.SetVelocity(speed,mu);
-       D_SA.SetVelocity(speed,mu);
-       
-       muNew=D_mu_mu.DistributeMu(MovingTime);
-       pNew=D_SA.DistributeP(MovingTime);
-       
-       if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
-         exit(__LINE__,__FILE__,"Error: NaN found");
-       }
-       
-       mu=D_mu_mu.mu;
-       
-       D_SA.Convert2Velocity();
-       speed=D_SA.speed;
-     }
-     break;
-   default:
-     exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
-   }
+  double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
+  ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
 
+  std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
+
+  UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {   
+    double SpeedNew,MuNew;
+
+    D_SA.SetVelocity(speed,mu);
+    D_SA.DistributeP(dt);
+
+    D_mu_mu.SetVelocity(speed,mu);
+    MuNew=D_mu_mu.DistributeMu(dt);
+
+    D_SA.Convert2Velocity();
+    SpeedNew=D_SA.speed;
+
+    static int cnt=0;
+    bool repeat_flag=false;
+
+    if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
+      //call the functions in the debugger to see what is going on
+      D_SA.SetVelocity(speed,mu);
+      D_SA.DistributeP(dt);
+
+      D_mu_mu.SetVelocity(speed,mu);
+      MuNew=D_mu_mu.DistributeMu(dt);
+
+      D_SA.Convert2Velocity();
+      SpeedNew=D_SA.speed;
+    }
+
+    if (MuNew>=1.0) {        
+      if (cnt<5) repeat_flag=true;
+      MuNew=1.0-muLimit;
+    }
+
+    if (MuNew<=-1.0) {     
+      if (cnt<5) repeat_flag=true;
+      MuNew=-1.0+muLimit;
+    }
+
+    if (repeat_flag==false) {
+      speed=SpeedNew;
+      mu=MuNew;
+
+      if (speed<0.0) speed*=-1;
+      if (mu>1.0-muLimit) mu=1.0-muLimit;
+      if (mu<-1.0+muLimit) mu=-1.0+muLimit;    
+    } 
+    else {
+      cnt++;
+      UpdateVelocity1(speed,mu,dt/2.0);
+      UpdateVelocity1(speed,mu,dt/2.0);
+      cnt--;
+    }
+
+    if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
+    if (mu>1.0 - muLimit) mu=1.0 - muLimit;
+  };
+
+
+  if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+
+  double dtSubStep=dtTotal;
+  double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+  bool FastParticleFlag=false;
+
+  if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+
+
+  double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/speed;
+
+  D_SA.SetVelocity(speed,mu);
+  D_mu_mu.SetVelocity(speed,mu);
+
+  double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
+
+  if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
+    //fast particle 
+    FastParticleFlag=true;
   }
-   
+  else {
+    FastParticleFlag=false;
+
+    double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+
+    if (SEP::Diffusion::muTimeStepVariationLimitFlag==false) {
+      if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
+    }
+
+    if (std::isfinite(dD_mu_mu_dMu)==false) {
+      dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+      exit(__LINE__,__FILE__,"Error: NAN is found");
+    }
+  }
+
+  //integrate particle trajectory
+  while (time_counter<dtTotal) { 
+    loop_cnt++;
+
+    if (Interpolate()==false) break;
+
+    double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
+    if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
+      //fast particle 
+      FastParticleFlag=true;
+      dtSubStep=dtTotal-time_counter;
+    }
+
+    if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {           
+      D_mu_mu.SetVelocity(speed,mu);
+      NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
+      NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
+    }
+
+    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+    L=-Vector3D::Length(B)/AbsBDeriv;
+
+    double MovingTime,ScatteringTime;
+    bool ScatteringFlag;
+
+
+    //set the numerical limit on the number of simulated scattering events
+    extern bool NumericalScatteringEventMode;
+    extern double NumericalScatteringEventLimiter;
+
+    //decide is scattering occured
+    if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {
+      ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
+
+      if (time_counter+ScatteringTime<dtTotal) {
+        //scattering occured
+        ScatteringFlag=true;
+
+        MovingTime=ScatteringTime;
+        time_counter+=ScatteringTime;
+      }
+      else {
+        //no scattering
+        ScatteringFlag=false;
+
+        MovingTime=dtTotal-time_counter;
+        time_counter=dtTotal;
+      }
+    }
+    else {
+      ScatteringFlag=false;
+
+      if (time_counter+dtSubStep<dtTotal) {
+        MovingTime=dtSubStep;
+        time_counter+=dtSubStep;
+      }
+      else {
+        MovingTime=dtTotal-time_counter;
+        time_counter=dtTotal;
+      }
+    }
+
+    //determine the new particle pitch angle and location
+    double L,AbsBDeriv;
+
+    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+    L=-Vector3D::Length(B)/AbsBDeriv;
+    mu+=(1.0-mu*mu)/(2.0*L)*MovingTime;
+
+    if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+    if (mu>1.0-muLimit) mu=1.0-muLimit;
+
+    //update the particle location
+    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
+
+    //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
+    if (LimitScatteringUpcomingWave==true) {
+      if (mu>=0.0) NuPlus=0.0;
+      else NuMinus=0.0;
+    }  
+
+
+    if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+      exit(__LINE__,__FILE__,"Error: NaN found");
+    }
+
+    //model scattering
+    switch (SEP::Diffusion::AccelerationType) {
+    case SEP::Diffusion::AccelerationTypeScattering:
+      if (FastParticleFlag==false) { 
+        if (ScatteringFlag==true) {
+          SEP::Diffusion::WaveScatteringModel(vAlfven,NuPlus,NuMinus,speed,mu);
+
+          if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+            exit(__LINE__,__FILE__,"Error: NaN found");
+          }
+        }
+      }
+      else {
+        double muNew,pNew;
+
+        D_mu_mu.SetVelocity(speed,mu);
+        D_SA.SetVelocity(speed,mu);
+
+        muNew=D_mu_mu.DistributeMu(MovingTime);
+        pNew=D_SA.DistributeP(MovingTime);
+
+        if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+          exit(__LINE__,__FILE__,"Error: NaN found");
+        }
+
+        mu=D_mu_mu.mu;
+
+        D_SA.Convert2Velocity();
+        speed=D_SA.speed;
+      }
+      break;
+    case SEP::Diffusion::AccelerationTypeDiffusion:
+    {       
+      double muNew,pNew;
+
+      D_mu_mu.SetVelocity(speed,mu);
+      D_SA.SetVelocity(speed,mu);
+
+      muNew=D_mu_mu.DistributeMu(MovingTime);
+      pNew=D_SA.DistributeP(MovingTime);
+
+      if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+        exit(__LINE__,__FILE__,"Error: NaN found");
+      }
+
+      mu=D_mu_mu.mu;
+
+      D_SA.Convert2Velocity();
+      speed=D_SA.speed;
+    }
+    break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
+    }
+  }
+
 
   //get the segment of the new particle location 
   if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
     //the particle left the computational domain
     int code=_PARTICLE_DELETED_ON_THE_FACE_;
-    
+
     //call the function that process particles that leaved the coputational domain
     switch (code) {
     case _PARTICLE_DELETED_ON_THE_FACE_:
@@ -853,18 +468,18 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    #pragma omp critical
-#endif
-    {
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp critical
+  #endif
+  {
     PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
     if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
     Segment->tempFirstParticleIndex=ptr;
-    } 
+  } 
 
-    break;
+  break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }

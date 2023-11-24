@@ -537,7 +537,108 @@ namespace SEP {
      }  
     };
 
- 
+    class cD_mu_mu_basic : public cDiffusionCoeffcient {
+    public:
+       double Lmax,*xLocation;
+       
+      double GetLambda() {
+        double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
+        double vNormal=speed*sqrt(1.0-mu*mu);
+        double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+   
+        double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
+
+        TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
+        if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+        res=c1/TurbulenceLevel;
+        if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
+
+        return res;
+      }
+      
+      void Init() {
+        Lmax=0.03*Vector3D::Length(xLocation);
+      }
+
+      double GetDiffusionCoeffcient() {
+        return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
+      }
+    };
+    
+    class cD_SA : public SEP::Diffusion::cDiffusionCoeffcient {
+    public: 
+      cD_mu_mu_basic D_mu_mu_Minus,D_mu_mu_Plus;
+      
+      double GetDiffusionCoeffcient() {
+        double Dplus,Dminus;
+        
+        D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
+        D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+        
+        Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
+        Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
+        
+        double t=vAlfven*PIC::MolecularData::GetMass(spec);
+        
+        return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus); 
+      }
+      
+      void Init() {
+        D_mu_mu_Minus.Init();
+        D_mu_mu_Plus.Init();  
+      }
+      
+      void SetW(double *w) {
+        D_mu_mu_Minus.W=w[1];
+        D_mu_mu_Plus.W=w[0];
+      }
+      
+      void SetLocation(double *x) {
+        D_mu_mu_Minus.xLocation=x;
+        D_mu_mu_Plus.xLocation=x;
+      }
+      
+      void SetVelAlfven(double v) {
+        vAlfven=v;
+        D_mu_mu_Minus.vAlfven=-v;
+        D_mu_mu_Plus.vAlfven=v;
+      }
+      
+      void SetAbsB(double b) {
+        D_mu_mu_Minus.AbsB=b;
+        D_mu_mu_Plus.AbsB=b;
+      }
+      
+      void SetVelocity(double SpeedIn,double MuIn) {
+        speed=SpeedIn,mu=MuIn,InputMode=InputModeVelocity;
+        D_mu_mu_Minus.SetVelocity(SpeedIn,MuIn);
+        D_mu_mu_Plus.SetVelocity(SpeedIn,MuIn);
+      }
+      
+      void SetMomentum(double MomentumIn,double MuIn) {
+        p=MomentumIn,mu=MuIn,InputMode=InputModeMomentum;
+        D_mu_mu_Minus.SetMomentum(MomentumIn,MuIn);
+        D_mu_mu_Plus.SetMomentum(MomentumIn,MuIn);
+      }
+        };
+    
+    
+    class cD_mu_mu : public cD_SA {
+    public:     
+      double GetDiffusionCoeffcient() {
+        double Dplus,Dminus;
+        
+        D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
+        D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+        
+        Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
+        Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
+        
+        return Dplus+Dminus; 
+      }
+    };
+    
 
 
 
