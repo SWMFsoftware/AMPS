@@ -10,6 +10,12 @@ int PIC::FieldLine::cFieldLineVertex::sampleDataLength=-1;
 int PIC::FieldLine::cFieldLineVertex::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 
+//the following is used to output the distance from the beginning of the 
+//field line in units other than SI
+//first -> the conversion factor
+//second -> the string contains the unit symbol
+std::pair<double,string> PIC::FieldLine::cFieldLine::OutputLengthConversionFactor(1.0,"");
+
 //user-defined function that defiens an title that is printed in the Tecplot output file (e.g., simulation time of the file)
 PIC::FieldLine::fUserDefinedTecplotFileTitle PIC::FieldLine::UserDefinedTecplotFileTitle=NULL; 
 
@@ -680,6 +686,8 @@ namespace PIC {
       double *DistanceTable=new double [nVertex]; 
 
       DistanceTable[0]=0.0;
+      
+      double LengthConversionFactor=PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.first;
 
       //calculate length of vertexes from the beginning of the field line 
       for (iSegment=0,Segment=FirstSegment; iSegment<nSegment; iSegment++,Segment=Segment->GetNext()) {
@@ -694,9 +702,9 @@ namespace PIC {
 
           Vertex->GetX(x);
 
-          for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
+          for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", LengthConversionFactor*x[idim]);
 
-          fprintf(fout,"%e \n",DistanceTable[iVertex]);
+          fprintf(fout,"%e \n",LengthConversionFactor*DistanceTable[iVertex]);
           Vertex = Vertex->GetNext();
         }
 
@@ -755,9 +763,9 @@ namespace PIC {
 
         Vertex->GetX(x);
 
-        for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", x[idim]);
+        for (int idim=0; idim<DIM; idim++) fprintf(fout, "%e ", LengthConversionFactor*x[idim]);
 
-        fprintf(fout, "%e ", DistanceTable[iVertex]);
+        fprintf(fout, "%e ", LengthConversionFactor*DistanceTable[iVertex]);
 
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
           if (iVertex==0) {
@@ -899,7 +907,15 @@ namespace PIC {
 switch (DIM) {
   case 3:
     {
-      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\",\"Distance from the beginning\"");
+      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\",\"Distance from the beginning");
+      
+      if (PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second=="") {
+        fprintf(fout,"\"");
+      }
+      else {
+        fprintf(fout," [%s]\"",PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second.c_str());
+      }
+     
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
 

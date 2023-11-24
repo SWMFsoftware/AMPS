@@ -1158,6 +1158,12 @@ void DeleteAttachedParticles();
       bool is_broken();
     public:
 
+      //the following is used to output the distance from the beginning of the 
+      //field line in units other than SI
+      //first -> the conversion factor
+      //second -> the string contains the unit symbol
+      static std::pair<double,string> OutputLengthConversionFactor;
+
       cFieldLine() {
         IsSet = 0, nSegment = -1, TotalLength=-1.0;
         FirstSegment = (LastSegment = NULL);
