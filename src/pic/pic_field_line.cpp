@@ -903,19 +903,19 @@ namespace PIC {
       fout = fopen(fname,"w");
       
       fprintf(fout, "TITLE=\"Field line geometry\"");
+
+      //if no units are defined in OutputLengthConversionFactor, then set the default to [m] 
+      if (PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second=="") {
+        PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second="m";
+      }
+
+      auto *units=PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second.c_str();
       
 switch (DIM) {
   case 3:
     {
-      fprintf(fout,"VARIABLES=\"x\",\"y\",\"z\",\"Distance from the beginning");
+      fprintf(fout,"VARIABLES=\"x[%s]\",\"y[%s]\",\"z[%s]\",\"Distance from the beginning[%s]\"",units,units,units,units);
       
-      if (PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second=="") {
-        fprintf(fout,"\"");
-      }
-      else {
-        fprintf(fout," [%s]\"",PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second.c_str());
-      }
-     
       vector<cDatumStored*>::iterator itrDatumStored;
       vector<cDatumSampled*>::iterator itrDatum;
 
