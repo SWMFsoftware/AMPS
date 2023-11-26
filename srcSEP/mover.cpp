@@ -105,7 +105,8 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   double *W0,*W1;
   double *x0,*x1;
   double w0,w1;
-  double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,NuPlus,NuMinus; 
+  double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,PlasmaDensityPrev0,PlasmaDensityPrev1,PlasmaDensityPrev;
+  double NuPlus,NuMinus; 
 
   auto Interpolate = [&] () {
     double x[3];
@@ -135,6 +136,9 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
     VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
     VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+    
+    VertexBegin->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev0);
+    VertexEnd->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev1);
 
     x0=VertexBegin->GetX();
     x1=VertexEnd->GetX();
@@ -159,6 +163,7 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
     W[0]=w0*W0[0]+w1*W1[0];
     W[1]=w0*W0[1]+w1*W1[1];
     PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+    PlasmaDensityPrev=(w0*PlasmaDensityPrev0+w1*PlasmaDensityPrev1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
 
     AbsB=sqrt(absB2);
     vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
@@ -188,65 +193,6 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
   ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
-
-  std::function<void(double& speed,double& mu,double dt)> UpdateVelocity1;
-
-  UpdateVelocity1 = [&] (double& speed,double& mu,double dt) -> void {   
-    double SpeedNew,MuNew;
-
-    D_SA.SetVelocity(speed,mu);
-    D_SA.DistributeP(dt);
-
-    D_mu_mu.SetVelocity(speed,mu);
-    MuNew=D_mu_mu.DistributeMu(dt);
-
-    D_SA.Convert2Velocity();
-    SpeedNew=D_SA.speed;
-
-    static int cnt=0;
-    bool repeat_flag=false;
-
-    if ((isfinite(SpeedNew)==false)||(isfinite(MuNew)==false)) {
-      //call the functions in the debugger to see what is going on
-      D_SA.SetVelocity(speed,mu);
-      D_SA.DistributeP(dt);
-
-      D_mu_mu.SetVelocity(speed,mu);
-      MuNew=D_mu_mu.DistributeMu(dt);
-
-      D_SA.Convert2Velocity();
-      SpeedNew=D_SA.speed;
-    }
-
-    if (MuNew>=1.0) {        
-      if (cnt<5) repeat_flag=true;
-      MuNew=1.0-muLimit;
-    }
-
-    if (MuNew<=-1.0) {     
-      if (cnt<5) repeat_flag=true;
-      MuNew=-1.0+muLimit;
-    }
-
-    if (repeat_flag==false) {
-      speed=SpeedNew;
-      mu=MuNew;
-
-      if (speed<0.0) speed*=-1;
-      if (mu>1.0-muLimit) mu=1.0-muLimit;
-      if (mu<-1.0+muLimit) mu=-1.0+muLimit;    
-    } 
-    else {
-      cnt++;
-      UpdateVelocity1(speed,mu,dt/2.0);
-      UpdateVelocity1(speed,mu,dt/2.0);
-      cnt--;
-    }
-
-    if (mu<-1.0 + muLimit) mu=-1.0 + muLimit;
-    if (mu>1.0 - muLimit) mu=1.0 - muLimit;
-  };
-
 
   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
 
@@ -285,10 +231,20 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   }
 
   //integrate particle trajectory
+  double DivVsw=0.0;
+  
   while (time_counter<dtTotal) { 
     loop_cnt++;
 
     if (Interpolate()==false) break;
+    
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    if (AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==true) {
+      DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+    }
+    #else 
+    DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/dtTotal;
+    #endif
 
     double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
     if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
@@ -363,6 +319,11 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
     //update the particle location
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
 
+    //increment particle momentum
+    double p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+    p*=exp(DivVsw*MovingTime/3.0);
+    speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+    
     //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
     if (LimitScatteringUpcomingWave==true) {
       if (mu>=0.0) NuPlus=0.0;

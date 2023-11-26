@@ -69,6 +69,10 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 
 void amps_init_mesh() {
   PIC::InitMPI();
+  
+  //set up the conversion factor for output of the magnetic field line length
+  PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.first=1.0/_AU_;
+  PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second="AU";
 
   //set the function for the particle sampling 
   SEP::Sampling::Init();

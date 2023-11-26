@@ -287,6 +287,9 @@ namespace SEP {
       static const int InputModeMomentum=1;
       static const int InputModeVelocity=2;
       
+      //counter of the recursive loops in the procedure for distributing the pich angle
+      int LoopCounter;
+      
       //user-defined function for calcuilating the diffusion coefficient may be set with a pointer
       std::function<double (cDiffusionCoeffcient*)> fGetDiffusionCoeffcient;
       
@@ -314,6 +317,7 @@ namespace SEP {
         InputMode=InputModeUndefined;
         fGetDiffusionCoeffcient=NULL;
         spec=0;
+        LoopCounter=0;
       }
       
       void SetVelocity(double SpeedIn,double MuIn) {
@@ -512,8 +516,18 @@ namespace SEP {
            
            res=mu+dMu;
            
-           if (res>1.0-muLimit) res=1.0-muLimit;
-           if (res<-1.0+muLimit) res=-1.0+muLimit;
+           if (LoopCounter<5) {
+             if ((res>1.0-muLimit)||(res<-1.0+muLimit)) {
+               LoopCounter++;
+               DistributeMu(0.5*dt/nSteps);
+               DistributeMu(0.5*dt/nSteps);
+               LoopCounter--;
+             }
+           }
+           else {
+             if (res>1.0-muLimit) res=1.0-muLimit;
+             if (res<1.0-muLimit) res=-1.0+muLimit;
+           }
            
            mu=res;
          }
