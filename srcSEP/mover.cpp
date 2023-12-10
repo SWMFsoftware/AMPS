@@ -79,6 +79,459 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   vParallelInit=vParallel,vNormalInit=vNormal;
 
+double  ee=Relativistic::Speed2E(sqrt(vNormal*vNormal+vParallel*vParallel),PIC::MolecularData::GetMass(spec));
+ee*=J2MeV;
+
+if (ee>200) {
+  double ss=0.0;
+
+  ss+=23;
+} 
+
+  //determine the segment of the particle location 
+  Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+
+  double AbsBDeriv;
+  double vSolarWind[3],vSolarWindParallel;
+  double FieldLineCoord_init=FieldLineCoord;
+
+  //get the new value of 'mu'
+  double D,dD_dmu;
+
+  double mu_init=mu;
+  double time_counter=0.0;
+  double dt=dtTotal;
+  double dmu=0.0;
+  double delta;
+
+  bool first_pass_flag=true;
+  static long int loop_cnt=0;
+
+  SEP::Diffusion::cD_SA D_SA;
+  SEP::Diffusion::cD_mu_mu D_mu_mu;
+  SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> D_x_x;
+  
+  double *B0,*B1,B[3],r2;
+  double *W0,*W1;
+  double *x0,*x1;
+  double w0,w1;
+  double PlasmaDensity0,PlasmaDensity1,PlasmaDensity,PlasmaDensityPrev0,PlasmaDensityPrev1,PlasmaDensityPrev;
+  double NuPlus,NuMinus; 
+
+  auto Interpolate = [&] () {
+    double x[3];
+    Segment->GetCartesian(x, FieldLineCoord);
+
+    D_SA.SetLocation(x);
+    D_SA.Init();
+
+    D_mu_mu.SetLocation(x);
+    D_mu_mu.Init();
+    
+    D_x_x.SetLocation(x);
+    D_x_x.Init(spec);
+
+    Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+    if (Segment==NULL) return false;
+
+    FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+    FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
+    absB2=0.0;
+
+
+    //get the magnetic field and the plasma waves at the corners of the segment
+    B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+    B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+    W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+    W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+
+    VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
+    VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+    
+    VertexBegin->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev0);
+    VertexEnd->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev1);
+
+    x0=VertexBegin->GetX();
+    x1=VertexEnd->GetX();
+
+    //determine the interpolation coefficients
+    w1=fmod(FieldLineCoord,1);
+    w0=1.0-w1;
+
+
+    int idim;
+
+    for (idim=0;idim<3;idim++) {
+      double t;
+
+      B[idim]=w0*B0[idim]+w1*B1[idim];
+      absB2+=B[idim]*B[idim];
+
+      t=w0*x0[idim]+w1*x1[idim]; 
+      r2+=t*t;
+    }
+
+    W[0]=w0*W0[0]+w1*W1[0];
+    W[1]=w0*W0[1]+w1*W1[1];
+    PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+    PlasmaDensityPrev=(w0*PlasmaDensityPrev0+w1*PlasmaDensityPrev1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+
+    AbsB=sqrt(absB2);
+    vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
+
+    D_SA.SetW(W);
+    D_SA.SetVelAlfven(vAlfven);
+    D_SA.SetAbsB(AbsB);
+
+    D_mu_mu.SetW(W);
+    D_mu_mu.SetVelAlfven(vAlfven);
+    D_mu_mu.SetAbsB(AbsB);
+
+    return true;
+  };
+
+
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/v;
+
+  if (v>0.99*SpeedOfLight) {
+    double t=0.99*SpeedOfLight/v;
+
+    v=0.99*SpeedOfLight;
+    vParallel*=t;
+    vNormal*=t; 
+  }
+
+  double ParticleStatWeight=node->block->GetLocalParticleWeight(spec);
+  ParticleStatWeight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
+
+  if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+
+  double dtSubStep=dtTotal;
+  double dD_mu_mu_dmu_Plus,dD_mu_mu_dmu_Minus;
+  bool FastParticleFlag=false;
+
+  if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
+
+
+  double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/speed;
+
+  D_SA.SetVelocity(speed,mu);
+  D_mu_mu.SetVelocity(speed,mu);
+
+  double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
+
+  if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
+    //fast particle 
+    FastParticleFlag=true;
+  }
+  else {
+    FastParticleFlag=false;
+
+    double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+
+    if (SEP::Diffusion::muTimeStepVariationLimitFlag==false) {
+      if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
+    }
+
+    if (std::isfinite(dD_mu_mu_dMu)==false) {
+      dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+      exit(__LINE__,__FILE__,"Error: NAN is found");
+    }
+  }
+
+  //integrate particle trajectory
+  double DivVsw=0.0,ds;
+  
+  while (time_counter<dtTotal) { 
+    loop_cnt++;
+
+    if (Interpolate()==false) break;
+    
+    
+    //determine the which method should be used 
+    double MeanFreePath;
+    
+    D_x_x.SetVelocity(speed);
+    MeanFreePath=D_x_x.GetMeanFreePath(FieldLineCoord,Segment,iFieldLine);
+    
+    
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    if (AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==true) {
+      DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
+    }
+    #else 
+    DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/dtTotal;
+    #endif
+
+    double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
+    if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
+      //fast particle 
+      FastParticleFlag=true;
+      dtSubStep=dtTotal-time_counter;
+    }
+
+    if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {           
+      D_mu_mu.SetVelocity(speed,mu);
+      NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
+      NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
+    }
+
+    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+    L=-Vector3D::Length(B)/AbsBDeriv;
+
+    double MovingTime,ScatteringTime;
+    bool ScatteringFlag;
+
+
+    //set the numerical limit on the number of simulated scattering events
+    extern bool NumericalScatteringEventMode;
+    extern double NumericalScatteringEventLimiter;
+
+    //decide is scattering occured
+    if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {
+      ScatteringTime=-log(rnd())/(NuPlus+NuMinus);
+
+      if (time_counter+ScatteringTime<dtTotal) {
+        //scattering occured
+        ScatteringFlag=true;
+
+        MovingTime=ScatteringTime;
+        time_counter+=ScatteringTime;
+      }
+      else {
+        //no scattering
+        ScatteringFlag=false;
+
+        MovingTime=dtTotal-time_counter;
+        time_counter=dtTotal;
+      }
+    }
+    else {
+      ScatteringFlag=false;
+
+      if (time_counter+dtSubStep<dtTotal) {
+        MovingTime=dtSubStep;
+        time_counter+=dtSubStep;
+      }
+      else {
+        MovingTime=dtTotal-time_counter;
+        time_counter=dtTotal;
+      }
+    }
+
+    //determine the new particle pitch angle and location
+    double L,AbsBDeriv;
+
+    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
+        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
+
+    L=-Vector3D::Length(B)/AbsBDeriv;
+    mu+=(1.0-mu*mu)/(2.0*L)*MovingTime;
+
+    if (mu<-1.0+muLimit) mu=-1.0+muLimit;
+    if (mu>1.0-muLimit) mu=1.0-muLimit;
+
+    //update the particle location
+ //   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
+    
+    //determine the shift of a particle position
+    ds=MovingTime*speed*mu;
+
+    //increment particle momentum
+    double p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+    p*=exp(DivVsw*MovingTime/3.0);
+    speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+    
+    //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
+    if (LimitScatteringUpcomingWave==true) {
+      if (mu>=0.0) NuPlus=0.0;
+      else NuMinus=0.0;
+    }  
+
+
+    if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+      exit(__LINE__,__FILE__,"Error: NaN found");
+    }
+
+    //model scattering
+    switch (SEP::Diffusion::AccelerationType) {
+    case SEP::Diffusion::AccelerationTypeScattering:
+      if (FastParticleFlag==false) { 
+        if (ScatteringFlag==true) {
+          SEP::Diffusion::WaveScatteringModel(vAlfven,NuPlus,NuMinus,speed,mu);
+
+          if ((isfinite(speed)==false)||(isfinite(mu)==false)) {
+            exit(__LINE__,__FILE__,"Error: NaN found");
+          }
+        }
+      }
+      else {
+        double muNew,pNew;
+
+        if (MeanFreePath>ds) {
+        	//Mean free path is "large" -> integrate the pich angle evalution
+          D_mu_mu.SetVelocity(speed,mu);
+          D_SA.SetVelocity(speed,mu);
+
+          muNew=D_mu_mu.DistributeMu(MovingTime);
+          pNew=D_SA.DistributeP(MovingTime);
+
+          if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+            exit(__LINE__,__FILE__,"Error: NaN found");
+          }
+
+          mu=D_mu_mu.mu;
+
+          D_SA.Convert2Velocity();
+          speed=D_SA.speed;
+        }
+        else {
+        	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
+          D_SA.SetVelocity(speed,mu);
+          D_SA.Convert2Velocity();
+          speed=D_SA.speed;
+          
+          ds=D_x_x.DistributeX(MovingTime,FieldLineCoord,Segment,iFieldLine);
+          mu=-1.0-muLimit+rnd()*2.0*(1.0-muLimit);
+        }
+      }
+      break;
+    case SEP::Diffusion::AccelerationTypeDiffusion:
+    {       
+      double muNew,pNew;
+
+      if (MeanFreePath>ds) {
+      	//Mean free path is "large" -> integrate the pich angle evalution
+				D_mu_mu.SetVelocity(speed,mu);
+				D_SA.SetVelocity(speed,mu);
+	
+				muNew=D_mu_mu.DistributeMu(MovingTime);
+				pNew=D_SA.DistributeP(MovingTime);
+	
+				if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+					exit(__LINE__,__FILE__,"Error: NaN found");
+				}
+	
+				mu=D_mu_mu.mu;
+	
+				D_SA.Convert2Velocity();
+				speed=D_SA.speed;
+      }
+      else {
+      	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
+        D_SA.SetVelocity(speed,mu);
+        D_SA.Convert2Velocity();
+        speed=D_SA.speed;
+        
+        ds=D_x_x.DistributeX(MovingTime,FieldLineCoord,Segment,iFieldLine);
+        mu=-1.0-muLimit+rnd()*2.0*(1.0-muLimit);
+      }
+    }
+    break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the oprion is not recognized");
+    }
+  }
+
+  //update the particle location
+  FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
+  
+  //get the segment of the new particle location 
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    //the particle left the computational domain
+    int code=_PARTICLE_DELETED_ON_THE_FACE_;
+
+    //call the function that process particles that leaved the coputational domain
+    switch (code) {
+    case _PARTICLE_DELETED_ON_THE_FACE_:
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: not implemented");
+    }
+  }
+
+
+  vParallel=speed*mu;
+  vNormal=speed*sqrt(1.0-mu*mu);
+
+  //set the new values of the normal and parallel particle velocities 
+  PB::SetVParallel(vParallel,ParticleData);
+  PB::SetVNormal(vNormal,ParticleData);
+
+  if (std::isfinite(vParallel)==false) exit(__LINE__,__FILE__);
+  if (std::isfinite(vNormal)==false) exit(__LINE__,__FILE__); 
+
+  //set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+
+  //attach the particle to the temporaty list
+  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+    break;
+  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #pragma omp critical
+  #endif
+  {
+    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
+    Segment->tempFirstParticleIndex=ptr;
+  } 
+
+  break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
+
+//===================================================================================================================================
+int SEP::ParticleMover_Droge_2009_AJ2(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+  double W[2],mu,AbsB,absB2,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
+  double FieldLineCoord,Lmax,vAlfven;
+  int iFieldLine,spec;
+  FL::cFieldLineSegment *Segment; 
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+
+  FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+  iFieldLine=PB::GetFieldLineId(ParticleData); 
+  spec=PB::GetI(ParticleData);
+
+  //velocity is in the frame moving with solar wind
+  vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
+
+  vParallelInit=vParallel,vNormalInit=vNormal;
+
+double  ee=Relativistic::Speed2E(sqrt(vNormal*vNormal+vParallel*vParallel),PIC::MolecularData::GetMass(spec));
+ee*=J2MeV;
+
+if (ee>200) {
+  double ss=0.0;
+
+  ss+=23;
+} 
+
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
@@ -1949,7 +2402,6 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   }
 
   double dx,dDxx_dx;
-  int iR,iE,iMu;
   
   dx=0.0;
 
