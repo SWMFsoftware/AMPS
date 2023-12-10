@@ -5,6 +5,30 @@
 #include "sep.h"
 #include "quadrature.h"
 
+//static variables from c_D_x_x
+//template<class T> double SEP::Diffusion::cD_x_x<T>::speed;
+
+/*template<class T>
+double SEP::Diffusion::cD_x_x<T>::p=0.0;
+
+template<class T>
+double SEP::Diffusion::cD_x_x<T>::W[2]={0.0,0.0};
+
+template<class T>
+double SEP::Diffusion::cD_x_x<T>::AbsB=0.0;
+
+template<class T>
+double SEP::Diffusion::cD_x_x<T>::xLocation[3]={0.0,0.0,0.0};
+
+template<class T>
+double SEP::Diffusion::cD_x_x<T>::vAlfven=0.0;
+
+template<class T>
+double SEP::Diffusion::cD_x_x<T>::B[3]={0.0,0.0,0.0};
+    
+template<class T>
+PIC::FieldLine::cFieldLineSegment*  SEP::Diffusion::cD_x_x<T>::Segment=NULL;*/
+
 namespace DxxInternalNumerics {
   thread_local double v;
   thread_local int spec;
