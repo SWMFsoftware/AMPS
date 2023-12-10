@@ -29,6 +29,7 @@
 
 #include "pic.h"
 #include "specfunc.h"
+#include "quadrature.h"
 
 #include "Exosphere.h"
 #include "constants.h"
@@ -328,6 +329,10 @@ namespace SEP {
       void SetMomentum(double MomentumIn,double MuIn) {
         p=MomentumIn,mu=MuIn;
         InputMode=InputModeMomentum;
+      }
+      
+      void SetMu(double MuIn) {
+      	mu=MuIn;
       }
       
      double GetLarmorR() {
@@ -653,7 +658,233 @@ namespace SEP {
       }
     };
     
+    template <class T>
+    class cD_x_x {
+    public:
+    	static T D_mu_mu;
+      #pragma omp threadprivate(D_mu_mu)
+    	
+    	int spec;
+    	int InputMode;
 
+    	static const int InputModeUndefined=0;
+    	static const int InputModeMomentum=1;
+    	static const int InputModeVelocity=2;
+    	
+    private:
+       static double speed,p,W[2],AbsB,xLocation[3],vAlfven,B[3];
+       #pragma omp threadprivate(speed,p,W,AbsB,xLocation,vAlfven,B)
+       
+       
+       static PIC::FieldLine::cFieldLineSegment* Segment;
+       #pragma omp threadprivate(Segment)
+
+    public:
+    	void Convert2Velocity() {
+    		if (InputMode==InputModeUndefined) {
+    			exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+    		}
+    		else if (InputMode==InputModeMomentum) {
+    			InputMode=InputModeVelocity;
+    			speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+    		}
+    	}
+
+    	void Convert2Momentum() {
+    		if (InputMode==InputModeUndefined) {
+    			exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+    		}
+    		else if (InputMode==InputModeVelocity) {
+    			InputMode=InputModeMomentum;
+    			p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+    		}
+    	}
+
+    	cD_x_x() {
+    		InputMode=InputModeUndefined;
+    		spec=0;
+    	}
+
+    	void Init(int SpecIn) {
+    		D_mu_mu.Init();
+    		
+    		spec=SpecIn;
+    		D_mu_mu.spec=SpecIn;
+    	}
+    	
+      void SetW(double *w) {
+      	D_mu_mu.SetW(w);
+       }
+       
+       void SetLocation(double *x) {
+         D_mu_mu.SetLocation(x);
+       }
+       
+       void SetVelAlfven(double v) {
+         D_mu_mu.SetVelAlfven(v);
+       }
+       
+       void SetAbsB(double b) {
+         D_mu_mu.SetAbsB(b);
+       }
+       
+       void SetVelocity(double SpeedIn) {
+         speed=SpeedIn;
+         InputMode=InputModeVelocity;
+       }
+       
+       void SetMomentum(double MomentumIn,double MuIn) {
+         p=MomentumIn;
+   	     InputMode=InputModeMomentum;
+       } 
+       
+    private:      
+       bool Interpolate(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+      	 namespace FL = PIC::FieldLine;
+      	 double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
+      	 double PlasmaDensity0,PlasmaDensity1,PlasmaDensity;
+      	 int idim;
+      	       	 
+      	 Segment->GetCartesian(xLocation, FieldLineCoord);
+      	 Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+      	 if (Segment==NULL) return false;
+
+      	 FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+      	 FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
+      	 AbsB=0.0;
+
+      	 //get the magnetic field and the plasma waves at the corners of the segment
+      	 B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+      	 B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+      	 W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+      	 W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+      	 
+         VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
+         VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+
+      	 x0=VertexBegin->GetX();
+      	 x1=VertexEnd->GetX();
+
+      	 //determine the interpolation coefficients
+      	 w1=fmod(FieldLineCoord,1);
+      	 w0=1.0-w1;
+
+      	 for (idim=0;idim<3;idim++) {
+      		 B[idim]=w0*B0[idim]+w1*B1[idim];
+      		 AbsB+=B[idim]*B[idim];
+      	 }
+
+         PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+      	 W[0]=w0*W0[0]+w1*W1[0];
+      	 W[1]=w0*W0[1]+w1*W1[1];
+
+      	 AbsB=sqrt(AbsB);
+      	 vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
+      	 
+      	 return true;
+       };
+
+       static double Integrant(double *mu) {
+         double D;
+         double t=1.0-mu[0]*mu[0];
+
+         D_mu_mu.SetMu(mu[0]);
+         D=D_mu_mu.GetDiffusionCoeffcient();
+
+         if (D==0.0) {
+           //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
+        	 D_mu_mu.GetDiffusionCoeffcient();
+         }
+
+         return t*t/D;
+       }
+
+      public: 
+    		double GetDxx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    			namespace FL = PIC::FieldLine;
+    			double D,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
+    			
+    			Interpolate(FieldLineCoord,Segment,iFieldLine);
+          Convert2Velocity();
+          
+          D_mu_mu.SetVelocity(speed,0.0);
+          D_mu_mu.spec=spec;   
+          D_mu_mu.SetW(W);
+          D_mu_mu.SetLocation(xLocation);
+          D_mu_mu.SetVelAlfven(vAlfven);        
+          D_mu_mu.SetAbsB(AbsB);
+    		  
+    		  if (speed<1.0E6) {
+    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,Integrant,xmin,xmax);
+    		  }
+    		  else if (speed<1.0E7) {
+    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,Integrant,xmin,xmax);
+    		  }
+    		  else {
+    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant,xmin,xmax);
+    		  }    	
+    		  
+    		  return D;
+    		}
+    		
+    		double GetMeanFreePath(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    		  double D;
+
+    		  D=GetDxx(FieldLineCoord,Segment,iFieldLine);
+    		  return 3.0*D/speed;
+    		}
+
+
+    		double GetdDxx_dx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    			namespace FL = PIC::FieldLine;
+    			double ds,S,D0,D1;
+    			FL::cFieldLineSegment *SegmentTest;
+
+    			ds=Segment->GetLength()/2.0;
+
+    			S=FieldLineCoord;
+
+    			//get the diffusion coeffcient for -ds
+    			S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
+    			SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+
+    			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
+    			D0=GetDxx(S,SegmentTest,iFieldLine);
+
+    			//get the diffusion coeffcient for +ds
+    			S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
+    			SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+
+    			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
+    			D1=GetDxx(S,SegmentTest,iFieldLine);
+
+    			//get the derivative
+    			return (D1-D0)/(2.0*ds);
+    		}
+    		
+    		double DistributeX(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    			namespace FL = PIC::FieldLine;
+    			double ds,D,dD_dx;
+    			
+    			D=GetDxx(FieldLineCoord,Segment,iFieldLine);
+    			dD_dx=GetdDxx_dx(FieldLineCoord,Segment,iFieldLine);
+    			
+    			ds=dD_dx*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+    			return FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
+    		}
+    };
+
+    template<class T> double SEP::Diffusion::cD_x_x<T>::speed=0.0;
+    template<class T> double SEP::Diffusion::cD_x_x<T>::p=0.0;
+    template<class T> double SEP::Diffusion::cD_x_x<T>::W[2]={0.0,0.0};
+    template<class T> double SEP::Diffusion::cD_x_x<T>::AbsB=0.0;
+    template<class T> double SEP::Diffusion::cD_x_x<T>::xLocation[3]={0.0,0.0,0.0};
+    template<class T> double SEP::Diffusion::cD_x_x<T>::vAlfven=0.0;
+    template<class T> double SEP::Diffusion::cD_x_x<T>::B[3]={0.0,0.0,0.0};      
+    template<class T> PIC::FieldLine::cFieldLineSegment*  SEP::Diffusion::cD_x_x<T>::Segment=NULL;
+    template<class T> T SEP::Diffusion::cD_x_x<T>::D_mu_mu;
 
 
     //avoid "special" points in the pitch angle diffusion coefficient 
@@ -1149,6 +1380,8 @@ double e_mev=e*J2MeV;
   int ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node); 
   int ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Droge_2009_AJ2(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
   int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_MeanFreePathScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
