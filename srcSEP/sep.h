@@ -468,6 +468,28 @@ namespace SEP {
        
        return mu;
      }
+
+     double Get_dMu(double dt) {
+       double D,dD_dMu,dMu,res;
+
+       D=GetDiffusionCoeffcient();
+       dD_dMu=GetdDdMuSolarFrame();
+       dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+
+       return dMu;
+     }
+
+//     void SetMu(double MuIn) {  
+ ///      mu=MuIn;
+ ///    }
+
+     void SetRandomMu() {
+       mu=-1.0+2.0*rnd();
+     }
+
+     void SetRandomMuHalfSphere(double dir) {
+       mu=rnd()+((dir>0.0) ? -1.0 : 0.0);
+     } 
      
      double DistributeMu(double dt) {
        double D,dD_dMu,dMu,res;
@@ -817,10 +839,10 @@ namespace SEP {
           D_mu_mu.SetAbsB(AbsB);
     		  
     		  if (speed<1.0E6) {
-    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,3,Integrant,xmin,xmax);
+    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
     		  }
     		  else if (speed<1.0E7) {
-    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,Integrant,xmin,xmax);
+    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
     		  }
     		  else {
     		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant,xmin,xmax);
@@ -864,7 +886,7 @@ namespace SEP {
     			return (D1-D0)/(2.0*ds);
     		}
     		
-    		double DistributeX(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    		double Get_ds(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
     			namespace FL = PIC::FieldLine;
     			double ds,D,dD_dx;
     			
@@ -872,8 +894,17 @@ namespace SEP {
     			dD_dx=GetdDxx_dx(FieldLineCoord,Segment,iFieldLine);
     			
     			ds=dD_dx*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+    			return ds;
+    		}
+    		
+    		double DistributeX(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    			namespace FL = PIC::FieldLine;
+    			double ds;
+    			
+    			ds=Get_ds(dt,FieldLineCoord,Segment,iFieldLine);
     			return FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
     		}
+    			
     };
 
     template<class T> double SEP::Diffusion::cD_x_x<T>::speed=0.0;
