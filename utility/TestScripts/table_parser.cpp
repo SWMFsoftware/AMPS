@@ -235,7 +235,8 @@ void ParseTable() {
 
       rtrim(line);
 
-      if (line=="") continue; 
+      if (line=="") continue;
+      else if (line.c_str()[0]=='!') continue; 
 
       if (line=="<#") {
         //test data is compeleted
