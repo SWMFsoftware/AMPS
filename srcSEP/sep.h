@@ -582,6 +582,15 @@ namespace SEP {
     public:
        double Lmax,*xLocation;
        
+       double GetTurbulenceLevel() {
+         double TurbulenceLevel;
+      	 
+         TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
+         if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+         return TurbulenceLevel;
+       }
+       
       double GetLambda() {
         double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
         double vNormal=speed*sqrt(1.0-mu*mu);
@@ -589,9 +598,8 @@ namespace SEP {
    
         double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
 
-        TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
-        if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
-
+        TurbulenceLevel=GetTurbulenceLevel();
+        
         res=c1/TurbulenceLevel;
         if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
 
@@ -616,6 +624,20 @@ namespace SEP {
         
         D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
         D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+        
+        //determine the particle speed and mu in the frame moving with velocity +vAlfven
+        double vParallel,vNormal;
+        
+        vNormal=speed*sqrt(1.0-mu*mu);
+        
+        vParallel=speed*mu-D_mu_mu_Minus.vAlfven;
+        D_mu_mu_Minus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        D_mu_mu_Minus.mu=vParallel/D_mu_mu_Minus.speed;
+        
+        vParallel=speed*mu-D_mu_mu_Plus.vAlfven;
+        D_mu_mu_Plus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        D_mu_mu_Plus.mu=vParallel/D_mu_mu_Plus.speed;
+        
         
         Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
         Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
@@ -672,6 +694,20 @@ namespace SEP {
         
         D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
         D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
+        
+        //determine the particle speed and mu in the frame moving with velocity +vAlfven
+        double vParallel,vNormal;
+        
+        vNormal=speed*sqrt(1.0-mu*mu);
+        
+        vParallel=speed*mu-D_mu_mu_Minus.vAlfven;
+        D_mu_mu_Minus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        D_mu_mu_Minus.mu=vParallel/D_mu_mu_Minus.speed;
+        
+        vParallel=speed*mu-D_mu_mu_Plus.vAlfven;
+        D_mu_mu_Plus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+        D_mu_mu_Plus.mu=vParallel/D_mu_mu_Plus.speed;
+        
         
         Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
         Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
@@ -822,6 +858,21 @@ namespace SEP {
 
          return t*t/D;
        }
+       
+       static double Integrant_MeanD_mu_mu(double *mu) {
+         double D;
+         double t=1.0-mu[0]*mu[0];
+
+         D_mu_mu.SetMu(mu[0]);
+         D=D_mu_mu.GetDiffusionCoeffcient();
+
+         if (D==0.0) {
+           //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
+        	 D_mu_mu.GetDiffusionCoeffcient();
+         }
+
+         return D;
+       }
 
       public: 
     		double GetDxx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
@@ -851,6 +902,33 @@ namespace SEP {
     		  return D;
     		}
     		
+    		double GetMeanD_mu_mu(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+    			namespace FL = PIC::FieldLine;
+    			double res,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
+    			
+    			Interpolate(FieldLineCoord,Segment,iFieldLine);
+          Convert2Velocity();
+          
+          D_mu_mu.SetVelocity(speed,0.0);
+          D_mu_mu.spec=spec;   
+          D_mu_mu.SetW(W);
+          D_mu_mu.SetLocation(xLocation);
+          D_mu_mu.SetVelAlfven(vAlfven);        
+          D_mu_mu.SetAbsB(AbsB);
+    		  
+    		  if (speed<1.0E6) {
+    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
+    		  }
+    		  else if (speed<1.0E7) {
+    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
+    		  }
+    		  else {
+    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant_MeanD_mu_mu,xmin,xmax);
+    		  }    	
+    		  
+    		  return res;
+    		}
+    		
     		double GetMeanFreePath(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
     		  double D;
 
@@ -864,6 +942,8 @@ namespace SEP {
     			double ds,S,D0,D1;
     			FL::cFieldLineSegment *SegmentTest;
 
+    			double MeanD_mu_mu0,MeanD_mu_mu1,t0,t1,w0,w1;
+    			
     			ds=Segment->GetLength()/2.0;
 
     			S=FieldLineCoord;
@@ -874,13 +954,21 @@ namespace SEP {
 
     			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
     			D0=GetDxx(S,SegmentTest,iFieldLine);
-
+    			
+    			MeanD_mu_mu0=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
+    			t0=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
+    			w0=D_mu_mu.D_mu_mu_Minus.W;
+    			
     			//get the diffusion coeffcient for +ds
     			S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
     			SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
 
     			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
     			D1=GetDxx(S,SegmentTest,iFieldLine);
+    			
+    			MeanD_mu_mu1=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
+    			t1=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
+    			w1=D_mu_mu.D_mu_mu_Minus.W;
 
     			//get the derivative
     			return (D1-D0)/(2.0*ds);

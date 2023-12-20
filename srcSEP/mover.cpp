@@ -66,6 +66,12 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   double FieldLineCoord,Lmax,vAlfven;
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment; 
+  
+  static int nCallCnt=0;
+  
+  nCallCnt++;
+  
+
 
   ParticleData=PB::GetParticleDataPointer(ptr);
 
@@ -373,8 +379,12 @@ if (ee>200) {
       }
       else {
         double muNew,pNew;
+        double dMu;
 
-        if (MeanFreePath>ds) {
+        D_mu_mu.SetVelocity(speed,mu);
+        dMu=D_mu_mu.Get_dMu(MovingTime);
+  
+        if(fabs(dMu)<1.0) { // (MeanFreePath>ds) {
         	//Mean free path is "large" -> integrate the pich angle evalution
           D_mu_mu.SetVelocity(speed,mu);
           D_SA.SetVelocity(speed,mu);
@@ -393,12 +403,9 @@ if (ee>200) {
         }
         else {
         	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
-          D_SA.SetVelocity(speed,mu);
-          D_SA.Convert2Velocity();
-          speed=D_SA.speed;
-          
-          ds=D_x_x.DistributeX(MovingTime,FieldLineCoord,Segment,iFieldLine);
-          mu=-1.0-muLimit+rnd()*2.0*(1.0-muLimit);
+          D_x_x.SetVelocity(speed);
+          ds=D_x_x.Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
+          mu=-1.0+muLimit+rnd()*2.0*(1.0-muLimit);
         }
       }
       break;
@@ -425,12 +432,9 @@ if (ee>200) {
       }
       else {
       	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
-        D_SA.SetVelocity(speed,mu);
-        D_SA.Convert2Velocity();
-        speed=D_SA.speed;
-        
-        ds=D_x_x.DistributeX(MovingTime,FieldLineCoord,Segment,iFieldLine);
-        mu=-1.0-muLimit+rnd()*2.0*(1.0-muLimit);
+        D_x_x.SetVelocity(speed);
+        ds=D_x_x.Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
+        mu=-1.0+muLimit+rnd()*2.0*(1.0-muLimit);
       }
     }
     break;
