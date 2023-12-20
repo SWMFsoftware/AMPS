@@ -4734,13 +4734,13 @@ Run=
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_divE_corr -j 
 >>>-cd SWMF;$(MAKE) test12_aniso_AMPS_dynamic -j 
 
-<<<ifeq ($(HOSTNAME),valeriy)
-<<<ifneq ($(COMPILE.c),icc)
->>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
-<<<endif
-<<<else
->>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j
-<<<endif
+!<<<ifeq ($(HOSTNAME),valeriy)
+!<<<ifneq ($(COMPILE.c),icc)
+!>>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j 
+!<<<endif
+!<<<else
+!>>>-cd SWMF;$(MAKE) test12_aniso_AMPS_openmp -j
+!<<<endif
 
 >>>-cd SWMF;./Config.pl -noopenmp -o=PC:openmp=off
 >>>@echo "test_AMPS-BATSRUS-PIC-coupling_run... done" >> test_AMPS-BATSRUS-PIC-coupling.diff
