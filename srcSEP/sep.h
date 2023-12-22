@@ -548,6 +548,7 @@ namespace SEP {
                LoopCounter++;
                DistributeMu(0.5*dt/nSteps);
                DistributeMu(0.5*dt/nSteps);
+               res=mu;
                LoopCounter--;
              }
            }
@@ -586,7 +587,7 @@ namespace SEP {
          double TurbulenceLevel;
       	 
          TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
-         if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel<MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+         if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel>MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
 
          return TurbulenceLevel;
        }
@@ -977,11 +978,115 @@ namespace SEP {
     		double Get_ds(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
     			namespace FL = PIC::FieldLine;
     			double ds,D,dD_dx;
+
+                        double S,D0,D1;
+
+                        double Fraction=1.0;
+                        int nIterations=1;
+
+                        PIC::FieldLine::cFieldLineSegment *SegmentLocal=Segment;
+
+                        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-dt*speed),0.01);
+                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
+
+
+                        D0=GetDxx(S,Segment,iFieldLine);
+
+                        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*speed),FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01); 
+                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
+                        D1=GetDxx(S,SegmentLocal,iFieldLine); 
+
+                        if (fabs(D0-D1)/(D0+D1)>0.2) {
+                          //the difference is on the diffusion coeffcient at the beginning and the end of the trajectory is too large
+
+double a=0.0;
+a=a+1;
+
+
+                          Fraction=max(D1/D0,D0/D1);
+                          nIterations=ceil(Fraction);
+                          if (nIterations==0) nIterations=1;
+                          Fraction=1.0/nIterations; 
+                        } 
+         
+                       
+                        S=FieldLineCoord;  
+                        ds=0.0;
+                        SegmentLocal=Segment;
+
+                        if (nIterations==1) {
+                          D=GetDxx(S,SegmentLocal,iFieldLine);
+                          dD_dx=GetdDxx_dx(S,SegmentLocal,iFieldLine);
+
+                          return dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
+                        }
+
+                        double S0,S1,dD_dx0,dD_dx1;
+
+                        S0=(int)S;
+                        S1=S0+1.0;
+                        if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01; 
+
+                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
+                        D0=GetDxx(S0,SegmentLocal,iFieldLine);
+                        dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+
+                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
+                        D1=GetDxx(S1,SegmentLocal,iFieldLine);
+                        dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+
+                        double iSegmentOld;   
+
+                        for (int i=0;i<nIterations;i++) {
+                          double w0,w1;
+
+                          w1=std::modf(S,&iSegmentOld);
+                          w0=1.0-w1;
+
+                          D=D0*w0+D1*w1;
+                          dD_dx=dD_dx0*w0+dD_dx1*w1; 
+
+
+//    			  D=GetDxx(S,SegmentLocal,iFieldLine);
+//    			  dD_dx=GetdDxx_dx(S,SegmentLocal,iFieldLine);
     			
-    			D=GetDxx(FieldLineCoord,Segment,iFieldLine);
-    			dD_dx=GetdDxx_dx(FieldLineCoord,Segment,iFieldLine);
-    			
-    			ds=dD_dx*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+    		   	  ds+=dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
+     
+                          if (i!=nIterations-1) {
+                             double iSegmentNew;
+
+                             S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds); 
+                         
+                             if (S>0.0) {
+                               std::modf(S,&iSegmentNew);
+
+                               if (iSegmentOld!=iSegmentNew) {
+                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S);
+
+                                 S0=iSegmentNew;
+                                 S1=S0+1.0;
+                                 if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01;
+
+                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
+                                 D0=GetDxx(S0,SegmentLocal,iFieldLine);
+                                 dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+
+                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
+                                 D1=GetDxx(S1,SegmentLocal,iFieldLine);
+                                 dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+
+                                 iSegmentOld=iSegmentNew;
+                               }
+                             }
+
+
+                             else {
+                               return ds;
+                             }
+                          }
+                        }
+
+
     			return ds;
     		}
     		
