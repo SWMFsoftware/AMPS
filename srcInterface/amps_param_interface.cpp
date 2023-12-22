@@ -228,9 +228,10 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       t=param_list.front().first;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
+
+      SEP::Diffusion::muTimeStepVariationLimit=atof(t.c_str());
       
       t=param_list.front().first;
-      SEP::Diffusion::muTimeStepVariationLimit=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
       
