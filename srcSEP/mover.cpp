@@ -116,6 +116,8 @@ if (ee>200) {
   SEP::Diffusion::cD_SA D_SA;
   SEP::Diffusion::cD_mu_mu D_mu_mu;
   SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> D_x_x;
+
+  static SEP::Diffusion::cD_mu_mu_Jokopii1966AJ<100,100> D_mu_mu_Jokopii1966AJ;
   
   double *B0,*B1,B[3],r2;
   double *W0,*W1;
@@ -381,15 +383,26 @@ if (ee>200) {
         double muNew,pNew;
         double dMu;
 
-        D_mu_mu.SetVelocity(speed,mu);
-        dMu=D_mu_mu.Get_dMu(MovingTime);
+//        D_mu_mu.SetVelocity(speed,mu);
+//        dMu=D_mu_mu.Get_dMu(MovingTime);
+
+        double x[3];
+        Segment->GetCartesian(x, FieldLineCoord);
+ 
+        D_mu_mu_Jokopii1966AJ.SetParameters(W,AbsB,Vector3D::DotProduct(x,x));
+        D_mu_mu_Jokopii1966AJ.SetVelocity(speed,mu);
+        dMu=D_mu_mu_Jokopii1966AJ.Get_dMu(MovingTime);
+
   
         if(fabs(dMu)<1.0) { // (MeanFreePath>ds) {
         	//Mean free path is "large" -> integrate the pich angle evalution
           D_mu_mu.SetVelocity(speed,mu);
           D_SA.SetVelocity(speed,mu);
 
-          muNew=D_mu_mu.DistributeMu(MovingTime);
+          //muNew=D_mu_mu.DistributeMu(MovingTime);
+          muNew=D_mu_mu_Jokopii1966AJ.DistributeMu(MovingTime);
+
+
           pNew=D_SA.DistributeP(MovingTime);
 
           if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
