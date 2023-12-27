@@ -579,6 +579,144 @@ namespace SEP {
      }  
     };
 
+    const int _awsom=0;
+    const int _fraction=1;
+
+
+    template <int nR,int nK>
+    class cD_mu_mu_Jokopii1966AJ : public cDiffusionCoeffcient {
+    public:
+      const double Rmax=10.0*_AU_;
+
+      double k_ref_min,k_ref_max,k_ref_R;
+      double FractionValue,FractionPowerIndex;
+      double r2,SummW,AbsB,AbsB2;
+      int Mode,spec;
+//      double speed,mu; 
+
+      double Lambda[nR],A[nR];
+
+//      void SetVelocity(double SpeedIn,double MuIn) {
+//        speed=SpeedIn,mu=MuIn;
+//      } 
+
+      cD_mu_mu_Jokopii1966AJ() {
+        k_ref_min=1.0E-10;
+        k_ref_max=1.0E-7;
+        k_ref_R=_AU_;
+        FractionValue=0.05;
+        FractionPowerIndex=0.0;
+        Mode=_fraction;
+
+        double dR=Rmax/nR;
+        double dK,t;
+        double k_min,k_max,gamma;
+
+        for (int iR=0;iR<nR;iR++) {
+          t=_AU_/((iR+0.5)*dR);
+
+          k_min=t*t*k_ref_min;
+          k_max=t*t*k_ref_max;
+
+          Lambda[iR]=1.0E9/(t*t);
+          dK=(k_max-k_min)/nK;
+
+          double summ=0.0;
+
+          for (int iK=0;iK<nK;iK++) {
+            summ+=1.0/(1.0+pow(Lambda[iR]*(k_min+(iK+0.5)*dK),5.0/3.0));
+          }
+
+         summ*=Lambda[iR]*dK;
+         A[iR]=1.0/summ;
+       }
+
+      }
+
+      void Init() {
+      }
+
+      void SetW(double* W) {
+        SummW=W[0]+W[1];
+      }
+
+      void SetAbsB(double B) {
+        AbsB=B;
+        AbsB2=B*B;
+      } 
+
+      void SetParameters(double* W,double B,double r2In) {
+        SummW=W[0]+W[1];
+        AbsB=B;
+        AbsB2=B*B;
+        r2=r2In;
+      } 
+
+      double GetDiffusionCoeffcient() {
+        namespace MD = PIC::MolecularData;
+
+        //reference values of k_max and k_min at 1 AU
+        //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
+        double D,k_min,k_max;
+        double t=k_ref_R*k_ref_R/r2;
+
+        k_min=t*k_ref_min;
+        k_max=t*k_ref_max;
+
+        double dR=Rmax/nR;
+        double dK,omega,k,P,c;
+
+        omega=fabs(MD::GetElectricCharge(spec))*AbsB/MD::GetMass(spec);
+
+        int iR=sqrt(r2)/(dR);
+
+        if (iR>=nR) iR=nR-1;
+        if (iR<0) iR=0;
+
+        double dB,dB2;
+
+        switch (Mode) {
+        case _awsom:
+          //(db/b)^2 = (W+ + W-)*mu0 / {(W+ + W-)*mu0 + B^2)
+          dB2=SummW*VacuumPermeability/(SummW*VacuumPermeability+AbsB2);
+          break;
+        case _fraction:
+          dB=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0)*AbsB;
+          if (dB>AbsB) dB=AbsB;
+          dB2=dB*dB;
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: the option is unknown");
+        }
+
+        if (MaxTurbulenceEnforceLimit==true) {
+          if (dB2/AbsB2>MaxTurbulenceLevel) dB2=AbsB2*MaxTurbulenceLevel;
+        }
+
+
+        omega=fabs(MD::GetElectricCharge(spec))*AbsB/MD::GetMass(spec);
+
+        double vParallel=speed*mu;
+        k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
+
+       if (isfinite(k)==false) {
+         k=k_max;
+       }
+       else if (k>k_max) {
+         k=k_max;
+       }
+
+
+
+        P=A[iR]*Lambda[iR]/(1.0+pow(k*Lambda[iR],5.0/3.0))*dB2;
+        c=Pi/4.0*omega*k*P/AbsB2;
+
+        D=c*(1.0-mu*mu);
+
+        return D;
+      }
+    };
+
     class cD_mu_mu_basic : public cDiffusionCoeffcient {
     public:
        double Lmax,*xLocation;
