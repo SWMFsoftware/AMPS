@@ -118,6 +118,8 @@ if (ee>200) {
   SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> D_x_x;
 
   static SEP::Diffusion::cD_mu_mu_Jokopii1966AJ<100,100> D_mu_mu_Jokopii1966AJ;
+
+  SEP::Diffusion::cDiffusionCoeffcient *D_mu_mu_ptr=&D_mu_mu_Jokopii1966AJ; 
   
   double *B0,*B1,B[3],r2;
   double *W0,*W1;
@@ -135,6 +137,10 @@ if (ee>200) {
 
     D_mu_mu.SetLocation(x);
     D_mu_mu.Init();
+    
+    D_mu_mu_ptr->SetLocation(x);
+    D_mu_mu_ptr->Init(spec);
+
     
     D_x_x.SetLocation(x);
     D_x_x.Init(spec);
@@ -197,6 +203,10 @@ if (ee>200) {
     D_mu_mu.SetVelAlfven(vAlfven);
     D_mu_mu.SetAbsB(AbsB);
 
+    D_mu_mu_ptr->SetW(W);
+    D_mu_mu_ptr->SetVelAlfven(vAlfven);
+    D_mu_mu_ptr->SetAbsB(AbsB);
+
     return true;
   };
 
@@ -229,6 +239,8 @@ if (ee>200) {
 
   D_SA.SetVelocity(speed,mu);
   D_mu_mu.SetVelocity(speed,mu);
+
+  D_mu_mu_ptr->SetVelocity(speed,mu);
 
   double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
 
@@ -389,9 +401,9 @@ if (ee>200) {
         double x[3];
         Segment->GetCartesian(x, FieldLineCoord);
  
-        D_mu_mu_Jokopii1966AJ.SetParameters(W,AbsB,Vector3D::DotProduct(x,x));
-        D_mu_mu_Jokopii1966AJ.SetVelocity(speed,mu);
-        dMu=D_mu_mu_Jokopii1966AJ.Get_dMu(MovingTime);
+//        D_mu_mu_Jokopii1966AJ.SetParameters(W,AbsB,Vector3D::DotProduct(x,x));
+        D_mu_mu_ptr->SetVelocity(speed,mu);
+        dMu=D_mu_mu_ptr->Get_dMu(MovingTime);
 
   
         if(fabs(dMu)<1.0) { // (MeanFreePath>ds) {
@@ -400,7 +412,7 @@ if (ee>200) {
           D_SA.SetVelocity(speed,mu);
 
           //muNew=D_mu_mu.DistributeMu(MovingTime);
-          muNew=D_mu_mu_Jokopii1966AJ.DistributeMu(MovingTime);
+          muNew=D_mu_mu_ptr->DistributeMu(MovingTime);
 
 
           pNew=D_SA.DistributeP(MovingTime);
@@ -409,7 +421,7 @@ if (ee>200) {
             exit(__LINE__,__FILE__,"Error: NaN found");
           }
 
-          mu=D_mu_mu.mu;
+          mu=muNew;
 
           D_SA.Convert2Velocity();
           speed=D_SA.speed;

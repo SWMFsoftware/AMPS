@@ -280,7 +280,7 @@ namespace SEP {
     //classes for claculation diffution coeffciients 
     class cDiffusionCoeffcient {
     public:
-      double speed,mu,L,max,W,vAlfven,AbsB,p;  
+      double speed,mu,L,max,W,vAlfven,AbsB,p,xLocation[3];  
       int spec;
       int InputMode;
       
@@ -293,6 +293,10 @@ namespace SEP {
       
       //user-defined function for calcuilating the diffusion coefficient may be set with a pointer
       std::function<double (cDiffusionCoeffcient*)> fGetDiffusionCoeffcient;
+
+      virtual void SetLocation(double *x) {
+        for (int i=0;i<3;i++) xLocation[i]=x[i];
+      }
       
       void Convert2Velocity() {
         if (InputMode==InputModeUndefined) {
@@ -345,7 +349,21 @@ namespace SEP {
        return fGetDiffusionCoeffcient(this);
      }
 
-     virtual void Init()=0;
+     virtual void SetW(double *wIn) {
+       exit(__LINE__,__FILE__,"Vrtual function has to be redifiened in the derived diffuciton coeffcient class");
+     }
+
+     virtual void Init(int SpecIn) { 
+       spec=SpecIn;
+     } 
+
+     virtual void SetVelAlfven(double vAlfvenIn) {
+       vAlfven=vAlfvenIn;
+     }
+
+     virtual void SetAbsB(double AbsBin) {
+       AbsB=AbsBin;
+     } 
      
      double GetPerturbSpeed(double dv) {
        double res; 
@@ -590,7 +608,7 @@ namespace SEP {
 
       double k_ref_min,k_ref_max,k_ref_R;
       double FractionValue,FractionPowerIndex;
-      double r2,SummW,AbsB,AbsB2;
+      double SummW,AbsB,AbsB2;
       int Mode,spec;
 //      double speed,mu; 
 
@@ -645,19 +663,13 @@ namespace SEP {
         AbsB2=B*B;
       } 
 
-      void SetParameters(double* W,double B,double r2In) {
-        SummW=W[0]+W[1];
-        AbsB=B;
-        AbsB2=B*B;
-        r2=r2In;
-      } 
-
       double GetDiffusionCoeffcient() {
         namespace MD = PIC::MolecularData;
 
         //reference values of k_max and k_min at 1 AU
         //k_max and k_min are scaled with B, which is turne is scaled with 1/R^2
         double D,k_min,k_max;
+        double r2=Vector3D::DotProduct(xLocation,xLocation);
         double t=k_ref_R*k_ref_R/r2;
 
         k_min=t*k_ref_min;
@@ -719,7 +731,7 @@ namespace SEP {
 
     class cD_mu_mu_basic : public cDiffusionCoeffcient {
     public:
-       double Lmax,*xLocation;
+       double Lmax;
        
        double GetTurbulenceLevel() {
          double TurbulenceLevel;
@@ -797,8 +809,8 @@ namespace SEP {
       }
       
       void SetLocation(double *x) {
-        D_mu_mu_Minus.xLocation=x;
-        D_mu_mu_Plus.xLocation=x;
+        D_mu_mu_Minus.SetLocation(x);
+        D_mu_mu_Plus.SetLocation(x);
       }
       
       void SetVelAlfven(double v) {
