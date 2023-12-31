@@ -115,10 +115,12 @@ if (ee>200) {
 
   SEP::Diffusion::cD_SA D_SA;
   SEP::Diffusion::cD_mu_mu D_mu_mu;
-  SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> D_x_x;
-
+  static SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> D_x_x;
   static SEP::Diffusion::cD_mu_mu_Jokopii1966AJ<100,100> D_mu_mu_Jokopii1966AJ;
 
+  SEP::Diffusion::cD_x_x<SEP::Diffusion::cD_mu_mu> *D_x_x_ptr=&D_x_x; 
+  SEP::Diffusion::cD_SA *D_SA_ptr=&D_SA;
+  SEP::Diffusion::cD_mu_mu *D_mu_mu_TwoWaves_ptr=&D_mu_mu;
   SEP::Diffusion::cDiffusionCoeffcient *D_mu_mu_ptr=&D_mu_mu_Jokopii1966AJ; 
   
   double *B0,*B1,B[3],r2;
@@ -132,18 +134,18 @@ if (ee>200) {
     double x[3];
     Segment->GetCartesian(x, FieldLineCoord);
 
-    D_SA.SetLocation(x);
-    D_SA.Init();
+    D_SA_ptr->SetLocation(x);
+    D_SA_ptr->Init();
 
-    D_mu_mu.SetLocation(x);
-    D_mu_mu.Init();
+    D_mu_mu_TwoWaves_ptr->SetLocation(x);
+    D_mu_mu_TwoWaves_ptr->Init();
     
     D_mu_mu_ptr->SetLocation(x);
     D_mu_mu_ptr->Init(spec);
 
     
-    D_x_x.SetLocation(x);
-    D_x_x.Init(spec);
+    D_x_x_ptr->SetLocation(x);
+    D_x_x_ptr->Init(spec);
 
     Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
     if (Segment==NULL) return false;
@@ -195,13 +197,13 @@ if (ee>200) {
     AbsB=sqrt(absB2);
     vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
 
-    D_SA.SetW(W);
-    D_SA.SetVelAlfven(vAlfven);
-    D_SA.SetAbsB(AbsB);
+    D_SA_ptr->SetW(W);
+    D_SA_ptr->SetVelAlfven(vAlfven);
+    D_SA_ptr->SetAbsB(AbsB);
 
-    D_mu_mu.SetW(W);
-    D_mu_mu.SetVelAlfven(vAlfven);
-    D_mu_mu.SetAbsB(AbsB);
+    D_mu_mu_TwoWaves_ptr->SetW(W);
+    D_mu_mu_TwoWaves_ptr->SetVelAlfven(vAlfven);
+    D_mu_mu_TwoWaves_ptr->SetAbsB(AbsB);
 
     D_mu_mu_ptr->SetW(W);
     D_mu_mu_ptr->SetVelAlfven(vAlfven);
@@ -237,8 +239,8 @@ if (ee>200) {
   double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
   mu=vParallel/speed;
 
-  D_SA.SetVelocity(speed,mu);
-  D_mu_mu.SetVelocity(speed,mu);
+  D_SA_ptr->SetVelocity(speed,mu);
+  D_mu_mu_TwoWaves_ptr->SetVelocity(speed,mu);
 
   D_mu_mu_ptr->SetVelocity(speed,mu);
 
@@ -251,14 +253,14 @@ if (ee>200) {
   else {
     FastParticleFlag=false;
 
-    double dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+    double dD_mu_mu_dMu=D_mu_mu_TwoWaves_ptr->GetdDdMuSolarFrame();
 
     if (SEP::Diffusion::muTimeStepVariationLimitFlag==false) {
       if (fabs(dD_mu_mu_dMu)*dtSubStep>0.1) dtSubStep=0.1/fabs(dD_mu_mu_dMu);
     }
 
     if (std::isfinite(dD_mu_mu_dMu)==false) {
-      dD_mu_mu_dMu=D_mu_mu.GetdDdMuSolarFrame();
+      dD_mu_mu_dMu=D_mu_mu_TwoWaves_ptr->GetdDdMuSolarFrame();
       exit(__LINE__,__FILE__,"Error: NAN is found");
     }
   }
@@ -275,8 +277,8 @@ if (ee>200) {
     //determine the which method should be used 
     double MeanFreePath;
     
-    D_x_x.SetVelocity(speed);
-    MeanFreePath=D_x_x.GetMeanFreePath(FieldLineCoord,Segment,iFieldLine);
+    D_x_x_ptr->SetVelocity(speed);
+    MeanFreePath=D_x_x_ptr->GetMeanFreePath(FieldLineCoord,Segment,iFieldLine);
     
     
     #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -295,9 +297,9 @@ if (ee>200) {
     }
 
     if ((FastParticleFlag==false)&&(SEP::Diffusion::AccelerationType==SEP::Diffusion::AccelerationTypeScattering)) {           
-      D_mu_mu.SetVelocity(speed,mu);
-      NuPlus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Plus.GetLambda(); 
-      NuMinus=fabs(speed*mu)/D_mu_mu.D_mu_mu_Minus.GetLambda(); 
+      D_mu_mu_TwoWaves_ptr->SetVelocity(speed,mu);
+      NuPlus=fabs(speed*mu)/D_mu_mu_TwoWaves_ptr->D_mu_mu_Plus.GetLambda(); 
+      NuMinus=fabs(speed*mu)/D_mu_mu_TwoWaves_ptr->D_mu_mu_Minus.GetLambda(); 
     }
 
     AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
@@ -357,9 +359,6 @@ if (ee>200) {
     if (mu<-1.0+muLimit) mu=-1.0+muLimit;
     if (mu>1.0-muLimit) mu=1.0-muLimit;
 
-    //update the particle location
- //   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,MovingTime*speed*mu);
-    
     //determine the shift of a particle position
     ds=MovingTime*speed*mu;
 
@@ -394,28 +393,20 @@ if (ee>200) {
       else {
         double muNew,pNew;
         double dMu;
-
-//        D_mu_mu.SetVelocity(speed,mu);
-//        dMu=D_mu_mu.Get_dMu(MovingTime);
-
         double x[3];
         Segment->GetCartesian(x, FieldLineCoord);
  
-//        D_mu_mu_Jokopii1966AJ.SetParameters(W,AbsB,Vector3D::DotProduct(x,x));
         D_mu_mu_ptr->SetVelocity(speed,mu);
         dMu=D_mu_mu_ptr->Get_dMu(MovingTime);
 
   
         if(fabs(dMu)<1.0) { // (MeanFreePath>ds) {
-        	//Mean free path is "large" -> integrate the pich angle evalution
-          D_mu_mu.SetVelocity(speed,mu);
-          D_SA.SetVelocity(speed,mu);
+          //Mean free path is "large" -> integrate the pich angle evalution
+          D_mu_mu_ptr->SetVelocity(speed,mu);
+          D_SA_ptr->SetVelocity(speed,mu);
 
-          //muNew=D_mu_mu.DistributeMu(MovingTime);
           muNew=D_mu_mu_ptr->DistributeMu(MovingTime);
-
-
-          pNew=D_SA.DistributeP(MovingTime);
+          pNew=D_SA_ptr->DistributeP(MovingTime);
 
           if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
             exit(__LINE__,__FILE__,"Error: NaN found");
@@ -423,13 +414,13 @@ if (ee>200) {
 
           mu=muNew;
 
-          D_SA.Convert2Velocity();
-          speed=D_SA.speed;
+          D_SA_ptr->Convert2Velocity();
+          speed=D_SA_ptr->speed;
         }
         else {
-        	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
-          D_x_x.SetVelocity(speed);
-          ds=D_x_x.Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
+          // Mean Free path is 'small" -> assume multiple scattering during the particle moving step
+          D_x_x_ptr->SetVelocity(speed);
+          ds=D_x_x_ptr->Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
           mu=-1.0+muLimit+rnd()*2.0*(1.0-muLimit);
         }
       }
@@ -440,25 +431,25 @@ if (ee>200) {
 
       if (MeanFreePath>ds) {
       	//Mean free path is "large" -> integrate the pich angle evalution
-				D_mu_mu.SetVelocity(speed,mu);
-				D_SA.SetVelocity(speed,mu);
+				D_mu_mu_TwoWaves_ptr->SetVelocity(speed,mu);
+				D_SA_ptr->SetVelocity(speed,mu);
 	
-				muNew=D_mu_mu.DistributeMu(MovingTime);
-				pNew=D_SA.DistributeP(MovingTime);
+				muNew=D_mu_mu_TwoWaves_ptr->DistributeMu(MovingTime);
+				pNew=D_SA_ptr->DistributeP(MovingTime);
 	
 				if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
 					exit(__LINE__,__FILE__,"Error: NaN found");
 				}
 	
-				mu=D_mu_mu.mu;
-	
-				D_SA.Convert2Velocity();
-				speed=D_SA.speed;
+				mu=D_mu_mu_TwoWaves_ptr->mu;
+
+				D_SA_ptr->Convert2Velocity();
+				speed=D_SA_ptr->speed;
       }
       else {
       	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
-        D_x_x.SetVelocity(speed);
-        ds=D_x_x.Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
+        D_x_x_ptr->SetVelocity(speed);
+        ds=D_x_x_ptr->Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
         mu=-1.0+muLimit+rnd()*2.0*(1.0-muLimit);
       }
     }
