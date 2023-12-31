@@ -178,6 +178,18 @@ namespace SEP {
       extern int status;
     }
   }  
+
+  namespace Diffusion {
+   namespace Jokopii1966AJ {
+      extern double k_ref_min,k_ref_max,k_ref_R;
+
+      extern int Mode;
+      const int _awsom=0;
+      const int _fraction=1;
+      extern double FractionValue,FractionPowerIndex;
+   }
+ }
+
   
   //functions used to sample and output macroscopic somulated data into the AMPS' output file
   namespace OutputAMPS {
@@ -597,10 +609,6 @@ namespace SEP {
      }  
     };
 
-    const int _awsom=0;
-    const int _fraction=1;
-
-
     template <int nR,int nK>
     class cD_mu_mu_Jokopii1966AJ : public cDiffusionCoeffcient {
     public:
@@ -610,21 +618,16 @@ namespace SEP {
       double FractionValue,FractionPowerIndex;
       double SummW,AbsB,AbsB2;
       int Mode,spec;
-//      double speed,mu; 
-
       double Lambda[nR],A[nR];
 
-//      void SetVelocity(double SpeedIn,double MuIn) {
-//        speed=SpeedIn,mu=MuIn;
-//      } 
 
       cD_mu_mu_Jokopii1966AJ() {
-        k_ref_min=1.0E-10;
-        k_ref_max=1.0E-7;
-        k_ref_R=_AU_;
-        FractionValue=0.05;
-        FractionPowerIndex=0.0;
-        Mode=_fraction;
+        k_ref_min=SEP::Diffusion::Jokopii1966AJ::k_ref_min;
+        k_ref_max=SEP::Diffusion::Jokopii1966AJ::k_ref_max;
+        k_ref_R=SEP::Diffusion::Jokopii1966AJ::k_ref_R=_AU_;
+        FractionValue=SEP::Diffusion::Jokopii1966AJ::FractionValue;
+        FractionPowerIndex=SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex;
+        Mode=SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
 
         double dR=Rmax/nR;
         double dK,t;
@@ -688,11 +691,11 @@ namespace SEP {
         double dB,dB2;
 
         switch (Mode) {
-        case _awsom:
+        case SEP::Diffusion::Jokopii1966AJ::_awsom:
           //(db/b)^2 = (W+ + W-)*mu0 / {(W+ + W-)*mu0 + B^2)
           dB2=SummW*VacuumPermeability/(SummW*VacuumPermeability+AbsB2);
           break;
-        case _fraction:
+        case SEP::Diffusion::Jokopii1966AJ::_fraction:
           dB=FractionValue*pow(r2/(_AU_*_AU_),FractionPowerIndex/2.0)*AbsB;
           if (dB>AbsB) dB=AbsB;
           dB2=dB*dB;
@@ -1304,12 +1307,12 @@ a=a+1;
     }     
 
     namespace Jokopii1966AJ {
-      extern double k_ref_min,k_ref_max,k_ref_R;
+//      extern double k_ref_min,k_ref_max,k_ref_R;
 
-      extern int Mode;
-      const int _awsom=0;
-      const int _fraction=1;
-      extern double FractionValue,FractionPowerIndex;
+//      extern int Mode;
+//      const int _awsom=0;
+//      const int _fraction=1;
+//      extern double FractionValue,FractionPowerIndex;
 
       const int nR=1000;
       const int nK=1000;
