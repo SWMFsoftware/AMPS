@@ -62,16 +62,13 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
   namespace FL = PIC::FieldLine;
 
   PIC::ParticleBuffer::byte *ParticleData;
-  double W[2],mu,AbsB,absB2,L,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
+  double W[2],mu,AbsB,absB2,vParallel,vNormal,v,DivAbsB,vParallelInit,vNormalInit;
   double FieldLineCoord,Lmax,vAlfven;
   int iFieldLine,spec;
   FL::cFieldLineSegment *Segment; 
-  
-  static int nCallCnt=0;
-  
-  nCallCnt++;
-  
 
+  static int nCallCnt=0;
+  nCallCnt++;
 
   ParticleData=PB::GetParticleDataPointer(ptr);
 
@@ -85,19 +82,19 @@ int SEP::ParticleMover_Droge_2009_AJ1(long int ptr,double dtTotal,cTreeNodeAMR<P
 
   vParallelInit=vParallel,vNormalInit=vNormal;
 
-double  ee=Relativistic::Speed2E(sqrt(vNormal*vNormal+vParallel*vParallel),PIC::MolecularData::GetMass(spec));
-ee*=J2MeV;
+  /*double  ee=Relativistic::Speed2E(sqrt(vNormal*vNormal+vParallel*vParallel),PIC::MolecularData::GetMass(spec));
+  ee*=J2MeV;
 
-if (ee>200) {
-  double ss=0.0;
+  if (ee>200) {
+    double ss=0.0;
 
-  ss+=23;
-} 
+    ss+=23;
+  }*/ 
 
   //determine the segment of the particle location 
   Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
 
-  double AbsBDeriv;
+  //double AbsBDeriv;
   double vSolarWind[3],vSolarWindParallel;
   double FieldLineCoord_init=FieldLineCoord;
 
@@ -122,7 +119,7 @@ if (ee>200) {
   SEP::Diffusion::cD_SA *D_SA_ptr=&D_SA;
   SEP::Diffusion::cD_mu_mu *D_mu_mu_TwoWaves_ptr=&D_mu_mu;
   SEP::Diffusion::cDiffusionCoeffcient *D_mu_mu_ptr=&D_mu_mu_Jokopii1966AJ; 
-  
+
   double *B0,*B1,B[3],r2;
   double *W0,*W1;
   double *x0,*x1;
@@ -139,11 +136,11 @@ if (ee>200) {
 
     D_mu_mu_TwoWaves_ptr->SetLocation(x);
     D_mu_mu_TwoWaves_ptr->Init();
-    
+
     D_mu_mu_ptr->SetLocation(x);
     D_mu_mu_ptr->Init(spec);
 
-    
+
     D_x_x_ptr->SetLocation(x);
     D_x_x_ptr->Init(spec);
 
@@ -155,7 +152,6 @@ if (ee>200) {
 
     absB2=0.0;
 
-
     //get the magnetic field and the plasma waves at the corners of the segment
     B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
     B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
@@ -165,7 +161,7 @@ if (ee>200) {
 
     VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
     VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
-    
+
     VertexBegin->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev0);
     VertexEnd->GetDatum(FL::DatumAtVertexPrevious::DatumAtVertexPlasmaDensity,&PlasmaDensityPrev1);
 
@@ -176,10 +172,7 @@ if (ee>200) {
     w1=fmod(FieldLineCoord,1);
     w0=1.0-w1;
 
-
-    int idim;
-
-    for (idim=0;idim<3;idim++) {
+    for (int idim=0;idim<3;idim++) {
       double t;
 
       B[idim]=w0*B0[idim]+w1*B1[idim];
@@ -235,7 +228,6 @@ if (ee>200) {
 
   if (Interpolate()==false) exit(__LINE__,__FILE__"Error: the local coorsinate is outside of the field line");
 
-
   double speed=sqrt(vParallel*vParallel+vNormal*vNormal);
   mu=vParallel/speed;
 
@@ -267,27 +259,26 @@ if (ee>200) {
 
   //integrate particle trajectory
   double DivVsw=0.0,ds;
-  
+
   while (time_counter<dtTotal) { 
     loop_cnt++;
 
     if (Interpolate()==false) break;
-    
-    
+
     //determine the which method should be used 
     double MeanFreePath;
-    
+
     D_x_x_ptr->SetVelocity(speed);
     MeanFreePath=D_x_x_ptr->GetMeanFreePath(FieldLineCoord,Segment,iFieldLine);
-    
-    
-    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+
+
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     if (AMPS2SWMF::MagneticFieldLineUpdate::SecondCouplingFlag==true) {
       DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/(AMPS2SWMF::MagneticFieldLineUpdate::LastCouplingTime-AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime);
     }
-    #else 
+#else 
     DivVsw=-log(PlasmaDensity/PlasmaDensityPrev)/dtTotal;
-    #endif
+#endif
 
     double t0=SEP::Diffusion::AccelerationModelVelocitySwitchFactor*vAlfven;
     if (vNormal*vNormal+vParallel*vParallel>t0*t0) {
@@ -301,11 +292,6 @@ if (ee>200) {
       NuPlus=fabs(speed*mu)/D_mu_mu_TwoWaves_ptr->D_mu_mu_Plus.GetLambda(); 
       NuMinus=fabs(speed*mu)/D_mu_mu_TwoWaves_ptr->D_mu_mu_Minus.GetLambda(); 
     }
-
-    AbsBDeriv = (pow(B1[0]*B1[0] + B1[1]*B1[1] + B1[2]*B1[2], 0.5) -
-        pow(B0[0]*B0[0] + B0[1]*B0[1] + B0[2]*B0[2], 0.5)) /  FL::FieldLinesAll[iFieldLine].GetSegmentLength(FieldLineCoord);
-
-    L=-Vector3D::Length(B)/AbsBDeriv;
 
     double MovingTime,ScatteringTime;
     bool ScatteringFlag;
@@ -366,7 +352,7 @@ if (ee>200) {
     double p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
     p*=exp(DivVsw*MovingTime/3.0);
     speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
-    
+
     //limit scattering only with the incoming wave (if vParallel>0, then scatter only of the wave movinf with -vAlfven, or if vParallel<0, them scatter on the wave moveing with +vAlfven)
     if (LimitScatteringUpcomingWave==true) {
       if (mu>=0.0) NuPlus=0.0;
@@ -395,11 +381,11 @@ if (ee>200) {
         double dMu;
         double x[3];
         Segment->GetCartesian(x, FieldLineCoord);
- 
+
         D_mu_mu_ptr->SetVelocity(speed,mu);
         dMu=D_mu_mu_ptr->Get_dMu(MovingTime);
 
-  
+
         if(fabs(dMu)<1.0) { // (MeanFreePath>ds) {
           //Mean free path is "large" -> integrate the pich angle evalution
           D_mu_mu_ptr->SetVelocity(speed,mu);
@@ -430,24 +416,24 @@ if (ee>200) {
       double muNew,pNew;
 
       if (MeanFreePath>ds) {
-      	//Mean free path is "large" -> integrate the pich angle evalution
-				D_mu_mu_TwoWaves_ptr->SetVelocity(speed,mu);
-				D_SA_ptr->SetVelocity(speed,mu);
-	
-				muNew=D_mu_mu_TwoWaves_ptr->DistributeMu(MovingTime);
-				pNew=D_SA_ptr->DistributeP(MovingTime);
-	
-				if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
-					exit(__LINE__,__FILE__,"Error: NaN found");
-				}
-	
-				mu=D_mu_mu_TwoWaves_ptr->mu;
+        //Mean free path is "large" -> integrate the pich angle evalution
+        D_mu_mu_TwoWaves_ptr->SetVelocity(speed,mu);
+        D_SA_ptr->SetVelocity(speed,mu);
 
-				D_SA_ptr->Convert2Velocity();
-				speed=D_SA_ptr->speed;
+        muNew=D_mu_mu_TwoWaves_ptr->DistributeMu(MovingTime);
+        pNew=D_SA_ptr->DistributeP(MovingTime);
+
+        if ((isfinite(muNew)==false)||(isfinite(pNew)==false)) {
+          exit(__LINE__,__FILE__,"Error: NaN found");
+        }
+
+        mu=D_mu_mu_TwoWaves_ptr->mu;
+
+        D_SA_ptr->Convert2Velocity();
+        speed=D_SA_ptr->speed;
       }
       else {
-      	// Mean Free path is 'small" -> assume multiple scattering during the particle moving step
+        // Mean Free path is 'small" -> assume multiple scattering during the particle moving step
         D_x_x_ptr->SetVelocity(speed);
         ds=D_x_x_ptr->Get_ds(MovingTime,FieldLineCoord,Segment,iFieldLine);
         mu=-1.0+muLimit+rnd()*2.0*(1.0-muLimit);
@@ -461,7 +447,7 @@ if (ee>200) {
 
   //update the particle location
   FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
-  
+
   //get the segment of the new particle location 
   if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
     //the particle left the computational domain
@@ -499,9 +485,9 @@ if (ee>200) {
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
 
-  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  #pragma omp critical
-  #endif
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+#pragma omp critical
+#endif
   {
     PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);

@@ -295,21 +295,21 @@ namespace SEP {
       double speed,mu,L,max,W,vAlfven,AbsB,p,xLocation[3];  
       int spec;
       int InputMode;
-      
+
       static const int InputModeUndefined=0;
       static const int InputModeMomentum=1;
       static const int InputModeVelocity=2;
-      
+
       //counter of the recursive loops in the procedure for distributing the pich angle
       int LoopCounter;
-      
+
       //user-defined function for calcuilating the diffusion coefficient may be set with a pointer
       std::function<double (cDiffusionCoeffcient*)> fGetDiffusionCoeffcient;
 
       virtual void SetLocation(double *x) {
         for (int i=0;i<3;i++) xLocation[i]=x[i];
       }
-      
+
       void Convert2Velocity() {
         if (InputMode==InputModeUndefined) {
           exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
@@ -319,7 +319,7 @@ namespace SEP {
           speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
         }
       }
-      
+
       void Convert2Momentum() {
         if (InputMode==InputModeUndefined) {
           exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
@@ -329,135 +329,135 @@ namespace SEP {
           p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
         }
       }
-      
+
       cDiffusionCoeffcient() {
         InputMode=InputModeUndefined;
         fGetDiffusionCoeffcient=NULL;
         spec=0;
         LoopCounter=0;
       }
-      
+
       void SetVelocity(double SpeedIn,double MuIn) {
         speed=SpeedIn,mu=MuIn;
         InputMode=InputModeVelocity;
       }
-      
+
       void SetMomentum(double MomentumIn,double MuIn) {
         p=MomentumIn,mu=MuIn;
         InputMode=InputModeMomentum;
       }
-      
+
       void SetMu(double MuIn) {
-      	mu=MuIn;
+        mu=MuIn;
       }
-      
-     double GetLarmorR() {
-       return PIC::MolecularData::GetMass(spec)*speed*sqrt(1.0-mu*mu)/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-     } 
 
-     virtual double GetDiffusionCoeffcient() {
-       if (fGetDiffusionCoeffcient==NULL) exit(__LINE__,__FILE__,"Error: function is not defined");
+      double GetLarmorR() {
+        return PIC::MolecularData::GetMass(spec)*speed*sqrt(1.0-mu*mu)/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
+      } 
 
-       return fGetDiffusionCoeffcient(this);
-     }
+      virtual double GetDiffusionCoeffcient() {
+        if (fGetDiffusionCoeffcient==NULL) exit(__LINE__,__FILE__,"Error: function is not defined");
 
-     virtual void SetW(double *wIn) {
-       exit(__LINE__,__FILE__,"Vrtual function has to be redifiened in the derived diffuciton coeffcient class");
-     }
+        return fGetDiffusionCoeffcient(this);
+      }
 
-     virtual void Init(int SpecIn) { 
-       spec=SpecIn;
-     } 
+      virtual void SetW(double *wIn) {
+        exit(__LINE__,__FILE__,"Vrtual function has to be redifiened in the derived diffuciton coeffcient class");
+      }
 
-     virtual void SetVelAlfven(double vAlfvenIn) {
-       vAlfven=vAlfvenIn;
-     }
+      virtual void Init(int SpecIn) { 
+        spec=SpecIn;
+      } 
 
-     virtual void SetAbsB(double AbsBin) {
-       AbsB=AbsBin;
-     } 
-     
-     double GetPerturbSpeed(double dv) {
-       double res; 
- 
-       speed+=dv;
-       res=GetDiffusionCoeffcient();
-       speed-=dv;
-   
-       return res;
-     }
+      virtual void SetVelAlfven(double vAlfvenIn) {
+        vAlfven=vAlfvenIn;
+      }
 
-     double GetPerturbMu(double Mu) {
-       double res,MuOrig=mu;
+      virtual void SetAbsB(double AbsBin) {
+        AbsB=AbsBin;
+      } 
 
-       mu=Mu;
-       res=GetDiffusionCoeffcient();
-       mu=MuOrig;
+      double GetPerturbSpeed(double dv) {
+        double res; 
 
-       return res;
-     }
-     
-     double GetdDdP() {
-       double dv,dp,f_Plus,f_Minus;
-       
-       Convert2Velocity();
+        speed+=dv;
+        res=GetDiffusionCoeffcient();
+        speed-=dv;
 
-       // dv is a small change relative to speed
-       dv=0.01*speed;
-       dp=dv*PIC::MolecularData::GetMass(spec); // dp is the change in momentum
+        return res;
+      }
 
-       f_Plus = GetPerturbSpeed(dv);
-       f_Minus = GetPerturbSpeed(-dv); // GetD_SA is now refactored to accept speed and mu
+      double GetPerturbMu(double Mu) {
+        double res,MuOrig=mu;
 
-       return (f_Plus-f_Minus)/(2.0*dp);
-     }
+        mu=Mu;
+        res=GetDiffusionCoeffcient();
+        mu=MuOrig;
 
-     double GetMuWaveFrame() {
-       double t;
-       double vNormal,vParallel;
+        return res;
+      }
 
-       vParallel=speed*mu;
-       vNormal=speed*sqrt(1.0-mu*mu);
+      double GetdDdP() {
+        double dv,dp,f_Plus,f_Minus;
 
-       t=vParallel-vAlfven;
-       return t/sqrt(t*t+vNormal*vNormal);
-     } 
-     
-     double GetdDdMuWaveFrame() {
-       double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
+        Convert2Velocity();
 
-       MuWaveFrame=GetMuWaveFrame(); 
-       if (fabs(MuWaveFrame) < dMu) {
-         return 0.0;
-       }
+        // dv is a small change relative to speed
+        dv=0.01*speed;
+        dp=dv*PIC::MolecularData::GetMass(spec); // dp is the change in momentum
 
-       dMu = muLimit / 2.0;
+        f_Plus = GetPerturbSpeed(dv);
+        f_Minus = GetPerturbSpeed(-dv); // GetD_SA is now refactored to accept speed and mu
 
-       mu_min = MuWaveFrame - dMu;
-       if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+        return (f_Plus-f_Minus)/(2.0*dp);
+      }
 
-       mu_max = MuWaveFrame + dMu;
-       if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+      double GetMuWaveFrame() {
+        double t;
+        double vNormal,vParallel;
 
-       if (mu_max<mu_min) {
-         double t=mu_min;
+        vParallel=speed*mu;
+        vNormal=speed*sqrt(1.0-mu*mu);
 
-         mu_min=mu_max;
-         mu_max=t;
-       }
-       else if (mu_max==mu_min) {
-         mu_max+=muLimit/10;
-         mu_min-=muLimit/10;
-       }
+        t=vParallel-vAlfven;
+        return t/sqrt(t*t+vNormal*vNormal);
+      } 
 
-       dMu=mu_max-mu_min;
-       f_Minus=GetPerturbMu(mu_min);
-       f_Plus=GetPerturbMu(mu_max);
+      double GetdDdMuWaveFrame() {
+        double dMu, mu_min, mu_max, f_Plus, f_Minus, MuWaveFrame, p0, m0, p1, m1;
 
-       return (f_Plus-f_Minus)/dMu;
-     }
-     
-     double GetdDdMuSolarFrame() {
+        MuWaveFrame=GetMuWaveFrame(); 
+        if (fabs(MuWaveFrame) < dMu) {
+          return 0.0;
+        }
+
+        dMu = muLimit / 2.0;
+
+        mu_min = MuWaveFrame - dMu;
+        if (mu_min < -1.0 + muLimit) mu_min = -1.0 + muLimit;
+
+        mu_max = MuWaveFrame + dMu;
+        if (mu_max > 1.0 - muLimit) mu_max = 1.0 - muLimit;
+
+        if (mu_max<mu_min) {
+          double t=mu_min;
+
+          mu_min=mu_max;
+          mu_max=t;
+        }
+        else if (mu_max==mu_min) {
+          mu_max+=muLimit/10;
+          mu_min-=muLimit/10;
+        }
+
+        dMu=mu_max-mu_min;
+        f_Minus=GetPerturbMu(mu_min);
+        f_Plus=GetPerturbMu(mu_max);
+
+        return (f_Plus-f_Minus)/dMu;
+      }
+
+      double GetdDdMuSolarFrame() {
         double dMu, mu_min, mu_max, f_Plus, f_Minus,p0, m0, p1, m1;
 
         dMu = muLimit / 2.0;
@@ -485,128 +485,121 @@ namespace SEP {
 
         return (f_Plus-f_Minus)/dMu;
       }
-     
-     
-     double DistributeMuUniform() {
-       mu=-1.0+2.0*rnd();
-       
-       return mu;
-     }
-     
-     double DistributeMuUniformReflect() {
-       mu=(mu>0.0) ? -rnd() : rnd();
-       
-       return mu;
-     }
 
-     double Get_dMu(double dt) {
-       double D,dD_dMu,dMu,res;
+      double DistributeMuUniform() {
+        mu=-1.0+2.0*rnd();
 
-       D=GetDiffusionCoeffcient();
-       dD_dMu=GetdDdMuSolarFrame();
-       dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+        return mu;
+      }
 
-       return dMu;
-     }
+      double DistributeMuUniformReflect() {
+        mu=(mu>0.0) ? -rnd() : rnd();
 
-//     void SetMu(double MuIn) {  
- ///      mu=MuIn;
- ///    }
+        return mu;
+      }
 
-     void SetRandomMu() {
-       mu=-1.0+2.0*rnd();
-     }
+      double Get_dMu(double dt) {
+        double D,dD_dMu,dMu,res;
 
-     void SetRandomMuHalfSphere(double dir) {
-       mu=rnd()+((dir>0.0) ? -1.0 : 0.0);
-     } 
-     
-     double DistributeMu(double dt) {
-       double D,dD_dMu,dMu,res;
-       
-       D=GetDiffusionCoeffcient();
-       dD_dMu=GetdDdMuSolarFrame();     
-       dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+        D=GetDiffusionCoeffcient();
+        dD_dMu=GetdDdMuSolarFrame();
+        dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
 
-       if (SEP::Diffusion::muTimeStepVariationLimitFlag==true) {
-         if (fabs(dMu)>SEP::Diffusion::muTimeStepVariationLimit) {
-           switch (SEP::Diffusion::muTimeStepVariationLimitMode) {
-           case SEP::Diffusion::muTimeStepVariationLimitModeUniform: 
-             return DistributeMuUniform();
-             break;
-           case muTimeStepVariationLimitModeUniformReflect:
-             return DistributeMuUniformReflect();
-             break;
-           }
-         }
-       }
-      
-       
-       
-       if (isfinite(dMu)==false) {
-         D=GetDiffusionCoeffcient();
-         dD_dMu=GetdDdMuSolarFrame();
-         exit(__LINE__,__FILE__,"Error: NAN is found");
-       }
-       
-       if (fabs(dMu)<0.2) {
-         res=mu+dMu;
-         
-         if (res>1.0-muLimit) res=1.0-muLimit;
-         if (res<-1.0+muLimit) res=-1.0+muLimit;
-         
-         mu=res;
-       }
-       else {
-         int nSteps=fabs(dMu)/0.2;
-         
-         for (int i=0;i<nSteps;i++) {
-           D=GetDiffusionCoeffcient();
-           dD_dMu=GetdDdMuSolarFrame();     
-           dMu=dD_dMu*dt/nSteps+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt/nSteps*log(rnd()));
-           
-           if (isfinite(dMu)==false) {
-             D=GetDiffusionCoeffcient();
-             dD_dMu=GetdDdMuSolarFrame();
-             exit(__LINE__,__FILE__,"Error: NAN is found");
-           }
-           
-           res=mu+dMu;
-           
-           if (LoopCounter<5) {
-             if ((res>1.0-muLimit)||(res<-1.0+muLimit)) {
-               LoopCounter++;
-               DistributeMu(0.5*dt/nSteps);
-               DistributeMu(0.5*dt/nSteps);
-               res=mu;
-               LoopCounter--;
-             }
-           }
-           else {
-             if (res>1.0-muLimit) res=1.0-muLimit;
-             if (res<1.0-muLimit) res=-1.0+muLimit;
-           }
-           
-           mu=res;
-         }
-       }
-       
-       return mu;
-     }
-     
-     double DistributeP(double dt) {
-       double D,dD_dP,dP;
-       
-       D=GetDiffusionCoeffcient();
-     
-       dD_dP=GetdDdP();     
-       dP=dD_dP*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
-      
-       Convert2Momentum();
-       p+=dP;
-       
-       return p;
-     }  
+        return dMu;
+      }
+
+      void SetRandomMu() {
+        mu=-1.0+2.0*rnd();
+      }
+
+      void SetRandomMuHalfSphere(double dir) {
+        mu=rnd()+((dir>0.0) ? -1.0 : 0.0);
+      } 
+
+      double DistributeMu(double dt) {
+        double D,dD_dMu,dMu,res;
+
+        D=GetDiffusionCoeffcient();
+        dD_dMu=GetdDdMuSolarFrame();     
+        dMu=dD_dMu*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+
+        if (SEP::Diffusion::muTimeStepVariationLimitFlag==true) {
+          if (fabs(dMu)>SEP::Diffusion::muTimeStepVariationLimit) {
+            switch (SEP::Diffusion::muTimeStepVariationLimitMode) {
+            case SEP::Diffusion::muTimeStepVariationLimitModeUniform: 
+              return DistributeMuUniform();
+              break;
+            case muTimeStepVariationLimitModeUniformReflect:
+              return DistributeMuUniformReflect();
+              break;
+            }
+          }
+        }
+
+        if (isfinite(dMu)==false) {
+          D=GetDiffusionCoeffcient();
+          dD_dMu=GetdDdMuSolarFrame();
+          exit(__LINE__,__FILE__,"Error: NAN is found");
+        }
+
+        if (fabs(dMu)<0.2) {
+          res=mu+dMu;
+
+          if (res>1.0-muLimit) res=1.0-muLimit;
+          if (res<-1.0+muLimit) res=-1.0+muLimit;
+
+          mu=res;
+        }
+        else {
+          int nSteps=fabs(dMu)/0.2;
+
+          for (int i=0;i<nSteps;i++) {
+            D=GetDiffusionCoeffcient();
+            dD_dMu=GetdDdMuSolarFrame();     
+            dMu=dD_dMu*dt/nSteps+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt/nSteps*log(rnd()));
+
+            if (isfinite(dMu)==false) {
+              D=GetDiffusionCoeffcient();
+              dD_dMu=GetdDdMuSolarFrame();
+              exit(__LINE__,__FILE__,"Error: NAN is found");
+            }
+
+            res=mu+dMu;
+
+            if (LoopCounter<5) {
+              if ((res>1.0-muLimit)||(res<-1.0+muLimit)) {
+                LoopCounter++;
+                DistributeMu(0.5*dt/nSteps);
+                DistributeMu(0.5*dt/nSteps);
+                res=mu;
+                LoopCounter--;
+              }
+            }
+            else {
+              if (res>1.0-muLimit) res=1.0-muLimit;
+              if (res<1.0-muLimit) res=-1.0+muLimit;
+            }
+
+            mu=res;
+          }
+        }
+
+        return mu;
+      }
+
+      double DistributeP(double dt) {
+        double D,dD_dP,dP;
+
+        D=GetDiffusionCoeffcient();
+
+        dD_dP=GetdDdP();     
+        dP=dD_dP*dt+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*log(rnd()));
+
+        Convert2Momentum();
+        p+=dP;
+
+        return p;
+      }  
     };
 
     template <int nR,int nK>
@@ -648,9 +641,9 @@ namespace SEP {
             summ+=1.0/(1.0+pow(Lambda[iR]*(k_min+(iK+0.5)*dK),5.0/3.0));
           }
 
-         summ*=Lambda[iR]*dK;
-         A[iR]=1.0/summ;
-       }
+          summ*=Lambda[iR]*dK;
+          A[iR]=1.0/summ;
+        }
 
       }
 
@@ -714,14 +707,12 @@ namespace SEP {
         double vParallel=speed*mu;
         k=(vParallel!=0.0) ? omega/fabs(vParallel) : k_max;
 
-       if (isfinite(k)==false) {
-         k=k_max;
-       }
-       else if (k>k_max) {
-         k=k_max;
-       }
-
-
+        if (isfinite(k)==false) {
+          k=k_max;
+        }
+        else if (k>k_max) {
+          k=k_max;
+        }
 
         P=A[iR]*Lambda[iR]/(1.0+pow(k*Lambda[iR],5.0/3.0))*dB2;
         c=Pi/4.0*omega*k*P/AbsB2;
@@ -734,32 +725,32 @@ namespace SEP {
 
     class cD_mu_mu_basic : public cDiffusionCoeffcient {
     public:
-       double Lmax;
-       
-       double GetTurbulenceLevel() {
-         double TurbulenceLevel;
-      	 
-         TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
-         if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel>MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+      double Lmax;
 
-         return TurbulenceLevel;
-       }
-       
+      double GetTurbulenceLevel() {
+        double TurbulenceLevel;
+
+        TurbulenceLevel=VacuumPermeability*W/(AbsB*AbsB);
+        if (MaxTurbulenceEnforceLimit==true) if (TurbulenceLevel>MaxTurbulenceLevel) TurbulenceLevel=MaxTurbulenceLevel;
+
+        return TurbulenceLevel;
+      }
+
       double GetLambda() {
         double res,c=6.0/Pi*pow(Lmax/PiTimes2,2.0/3.0);
         double vNormal=speed*sqrt(1.0-mu*mu);
         double rLarmor=GetLarmorR(); //   PIC::MolecularData::GetMass(spec)*vNormal/(PIC::MolecularData::GetElectricCharge(spec)*AbsB);
-   
+
         double TurbulenceLevel,c1=c*pow(rLarmor,0.3333),misc;
 
         TurbulenceLevel=GetTurbulenceLevel();
-        
+
         res=c1/TurbulenceLevel;
         if ((LimitMeanFreePath==true)&&(res<rLarmor)) res=rLarmor;
 
         return res;
       }
-      
+
       void Init() {
         Lmax=0.03*Vector3D::Length(xLocation);
       }
@@ -768,489 +759,475 @@ namespace SEP {
         return speed*(1-mu*mu)*pow(fabs(mu),2.0/3.0)/GetLambda(); 
       }
     };
-    
+
     class cD_SA : public SEP::Diffusion::cDiffusionCoeffcient {
     public: 
       cD_mu_mu_basic D_mu_mu_Minus,D_mu_mu_Plus;
-      
+
       double GetDiffusionCoeffcient() {
         double Dplus,Dminus;
-        
+
         D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
         D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
-        
+
         //determine the particle speed and mu in the frame moving with velocity +vAlfven
         double vParallel,vNormal;
-        
+
         vNormal=speed*sqrt(1.0-mu*mu);
-        
+
         vParallel=speed*mu-D_mu_mu_Minus.vAlfven;
         D_mu_mu_Minus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
         D_mu_mu_Minus.mu=vParallel/D_mu_mu_Minus.speed;
-        
+
         vParallel=speed*mu-D_mu_mu_Plus.vAlfven;
         D_mu_mu_Plus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
         D_mu_mu_Plus.mu=vParallel/D_mu_mu_Plus.speed;
-        
-        
+
+
         Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
         Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
-        
+
         double t=vAlfven*PIC::MolecularData::GetMass(spec);
-        
+
         return 4.0*t*t*Dplus*Dminus/(Dplus+Dminus); 
       }
-      
+
       void Init() {
         D_mu_mu_Minus.Init();
         D_mu_mu_Plus.Init();  
       }
-      
+
       void SetW(double *w) {
         D_mu_mu_Minus.W=w[1];
         D_mu_mu_Plus.W=w[0];
       }
-      
+
       void SetLocation(double *x) {
         D_mu_mu_Minus.SetLocation(x);
         D_mu_mu_Plus.SetLocation(x);
       }
-      
+
       void SetVelAlfven(double v) {
         vAlfven=v;
         D_mu_mu_Minus.vAlfven=-v;
         D_mu_mu_Plus.vAlfven=v;
       }
-      
+
       void SetAbsB(double b) {
         D_mu_mu_Minus.AbsB=b;
         D_mu_mu_Plus.AbsB=b;
       }
-      
+
       void SetVelocity(double SpeedIn,double MuIn) {
         speed=SpeedIn,mu=MuIn,InputMode=InputModeVelocity;
         D_mu_mu_Minus.SetVelocity(SpeedIn,MuIn);
         D_mu_mu_Plus.SetVelocity(SpeedIn,MuIn);
       }
-      
+
       void SetMomentum(double MomentumIn,double MuIn) {
         p=MomentumIn,mu=MuIn,InputMode=InputModeMomentum;
         D_mu_mu_Minus.SetMomentum(MomentumIn,MuIn);
         D_mu_mu_Plus.SetMomentum(MomentumIn,MuIn);
       }
-        };
-    
-    
+    };
+
+
     class cD_mu_mu : public cD_SA {
     public:     
       double GetDiffusionCoeffcient() {
         double Dplus,Dminus;
-        
+
         D_mu_mu_Minus.speed=speed,D_mu_mu_Minus.p=p,D_mu_mu_Minus.mu=mu;
         D_mu_mu_Plus.speed=speed,D_mu_mu_Plus.p=p,D_mu_mu_Plus.mu=mu;
-        
+
         //determine the particle speed and mu in the frame moving with velocity +vAlfven
         double vParallel,vNormal;
-        
+
         vNormal=speed*sqrt(1.0-mu*mu);
-        
+
         vParallel=speed*mu-D_mu_mu_Minus.vAlfven;
         D_mu_mu_Minus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
         D_mu_mu_Minus.mu=vParallel/D_mu_mu_Minus.speed;
-        
+
         vParallel=speed*mu-D_mu_mu_Plus.vAlfven;
         D_mu_mu_Plus.speed=sqrt(vNormal*vNormal+vParallel*vParallel);
         D_mu_mu_Plus.mu=vParallel/D_mu_mu_Plus.speed;
-        
-        
+
+
         Dplus=D_mu_mu_Plus.GetDiffusionCoeffcient();
         Dminus=D_mu_mu_Minus.GetDiffusionCoeffcient();
-        
+
         return Dplus+Dminus; 
       }
     };
-    
+
     template <class T>
     class cD_x_x {
     public:
-    	static T D_mu_mu;
+      static T D_mu_mu;
       #pragma omp threadprivate(D_mu_mu)
-    	
-    	int spec;
-    	int InputMode;
 
-    	static const int InputModeUndefined=0;
-    	static const int InputModeMomentum=1;
-    	static const int InputModeVelocity=2;
-    	
+      int spec;
+      int InputMode;
+
+      static const int InputModeUndefined=0;
+      static const int InputModeMomentum=1;
+      static const int InputModeVelocity=2;
+
     private:
-       static double speed,p,W[2],AbsB,xLocation[3],vAlfven,B[3];
-       #pragma omp threadprivate(speed,p,W,AbsB,xLocation,vAlfven,B)
-       
-       
-       static PIC::FieldLine::cFieldLineSegment* Segment;
-       #pragma omp threadprivate(Segment)
+      static double speed,p,W[2],AbsB,xLocation[3],vAlfven,B[3];
+      #pragma omp threadprivate(speed,p,W,AbsB,xLocation,vAlfven,B)
+
+
+      static PIC::FieldLine::cFieldLineSegment* Segment;
+      #pragma omp threadprivate(Segment)
 
     public:
-    	void Convert2Velocity() {
-    		if (InputMode==InputModeUndefined) {
-    			exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
-    		}
-    		else if (InputMode==InputModeMomentum) {
-    			InputMode=InputModeVelocity;
-    			speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
-    		}
-    	}
+      void Convert2Velocity() {
+        if (InputMode==InputModeUndefined) {
+          exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+        }
+        else if (InputMode==InputModeMomentum) {
+          InputMode=InputModeVelocity;
+          speed=Relativistic::Momentum2Speed(p,PIC::MolecularData::GetMass(spec));
+        }
+      }
 
-    	void Convert2Momentum() {
-    		if (InputMode==InputModeUndefined) {
-    			exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
-    		}
-    		else if (InputMode==InputModeVelocity) {
-    			InputMode=InputModeMomentum;
-    			p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
-    		}
-    	}
+      void Convert2Momentum() {
+        if (InputMode==InputModeUndefined) {
+          exit(__LINE__,__FILE__,"Error: the parameter is not defined yet");
+        }
+        else if (InputMode==InputModeVelocity) {
+          InputMode=InputModeMomentum;
+          p=Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec));
+        }
+      }
 
-    	cD_x_x() {
-    		InputMode=InputModeUndefined;
-    		spec=0;
-    	}
+      cD_x_x() {
+        InputMode=InputModeUndefined;
+        spec=0;
+      }
 
-    	void Init(int SpecIn) {
-    		D_mu_mu.Init();
-    		
-    		spec=SpecIn;
-    		D_mu_mu.spec=SpecIn;
-    	}
-    	
+      void Init(int SpecIn) {
+        D_mu_mu.Init();
+
+        spec=SpecIn;
+        D_mu_mu.spec=SpecIn;
+      }
+
       void SetW(double *w) {
-      	D_mu_mu.SetW(w);
-       }
-       
-       void SetLocation(double *x) {
-         D_mu_mu.SetLocation(x);
-       }
-       
-       void SetVelAlfven(double v) {
-         D_mu_mu.SetVelAlfven(v);
-       }
-       
-       void SetAbsB(double b) {
-         D_mu_mu.SetAbsB(b);
-       }
-       
-       void SetVelocity(double SpeedIn) {
-         speed=SpeedIn;
-         InputMode=InputModeVelocity;
-       }
-       
-       void SetMomentum(double MomentumIn,double MuIn) {
-         p=MomentumIn;
-   	     InputMode=InputModeMomentum;
-       } 
-       
+        D_mu_mu.SetW(w);
+      }
+
+      void SetLocation(double *x) {
+        D_mu_mu.SetLocation(x);
+      }
+
+      void SetVelAlfven(double v) {
+        D_mu_mu.SetVelAlfven(v);
+      }
+
+      void SetAbsB(double b) {
+        D_mu_mu.SetAbsB(b);
+      }
+
+      void SetVelocity(double SpeedIn) {
+        speed=SpeedIn;
+        InputMode=InputModeVelocity;
+      }
+
+      void SetMomentum(double MomentumIn,double MuIn) {
+        p=MomentumIn;
+        InputMode=InputModeMomentum;
+      } 
+
     private:      
-       bool Interpolate(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-      	 namespace FL = PIC::FieldLine;
-      	 double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
-      	 double PlasmaDensity0,PlasmaDensity1,PlasmaDensity;
-      	 int idim;
-      	       	 
-      	 Segment->GetCartesian(xLocation, FieldLineCoord);
-      	 Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
-      	 if (Segment==NULL) return false;
+      bool Interpolate(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
+        double PlasmaDensity0,PlasmaDensity1,PlasmaDensity;
+        int idim;
 
-      	 FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
-      	 FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+        Segment->GetCartesian(xLocation, FieldLineCoord);
+        Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord); 
+        if (Segment==NULL) return false;
 
-      	 AbsB=0.0;
+        FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+        FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
 
-      	 //get the magnetic field and the plasma waves at the corners of the segment
-      	 B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
-      	 B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        AbsB=0.0;
 
-      	 W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
-      	 W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
-      	 
-         VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
-         VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
+        //get the magnetic field and the plasma waves at the corners of the segment
+        B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+        B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
 
-      	 x0=VertexBegin->GetX();
-      	 x1=VertexEnd->GetX();
+        W0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
+        W1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
 
-      	 //determine the interpolation coefficients
-      	 w1=fmod(FieldLineCoord,1);
-      	 w0=1.0-w1;
+        VertexBegin->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity0);
+        VertexEnd->GetDatum(FL::DatumAtVertexPlasmaDensity,&PlasmaDensity1);
 
-      	 for (idim=0;idim<3;idim++) {
-      		 B[idim]=w0*B0[idim]+w1*B1[idim];
-      		 AbsB+=B[idim]*B[idim];
-      	 }
+        x0=VertexBegin->GetX();
+        x1=VertexEnd->GetX();
 
-         PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
-      	 W[0]=w0*W0[0]+w1*W1[0];
-      	 W[1]=w0*W0[1]+w1*W1[1];
+        //determine the interpolation coefficients
+        w1=fmod(FieldLineCoord,1);
+        w0=1.0-w1;
 
-      	 AbsB=sqrt(AbsB);
-      	 vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
-      	 
-      	 return true;
-       };
+        for (idim=0;idim<3;idim++) {
+          B[idim]=w0*B0[idim]+w1*B1[idim];
+          AbsB+=B[idim]*B[idim];
+        }
 
-       static double Integrant(double *mu) {
-         double D;
-         double t=1.0-mu[0]*mu[0];
+        PlasmaDensity=(w0*PlasmaDensity0+w1*PlasmaDensity1)*PIC::CPLR::SWMF::MeanPlasmaAtomicMass;
+        W[0]=w0*W0[0]+w1*W1[0];
+        W[1]=w0*W0[1]+w1*W1[1];
 
-         D_mu_mu.SetMu(mu[0]);
-         D=D_mu_mu.GetDiffusionCoeffcient();
+        AbsB=sqrt(AbsB);
+        vAlfven=AbsB/sqrt(VacuumPermeability*PlasmaDensity);
 
-         if (D==0.0) {
-           //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
-        	 D_mu_mu.GetDiffusionCoeffcient();
-         }
+        return true;
+      };
 
-         return t*t/D;
-       }
-       
-       static double Integrant_MeanD_mu_mu(double *mu) {
-         double D;
-         double t=1.0-mu[0]*mu[0];
+      static double Integrant(double *mu) {
+        double D;
+        double t=1.0-mu[0]*mu[0];
 
-         D_mu_mu.SetMu(mu[0]);
-         D=D_mu_mu.GetDiffusionCoeffcient();
+        D_mu_mu.SetMu(mu[0]);
+        D=D_mu_mu.GetDiffusionCoeffcient();
 
-         if (D==0.0) {
-           //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
-        	 D_mu_mu.GetDiffusionCoeffcient();
-         }
+        if (D==0.0) {
+          //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
+          D_mu_mu.GetDiffusionCoeffcient();
+        }
 
-         return D;
-       }
+        return t*t/D;
+      }
 
-      public: 
-    		double GetDxx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    			namespace FL = PIC::FieldLine;
-    			double D,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
-    			
-    			Interpolate(FieldLineCoord,Segment,iFieldLine);
-          Convert2Velocity();
-          
-          D_mu_mu.SetVelocity(speed,0.0);
-          D_mu_mu.spec=spec;   
-          D_mu_mu.SetW(W);
-          D_mu_mu.SetLocation(xLocation);
-          D_mu_mu.SetVelAlfven(vAlfven);        
-          D_mu_mu.SetAbsB(AbsB);
-    		  
-    		  if (speed<1.0E6) {
-    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
-    		  }
-    		  else if (speed<1.0E7) {
-    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
-    		  }
-    		  else {
-    		    D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant,xmin,xmax);
-    		  }    	
-    		  
-    		  return D;
-    		}
-    		
-    		double GetMeanD_mu_mu(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    			namespace FL = PIC::FieldLine;
-    			double res,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
-    			
-    			Interpolate(FieldLineCoord,Segment,iFieldLine);
-          Convert2Velocity();
-          
-          D_mu_mu.SetVelocity(speed,0.0);
-          D_mu_mu.spec=spec;   
-          D_mu_mu.SetW(W);
-          D_mu_mu.SetLocation(xLocation);
-          D_mu_mu.SetVelAlfven(vAlfven);        
-          D_mu_mu.SetAbsB(AbsB);
-    		  
-    		  if (speed<1.0E6) {
-    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
-    		  }
-    		  else if (speed<1.0E7) {
-    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
-    		  }
-    		  else {
-    		    res=Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant_MeanD_mu_mu,xmin,xmax);
-    		  }    	
-    		  
-    		  return res;
-    		}
-    		
-    		double GetMeanFreePath(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    		  double D;
+      static double Integrant_MeanD_mu_mu(double *mu) {
+        double D;
+        double t=1.0-mu[0]*mu[0];
 
-    		  D=GetDxx(FieldLineCoord,Segment,iFieldLine);
-    		  return 3.0*D/speed;
-    		}
+        D_mu_mu.SetMu(mu[0]);
+        D=D_mu_mu.GetDiffusionCoeffcient();
 
+        if (D==0.0) {
+          //for debugging: catch the issue in the debugger by pacing a breat point in calculation of the D_mu_mu
+          D_mu_mu.GetDiffusionCoeffcient();
+        }
 
-    		double GetdDxx_dx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    			namespace FL = PIC::FieldLine;
-    			double ds,S,D0,D1;
-    			FL::cFieldLineSegment *SegmentTest;
+        return D;
+      }
 
-    			double MeanD_mu_mu0,MeanD_mu_mu1,t0,t1,w0,w1;
-    			
-    			ds=Segment->GetLength()/2.0;
+    public: 
+      double GetDxx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double D,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
 
-    			S=FieldLineCoord;
+        Interpolate(FieldLineCoord,Segment,iFieldLine);
+        Convert2Velocity();
 
-    			//get the diffusion coeffcient for -ds
-    			S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
-    			SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+        D_mu_mu.SetVelocity(speed,0.0);
+        D_mu_mu.spec=spec;   
+        D_mu_mu.SetW(W);
+        D_mu_mu.SetLocation(xLocation);
+        D_mu_mu.SetVelAlfven(vAlfven);        
+        D_mu_mu.SetAbsB(AbsB);
 
-    			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
-    			D0=GetDxx(S,SegmentTest,iFieldLine);
-    			
-    			MeanD_mu_mu0=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
-    			t0=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
-    			w0=D_mu_mu.D_mu_mu_Minus.W;
-    			
-    			//get the diffusion coeffcient for +ds
-    			S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
-    			SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+        if (speed<1.0E6) {
+          D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
+        }
+        else if (speed<1.0E7) {
+          D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant,xmin,xmax);
+        }
+        else {
+          D=speed*speed/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant,xmin,xmax);
+        }    	
 
-    			if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
-    			D1=GetDxx(S,SegmentTest,iFieldLine);
-    			
-    			MeanD_mu_mu1=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
-    			t1=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
-    			w1=D_mu_mu.D_mu_mu_Minus.W;
+        return D;
+      }
 
-    			//get the derivative
-    			return (D1-D0)/(2.0*ds);
-    		}
-    		
-    		double Get_ds(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    			namespace FL = PIC::FieldLine;
-    			double ds,D,dD_dx;
+      double GetMeanD_mu_mu(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double res,xmin[]={-1.0+1.1*muLimit},xmax[]={1.0-muLimit};  //that is needed to eliminate the point mu==0 from the integration procedure
 
-                        double S,D0,D1;
+        Interpolate(FieldLineCoord,Segment,iFieldLine);
+        Convert2Velocity();
 
-                        double Fraction=1.0;
-                        int nIterations=1;
+        D_mu_mu.SetVelocity(speed,0.0);
+        D_mu_mu.spec=spec;   
+        D_mu_mu.SetW(W);
+        D_mu_mu.SetLocation(xLocation);
+        D_mu_mu.SetVelAlfven(vAlfven);        
+        D_mu_mu.SetAbsB(AbsB);
 
-                        PIC::FieldLine::cFieldLineSegment *SegmentLocal=Segment;
+        if (speed<1.0E6) {
+          res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
+        }
+        else if (speed<1.0E7) {
+          res=Quadrature::Gauss::Cube::GaussLegendre(1,5,Integrant_MeanD_mu_mu,xmin,xmax);
+        }
+        else {
+          res=Quadrature::Gauss::Cube::GaussLegendre(1,6,Integrant_MeanD_mu_mu,xmin,xmax);
+        }    	
 
-                        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-dt*speed),0.01);
-                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
+        return res;
+      }
 
+      double GetMeanFreePath(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        double D;
 
-                        D0=GetDxx(S,Segment,iFieldLine);
+        D=GetDxx(FieldLineCoord,Segment,iFieldLine);
+        return 3.0*D/speed;
+      }
 
-                        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*speed),FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01); 
-                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
-                        D1=GetDxx(S,SegmentLocal,iFieldLine); 
+      double GetdDxx_dx(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double ds,S,D0,D1;
+        FL::cFieldLineSegment *SegmentTest;
 
-                        if (fabs(D0-D1)/(D0+D1)>0.2) {
-                          //the difference is on the diffusion coeffcient at the beginning and the end of the trajectory is too large
+        double MeanD_mu_mu0,MeanD_mu_mu1,t0,t1,w0,w1;
 
-double a=0.0;
-a=a+1;
+        ds=Segment->GetLength()/2.0;
 
+        S=FieldLineCoord;
 
-                          Fraction=max(D1/D0,D0/D1);
-                          nIterations=ceil(Fraction);
-                          if (nIterations==0) nIterations=1;
-                          Fraction=1.0/nIterations; 
-                        } 
-         
-                       
-                        S=FieldLineCoord;  
-                        ds=0.0;
-                        SegmentLocal=Segment;
+        //get the diffusion coeffcient for -ds
+        S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
+        SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
 
-                        if (nIterations==1) {
-                          D=GetDxx(S,SegmentLocal,iFieldLine);
-                          dD_dx=GetdDxx_dx(S,SegmentLocal,iFieldLine);
+        if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
+        D0=GetDxx(S,SegmentTest,iFieldLine);
 
-                          return dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
-                        }
+        MeanD_mu_mu0=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
+        t0=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
+        w0=D_mu_mu.D_mu_mu_Minus.W;
 
-                        double S0,S1,dD_dx0,dD_dx1;
+        //get the diffusion coeffcient for +ds
+        S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
+        SegmentTest=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
 
-                        S0=(int)S;
-                        S1=S0+1.0;
-                        if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01; 
+        if ((S<0.0)||(S>=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber())) return 0.0;
+        D1=GetDxx(S,SegmentTest,iFieldLine);
 
-                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
-                        D0=GetDxx(S0,SegmentLocal,iFieldLine);
-                        dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+        MeanD_mu_mu1=GetMeanD_mu_mu(S,SegmentTest,iFieldLine);
+        t1=D_mu_mu.D_mu_mu_Minus.GetTurbulenceLevel();
+        w1=D_mu_mu.D_mu_mu_Minus.W;
 
-                        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
-                        D1=GetDxx(S1,SegmentLocal,iFieldLine);
-                        dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+        //get the derivative
+        return (D1-D0)/(2.0*ds);
+      }
 
-                        double iSegmentOld;   
+      double Get_ds(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double ds,D,dD_dx;
 
-                        for (int i=0;i<nIterations;i++) {
-                          double w0,w1;
+        double S,D0,D1;
 
-                          w1=std::modf(S,&iSegmentOld);
-                          w0=1.0-w1;
+        double Fraction=1.0;
+        int nIterations=1;
 
-                          D=D0*w0+D1*w1;
-                          dD_dx=dD_dx0*w0+dD_dx1*w1; 
+        PIC::FieldLine::cFieldLineSegment *SegmentLocal=Segment;
 
+        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-dt*speed),0.01);
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
 
-//    			  D=GetDxx(S,SegmentLocal,iFieldLine);
-//    			  dD_dx=GetdDxx_dx(S,SegmentLocal,iFieldLine);
-    			
-    		   	  ds+=dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
-     
-                          if (i!=nIterations-1) {
-                             double iSegmentNew;
+        D0=GetDxx(S,Segment,iFieldLine);
 
-                             S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds); 
-                         
-                             if (S>0.0) {
-                               std::modf(S,&iSegmentNew);
+        S=max(FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,dt*speed),FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01); 
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S); 
+        D1=GetDxx(S,SegmentLocal,iFieldLine); 
 
-                               if (iSegmentOld!=iSegmentNew) {
-                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S);
+        if (fabs(D0-D1)/(D0+D1)>0.2) {
+          //the difference is on the diffusion coeffcient at the beginning and the end of the trajectory is too large
 
-                                 S0=iSegmentNew;
-                                 S1=S0+1.0;
-                                 if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01;
+          Fraction=max(D1/D0,D0/D1);
+          nIterations=ceil(Fraction);
+          if (nIterations==0) nIterations=1;
+          Fraction=1.0/nIterations; 
+        } 
 
-                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
-                                 D0=GetDxx(S0,SegmentLocal,iFieldLine);
-                                 dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+        S=FieldLineCoord;  
+        ds=0.0;
+        SegmentLocal=Segment;
 
-                                 SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
-                                 D1=GetDxx(S1,SegmentLocal,iFieldLine);
-                                 dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+        if (nIterations==1) {
+          D=GetDxx(S,SegmentLocal,iFieldLine);
+          dD_dx=GetdDxx_dx(S,SegmentLocal,iFieldLine);
 
-                                 iSegmentOld=iSegmentNew;
-                               }
-                             }
+          return dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
+        }
+
+        double S0,S1,dD_dx0,dD_dx1;
+
+        S0=(int)S;
+        S1=S0+1.0;
+        if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01; 
+
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
+        D0=GetDxx(S0,SegmentLocal,iFieldLine);
+        dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+
+        SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
+        D1=GetDxx(S1,SegmentLocal,iFieldLine);
+        dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+
+        double iSegmentOld;   
+
+        for (int i=0;i<nIterations;i++) {
+          double w0,w1;
+
+          w1=std::modf(S,&iSegmentOld);
+          w0=1.0-w1;
+
+          D=D0*w0+D1*w1;
+          dD_dx=dD_dx0*w0+dD_dx1*w1; 
+
+          ds+=dD_dx*dt*Fraction+2.0*cos(PiTimes2*rnd())*sqrt(-D*dt*Fraction*log(rnd()));
+
+          if (i!=nIterations-1) {
+            double iSegmentNew;
+
+            S=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds); 
+
+            if (S>0.0) {
+              std::modf(S,&iSegmentNew);
+
+              if (iSegmentOld!=iSegmentNew) {
+                SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S);
+
+                S0=iSegmentNew;
+                S1=S0+1.0;
+                if (S1==FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()) S1=FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber()-0.01;
+
+                SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S0);
+                D0=GetDxx(S0,SegmentLocal,iFieldLine);
+                dD_dx0=GetdDxx_dx(S0,SegmentLocal,iFieldLine);
+
+                SegmentLocal=FL::FieldLinesAll[iFieldLine].GetSegment(S1);
+                D1=GetDxx(S1,SegmentLocal,iFieldLine);
+                dD_dx1=GetdDxx_dx(S1,SegmentLocal,iFieldLine);
+
+                iSegmentOld=iSegmentNew;
+              }
+            }
+            else {
+              return ds;
+            }
+          }
+        }
 
 
-                             else {
-                               return ds;
-                             }
-                          }
-                        }
+        return ds;
+      }
 
+      double DistributeX(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+        namespace FL = PIC::FieldLine;
+        double ds;
 
-    			return ds;
-    		}
-    		
-    		double DistributeX(double dt,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
-    			namespace FL = PIC::FieldLine;
-    			double ds;
-    			
-    			ds=Get_ds(dt,FieldLineCoord,Segment,iFieldLine);
-    			return FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
-    		}
-    			
+        ds=Get_ds(dt,FieldLineCoord,Segment,iFieldLine);
+        return FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);
+      }
     };
 
     template<class T> double SEP::Diffusion::cD_x_x<T>::speed=0.0;
