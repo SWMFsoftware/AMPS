@@ -258,8 +258,7 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       if (t=="HE_2019_AJL") SEP::ParticleMoverSet(SEP::_HE_2019_AJL_);
       else if (t=="Kartavykh_2016_AJ") SEP::ParticleMoverSet(SEP::_Kartavykh_2016_AJ_);
       else if (t=="BOROVIKOV_2019_ARXIV") SEP::ParticleMoverSet(SEP::_BOROVIKOV_2019_ARXIV_);
-      else if (t=="Droge_2009_AJ_") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ_);
-      else if (t=="Droge_2009_AJ1") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ1_);     
+      else if (t=="Droge_2009_AJ") SEP::ParticleMoverSet(SEP::_Droge_2009_AJ_);
       else if (t=="MeanFreePathScattering") SEP::ParticleMoverSet(SEP::_MeanFreePathScattering_);
       else if (t=="Tenishev_2005_FL") SEP::ParticleMoverSet(SEP::_Tenishev_2005_FL_);
       else exit(__LINE__,__FILE__,"Error: the parameter value is not recognized");
