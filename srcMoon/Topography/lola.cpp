@@ -33,8 +33,8 @@ string fNameLAT="ldem_4_float_LAT.txt";
 string fNameALT="ldem_4_float.txt";
 
 //char fNameSphere[100]="sphere-coarce.mail";
-char fNameSphere[100]="sphere-medium.mail";
-//char fNameSphere[100]="sphere-fine.mail";
+//char fNameSphere[100]="sphere-medium.mail";
+char fNameSphere[100]="sphere-fine.mail";
 
 vector<double> vLON,vLAT;
 vector<vector<double> >vALT;
@@ -199,6 +199,7 @@ int main () {
 
   //output the resulting mesh 
   PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh("surface-mesh.dat");
+  PIC::Mesh::IrregularSurface::SaveCEASurfaceMeshLongFormat("surface-mesh.mail");
 
   return 0;
 }
