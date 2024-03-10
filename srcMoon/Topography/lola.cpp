@@ -116,6 +116,7 @@ void GetLonLat(double& Lon,double& Lat,double* x) {
     Lat=(c<90.0) ? 90.0-c : -(c-90.0); 
   }
 
+  l=sqrt(x[0]*x[0]+x[1]*x[1]);
   c=Vector3D::DotProduct(x,xx)/l;
   d=Vector3D::DotProduct(x,yy)/l;
 
