@@ -108,8 +108,13 @@ ParticleWeightCorrectionMode=on
 
   UpstreamTemperature=293.0
 
-  SurfaceModel=Orbiter.bdf
-  SurfaceModelFormat=CEA !CEA, NASTRAN
+  SurfaceModel \\ 
+    faceat=0,meshfile=Orbiter.bdf
+  
+
+
+
+  SurfaceModelFormat=NASTRAN !CEA, NASTRAN
   
   MeshSignature=0xb3422242b9bcb538
 
