@@ -418,7 +418,7 @@ void PIC::Mesh::initCellSamplingDataBuffer() {
   //local particle weight
 #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   if (PIC::ThisThread==0) cout << "$PREFIX:Particle weight mode: specie dependent local weight" << endl;
-  cDataBlockAMR::LocalParticleWeightOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
+  cDataBlockAMR_static_data::LocalParticleWeightOffset=cDataBlockAMR::RequestInternalBlockData(sizeof(double)*PIC::nTotalSpecies);
 #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
   //do nothing for _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
 #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ ==_SINGLE_GLOBAL_PARTICLE_WEIGHT_

@@ -2132,7 +2132,7 @@ void PIC::Init_AfterParser() {
 //set up the particle weight and time step
 void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
-  *(spec+(double *)(associatedDataPointer+LocalParticleWeightOffset))=weight;
+  *(spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalParticleWeightOffset))=weight;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
   if ((PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]<0.0)||(PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]>weight)) {
     PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]=weight;
@@ -2149,7 +2149,7 @@ void PIC::Mesh::cDataBlockAMR::SetLocalParticleWeight(double weight, int spec) {
 double PIC::Mesh::cDataBlockAMR::GetLocalParticleWeight(int spec) {
   #if _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_LOCAL_PARTICLE_WEIGHT_
   double *res;
-  res=spec+(double *)(associatedDataPointer+LocalParticleWeightOffset);
+  res=spec+(double *)(associatedDataPointer+cDataBlockAMR_static_data::LocalParticleWeightOffset);
   return *res;
   #elif _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
   return PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
