@@ -23,11 +23,16 @@
 #include <string>
 #include <algorithm>
 
+#include "../../src/general/constants.PlanetaryData.h"
+#include "../../src/pic/pic.h"
+
 using namespace std;
 
 string fNameLON="ldem_4_float_LON.txt";
 string fNameLAT="ldem_4_float_LAT.txt";
 string fNameALT="ldem_4_float.txt";
+
+char fNameSphere[100]="sphere-coarce.mail";
 
 vector<double> vLON,vLAT;
 vector<vector<double> >vALT;
@@ -66,27 +71,18 @@ void ReadFileALT(string fName,vector<vector<double> >& vRes) {
   f.close();
 }
 
-void OutputTecplotMap() {
-  FILE* fout=fopen("topologycam-map.dat","w");
-  int iLon,iLonMax,iLat,iLatMax;
-
-  iLonMax=vLON.size();
-  iLatMax=vLAT.size();
-
-  fprintf(fout,"\nZONE I=%ld, J=%ld, DATAPACKING=POINT\n",iLonMax,iLatMax); 
-
-  for (iLon=0;iLon<iLonMax;iLon++) {
-    for (iLat=0;iLat<iLatMax;iLat++) {
-      fprintf(fout,"%e  %e  %e\n", vLON[iLon],vLAT[iLat],vALT[iLat][iLon]);
-    }
-  }
-
-  fclose(fout);
-}
 
 
 int main () {
+
+  PIC::InitMPI();
+
+cout << "sdsfsfasdfsadfsd\n";
   
+
+  //read the sphere 
+  PIC::Mesh::IrregularSurface::ReadCEASurfaceMeshLongFormat(fNameSphere,_MOON__RADIUS_);
+  PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh("imported-sphere.dat");
 
   //read the map	
   ReadFileLON_LAT(fNameLON,vLON);
@@ -95,8 +91,6 @@ int main () {
 
   vALT.resize(vLAT.size());
   ReadFileALT(fNameALT,vALT);
-
-  OutputTecplotMap();
 
   return 0;
 }
