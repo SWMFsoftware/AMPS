@@ -601,6 +601,7 @@ unsigned long int GetTriangulationSignature();
 
   void ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double UnitConversitonFactor=1.0);
   void ReadCEASurfaceMeshLongFormat(const char *fname,double UnitConversitonFactor=1.0);
+  void SaveCEASurfaceMeshLongFormat(const char* fname);
 
   void ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> SurfaceMeshFileList);
   void ReadNastranSurfaceMeshLongFormat_km(list<cSurfaceMeshFile> SurfaceMeshFileList,const char *path);

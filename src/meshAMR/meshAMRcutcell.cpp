@@ -368,6 +368,29 @@ void CutCell::ReadCEASurfaceMeshLongFormat(const char *fname,double UnitConversi
 }
 
 
+void CutCell::SaveCEASurfaceMeshLongFormat(const char* fname) {
+  FILE *fout=fopen(fname,"w");
+  int nface,pnode,cnt;
+  bool flag;
+  double *xNode,*xFace;
+
+  //output the numebr of the mesh elements 
+  fprintf(fout,"%i %i\n",nBoundaryTriangleNodes,nBoundaryTriangleFaces); 
+
+  //output the coordinates
+  for (int i=0;i<nBoundaryTriangleNodes;i++) {   
+     double *x=BoundaryTriangleNodes[i].x;
+     fprintf(fout,"%e %e %e\n",x[0],x[1],x[2]);
+  }
+
+  //output the connectivity list  
+  for (nface=0;nface<nBoundaryTriangleFaces;nface++) {
+    fprintf(fout,"%i %i %i\n",BoundaryTriangleFaces[nface].node[0]->id,BoundaryTriangleFaces[nface].node[1]->id,BoundaryTriangleFaces[nface].node[2]->id);
+  }
+
+  fclose(fout);
+}
+
 void CutCell::ReadCEASurfaceMeshLongFormat(list<cSurfaceMeshFile> SurfaceMeshFileList,double UnitConversitonFactor) {
   CiFileOperations ifile;
   char str[10000],dat[10000],*endptr;
