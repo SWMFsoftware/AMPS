@@ -43,7 +43,7 @@ char Kernels[100][100]={"NAIF/naif0010.tls", "NAIF/de430.bsp", "NAIF/pck00010.tp
 //                             'naif0008.tls'
 //                             'de421.bsp'
 
-char SimulationStartTimeString[100]="2017-01-01T00:00:00";
+char SimulationStartTimeString[100]="2016-12-31T12:00:00";
 
 double SurfaceResolution(CutCell::cTriangleFace* t) {
   double res,size;
@@ -94,11 +94,11 @@ int main () {
 
   PIC::Mesh::IrregularSurface::InitExternalNormalVector();
 
-  for (int iCalc=0;iCalc<30;iCalc++) {
+  for (int iCalc=1;iCalc<180;iCalc++) {
     cout << "\nAMPS::iCalc=" << iCalc << endl; 
 
     spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
-    et+=24*3600.0;
+    et+=4*3600.0;
 
     for (int idim=0;idim<3;idim++) state[idim]*=1.0E3;
 
