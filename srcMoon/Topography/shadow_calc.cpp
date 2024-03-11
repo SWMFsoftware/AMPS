@@ -88,22 +88,32 @@ int main () {
   furnsh_c("moon_060721.tf");
 
   //determine location of the Sun
-   SpiceDouble state[6],et,lt;
+  SpiceDouble state[6],et,lt;
 
-   utc2et_c(SimulationStartTimeString,&et);
-   spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
+  utc2et_c(SimulationStartTimeString,&et);
 
-   for (int idim=0;idim<3;idim++) state[idim]*=1.0E3;
+  PIC::Mesh::IrregularSurface::InitExternalNormalVector();
+
+  for (int iCalc=0;iCalc<30;iCalc++) {
+    cout << "\nAMPS::iCalc=" << iCalc << endl; 
+
+    spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
+    et+=24*3600.0;
+
+    for (int idim=0;idim<3;idim++) state[idim]*=1.0E3;
 
 
-   //calcualte shadow 
-   PIC::Mesh::IrregularSurface::InitExternalNormalVector();
-   PIC::Mesh::IrregularSurface::CutFaceAccessCounter::Init();
+    //calcualte shadow 
+    PIC::Mesh::IrregularSurface::CutFaceAccessCounter::Init();
+    PIC::RayTracing::FlushtCutCellShadowAttribute(_PIC__CUT_FACE_SHADOW_ATTRIBUTE__FALSE_); 
+    PIC::RayTracing::SetCutCellShadowAttribute(state);
+      
+    //output the result
+    char fname[200];
 
-
-   PIC::RayTracing::FlushtCutCellShadowAttribute(_PIC__CUT_FACE_SHADOW_ATTRIBUTE__FALSE_); 
-   PIC::RayTracing::SetCutCellShadowAttribute(state);
-   PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh("shadow-surface-mesh.dat");
+    sprintf(fname,"shadow-surface-mesh--i=%i.dat",iCalc); 
+    PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh(fname);
+  }
 
   return 0;
 }
