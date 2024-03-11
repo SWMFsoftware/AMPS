@@ -91,7 +91,9 @@ int main () {
    SpiceDouble state[6],et,lt;
 
    utc2et_c(SimulationStartTimeString,&et);
-   spkezr_c("MOON",et,"IAU_MOON","none","SUN",state,&lt);
+   spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
+
+   for (int idim=0;idim<3;idim++) state[idim]*=1.0E3;
 
 
    //calcualte shadow 
