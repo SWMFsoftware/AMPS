@@ -398,6 +398,14 @@ int PIC::RayTracing::FindFistIntersectedFace(double *x0Ray,double *lRay,double *
   return -1;
 }
 
+void PIC::RayTracing::FlushtCutCellShadowAttribute(int at) {
+  for (int i=0;i<PIC::Mesh::IrregularSurface::nBoundaryTriangleFaces;i++) {
+    auto face=PIC::Mesh::IrregularSurface::BoundaryTriangleFaces+i;
+
+    PIC::Mesh::IrregularSurface::BoundaryTriangleFaces[i].pic__shadow_attribute=at;
+  }
+}  
+
 
 void PIC::RayTracing::SetCutCellShadowAttribute(double *xLightSource,bool ParallelExecution) {
   double xTriangle[3],c;

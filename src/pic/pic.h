@@ -1872,6 +1872,7 @@ void DeleteAttachedParticles();
     int FindFistIntersectedFace(double *x0Ray,double *lRay,double *xIntersection,bool ParallelCheck,void* ExeptionFace);
 
     void SetCutCellShadowAttribute(double *xLightSource, bool ParallelExecution=false);
+    void FlushtCutCellShadowAttribute(int at);
   }
 
   //define the test-run parameters

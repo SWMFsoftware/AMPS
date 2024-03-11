@@ -303,6 +303,14 @@ void CutCell::PrintSurfaceTriangulationMesh(const char *fname) {
     double cos_illumination_angle;
     int MeshFileID;
     double ExternalNormal[3];
+
+    cTempNodeData() {
+       shadow_attribute=0,faceat=0;
+       nface=0;
+       cos_illumination_angle=0.0;
+       MeshFileID=0; 
+       for (int i=0;i<3;i++) ExternalNormal[i]=0.0;
+     }
   };
 
   cTempNodeData *TempNodeData=new cTempNodeData[nBoundaryTriangleNodes];

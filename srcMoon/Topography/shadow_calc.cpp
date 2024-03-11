@@ -97,8 +97,11 @@ int main () {
 
 
    //calcualte shadow 
-    PIC::Mesh::IrregularSurface::InitExternalNormalVector();
+   PIC::Mesh::IrregularSurface::InitExternalNormalVector();
    PIC::Mesh::IrregularSurface::CutFaceAccessCounter::Init();
+
+
+   PIC::RayTracing::FlushtCutCellShadowAttribute(_PIC__CUT_FACE_SHADOW_ATTRIBUTE__FALSE_); 
    PIC::RayTracing::SetCutCellShadowAttribute(state);
    PIC::Mesh::IrregularSurface::PrintSurfaceTriangulationMesh("shadow-surface-mesh.dat");
 
