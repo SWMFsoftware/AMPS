@@ -670,10 +670,10 @@ $!ThreeDAxis
     ShowAxis = No
     RangeMin = -1914862.9499999999534
     RangeMax = 1910231.9499999999534
-    GRSpacing = 1000000
+    GRSpacing = 2000000
     AxisLine
       {
-      Edge = 2
+      Edge = 1
       }
     }
 $!ThreeDAxis 
@@ -685,7 +685,7 @@ $!ThreeDAxis
     GRSpacing = 500000
     AxisLine
       {
-      Edge = 1
+      Edge = 3
       }
     }
 $!ThreeDAxis 
@@ -697,7 +697,7 @@ $!ThreeDAxis
     GRSpacing = 1000000
     AxisLine
       {
-      Edge = 1
+      Edge = 4
       }
     }
 $!IsoSurfaceAttributes  1
@@ -964,14 +964,14 @@ $!GlobalThreeD
   VectorLiftFraction = 0.7
   NearPlaneFraction = 0.1
 $!ThreeDView 
-  PSIAngle = 134.399
-  ThetaAngle = -81.0604
-  AlphaAngle = 31.7161
+  PSIAngle = 88.418
+  ThetaAngle = -89.1876
+  AlphaAngle = 1.0162
   ViewerPosition
     {
-    X = 24771281.60255142
-    Y = -3899726.600623176
-    Z = -24559028.58757199
+    X = 35081048.15980969
+    Y = -499937.3581754583
+    Z = 967819.0666157878
     }
   ViewWidth = 6.0574E+06
 $!FieldLayers 

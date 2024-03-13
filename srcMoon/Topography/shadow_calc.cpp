@@ -85,6 +85,8 @@ int main () {
     furnsh_c(str);
   }
 
+  furnsh_c("moon_assoc_me.tf");
+  furnsh_c("moon_pa_de403_1950-2198.bpc");
   furnsh_c("moon_060721.tf");
 
   //determine location of the Sun
@@ -97,7 +99,10 @@ int main () {
   for (int iCalc=1;iCalc<180;iCalc++) {
     cout << "\nAMPS::iCalc=" << iCalc << endl; 
 
-    spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
+//    spkezr_c("SUN",et,"IAU_MOON","none","MOON",state,&lt);
+
+    spkezr_c("SUN",et,"MOON_ME","none","MOON",state,&lt); 
+
     et+=4*3600.0;
 
     for (int idim=0;idim<3;idim++) state[idim]*=1.0E3;
