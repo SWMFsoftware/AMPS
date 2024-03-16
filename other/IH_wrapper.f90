@@ -861,7 +861,7 @@ contains
     else
        IsFullyCoupledFluid = .true.
     end if
-    ! Make sure that ghost cells get filled after
+    ! Make sure that ghost cells in the buffer get filled after
     call fill_in_buffer_grid_gc
     ! Fill in the cells, covered by the bufer grid, including ghost cells.
     ! Fill in the ghostcells, calculate energy
