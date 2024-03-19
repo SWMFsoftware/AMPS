@@ -105,12 +105,14 @@ while ($line=<InputFile>) {
   }
 
   ($InputLine,$InputComment)=split('!',$line,2);
+  $line=$InputLine;
   $InputLine=uc($InputLine);
   chomp($InputLine);
  
   $InputLine=~s/=/ /g;
   ($InputLine,$InputComment)=split(' ',$InputLine,2);
   $InputLine=~s/ //g;
+
   
   #read the line 
   if ($InputLine eq "PHOTOLYTICREACTIONS") {
@@ -725,6 +727,56 @@ while ($line=<InputFile>) {
       push(@SourceProcessesSymbolicID,"\"Vertical Injection\"");
       $SourceProcessID++;
     }
+
+
+    elsif ($InputLine eq "UNIFORMLOCALTEMPERATURE") { 
+      my @SourceRate=(0)x$TotalSpeciesNumber;
+      my ($l0,$l1,$l2);
+
+      $line=~s/=/ /g;
+      chomp($InputLine);
+      ($l0,$line)=split(' ',$line,2); 
+      ($l0,$line)=split(' ',$line,2);
+      ($l0,$line)=split(' ',$line,2);
+
+
+      if ($s0 eq "ON") {
+        while (defined $InputComment) {
+          ($InputLine,$line)=split(' ',$line,2);
+          ($InputLine,$InputComment)=split(' ',$InputComment,2);
+          $InputLine=~s/ //g;
+
+	  if ($InputLine eq "SOURCERATE") {
+            ($s0,$s1,$line)=split(' ',$line,3);
+
+            ($s0,$s1,$InputComment)=split(' ',$InputComment,3);
+	    $s0=~s/ //g;
+            $s1=~s/ //g;
+
+            $SourceRate[getSpeciesNumber($s0)]=$s1;
+          }
+          elsif ($InputLine eq "FUNCTION") {
+            my $FunctionName;
+
+            ($FunctionName,$InputComment)=split(' ',$InputComment,2);
+	    ($FunctionName,$line)=split(' ',$line,2);
+
+            ampsConfigLib::RedefineMacroFunction("_EXOSPHERE__SOUCE__UNIFORM_LOCAL_TEMP__SURFACE_TEMP_","(CosSubSolarAngle,x_LOCAL_SO_OBJECT)  ($FunctionName(CosSubSolarAngle,x_LOCAL_SO_OBJECT))","models/exosphere/Exosphere.dfn");
+          }
+        }  
+
+        #add the parameters of the input file to the code      
+        ampsConfigLib::RedefineMacro("_EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_","_EXOSPHERE_SOURCE__ON_","models/exosphere/Exosphere.dfn");
+        ampsConfigLib::ChangeValueOfArray("static const double UniformLocalTemperature_SourceRate\\[\\]",\@SourceRate,"models/exosphere/Exosphere.h");
+
+        ampsConfigLib::RedefineMacro("_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_",$SourceProcessID,"models/exosphere/Exosphere.dfn");
+
+        push(@SourceModifySurfaceSpeciesAbundance,'false');
+        push(@SourceProcessesSymbolicID,"\"UniformLocalTemperatureInjection\"");
+        $SourceProcessID++;
+      }
+    }
+
     elsif ($InputLine eq "IMPACTVAPORIZATION") {
       my $HeliocentricDistance="_AU_";
       my $SourceRatePowerIndex=0;
