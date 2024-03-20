@@ -842,6 +842,7 @@ while ($line=<InputFile>) {
 
       $MARKER__RESERVE_CELL_SAMPLING_DATA_BUFFER=$MARKER__RESERVE_CELL_SAMPLING_DATA_BUFFER."\nSamplingDensityOffset[$SourceCode]=CellSamplingDataOffset+SamplingLength;\nSamplingLength+=sizeof(double)*PIC::nTotalSpecies;\n";
             
+      push(@SourceModifySurfaceSpeciesAbundance,'false');
       push(@SourceProcessesSymbolicID,"\"$s0\"");
       $SourceProcessID++;
     }
@@ -920,6 +921,7 @@ while ($line=<InputFile>) {
         
         if (!defined $UserDefinedModifySurfaceAbundance) {
           print "ModifySurfaceSpeciesAbundance is not defined [file=$InputFileName, line=$InputFileLineNumber]\n";
+	  push(@SourceModifySurfaceSpeciesAbundance,'false');
         }
         elsif (!defined $Code) {
           die "SourceProcessCode is not defined [file=$InputFileName, line=$InputFileLineNumber]\n";
