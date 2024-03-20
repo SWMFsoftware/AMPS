@@ -17,7 +17,10 @@
 namespace Moon {
   using namespace Exosphere;
 
+  extern bool UseKaguya;
 
+  //iteration counter
+  extern int nIterationCounter;
 
   //init the model
   void Init_AfterParser();
@@ -112,6 +115,8 @@ namespace Moon {
       }
 
       inline void Init () {
+        if (!UseKaguya) return;
+
 #if _EXOSPHERE__ORBIT_CALCUALTION__MODE_ == _PIC_MODE_ON_
         SpiceDouble et,lt,State[6],xform[6][6];
         SpiceDouble lJ2000[6]={0.0,0.0,0.0,0.0,0.0,0.0};

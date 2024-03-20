@@ -16,7 +16,7 @@
 
 
 
-        double HeliumDesorption::SourceRate[PIC::nTotalSpecies],HeliumDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
+//        double HeliumDesorption::SourceRate[PIC::nTotalSpecies],HeliumDesorption::maxLocalSourceRate[PIC::nTotalSpecies];
         cSingleVariableDiscreteDistribution<int> HeliumDesorption::SurfaceInjectionDistribution[PIC::nTotalSpecies];
 //        double HeliumDesorption::GetSurfaceElementProductionRate(int nElement,int *spec);
 
@@ -38,13 +38,39 @@
         }
 
 
-               bool HeliumDesorption::GenerateParticleProperties(int spec,double *x_SO_OBJECT,double *x_IAU_OBJECT,double *v_SO_OBJECT,double* v_IAU_OBJECT, double *sphereX0,double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode, cInternalSphericalData* Sphere) {
+               bool HeliumDesorption::GenerateParticleProperties(int spec,PIC::ParticleBuffer::byte* tempParticleData,double *x_SO_OBJECT,double *x_IAU_OBJECT,double *v_SO_OBJECT,double* v_IAU_OBJECT, double *sphereX0,double sphereRadius,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* &startNode, int BoundaryElementType,void *BoundaryElement) { 
                 double ExternalNormal[3],CosSubSolarAngle;
 
                 //'x' is the position of a particle in the coordinate frame related to the planet 'IAU_OBJECT'
                 double x_LOCAL_IAU_OBJECT[3],x_LOCAL_SO_OBJECT[3],v_LOCAL_IAU_OBJECT[3],v_LOCAL_SO_OBJECT[3];
                 int nZenithElement,nAzimuthalElement;
                 unsigned int el;
+
+		static int nLastIteration=-1;
+
+		if (nLastIteration!=Moon::nIterationCounter) {
+		  //need to init all parameters for particle injection at the currect iteration 	
+		  nLastIteration=Moon::nIterationCounter;
+
+                  auto Sphere=(cInternalSphericalData*)BoundaryElement;
+                  int nElements=Sphere->GetTotalSurfaceElementsNumber();
+                  double *rate=new double[nElements];  
+                  double norm[3];
+
+                  for (int i=0;i<nElements;i++) {
+                    Sphere->GetSurfaceElementNormal(norm,i);
+                    rate[i]=Vector3D::DotProduct(Exosphere::OrbitalMotion::SunDirection_IAU_OBJECT,norm);   
+
+		    if (rate[i]<0.0) rate[i]=0.0;
+                  }
+
+
+                  for (int s=0;s<PIC::nTotalSpecies;s++) {
+                    SurfaceInjectionDistribution[s].InitArray(rate,nElements,10*nElements); 
+		  }
+
+                  delete [] rate;
+		}
 
                 el=SurfaceInjectionDistribution[spec].DistributeVariable();
                 Exosphere::Planet->GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,el);

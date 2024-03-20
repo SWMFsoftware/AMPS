@@ -415,12 +415,12 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
   double CellSize,CharacteristicSpeed;
 
   switch (spec) {
-  case _NA_SPEC_:
-    CharacteristicSpeed=2.0E3;
+	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
+    CharacteristicSpeed=20.0E3;
     break;
 
   case _NA_PLUS_SPEC_:
-    CharacteristicSpeed=2.0E4;
+    CharacteristicSpeed=8.0E4;
     break;
 
   default:
@@ -1409,6 +1409,28 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname);
       PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NA_PLUS_SPEC_,_NA_SPEC_,5.0E3/800.0E3);
       PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_NA_PLUS_SPEC_,_NA_SPEC_,5.0E3/800.0E3);
     }
+
+    if (_HE_SPEC_>=0) {
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_HE_SPEC_,_NA_SPEC_,1.0);
+
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_HE_SPEC_);
+      PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_HE_SPEC_,_NA_SPEC_,0.1);
+    }
+
+    if (_NE_SPEC_>=0) {
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NE_SPEC_,_NA_SPEC_,1.0);
+
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_NE_SPEC_);
+      PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_NE_SPEC_,_NA_SPEC_,0.1);
+    }
+
+    if (_AR_SPEC_>=0) {
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_AR_SPEC_,_NA_SPEC_,1.0);
+
+      PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_AR_SPEC_);
+      PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_AR_SPEC_,_NA_SPEC_,0.1);
+    }
+
 
     //set photolytic reactions
   /*

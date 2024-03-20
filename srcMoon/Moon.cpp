@@ -22,6 +22,8 @@ int Moon::Sampling::SubsolarLimbColumnIntegrals::_NA_EMISSION_5897_56A_SAMPLE_OF
 int Moon::Sampling::SubsolarLimbColumnIntegrals::_NA_COLUMN_DENSITY_OFFSET_=-1;
 
 
+bool Moon::UseKaguya=false;
+int Moon::nIterationCounter=0;
 
 //char Exosphere::SimulationStartTimeString[_MAX_STRING_LENGTH_PIC_]="2008-12-20T00:00:00"; //"2011-04-13T00:00:00" ;//"2009-00-00T00:00:00";
 
@@ -96,8 +98,28 @@ void Moon::Init_AfterParser() {
 
   //init the model of calcualting the integrals that correspond to the Kaguya's TVIS observations
   Moon::Sampling::Kaguya::Init();
-  PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(Sampling::SubsolarLimbColumnIntegrals::EmptyFunction,Moon::Sampling::Kaguya::TVIS::OutputModelData);
+  if (UseKaguya==true) PIC::Sampling::ExternalSamplingLocalVariables::RegisterSamplingRoutine(Sampling::SubsolarLimbColumnIntegrals::EmptyFunction,Moon::Sampling::Kaguya::TVIS::OutputModelData);
 }
+
+double ArgonStickingProbability(double& ReemissionParticleFraction,double Temp) {
+  double res;
+
+    if (Temp<8.8E+1) res=1.0/pow(10.0,7.2E-1);
+    else if (Temp<1.1E+2) {
+      double alfa=(-2.2+7.2E-1)/(1.1E+2-8.8E+1);  
+      res=1.0/pow(10.0,7.2E-1-alfa*(Temp-8.8E+1));
+    }
+    else if (Temp<1.58E+2) {
+      double alfa=(-4.0+2.2)/(1.58E+2-1.1E+2);  
+      res=1.0/pow(10.0,2.2-alfa*(Temp-1.1E+2));
+    }
+    else res=1.0/pow(10.0,4.0);
+
+    ReemissionParticleFraction=1.0;
+
+    return res;
+}
+
 
 double SodiumStickingProbability(double& ReemissionParticleFraction,double Temp) {
   double res=-1.0;
@@ -176,6 +198,12 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
    switch (spec) {
    case _NA_SPEC_: case _NA_PLUS_SPEC_:
      res=SodiumStickingProbability(ReemissionParticleFraction,Temp);
+     break;
+   case _AR_SPEC_:
+     res=ArgonStickingProbability(ReemissionParticleFraction,Temp);
+     break;
+   case _HE_SPEC_: case _NE_SPEC_: 
+     res=0.0;
      break;
    default:
      exit(__LINE__,__FILE__,"the option is not implemented");

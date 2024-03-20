@@ -49,7 +49,7 @@ t.SwitchTimeSegment(__LINE__,"first switch");
     PIC::Debugger::logger.func_enter(__LINE__,"main()",&PIC::Debugger::LoggerData,0,5);
   }
 
-  int niter,nTotalIterations=100000001;
+  int nTotalIterations=100000001;
   if (_PIC_NIGHTLY_TEST_MODE_ == _PIC_MODE_ON_) nTotalIterations=100;
 
   //time step
@@ -57,11 +57,11 @@ t.SwitchTimeSegment(__LINE__,"first switch");
 
   
 
-  for (niter=0;niter<nTotalIterations;niter++) {
+  for (Moon::nIterationCounter=0;Moon::nIterationCounter<nTotalIterations;Moon::nIterationCounter++) {
 
     if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
       PIC::Debugger::LoggerData.erase();
-      sprintf(PIC::Debugger::LoggerData.msg,"line=%ld,iter=%i",__LINE__,niter);
+      sprintf(PIC::Debugger::LoggerData.msg,"line=%ld,iter=%i",__LINE__,Moon::nIterationCounter);
       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
     }
 
@@ -74,7 +74,7 @@ t.SwitchTimeSegment(__LINE__,"another switch");
       time_t TimeValue=time(NULL);
       tm *ct=localtime(&TimeValue);
 
-      printf(": (%i/%i %i:%i:%i), Iteration: %ld  (currect sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,niter,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
+      printf(": (%i/%i %i:%i:%i), Iteration: %i  (currect sample length:%ld, %ld interations to the next output)\n",ct->tm_mon+1,ct->tm_mday,ct->tm_hour,ct->tm_min,ct->tm_sec,Moon::nIterationCounter,PIC::RequiredSampleLength,PIC::RequiredSampleLength-PIC::CollectingSampleCounter);
     }
 
     if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
