@@ -21,6 +21,7 @@
 #define _EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_            _EXOSPHERE_SOURCE__OFF_
 #define _EXOSPHERE_SOURCE__VERTICAL_INJECTION_               _EXOSPHERE_SOURCE__OFF_
 #define _EXOSPHERE_SOURCE__BACKGROUND_PLASMA_ION_INJECTION_  _EXOSPHERE_SOURCE__OFF_
+#define _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_             _EXOSPHERE_SOURCE__OFF_
 
 
 //default codes for the sources processes
@@ -31,6 +32,7 @@
 #define _EXOSPHERE_SOURCE__ID__SOLAR_WIND_SPUTTERING_            -5
 #define _EXOSPHERE_SOURCE__ID__VERTICAL_INJECTION_               -6
 #define _EXOSPHERE_SOURCE__ID__BACKGROUND_PLASMA_ION_INJECTION_  -7
+#define _EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_             -8
 
 //integration mode: steady state/time dependent
 #define _EXOSPHERE_INTEGRATION_MODE__STEADY_STATE_    0
@@ -46,7 +48,8 @@
 //integration mode: steady state/time dependent
 #define _EXOSPHERE_INTEGRATION_MODE_ _EXOSPHERE_INTEGRATION_MODE__TIME_DEPENDENT_
 
-
+//macro for calcualtion of the surface temperature in UniformLocalTemperature particle source model   
+#define _EXOSPHERE__SOUCE__UNIFORM_LOCAL_TEMP__SURFACE_TEMP_(CosSubSolarAngle,x_LOCAL_SO_OBJECT) (0.0)
 
 //default macro that is called when '_EXOSPHERE__SURFACE_CONTENT__USER_DEFINED_' is used
 #define _EXOSPHERE__SURFACE_CONTENT_DENSITY__USER_DEFINED__FUNCTION_(el)   (0.0)

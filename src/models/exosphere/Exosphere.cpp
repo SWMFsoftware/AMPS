@@ -88,6 +88,11 @@ int Exosphere::Sampling::RequestSamplingData(int offset) {
   SamplingLength+=sizeof(double)*PIC::nTotalSpecies;
 #endif
 
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  SamplingDensityOffset[_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_]=CellSamplingDataOffset+SamplingLength;
+  SamplingLength+=sizeof(double)*PIC::nTotalSpecies;
+#endif
+
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
   Exosphere::Sampling::SamplingDensityOffset[_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_]=CellSamplingDataOffset+SamplingLength;
   SamplingLength+=sizeof(double)*PIC::nTotalSpecies;
@@ -164,6 +169,15 @@ void Exosphere::Init_BeforeParser() {
 #else
   exit(__LINE__,__FILE__,"Error: the option is not found");
 #endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  ++nTotalSourceProcesses;
+#elif _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__OFF_
+//do nothing
+#else
+  exit(__LINE__,__FILE__,"Error: the option is not found");
+#endif
+
 
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
   ++nTotalSourceProcesses;
@@ -1471,6 +1485,25 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
   if (PIC::ThisThread==0) fprintf(fSource,"  0.0");
 #endif
 
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  ierr=MPI_Gather(&Exosphere::SourceProcesses::UniformLocalTemperature::CalculatedTotalSodiumSourceRate,1,MPI_DOUBLE,buffer,1, MPI_DOUBLE,0, MPI_GLOBAL_COMMUNICATOR);
+  if (ierr!=MPI_SUCCESS) exit(__LINE__,__FILE__);
+
+  for (thread=0,SourceRate=0.0;thread<PIC::nTotalThreads;thread++) SourceRate+=buffer[thread];
+  if (PIC::LastSampleLength!=0) SourceRate/=PIC::LastSampleLength;
+
+  if (PIC::ThisThread==0) {
+    printf("Sodium source: Uniform Source with Local Temperature rate - %e s^{-1}\n",SourceRate);
+    fprintf(fSource,"  %e",SourceRate);
+
+    TotalSourceRate+=SourceRate;
+  }
+
+  Exosphere::SourceProcesses::ImpactVaporization::CalculatedTotalSodiumSourceRate=0.0;
+#else
+  if (PIC::ThisThread==0) fprintf(fSource,"  0.0");
+#endif
+
 
 #if _EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_
   ierr=MPI_Gather(&Exosphere::SourceProcesses::ThermalDesorption::CalculatedTotalSodiumSourceRate,1,MPI_DOUBLE,buffer,1, MPI_DOUBLE,0, MPI_GLOBAL_COMMUNICATOR);
@@ -1565,6 +1598,10 @@ void Exosphere::Sampling::OutputSampledModelData(int DataOutputFileNumber) {
 
 #if _EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_
        printf("Particles produced by  Impact Vaporization: %e\n",flux[_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_]);
+#endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+       printf("Particles produced by  Uniforn Source with Local Surface Temperature: %e\n",flux[_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_]);
 #endif
 
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
@@ -1719,6 +1756,10 @@ void Exosphere::Sampling::OutputDataFile::PrintVariableList(FILE* fout,int DataS
   //macroscopic properties
 #if _EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_
   fprintf(fout,", \"Sodium number Density(Impact Vaporization Source)\"");
+#endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  fprintf(fout,", \"Sodium number Density(Uniform Source with Local Surface Temperature)\"");
 #endif
 
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
@@ -1956,6 +1997,11 @@ double Exosphere::SourceProcesses::totalProductionRate(int spec,int BoundaryElem
 //  }
 #endif
 
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  res+=Exosphere::SourceProcesses::UniformLocalTemperature::GetTotalProductionRate(spec,BoundaryElementType,(cInternalSphericalData*)(BoundaryElement));
+#endif
+
+
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
 //  if (spec==_NA_SPEC_) {
   res+=Exosphere::SourceProcesses::PhotonStimulatedDesorption::GetTotalProductionRate(spec,BoundaryElementType,BoundaryElement);
@@ -2096,6 +2142,10 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
 //  Flux_ImpactVaporization=Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(_NA_SPEC_,SphereDataPointer);
 
   FluxSourceProcess[_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_]=Exosphere::SourceProcesses::ImpactVaporization::GetTotalProductionRate(spec,BoundaryElementType,(cInternalSphericalData*)(BoundaryElement));
+#endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  FluxSourceProcess[_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_]=Exosphere::SourceProcesses::UniformLocalTemperature::GetTotalProductionRate(spec,BoundaryElementType,(cInternalSphericalData*)(BoundaryElement));
   #endif
 
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
@@ -2171,6 +2221,13 @@ long int Exosphere::SourceProcesses::InjectionBoundaryModel(int spec,int Boundar
 //     if (flag==true) Sampling::CalculatedSourceRate[spec][SourceProcessID]+=ParticleWeightCorrection*ParticleWeight/LocalTimeStep;
    }
 #endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_  == _EXOSPHERE_SOURCE__ON_
+   else if (SourceProcessID==_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_) {
+     flag=Exosphere::SourceProcesses::UniformLocalTemperature::GenerateParticleProperties(spec,(PIC::ParticleBuffer::byte*)tempParticleData,x_SO_OBJECT,x_IAU_OBJECT,v_SO_OBJECT,v_IAU_OBJECT,sphereX0,sphereRadius,startNode,BoundaryElementType,BoundaryElement);
+   }
+#endif
+
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
    else if (SourceProcessID==_EXOSPHERE_SOURCE__ID__PHOTON_STIMULATED_DESPRPTION_) {
      flag=Exosphere::SourceProcesses::PhotonStimulatedDesorption::GenerateParticleProperties(spec,(PIC::ParticleBuffer::byte*)tempParticleData,x_SO_OBJECT,x_IAU_OBJECT,v_SO_OBJECT,v_IAU_OBJECT,sphereX0,sphereRadius,startNode,BoundaryElementType,BoundaryElement);
@@ -2495,6 +2552,10 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintVariableList(FILE* fout) {
    fprintf(fout,", \"Impact Vaporization Flux [s^{-1} m^{-2}]\"");
 #endif
 
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+   fprintf(fout,", \"Uniform Source with Local Surface Temetarure Flux [s^{-1} m^{-2}]\"");
+#endif
+
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
    fprintf(fout,", \"Photon Stimulated Desorption Flux [s^{-1} m^{-2}]\"");
 #endif
@@ -2518,6 +2579,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
 
   double t,TotalFluxDown=0.0,TotalFluxUp=0.0,SurfaceContent=0.0,BulkSpeedDown=0.0,BulkSpeedUp=0.0,SampleSpeciesSurfaceInjectionFlux=0.0;
   double FluxIV=0.0;
+  double FluxUSLT=0.0;
   double FluxPDS=0.0;
   double FluxTD=0.0;
   double FluxSW=0.0,SolarWindIncidentFlux=0.0;
@@ -2545,6 +2607,11 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
     if (_EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_) {
       t=(PIC::LastSampleLength!=0) ? Sphere->SampleSpeciesSurfaceSourceRate[spec][nSurfaceElement][_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_]/PIC::LastSampleLength : 0.0;
       FluxIV+=t;
+    }
+
+    if ( _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_== _EXOSPHERE_SOURCE__ON_) {
+      t=(PIC::LastSampleLength!=0) ? Sphere->SampleSpeciesSurfaceSourceRate[spec][nSurfaceElement][_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_]/PIC::LastSampleLength : 0.0;
+      FluxUSLT+=t;
     }
 
     if (_EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_) {
@@ -2586,6 +2653,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
       SampleSpeciesSurfaceInjectionFlux+=pipe->recv<double>(thread);
 
       if (_EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_) FluxIV+=pipe->recv<double>(thread);
+      if (_EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_) FluxUSLT+=pipe->recv<double>(thread);
       if (_EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_) FluxPDS+=pipe->recv<double>(thread);
       if (_EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_) FluxTD+=pipe->recv<double>(thread);
       if (_EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_ == _EXOSPHERE_SOURCE__ON_) FluxSW+=pipe->recv<double>(thread);
@@ -2637,6 +2705,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
 
 
     if (_EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_) fprintf(fout," %e ",FluxIV/InterpolationNormalization);
+    if (_EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_) fprintf(fout," %e ",FluxUSLT/InterpolationNormalization);
     if (_EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_) fprintf(fout," %e ",FluxPDS/InterpolationNormalization);
     if (_EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_) fprintf(fout," %e ",FluxTD/InterpolationNormalization);
     if (_EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_ == _EXOSPHERE_SOURCE__ON_) fprintf(fout," %e %e ",FluxSW/InterpolationNormalization,SolarWindIncidentFlux/InterpolationNormalization);
@@ -2652,6 +2721,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
     pipe->send(SampleSpeciesSurfaceInjectionFlux);
 
     if (_EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_) pipe->send(FluxIV);
+    if (_EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_) pipe->send(FluxUSLT);
     if (_EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_) pipe->send(FluxPDS);
     if (_EXOSPHERE_SOURCE__THERMAL_DESORPTION_ == _EXOSPHERE_SOURCE__ON_) pipe->send(FluxTD);
     if (_EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_ == _EXOSPHERE_SOURCE__ON_) pipe->send(FluxSW);
@@ -2665,6 +2735,10 @@ void Exosphere::Sampling::OutputSurfaceDataFile::flushCollectingSamplingBuffer(c
 
 #if _EXOSPHERE_SOURCE__IMPACT_VAPORIZATION_ == _EXOSPHERE_SOURCE__ON_
   if (maxSurfaceSourceID<_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_) maxSurfaceSourceID=_EXOSPHERE_SOURCE__ID__IMPACT_VAPORIZATION_;
+#endif
+
+#if _EXOSPHERE_SOURCE__LOCAL_TEMP_INJECTION_ == _EXOSPHERE_SOURCE__ON_
+  if (maxSurfaceSourceID<_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_) maxSurfaceSourceID=_EXOSPHERE_SOURCE__ID__LOCAL_TEMP_INJECTION_;
 #endif
 
 #if _EXOSPHERE_SOURCE__PHOTON_STIMULATED_DESPRPTION_ == _EXOSPHERE_SOURCE__ON_
