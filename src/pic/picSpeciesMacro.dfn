@@ -30,6 +30,9 @@
 #define _CO2_SPEC_            -25
 #define _N2_HOT_SPEC_         -26
 #define _ANTIPROTON_SPEC_     -27
+#define _AR_PLUS_SPEC_        -28
+#define _NE_SPEC_             -29
+#define _NE_PLUS_SPEC_        -30
 
 #define _DUST_SPEC_           -999
 
