@@ -113,7 +113,6 @@ while ($line=<InputFile>) {
   ($InputLine,$InputComment)=split(' ',$InputLine,2);
   $InputLine=~s/ //g;
 
-  
   #read the line 
   if ($InputLine eq "PHOTOLYTICREACTIONS") {
     my $ReactionFlag=0;
@@ -169,8 +168,33 @@ while ($line=<InputFile>) {
       die "Cannot recognize the option, line=$InputFileLineNumber ($InputFileName)\n";
     }
   }
+
+
+  #electron impact ionizastion  
+  elsif ($InputLine eq "ELECTRONIMPACTIONIZATION") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+    if ($InputLine eq "ON") {
+      ampsConfigLib::RedefineMacro("_PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_","_PIC_MODE_ON_","pic/picGlobal.dfn");
+
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+      if ($InputLine eq "REACTIONPROBABILITY") {
+        my ($s0,$s1,$s2,$FunctionName);
+
+        $line=~s/=/ /g;
+        chomp($line);
+
+	($s0,$s1,$s2,$FunctionName,$line)=split(' ',$line,4);
+	ampsConfigLib::RedefineMacroFunction("_PIC_ELECTRON_IMPACT_IONIZATION_RATE_","(ParticleData,ResultSpeciesIndex,node)  ($FunctionName(ParticleData,ResultSpeciesIndex,node))","pic/picGlobal.dfn");
+      }
+      else {
+        die "Cannot recognize the option [$InputLine], line=$InputFileLineNumber ($InputFileName)\n";
+      }
+    } 
+  }
+
   
-  
+  #background particle injection  
   elsif ($InputLine eq "BACKGROUNDIONINJECTION") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
 
