@@ -210,6 +210,7 @@ namespace PIC {
     void BackgroundAtmosphereModel(double& BackgroundAtmosphereCollisionTime);
     void PhtolyticReactions(double &PhotoChemistryTime);
     void UserDefinedParticleProcessing(double& UserDefinedParticleProcessingTime);
+    void ElectronImpactIonizationReactions(double& ElectronImpactIoninzationTime);
     
     void CheckParticleLists();
     
@@ -1903,7 +1904,7 @@ void DeleteAttachedParticles();
     //timing of the code execution
     namespace CumulativeTiming {
       extern double UserDefinedMPI_RoutineExecutionTime,ParticleMovingTime,FieldSolverTime;
-      extern double PhotoChemistryTime,InjectionBoundaryTime,ParticleExchangeTime,SamplingTime;
+      extern double PhotoChemistryTime,ElectronImpactIonizationTime,InjectionBoundaryTime,ParticleExchangeTime,SamplingTime;
       extern double IterationExecutionTime,TotalRunTime,ParticleCollisionTime;
       extern double BackgroundAtmosphereCollisionTime,UserDefinedParticleProcessingTime;
 
@@ -7940,6 +7941,12 @@ void DeleteAttachedParticles();
        //execute the photolytic chemistry model
        void ExecutePhotochemicalModel();
 
+    }
+
+    //electron impact ionization reactions 
+    namespace ElectronImpactIonizationReactions {
+      inline double ReactionProbability_default(PIC::ParticleBuffer::byte *ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {return 0.0;}
+      void ExecuteElectronImpactIonizationModel();
     }
 
     namespace GenericParticleTranformation {

@@ -71,6 +71,7 @@ double PIC::RunTimeSystemState::CumulativeTiming::PhotoChemistryTime=0.0,PIC::Ru
 double PIC::RunTimeSystemState::CumulativeTiming::SamplingTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::ParticleCollisionTime=0.0;
 double PIC::RunTimeSystemState::CumulativeTiming::TotalRunTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::IterationExecutionTime=0.0;
 double PIC::RunTimeSystemState::CumulativeTiming::BackgroundAtmosphereCollisionTime=0.0,PIC::RunTimeSystemState::CumulativeTiming::UserDefinedParticleProcessingTime=0.0;
+double PIC::RunTimeSystemState::CumulativeTiming::ElectronImpactIonizationTime=0.0;
 vector<PIC::RunTimeSystemState::CumulativeTiming::fPrintTiming> PIC::RunTimeSystemState::CumulativeTiming::PrintTimingFunctionTable;
 
 //supress output of the sampled macrospcopic data

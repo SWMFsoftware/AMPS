@@ -282,6 +282,19 @@ void PIC::TimeStepInternal::PhtolyticReactions(double &PhotoChemistryTime) {
 }
 
 //===============================================================================================
+//Simulate photolytic reactions
+void PIC::TimeStepInternal::ElectronImpactIonizationReactions(double &ElectronImpactIonizationTime) {
+  SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
+  ElectronImpactIonizationTime=MPI_Wtime();
+
+  ChemicalReactions::ElectronImpactIonizationReactions::ExecuteElectronImpactIonizationModel();
+
+  ElectronImpactIonizationTime=MPI_Wtime()-ElectronImpactIonizationTime;
+  RunTimeSystemState::CumulativeTiming::ElectronImpactIonizationTime+=ElectronImpactIonizationTime;
+}
+
+
+//===============================================================================================
 //perform user-define processing of the model particles
 void PIC::TimeStepInternal::UserDefinedParticleProcessing(double& UserDefinedParticleProcessingTime) {
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);

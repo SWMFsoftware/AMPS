@@ -67,6 +67,7 @@ PICOBJ = pic.o \
 	pic_move_blocks.o \
 	pic_rnd.o \
 	pic_gyrokinetic.o \
+	pic_electron_impact_ionization.o \
 	pic_particle_spliting.o 
 	
 ifneq ($(BATL),nobatl)	

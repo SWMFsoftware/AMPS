@@ -40,7 +40,7 @@ list <cRebuildMatrix*> PIC::LinearSolverTable;
 //perform one time step
 int PIC::TimeStep() {
    double UserDefinedMPI_RoutineExecutionTime=0.0,ParticleMovingTime,FieldSolverTime=0.0,PhotoChemistryTime=0.0,InjectionBoundaryTime,ParticleExchangeTime,IterationExecutionTime,SamplingTime,StartTime=MPI_Wtime();
-   double ParticleCollisionTime=0.0,BackgroundAtmosphereCollisionTime=0.0;
+   double ParticleCollisionTime=0.0,BackgroundAtmosphereCollisionTime=0.0,ElectronImpactIonizationTime=0.0;
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
 
@@ -164,8 +164,27 @@ int PIC::TimeStep() {
     RunTimeSystemState::CumulativeTiming::PhotoChemistryTime+=PhotoChemistryTime;
   }
 
-  timing_stop("PT::ReacProc"); // MARC
+  timing_stop("PT::ReacProc"); 
+
+  PIC::Debugger::Timer.SwitchTimeSegment(__LINE__,"Electron Impact Ionization Reactions");
+  timing_start("PT::ElectronImpactIonizationProc");
+
+  //particle electron impact ionization  model
+  if (_PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ == _PIC_MODE_ON_) {
+    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
+       PIC::Debugger::LoggerData.erase();
+       sprintf(PIC::Debugger::LoggerData.msg,"PIC::TimeStep()): call electron impact ionization model");
+       PIC::Debugger::logger.add_data_point(__LINE__,&PIC::Debugger::LoggerData);
+    }
+
+    TimeStepInternal::ElectronImpactIonizationReactions(ElectronImpactIonizationTime);
+    RunTimeSystemState::CumulativeTiming::ElectronImpactIonizationTime+=ElectronImpactIonizationTime;
+  }
+
+  timing_stop("PT::ElectronImpactIonizationProc"); // MARC
   PIC::Debugger::Timer.SwitchTimeSegment(__LINE__);
+
+
 
 
   //perform user-define processing of the model particles
@@ -307,6 +326,7 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
     double UserDefinedMPI_RoutineExecutionTime;
     double UserDefinedParticleProcessingTime;
     double FieldSolverTime;
+    double ElectronImpactIonizationTime;
     int SimulatedModelParticleNumber[PIC::nTotalSpecies];
   };
 
@@ -345,6 +365,7 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
     localRunStatisticData.UserDefinedMPI_RoutineExecutionTime=UserDefinedMPI_RoutineExecutionTime;
     localRunStatisticData.UserDefinedParticleProcessingTime=UserDefinedParticleProcessingTime;
     localRunStatisticData.FieldSolverTime=FieldSolverTime;
+    localRunStatisticData.ElectronImpactIonizationTime=ElectronImpactIonizationTime;
 
     for (int s=0;s<PIC::nTotalSpecies;s++) localRunStatisticData.SimulatedModelParticleNumber[s]=PIC::Sampling::SimulatedSpeciesParticleNumber[s];
 
@@ -387,11 +408,14 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:16:\t Background Atmosphere Collision Time\n");
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:17:\t User Defined Particle Processing Time\n");
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX:18:\t Field Solver Time\n");
+      fprintf(PIC::DiagnospticMessageStream,"$PREFIX:19:\t Electron Impact Ionization Time\n");
 
 
       fprintf(PIC::DiagnospticMessageStream,"$PREFIX: ");
       for (int i=1;i<=17;i++) fprintf(PIC::DiagnospticMessageStream,"%12d ",i);
       fprintf(PIC::DiagnospticMessageStream,"\n");
+
+
 
       //detemine the earliest time that a thread has passed the point of collecting the runtime statistical information
       double minCheckPointTime=-1.0;
@@ -402,7 +426,7 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
       for (thread=0;thread<PIC::Mesh::mesh->nTotalThreads;thread++) {
         ExchangeBuffer[thread].Latency-=minCheckPointTime;
 
-        fprintf(PIC::DiagnospticMessageStream,"$PREFIX: %12d %12d %10e %10e %10e %10e %10e %10e %10e %10e %12d %12d %10e %10e %10e %10e %10e %10e\n",
+        fprintf(PIC::DiagnospticMessageStream,"$PREFIX: %12d %12d %10e %10e %10e %10e %10e %10e %10e %10e %12d %12d %10e %10e %10e %10e %10e %10e %10e\n",
             thread,
             (int)ExchangeBuffer[thread].TotalParticlesNumber,
             ExchangeBuffer[thread].TotalInterationRunTime,
@@ -421,7 +445,8 @@ if (_PIC_FIELD_LINE_MODE_ == _PIC_MODE_ON_) {
             ExchangeBuffer[thread].ParticleCollisionTime,
             ExchangeBuffer[thread].BackgroundAtmosphereCollisionTime,
             ExchangeBuffer[thread].UserDefinedParticleProcessingTime,
-            ExchangeBuffer[thread].FieldSolverTime);
+            ExchangeBuffer[thread].FieldSolverTime, 
+	    ExchangeBuffer[thread].ElectronImpactIonizationTime);
 
         nTotalModelParticles+=ExchangeBuffer[thread].TotalParticlesNumber;
         nTotalInjectedParticels+=ExchangeBuffer[thread].nInjectedParticles;
