@@ -199,10 +199,10 @@ double Exosphere::SurfaceInteraction::StickingProbability(int spec, double& Reem
    case _NA_SPEC_: case _NA_PLUS_SPEC_:
      res=SodiumStickingProbability(ReemissionParticleFraction,Temp);
      break;
-   case _AR_SPEC_:
+   case _AR_SPEC_:case _AR_PLUS_SPEC_: 
      res=ArgonStickingProbability(ReemissionParticleFraction,Temp);
      break;
-   case _HE_SPEC_: case _NE_SPEC_: 
+   case _HE_SPEC_: case _HE_PLUS_SPEC_: case _NE_SPEC_:case _NE_PLUS_SPEC_: 
      res=0.0;
      break;
    default:
@@ -422,3 +422,41 @@ void Moon::AntiSolarDirectionColumnMap::Print(int DataOutputFileNumber) {
   if (PIC::ThisThread==0) fclose(fout);
 #endif
 }
+
+
+
+
+//electron impact ionization probability 
+
+double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+  int spec=PIC::ParticleBuffer::GetI(ParticleData);
+  double rate,weight,sigma,res=0.0;
+
+  static const double ElectronImpactIonizationCrossSectionAr=2.0E-10;
+  static const double ElectronImpactIonizationCrossSectionNe=2.0E-10; 
+  static const double ElectronImpactIonizationCrossSectionNa=2.0E-10;
+
+   switch (spec) {
+   case _AR_SPEC_:
+     rate=Exosphere::swNumberDensity_Typical*400E3*ElectronImpactIonizationCrossSectionAr; 
+     ResultSpeciesIndex=_AR_PLUS_SPEC_;
+     break;
+   case _NE_SPEC_: 
+     rate=Exosphere::swNumberDensity_Typical*400E3*ElectronImpactIonizationCrossSectionNe;    
+     ResultSpeciesIndex=_NE_PLUS_SPEC_;
+     break;
+   case _NA_SPEC_:
+     rate=Exosphere::swNumberDensity_Typical*400E3*ElectronImpactIonizationCrossSectionNa;
+     ResultSpeciesIndex=_NA_PLUS_SPEC_;
+     break;
+   default:
+     return 0.0;
+   }
+
+  
+   return rate;
+}	
+
+
+
+

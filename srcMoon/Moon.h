@@ -19,6 +19,9 @@ namespace Moon {
 
   extern bool UseKaguya;
 
+  //electron impact ionozation probability 
+  double ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+
   //iteration counter
   extern int nIterationCounter;
 
@@ -319,7 +322,8 @@ namespace Moon {
       }
 #endif
     }
-    else if (spec==_NA_PLUS_SPEC_) { //the Lorentz force
+
+    if (PIC::MolecularData::ElectricChargeTable[spec]!=0.0) { //the Lorentz force
       double E[3],B[3];
 
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -327,14 +331,18 @@ namespace Moon {
   #endif
 
 
+      if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__OFF_) {
+	 for (int idim=0;idim<3;idim++) B[idim]=Exosphere::swB_Typical[idim],E[idim]=Exosphere::swE_Typical[idim]; 
+      }
+      else {
+        PIC::CPLR::InitInterpolationStencil(x_LOCAL,startNode);
+        PIC::CPLR::GetBackgroundFieldsVector(E,B);
+      }
 
-      PIC::CPLR::InitInterpolationStencil(x_LOCAL,startNode);
-      PIC::CPLR::GetBackgroundFieldsVector(E,B);
 
-
-      accl_LOCAL[0]+=ElectronCharge*(E[0]+v_LOCAL[1]*B[2]-v_LOCAL[2]*B[1])/_MASS_(_NA_);
-      accl_LOCAL[1]+=ElectronCharge*(E[1]-v_LOCAL[0]*B[2]+v_LOCAL[2]*B[0])/_MASS_(_NA_);
-      accl_LOCAL[2]+=ElectronCharge*(E[2]+v_LOCAL[0]*B[1]-v_LOCAL[1]*B[0])/_MASS_(_NA_);
+      accl_LOCAL[0]+=PIC::MolecularData::ElectricChargeTable[spec]*(E[0]+v_LOCAL[1]*B[2]-v_LOCAL[2]*B[1])/PIC::MolecularData::MolMass[spec];
+      accl_LOCAL[1]+=PIC::MolecularData::ElectricChargeTable[spec]*(E[1]-v_LOCAL[0]*B[2]+v_LOCAL[2]*B[0])/PIC::MolecularData::MolMass[spec];
+      accl_LOCAL[2]+=PIC::MolecularData::ElectricChargeTable[spec]*(E[2]+v_LOCAL[0]*B[1]-v_LOCAL[1]*B[0])/PIC::MolecularData::MolMass[spec];
 
     }
 
