@@ -7945,7 +7945,7 @@ void DeleteAttachedParticles();
 
     //electron impact ionization reactions 
     namespace ElectronImpactIonizationReactions {
-      inline double ReactionProbability_default(PIC::ParticleBuffer::byte *ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {return 0.0;}
+      inline double ReactionRate_default(PIC::ParticleBuffer::byte *ParticleData,int& ResultSpeciesIndex,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {return 0.0;}
       void ExecuteElectronImpactIonizationModel();
     }
 

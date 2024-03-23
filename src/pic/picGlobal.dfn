@@ -145,7 +145,7 @@ at the end of each time step
 #define _PIC_ELECTRON_IMPACT_IONIZATION_REACTION_MODE_ _PIC_MODE_OFF_
 
 //default fucntion for calculating the electron impact ionization probability 
-#define _PIC_ELECTRON_IMPACT_IONIZATION_RATE_(ParticleData,ResultSpeciesIndex,node) PIC::ChemicalReactions::ElectronImpactIonization::ReactionRate_default(ParticleData,ResultSpeciesIndex,node)
+#define _PIC_ELECTRON_IMPACT_IONIZATION_RATE_(ParticleData,ResultSpeciesIndex,node) PIC::ChemicalReactions::ElectronImpactIonizationReactions::ReactionRate_default(ParticleData,ResultSpeciesIndex,node)
 
 //the default procedure for calcualtion of the lifitime for the photolytic processes
 #define _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(x,spec,ptr,flag,node) TotalLifeTime_default(x,spec,ptr,flag,node);
