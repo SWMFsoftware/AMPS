@@ -803,9 +803,9 @@ if (ptr!=-1) {
         ((cInternalSphericalData*)(InternalBoundaryDescriptor.BoundaryElement))->GetSphereGeometricalParameters(x0Sphere,radiusSphere);
 
         if (pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)<pow(radiusSphere-PIC::Mesh::mesh->EPS,2)) {
-          printf("$PREFIX: %s@%ld Sphere: x0= %e, %e, %e, R=%e\n",__FILE__,__LINE__,x0Sphere[0],x0Sphere[1],x0Sphere[2],radiusSphere);
-          printf("$PREFIX: %s@%ld Particle Position: x=%e, %e, %e\n",__FILE__,__LINE__,x[0],x[1],x[2]);
-          printf("$PREFIX: %s@%ld Particle Distance from the center of the sphere: %e\n",sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)));
+          printf("$PREFIX: %s@%d Sphere: x0= %e, %e, %e, R=%e\n",__FILE__,__LINE__,x0Sphere[0],x0Sphere[1],x0Sphere[2],radiusSphere);
+          printf("$PREFIX: %s@%d Particle Position: x=%e, %e, %e\n",__FILE__,__LINE__,x[0],x[1],x[2]);
+          printf("$PREFIX: %s@%d Particle Distance from the center of the sphere: %e\n",__FILE__,__LINE__,sqrt(pow(x[0]-x0Sphere[0],2)+pow(x[1]-x0Sphere[1],2)+pow(x[2]-x0Sphere[2],2)));
 
           exit(__LINE__,__FILE__,"Error: particle inside spherical body");
         }

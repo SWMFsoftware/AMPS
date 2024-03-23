@@ -109,7 +109,7 @@ public:
     if ((nZenithElement<0)||(nZenithElement>=nZenithSurfaceElements)||(nAzimuthalElement<0)||(nAzimuthalElement>=nAzimuthalSurfaceElements)) {
       char msg[1000];
 
-      sprintf(msg,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range\nnZenithElement=%o\nnAzimuthalElement=%i\n",nZenithElement,nAzimuthalElement);
+      sprintf(msg,"Error: 'nZenithElement' or 'nAzimuthalElement' are outside of the range\nnZenithElement=%lo\nnAzimuthalElement=%li\n",nZenithElement,nAzimuthalElement);
       exit(__LINE__,__FILE__,msg);
     }
     #endif

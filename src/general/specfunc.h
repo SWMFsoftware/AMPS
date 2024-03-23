@@ -388,7 +388,7 @@ namespace Vector3D {
 
   inline bool CheckBelowLimit(double *x,double limit,int length=3) {
     for (int i=0;i<length;i++) if ((x[i]!=0.0)&&(fabs(x[i])<limit)) {
-     printf("Error: below the limit found, (file=%s, line=%ld\n",__FILE__,__LINE__);
+     printf("Error: below the limit found, (file=%s, line=%d\n",__FILE__,__LINE__);
      return true;
     } 
 
@@ -431,7 +431,7 @@ namespace Vector3D {
     }
 
     if (rr<EPS*EPS) {
-       printf("the point %e %e %e is in the vicility of the point %e  %e  %e (file=%s, line=%ld)\n",x[0],x[1],x[2],x_point[0],x_point[1],x_point[2],__FILE__,__LINE__);
+       printf("the point %e %e %e is in the vicility of the point %e  %e  %e (file=%s, line=%d)\n",x[0],x[1],x[2],x_point[0],x_point[1],x_point[2],__FILE__,__LINE__);
 
        return true; 
     }
@@ -449,7 +449,7 @@ namespace Vector3D {
     }
 
     if (d<EPS*EPS) {
-       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%ld)\n",x[0],x[1],x[2],__FILE__,__LINE__);
+       printf("the point %e %e %e is in the vicility of the plane (file=%s, line=%d)\n",x[0],x[1],x[2],__FILE__,__LINE__);
 
        return true;
     }

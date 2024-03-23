@@ -349,7 +349,7 @@ public:
 
 
     if (dataBufferList[dataBufferListPointer]==NULL) {
-      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
+      printf("Error: cannot allocate %li bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T));
       exit(__LINE__,__FILE__);
     } 
 
@@ -359,7 +359,7 @@ public:
 amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_BUFFER_BUNK_SIZE_);
 
     if (elementStackList[dataBufferListPointer]==NULL) {
-      printf("Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
+      printf("Error: cannot allocate %li bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(T*));
       exit(__LINE__,__FILE__);
     }
 
@@ -726,7 +726,7 @@ public:
       if (associatedDataBufferList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
 
-        sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset*sizeof(char));
+        sprintf(msg,"Error: cannot allocate %li bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*offset*sizeof(char));
       } 
 
 
@@ -736,7 +736,7 @@ public:
       if (associatedDataStackList[BaseElementStack.dataBufferListPointer]==NULL) {
         char msg[1000];
 
-        sprintf(msg,"Error: cannot allocate %i bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(char*));
+        sprintf(msg,"Error: cannot allocate %li bytes",_STACK_DEFAULT_BUFFER_BUNK_SIZE_*sizeof(char*));
       }
 
 

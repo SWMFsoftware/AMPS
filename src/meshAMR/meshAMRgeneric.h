@@ -1816,8 +1816,8 @@ public:
       MPI_Comm_rank(MPI_GLOBAL_COMMUNICATOR,&rank);
 
       if (printflag==true) {
-        if (msg!=NULL) sprintf(message,", %s[rank=%i,l=%ld,f=%s]",msg,rank,__LINE__,__FILE__);
-        else sprintf(message,"rank=%i,l=%ld,f=%s",rank,__LINE__,__FILE__);
+        if (msg!=NULL) sprintf(message,", %s[rank=%i,l=%d,f=%s]",msg,rank,__LINE__,__FILE__);
+        else sprintf(message,"rank=%i,l=%d,f=%s",rank,__LINE__,__FILE__);
 
         printf("AMR tree checksum:\n%s\nckecksum=0x%lx\n",message,checksum.checksum());
       }
@@ -3331,7 +3331,7 @@ void GetMeshTreeStatistics(cTreeNodeAMR<cBlockAMR> *startNode=NULL) {
         }
 
 //        *DiagnospticMessageStream << "$PREFIX:" << thread << "\t" << nAllocatedBlocks << "\t\t\t\t\t" << nAllocatedBlocksUpperTreeBranches << "\t\t\t\t\t" << nAllocatedBoundaryLayerBlocks << "\t\t\t\t\t" << nBlocksPerProcessor[thread] <<  std::endl;
-        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
+        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%d\t\t\t\t\t%d\t\t\t\t\t%d\t\t\t\t\t%d\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
 
 
       }
@@ -3536,7 +3536,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
          long int nd,ii,jj,kk,idim;
 
          fprintf(DiagnospticMessageStream,"$PREFIX:ERROR: Two neiubouring blocks doesn't share nodes\n");
-         fprintf(DiagnospticMessageStream,"$PREFIX:Block 1: ID=%ld\nCorner Nodes:\n",startNode->Temp_ID);
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block 1: ID=%d\nCorner Nodes:\n",startNode->Temp_ID);
 
          for (ii=0;ii<iMax;ii++) for (jj=0;jj<jMax;jj++) for (kk=0;kk<kMax;kk++) {
            nd=getCornerNodeLocalNumber(ii*_BLOCK_CELLS_X_,jj*_BLOCK_CELLS_Y_,kk*_BLOCK_CELLS_Z_);
@@ -3545,13 +3545,13 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
            for (idim=0;idim<_MESH_DIMENSION_;idim++) *DiagnospticMessageStream << startNode->block->GetCornerNode(nd)->GetX()[idim] << " ";
            *DiagnospticMessageStream << std::endl;*/
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%ld,%ld,%ld (nd=%ld), Temp_ID=%ld x=",ii,jj,kk,nd,startNode->block->GetCornerNode(nd)->Temp_ID);
+           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%d,%d,%d (nd=%d), Temp_ID=%d x=",ii,jj,kk,nd,startNode->block->GetCornerNode(nd)->Temp_ID);
            for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",startNode->block->GetCornerNode(nd)->GetX()[idim]);
            fprintf(DiagnospticMessageStream,"\n");
 
          }
 
-         fprintf(DiagnospticMessageStream,"$PREFIX:Block 2: ID=%ld\nCorner Nodes:",neibNode->Temp_ID );
+         fprintf(DiagnospticMessageStream,"$PREFIX:Block 2: ID=%d\nCorner Nodes:",neibNode->Temp_ID );
          fprintf(DiagnospticMessageStream,"neib coordinates=%i, %i, %i\n",i,j,k);
 
          for (ii=0;ii<iMax;ii++) for (jj=0;jj<jMax;jj++) for (kk=0;kk<kMax;kk++) {
@@ -3562,7 +3562,7 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
            *DiagnospticMessageStream << std::endl;*/
 
 
-           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%ld,%ld,%ld (nd=%ld), Temp_ID=%ld x=",ii,jj,kk,nd,neibNode->block->GetCornerNode(nd)->Temp_ID);
+           fprintf(DiagnospticMessageStream,"$PREFIX:(i,j,k)=%d,%d,%d (nd=%d), Temp_ID=%d x=",ii,jj,kk,nd,neibNode->block->GetCornerNode(nd)->Temp_ID);
            for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e ",neibNode->block->GetCornerNode(nd)->GetX()[idim]);
            fprintf(DiagnospticMessageStream,"\n");
          }
@@ -3798,9 +3798,9 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e  ",startCenterNode->GetX()[idim]);
                 	fprintf(DiagnospticMessageStream,"; (i,j,k,nd)=");
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%i  ",iii[idim]);
-                	fprintf(DiagnospticMessageStream," Local node number=%ld",nd);
-                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%ld",startCenterNode->Temp_ID);
-                	fprintf(DiagnospticMessageStream," Block Temp_ID=%ld",startNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Local node number=%d",nd);
+                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%d",startCenterNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Block Temp_ID=%d",startNode->Temp_ID);
                 	fprintf(DiagnospticMessageStream,"\n");
 
                 	//recalculate the indexes of the 'center nodes'
@@ -3809,9 +3809,9 @@ if ((AllowBlockAllocation==true)&&(startNode->block!=NULL)) {
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%e  ",neibCenterNode->GetX()[idim]);
                 	fprintf(DiagnospticMessageStream,"; (i,j,k,nd)=");
                 	for (idim=0;idim<_MESH_DIMENSION_;idim++) fprintf(DiagnospticMessageStream,"%i  ",iii[idim]);
-                	fprintf(DiagnospticMessageStream," Local node number=%ld",nd);
-                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%ld",neibCenterNode->Temp_ID);
-                	fprintf(DiagnospticMessageStream," Block Temp_ID=%ld",neibNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Local node number=%d",nd);
+                	fprintf(DiagnospticMessageStream," Center node Temp_ID=%d",neibCenterNode->Temp_ID);
+                	fprintf(DiagnospticMessageStream," Block Temp_ID=%d",neibNode->Temp_ID);
                 	fprintf(DiagnospticMessageStream,"\n");
 
 
@@ -7674,7 +7674,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
        rootTree->block->PrintVariableList(fVariables);
       }
 
-      fprintf(fHeader,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",nSubDomainTotalCellCorners,nSubDomainTotalCells);
+      fprintf(fHeader,"\nZONE N=%d, E=%d, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",nSubDomainTotalCellCorners,nSubDomainTotalCells);
     };
 
 
@@ -7804,8 +7804,8 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
        i6=1+it->node_id[6];
        i7=1+it->node_id[7];
 
-       fprintf(fConnectivity,"%ld %ld %ld %ld   ",i0,i1,i2,i3);
-       fprintf(fConnectivity,"   %ld %ld %ld %ld\n",i4,i5,i6,i7);
+       fprintf(fConnectivity,"%d %d %d %d   ",i0,i1,i2,i3);
+       fprintf(fConnectivity,"   %d %d %d %d\n",i4,i5,i6,i7);
      }
    };
 
@@ -7816,23 +7816,23 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
    ResetNodeIndex(rootTree);
 
-   sprintf(fname_data,"%s.thread=%ld.data",fname,ThisThread); 
+   sprintf(fname_data,"%s.thread=%d.data",fname,ThisThread); 
    fData=fopen(fname_data,"w");
 
    //print the data and create the tetrahedtal mesh of cut cells
    OutputDataFile(rootTree,TetrahedronList,ConnectivityList);
 
    //print the header and combine it with the datafile 
-   sprintf(fname_header,"%s.thread=%ld.header",fname,ThisThread);
+   sprintf(fname_header,"%s.thread=%d.header",fname,ThisThread);
    fHeader=fopen(fname_header,"w");
 
-   sprintf(fname_variables,"%s.thread=%ld.variables",fname,ThisThread);
+   sprintf(fname_variables,"%s.thread=%d.variables",fname,ThisThread);
    fVariables=fopen(fname_variables,"w");
 
    PrintHeader(fVariables,fHeader);
   
    //Print the connectivity list 
-   sprintf(fname_connectivity,"%s.thread=%ld.connectivity",fname,ThisThread);
+   sprintf(fname_connectivity,"%s.thread=%d.connectivity",fname,ThisThread);
    fConnectivity=fopen(fname_connectivity,"w");
 
    PrintConnectivity(fConnectivity,ConnectivityList);
@@ -7868,10 +7868,10 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
      src_variables.close();
 
      for (int thread=0;thread<nTotalThreads;thread++) {
-       sprintf(fname_header,"%s.thread=%ld.header",fname,thread);
-       sprintf(fname_variables,"%s.thread=%ld.variables",fname,thread);
-       sprintf(fname_data,"%s.thread=%ld.data",fname,thread);
-       sprintf(fname_connectivity,"%s.thread=%ld.connectivity",fname,thread);
+       sprintf(fname_header,"%s.thread=%d.header",fname,thread);
+       sprintf(fname_variables,"%s.thread=%d.variables",fname,thread);
+       sprintf(fname_data,"%s.thread=%d.data",fname,thread);
+       sprintf(fname_connectivity,"%s.thread=%d.connectivity",fname,thread);
 
        if (ConnectivityListLengthTable[thread]!=0) {
          std::ifstream  src_header(fname_header, std::ios::binary);
@@ -7895,7 +7895,7 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
 
      //append the tetra mesh if needed 
      for (int thread=0;thread<nTotalThreads;thread++) if (TetraMeshLengthTable[thread]!=0) {
-       sprintf(fname_full,"%s.tetra.thread=%ld.dat",fname,thread);
+       sprintf(fname_full,"%s.tetra.thread=%d.dat",fname,thread);
 
        std::ifstream  src(fname_full, std::ios::binary);
 
@@ -11815,7 +11815,7 @@ if (TmpAllocationCounter==2437) {
 
         for (int thread=0;thread<nTotalThreads;thread++) nGlobalBlockNumber+=GlobalTotalBlockNumberTable[thread],nGlobalUsedInCalculationBlocks+=GlobalTotalTotalUsedInSimulationNodeTable[thread];
 
-        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%ld, Total Number of blocks: %ld\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
+        fprintf(DiagnospticMessageStream,"$PREFIX: Total Number of blocks used in calcualtions=%d, Total Number of blocks: %d\n",nGlobalUsedInCalculationBlocks,nGlobalBlockNumber); 
 
         if (nGlobalUsedInCalculationBlocks==0) {
           //there are not blocks used in the calcualtion -> terminate the execution
@@ -11828,7 +11828,7 @@ if (TmpAllocationCounter==2437) {
         fprintf(DiagnospticMessageStream,"$PREFIX:Initial Cumulative Parallel Load Distribution\n$PREFIX:Thread\tLoad\tNormalized Load\tNumber of Blocks\n");
 
         for (int t=0;t<nTotalThreads;t++) {
-          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%ld(%ld)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
+          fprintf(DiagnospticMessageStream,"$PREFIX:%i\t%8.2e\t%8.2e\t%d(%ld)\n",t,InitialProcessorLoad[t],InitialProcessorLoad[t]/LoadMeasureNormal,GlobalTotalTotalUsedInSimulationNodeTable[t],GlobalTotalBlockNumberTable[t]);
         }
 
         fflush(DiagnospticMessageStream);
@@ -14484,7 +14484,7 @@ cTreeNodeAMR<cBlockAMR> *NeibFace;
 
     FILE *f=fopen(fname,"w");
     fprintf(f,"VARIABLES=\"X\", \"Y\", \"Z\", \"code\"");
-    fprintf(f,"\nZONE N=%ld, E=%ld, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*nTotalNodes,nTotalNodes);
+    fprintf(f,"\nZONE N=%d, E=%d, DATAPACKING=POINT, ZONETYPE=FEBRICK\n",8*nTotalNodes,nTotalNodes);
 
     OutputMeshPoints(rootTree,f);
     OutputConnectivyList(rootTree,f);

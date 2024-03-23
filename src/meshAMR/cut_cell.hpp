@@ -919,7 +919,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMesh(li
 
   //print the connectivity list 
   for (it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
-    fprintf(fout,"%ld %ld %ld %ld\n",it->id[0],it->id[1],it->id[2],it->id[3]);
+    fprintf(fout,"%d %d %d %d\n",it->id[0],it->id[1],it->id[2],it->id[3]);
   } 
 
   fclose(fout);
@@ -936,7 +936,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
   char full_fname[200];
 
 
-  sprintf(full_fname,"%s.tetra.thread=%ld.dat",fname,ThisThread);
+  sprintf(full_fname,"%s.tetra.thread=%d.dat",fname,ThisThread);
   fout=fopen(full_fname,"w");
 
   //Print the header
@@ -979,7 +979,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
       int MaxRefinmentLevel=0; //CornerNode->nodeDescriptor.maxRefinmentLevel;
       int NodeTempID=0; //CornerNode->Temp_ID;
 
-      fprintf(fout,"%ld  %ld %i  ",MaxRefinmentLevel,NodeTempID,it->Node->Thread);
+      fprintf(fout,"%d  %d %i  ",MaxRefinmentLevel,NodeTempID,it->Node->Thread);
 
       //interpolated values 
       double xNode[3]={it->x[i][0],it->x[i][1],it->x[i][2]}; 
@@ -1015,7 +1015,7 @@ void cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::PrintTetrahedronMeshDat
 
   //print the connectivity list
   for (it=TetrahedronList.begin();it!=TetrahedronList.end();it++) {
-    fprintf(fout,"%ld %ld %ld %ld\n",it->id[0],it->id[1],it->id[2],it->id[3]);
+    fprintf(fout,"%d %d %d %d\n",it->id[0],it->id[1],it->id[2],it->id[3]);
   }
 
   fclose(fout);

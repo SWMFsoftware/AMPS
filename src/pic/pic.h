@@ -5937,10 +5937,10 @@ void DeleteAttachedParticles();
         
         for (const auto& it : p->second) {
           if (it->SubSectionLabel=="") {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
+            printf("$PREFIX: Lines %d-%d:\t sampled time: %e\t#passes: %d\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter);
           }
           else {
-            printf("$PREFIX: Lines %ld-%ld:\t sampled time: %e\t#passes: %ld\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
+            printf("$PREFIX: Lines %d-%d:\t sampled time: %e\t#passes: %d\t(%s)\n",it->StartLine,it->EndLine,it->TotalSampledTime,it->nPassCounter,it->SubSectionLabel.c_str()); 
           }
         }
       }
@@ -6042,11 +6042,11 @@ void DeleteAttachedParticles();
           
           if (PIC::ThisThread==0) {
             if (it->SubSectionLabel=="") {
-              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\n", 
+              printf("$PREFIX: Lines %d-%d:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %d - %d\n", 
                 it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass);
             }
             else {
-              printf("$PREFIX: Lines %ld-%ld:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %ld - %ld\t(%s)\n",
+              printf("$PREFIX: Lines %d-%d:\t sampled time range: %e - %e [sec]\t summed over all processes: %e [sec]\t #passes range: %d - %d\t(%s)\n",
                 it->StartLine,it->EndLine,min_time,max_time,summed_time,min_npass,max_npass,it->SubSectionLabel.c_str());
             }
           }
