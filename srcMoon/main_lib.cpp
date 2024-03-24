@@ -416,7 +416,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
 
   switch (spec) {
 	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
-    CharacteristicSpeed=20.0E3;
+    CharacteristicSpeed=2.0E3;
     break;
 
 	  case _NA_PLUS_SPEC_:case _NE_PLUS_SPEC_:case _AR_PLUS_SPEC_: 
