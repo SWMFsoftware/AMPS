@@ -1,7 +1,7 @@
 #!/bin/csh
 
 set WorkDir = $HOME
-source $WorkDir/module/gnu 
+##source $WorkDir/module/gnu 
 
 echo -n "Executing tests GNU....."
 
