@@ -677,7 +677,21 @@ namespace Vector3D {
 
       if (length%2!=0) res[length-1]=Normal();
     }
- 
+
+    namespace SphericalShell {
+      inline void Uniform(double *a,double Radius=1.0) {  
+         Distribution::Uniform(a,Radius);
+      }
+    }
+
+    namespace Sphere {
+      inline void Uniform(double *a,double Radius=1.0) {
+        double r;
+
+	r=Radius*pow(rnd(),1.0/3.0);
+	SphericalShell::Uniform(a,r);
+      }
+    }
 
     namespace Circle {
        inline void Uniform(double *a, double Radius) {
