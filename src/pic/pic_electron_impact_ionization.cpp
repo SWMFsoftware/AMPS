@@ -8,6 +8,7 @@ void PIC::ChemicalReactions::ElectronImpactIonizationReactions::ExecuteElectronI
   double ReactionRate,ParticleWeight;
   int spec,i,j,k,ProductSpeciesIndex;
   long int ptr,ptrnext;
+  double *x,r,l[3],CellSize;
 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
@@ -34,25 +35,48 @@ for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNo
 	   spec=PIC::ParticleBuffer::GetI(ParticleData);
 
            //check if the reaction occured 
-//	   ParticleWeight=block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData); 
-	   ReactionRate=_PIC_ELECTRON_IMPACT_IONIZATION_RATE_(ParticleData,ProductSpeciesIndex,node); ///ParticleWeight; 
+	   ReactionRate=_PIC_ELECTRON_IMPACT_IONIZATION_RATE_(ParticleData,ProductSpeciesIndex,node);  
 
 	   if (ReactionRate>0.0) {
-             if (block->GetLocalTimeStep(spec)>-log(rnd())/ReactionRate) {
-                //electron impact reaction occured
-		
-	        if (ProductSpeciesIndex<0) {
-	          //the ion species is not exist in the simulation -> delete the particle 
-                  PIC::ParticleBuffer::DeleteParticle(ptr,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]); 
-                }
-	        else {
-                  if (block->GetLocalParticleWeight(spec)!=block->GetLocalParticleWeight(spec)) {
-                    exit(__LINE__,__FILE__,"Error: the case when stat weight of the parent and daughter species are difference is not implemented yet -- need to implement it, or use the same weight for parent and daougher species");
-                  }
+             if (ProductSpeciesIndex>=0) {
+               //ion species exists in the currect simulation 
+	       double anpart;
+               int npart;
 
-                  PIC::ParticleBuffer::SetI(ProductSpeciesIndex,ParticleData);
-	        }
-             }
+
+               anpart=(1.0-exp(-block->GetLocalTimeStep(ProductSpeciesIndex)*ReactionRate))*
+		       block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)/
+		       block->GetLocalParticleWeight(ProductSpeciesIndex); 
+
+               npart=(int)(anpart);
+	       if (rnd()<anpart-npart) npart++;
+
+ //              CellSize=block->CellCharacteristicSize();
+
+	       //inject new model particles into the simulation 
+               long int p;
+	       int i;
+
+	       for (i=0;i<npart;i++) {
+	         p=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]); 
+		 PIC::ParticleBuffer::CloneParticle(p,ptr); 
+                 PIC::ParticleBuffer::SetI(ProductSpeciesIndex,p);
+
+                 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
+		 PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,p);
+                 #endif
+
+                 //shift location of the new particle
+//                 Vector3D::Distribution::Sphere::Uniform(l,0.5*CellSize);
+//                 x=PIC::ParticleBuffer::GetX(p);
+//                 for (int idim=0;idim<3;idim++) x[idim]+=l[idim];
+	       }
+	     }
+
+             if (rnd()<1.0-exp(-block->GetLocalTimeStep(spec)*ReactionRate)) {
+                //the ion species is not exist in the simulation -> delete the particle
+                PIC::ParticleBuffer::DeleteParticle(ptr,node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
+              }
 	   }
 
 	   ptr=ptrnext;
