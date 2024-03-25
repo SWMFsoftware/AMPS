@@ -1406,7 +1406,7 @@ PIC::Mesh::mesh->PrintTetrahedronMesh(tetra_list,fname);
 
     //copy the weight and time step from Na neutra to Na ions
     if (_NA_PLUS_SPEC_>=0) {
-      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NA_PLUS_SPEC_,_NA_SPEC_,5.0E3/800.0E3);
+      PIC::ParticleWeightTimeStep::copyLocalParticleWeightDistribution(_NA_PLUS_SPEC_,_NA_SPEC_,1.0E-5);
       PIC::ParticleWeightTimeStep::copyLocalTimeStepDistribution(_NA_PLUS_SPEC_,_NA_SPEC_,5.0E3/800.0E3);
     }
 

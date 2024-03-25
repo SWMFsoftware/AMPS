@@ -432,9 +432,15 @@ double Moon::ElectronImpactIonizationRate(PIC::ParticleBuffer::byte* ParticleDat
   int spec=PIC::ParticleBuffer::GetI(ParticleData);
   double rate,weight,sigma,res=0.0;
 
-  static const double ElectronImpactIonizationCrossSectionAr=2.0E-10;
-  static const double ElectronImpactIonizationCrossSectionNe=2.0E-10; 
-  static const double ElectronImpactIonizationCrossSectionNa=2.0E-10;
+//  K Fujii and S K Srivastava 1995
+//J. Phys. B: At. Mol. Opt. Phys. 28 L559
+//A measurement of the electron-impact ionization
+//cross section of sodium
+
+
+  static const double ElectronImpactIonizationCrossSectionAr=2.0E-20;
+  static const double ElectronImpactIonizationCrossSectionNe=2.0E-20; 
+  static const double ElectronImpactIonizationCrossSectionNa=2.0E-20;
 
    switch (spec) {
    case _AR_SPEC_:
