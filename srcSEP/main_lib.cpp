@@ -571,7 +571,6 @@ void amps_time_step(){
       TestCompleted=true;
       TestManager();
     } 
-    #endif
 
 
     //prepopulate the magnetic filed lines with particles if needed  
@@ -579,6 +578,7 @@ void amps_time_step(){
       AMPS2SWMF::FieldLineData::ParticlePrepopulateFlag=false;
       SEP::ParticleSource::PopulateAllFieldLines();
     }
+    #endif
 
 start:
 
