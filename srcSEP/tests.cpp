@@ -684,18 +684,41 @@ void ScatteringBeyond1AU(double E) {
 
      //output time distribution
      int norm=0;
+     double df_dt,d2f_dt2;
 
      for (int i=0;i<nTimeSampleIntervals;i++) norm+=GlobalReturnParticleTimeCounterTable[i];
 
      Integral=0;
      fout=fopen("time.dat","w");
-     fprintf(fout,"VARIABLES=\"Time [s]\",\"f/f_total\",\"Integrated f/f_total\"\n");
+     fprintf(fout,"VARIABLES=\"Time [h]\",\"f/f_total\",\"Integrated f/f_total\", \"df_dt/f_total\", \"df2_dt2/f_total\"\n");
+
+     auto Get_df_dt = [&] (int i) {
+        return (GlobalReturnParticleTimeCounterTable[i+1]-GlobalReturnParticleTimeCounterTable[i-1])/(2.0*norm*dTimeSamplingInterval);
+     };	
+
+     auto Get_d2f_dt2 = [&] (int i) {
+        return (GlobalReturnParticleTimeCounterTable[i+1]-2.0*GlobalReturnParticleTimeCounterTable[i]+GlobalReturnParticleTimeCounterTable[i-1])/(norm*dTimeSamplingInterval*dTimeSamplingInterval);
+     };
 
      for (int i=0;i<nTimeSampleIntervals;i++) {
-       t=i*dTimeSamplingInterval;
+       t=i*dTimeSamplingInterval/3600.0;
        Integral+=double(GlobalReturnParticleTimeCounterTable[i])/norm;
 
-       fprintf(fout,"%e %e %e\n",t,double(GlobalReturnParticleTimeCounterTable[i])/(nTestTotal*PIC::nTotalThreads),Integral);
+       if (i==0) {
+         df_dt=Get_df_dt(1);
+	 d2f_dt2=Get_d2f_dt2(1); 
+       }
+       else if (i==nTimeSampleIntervals-1) {
+         df_dt=Get_df_dt(nTimeSampleIntervals-2);
+         d2f_dt2=Get_d2f_dt2(nTimeSampleIntervals-2);
+       }
+       else {
+         df_dt=Get_df_dt(i);
+         d2f_dt2=Get_d2f_dt2(i);
+       }
+
+
+       fprintf(fout,"%e %e %e %e %e\n",t,double(GlobalReturnParticleTimeCounterTable[i])/(nTestTotal*PIC::nTotalThreads),Integral,df_dt,d2f_dt2);
      }
 
      fclose(fout);
