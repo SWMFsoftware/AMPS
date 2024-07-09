@@ -550,12 +550,12 @@ void ScatteringBeyond1AU(double E) {
   //sampled quantaties:
   //1. the fraction of the particles that has returned back
   //2. the distribution of time that is needed for particles to return back 
-  const int nTestTotal=100; 
+  const int nTestTotal=100000; 
   int iTest;
   bool in_domain_flag;
 
   //counter of the particles that return back to 1AU
-  int GlobalReturnParticleCounter,ReturnParticleCounter=0;
+  int GlobalReturnParticleCounter,ReturnParticleCounter=0,UncountedParticleNumber=0;
   double x[3],dt,t,GlobalReturnTimeMax,ReturnTimeMax=0.0;
 
   const int nTimeSampleIntervals=100;
@@ -569,14 +569,16 @@ void ScatteringBeyond1AU(double E) {
 
 
   const int nHeliocentricSampleIntervals=100;
-  const double MaxR=5*_AU_;
-  const double dR=(MaxR-_AU_)/nHeliocentricSampleIntervals;
+  double MaxR=5*_AU_;
+  double dR=(MaxR-_AU_)/nHeliocentricSampleIntervals;
+ 
+  MaxR=Vector3D::Length(FL::FieldLinesAll[0].GetLastVertex()->GetX()); 
+  dR=(MaxR-_AU_)/nHeliocentricSampleIntervals; 
 
   int *ReturnParticleMaxR=new int [nHeliocentricSampleIntervals];
   int *GlobalReturnParticleMaxR=new int [nHeliocentricSampleIntervals];
     
   for (int i=0;i<nHeliocentricSampleIntervals;i++)  ReturnParticleMaxR[i]=0; 
-
 
 
   auto GetMeanFreePath = [&]  (const double& r) {
@@ -590,7 +592,7 @@ void ScatteringBeyond1AU(double E) {
     mu=rnd();
     v_parallel=mu*speed;
     S=S0;
-    t=0.0;
+    t=0.0,r2max=-1.0;
     in_domain_flag=true;
 
     Segment=Segment1AU;
@@ -607,7 +609,7 @@ void ScatteringBeyond1AU(double E) {
         t+=dt;
       }
       else {
-        t-=(r-l)/vparallel;
+        t-=(r-_AU_)/v_parallel;
       }
 
 
@@ -627,11 +629,17 @@ void ScatteringBeyond1AU(double E) {
           ReturnParticleCounter++;
 
           int iTimeBin=t/dTimeSamplingInterval;
-	  if (iTimeBin<nTimeSampleIntervals) ReturnParticleTimeCounterTable[iTimeBin]++; 
+	  if ((iTimeBin>=0)&&(iTimeBin<nTimeSampleIntervals)) ReturnParticleTimeCounterTable[iTimeBin]++; 
 	  if (t>ReturnTimeMax) ReturnTimeMax=t;
 
-	  int iR=(sqrt(r2max)-_AU_)/dR;
-	  if ((iR>=0)&&(iR<nHeliocentricSampleIntervals)) ReturnParticleMaxR[iR]++; 
+	  int iR=(r2max>0) ? (sqrt(r2max)-_AU_)/dR : 0;
+
+	  if ((iR>=0)&&(iR<nHeliocentricSampleIntervals)) {
+            ReturnParticleMaxR[iR]++; 
+	  }
+	  else {
+	    UncountedParticleNumber++;
+	  }
 
           in_domain_flag=false;
         }
@@ -653,12 +661,26 @@ void ScatteringBeyond1AU(double E) {
   MPI_Reduce(ReturnParticleTimeCounterTable,GlobalReturnParticleTimeCounterTable,nTimeSampleIntervals,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(&ReturnParticleCounter,&GlobalReturnParticleCounter,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(&ReturnTimeMax,&GlobalReturnTimeMax,1,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
-
+  MPI_Reduce(&ReturnParticleCounter,&GlobalReturnParticleCounter,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   //output the results 
   if (PIC::ThisThread==0) {
      cout << "The fraction of the returned particles: " << double(GlobalReturnParticleCounter)/(nTestTotal*PIC::nTotalThreads) << endl; 
      cout << "Max Return Time: " << GlobalReturnTimeMax << endl; 
+
+
+     double Integral=0.0;
+     FILE *fout=fopen("rmax.dat","w");
+     fprintf(fout,"VARIABLES=\"R[AU]\",\"f/f_total\",\"Integrated f/f_total\", \"Mean Free Path[AU]\"\n");
+
+     for (int i=0;i<nHeliocentricSampleIntervals;i++) {
+       r=_AU_+i*dR;	     
+       Integral+=double(GlobalReturnParticleMaxR[i])/GlobalReturnParticleCounter;
+
+       fprintf(fout,"%e %e %e %e\n",r/_AU_,double(ReturnParticleMaxR[i])/(nTestTotal*PIC::nTotalThreads),Integral,GetMeanFreePath(r)/_AU_);   
+     }
+
+     fclose(fout);
   }
 
 
