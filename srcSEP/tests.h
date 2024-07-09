@@ -36,5 +36,7 @@ void FTE_Convectoin();
 void FTE_Acceleration();
 void FTE_Diffusion();
 
+void ScatteringBeyond1AU(double E);
+void ScatteringBeyond1AU();
 
 #endif

@@ -28,6 +28,8 @@ using namespace std;
 
 void TestManager() {
 
+  ScatteringBeyond1AU();
+
   FTE_Convectoin();
 
 
@@ -504,5 +506,173 @@ void FTE_Convectoin() {
 
 
 
+void ScatteringBeyond1AU(double E) {
+  namespace FL = PIC::FieldLine;
+  double l,MeanFreePath,r,r2,r2max,S,S0=0.0;
+  FL::cFieldLineSegment *Segment,*Segment1AU;
+
+  //determine the Lagrangian coordinate corresponding to 1 AU 
+  for (Segment=FL::FieldLinesAll[0].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+    auto v0=Segment->GetBegin();
+    auto v1=Segment->GetEnd();
+
+    if ((Vector3D::DotProduct(v0->GetX(),v0->GetX())<_AU_*_AU_)&&(Vector3D::DotProduct(v1->GetX(),v1->GetX())>_AU_*_AU_)) {
+      //here is the segment the crossed the heliocentric distance of 1 AU
+      double r0,r1,dS;
+
+      r0=Vector3D::Length(v0->GetX());
+      r1=Vector3D::Length(v1->GetX());
+
+      dS=(_AU_-r0)/(r1-r0);
+
+      if (dS<0.0) dS=0.0;
+      if (dS>1.0) dS=1.0; 
+
+      S0+=dS;
+      break;
+    }
+    else {
+      S0++;
+    }
+  }  
+
+  if (Segment==NULL) exit(__LINE__,__FILE__,"Error: cannot find the location of 1 AU on the magnetic field line"); 
+   
+  double vsw=400.0E3;
+  double mu,speed,v_parallel;
+
+  speed=Relativistic::E2Speed(E,_AMU_);  
+  mu=rnd();  //we consider only those particles that crosses the heliocentric distance of 1 AU moving in the direction of the outer heliosphere  
+  v_parallel=mu*speed;
+
+  Segment1AU=Segment;
+
+  //sampled quantaties:
+  //1. the fraction of the particles that has returned back
+  //2. the distribution of time that is needed for particles to return back 
+  const int nTestTotal=100; 
+  int iTest;
+  bool in_domain_flag;
+
+  //counter of the particles that return back to 1AU
+  int GlobalReturnParticleCounter,ReturnParticleCounter=0;
+  double x[3],dt,t,GlobalReturnTimeMax,ReturnTimeMax=0.0;
+
+  const int nTimeSampleIntervals=100;
+  const double SampleTimeMax=24*3600.0;
+  const double dTimeSamplingInterval=SampleTimeMax/nTimeSampleIntervals;
+
+  int *ReturnParticleTimeCounterTable=new int[nTimeSampleIntervals];
+  int *GlobalReturnParticleTimeCounterTable=new int[nTimeSampleIntervals];
+
+  for (int i=0;i<nTimeSampleIntervals;i++) ReturnParticleTimeCounterTable[i]=0; 
+
+
+  const int nHeliocentricSampleIntervals=100;
+  const double MaxR=5*_AU_;
+  const double dR=(MaxR-_AU_)/nHeliocentricSampleIntervals;
+
+  int *ReturnParticleMaxR=new int [nHeliocentricSampleIntervals];
+  int *GlobalReturnParticleMaxR=new int [nHeliocentricSampleIntervals];
+    
+  for (int i=0;i<nHeliocentricSampleIntervals;i++)  ReturnParticleMaxR[i]=0; 
+
+
+
+  auto GetMeanFreePath = [&]  (const double& r) {
+    const double alpha=0.333333333333333;
+    const double beta=2.0/3.0;
+
+    return 0.4*_AU_*pow(E/GeV2J,alpha)*pow(r/_AU_,beta);
+  }; 
+
+  for (iTest=0;iTest<nTestTotal;iTest++) {
+    mu=rnd();
+    v_parallel=mu*speed;
+    S=S0;
+    t=0.0;
+    in_domain_flag=true;
+
+    Segment=Segment1AU;
+    Segment->GetCartesian(x,S); 
+
+    do {
+      r=Vector3D::Length(x);
+      MeanFreePath=GetMeanFreePath(r);  
+      l=-MeanFreePath*log(rnd());
+    
+      dt=fabs(l/v_parallel);
+
+      if ((v_parallel>0.0)||(r-l>_AU_)) {
+        t+=dt;
+      }
+      else {
+        t-=(r-l)/vparallel;
+      }
+
+
+      S=FL::FieldLinesAll[0].move(S,v_parallel*dt);
+
+      Segment=FL::FieldLinesAll[0].GetSegment(S);
+
+      if (Segment==NULL) {
+         //particle left the domain -> move to test another particle
+        in_domain_flag=false;
+      }
+      else {
+        Segment->GetCartesian(x,S);
+
+        if ((r2=Vector3D::DotProduct(x,x))<_AU_*_AU_) {
+          //the particle has returned back -> sample the particle as move to the next test
+          ReturnParticleCounter++;
+
+          int iTimeBin=t/dTimeSamplingInterval;
+	  if (iTimeBin<nTimeSampleIntervals) ReturnParticleTimeCounterTable[iTimeBin]++; 
+	  if (t>ReturnTimeMax) ReturnTimeMax=t;
+
+	  int iR=(sqrt(r2max)-_AU_)/dR;
+	  if ((iR>=0)&&(iR<nHeliocentricSampleIntervals)) ReturnParticleMaxR[iR]++; 
+
+          in_domain_flag=false;
+        }
+        else {
+          //redistribute the particle velocity direction 
+          mu=-1.0+2.0*rnd();
+          v_parallel=speed*mu;
+
+	  //update max heliospheric distance sampler that the particle can reach 
+	  if (r2>r2max) r2max=r2;
+        }
+      }
+    }
+    while (in_domain_flag==true);
+  } 
+
+  //reduce the model result 
+  MPI_Reduce(ReturnParticleMaxR,GlobalReturnParticleMaxR,nHeliocentricSampleIntervals,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(ReturnParticleTimeCounterTable,GlobalReturnParticleTimeCounterTable,nTimeSampleIntervals,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&ReturnParticleCounter,&GlobalReturnParticleCounter,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&ReturnTimeMax,&GlobalReturnTimeMax,1,MPI_DOUBLE,MPI_MAX,0,MPI_GLOBAL_COMMUNICATOR);
+
+
+  //output the results 
+  if (PIC::ThisThread==0) {
+     cout << "The fraction of the returned particles: " << double(GlobalReturnParticleCounter)/(nTestTotal*PIC::nTotalThreads) << endl; 
+     cout << "Max Return Time: " << GlobalReturnTimeMax << endl; 
+  }
+
+
+  delete [] ReturnParticleTimeCounterTable;
+  delete [] GlobalReturnParticleTimeCounterTable;
+  delete [] ReturnParticleMaxR; 
+  delete [] GlobalReturnParticleMaxR;
+}	
+
+
+
+
+void ScatteringBeyond1AU() {
+  ScatteringBeyond1AU(100*MeV2J);
+}
 
 
