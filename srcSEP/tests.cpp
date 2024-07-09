@@ -677,7 +677,25 @@ void ScatteringBeyond1AU(double E) {
        r=_AU_+i*dR;	     
        Integral+=double(GlobalReturnParticleMaxR[i])/GlobalReturnParticleCounter;
 
-       fprintf(fout,"%e %e %e %e\n",r/_AU_,double(ReturnParticleMaxR[i])/(nTestTotal*PIC::nTotalThreads),Integral,GetMeanFreePath(r)/_AU_);   
+       fprintf(fout,"%e %e %e %e\n",r/_AU_,double(GlobalReturnParticleMaxR[i])/(nTestTotal*PIC::nTotalThreads),Integral,GetMeanFreePath(r)/_AU_);   
+     }
+
+     fclose(fout);
+
+     //output time distribution
+     int norm=0;
+
+     for (int i=0;i<nTimeSampleIntervals;i++) norm+=GlobalReturnParticleTimeCounterTable[i];
+
+     Integral=0;
+     fout=fopen("time.dat","w");
+     fprintf(fout,"VARIABLES=\"Time [s]\",\"f/f_total\",\"Integrated f/f_total\"\n");
+
+     for (int i=0;i<nTimeSampleIntervals;i++) {
+       t=i*dTimeSamplingInterval;
+       Integral+=double(GlobalReturnParticleTimeCounterTable[i])/norm;
+
+       fprintf(fout,"%e %e %e\n",t,double(GlobalReturnParticleTimeCounterTable[i])/(nTestTotal*PIC::nTotalThreads),Integral);
      }
 
      fclose(fout);
