@@ -225,7 +225,7 @@ void amps_init_mesh() {
     PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
   
     if (SEP::Domain_nTotalParkerSpirals==1) { 
-      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,250.0);
+      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,40*250.0);
       SEP::Mesh::ImportFieldLine(&field_line);
 
       if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) {
@@ -253,7 +253,7 @@ void amps_init_mesh() {
 
         field_line.clear();
 
-        SEP::ParkerSpiral::CreateFileLine(&field_line,x0,250.0);
+        SEP::ParkerSpiral::CreateFileLine(&field_line,x0,7*250.0);
         SEP::Mesh::ImportFieldLine(&field_line);
 
         if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) SEP::Mesh::InitFieldLineAMPS(&field_line);
