@@ -670,7 +670,12 @@ void ScatteringBeyond1AU(double E) {
 
 
      double Integral=0.0;
-     FILE *fout=fopen("rmax.dat","w");
+     FILE *fout;
+     char fname[100]; 
+	     
+	     
+     sprintf(fname,"rmax-E=%eMeV.dat",E*J2MeV); 
+     fout=fopen(fname,"w");
      fprintf(fout,"VARIABLES=\"R[AU]\",\"f/f_total\",\"Integrated f/f_total\", \"Mean Free Path[AU]\"\n");
 
      for (int i=0;i<nHeliocentricSampleIntervals;i++) {
@@ -689,7 +694,9 @@ void ScatteringBeyond1AU(double E) {
      for (int i=0;i<nTimeSampleIntervals;i++) norm+=GlobalReturnParticleTimeCounterTable[i];
 
      Integral=0;
-     fout=fopen("time.dat","w");
+
+     sprintf(fname,"time-E=%eMeV.dat",E*J2MeV);
+     fout=fopen(fname,"w");
      fprintf(fout,"VARIABLES=\"Time [h]\",\"f/f_total\",\"Integrated f/f_total\", \"df_dt/f_total\", \"df2_dt2/f_total\"\n");
 
      auto Get_df_dt = [&] (int i) {
@@ -735,7 +742,10 @@ void ScatteringBeyond1AU(double E) {
 
 
 void ScatteringBeyond1AU() {
-  ScatteringBeyond1AU(100*MeV2J);
+
+  for (int i=0;i<4;i++) {
+    ScatteringBeyond1AU(i*50.0*MeV2J);
+  }
 }
 
 
