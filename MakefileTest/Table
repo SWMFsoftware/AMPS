@@ -2363,13 +2363,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_check..." >> test_fast-wave$(TESTfast-wave-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '` 
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-waveDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2379,6 +2380,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-waveDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave--electrons$(TESTfast-wave-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>mv $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-waveDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-waveDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
