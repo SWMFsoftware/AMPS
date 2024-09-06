@@ -802,7 +802,7 @@ namespace Exosphere {
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
-        PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
+        PIC::IDF::InitRotTemp(0.0,tempParticleData);
   #endif
 
   #if _PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_
