@@ -3432,6 +3432,16 @@ Keys=-model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd705
 Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
 
 Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+amps-gpu)
+
+
+Compile=
+>>>@echo "test_CG_compile..." > test_CG$(TESTCG-REF).diff
+>>>./Config.pl -application=CG -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Rosetta  -amps-test=on $(TESTCGKEYS)
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>gunzip $(PTDIR)/data/input/Rosetta/SHAP5_stefano.bdf.gz
+>>>@echo "test_CG_compile... done" >> test_CG$(TESTCG-REF).diff
+
 <#
 -------------------------------------------------------------------------------
 #>
