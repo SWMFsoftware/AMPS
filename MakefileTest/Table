@@ -2418,13 +2418,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave__correction_check..." >> test_fast-wave__correction$(TESTfast-wave__correction-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave__correctionDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2434,6 +2435,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \ 
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave__correctionDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave__correction--electrons$(TESTfast-wave__correction-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>mv $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave__correctionDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave__correctionDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2473,13 +2477,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_rebalancing_check..." >> test_fast-wave_rebalancing$(TESTfast-wave_rebalancing-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_rebalancingDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>mkdir -p output/test_fast-wave/temp_files
 >>>-cp output/test_fast-wave/*ref_np? output/test_fast-wave/temp_files
@@ -2502,6 +2507,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_rebalancingDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_rebalancingDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_rebalancing--electrons$(TESTfast-wave_rebalancing-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>-mv $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files/* $(TESTfast-wave_rebalancingDIR)/PT/plots/
 >>>-rm -rf $(TESTfast-wave_rebalancingDIR)/PT/plots/temp_files
@@ -2656,13 +2664,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_multithread_UpdateJMassMatrix_check..." >> test_fast-wave_multithread_UpdateJMassMatrix$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave_multithread_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2672,6 +2681,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_multithread_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_UpdateJMassMatrix-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>mv $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave_multithread_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2708,13 +2720,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_multithread_mover_UpdateJMassMatrix_check..." >> test_fast-wave_multithread_mover_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_UpdateJMassMatrix-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2724,6 +2737,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_multithread_mover_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_mover_UpdateJMassMatrix-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>mv $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave_multithread_mover_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2760,13 +2776,14 @@ Compile=
 Check=
 >>>@echo "test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix_check..." >> test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix$(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrix-REF).diff
 
-<<<ifeq ($(wildcard output/test_fast-wave/*.tmp),)
+>>>mkdir -p output/test_fast-wave/tmp
+>>>cp output/test_fast-wave/pic* output/test_fast-wave/tmp
+
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.H_PLUS.s=0.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 output/test_fast-wave/pic.25THELECTRON.s=1.out=2.CorrectionDivE.ref_np`ls $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`
-<<<endif
 
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>-@${TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR}/../utility/RemoveColumn.pl -c=5 $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
@@ -2776,6 +2793,9 @@ Check=
 
 >>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat \
 >>>output/test_fast-wave/pic.25THELECTRON.s=1.out=2.ref_np`ls $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/thread* |wc -l |tr -d ' '`  > test_fast-wave_multithread_mover_matmul_UpdateJMassMatrix--electrons$(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrix-REF).diff)
+
+>>>mv output/test_fast-wave/tmp/* output/test_fast-wave/
+>>>rm -rf output/test_fast-wave/tmp
 
 >>>mv $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat.tmp $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.H_PLUS.s=0.out=2.dat
 >>>mv $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat.tmp $(TESTfast-wave_multithread_mover_matmul_UpdateJMassMatrixDIR)/PT/plots/pic.25THELECTRON.s=1.out=2.dat
