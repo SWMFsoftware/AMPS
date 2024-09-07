@@ -100,10 +100,10 @@ cd $WorkDir/Tmp_AMPS_test/GNU/AMPS
 echo AMPS was checked out on $CheckoutTime > test_amps.log
 ./Config.pl -install -compiler=gfortran,gcc_mpicc    >>& test_amps.log    
 #./Config.pl -fexit=exit
-#./Config.pl -f-link-option=-lmpi_cxx
+./Config.pl -f-link-option=-lmpi_cxx
 
-./Config.pl -f-link-option=-lstdc++
-./Config.pl -cpplib-rm=-lmpi_cxx
+#./Config.pl -f-link-option=-lstdc++
+#./Config.pl -cpplib-rm=-lmpi_cxx
 #./Config.pl -compiler-option=-g
 
 ./Config.pl -test-blocks=10
@@ -198,6 +198,6 @@ g++ ./scheduler.cpp -g -o scheduler -lpthread
 #./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -intel -gcc -pgi -nvcc > runlog 
 
 
-./scheduler -threads 10  -path /home/vtenishe/Tmp_AMPS_test -gcc   > runlog
+./scheduler -threads 5  -path /home/vtenishe/Tmp_AMPS_test -gcc   > runlog
 
 
