@@ -56,11 +56,11 @@ Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
 Ref=7{pgcc}@@(0+pleiades)
 
-Ref=5{gcc}@@(0+stampede+amps-gpu)
+Ref=5{gcc}@@(0+stampede+amps-gpu+passion)
 Ref=6{icc}@@(0+stampede)
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels  @@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu+passion)
 Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels @@(0+pleiades)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels  @@(0+stampede)
 
@@ -79,7 +79,7 @@ Check=
 Name=test/Mars-ions 
 Time=2
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+pleiades)
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MARS-IONS/data_mhd_PERmax-SSLONG180@@(0+stampede)
 <#
@@ -92,7 +92,7 @@ Name=test/Mercury-ions
 Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+pleiades)
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/MERCURY-IONS@@(0+stampede)
 
@@ -119,7 +119,7 @@ Check=
 Name=Titan@@(0+) 
 Time=3
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+pleiades)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/TITAN/YINGJUAN_MA--2007GRL_3D_T9@@(0+stampede)
 <#
@@ -140,7 +140,7 @@ Ref=7{pgcc}@@(0+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/COPS@@(0+valeriy)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/COPS@@(0+pleiades) 
 Keys=-cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/COPS@@(0+stampede)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/COPS@@(0+amps-gpu+passion)
 
 Check=
 >>>@echo "test_COPS_check..." >> test_COPS$(TESTCOPS-REF).diff
@@ -304,7 +304,7 @@ Ref=8{pgcc}@@(0+valeriy)
 Ref=6{icc}@@(0+pleiades)
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+valeriy) 
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CYGNSS -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CYGNSS@@(0+pleiades)
 
 Compile=
@@ -357,7 +357,7 @@ Check=
 Name=test-1853-shape@@(0+) 
 Time=5
 
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu) 
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/home/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+amps-gpu+passion) 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/SURFACE @@(0+valeriy)
 
 Compile=
@@ -447,7 +447,7 @@ Check=
 Name=CCMC@@(-pleiades) 
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu+passion)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC@@(0+pleiades)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC@@(0+stampede)
 
@@ -1438,11 +1438,11 @@ Keys=-cplr-data-path=${PTDIR}/data/input/Europa/Martin-Multifluid
 
 #>
 Time=1
-Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu)
+Name=test/binary-reader@@(0+valeriy+stampede+pleiades+amps-gpu+passion)
 
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/BINARY-READER@@(0+stampede+pleiades)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+valeriy) 
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/BINARY-READER@@(0+amps-gpu+passion)
 
 Run=
 >>>@echo "test_binary_reader_run..." >> test_binary-reader.diff
@@ -1502,12 +1502,12 @@ Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
 Ref=6{icc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades+amps-gpu)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu+passion)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+stampede)
 
-Ref=5{gcc}@@(0+amps-gpu)
+Ref=5{gcc}@@(0+amps-gpu+passion)
 
 <#
 -------------------------------------------------------------------------------
@@ -1582,10 +1582,10 @@ Time=2
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2@@(0+amps-gpu+passion)
 
 
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Earth_compile..." > test_Earth.diff
@@ -1643,7 +1643,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels  @@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu+passion)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 
@@ -1715,7 +1715,7 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 
 Compile=
@@ -1759,7 +1759,7 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 
 Compile=
@@ -1818,7 +1818,7 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 
 Compile=
@@ -1862,7 +1862,7 @@ Time=15
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels@@(0+amps-gpu+passion)
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels@@(0+valeriy)
 Keys=-spice-path=/nobackupp17/vtenishe/SPICE/cspice -spice-kernels=/nobackupp17/vtenishe/SPICE/Kernels @@(0+pleiades)
 
@@ -1896,11 +1896,11 @@ Check=
 Name=test/Earth-T96@@(0+) 
 Time=3
 
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2/output-sig=0x103010036592e5d@@(0+valeriy) 
 
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels  @@(0+valeriy)
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels  @@(0+amps-gpu+passion)
 Keys=-cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 
@@ -1937,7 +1937,7 @@ Time=6
 Outs=test_Earth
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EARTH/ful_2 -spice-path=/Users/vtenishe/SPICE/Toolkit-120316/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels @@(0+valeriy)
-Keys= -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+Keys= -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu+passion)
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2  -cplr-data-path=${PTDIR}/../../../AMPS_DATA_TEST/EARTH/ful_2@@(0+stampede+pleiades)
 
 Compile=
@@ -1959,7 +1959,7 @@ Name=test/Earth-Impulse-Neutron-Source
 Time=6
 
 Outs=test_Earth-Impulse-Neutron 
-Keys= -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu)
+Keys= -spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels @@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Earth-Impulse-Neutron-Source_compile..." > test_Earth-Impulse-Neutron-Source$(TESTEarth-Impulse-Neutron-Source-REF).diff
@@ -2070,8 +2070,8 @@ Time=3
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
-Ref=5{gcc}@@(0+amps-gpu)
-Ref=9{icc}@@(0+amps-gpu)
+Ref=5{gcc}@@(0+amps-gpu+passion)
+Ref=9{icc}@@(0+amps-gpu+passion)
 Ref=10{pgcc}@@(0+amps-gpu)
 Ref=3{gcc}@@(0+stampede)
 Ref=6{icc}@@(0+pleiades)
@@ -2207,8 +2207,8 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
-Ref=5{gcc}@@(0+amps-gpu)
-Ref=9{icc}@@(0+amps-gpu)
+Ref=5{gcc}@@(0+amps-gpu+passion)
+Ref=9{icc}@@(0+amps-gpu+passion)
 Ref=10{pgcc}@@(0+amps-gpu)
 
 Ref=6{icc}@@(0+pleiades)
@@ -2296,8 +2296,8 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
-Ref=6{gcc}@@(0+amps-gpu)
-Ref=9{icc}@@(0+amps-gpu)
+Ref=6{gcc}@@(0+amps-gpu+passion)
+Ref=9{icc}@@(0+amps-gpu+passion)
 Ref=1{pgcc}@@(0+amps-gpu)
 
 Ref=6{icc}@@(0+pleiades)
@@ -3233,7 +3233,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=2{icc}@@(0+stampede)
 Ref=2{icc}@@(0+pleiades)
 
-Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII@@(0+amps-gpu)
+Keys=-cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII@@(0+amps-gpu+passion)
 Keys=-cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII -model-data-path=//Users/vtenishe/AMPS_DATA_TEST/ARMS/Converted2ASCII@@(0+valeriy)
 
 Compile=
@@ -3467,7 +3467,7 @@ Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a
 Keys=-model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+pleiades)
 Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
 
-Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+amps-gpu)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+amps-gpu+passion)
 
 
 Compile=
@@ -3481,7 +3481,7 @@ Compile=
 <#
 -------------------------------------------------------------------------------
 #>
-Name=CG-dust-test@@(0+valeriy+pleiades+stampede+amps-gpu)
+Name=CG-dust-test@@(0+valeriy+pleiades+stampede+amps-gpu+passion)
 Time=3
 
 Ref=1{gcc}@@(0+valeriy)
@@ -3495,7 +3495,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu+passion)
 Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+pleiades)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
 
@@ -3533,7 +3533,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=CG-dust-test-tetra-cut-mesh@@(0+valeriy+pleiades+stampede+amps-gpu)
+Name=CG-dust-test-tetra-cut-mesh@@(0+valeriy+pleiades+stampede+amps-gpu+passion)
 Time=100 
 
 Ref=1{gcc}@@(0+valeriy)
@@ -3547,7 +3547,7 @@ Ref=1{pgcc}@@(0+valeriy)
 
 
 Keys=-spice-path=/Users/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/Users/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+valeriy)
-Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu)
+Keys=-spice-path=/home/vtenishe/SPICE/cspice -spice-kernels=/home/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 @@(0+amps-gpu+passion)
 Keys=-spice-path=/home3/vtenishe/SPICE/Toolkit/cspice -spice-kernels=/nobackupp8/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+pleiades)
 Keys=-spice-path=/scratch/02452/vtenishe/SPICE/cspice -spice-kernels=/scratch/02452/vtenishe/SPICE/Kernels/ROSETTA/kernels -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2 -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/ROSETTA/amr-sig=0xd7058cc2a680a3a2@@(0+stampede)
 
@@ -3599,7 +3599,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades+amps-gpu)
+Ref=6{icc}@@(0+pleiades+amps-gpu+passion)
 Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
@@ -3613,7 +3613,7 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+stampede)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Lapenta@@(0+stampede)
 
@@ -3636,7 +3636,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades+amps-gpu)
+Ref=6{icc}@@(0+pleiades+amps-gpu+passion)
 Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede+amps-gpu+passion)
@@ -3649,7 +3649,7 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/024
 
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/Markidis@@(0+stampede)
 
@@ -3672,13 +3672,13 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades+amps-gpu)
+Ref=6{icc}@@(0+pleiades+amps-gpu+passion)
 Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
 Ref=4{icc}@@(0+stampede)
 
-Ref=5{gcc}@@(0+amps-gpu)
+Ref=5{gcc}@@(0+amps-gpu+passion)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
 Keys=-link-option=./share/lib/libSHARE.a -boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+amps-gpu+passion)
@@ -3686,7 +3686,7 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+stampede)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS@@(0+stampede)
 
@@ -3707,7 +3707,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=8{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades+amps-gpu)
+Ref=6{icc}@@(0+pleiades+amps-gpu+passion)
 Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
@@ -3721,7 +3721,7 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+stampede)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/BORIS-RELATIVISTIC@@(0+stampede)
 
@@ -3741,7 +3741,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{pgcc}@@(0+valeriy)
 
 Ref=5{gcc}@@(0+pleiades)
-Ref=6{icc}@@(0+pleiades+amps-gpu)
+Ref=6{icc}@@(0+pleiades+amps-gpu+passion)
 Ref=7{pgcc}@@(0+pleiades+amps-gpu)
 
 Ref=5{gcc}@@(0+stampede)
@@ -3755,7 +3755,7 @@ Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/GUIDING-CENTER  -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/GUIDING-CENTER@@(0+stampede)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/GUIDING-CENTER@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/GUIDING-CENTER@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/GUIDING-CENTER@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/GUIDING-CENTER@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/OUTPUT/GUIDING-CENTER@@(0+stampede)
 
@@ -3806,7 +3806,7 @@ Check=
 Name=CCMC-Individual_Trajectories
 Time=4
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/CCMC@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/CCMC@@(0+amps-gpu+passion)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/CCMC@@(0+pleiades)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/CCMC@@(0+stampede)
 
@@ -3904,7 +3904,7 @@ Check=
 
 
 #>
-Name=test/Mover-guiding-center@@(0+stampede+pleiades+amps-gpu)
+Name=test/Mover-guiding-center@@(0+stampede+pleiades+amps-gpu+passion)
 Time=3
 
 Ref=2{icc}@@(0+valeriy)
@@ -3913,7 +3913,7 @@ Ref=8{pgcc}@@(0+valeriy)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+pleiades)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Guiding-Center@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Mover-guiding-center_compile..." > test_Mover-guiding-center${TESTMover-guiding-center-REF}.diff
@@ -3936,12 +3936,12 @@ Name=test/Mover-Lapenta2017
 Time=7
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Lapenta2017@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Lapenta2017@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Lapenta2017@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/test_Mover/Lapenta2017@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Lapenta2017@@(0+stampede)
 
@@ -3965,12 +3965,12 @@ Name=test/Mover-Markidis2010
 Time=7
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
 
 CustomRefSolutionPaths=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Markidis2010@@(0+valeriy)
-CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Markidis2010@@(0+amps-gpu)
+CustomRefSolutionPaths=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Markidis2010@@(0+amps-gpu+passion)
 CustomRefSolutionPaths=/nobackup/vtenishe/AMPS_DATA_TEST/test_Mover/Markidis2010@@(0+pleiades)
 CustomRefSolutionPaths=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Markidis2010@@(0+stampede)
 
@@ -3996,7 +3996,7 @@ Name=test/Mover-Boris@@(0+valeriy)
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Mover-Boris_compile..." > test_Mover-Boris${TESTMover-Boris-REF}.diff
@@ -4015,14 +4015,14 @@ Check=
 
 
 #>
-Name=test/Mover-Boris@@(0+stampede+pleiades+amps-gpu)
+Name=test/Mover-Boris@@(0+stampede+pleiades+amps-gpu+passion)
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 
 
 Compile=
@@ -4046,7 +4046,7 @@ Name=test/Mover-Boris-relativistic@@(0+valeriy)
 Time=20
 
 Keys=/Users/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+valeriy)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Mover-Boris-relativistic_compile..." > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
@@ -4065,14 +4065,14 @@ Check=
 
 
 #>
-Name=test/Mover-Boris-relativistic@@(0+stampede+pleiades+amps-gpu)
+Name=test/Mover-Boris-relativistic@@(0+stampede+pleiades+amps-gpu+passion)
 Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
 Keys=/scratch/02452/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+stampede)
 Keys=/nobackupp8/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+pleiades)
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Boris@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Mover-Boris-relativistic_compile..." > test_Mover-Boris-relativistic${TESTMover-Boris-relativistic-REF}.diff
@@ -4095,7 +4095,7 @@ Time=20
 
 Ref=2{gcc}@@(0+stampede)
 
-Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Relativistic-Guiding-Center@@(0+amps-gpu)
+Keys=/home/vtenishe/AMPS_DATA_TEST/test_Mover/Relativistic-Guiding-Center@@(0+amps-gpu+passion)
 
 Compile=
 >>>@echo "test_Mover-gca-relativistic_compile..." > test_Mover-gca-relativistic${TESTMover-gca-relativistic-REF}.diff
@@ -4121,7 +4121,7 @@ Name=Europa-test1
 Time=3
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+valeriy) 
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+amps-gpu+passion)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+stampede) 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/EUROPA@@(0+pleiades) 
 
@@ -4139,7 +4139,7 @@ Name=Europa-test2
 Time=3
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+amps-gpu)
+Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+amps-gpu+passion)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+stampede)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/EUROPA/MultiFluid@@(0+pleiades)
 
@@ -4348,14 +4348,14 @@ Time=50
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 Ref=3{gcc}@@(0+pleiades)
-Ref=7{pgcc}@@(0+pleiades+amps-gpu)
-Ref=3{gcc}@@(0+stampede+amps-gpu)
+Ref=7{pgcc}@@(0+pleiades+amps-gpu+passion)
+Ref=3{gcc}@@(0+stampede+amps-gpu+passion)
 Ref=2{pgcc}@@(0+valeriy)
 
 
 Keys=-model-data-path=${PTDIR}/../../../AMPS_DATA_TEST/MARS@@(0+stampede+pleiades) 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/MARS@@(0+valeriy)
-Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS@@(0+amps-gpu)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/MARS@@(0+amps-gpu+passion)
 
 
 Compile=
@@ -4394,7 +4394,7 @@ Ref=1{gcc}@@(0+valeriy)
 Ref=7{pgcc}@@(0+amps-gpu+pleiades)
 
 Keys=-model-data-path=/Users/vtenishe/AMPS_DATA_TEST/VENUS@@(0+valeriy)
-Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/VENUS@@(0+amps-gpu)
+Keys=-model-data-path=/home/vtenishe/AMPS_DATA_TEST/VENUS@@(0+amps-gpu+passion)
 Keys=-model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/VENUS@@(0+pleiades)
 Keys=-model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/VENUS@@(0+stampede)
 
