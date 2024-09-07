@@ -3673,7 +3673,7 @@ Ref=4{icc}@@(0+stampede)
 Ref=5{gcc}@@(0+amps-gpu)
 
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/Users/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+valeriy)
-Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+amps-gpu)
+Keys=-link-option=./share/lib/libSHARE.a -boost-path=noboost -kameleon-path=nokameleon -model-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/home/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+amps-gpu+passion)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS  -cplr-data-path=/nobackupp8/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+pleiades)
 Keys=-boost-path=noboost -kameleon-path=nokameleon -model-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS -cplr-data-path=/scratch/02452/vtenishe/AMPS_DATA_TEST/INDIVIDUAL-TRAJECTORY/BORIS@@(0+stampede)
 
