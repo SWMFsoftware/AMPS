@@ -80,9 +80,13 @@ void MOP::Init() {
   //get Saturn's axis of rotation
   SpiceDouble lz_IAU_SATURN[3]={0.0,0.0,1.0},rotate[3][3];
 
+  #ifndef _NO_SPICE_CALLS_
   utc2et_c(Exosphere::SimulationStartTimeString,&KMAG::et);
   pxform_c("IAU_SATURN","SSO",KMAG::et,rotate);
   mxv_c(rotate,lz_IAU_SATURN,MOP::SaturninanSystem::Saturn::RotationAxis);
+  #else 
+  KMAG::et=0.0;
+  #endif
 }
 
 //output of the sampled data into a file
