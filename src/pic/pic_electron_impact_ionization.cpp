@@ -13,13 +13,12 @@ void PIC::ChemicalReactions::ElectronImpactIonizationReactions::ExecuteElectronI
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #pragma omp parallel for schedule(dynamic,1) default (none)  \
-    private (k,j,i,node,oldFirstCellParticle,newFirstCellParticle,p,pnext) \
+    private (k,j,i,node,ptr,ptrnext,spec,ProductSpeciesIndex,ReactionRate) \
     shared (DomainBlockDecomposition::nLocalBlocks,PIC::DomainBlockDecomposition::BlockTable)
 #endif
 
 for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (k=0;k<_BLOCK_CELLS_Z_;k++) for (j=0;j<_BLOCK_CELLS_Y_;j++)  for (i=0;i<_BLOCK_CELLS_X_;i++) {
     double StartTime=MPI_Wtime();
-
 
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
     if (node->block!=NULL) {
