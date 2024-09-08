@@ -5723,7 +5723,31 @@ Run=
 >>>@echo "test_AMPS-BATSRUS-OH_run..." >> test_AMPS-BATSRUS-OH.diff
 >>>@echo Test test_AMPS-BATSRUS-OH has started: `date`
 
->>>cd SWMF;$(MAKE) MPIRUN="mpirun -np 2" test14
+>>>cd SWMF; ./Config.pl -v=Empty,OH/BATSRUS,PT/AMPS
+>>>cd SWMF; ./Config.pl -o=OH:u=OuterHelio,e=Swh,ng=2,g=4,4,4
+>>>cd SWMF; ./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=oh,amps-test=on,no-signals
+>>>cd SWMF; ${MAKE} SWMF
+>>>cd SWMF; make PIDL
+
+>>>cd SWMF; rm -rf run_test
+>>>cd SWMF;${MAKE} rundir RUNDIR=run_test
+
+>>>cd SWMF; cp Param/PARAM.in.test.OHPT run_test/PARAM.in
+>>>-cd SWMF; Scripts/TestParam.pl -F run_test/PARAM.in
+>>>cd SWMF/run_test; ${MPIRUN} ./SWMF.exe > runlog_start
+>>>cd SWMF/run_test; rm -rf RESTART_n000120; ./Restart.pl
+>>>cd SWMF/run_test; mv PARAM.in PARAM.in.start; rm -f PARAM.in_orig
+
+>>>cd SWMF/run_test; cp Param/PARAM.in.test.restart.OHPT PARAM.in
+>>>-cd SWMF; Scripts/TestParam.pl -F run_test/PARAM.in
+>>>cd SWMF/run_test; mpirun -np 2 ./SWMF.exe > runlog
+>>>cd SWMF/run_test; rm -rf RESULTS; ./PostProc.pl -M -cat RESULTS
+
+>>>-cd SWMF; (share/Scripts/DiffNum.pl -b -r=1e-5 -a=1e-29\
+>>>run_test/RESULTS/OH/log_n000000.log \
+>>>output/test14/OH_log_n000000.log_np${NAMPS} > test14_ohpt.diff) 
+>>>cd SWMF; ls -l test14_ohpt.diff
+
 >>>@echo "test_AMPS-BATSRUS-OH_run... done" >> test_AMPS-BATSRUS-OH.diff
 
 Check=
