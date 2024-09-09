@@ -350,6 +350,13 @@ void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldL
 void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,double &dD_dmu,double mu,double vParallel,double vNorm,int spec,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment) {
   namespace FL = PIC::FieldLine;
   namespace MD = PIC::MolecularData;
+
+  static bool init_flag=false;
+
+  if (init_flag==false) {
+    init_flag=true; 
+    Init();
+  }
   
   double k,P,c,absB,dB,SummW,omega,dB2,absB2,r2;
   double dR=Rmax/nR;
