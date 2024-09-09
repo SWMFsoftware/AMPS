@@ -228,19 +228,17 @@ void amps_init_mesh() {
       SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,40*250.0);
       SEP::Mesh::ImportFieldLine(&field_line);
 
-      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) {
-        PIC::FieldLine::Init();
-        SEP::Mesh::InitFieldLineAMPS(&field_line);
-      }
+      PIC::FieldLine::Init();
+      SEP::Mesh::InitFieldLineAMPS(&field_line);
     }
     else {
-      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) PIC::FieldLine::Init();
+      PIC::FieldLine::Init();
 
       rnd_seed(10);
 
       for (int iline=0;iline<SEP::Domain_nTotalParkerSpirals;iline++) {
         double x0[3],r,phi;  
-        double phi_max=15.0*Pi/180.0;
+        double phi_max=25.0*Pi/180.0;
 
         r=Vector3D::Length(xStart);
 
@@ -256,10 +254,10 @@ void amps_init_mesh() {
         SEP::ParkerSpiral::CreateFileLine(&field_line,x0,7*250.0);
         SEP::Mesh::ImportFieldLine(&field_line);
 
-        if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) SEP::Mesh::InitFieldLineAMPS(&field_line);
+        SEP::Mesh::InitFieldLineAMPS(&field_line);
       } 
 
-      if (SEP::ParticleTrajectoryCalculation==SEP::ParticleTrajectoryCalculation_FieldLine) PIC::FieldLine::Output("all-field-lines.dat",false);
+      if (PIC::ThisThread==0) PIC::FieldLine::Output("all-field-lines.dat",false);
     }
 
     break;
