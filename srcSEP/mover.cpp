@@ -1859,6 +1859,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
   //set the new particle coordinate 
   PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
 
+  /*
   //determine the final location of the particle in 3D
   double xFinal[3];
   FL::FieldLinesAll[iFieldLine].GetCartesian(xFinal,FieldLineCoord);
@@ -1867,7 +1868,7 @@ int SEP::ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<P
     PIC::ParticleBuffer::DeleteParticle(ptr);
     return _PARTICLE_LEFT_THE_DOMAIN_;
   }
-
+  */
  
 
   //attach the particle to the temporaty list
