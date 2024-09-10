@@ -52,6 +52,7 @@ int main(int argc,char **argv) {
 
   int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
 
+  SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
