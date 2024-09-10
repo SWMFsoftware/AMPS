@@ -54,8 +54,8 @@ int main(int argc,char **argv) {
   Europa::OrbitalMotion::UpdateSunJupiterLocation();
 
 
-PIC::RequiredSampleLength=5000;
-
+PIC::RequiredSampleLength=3000;
+//PIC::RequiredSampleLength=500;
 
 
 

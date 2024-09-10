@@ -135,12 +135,12 @@ int Europa::ParticleMover(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cD
     res=PIC::Mover::Relativistic::GuidingCenter::Mover_FirstOrder(ptr,dtTotal,startNode);
     break;
     
-  case _O_PLUS_HIGH_SPEC_:case _O2_PLUS_HIGH_SPEC_:  case _H_PLUS_HIGH_SPEC_: 
+  case _O_PLUS_HIGH_SPEC_: case _S_PLUS_PLUS_HIGH_SPEC_:  case _O2_PLUS_HIGH_SPEC_:  case _H_PLUS_HIGH_SPEC_: 
     res=PIC::Mover::Relativistic::Boris(ptr,dtTotal,startNode);
     break;
 
 
-  case _O_PLUS_THERMAL_SPEC_:case _O2_PLUS_THERMAL_SPEC_:  case _H_PLUS_THERMAL_SPEC_: 
+  case _O_PLUS_THERMAL_SPEC_:case _S_PLUS_PLUS_THERMAL_SPEC_: case _O2_PLUS_THERMAL_SPEC_:  case _H_PLUS_THERMAL_SPEC_: 
     // res=PIC::Mover::GuidingCenter::Mover_SecondOrder(ptr,dtTotal,startNode);
     /*
     if (spec==_ELECTRON_THERMAL_SPEC_ || spec==_H_PLUS_THERMAL_SPEC_){
@@ -623,7 +623,7 @@ double Europa::SurfaceInteraction::yield_e(int prodSpec, double E){
   double kb,ele,amu, T, E_keV, theta;
   double m2, z2;
   
-  T=80; //k surface temperature
+  T=100; //k surface temperature
 
 
   kb      = 1.3806623e-23                 ;//% [m^2 kg s^-2 K^-1]                                                             
@@ -658,11 +658,12 @@ double Europa::SurfaceInteraction::yield_e(int prodSpec, double E){
 
   return -1; // in case sth goes wrong
 }
+
 double Europa::SurfaceInteraction::yield_Oplus(int prodSpec, double E){
   double kb,ele,amu, T, E_keV, theta;
   double m2, z2;
   
-  T=80; //k surface temperature
+  T=100; //k surface temperature
 
 
   kb      = 1.3806623e-23                 ;//% [m^2 kg s^-2 K^-1]                                                             
@@ -743,12 +744,13 @@ double Europa::SurfaceInteraction::yield_Oplus(int prodSpec, double E){
 
   return -1;//in case having a wrong input
 }
-  
+
+
 double Europa::SurfaceInteraction::yield_Hplus(int prodSpec, double E){
   double kb,ele,amu, T, E_keV, theta;
   double m2, z2;
   
-  T=80; //k surface temperature
+  T=100; //k surface temperature
 
 
   kb      = 1.3806623e-23                 ;//% [m^2 kg s^-2 K^-1]                                           
@@ -835,6 +837,97 @@ double Europa::SurfaceInteraction::yield_Hplus(int prodSpec, double E){
   
 }
 
+
+
+double Europa::SurfaceInteraction::yield_Splusplus(int prodSpec, double E){
+  double kb,ele,amu, T, E_keV, theta;
+  double m2, z2;
+  
+  T=100; //k surface temperature
+
+
+  kb      = 1.3806623e-23                 ;//% [m^2 kg s^-2 K^-1]                                                             
+  ele     = 1.6021892e-19                 ;//% [J]                                                                            
+  amu     = 1.66053886e-27                ;//% [kg]  
+
+  m2 = 2./3. + 1./3.*16.;
+  z2 = 2./3.*1. + 1./3.*8.;
+  theta   = 45/180.*Pi;  
+  E_keV = E*1e-3;
+  
+  if (prodSpec==_H2O_SPEC_){
+    double U0,C0,Yr, Ea,m1, z1,v;
+    U0      = 0.45;// [eV]                                                                           
+    C0      = 1.3;// [Angström^2]                                                                   
+    Yr      = 220.; //% [-]                                                                            
+    Ea      = 0.06*ele ;// [J]            
+    
+    m1      = 32. ; //[amu]                                                                            
+    z1      = 16.  ;// %[-]                                                                              
+    v       = sqrt(2*1e3*E_keV*ele / (m1*amu))    ;// %[m/s]    
+
+    double epsilon, Sred, Sn, alpha, f, Y_elas, SNred;
+    epsilon = 32.53 * m2 * E_keV / (z1 * z2 * (m1 + m2) * (pow(z1,0.23) + pow(z2,0.23)));
+    Sred    = log(1.+1.1383*epsilon) / (2.0*(epsilon + 0.01321 * pow(epsilon,0.21226) + 0.19593 * pow(epsilon,0.5)));
+    
+    if (epsilon<=30){
+      SNred  = log(1.0+1.1383*epsilon)* 0.5 / (epsilon + 0.01321*pow(epsilon,0.21226) + 0.19593*pow(epsilon,0.5));
+    }else{
+      SNred  = log(epsilon)/epsilon;
+    }
+    
+    Sn = 8.462*z1*z2*m1*Sred / ((m1+m2)*(pow(z1,0.23) + pow(z2,0.23)));
+
+    alpha   = 0.25574 + 1.25338 * exp(-0.86971*m1) + 0.3793 * exp(-0.10508*m1);
+    f       = 1.3 * (1.0 + log(m1)/10.);
+
+    Y_elas  = 1. / U0 * 3. / (4. * pow(Pi,2.) * C0) * alpha * Sn * 10. ;
+    
+    double v_J, C1_low, C2_low, C1_high, C2_high, Y_low, Y_high, Y_elec, Y_h2o;
+    v_J     = v / 2.19e6;//
+    C1_low  = 4.2        ;//% [-]                                                                                           
+    C2_low  = 2.16       ;// [-]                                                                                           
+    C1_high = 11.22      ;// [-]                                                                                           
+    C2_high = -2.24      ;// [-]         
+    double z1_1_3= pow(z1,0.333333);
+    double z1_2p8 = pow(z1,2.8);
+    Y_low   = z1_2p8 * C1_low  *  pow((v_J / z1_1_3),C2_low);
+    Y_high  = z1_2p8 * C1_high * pow((v_J / z1_1_3),C2_high);
+    Y_elec  = 1/(1/Y_low + 1/Y_high);
+
+    // ion H2O sputter yield as the sum of the elastic and electronic sputter yield                                                        
+      Y_h2o = Y_elas + Y_elec;
+      return Y_h2o;
+      
+  }else if (prodSpec==_O2_SPEC_){
+    
+    double x0, gO2_0, q0,Q, beta, m1,z1, v;
+    x0    = 28e-10     ;//% [m]                                                                                         
+    gO2_0 = 5e-3       ;//%[eV^-1]                                                                                     
+    q0    = 1000      ;//% [-]                                                                                         
+    Q     = 0.06       ;//% [eV]                                                                                        
+    beta  = 45./180.*3.1415926 ;//% [rad]                                                                                       
+
+    // impactor parameters                                                                                                                 
+    m1      = 32.                         ;//% [amu]                                                                                         
+    z1      = 16.                          ;//% [-]                                                                                           
+    v       = sqrt(2*1e3*E_keV*ele / (m1*amu)) ;// %[m/s]   
+      
+    double A[3]={-9.42677, 0.230951, 1.52624};
+    double r0    = pow(10,A[0] + A[1]*pow(log10(E_keV*1e3),A[2]));
+      
+    double Y_O2 = E_keV *1e3 * gO2_0 * x0 * (1.0-exp(-r0*cos(beta)/x0))*(1.0+q0*exp(-Q/(kb*T/ele))) / (r0*cos(beta));
+      
+    return Y_O2;
+  }
+
+
+  return -1;//in case having a wrong input
+}
+
+
+
+
 double Europa::SurfaceInteraction::yield_O2plus(int prodSpec, double E){
   //E in eV
   if (E>1e4){
@@ -916,7 +1009,7 @@ void applyReflectiveBC(int spec, long int ptr,double *x_SO,double *v_SO,void *No
   double weight_correction = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
 
 
-  newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true);
+  newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],false);
 
   PIC::ParticleBuffer::SetIndividualStatWeightCorrection(weight_correction,newParticle);
   PIC::ParticleBuffer::SetX(x_new,newParticle);
@@ -978,7 +1071,8 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
 
   if (spec!=_ELECTRON_THERMAL_SPEC_ && spec!=_ELECTRON_HIGH_SPEC_ 
       && spec!=_O2_PLUS_HIGH_SPEC_  && spec!=_O2_PLUS_THERMAL_SPEC_ 
-      && spec!=_O_PLUS_HIGH_SPEC_   && spec!=_O_PLUS_THERMAL_SPEC_ 
+      && spec!=_O_PLUS_HIGH_SPEC_   && spec!=_O_PLUS_THERMAL_SPEC_
+      && spec!=_S_PLUS_PLUS_HIGH_SPEC_   && spec!=_S_PLUS_PLUS_THERMAL_SPEC_ 
       && spec!=_H_PLUS_HIGH_SPEC_ && spec!=_H_PLUS_THERMAL_SPEC_ && spec!= _O2_SPEC_
       && spec!= _H2_SPEC_) 
     return _PARTICLE_DELETED_ON_THE_FACE_;
@@ -1004,10 +1098,11 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
   */
 
   //one test particle will produce both H2O and O2
-  for (int iSpec=0; iSpec<2; iSpec++){
+  for (int iSpec=0; iSpec<3; iSpec++){
 
     if (iSpec==0) specNew = _O2_SPEC_;
     if (iSpec==1) specNew = _H2O_SPEC_;
+    if (iSpec==2) specNew = _O2_SPEC_;
     
     double E_ev;
     double vMag2, vMag;
@@ -1022,7 +1117,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
       E_ev = 0.5*vMag2/eV2J;
     }
     
-    
+   
     
     switch (spec) {
       
@@ -1041,6 +1136,11 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
       Yield = Europa::SurfaceInteraction::yield_Oplus(specNew,E_ev);
       break;
       
+    case _S_PLUS_PLUS_HIGH_SPEC_ : case _S_PLUS_PLUS_THERMAL_SPEC_:
+      E_ev *= _O__MASS_*2;
+      Yield = Europa::SurfaceInteraction::yield_Splusplus(specNew,E_ev);
+      break;  
+      
     case _H_PLUS_HIGH_SPEC_ : case _H_PLUS_THERMAL_SPEC_:
       E_ev *= _H__MASS_;
       Yield = Europa::SurfaceInteraction::yield_Hplus(specNew,E_ev);
@@ -1048,6 +1148,11 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
     
     default:
       exit(__LINE__,__FILE__,"Error: the specie should not be here");
+    }
+
+    if (iSpec==2) {
+      specNew = _H2_SPEC_;
+      Yield = Yield *2;
     }
     
     Yield*=ParticleWeight/PIC::ParticleWeightTimeStep::GlobalParticleWeight[specNew]*
@@ -1089,9 +1194,11 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
       
       double v_new[3];
       
-      
-      Europa::TestParticleSputtering::InjectSputteringDistribution(v_new,ExternalNormal,specNew);
-      
+      if (iSpec==0 ||iSpec==1 ){
+	Europa::TestParticleSputtering::InjectSputteringDistribution(v_new,ExternalNormal,specNew);
+      }else if(iSpec==2){
+	 MaxwellianDistribution_sphere(v_new,ExternalNormal,specNew);
+      }
       /*
 	v_new[0] = -v_SO[0];
 	v_new[1] = v_SO[1];
@@ -1165,7 +1272,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
 
       //  newParticle=PIC::ParticleBuffer::GetNewParticle(node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true);
       
-      newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],true);
+      newParticle=PIC::ParticleBuffer::GetNewParticle(newNode->block->tempParticleMovingListTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)],false);
 
       PIC::ParticleBuffer::SetIndividualStatWeightCorrection(tempWeight,newParticle);
       PIC::ParticleBuffer::SetX(x_new,newParticle);
@@ -1216,7 +1323,7 @@ int Europa::SurfaceInteraction::ParticleSphereInteraction_SurfaceAccomodation(in
       //inject the particle into the system
       //_PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(newParticle,PIC::ParticleWeightTimeStep::GlobalTimeStep[specNew],(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)NodeDataPonter,true);      
     }
-  }//for (int iSpec=0; iSpec<2; iSpec++)
+  }//for (int iSpec=0; iSpec<3; iSpec++)
 
   return _PARTICLE_DELETED_ON_THE_FACE_;
 
@@ -1824,7 +1931,7 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
 
 
   if (UseElectronImpact){
-    ThermalElectronDensity=30.0e6;
+    ThermalElectronDensity=30e6;
     HotElectronDensity=2.0e6;
     
     double xmiddle[3], rr;
@@ -1833,12 +1940,13 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
     }
     
     rr = sqrt(xmiddle[0]*xmiddle[0]+xmiddle[1]*xmiddle[1]+xmiddle[2]*xmiddle[2]);
-    
-    if (rr-_RADIUS_(_TARGET_)<1000e3){
-      ThermalElectronDensity=30e6*0.05;
-      HotElectronDensity= 2e6*0.1;
-    }
 
+   
+    if (rr-_RADIUS_(_TARGET_)<_RADIUS_(_TARGET_)*0.1){
+      ThermalElectronDensity=30e6*0.1;
+      // HotElectronDensity= 2e6*0.1;
+    }
+    
 
     HotElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
     ThermalElectronImpactRate_H2O=ElectronImpact::H2O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
@@ -1856,7 +1964,12 @@ double Europa::LossProcesses::ExospherePhotoionizationLifeTime(double *x,int spe
     HotElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::HotElectronTemperature)*HotElectronDensity;
     ThermalElectronImpactRate_O=ElectronImpact::O::RateCoefficient(Europa::ElectronModel::ThermalElectronTemperature)*ThermalElectronDensity;
     
-
+    /*
+    if (PIC::ThisThread==0){
+      printf(" HotElectronImpactRate_O2:%e,ThermalElectronImpactRate_O2:%e\n",HotElectronImpactRate_O2, ThermalElectronImpactRate_O2);
+    }
+    */
+    
     //something was wrong here.
     switch (spec){
     case _H2O_SPEC_:

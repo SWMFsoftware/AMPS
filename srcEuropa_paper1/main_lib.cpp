@@ -254,7 +254,8 @@ double localSphericalSurfaceResolution(double *x) {
 	SubsolarAngle=0.0;
 	res=dxMinSphere+(dxMaxSphere-dxMinSphere)/Pi*SubsolarAngle;
 
-  res/=4.0;
+	res/=4.0;
+	//res/=8.0;      
 
   if (r>0.95) {
     if (strcmp(Europa::Mesh::sign,"0x3030203cdedcf30")==0) { //reduced mesh
@@ -353,6 +354,9 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
    case _O_PLUS_HIGH_SPEC_:
      CharacteristicSpeed=10.0*1.6E6;
      break;
+   case _S_PLUS_PLUS_HIGH_SPEC_:
+     CharacteristicSpeed=10.0*1.6E6;
+     break;  
    case _H_PLUS_HIGH_SPEC_:
      CharacteristicSpeed=3e7;
      break;
@@ -365,6 +369,9 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
    case _O_PLUS_THERMAL_SPEC_:
      CharacteristicSpeed=2E5;
      break;
+   case _S_PLUS_PLUS_THERMAL_SPEC_:
+     CharacteristicSpeed=2E5;
+     break;  
    case _H_PLUS_THERMAL_SPEC_:
      CharacteristicSpeed=7e5;  
      break; 
@@ -1253,6 +1260,9 @@ void amps_init() {
        case _O_PLUS_HIGH_SPEC_:
 	 printf("spec:%d, _O_PLUS_HIGH_SPEC_\n",spec);
 	 break;
+       case _S_PLUS_PLUS_HIGH_SPEC_:
+	 printf("spec:%d, _S_PLUS_PLUS_HIGH_SPEC_\n",spec);
+	 break;
        case _H_PLUS_HIGH_SPEC_:
 	 printf("spec:%d, _H_PLUS_HIGH_SPEC_\n",spec);
 	 break;
@@ -1265,6 +1275,9 @@ void amps_init() {
        case _O_PLUS_THERMAL_SPEC_:
 	 printf("spec:%d, _O_PLUS_THERMAL_SPEC_\n",spec);
 	 break;
+       case _S_PLUS_PLUS_THERMAL_SPEC_:
+	 printf("spec:%d, _S_PLUS_PLUS_THERMAL_SPEC_\n",spec);
+	 break;	 
        case _H_PLUS_THERMAL_SPEC_:
 	 printf("spec:%d, _H_PLUS_THERMAL_SPEC_\n",spec);
 	 break;
@@ -1514,8 +1527,8 @@ void amps_init() {
   //TECPLOT
   //read the background data
    
-   if (PIC::CPLR::DATAFILE::BinaryFileExists("EUROPA-BATSRUS-MED")==true)  {
-     PIC::CPLR::DATAFILE::LoadBinaryFile("EUROPA-BATSRUS-MED");
+   if (PIC::CPLR::DATAFILE::BinaryFileExists("EUROPA-BATSRUS-HIGH")==true)  {
+     PIC::CPLR::DATAFILE::LoadBinaryFile("EUROPA-BATSRUS-HIGH");
     }
    else  {
    double xminTECPLOT[3]={-5.1,-5.1,-5.1},xmaxTECPLOT[3]={5.1,5.1,5.1};
@@ -1578,7 +1591,7 @@ void amps_init() {
    //PIC::CPLR::DATAFILE::TECPLOT::ImportData(Europa::BackgroundPlasmaFileName);//relative path to data cplr directory 
    //PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluid_MHD_output.plt");//relative path to data cplr directory
    printf("before import data\n");
-   PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluidMHD_Case2_MediumDensity.plt");
+   PIC::CPLR::DATAFILE::TECPLOT::ImportData("Europa_3D_MultiFluidMHD_Case2_HighDensity.plt");
 
    for (cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];node!=NULL;node=node->nextNodeThisThread) {
      //GenerateVarForRelativisticGCA(node);
@@ -1591,7 +1604,7 @@ void amps_init() {
    
    
    PIC::Mesh::mesh->outputMeshDataTECPLOT("after_import.dat",0);
-   PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS-MED");
+   PIC::CPLR::DATAFILE::SaveBinaryFile("EUROPA-BATSRUS-HIGH");
    }//else {
   #else
     exit(__LINE__,__FILE__,"ERROR: unrecognized datafile reader mode");
@@ -1637,7 +1650,11 @@ bool generate_thermal_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC::Me
     switch (spec) {
     case _O_PLUS_THERMAL_SPEC_:
       plasmaSpec=0;
-      str = " _O_PLUS_THERMAL_SPEC_";
+      str = "_O_PLUS_THERMAL_SPEC_";
+      break;
+    case _S_PLUS_PLUS_THERMAL_SPEC_:
+      plasmaSpec=0;
+      str = "_S_PLUS_PLUS_THERMAL_SPEC_";
       break;
     case _H_PLUS_THERMAL_SPEC_:
       plasmaSpec=0;
@@ -1692,6 +1709,9 @@ bool generate_thermal_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC::Me
       case _O_PLUS_HIGH_SPEC_:
 	CharacteristicSpeed=10.0*1.6E6;
 	break;
+      case _S_PLUS_PLUS_HIGH_SPEC_:
+	CharacteristicSpeed=10.0*1.6E6;
+	break;	
       case _H_PLUS_HIGH_SPEC_:
 	CharacteristicSpeed=3e7;
 	break;
@@ -1702,6 +1722,9 @@ bool generate_thermal_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC::Me
 	CharacteristicSpeed=3e6;
 	break;
       case _O_PLUS_THERMAL_SPEC_:
+	CharacteristicSpeed=2E5;
+	break;
+      case _S_PLUS_PLUS_THERMAL_SPEC_:
 	CharacteristicSpeed=2E5;
 	break;
       case _H_PLUS_THERMAL_SPEC_:
@@ -1785,9 +1808,12 @@ bool generate_thermal_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC::Me
       for (int idim=0;idim<3;idim++)
 	ParVel_D[idim] = e_bulk_velocity[idim]+uth[idim];
       
-            double  CharacteristicSpeed;
+      double  CharacteristicSpeed;
       switch (spec) {
       case _O_PLUS_HIGH_SPEC_:
+	CharacteristicSpeed=10.0*1.6E6;
+	break;
+      case _S_PLUS_PLUS_HIGH_SPEC_:
 	CharacteristicSpeed=10.0*1.6E6;
 	break;
       case _H_PLUS_HIGH_SPEC_:
@@ -1800,6 +1826,9 @@ bool generate_thermal_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC::Me
 	CharacteristicSpeed=3e6;
 	break;
       case _O_PLUS_THERMAL_SPEC_:
+	CharacteristicSpeed=2E5;
+	break;
+      case _S_PLUS_PLUS_THERMAL_SPEC_:
 	CharacteristicSpeed=2E5;
 	break;
       case _H_PLUS_THERMAL_SPEC_:
@@ -1876,6 +1905,9 @@ double high_ion_energy(int spec){
   case _O_PLUS_HIGH_SPEC_:
     ind=1;
     break;
+  case _S_PLUS_PLUS_HIGH_SPEC_:
+    ind=2;
+    break;  
   default:       
     exit(__LINE__,__FILE__,"Error: wrong species input");
   }
@@ -1893,6 +1925,8 @@ double high_ion_energy(int spec){
       y_test = 1e6/xTemp;
     }
     double intens=  C_arr[ind] * (xTemp * pow((xTemp + kT_arr[ind] * (1 + gamma1_arr[ind])),(-1-gamma1_arr[ind]))) / (1 + pow(xTemp/et_arr[ind],gamma2_arr[ind]));
+
+    if (ind==2) intens=0.5*intens;
     //%[cm^-2 s^-1 sr^-1 keV^-1]
     if (rnd()<intens/y_test) isAccepted=true;
   }
@@ -1971,8 +2005,8 @@ bool generate_high_energy_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC
     for (int idim=0;idim<3;idim++){
       ParVel_D[idim] = ParVel_D[idim]/sum_v*vmag;       
     }
-
-          double  CharacteristicSpeed;
+    /*
+    double  CharacteristicSpeed;
       switch (spec) {
       case _O_PLUS_HIGH_SPEC_:
 	CharacteristicSpeed=10.0*1.6E6;
@@ -1989,6 +2023,9 @@ bool generate_high_energy_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC
       case _O_PLUS_THERMAL_SPEC_:
 	CharacteristicSpeed=2E5;
 	break;
+      case _S_PLUS_PLUS_THERMAL_SPEC_:
+	CharacteristicSpeed=2E5;
+	break;
       case _H_PLUS_THERMAL_SPEC_:
 	CharacteristicSpeed=7e5;  
 	break; 
@@ -1996,6 +2033,7 @@ bool generate_high_energy_test_particle(int spec, double * xLoc,cTreeNodeAMR<PIC
 	CharacteristicSpeed=1E6;
 	break;
 	 }
+      */
       /*
       ParVel_D[0]=CharacteristicSpeed;
       ParVel_D[1]=0.0;
@@ -2019,13 +2057,13 @@ void init_test_particle_weight(int spec){
   double xLoc = 4.5*rSphere;
   double yLoc[2] = {-2*rSphere, 2*rSphere};
   double zLoc[2] = {-2*rSphere, 2*rSphere};
-  double weight, nTotal=500;
+  double weight, nTotal=1500;
 
   double rLoc = 2*rSphere;
   double sphereArea = 4* Pi * rLoc * rLoc; 
   double dy = yLoc[1]-yLoc[0];
   double dz = zLoc[1]-zLoc[0];
-  double OpTotalFlux_thermal = 1.3e13*dy*dz;
+  double OpTotalFlux_thermal = 1.5e13*dy*dz;
   //Op flux at 5R is aboout 5.8e12/m^2 s
   //O2+ integral flux at 1.1R is about 1e11 m^-2 s^-1
   //  test_prod[0] = 10000/PIC::ParticleWeightTimeStep::GlobalTimeStep[_O_PLUS_SPEC_]*PIC::ParticleWeightTimeStep::GlobalParticleWeight[_O_PLUS_SPEC_];
@@ -2049,9 +2087,17 @@ void init_test_particle_weight(int spec){
 	Flux_O_high*PIC::ParticleWeightTimeStep::GlobalTimeStep[_O_PLUS_HIGH_SPEC_]/nTotal;
       break;
     }
+  case _S_PLUS_PLUS_HIGH_SPEC_:
+    {
+      //double Flux_O_high = 4.0e10*dy*dz; // m^-2 s^-1   Vorburger 2018
+      double Flux_S_high = 8.0e10*sphereArea*4;
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[_S_PLUS_PLUS_HIGH_SPEC_]= 
+	Flux_S_high*PIC::ParticleWeightTimeStep::GlobalTimeStep[_S_PLUS_PLUS_HIGH_SPEC_]/nTotal;
+      break;
+    }
   case _H_PLUS_THERMAL_SPEC_:
     {
-      double prod_H = OpTotalFlux_thermal /9.0*2.3;
+      double prod_H = OpTotalFlux_thermal /5.2*1.7;
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[_H_PLUS_THERMAL_SPEC_]= 
 	prod_H*PIC::ParticleWeightTimeStep::GlobalTimeStep[_H_PLUS_THERMAL_SPEC_]/nTotal;      
       break;
@@ -2062,9 +2108,17 @@ void init_test_particle_weight(int spec){
 	OpTotalFlux_thermal*PIC::ParticleWeightTimeStep::GlobalTimeStep[_O_PLUS_THERMAL_SPEC_]/nTotal;
       break;
     }
+  case _S_PLUS_PLUS_THERMAL_SPEC_:
+    {
+      PIC::ParticleWeightTimeStep::GlobalParticleWeight[_S_PLUS_PLUS_THERMAL_SPEC_]= 
+	OpTotalFlux_thermal*PIC::ParticleWeightTimeStep::GlobalTimeStep[_S_PLUS_PLUS_THERMAL_SPEC_]/nTotal/5.2*3.0;
+      break;
+    }  
   case _O2_PLUS_THERMAL_SPEC_:
     {
-      double O2pTotalFlux_thermal = 1e11 * 4*Pi * 1.1* rSphere*1.1* rSphere ;//s^-1 based on the MHD model results
+      //  double O2pTotalFlux_thermal = 1e11 * 4*Pi * 1.1* rSphere*1.1* rSphere ;//s^-1 based on the MHD model results
+      double O2pTotalFlux_thermal = 3e25; //s^-1 based on the MHD model results high case
+
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[_O2_PLUS_THERMAL_SPEC_]= 
 	O2pTotalFlux_thermal*PIC::ParticleWeightTimeStep::GlobalTimeStep[_O2_PLUS_THERMAL_SPEC_]/nTotal;
       break;
@@ -2080,7 +2134,7 @@ void init_test_particle_weight(int spec){
   case _ELECTRON_THERMAL_SPEC_:
     {
       PIC::ParticleWeightTimeStep::GlobalParticleWeight[_ELECTRON_THERMAL_SPEC_]= 
-	OpTotalFlux_thermal*PIC::ParticleWeightTimeStep::GlobalTimeStep[_ELECTRON_THERMAL_SPEC_]/nTotal;    
+	OpTotalFlux_thermal/5.2*10*PIC::ParticleWeightTimeStep::GlobalTimeStep[_ELECTRON_THERMAL_SPEC_]/nTotal;    
       break;
     }
   default:       
@@ -2147,6 +2201,7 @@ void inject_test_particles_upstream(int spec){
 
   if ( spec!=_H_PLUS_THERMAL_SPEC_
       && spec!=_O_PLUS_THERMAL_SPEC_
+      && spec!=_S_PLUS_PLUS_THERMAL_SPEC_  
       && spec!= _ELECTRON_THERMAL_SPEC_){
     exit(__LINE__,__FILE__,"Error: this species is not injected upstream");
   }
@@ -2155,9 +2210,10 @@ void inject_test_particles_upstream(int spec){
   
   if (spec==_H_PLUS_THERMAL_SPEC_
       || spec==_O_PLUS_THERMAL_SPEC_
+      || spec==_S_PLUS_PLUS_THERMAL_SPEC_ 
       || spec== _ELECTRON_THERMAL_SPEC_) is_thermal=true;
   
-  if (spec==_H_PLUS_HIGH_SPEC_ || spec== _O_PLUS_HIGH_SPEC_ 
+  if (spec==_H_PLUS_HIGH_SPEC_ || spec== _O_PLUS_HIGH_SPEC_ || spec== _S_PLUS_PLUS_HIGH_SPEC_ 
       || spec== _ELECTRON_HIGH_SPEC_) is_thermal=false;
 
   //if (spec == _ELECTRON_HIGH_SPEC_) printf("_ELECTRON_HIGH_SPEC_ inject_test_particles_upstream called test3\n");
@@ -2197,7 +2253,7 @@ void inject_test_particles_planet(int spec){
   //if (spec!=_O2_PLUS_THERMAL_SPEC_) exit(__LINE__,__FILE__,"Error: the species should not be produced here"); 
 
   if (spec!=_H_PLUS_HIGH_SPEC_ && spec!= _O_PLUS_HIGH_SPEC_ && spec!=_O2_PLUS_THERMAL_SPEC_
-      &&  spec!= _ELECTRON_HIGH_SPEC_) {
+      && spec!= _S_PLUS_PLUS_HIGH_SPEC_ &&  spec!= _ELECTRON_HIGH_SPEC_) {
     exit(__LINE__,__FILE__,"Error: this species is not injected around planet");
   }
 
@@ -2205,10 +2261,10 @@ void inject_test_particles_planet(int spec){
   bool is_thermal=false;
   
   if (spec==_H_PLUS_THERMAL_SPEC_
-      || spec==_O_PLUS_THERMAL_SPEC_
+      || spec==_O_PLUS_THERMAL_SPEC_    || spec==_S_PLUS_PLUS_THERMAL_SPEC_
       || spec== _ELECTRON_THERMAL_SPEC_ || spec== _O2_PLUS_THERMAL_SPEC_ ) is_thermal=true;
   
-  if (spec==_H_PLUS_HIGH_SPEC_ || spec== _O_PLUS_HIGH_SPEC_ 
+  if (spec==_H_PLUS_HIGH_SPEC_ || spec== _O_PLUS_HIGH_SPEC_ || spec== _S_PLUS_PLUS_HIGH_SPEC_
       || spec== _ELECTRON_HIGH_SPEC_) is_thermal=false;
 
   if (spec == _O2_PLUS_THERMAL_SPEC_){
@@ -2263,8 +2319,8 @@ void inject_test_particles(){
   if (!isInit){
     for (int iSpec=0;iSpec<PIC::nTotalSpecies; iSpec++){
       
-      if (iSpec==_H_PLUS_HIGH_SPEC_ || iSpec== _O_PLUS_HIGH_SPEC_ ||
-	  iSpec==_H_PLUS_THERMAL_SPEC_ || iSpec==_O_PLUS_THERMAL_SPEC_ ||
+      if (iSpec==_H_PLUS_HIGH_SPEC_ || iSpec== _O_PLUS_HIGH_SPEC_ || iSpec== _S_PLUS_PLUS_HIGH_SPEC_ ||
+	  iSpec==_H_PLUS_THERMAL_SPEC_ || iSpec==_O_PLUS_THERMAL_SPEC_ ||  iSpec==_S_PLUS_PLUS_THERMAL_SPEC_ ||
 	  iSpec== _ELECTRON_HIGH_SPEC_ || iSpec== _ELECTRON_THERMAL_SPEC_
 	  ||iSpec==_O2_PLUS_THERMAL_SPEC_  )
 	init_test_particle_weight(iSpec);
@@ -2274,11 +2330,11 @@ void inject_test_particles(){
 
 
   for (int iSpec=0;iSpec<PIC::nTotalSpecies; iSpec++){
-       if (iSpec==_H_PLUS_THERMAL_SPEC_ || iSpec==_O_PLUS_THERMAL_SPEC_ || iSpec== _ELECTRON_THERMAL_SPEC_){
+       if (iSpec==_H_PLUS_THERMAL_SPEC_ || iSpec==_O_PLUS_THERMAL_SPEC_ || iSpec==_S_PLUS_PLUS_THERMAL_SPEC_  || iSpec== _ELECTRON_THERMAL_SPEC_){
 	 inject_test_particles_upstream(iSpec);
 	 //printf("inject_test_particles_upstream iSpec:%d done\n", iSpec);
        }
-       if (iSpec==_O2_PLUS_THERMAL_SPEC_ || iSpec==_H_PLUS_HIGH_SPEC_ || iSpec== _O_PLUS_HIGH_SPEC_ ||
+       if (iSpec==_O2_PLUS_THERMAL_SPEC_ || iSpec==_H_PLUS_HIGH_SPEC_ || iSpec== _O_PLUS_HIGH_SPEC_ || iSpec== _S_PLUS_PLUS_HIGH_SPEC_ ||
 	   iSpec==_ELECTRON_HIGH_SPEC_) {
 	 inject_test_particles_planet(iSpec);
 	 //printf("inject_test_particles_planet iSpec:%d done\n", iSpec);
@@ -2568,9 +2624,9 @@ void amps_time_step () {
     std::cout<<" GlobalParticleNumber:"<<GlobalParticleNumber<<std::endl;
 
   if ((PIC::DataOutputFileNumber!=0)&&(PIC::DataOutputFileNumber!=LastDataOutputFileNumber)) {
-    PIC::RequiredSampleLength*=2;
-    if (PIC::RequiredSampleLength>5000) PIC::RequiredSampleLength=5000;
-    
+    //PIC::RequiredSampleLength*=2;
+    //if (PIC::RequiredSampleLength>5000) PIC::RequiredSampleLength=5000;
+    PIC::RequiredSampleLength=3000;    
     
     LastDataOutputFileNumber=PIC::DataOutputFileNumber;
     if (PIC::Mesh::mesh->ThisThread==0) cout << "The new sample length is " << PIC::RequiredSampleLength << endl;

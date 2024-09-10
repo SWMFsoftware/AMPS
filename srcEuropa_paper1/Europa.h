@@ -1203,6 +1203,7 @@ namespace Europa {
     int ParticleSphereInteraction_SurfaceAccomodation(int spec,long int ptr,double *x,double *v,double &dtTotal,void *NodeDataPonter,void *SphereDataPointer);
     double yield_e(int prodSpec, double E);
     double yield_Oplus(int prodSpec, double E);
+    double yield_Splusplus(int prodSpec, double E);
     double yield_Hplus(int prodSpec, double E);
     double yield_O2plus(int prodSpec, double E);
   }
