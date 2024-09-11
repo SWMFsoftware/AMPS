@@ -1897,6 +1897,17 @@ double e_mev=e*J2MeV;
         void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
         void Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode);
       }
+
+
+      namespace Tenishev2005 {
+        extern double rShock;
+
+        double GetShockSpeed();
+        void UpdateShockLocation();
+        double GetInjectionRate();
+        PIC::FieldLine::cFieldLineSegment* GetInjectionLocation(int iFieldLine);
+     }
+
     }
 
     namespace OuterBoundary {
