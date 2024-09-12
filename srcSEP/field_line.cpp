@@ -22,6 +22,8 @@ int SEP::FieldLine::InjectionParameters::InjectLocation=SEP::FieldLine::Injectio
 
 
 int SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
+int SEP::FieldLine::InjectionParameters::UseAnalyticShockModel=SEP::FieldLine::InjectionParameters::AnalyticShockModel_Tenishev2005; 
+
 
 
 long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLine) {
@@ -98,7 +100,16 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
         if ((iShockFieldLine=AMPS2SWMF::ShockData[iFieldLine].iSegmentShock)==-1) return 0;
       }
       #else 
-      iShockFieldLine=0;
+      switch (InjectionParameters::UseAnalyticShockModel) {
+      case InjectionParameters::AnalyticShockModel_Tenishev2005: 
+        iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine);
+	break;
+      case InjectionParameters::AnalyticShockModel_none:
+        iShockFieldLine=0;
+	break;
+      default:
+	exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
       #endif
   
       break;
@@ -135,7 +146,18 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     vol=node->block->GetLocalTimeStep(spec)*AMPS2SWMF::MinShockSpeed*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   }
   #else 
-    vol=node->block->GetLocalTimeStep(spec)*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
+    switch (InjectionParameters::UseAnalyticShockModel) {
+    case InjectionParameters::AnalyticShockModel_Tenishev2005:
+      vol=SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed();
+      break;
+    case InjectionParameters::AnalyticShockModel_none:
+      vol=1.0;
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is unknown");
+    }
+
+    vol*=node->block->GetLocalTimeStep(spec)*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   #endif
 
 
@@ -158,7 +180,17 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   anpart/=node->block->GetLocalParticleWeight(spec);
 #else 
   n_sw_end=1.0;
-  anpart=InjectionParameters::nParticlesPerIteration;
+
+  switch (InjectionParameters::UseAnalyticShockModel) {
+  case InjectionParameters::AnalyticShockModel_Tenishev2005:
+    anpart=vol*SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/node->block->GetLocalParticleWeight(spec);
+    break;
+  case InjectionParameters::AnalyticShockModel_none:
+    anpart=InjectionParameters::nParticlesPerIteration;
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
 #endif
 
   double GlobalWeightCorrectionFactor=1.0;

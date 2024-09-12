@@ -58,25 +58,22 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
   return pow(rmin / rShock, 2);
 }
 
-PIC::FieldLine::cFieldLineSegment* SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine) {
+int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine) {
+  double r, *x, r2 = rShock * rShock;
+  int iSegment;
   PIC::FieldLine::cFieldLineSegment *Segment =
       PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
-  double r, *x, r2 = rShock * rShock;
 
   UpdateShockLocation();
   x=Segment->GetBegin()->GetX(); 
 
-  if (r2 <= Vector3D::DotProduct(x, x))
-    return NULL;
+  if (r2 <= Vector3D::DotProduct(x, x)) return -1; 
 
-  for (; Segment != NULL; Segment = Segment->GetNext()) {
+  for (iSegment=0; Segment != NULL; iSegment++,Segment = Segment->GetNext()) {
     x = Segment->GetBegin()->GetX();
-
-    if (Vector3D::DotProduct(x, x) < r2)
-      return Segment;
+    if (Vector3D::DotProduct(x, x) < r2) return iSegment; 
   }
 
-  return NULL;
-
+  return -1;
 }
 

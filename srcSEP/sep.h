@@ -239,6 +239,11 @@ namespace SEP {
       const int _const_energy=2;
       const int _const_speed=3;
       const int _background_sw_temperature=4; 
+
+      //parameters of the analytic shoch wave model 
+      extern int UseAnalyticShockModel;
+      const int AnalyticShockModel_none=0;
+      const int AnalyticShockModel_Tenishev2005=1;
     }
 
 
@@ -1905,7 +1910,7 @@ double e_mev=e*J2MeV;
         double GetShockSpeed();
         void UpdateShockLocation();
         double GetInjectionRate();
-        PIC::FieldLine::cFieldLineSegment* GetInjectionLocation(int iFieldLine);
+        int GetInjectionLocation(int iFieldLine);
      }
 
     }
