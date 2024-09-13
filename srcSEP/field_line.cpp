@@ -235,9 +235,17 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     double WeightNorm=pow(pmin,-q);
 
+    //to cover the entire range of the particle momentum, the momentum will be generated in the log(p) space 
+    //that will be accounted for with a statistical weight correction
+    
+    double log_pmin=log(pmin);
+    double log_pmax=log(pmax); 
+
     for (int i=0;i<nParticles;i++) {
-      pAbsTable[i]=pmin+rnd()*(pmax-pmin);
-      WeightCorrectionTable[i]=pow(pAbsTable[i],-q)/WeightNorm*GlobalWeightCorrectionFactor;
+//      pAbsTable[i]=pmin+rnd()*(pmax-pmin);
+
+      pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
+      WeightCorrectionTable[i]=pAbsTable[i]/pmin*pow(pAbsTable[i],-q)/WeightNorm*GlobalWeightCorrectionFactor;
     }
   }; 
 
