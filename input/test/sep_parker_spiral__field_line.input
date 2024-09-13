@@ -64,11 +64,13 @@ CouplerMode=T96 !ices !!off, ices, swmf
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
-  !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
   !define _SEP_MOVER_ _SEP_MOVER_DEFUALT_
 
+  define _PIC_GLOBAL_TIME_COUNTER_MODE_  _PIC_MODE_ON_
 
-  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Tenishev_2005_FL(ptr,LocalTimeStep,node)
+
+  !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Tenishev_2005_FL(ptr,LocalTimeStep,node)
 
 
   define _PIC_MOVER_INTEGRATOR_MODE_  _PIC_MOVER_INTEGRATOR_MODE__GUIDING_CENTER_
@@ -129,6 +131,8 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   DomainType=ParkerSpiral !ParkerSpiral,FLAMPA
   ParticleTrajectory=FieldLine !RelativisticBoris !RelativisticBoris,GuidingCenter,IgorFieldLine
+
+  Mover=ParticleMover_ParkerEquation !ParticleMover_Droge_2009_AJ
 
 #endblock
 

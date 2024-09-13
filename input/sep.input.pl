@@ -147,6 +147,16 @@ while ($line=<InputFile>) {
     ampsConfigLib::ChangeValueOfVariable("int SEP::Domain_nTotalParkerSpirals",$InputLine,"main/mesh.cpp");
   }
 
+  ##set up the mover 
+  elsif ($ InputLine eq "MOVER") {
+    my ($f0,$f1,$f2); 
+
+    $line=~s/[=()]/ /g;
+    ($f0,$f1,$f2)=split(' ',$line,3);
+
+    ampsConfigLib::ChangeValueOfVariable("SEP::fParticleMover SEP::ParticleMoverPtr",$f1,"main/mover.cpp");
+  }
+
   ##the model for integrating particle trajectories 
   elsif ($InputLine eq "PARTICLETRAJECTORY") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);
