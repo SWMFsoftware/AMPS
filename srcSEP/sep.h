@@ -1905,8 +1905,10 @@ double e_mev=e*J2MeV;
 
 
       namespace Tenishev2005 {
-        extern double rShock;
+        extern double rShock,MinFieldLineHeliocentricDistance;
+        extern bool InitFlag;
 
+        void Init();
         double GetShockSpeed();
         void UpdateShockLocation();
         double GetInjectionRate();

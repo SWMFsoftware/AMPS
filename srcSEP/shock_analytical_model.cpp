@@ -2,6 +2,28 @@
 //analytic model of a shock wave (Tenishev-2005-AIAA-4928
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::rShock = 0.0;
+bool SEP::ParticleSource::ShockWave::Tenishev2005::InitFlag=false;
+double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;  
+
+
+void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
+  InitFlag=true;
+
+  //determine the  initial location of the shock that is the minimum helpocentric distance of the beginning of the simulated field lines  
+  //loop through all simulated field lines
+  for (int i = 0; i < PIC::FieldLine::nFieldLine; i++) {
+    double r, *x;
+
+    x = PIC::FieldLine::FieldLinesAll[i].GetFirstSegment()->GetBegin()->GetX();
+    r = Vector3D::Length(x);
+
+    if ((MinFieldLineHeliocentricDistance < 0.0) || (MinFieldLineHeliocentricDistance > r))
+      MinFieldLineHeliocentricDistance = r;
+  }
+
+  rShock=MinFieldLineHeliocentricDistance;
+}
+  
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
   double r = rShock / _AU_;
@@ -20,42 +42,27 @@ double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
   else
     res = 900.0;
 
-  return res;
+  return res*1.0E3;
 }
 
 void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
   static double simulation_time_last = 0.0;
 
+  if (InitFlag==false) Init();
+
   if (simulation_time_last != PIC::SimulationTime::TimeCounter) {
     double speed = GetShockSpeed();
     rShock += speed * (PIC::SimulationTime::TimeCounter - simulation_time_last);
+    simulation_time_last=PIC::SimulationTime::TimeCounter;
   }
 }
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
-  static bool init_flag;
-  static double rmin;
   double res;
 
-  if (init_flag == false) {
-    //find the valiue of rmin
-    init_flag = true;
+  if (InitFlag==false) Init(); 
 
-    rmin = -1.0;
-
-    //loop through all simulated field lines
-    for (int i = 0; i < PIC::FieldLine::nFieldLine; i++) {
-      double r, *x;
-
-      x = PIC::FieldLine::FieldLinesAll[i].GetFirstSegment()->GetBegin()->GetX();
-      r = Vector3D::Length(x);
-
-      if ((rmin < 0.0) || (rmin > r))
-        rmin = r;
-    }
-  }
-
-  return pow(rmin / rShock, 2);
+  return pow(MinFieldLineHeliocentricDistance/rShock,2);
 }
 
 int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine) {
