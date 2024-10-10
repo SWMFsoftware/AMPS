@@ -15,6 +15,11 @@ def print_help():
         
         For an Ellipsoid:
             python script.py <filename> ellipsoid <a> <b> <c> <R2> <R3> <tecplot_output_filename> [--equal_axes]
+
+        Run the example with input from data/input/FieldLines 
+            python field-line-surface-intersection.py all-field-lines.dat ellipsoid 1 1 1 2 0.2 out.dat --equal_axes
+            python field-line-surface-intersection.py all-field-lines.dat sphere 1 2 0.2 out.dat --equal_axes
+
     
     Arguments:
         - <filename>                 : Path to the ASCII file containing the trajectories.
