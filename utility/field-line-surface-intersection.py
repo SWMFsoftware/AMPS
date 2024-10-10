@@ -7,18 +7,26 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib.lines import Line2D
 
+# Conversion factors for units
+unit_conversion = {
+    'm': 1.0,
+    'rsun': 6.957e8,  # meters in one solar radius
+    'au': 1.496e11    # meters in one astronomical unit
+}
+
 def print_help():
     help_message = """
     Usage:
         For a Sphere:
-            python script.py <filename> sphere <R> <R2> <R3> <tecplot_output_filename> [--equal_axes]
+            python script.py <filename> sphere <R> <R2> <R3> <tecplot_output_filename> [units] [input_file_units] [--equal_axes]
         
         For an Ellipsoid:
             python script.py <filename> ellipsoid <a> <b> <c> <R2> <R3> <tecplot_output_filename> [--equal_axes]
 
         Run the example with input from data/input/FieldLines 
-            python field-line-surface-intersection.py all-field-lines.dat ellipsoid 1 1 1 2 0.2 out.dat --equal_axes
-            python field-line-surface-intersection.py all-field-lines.dat sphere 1 2 0.2 out.dat --equal_axes
+            python field-line-surface-intersection.py all-field-lines.dat ellipsoid 1 1 1 2 0.2 out.dat rsun au --equal_axes
+            python field-line-surface-intersection.py all-field-lines.dat sphere 3 6 1 out.dat rsun au --equal_axes
+
 
     
     Arguments:
@@ -28,6 +36,8 @@ def print_help():
         - <a> <b> <c>                : Semi-axes of the ellipsoid (positive floats). Required if shape is 'ellipsoid'.
         - <R2>                       : Radius beyond which trajectory points will not be plotted (positive float).
         - <R3>                       : Radius of the non-transparent yellow sphere to be plotted (positive float).
+        - <units>                    : units used in the argument line [au,rsun,m]
+        - <input_file_units]         : units used in the input file [au,rsun,m]
         - <tecplot_output_filename>  : Name of the Tecplot file where the triangulated surface will be saved.
     
     Optional Argument:
@@ -50,7 +60,7 @@ def print_help():
     """
     print(help_message)
 
-def read_trajectories(filename):
+def read_trajectories(filename,conversion_factor):
     """
     Reads trajectory data from a file.
     Each trajectory is a list of (x, y, z) tuples.
@@ -82,6 +92,11 @@ def read_trajectories(filename):
                 try:
                     # Take the first three numbers as x, y, z
                     x, y, z = map(float, numbers[:3])
+
+                    x=conversion_factor*x
+                    y=conversion_factor*y
+                    z=conversion_factor*z
+
                     current_trajectory.append((x, y, z))
                 except ValueError:
                     print(f"Warning: Line {line_number} contains invalid numeric data. Skipping.")
@@ -275,7 +290,7 @@ def save_tecplot(filename, unique_points, triangles):
         for tri in triangles:
             f.write(f"{tri[0]+1} {tri[1]+1} {tri[2]+1}\n")
 
-def plot_trajectories_and_surface(trajectories, unique_points_np, triangles, R3, equal_axes, shape, params):
+def plot_trajectories_and_surface(trajectories, unique_points_np, triangles, R3, equal_axes, shape, units, params):
     """
     Plots the field lines, shock locations, and the yellow sphere.
     """
@@ -325,9 +340,10 @@ def plot_trajectories_and_surface(trajectories, unique_points_np, triangles, R3,
         ax.set_zlim(mid_z - max_range, mid_z + max_range)
 
     # Set labels and title
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+    ax.set_xlabel(f'X [{units}]')
+    ax.set_ylabel(f'Y [{units}]')
+    ax.set_zlabel(f'Z [{units}]')
+
     ax.set_title('Field Lines and Shock Locations')
 
     # Create custom legend handles
@@ -351,6 +367,10 @@ def main():
     filename = sys.argv[1]
     shape = sys.argv[2].lower()
 
+    # Units
+    units='au'
+    input_file_units='au'
+
     # Initialize variables
     R = R2 = R3 = a = b = c = tecplot_output_filename = None
     params = None
@@ -366,6 +386,10 @@ def main():
             R2 = float(sys.argv[4])
             R3 = float(sys.argv[5])
             tecplot_output_filename = sys.argv[6]
+
+            units=sys.argv[7].lower()
+            input_file_units=sys.argv[8].lower()
+
             if R <= 0 or R2 <= 0 or R3 <= 0:
                 raise ValueError
         except ValueError:
@@ -384,6 +408,10 @@ def main():
             R2 = float(sys.argv[6])
             R3 = float(sys.argv[7])
             tecplot_output_filename = sys.argv[8]
+
+            units=sys.argv[9].lower()
+            input_file_units=sys.argv[10].lower()
+
             if a <= 0 or b <= 0 or c <= 0 or R2 <= 0 or R3 <= 0:
                 raise ValueError
         except ValueError:
@@ -400,7 +428,8 @@ def main():
         equal_axes = True
 
     # Read the trajectories from the input file
-    trajectories = read_trajectories(filename)
+    conversion_factor=unit_conversion[input_file_units]/unit_conversion[units]  
+    trajectories = read_trajectories(filename,conversion_factor)
     print(f"Total trajectories loaded: {len(trajectories)}")
     if not trajectories:
         print("No trajectories were loaded from the file.")
@@ -445,7 +474,7 @@ def main():
     print(f"Triangulated surface saved to '{tecplot_output_filename}'.")
 
     # Plot the field lines, shock locations, and the yellow sphere
-    plot_trajectories_and_surface(filtered_trajectories, unique_points_np, triangles, R3, equal_axes, shape, params)
+    plot_trajectories_and_surface(filtered_trajectories, unique_points_np, triangles, R3, equal_axes, shape, units, params)
 
 if __name__ == "__main__":
     main()
