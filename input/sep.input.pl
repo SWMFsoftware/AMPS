@@ -179,6 +179,22 @@ while ($line=<InputFile>) {
  }
 
   
+
+   ##allow particle scattering in SEP::ParticleMover_Tenishev_2005_FL 
+  elsif ($InputLine eq "PARTICLEMOVER_TENISHEV_2005_FL_SCATTERING") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+
+    if ($InputLine eq "ON") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::Scattering::Tenishev2005AIAA::status","SEP::Scattering::Tenishev2005AIAA::_enabled","main/sep.cpp");
+    }
+    elsif ($InputLine eq "OFF") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::Scattering::Tenishev2005AIAA::status","SEP::Scattering::Tenishev2005AIAA::_disabled","main/sep.cpp");
+    }    else {
+      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+ }
+
  
  
   elsif ($InputLine eq "#ENDBLOCK") {
