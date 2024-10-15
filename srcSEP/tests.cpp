@@ -147,6 +147,13 @@ void ParkerModelMoverTest_const_plasma_field() {
 
     SEP::ParticleMover_ParkerEquation(ptr,dtTotal,node); 
 
+    if (PIC::ParticleBuffer::IsParticleAllocated(ptr)==false) {
+      //the particle was develed -- it probably left the domain 
+      ptr=PB::GetNewParticle();
+      PB::SetI(0,ptr);
+      continue;
+    }
+
     xLocal=PB::GetFieldLineCoord(ptr);
     FL::FieldLinesAll[0].GetCartesian(x_new,xLocal); 
     dx=0.0;
