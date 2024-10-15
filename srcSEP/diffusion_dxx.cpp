@@ -62,17 +62,18 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
   DxxInternalNumerics::FieldLineCoord=FieldLineCoord;
   DxxInternalNumerics::Segment=Segment;
 
-  double xmin[]={-1.0};
+  //as Dxx depends only on |\mu|, the integration limit is chabnged fomr (-1,1) to (0+something very small to exclude 0 from integraiont), 1);
+  double xmin[]={0.00001};
   double xmax[]={1.0};
 
   if (v<1.0E6) {     
-    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
   } 
   else if (v<1.0E7) {
-    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
   }
   else {
-    D=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,DxxInternalNumerics::Integrant,xmin,xmax);  
+    D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,DxxInternalNumerics::Integrant,xmin,xmax);  
   }
 
   ds=Segment->GetLength();
@@ -85,7 +86,7 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
     return;
   }
   else {
-    D1=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+    D1=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
   }
 
   DxxInternalNumerics::FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,-ds);
@@ -96,7 +97,7 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
     return;
   }
   else {
-    D0=v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
+    D0=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,4,DxxInternalNumerics::Integrant,xmin,xmax);
   }
 
   dDxx_dx=(D1-D0)/(2.0*ds);
