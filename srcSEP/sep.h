@@ -39,6 +39,9 @@
 #include "array_4d.h"
 #include "array_5d.h"
 
+#include "DLT.h"
+#include "QLT.h"
+
 #ifndef _DOMAIN_GEOMETRY_
 #define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
 #endif
@@ -1621,7 +1624,7 @@ double e_mev=e*J2MeV;
 
 
       //full name of the output file is saved here for debugging purposes 
-      char full_name[200];
+      char full_name_density[200],full_name_flux[200],full_name_return_flux[200];
       char base_name[200];      
 
       void Init(const char *fname,double e_min,double e_max,int n,double r,int l) {
@@ -1636,24 +1639,24 @@ double e_mev=e*J2MeV;
 
         sprintf(base_name,"%s",fname);
  
-        sprintf(full_name,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
-        foutDensity=fopen(full_name,"w"); 
+        sprintf(full_name_density,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutDensity=fopen(full_name_density,"w"); 
         if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting"); 
 
         fprintf(foutDensity,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutDensity,"\n");   
 
-        sprintf(full_name,"%s.flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
-        foutFlux=fopen(full_name,"w");
+        sprintf(full_name_flux,"%s.flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutFlux=fopen(full_name_flux,"w");
         if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
         fprintf(foutFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutFlux,"\n");
 
-        sprintf(full_name,"%s.return_flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
-        foutReturnFlux=fopen(full_name,"w");
+        sprintf(full_name_return_flux,"%s.return_flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        foutReturnFlux=fopen(full_name_return_flux,"w");
         if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
         fprintf(foutReturnFlux,"VARIABLES=\"time\"");
@@ -1742,6 +1745,8 @@ double e_mev=e*J2MeV;
   int ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_MeanFreePathScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
   void GetTransportCoefficients(double& dP,double& dLogP,double& dmu,double v,double mu,PIC::FieldLine::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel);
 
   int ParticleMover_ParkerEquation(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
