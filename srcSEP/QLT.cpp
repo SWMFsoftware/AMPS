@@ -2,6 +2,29 @@
 #include <cmath>
 #include "QLT.h"
 
+/*
+Parker transport equation:
+
+\[
+\frac{\partial f}{\partial t} + \vec{v}_{\text{sw}} \cdot \nabla f - \nabla \cdot (\kappa \nabla f) + \frac{1}{3} (\nabla \cdot \vec{v}_{\text{sw}}) p \frac{\partial f}{\partial p} = Q
+\]
+
+Where:
+- \( f \) is the particle distribution function,
+- \( \vec{v}_{\text{sw}} \) is the solar wind velocity vector,
+- \( \kappa \) is the spatial diffusion tensor (can depend on the local magnetic field),
+- \( p \) is the particle momentum,
+- \( Q \) is a source term representing particle injection.
+
+The terms in the equation describe the following physical processes:
+1. \( \frac{\partial f}{\partial t} \): Time evolution of the particle distribution.
+2. \( \vec{v}_{\text{sw}} \cdot \nabla f \): Convection of particles by the solar wind.
+3. \( \nabla \cdot (\kappa \nabla f) \): Diffusion of particles due to magnetic turbulence.
+4. \( \frac{1}{3} (\nabla \cdot \vec{v}_{\text{sw}}) p \frac{\partial f}{\partial p} \): Adiabatic energy losses (cooling) due to the expanding solar wind.
+
+This equation describes how solar energetic particles (SEPs) are transported through the solar wind, experiencing scattering, convection, and energy losses.
+*/
+
 namespace QLT {
     // Function to calculate proton gyrofrequency Omega (rad/s)
     //  \[ \Omega = \frac{q B}{m_p} \]
@@ -69,7 +92,7 @@ namespace QLT {
     // This function calculates the magnetic field \( B(r) \) and fluctuation \( dB(r) \) at a given heliocentric distance \( r \),
     // and then calls the functions to compute \( D_{xx} \) and its derivative.
     // The scaling of the magnetic field is given by \( B(r) = B_{1AU} \left( \frac{r_0}{r} \right)^2 \).
-    void calculateAtHeliocentricDistance(double r, double v) {
+    void calculateAtHeliocentricDistance(double& Dxx, double& dDxx_dx,double r, double v) {
         double B_1AU = 5e-9;      // Magnetic field at 1 AU (Tesla)
         double dB_1AU = 2e-9;     // Magnetic field fluctuation at 1 AU (Tesla)
 
@@ -79,17 +102,87 @@ namespace QLT {
         // Magnetic field fluctuation scaling \( dB(r) = dB_{1AU} \left( \frac{r_0}{r} \right)^2 \)
         double dB = dB_1AU * std::pow((r0 / r), 2);
 
-        std::cout << "At heliocentric distance r = " << r << " meters:\n";
-        std::cout << "Magnetic field B = " << B << " Tesla\n";
-        std::cout << "Magnetic field fluctuation dB = " << dB << " Tesla\n";
-
-        double Dxx = calculateDxx(B, dB, v, r);
-        std::cout << "Dxx = " << Dxx << " m^2/s\n";
+        Dxx = calculateDxx(B, dB, v, r);
 
         double delta_r = 1e6;  // Small increment for finite difference
-        double dDxx_dx = calculateDxxDerivative(B, dB, v, r, delta_r);
-        std::cout << "d(Dxx)/dx = " << dDxx_dx << " m^2/s per meter\n";
+        dDxx_dx = calculateDxxDerivative(B, dB, v, r, delta_r);
     }
+
+/*   Function to calculate mean free path lambda
+
+    The mean free path \( \lambda \) is calculated from \( D_{\mu\mu} \) using the following integral:
+    \[
+    \lambda = \frac{3}{8} \int_{-1}^{1} \frac{(1 - \mu^2)^2}{D_{\mu\mu}(\mu)} \, d\mu
+    \]
+    Where:
+    - \( \mu \) is the pitch-angle cosine,
+    - \( D_{\mu\mu}(\mu) \) is the pitch-angle diffusion coefficient as a function of \( \mu \).
+
+    This integral represents the contribution of all pitch angles to the scattering rate of the particle. 
+    The result of this integral gives the parallel mean free path \( \lambda \), which describes how far a particle travels before being significantly scattered.
+
+    \textbf{Physics Model:}
+    - Particles interact resonantly with magnetic turbulence, which causes them to scatter in pitch angle.
+    - The mean free path depends on the level of turbulence (via the power spectrum) and the local magnetic field strength.
+    - Higher turbulence (more scattering) results in a shorter mean free path.
+*/	
+
+    double calculateMeanFreePath(double B, double dB, double r, double v) {
+        double Dxx = calculateDxx(B, dB, v, r);
+        return 3 * Dxx / v;  // Mean free path: lambda = 3 D_xx / v
+    }
+
+     double calculateMeanFreePath(double r, double v) {
+       double Dxx, dDxx_dx;   
+
+       calculateAtHeliocentricDistance(Dxx,dDxx_dx,r,v);
+       return 3 * Dxx / v;  // Mean free path: lambda = 3 D_xx / v
+    }
+
+// Function to calculate the adiabatic cooling factor (due to solar wind expansion)
+/*
+    \section*{Adiabatic Cooling}
+
+    In the Parker transport equation, particles lose energy as they move outward in the solar wind due to adiabatic expansion. 
+    The solar wind acts like an expanding gas, doing work on the particles, which causes their momentum to decrease.
+
+    The term representing adiabatic cooling in the Parker equation is:
+    \[
+    \frac{1}{3} (\nabla \cdot \vec{v}_{\text{sw}}) p \frac{\partial f}{\partial p}
+    \]
+    Where:
+    - \( \vec{v}_{\text{sw}} \) is the solar wind velocity (assumed constant in magnitude but radially expanding),
+    - \( p \) is the particle momentum,
+    - \( f \) is the particle distribution function.
+
+    Even though the solar wind velocity magnitude is often assumed constant (e.g., 400 km/s), its direction and the radial nature of the expansion cause the divergence of the velocity field to be non-zero. This leads to energy loss for particles (adiabatic cooling).
+
+    The divergence of the radial solar wind velocity in spherical coordinates is:
+    \[
+    \nabla \cdot \vec{v}_{\text{sw}} = \frac{2 v_{\text{sw}}}{r}
+    \]
+    This results in the adiabatic cooling factor, which describes how much a particle's momentum decreases as it moves outward:
+    \[
+    p_{\text{new}} = p_{\text{old}} \cdot \left( 1 - \frac{v_{\text{sw}}}{c} \cdot \frac{1}{r} \right)
+    \]
+    Where:
+    - \( p_{\text{new}} \) is the updated momentum,
+    - \( p_{\text{old}} \) is the initial momentum,
+    - \( v_{\text{sw}} \) is the solar wind speed (assumed constant),
+    - \( r \) is the heliocentric distance (distance from the Sun),
+    - \( c \) is the speed of light.
+
+    This cooling factor is used to reduce the particle's momentum at each step of the Monte Carlo simulation.
+
+    \textbf{Physics of Adiabatic Cooling:}
+    - As the particle moves outward, the solar wind expands radially, leading to a loss of momentum (energy).
+    - The particle's energy decreases proportionally to the solar wind speed and inversely with distance from the Sun.
+*/
+double adiabaticCooling(double r,double v_sw) {
+    return 1.0 - (v_sw / speed_of_light) * (1.0 / r);  // The factor to reduce the particle's momentum
+}
+
+
 }
 
 

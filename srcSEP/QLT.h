@@ -14,7 +14,10 @@ namespace QLT {
     extern double calculateDmuMu(double B, double dB, double v, double mu, double r);
     extern double calculateDxx(double B, double dB, double v, double r);
     extern double calculateDxxDerivative(double B, double dB, double v, double r, double delta_r);
-    extern void calculateAtHeliocentricDistance(double r, double v);
+    extern void calculateAtHeliocentricDistance(double& Dxx, double& dDxx_dx,double r, double v);
+    extern double calculateMeanFreePath(double r, double v);
+    extern double calculateMeanFreePath(double B, double dB, double r,double v);
+    extern double adiabaticCooling(double r,double v_sw);
 }
 
 #endif
