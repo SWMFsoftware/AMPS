@@ -8,9 +8,50 @@
 
 #include "sep.h"
 
+
+#include <iostream>
+#include <cmath>
+
+// Function to calculate the Parker spiral magnetic field in 3D, using arrays
+void calculateIMFParkerSpiral3D(double* x, double u_sw, double* B) {
+    // x is the 3D position array (x[0], x[1], x[2]) in meters
+    // u_sw is the solar wind speed in m/s
+    // B is the output 3D magnetic field array (B[0], B[1], B[2]) in Tesla
+
+
+    // Constants
+    const double B0 = 5e-9;           // Magnetic field at 1 AU in Tesla (5 nT)
+    const double r0 = 1.496e11;       // 1 AU in meters
+    const double omega_sun = 2.865e-6; // Angular rotation speed of the Sun in rad/s
+
+
+    // Calculate the heliocentric distance r
+    double r = sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+
+    // Calculate r_sw (the critical radius where the solar wind affects the magnetic field)
+    double r_sw = u_sw / omega_sun;
+
+    // Calculate the radial component of the magnetic field
+    double B_r = B0 * pow(r0 / r, 2);
+
+    // Calculate the azimuthal component of the magnetic field
+    double B_phi = B_r * (r / r_sw);
+
+    // Convert the magnetic field to Cartesian coordinates and store in B array
+    B[0] = B_r * (x[0] / r) - B_phi * (x[1] / r); // Bx
+    B[1] = B_r * (x[1] / r) + B_phi * (x[0] / r); // By
+    B[2] = B_r * (x[2] / r);                      // Bz
+}
+
+
 void SEP::ParkerSpiral::GetB(double* B,double *x,double u_sw) {
-  double B0=1.83E-6,R0=10.0*_RADIUS_(_SUN_);
+  double B0=5.0E-9,R0=_AU_;
   double omega=2*Pi/(25.4*24*3600.0);
+
+
+  calculateIMFParkerSpiral3D(x,u_sw,B);
+  return;
+
 
   double e_r[3],e_phi[3],e_z[3]={0.0,0.0,1.0};
   int idim;
