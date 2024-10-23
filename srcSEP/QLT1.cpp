@@ -16,7 +16,7 @@
  * - Bruno, R., & Carbone, V. (2013). "The solar wind as a turbulence laboratory."
  *   *Living Reviews in Solar Physics*, 10(1), 2.
  */
-namespace QLTApproximation {
+namespace QLT1 {
     /*
      * Function: calculateMeanFreePath
      * Calculates the mean free path (λₚₐᵣₐₗₗₑₗ) of SEP protons using the Quasi-Linear Theory approximation,

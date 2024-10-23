@@ -17,7 +17,7 @@
  * - Bruno, R., & Carbone, V. (2013). "The solar wind as a turbulence laboratory."
  *   *Living Reviews in Solar Physics*, 10(1), 2.
  */
-namespace QLTApproximation {
+namespace QLT1 {
 
     // Physical constants
     const double c = 2.99792458e8;          // Speed of light in m/s
