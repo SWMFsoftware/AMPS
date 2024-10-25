@@ -14,10 +14,10 @@
 #include <cmath>
 #include <iostream>
 
-#ifndef _QLT3_
-#define _QLT3_
+#ifndef _QLT1_
+#define _QLT1_
 
-namespace QLT3 {
+namespace QLT1 {
 
     // Physical Constants
     const double q = 1.602e-19;         // Proton charge in Coulombs

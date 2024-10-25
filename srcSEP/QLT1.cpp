@@ -14,9 +14,9 @@
 #include <cmath>
 #include <iostream>
 
-#include "QLT3.h"
+#include "QLT1.h"
 
-namespace QLT3 {
+namespace QLT1 {
 
     /// \brief Computes the magnetic field strength B(r) at a given heliocentric distance r.
     ///
