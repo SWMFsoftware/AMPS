@@ -1,104 +1,178 @@
-#include <iostream>
+// QLT3.h
+// This header file contains a function for calculating the mean free path (λ)
+// of solar energetic particle (SEP) protons based on Quasi-Linear Theory (QLT)
+// with a Kolmogorov turbulence spectrum.
+
+// References:
+// - Jokipii, J. R. (1966). Cosmic-Ray Propagation. I. Charged Particles in a Random Magnetic Field.
+//   The Astrophysical Journal, 146, 480.
+// - Schlickeiser, R. (2002). Cosmic Ray Astrophysics. Springer-Verlag Berlin Heidelberg.
+// - Parker, E. N. (1958). Dynamics of the Interplanetary Gas and Magnetic Fields.
+//   The Astrophysical Journal, 128, 664.
+
+// Include necessary headers
 #include <cmath>
+#include <iostream>
 
-#include "QLT1.h"
+#include "QLT3.h"
 
-/*
- * Namespace: QLTApproximation
- * This namespace contains functions based on the Quasi-Linear Theory (QLT) approximation
- * for calculating the mean free path of Solar Energetic Particle (SEP) protons in the heliosphere,
- * including the effect of heliocentric distance on the turbulence energy density.
- *
- * References:
- * - Schlickeiser, R. (2002). *Cosmic Ray Astrophysics*. Springer.
- * - Zank, G. P., & Matthaeus, W. H. (1992). "The radial evolution of interplanetary turbulence."
- *   *Journal of Geophysical Research*, 97(A11), 17189–17200.
- * - Bruno, R., & Carbone, V. (2013). "The solar wind as a turbulence laboratory."
- *   *Living Reviews in Solar Physics*, 10(1), 2.
- */
-namespace QLT1 {
-    /*
-     * Function: calculateMeanFreePath
-     * Calculates the mean free path (λₚₐᵣₐₗₗₑₗ) of SEP protons using the Quasi-Linear Theory approximation,
-     * including the effect of heliocentric distance on the turbulence energy density.
-     *
-     * Inputs:
-     * - v: Particle speed in m/s (must be less than the speed of light)
-     * - r: Heliocentric distance in Astronomical Units (AU)
-     *
-     * Output:
-     * - Mean free path in meters
-     *
-     * Assumptions and Approximations:
-     * - The interplanetary magnetic field (IMF) follows the Parker spiral model.
-     * - The mean magnetic field strength decreases with distance as B ∝ r⁻².
-     * - The turbulence energy density decreases with distance as δB² ∝ r⁻ˢ.
-     * - The turbulence level δB²/B₀² varies with distance accordingly.
-     * - Magnetic turbulence follows a Kolmogorov spectrum with spectral index q = 5/3.
-     * - Uses an average pitch-angle cosine μ to simplify integration over pitch angles.
-     * - Neglects perpendicular diffusion and nonlinear effects.
-     *
-     * References:
-     * - Schlickeiser, R. (2002). *Cosmic Ray Astrophysics*. Springer.
-     * - Zank, G. P., & Matthaeus, W. H. (1992). "The radial evolution of interplanetary turbulence."
-     *   *Journal of Geophysical Research*, 97(A11), 17189–17200.
-     */
-    double calculateMeanFreePath(double v, double r_meters) {
-        // Validate inputs
-        if (v <= 0 || v >= c) {
-            std::cerr << "Error: Particle speed must be between 0 and the speed of light." << std::endl;
-            return -1.0;
-        }
-        if (r_meters <= 0) {
-            std::cerr << "Error: Heliocentric distance must be positive." << std::endl;
-            return -1.0;
-        }
+namespace QLT3 {
 
-        // Mean magnetic field strength at distance r (B ∝ r⁻²)
-        double B = B1AU * pow(AU / r_meters, 2); // Tesla
-
-        // Turbulence energy density at distance r (δB² ∝ r⁻ˢ)
-        double deltaB2 = deltaB2_1AU * pow(AU / r_meters, s); // T^2
-
-        // Turbulence level δB² / B₀² at distance r
-        double deltaB2_over_B0_2 = deltaB2 / (B * B);
-
-        // Calculate Lorentz factor γ
-        double beta = v / c;
-        double gamma = 1.0 / sqrt(1 - beta * beta);
-
-        // Proton momentum p = γ * m_p * v
-        double p = gamma * mp * v; // kg·m/s
-
-        // Proton rigidity R = p / (Z * e), Z = 1 for protons
-        double R = p / e; // V·s (Volt·seconds)
-
-        // Proton gyrofrequency Ω = (Z * e * B) / (γ * m_p)
-        double Omega = e * B / (gamma * mp); // rad/s
-
-        // Average pitch-angle cosine μ (approximation)
-        double mu = 0.7; // Dimensionless
-        double mu2 = mu * mu;
-
-        // Resonant wave number k_res = Ω / (v * μ)
-        double k_res = Omega / (v * fabs(mu)); // 1/m
-
-        // Reference wave number k0 corresponding to the turbulence outer scale (~1e-10 m⁻¹)
-        double k0 = 1e-10; // 1/m
-
-        // Turbulence power spectrum at k_res: [δB²(k_res) / B₀²] ∝ (k_res / k0)⁻q
-        double deltaB2_over_B0_2_kres = deltaB2_over_B0_2 * pow(k_res / k0, -q);
-
-        // Pitch-angle diffusion coefficient D_μμ at μ
-        // D_μμ = (π / 2) * Ω² * (1 - μ²) * [δB²(k_res) / B₀²] / (v * |μ|)
-        double D_mu_mu = (M_PI / 2.0) * Omega * Omega * (1.0 - mu2) * deltaB2_over_B0_2_kres / (v * fabs(mu)); // 1/s
-
-        // Mean free path λ_parallel = (3 * v) / (8 * D_μμ)
-        double lambda_parallel = (3.0 * v) / (8.0 * D_mu_mu); // meters
-
-        return lambda_parallel;
+    /// \brief Computes the magnetic field strength B(r) at a given heliocentric distance r.
+    ///
+    /// The Parker spiral model describes how the solar wind drags the magnetic field
+    /// outward from the Sun, creating a spiral structure. The magnetic field strength
+    /// decreases with the square of the distance from the Sun:
+    ///     B(r) = B0 * (R0 / r)^2
+    ///
+    /// Reference:
+    /// - Parker, E. N. (1958). Dynamics of the Interplanetary Gas and Magnetic Fields.
+    ///
+    /// \param r Heliocentric distance in meters.
+    /// \return Magnetic field strength at distance r in Tesla.
+    double B(double r) {
+        // B0: Magnetic field at reference distance R0.
+        // For the inner heliosphere, B0 ~ 5e-5 T at R0 = 0.1 AU.
+        double B0 = 5e-5;               // Magnetic field at reference distance (Tesla)
+        double R0 = 0.1 * AU;           // Reference distance (meters)
+        return B0 * pow(R0 / r, 2);
     }
 
-} // namespace QLTApproximation
+    /// \brief Computes the proton gyrofrequency Omega.
+    ///
+    /// The gyrofrequency is the angular frequency of a charged particle in a magnetic field:
+    ///     Omega = q * B / m_p
+    ///
+    /// \param B Magnetic field strength in Tesla.
+    /// \return Proton gyrofrequency in radians per second.
+    double gyrofrequency(double B) {
+        return q * B / m_p;
+    }
+
+    /// \brief Computes the Larmor radius r_L of a proton.
+    ///
+    /// The Larmor radius is the radius of the circular motion of a charged particle in a magnetic field:
+    ///     r_L = v_perp / Omega
+    ///
+    /// \param v Proton speed in meters per second.
+    /// \param Omega Proton gyrofrequency in radians per second.
+    /// \return Larmor radius in meters.
+    double larmor_radius(double v_perp, double Omega) {
+        return v_perp / Omega;
+    }
+
+    /// \brief Computes the turbulence correlation length L_c at a given heliocentric distance.
+    ///
+    /// The turbulence correlation length is assumed to scale linearly with distance from the Sun:
+    ///     L_c(r) = L_c0 * (r / AU)
+    ///
+    /// \param r Heliocentric distance in meters.
+    /// \return Turbulence correlation length at distance r in meters.
+    double L_c(double r) {
+        // L_c0: Turbulence correlation length at 1 AU (~0.01 AU)
+        double L_c0 = 0.01 * AU;        // Meters
+        return L_c0 * (r / AU);
+    }
+
+    /// \brief Calculates the mean free path λ of SEP protons.
+    ///
+    /// Based on Quasi-Linear Theory (QLT) with a Kolmogorov turbulence spectrum:
+    ///     λ = L_c(r) * (deltaB_over_B)^{-2} * (r_L / L_c(r))^{1/3}
+    ///
+    /// Reference:
+    /// - Jokipii, J. R. (1966). Cosmic-Ray Propagation. I. Charged Particles in a Random Magnetic Field.
+    ///
+    /// \param r Heliocentric distance in meters.
+    /// \param v Proton speed in meters per second.
+    /// \param deltaB_over_B Magnetic field fluctuation ratio (dimensionless), default value 0.3.
+    /// \return Mean free path in meters.
+    double calculateMeanFreePath(double r, double v, double deltaB_over_B) {
+        // Compute the magnetic field strength at distance r
+        double B_r = B(r);  // Magnetic field at r in Tesla
+
+        // Compute the proton gyrofrequency Omega
+        double Omega = gyrofrequency(B_r);  // Gyrofrequency in rad/s
+
+        // Assume isotropic pitch-angle distribution: average v_perp = v * sqrt(2/3)
+        double v_perp = v * sqrt(2.0 / 3.0);
+
+        // Compute the Larmor radius r_L
+        double r_L = larmor_radius(v_perp, Omega);  // Larmor radius in meters
+
+        // Compute the turbulence correlation length L_c(r)
+        double Lc = L_c(r);  // Correlation length in meters
+
+        // Compute the mean free path λ
+        double lambda = Lc * pow(deltaB_over_B, -2.0) * pow(r_L / Lc, 1.0 / 3.0);
+
+        return lambda;  // Mean free path in meters
+    }
+
+    /// \brief Calculates the spatial diffusion coefficient Dxx of SEP protons.
+    ///
+    /// The spatial diffusion coefficient (Dxx) describes how a particle's position changes over time
+    /// due to interactions with turbulent magnetic fields. It is derived from the mean free path λ by:
+    ///     Dxx = (1/3) * λ * v
+    ///
+    /// This formula assumes isotropic scattering, where λ is the mean free path and v is the particle's speed.
+    ///
+    /// References:
+    /// - Jokipii, J. R. (1966). Cosmic-Ray Propagation. I. Charged Particles in a Random Magnetic Field.
+    /// - Schlickeiser, R. (2002). Cosmic Ray Astrophysics.
+    ///
+    /// \param r Heliocentric distance in meters.
+    /// \param v Proton speed in meters per second.
+    /// \param deltaB_over_B Magnetic field fluctuation ratio (dimensionless), default value 0.3.
+    /// \return Spatial diffusion coefficient Dxx in square meters per second.
+    double calculateDxx(double r, double v, double deltaB_over_B) {
+        double lambda = calculateMeanFreePath(r, v, deltaB_over_B); // Calculate mean free path λ
+        return (1.0 / 3.0) * lambda * v; // Dxx = (1/3) * λ * v
+    }
+
+// Function to calculate the adiabatic cooling factor (due to solar wind expansion)
+/*
+    \section*{Adiabatic Cooling}
+
+    In the Parker transport equation, particles lose energy as they move outward in the solar wind due to adiabatic expansion. 
+    The solar wind acts like an expanding gas, doing work on the particles, which causes their momentum to decrease.
+
+    The term representing adiabatic cooling in the Parker equation is:
+    \[
+    \frac{1}{3} (\nabla \cdot \vec{v}_{\text{sw}}) p \frac{\partial f}{\partial p}
+    \]
+    Where:
+    - \( \vec{v}_{\text{sw}} \) is the solar wind velocity (assumed constant in magnitude but radially expanding),
+    - \( p \) is the particle momentum,
+    - \( f \) is the particle distribution function.
+
+    Even though the solar wind velocity magnitude is often assumed constant (e.g., 400 km/s), its direction and the radial nature of the expansion cause the divergence of the velocity field to be non-zero. This leads to energy loss for particles (adiabatic cooling).
+
+    The divergence of the radial solar wind velocity in spherical coordinates is:
+    \[
+    \nabla \cdot \vec{v}_{\text{sw}} = \frac{2 v_{\text{sw}}}{r}
+    \]
+    This results in the adiabatic cooling factor, which describes how much a particle's momentum decreases as it moves outward:
+    \[
+    p_{\text{new}} = p_{\text{old}} \cdot \left( 1 - \frac{v_{\text{sw}}}{c} \cdot \frac{1}{r} \right)
+    \]
+    Where:
+    - \( p_{\text{new}} \) is the updated momentum,
+    - \( p_{\text{old}} \) is the initial momentum,
+    - \( v_{\text{sw}} \) is the solar wind speed (assumed constant),
+    - \( r \) is the heliocentric distance (distance from the Sun),
+    - \( c \) is the speed of light.
+
+    This cooling factor is used to reduce the particle's momentum at each step of the Monte Carlo simulation.
+
+    \textbf{Physics of Adiabatic Cooling:}
+    - As the particle moves outward, the solar wind expands radially, leading to a loss of momentum (energy).
+    - The particle's energy decreases proportionally to the solar wind speed and inversely with distance from the Sun.
+*/
+  double adiabaticCooling(double r,double v_sw) {
+    return 1.0 - (v_sw / speed_of_light) * (1.0 / r);  // The factor to reduce the particle's momentum
+  }
+
+
+} // namespace QLT3
 
 
