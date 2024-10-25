@@ -1169,6 +1169,277 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
   return _PARTICLE_MOTION_FINISHED_;
 }
 
+int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+  double Speed,mu,AbsB,L,vParallel,vNormal,DivAbsB,vParallelInit,vNormalInit;
+  double FieldLineCoord,xCartesian[3];
+  int iFieldLine,spec;
+  FL::cFieldLineSegment *Segment;
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+
+  FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+  iFieldLine=PB::GetFieldLineId(ParticleData);
+  spec=PB::GetI(ParticleData);
+
+  //velocity is in the frame moving with solar wind
+  vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
+
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    exit(__LINE__,__FILE__,"Error: cannot find the segment");
+  }
+
+  double TimeCounter=0.0,dt;
+  double MeanFreePath,ds;
+  double energy,vnew[3],l[3],x[3],r; 
+
+  Segment->GetCartesian(x,FieldLineCoord);
+  r=Vector3D::Length(x);
+  Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+
+  while (TimeCounter<dtTotal) {
+//    MeanFreePath=QLT::calculateMeanFreePath(r,Speed); 
+
+/*
+    energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+
+    MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
+      pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
+      */
+
+    MeanFreePath=QLT1::calculateMeanFreePath(Speed,r);
+
+
+    ds=-MeanFreePath*log(rnd());
+    dt=ds/fabs(vParallel);
+
+    if (TimeCounter+dt<dtTotal) {
+      //scattering occured begore the end of the time interval 
+      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+
+      //simulate scattering of the particle
+      Vector3D::Distribution::Uniform(vnew,Speed);
+
+      Segment->GetDir(l);
+      Vector3D::GetComponents(vParallel,vNormal,vnew,l);
+    }
+    else {
+      //scattering does not occur before the enf of the simulated time interval  
+      dt=dtTotal-TimeCounter; 
+      ds=vParallel*dt;
+
+      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+    } 
+
+
+    TimeCounter+=dt;  
+
+    if (Segment==NULL) {
+      //the particle has left the simulation, and it is need to be deleted 
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    Segment->GetCartesian(x,FieldLineCoord);
+    r=Vector3D::Length(x);
+  }
+
+  //set the new values of the normal and parallel particle velocities 
+  PB::SetVParallel(vParallel,ParticleData);
+  PB::SetVNormal(vNormal,ParticleData);
+
+  //set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+
+  //attach the particle to the temporaty list
+  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+    break;
+  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp critical
+#endif
+    {
+    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
+    Segment->tempFirstParticleIndex=ptr;
+    }
+
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+  double Speed,mu,AbsB,L,vParallel,vNormal,DivAbsB,vParallelInit,vNormalInit;
+  double FieldLineCoord,xCartesian[3];
+  int iFieldLine,spec;
+  FL::cFieldLineSegment *Segment;
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+
+  FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+  iFieldLine=PB::GetFieldLineId(ParticleData);
+  spec=PB::GetI(ParticleData);
+
+  //velocity is in the frame moving with solar wind
+  vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
+
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    exit(__LINE__,__FILE__,"Error: cannot find the segment");
+  }
+
+  double TimeCounter=0.0,dt;
+  double MeanFreePath,ds;
+  double energy,vnew[3],l[3],x[3],r; 
+
+  Segment->GetCartesian(x,FieldLineCoord);
+  r=Vector3D::Length(x);
+  Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+
+  while (TimeCounter<dtTotal) {
+    MeanFreePath=QLT::calculateMeanFreePath(r,Speed); 
+
+    energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+
+    MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
+      pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
+
+    MeanFreePath=QLT1::calculateMeanFreePath(Speed,r);
+
+
+    //determine d (Dxx)/dx
+    double xx[3],rr,s,dxx_minus,dxx,dxx_plus,d_dxx_dx; 
+    bool f_minus=true,f_plus=true;
+
+
+    ds=-5*MeanFreePath;
+    s=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+    
+    if (Segment!=NULL) {
+      Segment->GetCartesian(xx,s);
+      rr=Vector3D::Length(xx);
+
+      dxx_minus=QLT1::calculateDxx(rr,Speed);  
+    }
+    else {
+      f_minus=false;
+    }
+
+    ds=5*MeanFreePath;
+    s=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+
+    if (Segment!=NULL) {
+      Segment->GetCartesian(xx,s);
+      rr=Vector3D::Length(xx);
+
+      dxx_plus=QLT1::calculateDxx(r,Speed);
+    }
+    else {
+      f_plus=false;
+    }
+
+    if ((f_minus==true)&&(f_plus==true)) {
+      d_dxx_dx=(dxx_plus-dxx_minus)/(2.0*ds);
+    }
+    else if ((f_minus==false)&&(f_plus==false)) {
+      exit(__LINE__,__FILE__,"Error: cannot calculate d_dxx_dx -> both points are outdise of the field line");
+    }
+    else {
+      dxx=QLT1::calculateDxx(r,Speed);
+      d_dxx_dx=(f_minus==true) ? (dxx-dxx_minus)/ds : (dxx_plus-dxx)/ds;  
+    }	    
+
+    ds=d_dxx_dx*dtTotal;
+
+
+
+
+
+    ds=-MeanFreePath*log(rnd());
+    dt=ds/fabs(vParallel);
+
+    if (TimeCounter+dt<dtTotal) {
+      //scattering occured begore the end of the time interval 
+      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+
+      //simulate scattering of the particle
+      Vector3D::Distribution::Uniform(vnew,Speed);
+
+      Segment->GetDir(l);
+      Vector3D::GetComponents(vParallel,vNormal,vnew,l);
+    }
+    else {
+      //scattering does not occur before the enf of the simulated time interval  
+      dt=dtTotal-TimeCounter; 
+      ds=vParallel*dt;
+
+      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+    } 
+
+
+    TimeCounter+=dt;  
+
+    if (Segment==NULL) {
+      //the particle has left the simulation, and it is need to be deleted 
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    Segment->GetCartesian(x,FieldLineCoord);
+    r=Vector3D::Length(x);
+  }
+
+  //set the new values of the normal and parallel particle velocities 
+  PB::SetVParallel(vParallel,ParticleData);
+  PB::SetVNormal(vNormal,ParticleData);
+
+  //set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+
+  //attach the particle to the temporaty list
+  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+    break;
+  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+
+#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    #pragma omp critical
+#endif
+    {
+    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
+    Segment->tempFirstParticleIndex=ptr;
+    }
+
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
 
 
 int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
