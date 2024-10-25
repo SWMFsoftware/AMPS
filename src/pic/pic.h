@@ -1210,9 +1210,10 @@ void DeleteAttachedParticles();
         while(Coord >=nSegment)Coord -= nSegment;
       }
 
-      inline double move(double SInit, double Increment) {
+      inline double move(double SInit, double Increment,cFieldLineSegment* &Segment) {
         double res = SInit;
-        cFieldLineSegment *Segment = GetSegment(SInit);
+        Segment = GetSegment(SInit);
+
         double Length = Segment->GetLength();
         double remain;
 
@@ -1251,6 +1252,13 @@ void DeleteAttachedParticles();
 
         return (Segment!=NULL) ? res : -1;
       }
+
+      inline double move(double SInit, double Increment) {
+        cFieldLineSegment *Segment;
+
+        return move(SInit,Increment,Segment);
+      }
+
 
       // Segment access
       //-----------------------------------------------------------------------
