@@ -652,8 +652,23 @@ namespace Vector3D {
   namespace Distribution {
     //uniform distribution of the
     inline void Uniform(double *a,double length=1.0) {
+      // Compute the spherical angles
+      double cos_theta=1.0-2.0*rnd();
+      double theta=acos(cos_theta);  // Polar angle with correct distribution
+      double phi=PiTimes2*rnd();       // Azimuthal angle uniformly distributed
+
+      double sin_theta=sin(theta);
+
+      // Convert spherical coordinates to Cartesian coordinates
+      a[0]=length*sin_theta*cos(phi);
+      a[1]=length*sin_theta*sin(phi);
+      a[2]=length*cos_theta;
+
+
+      /* Old implementation worked correctly but was replaced due to the high number of operations required to distribute the vector. 
       for (int i=0;i<3;i++) a[i]=sqrt(-log(rnd()))*cos(PiTimes2*rnd());
       Vector3D::Normalize(a,length);
+      */
     }
 
     //normal distribution p(x) ~ exp(-x^2/2)
