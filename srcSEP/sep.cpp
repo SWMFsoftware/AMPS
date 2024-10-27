@@ -5,6 +5,7 @@ int SEP::Offset::Momentum=-1;
 int SEP::Offset::CosPitchAngle=-1;
 int SEP::Offset::p_par=-1;
 int SEP::Offset::p_norm=-1;
+int SEP::Offset::RadialLocation=-1;
 
 //in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the
 //model run is not returned to the SWMF and the sumulation continues with AMPS only and "freezed" MHD solar wind
@@ -34,7 +35,6 @@ double SEP::TimeStepRatioSwitch_FTE2PE=-1.0;
 
 //min/max particle number limit during a run 
 int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
-
 
 //title that will be printed inn Tecplot output file (simuation time)
 void SEP::TecplotFileTitle(char* title) {
@@ -103,4 +103,9 @@ void SEP::RequestParticleData() {
     Offset::p_norm=offset;
     break;
   }
+
+
+  //request the memory to store particle's distance from the magnetic field line 
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
+  Offset::RadialLocation=offset;   
 }

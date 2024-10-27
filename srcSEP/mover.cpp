@@ -1222,6 +1222,18 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       //scattering occured begore the end of the time interval 
       FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
 
+      //update the distance of the particle from the magnetic field line 
+      //x -> distance of the particle from a magnetic field line   
+      if (SEP::Offset::RadialLocation!=-1) {  
+        double r=*((double*)(ParticleData+SEP::Offset::RadialLocation)); 
+        double theta=PiTimes2*rnd();
+        double cos_theta=cos(theta),sin_theta=sin(theta);
+
+        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+
+	*((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
+      }
+
       //simulate scattering of the particle
       Vector3D::Distribution::Uniform(vnew,Speed);
 
@@ -1234,6 +1246,18 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       ds=vParallel*dt;
 
       FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+
+      //update the distance of the particle from the magnetic field line
+      //x -> distance of the particle from a magnetic field line
+      if (SEP::Offset::RadialLocation!=-1) {
+        double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
+        double theta=PiTimes2*rnd();
+        double cos_theta=cos(theta),sin_theta=sin(theta);
+
+        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+
+        *((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
+      }
     } 
 
 

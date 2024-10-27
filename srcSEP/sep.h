@@ -41,6 +41,7 @@
 
 #include "DLT.h"
 #include "QLT.h"
+#include "QLT1.h"
 
 #ifndef _DOMAIN_GEOMETRY_
 #define _DOMAIN_GEOMETRY_ _DOMAIN_GEOMETRY_PARKER_SPIRAL_  
@@ -1374,6 +1375,23 @@ namespace SEP {
       void Output();
     }
 
+    namespace Energy {
+      extern array_3d<double> REnergySamplingTable;
+      void Output(int);
+    }
+
+    namespace RadialDisplacement {
+      extern  array_3d<double>  DisplacementSamplingTable;
+      extern array_4d<double> DisplacementEnergySamplingTable;
+
+      const double rDisplacementMax=1.0E7;
+      const int nSampleIntervals=100;
+      const double dLogDisplacement=log(rDisplacementMax)/nSampleIntervals;  
+
+      void OutputDisplacementSamplingTable(int);
+      void OutputDisplacementEnergySamplingTable(int);
+    }
+
     class cSamplingBuffer {
     public:
       int nEnergyBins,nPitchAngleBins;
@@ -1710,6 +1728,9 @@ double e_mev=e*J2MeV;
   namespace Offset {
     extern int Momentum,CosPitchAngle;
     extern int p_par,p_norm;
+
+    //offset of the variable containing the radial distance of a particle from the attached magnetic field line 
+    extern int RadialLocation;
   }
 
   //request data in the particle state vector
@@ -1746,6 +1767,7 @@ double e_mev=e*J2MeV;
   int ParticleMover_He_2011_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_MeanFreePathScattering(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+  int ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
 
   void GetTransportCoefficients(double& dP,double& dLogP,double& dmu,double v,double mu,PIC::FieldLine::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel);
 

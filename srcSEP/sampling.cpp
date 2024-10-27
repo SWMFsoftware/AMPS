@@ -8,6 +8,11 @@ array_4d<double>  SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable;
 array_3d<double>  SEP::Sampling::PitchAngle::PitchAngleRSamplingTable;
 array_5d<double>  SEP::Sampling::PitchAngle::DmumuSamplingTable;
 
+array_3d<double>  SEP::Sampling::RadialDisplacement::DisplacementSamplingTable;
+array_4d<double>  SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingTable;
+
+array_3d<double>  SEP::Sampling::Energy::REnergySamplingTable;
+
 double SEP::Sampling::PitchAngle::emin=0.01*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
 int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=10;
@@ -34,6 +39,16 @@ void SEP::Sampling::Init() {
 
   PitchAngle::DmumuSamplingTable.init(4,PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   PitchAngle::DmumuSamplingTable=0.0;
+
+  RadialDisplacement::DisplacementSamplingTable.init(RadialDisplacement::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax); 
+  RadialDisplacement::DisplacementEnergySamplingTable.init(RadialDisplacement::nSampleIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+
+  RadialDisplacement::DisplacementSamplingTable=0.0;
+  RadialDisplacement::DisplacementEnergySamplingTable=0.0;
+
+   
+  Energy::REnergySamplingTable.init(SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+  Energy::REnergySamplingTable=0.0;
 
 }  
 
@@ -120,6 +135,28 @@ void SEP::Sampling::Manager() {
 
           SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable(iMu,iE,iR,iFieldLine)+=ParticleWeight;
           SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iFieldLine)+=ParticleWeight;
+
+	  SEP::Sampling::Energy::REnergySamplingTable(iE,iR,iFieldLine)+=ParticleWeight;
+
+	  //sample displacement of a particle from the magnetic field line 
+         if (SEP::Offset::RadialLocation!=-1) {
+           double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
+	   int iD;
+
+	   if (r<1.0) {
+             iD=0;
+	   }
+	   else if (r>=SEP::Sampling::RadialDisplacement::rDisplacementMax) {
+	     iD=SEP::Sampling::RadialDisplacement::nSampleIntervals-1;
+           }
+           else {
+             iD=(int)(log(r)/Sampling::RadialDisplacement::dLogDisplacement); 
+	   }	   
+
+	   Sampling::RadialDisplacement::DisplacementSamplingTable(iD,iR,iFieldLine)+=ParticleWeight;
+	   Sampling::RadialDisplacement::DisplacementEnergySamplingTable(iD,iE,iR,iFieldLine)+=ParticleWeight;
+	 }
+
 
           ptr=PB::GetNext(ptr);
         }
@@ -276,6 +313,13 @@ void SEP::Sampling::Manager() {
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
    SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;
+
+
+   SEP::Sampling::RadialDisplacement::DisplacementSamplingTable=0.0;
+   SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingTable=0.0;
+
+   SEP::Sampling::Energy::REnergySamplingTable=0.0;
+
   }
 
 
