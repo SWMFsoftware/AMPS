@@ -5,6 +5,8 @@ void SEP::Sampling::Energy::Output(int cnt) {
   double de,norm,t,max_val;
   int iLine,iE,iR;
 
+  REnergySamplingTable.find_nan(); 
+
   //normalize the energy distribution 
   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
     norm=0.0,max_val=0.0;
@@ -14,18 +16,20 @@ void SEP::Sampling::Energy::Output(int cnt) {
       norm+=REnergySamplingTable(iE,iR,iLine)*de;
     }
 
+    if (norm>0.0) {
+      for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+        REnergySamplingTable(iE,iR,iLine)/=norm;
 
-    for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
-      REnergySamplingTable(iE,iR,iLine)/=norm;
+        if ((t=REnergySamplingTable(iE,iR,iLine))>max_val) max_val=t;
+      }
 
-      if ((t=REnergySamplingTable(iE,iR,iLine))>max_val) max_val=t;
+      for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
+        REnergySamplingTable(iE,iR,iLine)/=max_val;
+      }
     }
-
-   for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
-     REnergySamplingTable(iE,iR,iLine)/=max_val;
-   }
   }
 
+  REnergySamplingTable.find_nan();
 
   //output the energy distribution in a file 
   FILE *fout;
@@ -81,15 +85,17 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(int cnt)
     }
 
 
-    for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
-      DisplacementSamplingTable(iD,iR,iLine)/=norm;
+    if (norm>0.0) {
+      for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
+        DisplacementSamplingTable(iD,iR,iLine)/=norm;
 
-      if ((t=DisplacementSamplingTable(iD,iR,iLine))>max_val) max_val=t;
+       if ((t=DisplacementSamplingTable(iD,iR,iLine))>max_val) max_val=t;
+      }
+
+      for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
+        DisplacementSamplingTable(iD,iR,iLine)/=max_val;
+      }
     }
-
-    for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
-     DisplacementSamplingTable(iD,iR,iLine)/=max_val;
-   }
   }
 
 
@@ -147,15 +153,17 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(in
     }
 
 
-    for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
-      DisplacementEnergySamplingTable(iD,iE,iR,iLine)/=norm;
+    if (norm>0.0) {
+      for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
+        DisplacementEnergySamplingTable(iD,iE,iR,iLine)/=norm;
 
-      if ((t=DisplacementEnergySamplingTable(iD,iE,iR,iLine))>max_val) max_val=t;
-    }
+        if ((t=DisplacementEnergySamplingTable(iD,iE,iR,iLine))>max_val) max_val=t;
+      }
 
 
-    for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
-     DisplacementEnergySamplingTable(iD,iE,iR,iLine)/=max_val;
+      for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
+        DisplacementEnergySamplingTable(iD,iE,iR,iLine)/=max_val;
+      }
     }
   }
 
