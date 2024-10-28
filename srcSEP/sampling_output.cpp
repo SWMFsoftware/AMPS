@@ -43,7 +43,7 @@ void SEP::Sampling::Energy::Output(int cnt) {
    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
         for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
-          fprintf(fout,", \"FieldLine=%i (%e-%e)AU\"",iLine,
+          fprintf(fout,", \"F=%i (%.2e-%.2e)AU\"",iLine,
             iR*SEP::Sampling::PitchAngle::dR/_AU_,(iR+1)*SEP::Sampling::PitchAngle::dR/_AU_);
 	}
       }
@@ -53,12 +53,12 @@ void SEP::Sampling::Energy::Output(int cnt) {
 
    //output the data 
    for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++) {
-     fprintf(fout," %e",SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
+     fprintf(fout," %.2e",SEP::Sampling::PitchAngle::emin*exp(iE*SEP::Sampling::PitchAngle::dLogE)*J2MeV);
 
      for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
        if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
          for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
-           fprintf(fout," %e",REnergySamplingTable(iE,iR,iLine));
+           fprintf(fout," %.2e",REnergySamplingTable(iE,iR,iLine));
  	 }
        }
      }
@@ -111,7 +111,7 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(int cnt)
    for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
         for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
-          fprintf(fout,", \"FieldLine=%i (%e-%e)AU\"",iLine,
+          fprintf(fout,", \"F=%i (%.2e-%.2e)AU\"",iLine,
             iR*SEP::Sampling::PitchAngle::dR/_AU_,(iR+1)*SEP::Sampling::PitchAngle::dR/_AU_);
         }
       }
@@ -121,12 +121,12 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(int cnt)
 
    //output the data
    for (iD=0;iD<SEP::Sampling::RadialDisplacement::nSampleIntervals;iD++) {
-     fprintf(fout," %e",exp(iD*Sampling::RadialDisplacement::dLogDisplacement));
+     fprintf(fout," %.2e",exp(iD*Sampling::RadialDisplacement::dLogDisplacement));
 
      for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
        if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
          for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
-           fprintf(fout," %e",DisplacementSamplingTable(iD,iR,iLine));
+           fprintf(fout," %.2e",DisplacementSamplingTable(iD,iR,iLine));
          }
        }
      }
