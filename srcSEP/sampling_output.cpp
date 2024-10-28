@@ -35,7 +35,10 @@ void SEP::Sampling::Energy::Output(int cnt) {
   FILE *fout;
   char fname[200];
 
-  sprintf(fname,"%s/EnergyRSample.cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
+  sprintf(fname,"mkdir -p %s/EnergyRSample",PIC::OutputDataFileDirectory);
+  system(fname);
+
+  sprintf(fname,"%s/EnergyRSample/cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
   fout=fopen(fname,"w");
 
   fprintf(fout,"VARIABLES=\"E [Mev]\"");  
@@ -103,7 +106,10 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(int cnt)
   FILE *fout;
   char fname[200];
 
-  sprintf(fname,"%s/DisplacementRSample.cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
+  sprintf(fname,"mkdir -p %s/DisplacementRSample",PIC::OutputDataFileDirectory);
+  system(fname);
+
+  sprintf(fname,"%s/DisplacementRSample/cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
   fout=fopen(fname,"w");
 
   fprintf(fout,"VARIABLES=\"Particle Radial Distance [m]\"");
@@ -172,7 +178,10 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(in
   FILE *fout;
   char fname[200];
 
-  sprintf(fname,"%s/DisplacementEvergyRSample.cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
+  sprintf(fname,"mkdir -p %s/DisplacementEvergyRSample",PIC::OutputDataFileDirectory);
+  system(fname);
+
+  sprintf(fname,"%s/DisplacementEvergyRSample/cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
   fout=fopen(fname,"w");
 
   fprintf(fout,"VARIABLES=\"Particle Radial Distance [m]\"");
