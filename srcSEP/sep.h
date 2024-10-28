@@ -1384,7 +1384,7 @@ namespace SEP {
       extern  array_3d<double>  DisplacementSamplingTable;
       extern array_4d<double> DisplacementEnergySamplingTable;
 
-      const double rDisplacementMax=1.0E7;
+      const double rDisplacementMax=1.0E10;
       const int nSampleIntervals=100;
       const double dLogDisplacement=log(rDisplacementMax)/nSampleIntervals;  
 
