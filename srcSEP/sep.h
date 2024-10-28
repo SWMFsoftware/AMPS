@@ -1561,7 +1561,10 @@ double e_mev=e*J2MeV;
         char fname[200];
         FILE *fout=NULL;
 
-        sprintf(fname,"%s.pitch_angle_distribution.field-line=%ld.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime); 
+	sprintf(fname,"mkdir -p %s.pitch_angle_distribution",base_name);
+	system(fname);
+
+        sprintf(fname,"%s.pitch_angle_distribution/field-line=%ld.r=%e.t=%e.dat",base_name,iFieldLine,HeliocentricDisctance/_AU_,SamplingTime); 
         fout=fopen(fname,"w");
 
         fprintf(fout,"VARIABLES = \"Pitch Angle\"  ");
@@ -1656,8 +1659,11 @@ double e_mev=e*J2MeV;
         PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
 
         sprintf(base_name,"%s",fname);
+
+	sprintf(full_name_density,"mkdir -p %s.density",fname);
+        system(full_name_density);
  
-        sprintf(full_name_density,"%s.density.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+        sprintf(full_name_density,"%s.density/field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutDensity=fopen(full_name_density,"w"); 
         if (foutDensity==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting"); 
 
@@ -1665,7 +1671,10 @@ double e_mev=e*J2MeV;
         for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutDensity,"\n");   
 
-        sprintf(full_name_flux,"%s.flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+	sprintf(full_name_flux,"mkdir -p %s.flux",fname,l);
+	system(full_name_flux);
+
+        sprintf(full_name_flux,"%s.flux/field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutFlux=fopen(full_name_flux,"w");
         if (foutFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
@@ -1673,7 +1682,10 @@ double e_mev=e*J2MeV;
         for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutFlux,"\n");
 
-        sprintf(full_name_return_flux,"%s.return_flux.field-line=%ld.r=%e.dat",fname,l,r/_AU_);
+	sprintf(full_name_return_flux,"mkdir -p %s.return_flux",fname);
+	system(full_name_return_flux);
+
+        sprintf(full_name_return_flux,"%s.return_flux/field-line=%ld.r=%e.dat",fname,l,r/_AU_);
         foutReturnFlux=fopen(full_name_return_flux,"w");
         if (foutReturnFlux==NULL) exit(__LINE__,__FILE__,"Error: cannot open a file for writting");
 
