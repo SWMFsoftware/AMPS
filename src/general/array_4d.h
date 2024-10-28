@@ -78,6 +78,16 @@ public:
     init(n0,n1,n2,n3);
   }
 
+  void find_nan() {
+    int i,imax=size_dim0*size_dim1*size_dim2*size_dim3;
+
+    for (i=0;i<imax;i++) {
+      if (isfinite(data[i])==false) {
+        exit(__LINE__,__FILE__,"Error: a non-finite number is found");
+      }
+    }
+  }
+
 //===================================================
   T   operator () (int i0,int i1,int i2,int i3) const {
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)||(i3<0)||(i3>=size_dim3)) exit(__LINE__,__FILE__,"Error: out of range");

@@ -76,6 +76,17 @@ public:
    ndim0_ndim1_ndim2=n0*n1*n2;
    ndim0_ndim1_ndim2_ndim3=n0*n1*n2*n3;
   };
+
+  void find_nan() {
+    int i,imax=size_dim0*size_dim1*size_dim2*size_dim3*size_dim4;
+
+    for (i=0;i<imax;i++) {
+      if (isfinite(data[i])==false) {
+        exit(__LINE__,__FILE__,"Error: a non-finite number is found");
+      }
+    }
+  }
+
   
   array_5d(int n0,int n1,int n2,int n3,int n4) {
     data=NULL;

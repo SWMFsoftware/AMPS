@@ -56,6 +56,16 @@ _TARGET_HOST_ _TARGET_DEVICE_
    locally_allocated_data_buiffer=true;
   }
 
+  void find_nan() {
+    int i,imax=size_dim0*size_dim1*size_dim2;
+
+    for (i=0;i<imax;i++) {
+      if (isfinite(data[i])==false) {
+        exit(__LINE__,__FILE__,"Error: a non-finite number is found");
+      }
+    }	
+  } 
+
 _TARGET_HOST_ _TARGET_DEVICE_
   array_3d() {
     data=NULL;
