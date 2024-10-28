@@ -183,6 +183,11 @@ void SEP::Sampling::Manager() {
 
 
   if (cnt%120==0) {
+    //output data in a file 
+    SEP::Sampling::Energy::Output(cnt);
+    SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(cnt);
+    SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(cnt);
+
     //output sampled pitch angle distribution
     //1. notmalize the distribution
     int iMu,iR,iLine; 
