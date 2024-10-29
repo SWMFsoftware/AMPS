@@ -1195,10 +1195,10 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
 
   double TimeCounter=0.0,dt;
   double MeanFreePath,ds;
-  double energy,vnew[3],l[3],x[3],r; 
+  double energy,vnew[3],l[3],x[3],rHelio; 
 
   Segment->GetCartesian(x,FieldLineCoord);
-  r=Vector3D::Length(x);
+  rHelio=Vector3D::Length(x);
   Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
 
   while (TimeCounter<dtTotal) {
@@ -1212,11 +1212,16 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
       */
 
-    MeanFreePath=QLT1::calculateMeanFreePath(Speed,r);
+    MeanFreePath=QLT1::calculateMeanFreePath(Speed,rHelio);
 
 
     ds=-MeanFreePath*log(rnd());
     dt=ds/fabs(vParallel);
+
+
+    static const int PerpScatteringMode_MeanFreePath=0;
+    static const int PerpScatteringMode_diffusion=1; 
+    static const int PerpScatteringMode=PerpScatteringMode_diffusion; 
 
     if (TimeCounter+dt<dtTotal) {
       //scattering occured begore the end of the time interval 
@@ -1226,10 +1231,22 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       //x -> distance of the particle from a magnetic field line   
       if (SEP::Offset::RadialLocation!=-1) {  
         double r=*((double*)(ParticleData+SEP::Offset::RadialLocation)); 
-        double theta=PiTimes2*rnd();
+        double dr,theta=PiTimes2*rnd();
         double cos_theta=cos(theta),sin_theta=sin(theta);
+        double D_perp;
 
-        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+        switch (PerpScatteringMode) {
+        case PerpScatteringMode_MeanFreePath:
+          r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+          break;
+        case PerpScatteringMode_diffusion:
+          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+          dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
+          r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: the option in unknown");
+        }
 
 	*((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
       }
@@ -1253,8 +1270,20 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
         double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
         double theta=PiTimes2*rnd();
         double cos_theta=cos(theta),sin_theta=sin(theta);
+	double D_perp,dr;
 
-        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+	switch (PerpScatteringMode) {
+        case PerpScatteringMode_MeanFreePath:
+          r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+	  break;
+	case PerpScatteringMode_diffusion:
+          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+          dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
+          r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
+	  break;
+	default:
+	  exit(__LINE__,__FILE__,"Error: the option in unknown");
+	}
 
         *((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
       }
@@ -1270,7 +1299,7 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
     }
 
     Segment->GetCartesian(x,FieldLineCoord);
-    r=Vector3D::Length(x);
+    rHelio=Vector3D::Length(x);
   }
 
   //set the new values of the normal and parallel particle velocities 
