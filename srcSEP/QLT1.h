@@ -34,6 +34,7 @@ namespace QLT1 {
    
     extern double calculateMeanFreePath(double r, double v, double deltaB_over_B = 0.3);
     extern double calculateDxx(double r, double v, double deltaB_over_B = 0.3);
+    extern double calculatePerpendicularDiffusion(double r, double v, double deltaB_over_B=0.3);  
 
     extern double adiabaticCooling(double r,double v_sw);
 } // namespace QLT3

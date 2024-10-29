@@ -172,6 +172,33 @@ namespace QLT1 {
     return 1.0 - (v_sw / speed_of_light) * (1.0 / r);  // The factor to reduce the particle's momentum
   }
 
+  /*
+ * C++ Program to Calculate the Perpendicular Diffusion Coefficient (D_perp)
+ * given the Parallel Diffusion Coefficient (D_xx) in the presence of
+ * Kolmogorov turbulence.
+ *
+ * Theory Reference:
+ * The Kolmogorov turbulence model is widely used in space physics to describe
+ * the spectrum of magnetic field fluctuations in the solar wind. The power spectrum
+ * of Kolmogorov turbulence follows a -5/3 scaling, impacting particle diffusion.
+ * Empirical studies using quasi-linear theory and nonlinear guiding-center theory
+ * suggest that perpendicular diffusion (D_perp) can be related to parallel
+ * diffusion (D_xx) by:
+ *
+ *     D_perp ≈ coefficient_scaling * (D_xx ^ scaling_exponent)
+ *
+ * where coefficient_scaling ≈ 0.02 and scaling_exponent ≈ 0.5 in typical solar wind conditions.
+ */
+double calculatePerpendicularDiffusion(double r, double v, double deltaB_over_B) {
+  const double COEFFICIENT_SCALING = 0.02; // Empirical scaling factor (typically between 0.02 - 0.1)
+  const double SCALING_EXPONENT = 0.5;     // Scaling exponent for Kolmogorov turbulence
+
+  double D_xx=calculateDxx(r, v,deltaB_over_B);  
+
+  // Calculate D_perp using the empirical formula:
+  // D_perp = COEFFICIENT_SCALING * (D_xx ^ SCALING_EXPONENT)
+  return COEFFICIENT_SCALING * std::pow(D_xx, SCALING_EXPONENT);
+}
 
 } // namespace QLT3
 
