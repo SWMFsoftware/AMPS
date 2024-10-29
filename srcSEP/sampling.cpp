@@ -13,9 +13,11 @@ array_4d<double>  SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingT
 
 array_3d<double>  SEP::Sampling::Energy::REnergySamplingTable;
 
+array_3d<double>  SEP::Sampling::LarmorRadius::SamplingTable;
+
 double SEP::Sampling::PitchAngle::emin=0.01*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
-int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=10;
+int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=70;
 double SEP::Sampling::PitchAngle::dLogE; 
 
 void SEP::Sampling::Init() {
@@ -50,6 +52,8 @@ void SEP::Sampling::Init() {
   Energy::REnergySamplingTable.init(SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
   Energy::REnergySamplingTable=0.0;
 
+  SEP::Sampling::LarmorRadius::SamplingTable.init(SEP::Sampling::LarmorRadius::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+  SEP::Sampling::LarmorRadius::SamplingTable=0.0;
 }  
 
 void SEP::Sampling::InitSingleFieldLineSampling(int iFieldLine) {
@@ -98,10 +102,15 @@ void SEP::Sampling::Manager() {
       FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
       double speed,e,x[3],v[3],mu,FieldLineCoord;
       long int ptr; 
-      int iMu,iR,spec,iE;
+      int iL,iMu,iR,spec,iE;
+      double rLarmor,MiddleX[3],MiddleB;
 
       for (;Segment!=NULL;Segment=Segment->GetNext()) {
         ptr=Segment->FirstParticleIndex;
+
+	Segment->GetCartesian(MiddleX,0.5);
+	MiddleB=QLT1::B(Vector3D::Length(MiddleX)); 
+
 
         while (ptr!=-1) {
           PB::byte* ParticleData=PB::GetParticleDataPointer(ptr);
@@ -110,6 +119,8 @@ void SEP::Sampling::Manager() {
           v[0]=PB::GetVParallel(ParticleData);
           v[1]=PB::GetVNormal(ParticleData);
           v[2]=0.0;
+
+	  rLarmor= PIC::MolecularData::GetMass(spec)*v[1]/fabs(PIC::MolecularData::GetElectricCharge(spec)*MiddleB); 
 
           speed=sqrt(v[0]*v[0]+v[1]*v[1]);
           if (speed>0.99*SpeedOfLight) speed=0.99*SpeedOfLight;
@@ -137,6 +148,19 @@ void SEP::Sampling::Manager() {
           SEP::Sampling::PitchAngle::PitchAngleRSamplingTable(iMu,iR,iFieldLine)+=ParticleWeight;
 
 	  SEP::Sampling::Energy::REnergySamplingTable(iE,iR,iFieldLine)+=ParticleWeight;
+
+	  //sample particle Larmor radius 
+	  if (rLarmor<1.0) {
+             iL=0;
+           }
+           else if (rLarmor>=SEP::Sampling::LarmorRadius::rLarmorRadiusMax) {
+             iL=SEP::Sampling::LarmorRadius::nSampleIntervals-1;
+           }
+           else {
+             iL=(int)(log(rLarmor)/Sampling::LarmorRadius::dLog);
+	   }
+            
+	  SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;  
 
 	  //sample displacement of a particle from the magnetic field line 
          if (SEP::Offset::RadialLocation!=-1) {
@@ -182,11 +206,12 @@ void SEP::Sampling::Manager() {
   }
 
 
-  if (cnt%120==0) {
+  if (cnt%1200==0) {
     //output data in a file 
     SEP::Sampling::Energy::Output(cnt);
     SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(cnt);
     SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(cnt);
+    SEP::Sampling::LarmorRadius::Output(cnt);
 
     //output sampled pitch angle distribution
     //1. notmalize the distribution
@@ -324,6 +349,7 @@ void SEP::Sampling::Manager() {
    SEP::Sampling::RadialDisplacement::DisplacementEnergySamplingTable=0.0;
 
    SEP::Sampling::Energy::REnergySamplingTable=0.0;
+   SEP::Sampling::LarmorRadius::SamplingTable=0.0;
 
   }
 

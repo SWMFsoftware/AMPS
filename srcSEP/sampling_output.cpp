@@ -222,5 +222,78 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(in
 }
 
 
+void SEP::Sampling::LarmorRadius::Output(int cnt) {
+  namespace FL=PIC::FieldLine;
+  double dL,norm,t,max_val;
+  int iLine,iR,iD,iL;
+
+  //normalize the energy distribution
+  for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)   for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+    norm=0.0,max_val=0.0;
+
+    for (iL=0;iL<nSampleIntervals;iL++) {
+      dL=exp((iL+1)*dLog)-exp(iL*dLog);
+
+      norm+=SamplingTable(iL,iR,iLine)*dL;
+    }
+
+
+    if (norm>0.0) {
+      for (iL=0;iL<nSampleIntervals;iL++) {
+        SamplingTable(iL,iR,iLine)/=norm;
+
+        if ((t=SamplingTable(iL,iR,iLine))>max_val) max_val=t;
+      }
+
+
+      for (iL=0;iL<nSampleIntervals;iL++) {
+        SamplingTable(iL,iR,iLine)/=max_val;
+      }
+    }
+  }
+
+
+  //output the distribution in a file
+  FILE *fout;
+  char fname[200];
+
+  sprintf(fname,"mkdir -p %s/LarmorRadius",PIC::OutputDataFileDirectory);
+  system(fname);
+
+  sprintf(fname,"%s/LarmorRadius/cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
+  fout=fopen(fname,"w");
+
+  fprintf(fout,"VARIABLES=\"LarmorRadius [m]\"");
+
+   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
+      if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
+        for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+          fprintf(fout,", \"F=%i (%.2e-%.2e)AU\"",iLine,
+            iR*SEP::Sampling::PitchAngle::dR/_AU_,(iR+1)*SEP::Sampling::PitchAngle::dR/_AU_);
+        }
+      }
+   }
+
+   fprintf(fout,"\n");
+
+   //output the data
+   for (iL=0;iL<nSampleIntervals;iL++) {
+     fprintf(fout," %.2e",exp(iL*dLog));
+
+     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
+       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
+         for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+           fprintf(fout," %.2e",SamplingTable(iL,iR,iLine));
+         }
+       }
+     }
+
+     fprintf(fout,"\n");
+   }
+
+   fclose(fout);
+}
+
+
 
 

@@ -874,7 +874,7 @@ namespace SEP {
     class cD_x_x {
     public:
       static T D_mu_mu;
-      #pragma omp threadprivate(D_mu_mu)
+//      #pragma omp threadprivate(D_mu_mu)
 
       int spec;
       int InputMode;
@@ -1380,11 +1380,20 @@ namespace SEP {
       void Output(int);
     }
 
+    namespace LarmorRadius {
+      extern array_3d<double> SamplingTable;
+      void Output(int);
+
+      const double rLarmorRadiusMax=1.0E5;
+      const int nSampleIntervals=100;
+      const double dLog=log(rLarmorRadiusMax)/nSampleIntervals;
+    }
+
     namespace RadialDisplacement {
       extern  array_3d<double>  DisplacementSamplingTable;
       extern array_4d<double> DisplacementEnergySamplingTable;
 
-      const double rDisplacementMax=1.0E10;
+      const double rDisplacementMax=1.0E11;
       const int nSampleIntervals=100;
       const double dLogDisplacement=log(rDisplacementMax)/nSampleIntervals;  
 
