@@ -537,3 +537,48 @@ int main() {
     return 0;
 }
 */ 
+
+//==========================================================================================================
+//function to loop through field line segments
+void PIC::ParticleSplitting::FledLine::WeightedParticleMerging(int spec,long int& head, int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                             int nParticleRangeMin, int nParticleRangeMax,
+                             int mergeThreshold) { 
+  namespace FL = PIC::FieldLine;
+  double sRange=1,vParallelRange,vNormalRange;
+
+  if (FL::FieldLinesAll==NULL) return; 
+
+  //loop through all field lines and segments 
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      if (Segment->FirstParticleIndex!=-1) for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+        Segment->WeightedParticleMerging(spec,Segment->FirstParticleIndex,numBinsSpatial,numBinsVParallel,numBinsVNormal,
+                             sRange,vParallelRange,vNormalRange,
+                             nParticleRangeMin,nParticleRangeMax,
+                             mergeThreshold);
+      }
+    }
+  }    
+}	
+
+void PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(int spec,long int& head, int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                               int nParticleRangeMin, int nParticleRangeMax,
+                               int splitThreshold) { 
+  namespace FL = PIC::FieldLine;
+  double sRange=1,vParallelRange,vNormalRange;
+
+  if (FL::FieldLinesAll==NULL) return;
+
+  //loop through all field lines and segments
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    for (auto Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();Segment!=NULL;Segment=Segment->GetNext()) {
+      if (Segment->FirstParticleIndex!=-1) for (spec=0;spec<PIC::nTotalSpecies;spec++) {
+        Segment->WeightedParticleSplitting(spec,Segment->FirstParticleIndex,numBinsSpatial,numBinsVParallel,numBinsVNormal,
+                               sRange,vParallelRange,vNormalRange,nParticleRangeMin,nParticleRangeMax,splitThreshold); 
+      } 
+    }
+  }
+}
+
+
+
