@@ -257,6 +257,24 @@ public:
       return data+i0*size_dim1+i1;
     }
 
+    T* GetPtr() {
+      return data;
+    }
+
+    int size() {
+      return size_dim0*size_dim1;
+    }
+
+   void find_nan() {
+    int i,imax=size_dim0*size_dim1;
+
+    for (i=0;i<imax;i++) {
+      if (isfinite(data[i])==false) {
+        exit(__LINE__,__FILE__,"Error: a non-finite number is found");
+      }
+    }
+  }
+
 };
 
 #endif

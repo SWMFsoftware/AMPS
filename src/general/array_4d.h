@@ -248,6 +248,14 @@ public:
     return data+i0+size_dim0*i1+ndim0_ndim1*i2+ndim0_ndim1_ndim2*i3;
   }
 
+  T* GetPtr() {
+    return data;
+  }
+
+  int size() {
+    return size_dim0*size_dim1*size_dim2*size_dim3;
+  }
+
 //===================================================
 };
 

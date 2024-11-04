@@ -300,6 +300,10 @@ _TARGET_HOST_ _TARGET_DEVICE_
     if ((i0<0)||(i0>=size_dim0)||(i1<0)||(i1>=size_dim1)||(i2<0)||(i2>=size_dim2)) exit(__LINE__,__FILE__,"Error: out of range");
     return data+i0*ndim1_ndim2+size_dim2*i1+i2;
   }
+
+  T* GetPtr() {
+    return data;
+  }
 };
 
 #endif
