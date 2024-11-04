@@ -3,6 +3,18 @@
 
 PIC::ParallelFieldLines::cThreadSegmentTable* PIC::ParallelFieldLines::ThreadSegmentTable;
 
+void PIC::ParallelFieldLines::StaticDecompositionSegmentNumber() {
+namespace FL = PIC::FieldLine;
+  int iFieldLine;
+
+  if (FL::FieldLinesAll==NULL) return;
+
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    StaticDecompositionSegmentNumber(FL::FieldLinesAll[iFieldLine].GetFirstSegment());
+  }
+} 
+
+
 
 void PIC::ParallelFieldLines::StaticDecompositionSegmentNumber(PIC::FieldLine::cFieldLineSegment* SegmentIn) { 
     // Count segments
@@ -29,6 +41,18 @@ void PIC::ParallelFieldLines::StaticDecompositionSegmentNumber(PIC::FieldLine::c
         Segment = Segment->GetNext();
     }
 }
+
+void PIC::ParallelFieldLines::StaticDecompositionFieldLineLength() {
+namespace FL = PIC::FieldLine;
+  int iFieldLine;
+
+  if (FL::FieldLinesAll==NULL) return;
+  
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    StaticDecompositionFieldLineLength(FL::FieldLinesAll[iFieldLine].GetFirstSegment());
+  }
+} 
+
 
 void PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(PIC::FieldLine::cFieldLineSegment* SegmentIn) {
     // First pass: calculate total length
