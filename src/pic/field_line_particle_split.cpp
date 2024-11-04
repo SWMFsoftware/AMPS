@@ -90,208 +90,162 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
     double binSizeVParallel = 0.0;
     double binSizeVNormal = 0.0;
 
-    // Data structure to hold particles in each combined spatial-velocity bin
-    // Key: combined bin key, Value: vector of cParticleData
-    std::unordered_map<long long, std::vector<cParticleData>> bins;
-
-    // Variables to determine V_MAX dynamically
+    // First pass: Count particles and determine velocity ranges
+    long int p_temp = head;
+    int totalParticles = 0;
     double dynamicVParallelMax = 0.0;
     double dynamicVNormalMax = 0.0;
 
-    // First pass: Traverse all particles to determine dynamic V_MAX
-    long int p_temp = head;
-    int totalParticles = 0;
-
     while (p_temp != -1) {
-        double vParallel = PB::GetVParallel(p_temp);
-        double vNormal = PB::GetVNormal(p_temp);
+        if (PB::GetI(p_temp) == spec) {
+            double vParallel = PB::GetVParallel(p_temp);
+            double vNormal = PB::GetVNormal(p_temp);
 
-	if (PB::GetI(p_temp)==spec) {
-          dynamicVParallelMax = std::max(dynamicVParallelMax, std::abs(vParallel));
-          dynamicVNormalMax = std::max(dynamicVNormalMax, std::abs(vNormal));
-
-          totalParticles++;
-	}
-
+            dynamicVParallelMax = std::max(dynamicVParallelMax, std::abs(vParallel));
+            dynamicVNormalMax = std::max(dynamicVNormalMax, std::abs(vNormal));
+            totalParticles++;
+        }
         p_temp = PIC::ParticleBuffer::GetNext(p_temp);
     }
 
-    // Update velocity ranges based on dynamic V_MAX
+    // Check if merging needed
+    if (totalParticles <= nParticleRangeMax) {
+        return;
+    }
+
+    // Update velocity ranges and calculate bin sizes
     vParallelRange = dynamicVParallelMax;
     vNormalRange = dynamicVNormalMax;
+    binSizeVParallel = (2.0 * vParallelRange) / numBinsVParallel;
+    binSizeVNormal = (2.0 * vNormalRange) / numBinsVNormal;
 
-    // Calculate bin sizes based on dynamic V_MAX
-    binSizeVParallel = (2.0 * vParallelRange) / numBinsVParallel; // Assuming vParallel ∈ [-V_MAX, +V_MAX]
-    binSizeVNormal = (2.0 * vNormalRange) / numBinsVNormal;       // Assuming vNormal ∈ [-V_MAX, +V_MAX]
+    // Calculate target number of particles
+    int targetParticles = static_cast<int>(0.5 * (nParticleRangeMin + nParticleRangeMax));
+    int particlesToRemove = totalParticles - targetParticles;
 
-    // Reset particle traversal
+    if (particlesToRemove <= 0) return;
+
+    // Map to store particles in each bin
+    std::unordered_map<long long, std::vector<cParticleData>> bins;
+
+    // Second pass: Bin particles
     p_temp = head;
-
-    // Traverse the linked list and assign particles to combined spatial-velocity bins
     while (p_temp != -1) {
-        // Retrieve particle properties
-        PIC::ParticleBuffer::byte *p_data_temp=PB::GetParticleDataPointer(p_temp);	
+        if (PB::GetI(p_temp) != spec) {
+            p_temp = PIC::ParticleBuffer::GetNext(p_temp);
+            continue;
+        }
+
+        PIC::ParticleBuffer::byte *p_data_temp = PB::GetParticleDataPointer(p_temp);
         double s = PB::GetFieldLineCoord(p_data_temp);
         double vParallel = PB::GetVParallel(p_data_temp);
-        double w,vNormal = PB::GetVNormal(p_data_temp);
+        double vNormal = PB::GetVNormal(p_data_temp);
+        double w = PB::GetIndividualStatWeightCorrection(p_data_temp); 
 
+        // Calculate bin indices
+        int is = std::min(std::max(static_cast<int>(std::floor(s / binSizeSpatial)), 0),
+                         numBinsSpatial - 1);
+        int ivParallel = std::min(std::max(static_cast<int>(std::floor((vParallel + vParallelRange) /
+                                 binSizeVParallel)), 0), numBinsVParallel - 1);
+        int ivNormal = std::min(std::max(static_cast<int>(std::floor((vNormal + vNormalRange) /
+                               binSizeVNormal)), 0), numBinsVNormal - 1);
 
-        if (spec!=PB::GetI(p_data_temp)) {
-          // Move to the next particle
-          p_temp = PIC::ParticleBuffer::GetNext(p_temp);
-	  continue;
-	}
+        long long binKey = computeBinKey(is, ivParallel, ivNormal, numBinsSpatial,
+                                       numBinsVParallel, numBinsVNormal);
 
-
-        w = PB::GetIndividualStatWeightCorrection(p_data_temp);
-
-        // Determine spatial bin index based on 's'
-        int is = static_cast<int>(std::floor(s / binSizeSpatial));
-        // Clamp the index to [0, numBinsSpatial - 1]
-        if (is >= numBinsSpatial) is = numBinsSpatial - 1;
-        if (is < 0) is = 0;
-
-        // Determine velocity bin indices based on 'vParallel' and 'vNormal'
-        int ivParallel = static_cast<int>(std::floor((vParallel + vParallelRange) / binSizeVParallel));
-        int ivNormal = static_cast<int>(std::floor((vNormal + vNormalRange) / binSizeVNormal));
-
-        // Clamp the indices to valid ranges
-        if (ivParallel >= numBinsVParallel) ivParallel = numBinsVParallel - 1;
-        if (ivParallel < 0) ivParallel = 0;
-        if (ivNormal >= numBinsVNormal) ivNormal = numBinsVNormal - 1;
-        if (ivNormal < 0) ivNormal = 0;
-
-        // Compute combined bin key
-        long long binKey = computeBinKey(is, ivParallel, ivNormal, numBinsSpatial, numBinsVParallel, numBinsVNormal);
-
-        // Store particle data in the corresponding bin
-        cParticleData pdata;
-        pdata.s = s;
-        pdata.vParallel = vParallel;
-        pdata.vNormal = vNormal;
-        pdata.w = w;
-        pdata.id = p_temp;
-
+        cParticleData pdata{s, vParallel, vNormal, w, p_temp};
         bins[binKey].push_back(pdata);
 
-        // Move to the next particle
         p_temp = PIC::ParticleBuffer::GetNext(p_temp);
     }
 
-    // Check if merging is needed
-    if (totalParticles <= nParticleRangeMax && totalParticles >= nParticleRangeMin) {
-        std::cout << "No merging needed. Total particles (" << totalParticles << ") are within the desired range [" 
-                  << nParticleRangeMin << ", " << nParticleRangeMax << "].\n";
+    // Calculate average particles per bin for populated bins
+    int populatedBins = 0;
+    for (const auto& bin : bins) {
+        if (!bin.second.empty()) {
+            populatedBins++;
+        }
     }
 
-    // If totalParticles < nParticleRangeMin, merging might not be necessary or desired.
-    // Depending on simulation needs, implement splitting here. For now, we focus on reducing particles.
+    double avgParticlesPerBin = static_cast<double>(targetParticles) / populatedBins;
 
-    // Calculate how many particles need to be removed
-    int particlesToRemove = (totalParticles > nParticleRangeMax) ? (totalParticles - nParticleRangeMax) : 0;
+    // Track energy conservation
+    double totalEnergyBefore = 0.0;
+    double totalEnergyAfter = 0.0;
 
-    if (particlesToRemove > 0) {
-        // Collect all bins that can be merged (i.e., have at least 'mergeThreshold' particles)
-        std::vector<std::pair<long long, std::vector<cParticleData>>> mergableBins;
-        for (const auto &bin : bins) {
-            if (bin.second.size() >= mergeThreshold) {
-                mergableBins.emplace_back(bin);
-            }
+    // Process each bin
+    for (auto& bin : bins) {
+        if (particlesToRemove <= 0) break;
+
+        auto& particles = bin.second;
+        if (particles.size() <= 1) continue;
+
+        // Sort particles in this bin by weight (ascending)
+        std::sort(particles.begin(), particles.end(),
+                 [](const cParticleData& a, const cParticleData& b) {
+                     return a.w < b.w;
+                 });
+
+        // Calculate how many particles to remove from this bin
+        int binExcess = static_cast<int>(particles.size() - avgParticlesPerBin);
+        int binParticlesToRemove = std::min(binExcess, particlesToRemove);
+
+        if (binParticlesToRemove <= 0) continue;
+
+        // Merge particles pairwise, starting with smallest weights
+        for (size_t i = 0; i < particles.size() - 1 && binParticlesToRemove > 0; i += 2) {
+            cParticleData& p1 = particles[i];
+            cParticleData& p2 = particles[i + 1];
+
+            // Calculate merged properties
+            double mergedWeight = p1.w + p2.w;
+            double totalMomentumParallel = (p1.w * p1.vParallel) + (p2.w * p2.vParallel);
+            double totalMomentumNormal = (p1.w * p1.vNormal) + (p2.w * p2.vNormal);
+            double mergedSWeighted = (p1.s * p1.w) + (p2.s * p2.w);
+
+            double energyBefore = 0.5 * p1.w * (p1.vParallel * p1.vParallel + p1.vNormal * p1.vNormal) +
+                                 0.5 * p2.w * (p2.vParallel * p2.vParallel + p2.vNormal * p2.vNormal);
+
+            // Calculate merged velocities (conserve momentum)
+            double mergedVParallel = totalMomentumParallel / mergedWeight;
+            double mergedVNormal = totalMomentumNormal / mergedWeight;
+            double mergedS = mergedSWeighted / mergedWeight;
+
+            // Update first particle with merged properties
+            PIC::ParticleBuffer::byte *ptr_data = PB::GetParticleDataPointer(p1.id);
+            PB::SetVParallel(mergedVParallel, ptr_data);
+            PB::SetVNormal(mergedVNormal, ptr_data);
+            PB::SetFieldLineCoord(mergedS, ptr_data);
+            PB::SetIndividualStatWeightCorrection(mergedWeight, ptr_data);
+
+            // Remove second particle
+            PB::DeleteParticle(p2.id, head);
+
+            double energyAfter = 0.5 * mergedWeight * (mergedVParallel * mergedVParallel +
+                                                      mergedVNormal * mergedVNormal);
+
+            totalEnergyBefore += energyBefore;
+            totalEnergyAfter += energyAfter;
+
+            binParticlesToRemove--;
+            particlesToRemove--;
+            totalParticles--;
         }
-
-        // Sort the mergable bins based on the average weight ascending (prioritize lower-weight bins)
-        std::sort(mergableBins.begin(), mergableBins.end(),
-                  [&](const std::pair<long long, std::vector<cParticleData>> &a,
-                      const std::pair<long long, std::vector<cParticleData>> &b) -> bool {
-                        double sumWeightA = 0.0;
-                        for (const auto &p : a.second) sumWeightA += p.w;
-                        double avgWeightA = sumWeightA / a.second.size();
-
-                        double sumWeightB = 0.0;
-                        for (const auto &p : b.second) sumWeightB += p.w;
-                        double avgWeightB = sumWeightB / b.second.size();
-
-                        return avgWeightA < avgWeightB;
-                  });
-
-        // Variables to track total energy before and after merging
-        double totalEnergyBefore = 0.0;
-        double totalEnergyAfter = 0.0;
-
-        // Start merging process
-        for (auto &bin : mergableBins) {
-            if (particlesToRemove <= 0) break; // Desired range achieved
-
-            auto &particles = bin.second;
-
-            // Sort particles in the bin by weight ascending
-            std::sort(particles.begin(), particles.end(),
-                      [&](const cParticleData &a, const cParticleData &b) -> bool {
-                          return a.w < b.w;
-                      });
-
-            // Continue merging within this bin as long as:
-            // - There are enough particles to merge
-            // - Merging reduces the required number of particles
-            while (particles.size() >= 2 && particlesToRemove > 0) {
-                // Select the two lowest-weight particles
-                cParticleData p1 = particles[0];
-                cParticleData p2 = particles[1];
-
-                // Calculate total weight and momentum
-                double mergedWeight = p1.w + p2.w;
-                double totalMomentumParallel = (p1.w * p1.vParallel) + (p2.w * p2.vParallel);
-                double totalMomentumNormal = (p1.w * p1.vNormal) + (p2.w * p2.vNormal);
-                double mergedSWeighted = (p1.s * p1.w) + (p2.s * p2.w);
-                double mergedEnergyBefore = 0.5 * p1.w * (p1.vParallel * p1.vParallel + p1.vNormal * p1.vNormal) +
-                                            0.5 * p2.w * (p2.vParallel * p2.vParallel + p2.vNormal * p2.vNormal);
-
-                // Compute merged particle's velocity to conserve momentum
-                double mergedVParallel = totalMomentumParallel / mergedWeight;
-                double mergedVNormal = totalMomentumNormal / mergedWeight;
-
-                // Compute merged particle's kinetic energy
-                double mergedEnergyAfter = 0.5 * mergedWeight * (mergedVParallel * mergedVParallel + mergedVNormal * mergedVNormal);
-
-                // Accumulate energies for reporting
-                totalEnergyBefore += mergedEnergyBefore;
-                totalEnergyAfter += mergedEnergyAfter;
-
-                // Compute weighted average spatial coordinate 's'
-                double mergedS = mergedSWeighted / mergedWeight;
-
-                // Create a new merged particle
-                PB::byte* merged_data=PB::GetParticleDataPointer(p1.id);
-                PB::SetVParallel(mergedVParallel,merged_data);
-                PB::SetVNormal(mergedVNormal,merged_data);
-                PB::SetFieldLineCoord(mergedS,merged_data);
-                PB::SetIndividualStatWeightCorrection(mergedWeight,merged_data);
-
-                // Remove original particles from the linked list
-                PB::DeleteParticle(p1.id,head);
-                totalParticles -= 2;
-                particlesToRemove -= 2;
-
-                // Remove the first two particles from the bin's particle list
-                particles.erase(particles.begin(), particles.begin() + 2);
-            }
-        }
-
-        // After merging, check if the desired range is achieved
-        if (particlesToRemove > 0) {
-            std::cout << "Warning: Unable to reduce particles to the desired maximum range.\n";
-            std::cout << "Remaining particles to remove: " << particlesToRemove << "\n";
-        }
-
-        // Report energy discrepancies
-        std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Total Kinetic Energy Before Merging: " << totalEnergyBefore << " J\n";
-        std::cout << "Total Kinetic Energy After Merging:  " << totalEnergyAfter << " J\n";
-        std::cout << "Energy Discrepancy:                 " << 2*fabs(totalEnergyAfter - totalEnergyBefore)/(totalEnergyAfter+totalEnergyBefore)  << " J\n\n";
-
-        std::cout << "Weighted Particle Merging completed.\n";
     }
+
+    // Report results
+    /*
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "Merging completed. Final particle count: " << totalParticles << "\n";
+    std::cout << "Target was: " << targetParticles << "\n";
+    std::cout << "Total Kinetic Energy Before: " << totalEnergyBefore << " J\n";
+    std::cout << "Total Kinetic Energy After:  " << totalEnergyAfter << " J\n";
+    std::cout << "Energy Discrepancy: " <<
+                 2 * fabs(totalEnergyAfter - totalEnergyBefore)/(totalEnergyAfter + totalEnergyBefore) <<
+                 " J\n";
+		 */
 }
+
 
 /// \brief Performs Weighted Particle Splitting on a linked list of particles.
 ///
@@ -315,193 +269,90 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
                                int nParticleRangeMin, int nParticleRangeMax,
                                int splitThreshold) {
     namespace PB = PIC::ParticleBuffer;
-    // Initial bin sizes (will be updated after dynamic V_MAX calculation)
-    double binSizeSpatial = sRange / numBinsSpatial;
-    double binSizeVParallel = 0.0;
-    double binSizeVNormal = 0.0;
 
-    // Data structure to hold particles in each combined spatial-velocity bin
-    // Key: combined bin key, Value: vector of cParticleData
-    std::unordered_map<long long, std::vector<cParticleData>> bins;
-
-    // Variables to determine V_MAX dynamically
-    double dynamicVParallelMax = 0.0;
-    double dynamicVNormalMax = 0.0;
-
-    // First pass: Traverse all particles to determine dynamic V_MAX
+    // First pass: Count particles and collect particle data
+    std::vector<cParticleData> particles;
     long int p_temp = head;
     int totalParticles = 0;
+
     while (p_temp != -1) {
-        double vParallel = PB::GetVParallel(p_temp);
-        double vNormal = PB::GetVNormal(p_temp);
+        if (PB::GetI(p_temp) == spec) {
+            PIC::ParticleBuffer::byte *p_data_temp = PB::GetParticleDataPointer(p_temp);
 
-	if (PB::GetI(p_temp)==spec) {
-          dynamicVParallelMax = std::max(dynamicVParallelMax, std::abs(vParallel));
-          dynamicVNormalMax = std::max(dynamicVNormalMax, std::abs(vNormal));
+            // Collect particle data
+            cParticleData pdata;
+            pdata.s = PB::GetFieldLineCoord(p_data_temp);
+            pdata.vParallel = PB::GetVParallel(p_data_temp);
+            pdata.vNormal = PB::GetVNormal(p_data_temp);
+            pdata.w = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] *
+                     PB::GetIndividualStatWeightCorrection(p_data_temp);
+            pdata.id = p_temp;
 
-          totalParticles++;
-	}
-
-        p_temp = PIC::ParticleBuffer::GetNext(p_temp);
-    }
-
-    // Update velocity ranges based on dynamic V_MAX
-    vParallelRange = dynamicVParallelMax;
-    vNormalRange = dynamicVNormalMax;
-
-    // Calculate bin sizes based on dynamic V_MAX
-    binSizeVParallel = (2.0 * vParallelRange) / numBinsVParallel; // Assuming vParallel ∈ [-V_MAX, +V_MAX]
-    binSizeVNormal = (2.0 * vNormalRange) / numBinsVNormal;       // Assuming vNormal ∈ [-V_MAX, +V_MAX]
-
-    // Reset particle traversal
-    p_temp = head;
-
-    // Traverse the linked list and assign particles to combined spatial-velocity bins
-    while (p_temp != -1) {
-        // Retrieve particle properties
-        PIC::ParticleBuffer::byte *p_data_temp=PB::GetParticleDataPointer(p_temp);
-        double s = PB::GetFieldLineCoord(p_data_temp);
-        double vParallel = PB::GetVParallel(p_data_temp);
-        double w,vNormal = PB::GetVNormal(p_data_temp);
-
-
-        if (spec!=PB::GetI(p_data_temp)) {
-          // Move to the next particle
-          p_temp = PIC::ParticleBuffer::GetNext(p_temp);
-	  continue;
-	}	
-
-
-        w = PB::GetIndividualStatWeightCorrection(p_data_temp);
-
-        // Determine spatial bin index based on 's'
-        int is = static_cast<int>(std::floor(s / binSizeSpatial));
-        // Clamp the index to [0, numBinsSpatial - 1]
-        if (is >= numBinsSpatial) is = numBinsSpatial - 1;
-        if (is < 0) is = 0;
-
-        // Determine velocity bin indices based on 'vParallel' and 'vNormal'
-        int ivParallel = static_cast<int>(std::floor((vParallel + vParallelRange) / binSizeVParallel));
-        int ivNormal = static_cast<int>(std::floor((vNormal + vNormalRange) / binSizeVNormal));
-
-        // Clamp the indices to valid ranges
-        if (ivParallel >= numBinsVParallel) ivParallel = numBinsVParallel - 1;
-        if (ivParallel < 0) ivParallel = 0;
-        if (ivNormal >= numBinsVNormal) ivNormal = numBinsVNormal - 1;
-        if (ivNormal < 0) ivNormal = 0;
-
-        // Compute combined bin key
-        long long binKey = computeBinKey(is, ivParallel, ivNormal, numBinsSpatial, numBinsVParallel, numBinsVNormal);
-
-        // Store particle data in the corresponding bin
-        cParticleData pdata;
-        pdata.s = s;
-        pdata.vParallel = vParallel;
-        pdata.vNormal = vNormal;
-        pdata.w = w;
-        pdata.id = p_temp;
-
-        bins[binKey].push_back(pdata);
-
-        // Move to the next particle
+            particles.push_back(pdata);
+            totalParticles++;
+        }
         p_temp = PIC::ParticleBuffer::GetNext(p_temp);
     }
 
     // Check if splitting is needed
-    if (totalParticles <= nParticleRangeMax && totalParticles >= nParticleRangeMin) {
-        std::cout << "No splitting needed. Total particles (" << totalParticles << ") are within the desired range [" 
-                  << nParticleRangeMin << ", " << nParticleRangeMax << "].\n";
+    if (totalParticles <= nParticleRangeMax) {
+        return;
     }
 
-    // Calculate how many particles need to be added
-    int particlesToAdd = (totalParticles < nParticleRangeMin) ? (nParticleRangeMin - totalParticles) : 0;
+    // Calculate target number of particles
+    int targetParticles = static_cast<int>(0.5 * (nParticleRangeMax + nParticleRangeMin));
 
-    if (particlesToAdd > 0) {
-        // Collect all bins that can be split (i.e., have at least 'splitThreshold' particles)
-        std::vector<std::pair<long long, std::vector<cParticleData>>> splittableBins;
-        for (const auto &bin : bins) {
-            if (bin.second.size() >= splitThreshold) {
-                splittableBins.emplace_back(bin);
-            }
-        }
+    // Sort particles by weight in descending order
+    std::sort(particles.begin(), particles.end(),
+              [](const cParticleData& a, const cParticleData& b) {
+                  return a.w > b.w;
+              });
 
-        // Sort the splittable bins based on the number of particles descending (prioritize more populated bins)
-        std::sort(splittableBins.begin(), splittableBins.end(),
-                  [&](const std::pair<long long, std::vector<cParticleData>> &a,
-                      const std::pair<long long, std::vector<cParticleData>> &b) -> bool {
-                        return a.second.size() > b.second.size();
-                  });
+    // Track energy conservation
+    double totalEnergyBefore = 0.0;
+    double totalEnergyAfter = 0.0;
 
-        // Variables to track total energy before and after splitting
-        double totalEnergyBefore = 0.0;
-        double totalEnergyAfter = 0.0;
+    // Split particles starting with highest weights until target is reached
+    for (const auto& p_to_split : particles) {
+        if (totalParticles >= targetParticles) break;
 
-        // Start splitting process
-        for (auto &bin : splittableBins) {
-            if (particlesToAdd <= 0) break; // Desired range achieved
+        double newWeight = p_to_split.w / 2.0;
 
-            auto &particles = bin.second;
+        // Calculate energy before splitting
+        double energyBefore = 0.5 * p_to_split.w * (p_to_split.vParallel * p_to_split.vParallel +
+                                                   p_to_split.vNormal * p_to_split.vNormal);
 
-            // Sort particles in the bin by weight descending (prioritize heavier particles)
-            std::sort(particles.begin(), particles.end(),
-                      [&](const cParticleData &a, const cParticleData &b) -> bool {
-                          return a.w > b.w;
-                      });
+        // Update weight of original particle
+        PB::SetIndividualStatWeightCorrection(newWeight,p_to_split.id);
 
-            // Continue splitting within this bin as long as:
-            // - There are enough particles to split
-            // - Splitting reduces the required number of particles
-            while (particles.size() >= splitThreshold && particlesToAdd > 0) {
-                // Select the highest-weight particle
-                cParticleData p_to_split = particles[0];
+        // Create new particle with half the weight
+        long int newParticle = PB::GetNewParticle(head);
+        PB::CloneParticle(newParticle, p_to_split.id);
 
-                // Calculate properties for the two new particles
-                double newWeight = p_to_split.w / 2.0;
+        double energyAfter = 0.5 * newWeight * (p_to_split.vParallel * p_to_split.vParallel +
+                                              p_to_split.vNormal * p_to_split.vNormal) * 2;
 
-                // Compute kinetic energy before splitting
-                double energyBefore = 0.5 * p_to_split.w * (p_to_split.vParallel * p_to_split.vParallel + p_to_split.vNormal * p_to_split.vNormal);
+        // Update energy trackers
+        totalEnergyBefore += energyBefore;
+        totalEnergyAfter += energyAfter;
 
-                // Reduce the stat weight of the original particle 
-		PB::SetIndividualStatWeightCorrection(newWeight,p_to_split.id);
-
-		// Create new particle with half the weight each
-		long int newParticle=PB::GetNewParticle(head); 
-		PB::CloneParticle(newParticle,p_to_split.id); 
-
-                // Compute kinetic energy after splitting
-                double energyAfter = 0.5 * newWeight * (p_to_split.vParallel * p_to_split.vParallel + p_to_split.vNormal * p_to_split.vNormal) * 2;
-
-                // Accumulate energies for reporting
-                totalEnergyBefore += energyBefore;
-                totalEnergyAfter += energyAfter;
-
-                // Remove the original particle from the linked list
-                totalParticles--;
-                particlesToAdd -= 2;
-
-                // Remove the split particle from the bin's particle list
-                particles.erase(particles.begin());
-
-                // Check if we've added enough particles
-                if (particlesToAdd <= 0) break;
-            }
-        }
-
-        // After splitting, check if the desired range is achieved
-        if (particlesToAdd > 0) {
-            std::cout << "Warning: Unable to increase particles to the desired minimum range.\n";
-            std::cout << "Remaining particles to add: " << particlesToAdd << "\n";
-        }
-
-        // Report energy discrepancies
-        std::cout << std::fixed << std::setprecision(6);
-        std::cout << "Total Kinetic Energy Before Splitting: " << totalEnergyBefore << " J\n";
-        std::cout << "Total Kinetic Energy After Splitting:  " << totalEnergyAfter << " J\n";
-        std::cout << "Energy Discrepancy:                   " << (totalEnergyAfter - totalEnergyBefore) << " J\n\n";
-
-        std::cout << "Weighted Particle Splitting completed.\n";
+        totalParticles++;
     }
+
+    /*
+    // Report results
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "Splitting completed. Final particle count: " << totalParticles << "\n";
+    std::cout << "Target was: " << targetParticles << "\n";
+    std::cout << "Total Kinetic Energy Before: " << totalEnergyBefore << " J\n";
+    std::cout << "Total Kinetic Energy After:  " << totalEnergyAfter << " J\n";
+    std::cout << "Energy Discrepancy: " <<
+                 2 * fabs(totalEnergyAfter - totalEnergyBefore)/(totalEnergyAfter + totalEnergyBefore) <<
+                 " J\n";
+		 */
 }
+
+
 
     /*EXAMPLE:
 /// \brief Example usage of the WeightedParticleMerging and WeightedParticleSplitting functions.
