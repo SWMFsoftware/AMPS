@@ -8,6 +8,7 @@ include ../../Makefile.conf
 include ../../Makefile.local
 
 PICOBJ = pic.o \
+	field_line_particle_split.o \
 	pic_time_step.o \
 	pic_parallel.o \
 	pic_bc.o \
@@ -68,7 +69,7 @@ PICOBJ = pic.o \
 	pic_rnd.o \
 	pic_gyrokinetic.o \
 	pic_electron_impact_ionization.o \
-	pic_particle_spliting.o 
+	pic_particle_spliting.o   
 	
 ifneq ($(BATL),nobatl)	
 PICOBJ+=pic_batsrus.o \

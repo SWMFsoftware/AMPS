@@ -14,32 +14,6 @@
 #include "pic.h"
 
 
-    // Add a new particle to the linked list and return its identifier
-    long int PIC::FieldLine::cFieldLineSegment::AddParticle(double s, double vParallel, double vNormal, double w,int spec,long int& head) {
-      namespace PB = PIC::ParticleBuffer;
-
-      long int ptr=ParticleBuffer::GetNewParticle(head); 
-      PB::byte* ptr_data=PB::GetParticleDataPointer(ptr);
-      double correction_factor; 
-
-
-
-      //particle stat weight
-      #if  _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
-      correction_factor=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
-      #else
-      exit(__LINE__,__FILE__,"Error: not implementfor the opiont");
-      #endif
-
-      PB::SetI(spec,ptr_data);
-      PB::SetVParallel(vParallel,ptr_data);
-      PB::SetVNormal(vNormal,ptr_data);
-      PB::SetFieldLineCoord(s,ptr_data);
-      PB::SetIndividualStatWeightCorrection(correction_factor,ptr_data);
-
-      return ptr;
-  }
-
 // Structure to hold particle data for binning
 struct cParticleData {
     double s;          // Spatial coordinate

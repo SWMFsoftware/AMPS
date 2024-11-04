@@ -918,6 +918,18 @@ namespace PIC {
       long int FirstParticleIndex;
       std::atomic<long int> tempFirstParticleIndex; 
 
+      //-----------------------------------------------------------------------
+      //functions used to split and merge particles attached to a field line segment 
+      long long computeBinKey(int is, int ivParallel, int ivNormal,int numBinsSpatial, int numBinsVParallel, int numBinsVNormal); 
+      void WeightedParticleMerging(int spec,long int& head, int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                             double sRange, double &vParallelRange, double &vNormalRange,
+                             int nParticleRangeMin, int nParticleRangeMax,
+                             int mergeThreshold = 2); 
+      void WeightedParticleSplitting(int spec,long int& head, int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                               double sRange, double &vParallelRange, double &vNormalRange,
+                               int nParticleRangeMin, int nParticleRangeMax,
+                               int splitThreshold = 2);
+
       //.......................................................................
       // interface with stack functionality
       inline void cleanDataBuffer() {
@@ -1481,6 +1493,15 @@ void DeleteAttachedParticles();
       void SplitWithVelocityShift(int particle_num_limit_min,int particle_num_limit_max);
 
       void SplitWithVelocityShift_FL(int particle_num_limit_min,int particle_num_limit_max,double WeightSplittingLimit=1.0E-10);
+    }
+
+    namespace FledLine {
+      void WeightedParticleMerging(int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                             int nParticleRangeMin, int nParticleRangeMax,
+                             int mergeThreshold = 2);
+      void WeightedParticleSplitting(int numBinsSpatial, int numBinsVParallel, int numBinsVNormal,
+                               int nParticleRangeMin, int nParticleRangeMax,
+                               int splitThreshold = 2);
     }
   }
 
