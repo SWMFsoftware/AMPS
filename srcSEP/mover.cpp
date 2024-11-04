@@ -481,17 +481,13 @@ int SEP::ParticleMover_Droge_2009_AJ(long int ptr,double dtTotal,cTreeNodeAMR<PI
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+    {
+      long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+      PIC::ParticleBuffer::SetNext(temp,ParticleData);
+      PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-#pragma omp critical
-#endif
-  {
-    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
-    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
-
-    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
-    Segment->tempFirstParticleIndex=ptr;
-  } 
+      if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
+    }
 
   break;
   default:
@@ -1315,16 +1311,13 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    #pragma omp critical
-#endif
     {
-    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
+
+    long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+    PIC::ParticleBuffer::SetNext(temp,ParticleData);
     PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
-    Segment->tempFirstParticleIndex=ptr;
+    if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
     }
 
     break;
@@ -1474,16 +1467,12 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    #pragma omp critical
-#endif
     {
-    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
-    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+      long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+      PIC::ParticleBuffer::SetNext(temp,ParticleData);
+      PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
-    Segment->tempFirstParticleIndex=ptr;
+      if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
     }
 
     break;
@@ -1575,17 +1564,13 @@ int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    #pragma omp critical
-#endif
     {
-    PIC::ParticleBuffer::SetNext(Segment->tempFirstParticleIndex,ParticleData);
-    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+      long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+      PIC::ParticleBuffer::SetNext(temp,ParticleData);
+      PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-    if (Segment->tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,Segment->tempFirstParticleIndex);
-    Segment->tempFirstParticleIndex=ptr;
-    } 
+      if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
+    }
 
     break;
   default:
@@ -1969,16 +1954,13 @@ cout << "found" << endl;
     exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
-  {
-    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+    {
+      long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+      PIC::ParticleBuffer::SetNext(temp,ParticleData);
+      PIC::ParticleBuffer::SetPrev(-1,ParticleData);
 
-    long int tempFirstParticleIndex;
-
-    tempFirstParticleIndex=atomic_exchange(&Segment->tempFirstParticleIndex,ptr);
-    if (tempFirstParticleIndex!=-1) PIC::ParticleBuffer::SetPrev(ptr,tempFirstParticleIndex);
-    PIC::ParticleBuffer::SetNext(tempFirstParticleIndex,ParticleData);
-  } 
-
+      if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
+    }
   break;
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
