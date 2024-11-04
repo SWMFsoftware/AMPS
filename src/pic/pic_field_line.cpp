@@ -1745,7 +1745,7 @@ int _process_mode=_process_by_segments;
       switch (_process_mode) {
       case _process_by_segments:
         #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-        #pragma omp parallel for  
+        #pragma omp parallel for schedule(dynamic) private (Segment) firstprivate(FL::FieldLinesAll,iFieldLine) 
         #endif
         for (int i=0;i<FL::FieldLinesAll[iFieldLine].GetTotalSegmentNumber();i++) {
           Segment=FL::FieldLinesAll[iFieldLine].SegmentPointerTable[i]; 
