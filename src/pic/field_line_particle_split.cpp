@@ -143,7 +143,7 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
 	}
 
 
-        w = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]*PB::GetIndividualStatWeightCorrection(p_data_temp);
+        w = PB::GetIndividualStatWeightCorrection(p_data_temp);
 
         // Determine spatial bin index based on 's'
         int is = static_cast<int>(std::floor(s / binSizeSpatial));
@@ -261,11 +261,14 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
                 double mergedS = mergedSWeighted / mergedWeight;
 
                 // Create a new merged particle
-                long int mergedParticle = AddParticle(mergedS, mergedVParallel, mergedVNormal, mergedWeight,spec,head);
+                PB::byte* merged_data=PB::GetParticleDataPointer(p1.id);
+                PB::SetVParallel(mergedVParallel,merged_data);
+                PB::SetVNormal(mergedVNormal,merged_data);
+                PB::SetFieldLineCoord(mergedS,merged_data);
+                PB::SetIndividualStatWeightCorrection(mergedWeight,merged_data);
 
                 // Remove original particles from the linked list
                 PB::DeleteParticle(p1.id,head);
-                PB::DeleteParticle(p2.id,head);
                 totalParticles -= 2;
                 particlesToRemove -= 2;
 
@@ -369,7 +372,7 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
 	}	
 
 
-        w = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]*PB::GetIndividualStatWeightCorrection(p_data_temp);
+        w = PB::GetIndividualStatWeightCorrection(p_data_temp);
 
         // Determine spatial bin index based on 's'
         int is = static_cast<int>(std::floor(s / binSizeSpatial));
@@ -455,18 +458,15 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
                 // Calculate properties for the two new particles
                 double newWeight = p_to_split.w / 2.0;
 
-                // Ensure that the weight is above a minimum threshold to avoid infinite splitting
-                if (newWeight < 1e-6) { // Example threshold
-                    std::cout << "Warning: Particle ID " << p_to_split.id << " has too small weight to split.\n";
-                    break;
-                }
-
                 // Compute kinetic energy before splitting
                 double energyBefore = 0.5 * p_to_split.w * (p_to_split.vParallel * p_to_split.vParallel + p_to_split.vNormal * p_to_split.vNormal);
 
-                // Create two new particles with half the weight each
-                long int newParticle1 = AddParticle(p_to_split.s, p_to_split.vParallel, p_to_split.vNormal, newWeight,spec,head);
-                long int newParticle2 = AddParticle(p_to_split.s, p_to_split.vParallel, p_to_split.vNormal, newWeight,spec,head);
+                // Reduce the stat weight of the original particle 
+		PB::SetIndividualStatWeightCorrection(newWeight,p_to_split.id);
+
+		// Create new particle with half the weight each
+		long int newParticle=PB::GetNewParticle(head); 
+		PB::CloneParticle(newParticle,p_to_split.id); 
 
                 // Compute kinetic energy after splitting
                 double energyAfter = 0.5 * newWeight * (p_to_split.vParallel * p_to_split.vParallel + p_to_split.vNormal * p_to_split.vNormal) * 2;
@@ -476,7 +476,6 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
                 totalEnergyAfter += energyAfter;
 
                 // Remove the original particle from the linked list
-                PB::DeleteParticle(p_to_split.id,head);
                 totalParticles--;
                 particlesToAdd -= 2;
 
