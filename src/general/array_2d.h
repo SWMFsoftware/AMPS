@@ -275,19 +275,75 @@ public:
     }
   }
 
-  void gather_double(int gather_rank,MPI_Comm &comm) { 
-    double *temp;
+  void reduce(int reduce_rank, MPI_Op operation, MPI_Comm comm) {
+    // Get current process rank
     int rank;
-
-    MPI_Comm_rank(comm,&rank);
-    if (rank==gather_rank) temp=new double[size()];
-
-    MPI_Gather(data,size(),MPI_DOUBLE,temp,size(),MPI_DOUBLE,gather_rank,comm); 
-
-    if (rank==gather_rank) {
-      memcpy(data,temp,size()*sizeof(double));
-      delete [] temp;
+    MPI_Comm_rank(comm, &rank);
+    
+    // Get total data size (same for all processes)
+    int dataSize = size();
+    
+    // Verify data buffer exists
+    if (data == nullptr) {
+        exit(__LINE__, __FILE__, "Error: Null data buffer in reduce operation");
     }
+    
+    // Determine MPI datatype based on template parameter T
+    MPI_Datatype mpiType;
+    if (std::is_same<T, char>::value) mpiType = MPI_CHAR;
+    else if (std::is_same<T, unsigned char>::value) mpiType = MPI_UNSIGNED_CHAR;
+    else if (std::is_same<T, short>::value) mpiType = MPI_SHORT;
+    else if (std::is_same<T, unsigned short>::value) mpiType = MPI_UNSIGNED_SHORT;
+    else if (std::is_same<T, int>::value) mpiType = MPI_INT;
+    else if (std::is_same<T, unsigned int>::value) mpiType = MPI_UNSIGNED;
+    else if (std::is_same<T, long>::value) mpiType = MPI_LONG;
+    else if (std::is_same<T, unsigned long>::value) mpiType = MPI_UNSIGNED_LONG;
+    else if (std::is_same<T, float>::value) mpiType = MPI_FLOAT;
+    else if (std::is_same<T, double>::value) mpiType = MPI_DOUBLE;
+    else if (std::is_same<T, long double>::value) mpiType = MPI_LONG_DOUBLE;
+    else {
+        exit(__LINE__, __FILE__, "Error: Unsupported data type for MPI reduce");
+    }
+    
+    // Allocate temporary buffer for reduction
+    T* recvBuffer = nullptr;
+    if (rank == reduce_rank) {
+        try {
+            recvBuffer = new T[dataSize]();  // Zero-initialize the buffer
+        } catch (std::bad_alloc&) {
+            exit(__LINE__, __FILE__, "Error: Failed to allocate receive buffer in reduce");
+        }
+    }
+
+    // Perform reduction
+    int error = MPI_Reduce(
+        data,           // Send buffer
+        recvBuffer,     // Receive buffer
+        dataSize,       // Count
+        mpiType,        // Datatype
+        operation,      // Reduction operation (e.g., MPI_SUM, MPI_MAX)
+        reduce_rank,    // Root rank
+        comm           // Communicator
+    );
+
+    if (error != MPI_SUCCESS) {
+        if (rank == reduce_rank && recvBuffer != nullptr) {
+            delete[] recvBuffer;
+        }
+        exit(__LINE__, __FILE__, "Error: MPI_Reduce failed");
+    }
+
+    // On reduction rank, copy reduced data back to array
+    if (rank == reduce_rank) {
+        // Copy received data back to the array
+        memcpy(data, recvBuffer, dataSize * sizeof(T));
+        
+        // Clean up receive buffer
+        delete[] recvBuffer;
+    }
+
+    // Ensure all processes wait for reduction to complete
+    MPI_Barrier(comm);
   }
 		  
 
