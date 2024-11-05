@@ -275,6 +275,22 @@ public:
     }
   }
 
+  void gather_double(int gather_rank,MPI_Comm &comm) { 
+    double *temp;
+    int rank;
+
+    MPI_Comm_rank(comm,&rank);
+    if (rank==gather_rank) temp=new double[size()];
+
+    MPI_Gather(data,size(),MPI_DOUBLE,temp,size(),MPI_DOUBLE,gather_rank,comm); 
+
+    if (rank==gather_rank) {
+      memcpy(data,temp,size()*sizeof(double));
+      delete [] temp;
+    }
+  }
+		  
+
 };
 
 #endif
