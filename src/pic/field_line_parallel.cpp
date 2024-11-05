@@ -1,6 +1,12 @@
 
 #include "pic.h"
 
+#include <unordered_set>
+#include <stdexcept>
+#include <vector>
+#include <map>
+
+
 PIC::ParallelFieldLines::cThreadSegmentTable* PIC::ParallelFieldLines::ThreadSegmentTable;
 
 void PIC::ParallelFieldLines::StaticDecompositionSegmentNumber() {
@@ -12,6 +18,8 @@ namespace FL = PIC::FieldLine;
   for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
     StaticDecompositionSegmentNumber(FL::FieldLinesAll[iFieldLine].GetFirstSegment());
   }
+
+  GenerateThreadSegmentTable();
 } 
 
 
@@ -51,6 +59,8 @@ namespace FL = PIC::FieldLine;
   for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
     StaticDecompositionFieldLineLength(FL::FieldLinesAll[iFieldLine].GetFirstSegment());
   }
+
+  GenerateThreadSegmentTable();
 } 
 
 
@@ -131,215 +141,181 @@ namespace FL = PIC::FieldLine;
 
 //===================================   EXCHANGE PARTICLES BETWEEN PROCESSES ============================================
 void PIC::ParallelFieldLines::ExchangeFieldLineParticles(cThreadSegmentTable& ThreadSegmentTable) {
-namespace FL = PIC::FieldLine;
-  MPI_Request *SendParticleDataRequest = new MPI_Request[PIC::nTotalThreads];
-  MPI_Request *RecvParticleDataRequest = new MPI_Request[PIC::nTotalThreads];
-  int SendRequestLength = 0, RecvRequestLength = 0;
+    namespace FL = PIC::FieldLine;
+    MPI_Request *SendParticleDataRequest = new MPI_Request[PIC::nTotalThreads];
+    MPI_Request *RecvParticleDataRequest = new MPI_Request[PIC::nTotalThreads];
+    int SendRequestLength = 0, RecvRequestLength = 0;
 
-  // Simplified descriptor using segment index instead of ID
-  struct cSegmentParticleDescriptor {
-    int segmentIndex;  // Index in ThreadSegmentTable.Table[thread]
-    int nTotalParticles;
-    std::vector<long int> particleList;
-  };
 
-  std::map<int, std::vector<cSegmentParticleDescriptor>> ProcessParticleMap;
+    PIC::ParallelFieldLines::GetFieldLinePopulationStat();
 
-  // Modified to use array indices
-  auto PrepareParticleLists = [&](int targetThread) {
-    std::vector<cSegmentParticleDescriptor>& segmentList = ProcessParticleMap[targetThread];
-    
-    // Loop through segments using array indices
-    for (int i = 0; i < ThreadSegmentTable.TableLength[targetThread]; i++) {
-      FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[targetThread][i];
-      
-      if (segment->FirstParticleIndex != -1) {
-        cSegmentParticleDescriptor descriptor;
-        descriptor.segmentIndex = i;  // Using array index directly
-        descriptor.nTotalParticles = 0;
+    // Enhanced descriptor that keeps track of particles to be deleted
+    struct cSegmentParticleDescriptor {
+        int segmentIndex;
+        int nTotalParticles;
+        std::vector<long int> particleList;
+        FL::cFieldLineSegment* segment;
+    };
+
+    std::map<int, std::vector<cSegmentParticleDescriptor>> ProcessParticleMap;
+
+    // First phase: Count particles and prepare send lists
+    // This needs to be done by all processes before communication starts
+    for (int thread = 0; thread < PIC::nTotalThreads; thread++) {
+        if (thread == PIC::ThisThread) continue;
         
-        long int particlePtr = segment->FirstParticleIndex;
-        while (particlePtr != -1) {
-          descriptor.particleList.push_back(particlePtr);
-          descriptor.nTotalParticles++;
-          particlePtr = PIC::ParticleBuffer::GetNext(particlePtr);
-        }
+        std::vector<cSegmentParticleDescriptor>& segmentList = ProcessParticleMap[thread];
         
-        if (descriptor.nTotalParticles > 0) {
-          segmentList.push_back(descriptor);
+        for (int i = 0; i < ThreadSegmentTable.TableLength[thread]; i++) {
+            FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[thread][i];
+            
+            if (segment && segment->FirstParticleIndex != -1) {
+                cSegmentParticleDescriptor descriptor;
+                descriptor.segmentIndex = i;
+                descriptor.nTotalParticles = 0;
+                descriptor.segment = segment;
+                
+                long int particlePtr = segment->FirstParticleIndex;
+                while (particlePtr != -1) {
+                    descriptor.particleList.push_back(particlePtr);
+                    descriptor.nTotalParticles++;
+                    particlePtr = PIC::ParticleBuffer::GetNext(particlePtr);
+                }
+                
+                if (descriptor.nTotalParticles > 0) {
+                    segmentList.push_back(descriptor);
+                }
+            }
         }
-      }
-    }
-    
-    return segmentList.size();
-  };
-
-  auto InitSendParticleData = [&](int To, const std::vector<cSegmentParticleDescriptor>& descriptors) {
-    int totalParticles = 0;
-    for (const auto& desc : descriptors) {
-      totalParticles += desc.nTotalParticles;
-    }
-    
-    if (totalParticles == 0) return;
-
-    MPI_Aint* offsets = new MPI_Aint[totalParticles];
-    int offsetIndex = 0;
-    
-    for (const auto& desc : descriptors) {
-      for (long int particlePtr : desc.particleList) {
-        MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
-                       PIC::ParticleBuffer::GetParticleDataOffset(particlePtr),
-                       &offsets[offsetIndex++]);
-      }
     }
 
-    MPI_Datatype particle_send_type;
-    MPI_Type_create_hindexed_block(totalParticles,
-                                  PIC::ParticleBuffer::ParticleDataLength - 2*sizeof(long int),
-                                  offsets,
-                                  MPI_BYTE,
-                                  &particle_send_type);
-    MPI_Type_commit(&particle_send_type);
-
-    MPI_Isend(MPI_BOTTOM, 1, particle_send_type, To, 0, MPI_GLOBAL_COMMUNICATOR, 
-              &SendParticleDataRequest[SendRequestLength++]);
-
-    MPI_Type_free(&particle_send_type);
-    delete[] offsets;
-  };
-
-  // Modified to use array index
-  auto InitNewParticles = [&](FL::cFieldLineSegment* segment, int nParticles) {
-    std::vector<MPI_Aint> particleOffsets;
-    particleOffsets.reserve(nParticles);
+    // Second phase: Exchange particle counts with all processes
+    std::vector<int> sendCounts(PIC::nTotalThreads, 0);
+    std::vector<int> recvCounts(PIC::nTotalThreads, 0);
     
-    for (int i = 0; i < nParticles; i++) {
-      long int newParticle = PIC::ParticleBuffer::GetNewParticle(segment->FirstParticleIndex);
-      
-      MPI_Aint offset;
-      MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
-                     PIC::ParticleBuffer::GetParticleDataOffset(newParticle),
-                     &offset);
-      particleOffsets.push_back(offset);
+    // Prepare send counts
+    for (const auto& pair : ProcessParticleMap) {
+        int totalParticles = 0;
+        for (const auto& desc : pair.second) {
+            totalParticles += desc.nTotalParticles;
+        }
+        sendCounts[pair.first] = totalParticles;
     }
-    
-    return particleOffsets;
-  };
 
-  auto RemoveSentParticles = [&](FL::cFieldLineSegment* segment) {
-    long int ptr = segment->FirstParticleIndex;
-    
-    while (ptr != -1) {
-      long int next = PIC::ParticleBuffer::GetNext(ptr);
-      PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr, true);
-      ptr = next;
+    // Exchange counts using MPI_Alltoall
+    MPI_Alltoall(sendCounts.data(), 1, MPI_INT,
+                 recvCounts.data(), 1, MPI_INT,
+                 MPI_GLOBAL_COMMUNICATOR);
+
+    // Third phase: Exchange particle data
+    for (int thread = 0; thread < PIC::nTotalThreads; thread++) {
+        if (thread == PIC::ThisThread) continue;
+
+        // Post receives first
+        if (recvCounts[thread] > 0) {
+            // Allocate space for incoming particles
+            std::vector<MPI_Aint> recvOffsets;
+            recvOffsets.reserve(recvCounts[thread]);
+            
+            for (int i = 0; i < recvCounts[thread]; i++) {
+                long int newParticle = PIC::ParticleBuffer::GetNewParticle();
+                if (newParticle == -1) {
+                    throw std::runtime_error("Failed to allocate new particle");
+                }
+                
+                MPI_Aint offset;
+                MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
+                              PIC::ParticleBuffer::GetParticleDataOffset(newParticle),
+                              &offset);
+                recvOffsets.push_back(offset);
+            }
+
+            MPI_Datatype particle_recv_type;
+            MPI_Type_create_hindexed_block(recvCounts[thread],
+                                         PIC::ParticleBuffer::ParticleDataLength - 2*sizeof(long int),
+                                         recvOffsets.data(),
+                                         MPI_BYTE,
+                                         &particle_recv_type);
+            MPI_Type_commit(&particle_recv_type);
+
+            MPI_Irecv(MPI_BOTTOM, 1, particle_recv_type, thread, 0,
+                      MPI_GLOBAL_COMMUNICATOR, &RecvParticleDataRequest[RecvRequestLength++]);
+
+            MPI_Type_free(&particle_recv_type);
+        }
     }
-    
-    segment->FirstParticleIndex = -1;
-  };
 
-  // Prepare particle lists for each target process
-  for (int thread = 0; thread < PIC::nTotalThreads; thread++) {
-    if (thread != PIC::ThisThread) {
-      PrepareParticleLists(thread);
+    // Post sends after all receives are posted
+    for (const auto& pair : ProcessParticleMap) {
+        int thread = pair.first;
+        if (sendCounts[thread] > 0) {
+            std::vector<MPI_Aint> sendOffsets;
+            sendOffsets.reserve(sendCounts[thread]);
+            
+            for (const auto& desc : pair.second) {
+                for (long int particlePtr : desc.particleList) {
+                    MPI_Aint offset;
+                    MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
+                                  PIC::ParticleBuffer::GetParticleDataOffset(particlePtr),
+                                  &offset);
+                    sendOffsets.push_back(offset);
+                }
+            }
+
+            MPI_Datatype particle_send_type;
+            MPI_Type_create_hindexed_block(sendCounts[thread],
+                                         PIC::ParticleBuffer::ParticleDataLength - 2*sizeof(long int),
+                                         sendOffsets.data(),
+                                         MPI_BYTE,
+                                         &particle_send_type);
+            MPI_Type_commit(&particle_send_type);
+
+            MPI_Isend(MPI_BOTTOM, 1, particle_send_type, thread, 0,
+                      MPI_GLOBAL_COMMUNICATOR, &SendParticleDataRequest[SendRequestLength++]);
+
+            MPI_Type_free(&particle_send_type);
+        }
     }
-  }
 
-  // Simplified exchange info structure using segment indices
-  struct ParticleExchangeInfo {
-    std::vector<int> segmentIndices;  // Array indices instead of IDs
-    std::vector<int> particleCounts;
-  };
-
-  std::vector<ParticleExchangeInfo> recvInfo(PIC::nTotalThreads);
-  
-  // Exchange segment indices and particle counts
-  for (const auto& pair : ProcessParticleMap) {
-    int targetThread = pair.first;
-    ParticleExchangeInfo info;
-    
-    for (const auto& desc : pair.second) {
-      info.segmentIndices.push_back(desc.segmentIndex);
-      info.particleCounts.push_back(desc.nTotalParticles);
+    // Wait for all communication to complete
+    if (SendRequestLength > 0) {
+        MPI_Waitall(SendRequestLength, SendParticleDataRequest, MPI_STATUSES_IGNORE);
     }
-    
-    MPI_Send(info.segmentIndices.data(), info.segmentIndices.size(), MPI_INT,
-             targetThread, 1, MPI_GLOBAL_COMMUNICATOR);
-    MPI_Send(info.particleCounts.data(), info.particleCounts.size(), MPI_INT,
-             targetThread, 2, MPI_GLOBAL_COMMUNICATOR);
-  }
-
-  // Receive counts and prepare receiving buffers
-  for (int thread = 0; thread < PIC::nTotalThreads; thread++) {
-    if (thread == PIC::ThisThread) continue;
-
-    MPI_Status status;
-    int count;
-    
-    MPI_Probe(thread, 1, MPI_GLOBAL_COMMUNICATOR, &status);
-    MPI_Get_count(&status, MPI_INT, &count);
-    
-    recvInfo[thread].segmentIndices.resize(count);
-    recvInfo[thread].particleCounts.resize(count);
-    
-    MPI_Recv(recvInfo[thread].segmentIndices.data(), count, MPI_INT,
-             thread, 1, MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
-    MPI_Recv(recvInfo[thread].particleCounts.data(), count, MPI_INT,
-             thread, 2, MPI_GLOBAL_COMMUNICATOR, MPI_STATUS_IGNORE);
-  }
-
-  // Send particles
-  for (const auto& pair : ProcessParticleMap) {
-    InitSendParticleData(pair.first, pair.second);
-  }
-
-  // Prepare receives using array indices
-  for (int thread = 0; thread < PIC::nTotalThreads; thread++) {
-    if (thread == PIC::ThisThread) continue;
-    
-    const auto& info = recvInfo[thread];
-    std::vector<MPI_Aint> allOffsets;
-    
-    // Access segments directly using array indices
-    for (size_t i = 0; i < info.segmentIndices.size(); i++) {
-      FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[thread][info.segmentIndices[i]];
-      auto offsets = InitNewParticles(segment, info.particleCounts[i]);
-      allOffsets.insert(allOffsets.end(), offsets.begin(), offsets.end());
+    if (RecvRequestLength > 0) {
+        MPI_Waitall(RecvRequestLength, RecvParticleDataRequest, MPI_STATUSES_IGNORE);
     }
-    
-    if (!allOffsets.empty()) {
-      MPI_Datatype particle_recv_type;
-      MPI_Type_create_hindexed_block(allOffsets.size(),
-                                    PIC::ParticleBuffer::ParticleDataLength - 2*sizeof(long int),
-                                    allOffsets.data(),
-                                    MPI_BYTE,
-                                    &particle_recv_type);
-      MPI_Type_commit(&particle_recv_type);
 
-      MPI_Irecv(MPI_BOTTOM, 1, particle_recv_type, thread, 0,
-                MPI_GLOBAL_COMMUNICATOR, &RecvParticleDataRequest[RecvRequestLength++]);
-
-      MPI_Type_free(&particle_recv_type);
+    // Final phase: Delete sent particles
+    for (const auto& pair : ProcessParticleMap) {
+        for (const auto& desc : pair.second) {
+            std::unordered_set<long int> deleteSet;
+            for (const auto& particleId : desc.particleList) {
+                deleteSet.insert(particleId);
+            }
+            
+            long int newFirst = -1;
+            long int ptr = desc.segment->FirstParticleIndex;
+            
+            while (ptr != -1) {
+                long int next = PIC::ParticleBuffer::GetNext(ptr);
+                
+                if (deleteSet.find(ptr) == deleteSet.end()) {
+                    PIC::ParticleBuffer::SetNext(ptr, newFirst);
+                    newFirst = ptr;
+                } else {
+                    PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr, true);
+                }
+                
+                ptr = next;
+            }
+            
+            desc.segment->FirstParticleIndex = newFirst;
+        }
     }
-  }
 
-  // Wait for completion
-  MPI_Waitall(SendRequestLength, SendParticleDataRequest, MPI_STATUSES_IGNORE);
-  MPI_Waitall(RecvRequestLength, RecvParticleDataRequest, MPI_STATUSES_IGNORE);
-
-  // Clean up sent particles using array indices
-  for (const auto& pair : ProcessParticleMap) {
-    for (const auto& desc : pair.second) {
-      FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[pair.first][desc.segmentIndex];
-      RemoveSentParticles(segment);
-    }
-  }
-
-  delete[] SendParticleDataRequest;
-  delete[] RecvParticleDataRequest;
+    delete[] SendParticleDataRequest;
+    delete[] RecvParticleDataRequest;
 }
-
-
 
 void PIC::ParallelFieldLines::ExchangeFieldLineParticles() {
 namespace FL = PIC::FieldLine;
@@ -347,8 +323,181 @@ namespace FL = PIC::FieldLine;
 
   if (ThreadSegmentTable==NULL) exit(__LINE__,__FILE__,"Error: ThreadSegmentTable is not initialized");
 
+  PIC::ParallelFieldLines::GetFieldLinePopulationStat();
+
   //loop through field lines  
   for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
     ExchangeFieldLineParticles(ThreadSegmentTable[iFieldLine]);
+  }
+}
+
+//==================================   output the number of particles attached to each of the field lines ======================================
+void PIC::ParallelFieldLines::GetFieldLinePopulationStat(PIC::FieldLine::cFieldLineSegment* FirstSegment) {
+    // Statistics for this process
+    struct ParticleStats {
+        long int totalParticles;         // Total particles in field line
+        long int localParticles;         // Particles in segments owned by this thread
+        long int remoteParticles;        // Particles in segments owned by other threads
+        int nLocalSegments;              // Number of segments owned by this thread
+        int nRemoteSegments;             // Number of segments owned by other threads
+    };
+    
+    // Collect local statistics
+    ParticleStats localStats = {0, 0, 0, 0, 0};
+    
+    // Loop through all segments in the field line
+    auto currentSegment = FirstSegment;
+    while (currentSegment != nullptr) {
+        int particleCount = 0;
+        long int ptr = currentSegment->FirstParticleIndex;
+        
+        // Count particles in this segment
+        while (ptr != -1) {
+            particleCount++;
+            ptr = PIC::ParticleBuffer::GetNext(ptr);
+        }
+        
+        // Update statistics
+        localStats.totalParticles += particleCount;
+        
+        if (currentSegment->Thread == PIC::ThisThread) {
+            localStats.localParticles += particleCount;
+            localStats.nLocalSegments++;
+        } else {
+            localStats.remoteParticles += particleCount;
+            localStats.nRemoteSegments++;
+        }
+        
+        currentSegment = currentSegment->GetNext();
+    }
+    
+    // Structure to hold statistics from all processes
+    struct GlobalParticleStats {
+        long int totalParticles;
+        long int localParticles;
+        long int remoteParticles;
+        int nLocalSegments;
+        int nRemoteSegments;
+        int processId;
+    };
+    
+    std::vector<GlobalParticleStats> allStats;
+    
+    if (PIC::ThisThread == 0) {
+        allStats.resize(PIC::nTotalThreads);
+    }
+    
+    // Create a custom MPI type for ParticleStats
+    MPI_Datatype mpi_stats_type;
+    int blocklengths[] = {1, 1, 1, 1, 1, 1};
+    MPI_Aint displacements[6];
+    MPI_Datatype types[] = {MPI_LONG, MPI_LONG, MPI_LONG, MPI_INT, MPI_INT, MPI_INT};
+    
+    GlobalParticleStats sample;
+    MPI_Aint base_address;
+    MPI_Get_address(&sample, &base_address);
+    MPI_Get_address(&sample.totalParticles, &displacements[0]);
+    MPI_Get_address(&sample.localParticles, &displacements[1]);
+    MPI_Get_address(&sample.remoteParticles, &displacements[2]);
+    MPI_Get_address(&sample.nLocalSegments, &displacements[3]);
+    MPI_Get_address(&sample.nRemoteSegments, &displacements[4]);
+    MPI_Get_address(&sample.processId, &displacements[5]);
+    
+    for (int i = 0; i < 6; i++) {
+        displacements[i] = MPI_Aint_diff(displacements[i], base_address);
+    }
+    
+    MPI_Type_create_struct(6, blocklengths, displacements, types, &mpi_stats_type);
+    MPI_Type_commit(&mpi_stats_type);
+    
+    // Prepare local stats for gathering
+    GlobalParticleStats myStats = {
+        localStats.totalParticles,
+        localStats.localParticles,
+        localStats.remoteParticles,
+        localStats.nLocalSegments,
+        localStats.nRemoteSegments,
+        PIC::ThisThread
+    };
+    
+    // Gather statistics from all processes
+    MPI_Gather(&myStats, 1, mpi_stats_type,
+               allStats.data(), 1, mpi_stats_type,
+               0, MPI_GLOBAL_COMMUNICATOR);
+    
+    MPI_Type_free(&mpi_stats_type);
+    
+    // Process 0 prints the results
+    if (PIC::ThisThread == 0) {
+        // Calculate totals
+        GlobalParticleStats totals = {0, 0, 0, 0, 0, -1};
+        for (const auto& stats : allStats) {
+            totals.totalParticles += stats.totalParticles;
+            totals.localParticles += stats.localParticles;
+            totals.remoteParticles += stats.remoteParticles;
+            totals.nLocalSegments += stats.nLocalSegments;
+            totals.nRemoteSegments += stats.nRemoteSegments;
+        }
+        
+        // Print header
+        printf("\n=== Field Line Particle Distribution Analysis ===\n");
+        printf("Total Processes: %d\n\n", PIC::nTotalThreads);
+        
+        // Print per-process statistics
+        printf("Per-Process Statistics:\n");
+        printf("%-6s | %-12s | %-12s | %-12s | %-12s | %-12s\n",
+               "Proc", "Total Parts", "Local Parts", "Remote Parts", "Local Segs", "Remote Segs");
+        printf("----------------------------------------------------------------------\n");
+        
+        for (const auto& stats : allStats) {
+            printf("%-6d | %-12ld | %-12ld | %-12ld | %-12d | %-12d\n",
+                   stats.processId,
+                   stats.totalParticles,
+                   stats.localParticles,
+                   stats.remoteParticles,
+                   stats.nLocalSegments,
+                   stats.nRemoteSegments);
+        }
+        
+        // Print summary
+        printf("\nGlobal Summary:\n");
+        printf("Total Particles: %ld\n", totals.totalParticles);
+        printf("Total Segments: %d\n", totals.nLocalSegments + totals.nRemoteSegments);
+        printf("Average Particles per Process: %.2f\n", 
+               static_cast<double>(totals.totalParticles) / PIC::nTotalThreads);
+        printf("Average Segments per Process: %.2f\n", 
+               static_cast<double>(totals.nLocalSegments + totals.nRemoteSegments) / PIC::nTotalThreads);
+        
+        // Print load balance metrics
+        printf("\nLoad Balance Metrics:\n");
+        long int maxParticles = 0, minParticles = LONG_MAX;
+        int maxSegments = 0, minSegments = INT_MAX;
+        
+        for (const auto& stats : allStats) {
+            maxParticles = std::max(maxParticles, stats.localParticles);
+            minParticles = std::min(minParticles, stats.localParticles);
+            maxSegments = std::max(maxSegments, stats.nLocalSegments);
+            minSegments = std::min(minSegments, stats.nLocalSegments);
+        }
+        
+        double particleImbalance = static_cast<double>(maxParticles - minParticles) / ((1>maxParticles) ? 1 : maxParticles)  * 100.0;
+        double segmentImbalance = static_cast<double>(maxSegments - minSegments) / maxSegments * 100.0;
+        
+        printf("Particle Load Imbalance: %.2f%%\n", particleImbalance);
+        printf("Segment Load Imbalance: %.2f%%\n", segmentImbalance);
+        printf("================================================\n\n");
+    }
+}
+
+void PIC::ParallelFieldLines::GetFieldLinePopulationStat() {
+namespace FL = PIC::FieldLine;
+  if (FL::FieldLinesAll==NULL) return;
+
+  if (ThreadSegmentTable==NULL) exit(__LINE__,__FILE__,"Error: ThreadSegmentTable is not initialized");
+
+  //loop through field lines
+  for (int iFieldLine=0;iFieldLine<FL::nFieldLine;iFieldLine++) {
+    if (PIC::ThisThread==0) cout << "Field line particle statistic: field line " << iFieldLine << endl << flush;
+    GetFieldLinePopulationStat(FL::FieldLinesAll[iFieldLine].GetFirstSegment());
   }
 }
