@@ -10,6 +10,7 @@ use Scalar::Util qw/looks_like_number/;
 use Cwd qw(cwd);
 
 use lib cwd;
+use File::Spec;
 use ampsConfigLib;
 use constant {true => 1, false =>0};
 use constant {GasSpecieType => 0, DustSpecieType => 1};
@@ -19,10 +20,11 @@ my $loadedFlag_SpeciesBlock=0;
 my $loadedFlag_BackgroundSpeciesBlock=0;
 
 my $InputFileName;
+my $BuildDir = "build";  # Changed from srcTemp to build
+my $LastInputFileInfo = ".last_input_info";
 
 #the directory for the input files/tables of the model runs
 my $InputDirectory='.'; 
-
 
 my $line;
 my $InputFileLineNumber=0;
@@ -42,10 +44,85 @@ my @SpeciesType;
 #compile the code
 my $CompileProcessedCodeFlag=1;
 
-#Location of the local working vertion of the code that will be compiled 
-system('rm -rf srcTemp');
-system('cp -r src srcTemp');
-$ampsConfigLib::WorkingSourceDirectory="srcTemp";
+# Function to check if build directory needs to be recreated
+sub shouldRecreateSourceTree {
+    return 1 unless (-e $LastInputFileInfo);
+    return 1 unless (-d $BuildDir);
+
+    
+    # Read last input file info
+    open(my $fh, "<", $LastInputFileInfo) or return 1;
+    my $lastFile = <$fh>;
+    my $lastMTime = <$fh>;
+    close($fh);
+    chomp($lastFile);
+    chomp($lastMTime);
+    
+    # Get current input file info
+    my $currentMTime = (stat($InputFileName))[9];
+
+    # Return true if input file or modification time has changed
+    return 1 if ($lastFile ne $InputFileName || $lastMTime != $currentMTime);
+    return 0;
+}
+
+# Function to save current input file info
+sub saveInputFileInfo {
+    open(my $fh, ">", $LastInputFileInfo) or die "Cannot create $LastInputFileInfo: $!";
+    print $fh $InputFileName . "\n";
+    print $fh (stat($InputFileName))[9] . "\n";
+    close($fh);
+}
+
+#Determine the name of the input file
+# Parse command-line arguments to find the -input flag
+for (my $i = 0; $i < @ARGV; $i++) {
+    if ($ARGV[$i] eq '-input' && defined $ARGV[$i + 1]) {
+        $InputFileName = $ARGV[$i + 1];
+    }
+}
+
+# Ensure $InputFileName is defined and the file exists
+unless (defined $InputFileName && -e $InputFileName) {
+    die "Error: Input file must be specified with -input and must exist.\n";
+}
+
+# Ensure $InputFileName is defined and the file exists
+unless (defined $InputFileName && -e $InputFileName) {
+    die "Error: Input file must be specified with -input and must exist.\n";
+}
+
+# Get the modification time of the input file using stat in list context
+my @input_file_stat = stat($InputFileName);
+
+# Ensure stat was successful and retrieve the modification time
+my $input_file_mod_time = defined $input_file_stat[9] ? $input_file_stat[9] : die "Error: Could not retrieve file modification time.\n";
+
+# Get the modification time of the input file
+#my $input_file_stat = stat($InputFileName);
+# $input_file_mod_time = $input_file_stat->mtime if defined $input_file_stat;
+
+#Location of the local working version of the code that will be compiled 
+my $needToRecreateTree = shouldRecreateSourceTree();
+
+if ($needToRecreateTree) {
+
+print "Recreating source tree in $BuildDir...\n";
+    
+# Remove existing build directory if it exists
+system("rm -rf $BuildDir") if (-d $BuildDir);
+
+# Create build directory
+mkdir $BuildDir or die "Error: Could not create directory '$BuildDir': $!";
+    
+# Copy source files to build directory
+system("cp -r src/* $BuildDir");
+    
+# Save the current input file information
+saveInputFileInfo();
+}
+
+$ampsConfigLib::WorkingSourceDirectory = $BuildDir;
 
 #location of the code distribution
 my $SourceDirectory=" ";
@@ -53,8 +130,13 @@ my $SourceDirectory=" ";
 #location of data for coupler
 my $CPLRDATA='.';
 
-#the location of the project sprcific sources
+#the location of the project specific sources
 my $ProjectSpecificSourceDirectory="main";
+
+# Copy project specific sources only when recreating the tree
+if ($needToRecreateTree && -d $ProjectSpecificSourceDirectory) {
+    system("cp -r $ProjectSpecificSourceDirectory $BuildDir/main");
+}
 
 #compilation mode: stand along of a part of SWMF
 my $CompilationMode="AMPS";
@@ -91,7 +173,7 @@ for (my $i=0;$i<$#ARGV + 1;$i++) {
   }
   
 }
-
+if ($needToRecreateTree) {
 #read the assembled input file
 print "Preprocessing AMPS sources\n";
 
@@ -108,12 +190,10 @@ die "ERROR: Application hasn't been set!\n" unless $InputFileName;
 #output basic parameters of the code configuration 
 print "InputFile: $InputFileName\n"; 
 
-
 #assemble the input file 
 open (AssembledInputFile,">","$InputFileName.Assembled");
 AssambleInputFile($InputFileName);
 close AssembledInputFile;
-
 
 open (InputFile,"<","$InputFileName.Assembled") || die "Cannot find file \"$InputFileName.Assembled\"\n";
 
@@ -197,11 +277,6 @@ while ($line=<InputFile>) {
       chomp($InputLine);    
                  
       print BLOCK "$line";  
-      
-#      print "$InputFileLineNumber: $InputLine\n";
-#      if ($InputFileLineNumber==104) {
-#        print "!!!\n";
-#      }
         
       if ($InputLine eq "#ENDBLOCK") {
         last;
@@ -228,7 +303,6 @@ while ($line=<InputFile>) {
   
 }
 
-
 #modify the makefile for the compilation mode
 if ($CompileProcessedCodeFlag==1) {
   my @makefilelines;
@@ -250,6 +324,7 @@ if ($CompileProcessedCodeFlag==1) {
   open (MAKEFILEFILE,">Makefile.local") || die "Cannot open Makefile.local\n";
   print MAKEFILEFILE @makefilelines;
   close (MAKEFILEFILE);
+  }
 
   #compile the code 
   print "Compile the code\n";
@@ -261,6 +336,7 @@ if ($CompileProcessedCodeFlag==1) {
     system("make");
   }
 }
+
 
 #=============================== Add a line to Makefile.local
 # USAGE:
@@ -682,13 +758,15 @@ sub ReadMainBlock {
       ($InputLine,$InputComment)=split('!',$line,2);
       $InputLine=~s/ //g;
       $InputLine=~s/=/ /;
-      
-      my $oldWSD = $ampsConfigLib::WorkingSourceDirectory;
-      ($InputLine,$ampsConfigLib::WorkingSourceDirectory)=split(' ',$InputLine,2);
 
-      if ($oldWSD ne $ampsConfigLib::WorkingSourceDirectory) {
-        system("mv $oldWSD $ampsConfigLib::WorkingSourceDirectory");
-      }
+      print "WORKINGSOURCEDIRECTORY is depricated: build is the default working source directory\n";  
+      
+      #my $oldWSD = $ampsConfigLib::WorkingSourceDirectory;
+      #($InputLine,$ampsConfigLib::WorkingSourceDirectory)=split(' ',$InputLine,2);
+      #
+      #if ($oldWSD ne $ampsConfigLib::WorkingSourceDirectory) {
+      #  system("mv $oldWSD $ampsConfigLib::WorkingSourceDirectory");
+      #}
     }
     ### SOURCEDIRECTORY ###
     elsif ($s0 eq "SOURCEDIRECTORY") {
@@ -889,8 +967,12 @@ sub ReadMainBlock {
   
 #  `cp -r $SourceDirectory $ampsConfigLib::WorkingSourceDirectory`;
  
-  if ( -d $ProjectSpecificSourceDirectory ) {
-    `cp -r $ProjectSpecificSourceDirectory $ampsConfigLib::WorkingSourceDirectory/main`;
+  if ($needToRecreateTree) {
+    if ( -d $ProjectSpecificSourceDirectory ) {
+      `cp -r $ProjectSpecificSourceDirectory $ampsConfigLib::WorkingSourceDirectory/main`;
+    }
+
+    system("./utility/CheckMacro.pl $BuildDir -in-place");
   }
   
   #setup the time-step and particle-weight modes
