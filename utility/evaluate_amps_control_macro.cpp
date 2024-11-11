@@ -21,6 +21,14 @@ unordered_map<string, bool> undefined_macros;     // Stores macros defined witho
 set<fs::path> processed_files;                    // Tracks files already processed to avoid duplication
 
 unordered_set<string> TrapMacroTable;             // Stores macros that should trigger TrapMacro() when processed
+bool verbose_mode = false;                        // Controls debug output
+
+// Debug print function
+void debugPrint(const string& message) {
+    if (verbose_mode) {
+        cout << "[DEBUG] " << message << endl;
+    }
+}
 
 // Condition structure to manage conditional compilation state
 struct Condition {
@@ -149,14 +157,14 @@ string substituteMacros(const string &expression) {
         double size = getSizeOfType(type);
         if (size != -1) {
             substituted.replace(match.position(0), match.length(0), to_string(size));
-            cout << "Substituted sizeof(" << type << ") with " << size << endl; // Debug print
+            if (verbose_mode==true) cout << "Substituted sizeof(" << type << ") with " << size << endl; // Debug print
         } else {
             cerr << "Failed to evaluate sizeof for type: " << type << endl;
             return "0"; // Return 0 for unsupported types
         }
     }
 
-    cout << "Expression after substitution: " << substituted << endl; // Debug print
+    if (verbose_mode==true) cout << "Expression after substitution: " << substituted << endl; // Debug print
     return substituted;
 }
 
@@ -176,7 +184,7 @@ void processLine(const string &line, stack<Condition> &conditionStack, const fs:
     regex endifRegex(R"(#endif)");
 
     smatch match;
-    cout << "Processing line: " << line << endl;  // Debug print
+    if (verbose_mode==true) cout << "Processing line: " << line << endl;  // Debug print
 
     // Ignore processing if the current condition stack has an inactive condition
     if (!conditionStack.empty() && !conditionStack.top().isActive) {
@@ -203,24 +211,24 @@ void processLine(const string &line, stack<Condition> &conditionStack, const fs:
         }
 
         if (value.empty()) {
-            cout << "Found macro without value: " << macro << endl;  // Debug print
+            if (verbose_mode==true) cout << "Found macro without value: " << macro << endl;  // Debug print
             undefined_macros[macro] = true;
         } else {
-            cout << "Defining macro: " << macro << " with expression: " << value << endl;  // Debug print
+            if (verbose_mode==true) cout << "Defining macro: " << macro << " with expression: " << value << endl;  // Debug print
             double evaluatedValue = evaluateExpression(substituteMacros(value));
             macro_values[macro] = evaluatedValue;
-            cout << "Macro " << macro << " evaluated to: " << evaluatedValue << endl;  // Debug print
+            if (verbose_mode==true) cout << "Macro " << macro << " evaluated to: " << evaluatedValue << endl;  // Debug print
         }
     } else if (regex_match(line, match, undefRegex)) {
         string macro = match[1].str();
-        cout << "Undefining macro: " << macro << endl;  // Debug print
+        if (verbose_mode==true) cout << "Undefining macro: " << macro << endl;  // Debug print
         macro_values.erase(macro);
         undefined_macros.erase(macro);
     } else if (regex_match(line, match, includeRegex)) {
         string includeFile = match[1].str();
         fs::path includePath = baseDir / includeFile;
         if (processed_files.find(includePath) == processed_files.end()) {
-            cout << "Including file: " << includeFile << endl;  // Debug print
+            if (verbose_mode==true) cout << "Including file: " << includeFile << endl;  // Debug print
             parseFile(includePath, conditionStack);
         } else {
             cout << "File " << includeFile << " already processed. Skipping to avoid recursion." << endl;
@@ -228,26 +236,26 @@ void processLine(const string &line, stack<Condition> &conditionStack, const fs:
     } else if (regex_match(line, match, ifRegex)) {
         bool condition = evaluateExpression(substituteMacros(match[1].str())) != 0;
         conditionStack.push({condition, false});
-        cout << "Evaluating #if condition (" << match[1].str() << ") as " << (condition ? "true" : "false") << endl;  // Debug print
+        if (verbose_mode==true) cout << "Evaluating #if condition (" << match[1].str() << ") as " << (condition ? "true" : "false") << endl;  // Debug print
     } else if (regex_match(line, match, ifdefRegex)) {
         string macro = match[1].str();
         bool condition = macro_values.find(macro) != macro_values.end();
         conditionStack.push({condition, false});
-        cout << "Evaluating #ifdef " << macro << " as " << (condition ? "true" : "false") << endl;  // Debug print
+        if (verbose_mode==true) cout << "Evaluating #ifdef " << macro << " as " << (condition ? "true" : "false") << endl;  // Debug print
     } else if (regex_match(line, match, ifndefRegex)) {
         string macro = match[1].str();
         bool condition = macro_values.find(macro) == macro_values.end();
         conditionStack.push({condition, false});
-        cout << "Evaluating #ifndef " << macro << " as " << (condition ? "true" : "false") << endl;  // Debug print
+        if (verbose_mode==true) cout << "Evaluating #ifndef " << macro << " as " << (condition ? "true" : "false") << endl;  // Debug print
     } else if (regex_match(line, elseRegex)) {
         Condition &top = conditionStack.top();
         if (!top.hasElse) {
             top.isActive = !top.isActive;
             top.hasElse = true;
-            cout << "Toggling condition for #else as " << top.isActive << endl;  // Debug print
+            if (verbose_mode==true) cout << "Toggling condition for #else as " << top.isActive << endl;  // Debug print
         }
     } else if (regex_match(line, endifRegex)) {
-        cout << "Ending conditional block with #endif" << endl;  // Debug print
+        if (verbose_mode==true) cout << "Ending conditional block with #endif" << endl;  // Debug print
         if (!conditionStack.empty()) {
             conditionStack.pop();
         }
@@ -353,7 +361,13 @@ int main(int argc, char *argv[]) {
     // Check for help flags
     for (int i = 1; i < argc; ++i) {
         string arg = argv[i];
-        if (arg == "-help" || arg == "-h") {
+        
+	
+	if (arg == "-verbose" || arg == "-v") {
+            verbose_mode = true;
+            debugPrint("Verbose mode enabled");
+        } 
+	else if (arg == "-help" || arg == "-h") {
             cout << "Usage: " << argv[0] << " <file1> <file2> ... [options]\n";
 	    cout << "Usage: " << argv[0] << " pic.h picGlobal.dfn picParticleDataMacro.h\n\n";
             cout << "This program processes C++ source files and headers to evaluate macros.\n";
@@ -361,8 +375,10 @@ int main(int argc, char *argv[]) {
             cout << "and tracks macro definitions across files.\n\n";
             cout << "Options:\n";
             cout << "  -help, -h       Show this help message.\n\n";
+	    cout << "  -verbose, -v    Enable verbose debug output.\n\n";
             cout << "Usage Example:\n";
-            cout << "  " << argv[0] << " file1.h file2.h\n\n";
+            cout << "  " << argv[0] << " file1.h file2.h\n";
+	    cout << "  " << argv[0] << " pic.h picGlobal.dfn picParticleDataMacro.h\n\n";
             cout << "Detailed Explanation:\n";
             cout << "  1. The program processes files in the specified order, and applies macros defined in\n";
             cout << "     earlier files to subsequent files.\n";
