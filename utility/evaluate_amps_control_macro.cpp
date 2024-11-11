@@ -11,9 +11,231 @@
 #include <iomanip>   // For std::setw
 #include <filesystem>
 #include <type_traits>
+#include <cctype>
+#include <stdexcept>
 
 using namespace std;
 namespace fs = std::filesystem;
+
+// Helper class to parse and evaluate expressions
+class ExpressionParser {
+public:
+    ExpressionParser(const string& expr) : expression(expr), pos(0) {}
+
+    double parse() {
+        double result = parseOrExpression();
+        skipWhitespace();
+        if (pos != expression.length()) {
+            throw runtime_error("Unexpected characters at end of expression");
+        }
+        return result;
+    }
+
+private:
+    string expression;
+    size_t pos;
+
+    void skipWhitespace() {
+        while (pos < expression.length() && isspace(expression[pos])) {
+            pos++;
+        }
+    }
+
+    // Parse OR expressions
+    double parseOrExpression() {
+        double left = parseAndExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("||")) {
+                double right = parseAndExpression();
+                left = (left || right) ? 1.0 : 0.0;
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse AND expressions
+    double parseAndExpression() {
+        double left = parseEqualityExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("&&")) {
+                double right = parseEqualityExpression();
+                left = (left && right) ? 1.0 : 0.0;
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse Equality expressions (==, !=)
+    double parseEqualityExpression() {
+        double left = parseRelationalExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("==")) {
+                double right = parseRelationalExpression();
+                left = (left == right) ? 1.0 : 0.0;
+            }
+            else if (match("!=")) {
+                double right = parseRelationalExpression();
+                left = (left != right) ? 1.0 : 0.0;
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse Relational expressions (<, >, <=, >=)
+    double parseRelationalExpression() {
+        double left = parseAdditiveExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("<=")) {
+                double right = parseAdditiveExpression();
+                left = (left <= right) ? 1.0 : 0.0;
+            }
+            else if (match(">=")) {
+                double right = parseAdditiveExpression();
+                left = (left >= right) ? 1.0 : 0.0;
+            }
+            else if (match("<")) {
+                double right = parseAdditiveExpression();
+                left = (left < right) ? 1.0 : 0.0;
+            }
+            else if (match(">")) {
+                double right = parseAdditiveExpression();
+                left = (left > right) ? 1.0 : 0.0;
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse Additive expressions (+, -)
+    double parseAdditiveExpression() {
+        double left = parseMultiplicativeExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("+")) {
+                double right = parseMultiplicativeExpression();
+                left += right;
+            }
+            else if (match("-")) {
+                double right = parseMultiplicativeExpression();
+                left -= right;
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse Multiplicative expressions (*, /, %)
+    double parseMultiplicativeExpression() {
+        double left = parseUnaryExpression();
+        while (true) {
+            skipWhitespace();
+            if (match("*")) {
+                double right = parseUnaryExpression();
+                left *= right;
+            }
+            else if (match("/")) {
+                double right = parseUnaryExpression();
+                if (right == 0) {
+                    throw runtime_error("Division by zero");
+                }
+                left /= right;
+            }
+            else if (match("%")) {
+                double right = parseUnaryExpression();
+                if (right == 0) {
+                    throw runtime_error("Modulo by zero");
+                }
+                left = static_cast<int>(left) % static_cast<int>(right);
+            }
+            else {
+                break;
+            }
+        }
+        return left;
+    }
+
+    // Parse Unary expressions (!, +, -)
+    double parseUnaryExpression() {
+        skipWhitespace();
+        if (match("!")) {
+            double operand = parseUnaryExpression();
+            return (!operand) ? 1.0 : 0.0;
+        }
+        else if (match("+")) {
+            return parseUnaryExpression();
+        }
+        else if (match("-")) {
+            return -parseUnaryExpression();
+        }
+        else {
+            return parsePrimaryExpression();
+        }
+    }
+
+    // Parse Primary expressions (numbers, parentheses)
+    double parsePrimaryExpression() {
+        skipWhitespace();
+        if (match("(")) {
+            double expr = parseOrExpression();
+            if (!match(")")) {
+                throw runtime_error("Expected ')'");
+            }
+            return expr;
+        }
+        else {
+            return parseNumber();
+        }
+    }
+
+    // Parse a number (integer or floating-point)
+    double parseNumber() {
+        skipWhitespace();
+        size_t start = pos;
+        bool hasDecimal = false;
+        while (pos < expression.length() && (isdigit(expression[pos]) || expression[pos] == '.')) {
+            if (expression[pos] == '.') {
+                if (hasDecimal) {
+                    throw runtime_error("Invalid number format");
+                }
+                hasDecimal = true;
+            }
+            pos++;
+        }
+        if (start == pos) {
+            throw runtime_error("Expected number at position " + to_string(pos));
+        }
+        string numberStr = expression.substr(start, pos - start);
+        return stod(numberStr);
+    }
+
+    // Utility function to match a string at the current position
+    bool match(const string& token) {
+        skipWhitespace();
+        if (expression.compare(pos, token.length(), token) == 0) {
+            pos += token.length();
+            return true;
+        }
+        return false;
+    }
+};
+
 
 // Global data structures for macro definitions and file tracking
 unordered_map<string, double> macro_values;       // Stores macros with numeric values
@@ -124,19 +346,16 @@ double evaluateSimpleExpression(const std::string& expression) {
 }
 
 // Evaluate expressions, handling arithmetic and parentheses
-double evaluateExpression(string expression) {
-    // Handle expressions with parentheses
-    regex parenRegex(R"(\(([^()]+)\))");
-    smatch match;
-
-    while (regex_search(expression, match, parenRegex)) {
-        string innerExpr = match[1].str();
-        double innerValue = evaluateExpression(innerExpr);
-        expression.replace(match.position(0), match.length(0), to_string(innerValue));
+double evaluateExpression(const string& expr) {
+    ExpressionParser parser(expr);
+    try {
+        double result = parser.parse();
+        return result;
     }
-
-    // After evaluating all parentheses, handle the remaining simple expression
-    return evaluateSimpleExpression(expression);
+    catch (const exception& e) {
+        cerr << "Error evaluating expression '" << expr << "': " << e.what() << endl;
+        return 0.0; // Default to false on error
+    }
 }
 
 // Substitute macros with their values in an expression and handle sizeof(type)
@@ -378,7 +597,7 @@ int main(int argc, char *argv[]) {
 	    cout << "  -verbose, -v    Enable verbose debug output.\n\n";
             cout << "Usage Example:\n";
             cout << "  " << argv[0] << " file1.h file2.h\n";
-	    cout << "  " << argv[0] << " pic.h picGlobal.dfn picParticleDataMacro.h\n\n";
+	    cout << "  " << argv[0] << " ../general/global.dfn ../general/global.h pic.h picGlobal.dfn picParticleDataMacro.h\n\n";
             cout << "Detailed Explanation:\n";
             cout << "  1. The program processes files in the specified order, and applies macros defined in\n";
             cout << "     earlier files to subsequent files.\n";
@@ -407,6 +626,9 @@ int main(int argc, char *argv[]) {
     TrapMacroTable.insert("_PIC_PARTICLE_DATA__NEXT_OFFSET_");
     TrapMacroTable.insert("_PIC_PARTICLE_DATA__VELOCITY_OFFSET_");
     TrapMacroTable.insert("_PIC_PARTICLE_DATA__WEIGHT_CORRECTION_OFFSET_"); 
+    TrapMacroTable.insert("_PIC_PARTICLE_DATA__MAGNETIC_MOMENT_OFFSET_");
+    TrapMacroTable.insert("_USE_MAGNETIC_MOMENT_");
+    TrapMacroTable.insert("TEST");
 
     // Ensure there are files to process
     if (argc < 2) {
