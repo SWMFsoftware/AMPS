@@ -4,7 +4,7 @@ DEFAULT_TARGET : amps
 
 # These definitions may be overwritten by Makefile.def
 SOURCES=src
-WSD=srcTemp
+WSD=build 
 SPICE=nospice
 OPENMP=off
 
@@ -259,7 +259,7 @@ distclean:
 	./Config.pl -uninstall
 
 allclean: clean
-	rm -rf main srcTemp *.input* amps table_parser Makefile.local Makefile.test \
+	rm -rf main ${WSD} *.input* amps table_parser Makefile.local Makefile.test \
 		.amps.conf .general.conf
 	rm -f output
 	rm -f AMPS.pdf
@@ -294,10 +294,10 @@ ${WSD}:
 	./utility/CheckMacro.pl ${WSD} -in-place
 
 ifeq ($(COMPILE.mpicxx),nvcc)
-	cd srcTemp/pic;../../utility/change-ext cpp cu  
-	cd srcTemp/meshAMR;../../utility/change-ext cpp cu 
-	cd srcTemp/main;../../utility/change-ext cpp cu
-	cd srcTemp/general;../../utility/change-ext cpp cu
+	cd ${WSD}/pic;../../utility/change-ext cpp cu  
+	cd ${WSD}/meshAMR;../../utility/change-ext cpp cu 
+	cd ${WSD}/main;../../utility/change-ext cpp cu
+	cd ${WSD}/general;../../utility/change-ext cpp cu
 endif
 
 AMPSLIB = ${LIBDIR}/lib${COMPONENT}.a
@@ -309,7 +309,6 @@ LIB:
 	fi
 
 AMPSLIB:
-	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
 	$(MAKE) ${WSD}
 	$(MAKE) LIB_after_build
 	cd srcInterface; $(MAKE) LIB SEARCH_C="${SEARCH_C}"
@@ -370,7 +369,7 @@ endif
 
 .PHONY: amps
 amps:
-	@(if [ -d ${WSD} ]; then rm -rf ${WSD}; fi)
+	./ampsConfig.pl -input ${InputFileAMPS} -no-compile
 	$(MAKE) $(WSD)
 	$(MAKE) amps_after_build
 
@@ -381,10 +380,10 @@ amps_after_build: LIB_after_build
 
 amps_link:
 ifeq ($(COMPILE.mpicxx),nvcc)
-	nvcc -o amps-link.a -dlink srcTemp/main/main.a srcTemp/libAMPS.a
-	mpif90 -o amps -g  amps-link.a srcTemp/main/main.a srcTemp/libAMPS.a -lstdc++ share/lib/libSHARE.a ${EXTRALINKEROPTIONS_F} 
+	nvcc -o amps-link.a -dlink ${WSD}/main/main.a ${WSD}/libAMPS.a
+	mpif90 -o amps -g  amps-link.a ${WSD}/main/main.a ${WSD}/libAMPS.a -lstdc++ share/lib/libSHARE.a ${EXTRALINKEROPTIONS_F} 
 else
-	${AMPSLINKER} -o amps srcTemp/main/main.a srcTemp/libAMPS.a \
+	${AMPSLINKER} -o amps ${WSD}/main/main.a ${WSD}/libAMPS.a \
 		${CPPLIB} ${AMPSLINKLIB} ${EXTRALINKEROPTIONS}
 endif
 
