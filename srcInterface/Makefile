@@ -28,7 +28,7 @@ LIB:
 	@echo ${MY_LIB} has been brought up to date.
 	@echo
 
-AMPS_LIB = ../srcTemp/libAMPS.a
+AMPS_LIB = ../build/libAMPS.a
 
 ${MY_LIB}: ${AMPS_LIB} ${OBJECTS}
 	cp -f ${AMPS_LIB} ${MY_LIB}
