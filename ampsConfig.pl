@@ -49,7 +49,6 @@ sub shouldRecreateSourceTree {
     return 1 unless (-e $LastInputFileInfo);
     return 1 unless (-d $BuildDir);
 
-    
     # Read last input file info
     open(my $fh, "<", $LastInputFileInfo) or return 1;
     my $lastFile = <$fh>;
@@ -103,10 +102,10 @@ my $input_file_mod_time = defined $input_file_stat[9] ? $input_file_stat[9] : di
 # $input_file_mod_time = $input_file_stat->mtime if defined $input_file_stat;
 
 #Location of the local working version of the code that will be compiled 
+print "Checking if source tree recreation is needed...\n";
 my $needToRecreateTree = shouldRecreateSourceTree();
 
 if ($needToRecreateTree) {
-
 print "Recreating source tree in $BuildDir...\n";
     
 # Remove existing build directory if it exists
@@ -120,6 +119,9 @@ system("cp -r src/* $BuildDir");
     
 # Save the current input file information
 saveInputFileInfo();
+}
+else {
+  print "No need to recreate source tree.\n";
 }
 
 $ampsConfigLib::WorkingSourceDirectory = $BuildDir;
@@ -135,7 +137,8 @@ my $ProjectSpecificSourceDirectory="main";
 
 # Copy project specific sources only when recreating the tree
 if ($needToRecreateTree && -d $ProjectSpecificSourceDirectory) {
-    system("cp -r $ProjectSpecificSourceDirectory $BuildDir/main");
+    my $result = system("cp -r $ProjectSpecificSourceDirectory $BuildDir/main");
+    die "Failed to remove build directory: $!" if $result != 0;
 }
 
 #compilation mode: stand along of a part of SWMF
@@ -330,10 +333,12 @@ if ($CompileProcessedCodeFlag==1) {
   print "Compile the code\n";
   
   if (defined $nCompilingThreads) {
-    system("make -j $nCompilingThreads"); 
+    my $result = system("make -j $nCompilingThreads"); 
+    die "Failed to make: $!" if $result != 0;
   }
   else {
-    system("make");
+    my $result = system("make -j");
+    die "Failed to make: $!" if $result != 0;
   }
 }
 
@@ -724,7 +729,8 @@ sub ReadMainBlock {
         if ($Mask) {
           if (-e "$CPLRDATA\/Schedule") {
             print "WARNING: Schedule file for loading multiple data files already exists in the folder $CPLRDATA!\nA reserve copy is created.\n";
-            system("cp $CPLRDATA/Schedule $CPLRDATA/Schedule.autocopy.".`date "+%Y_%m_%d__%Hh%Mm%Ss"`);
+            my $result = system("cp $CPLRDATA/Schedule $CPLRDATA/Schedule.autocopy.".`date "+%Y_%m_%d__%Hh%Mm%Ss"`);
+	    die "Failed to copy: $!" if $result != 0;
           }
     
           my @FileList=`ls $CPLRDATA/$Mask | xargs -n 1 basename`;
