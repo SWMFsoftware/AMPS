@@ -1,3 +1,4 @@
+//should be compiles as g++ -std=c++17 evaluate_amps_control_macro.cpp
 #include <iostream>
 #include <fstream>
 #include <string>
