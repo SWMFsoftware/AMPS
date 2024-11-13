@@ -207,7 +207,7 @@ public:
     StencilLength=0,AllocatedStencilLength=0;
     
     i=0,j=0,k=0;
-    sprintf(symbol,"");
+    symbol[0]='\0';
   }
 
   cStencil(const char* s) {
