@@ -582,12 +582,12 @@ unsigned long int GetTriangulationSignature();
   //read multiple surface mesh files: the class describing individual mesh file, and functions that read these files
   class cSurfaceMeshFile {
   public:
-    char MeshFileName[200];
+    char MeshFileName[600];
     int faceat;
 
     cSurfaceMeshFile() {
       faceat=-1;
-      sprintf(MeshFileName,"");
+      MeshFileName[0]='\0';
     }
   };
 
