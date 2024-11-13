@@ -790,7 +790,7 @@ int PIC::CCMC::TraceParticles() {
     char cmd[_MAX_STRING_LENGTH_PIC_];
 
     sprintf(cmd,"cat %s/amps.TrajectoryTracking.s=*.dat > %s/test_CCMC-Individual_Trajectories.dat",OutputDataFileDirectory,OutputDataFileDirectory);
-    system(cmd);
+    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
   }
 
 

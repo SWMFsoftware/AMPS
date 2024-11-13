@@ -70,10 +70,10 @@ void PIC::ParticleTracker::Init() {
   if (PIC::ThisThread==0) {
     char cmd[_MAX_STRING_LENGTH_PIC_];
     sprintf(cmd,"rm -rf %s/ParticleTrackerTmp",PIC::OutputDataFileDirectory);
-    system(cmd);
+    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
     sprintf(cmd,"mkdir -p %s/ParticleTrackerTmp",PIC::OutputDataFileDirectory);
-    system(cmd);
+    if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
   }
 }
 

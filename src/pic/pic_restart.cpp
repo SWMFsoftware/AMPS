@@ -6,7 +6,7 @@
 int PIC::Restart::ParticleRestartAutosaveIterationInterval=1;
 char PIC::Restart::SamplingData::RestartFileName[_MAX_STRING_LENGTH_PIC_]="SampleData.restart";
 
-char PIC::Restart::saveParticleDataRestartFileName[_MAX_STRING_LENGTH_PIC_]="ParticleData.restart";
+char PIC::Restart::saveParticleDataRestartFileName[200]="ParticleData.restart";
 char PIC::Restart::recoverParticleDataRestartFileName[_MAX_STRING_LENGTH_PIC_]="ParticleData.restart";
 bool PIC::Restart::ParticleDataRestartFileOverwriteMode=true;
 

@@ -845,7 +845,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
   int TecplotInterpolationFinishFlag=false;
 
   sprintf(command,"rm -f %s.AMPS.ImportData.thread=*.dat",DataFileFullName);
-  if (PIC::ThisThread==0) system(command);
+  if (PIC::ThisThread==0) if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
   //extract the data with TECPLOT
@@ -854,7 +854,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
   for (int nTecplotCalls=0;nTecplotCalls<nTestTecplotCalls;nTecplotCalls++) {
     if (TecplotInterpolationFinishFlag==false) {
       sprintf(command,"tec360 -b %s %s.thread=%i.mcr",DataFileFullName,ScriptBaseName,PIC::ThisThread);
-      system(command);
+      if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
     }
 
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
@@ -910,10 +910,10 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
 
   //remove the temporary files and scripts
   sprintf(command,"rm -f %s.thread=%i.mcr",ScriptBaseName,PIC::ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   sprintf(command,"rm -f %s.thread=%i.*.dat",ScriptBaseName,PIC::ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }

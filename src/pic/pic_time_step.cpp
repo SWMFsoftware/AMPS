@@ -57,7 +57,7 @@ void PIC::TimeStepInternal::RecoverSamplingDataRestart() {
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
       for (list<int>::iterator s=RecoveryEntry->second.begin();s!=RecoveryEntry->second.end();s++) {
-        char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[_MAX_STRING_LENGTH_PIC_];
+        char fname[_MAX_STRING_LENGTH_PIC_],ChemSymbol[40];
 
         PIC::MolecularData::GetChemSymbol(ChemSymbol,*s);
         sprintf(fname,"RECOVERED.%s.%s.s=%i.dat",RecoveryEntry->first.c_str(),ChemSymbol,*s);
@@ -68,7 +68,7 @@ void PIC::TimeStepInternal::RecoverSamplingDataRestart() {
           char cmd[_MAX_STRING_LENGTH_PIC_];
 
           sprintf(cmd,"preplot %s",fname);
-          system(cmd);
+          if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
         }
       }
     }

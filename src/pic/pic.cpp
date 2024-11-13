@@ -1815,11 +1815,11 @@ void PIC::Init_BeforeParser() {
 
       //remove the content of the output directory
       sprintf(cmd,"mkdir -p %s",PIC::DiagnospticMessageStreamName);
-      system(cmd);
+      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
 
       if ((test_directory("restartOUT",PIC::DiagnospticMessageStreamName)==false)&&(test_directory("restartIN",PIC::DiagnospticMessageStreamName)==false)) {
         sprintf(cmd,"rm -rf %s/*",PIC::DiagnospticMessageStreamName);
-        system(cmd);
+        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed");
       }
     }
 
@@ -1874,12 +1874,12 @@ void PIC::Init_BeforeParser() {
 
       //remove the content of the output directory
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-      system(cmd);
+      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
       
       //check existance of the restart files directories. In case they are not present, clean the directory
       if ((test_directory("restartOUT","PT")==false)&&(test_directory("restartIN","PT")==false)) {
         sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
-        system(cmd);
+        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
       }
     }
   }

@@ -383,16 +383,16 @@ void PIC::CPLR::SWMF::ConvertMpiCommunicatorFortran2C(signed int* iComm,signed i
       sprintf(PIC::OutputDataFileDirectory,"amps-out.thread=%ld",rank);
 
       if (rank==0) {
-        system("rm -rf amps-out.thread=*");
+        if (system("rm -rf amps-out.thread=*")==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
       }
 
       MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);      
 
       sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-      system(cmd);
+      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
       sprintf(cmd,"rm -rf %s/*",PIC::OutputDataFileDirectory);
-      system(cmd);
+      if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
     }
 
     //define the communicator

@@ -1566,7 +1566,7 @@ void DeleteAttachedParticles();
       char msg[200];
 
       void erase() {
-        sprintf(msg,"");
+        msg[0]='\0';
       } 
 
       cLoggerData() {
@@ -7839,7 +7839,7 @@ void DeleteAttachedParticles();
 
     //Particle data
     extern int ParticleRestartAutosaveIterationInterval;
-    extern char saveParticleDataRestartFileName[_MAX_STRING_LENGTH_PIC_]; //the file name in which the particle data WILL BE WRITTEN
+    extern char saveParticleDataRestartFileName[200]; //the file name in which the particle data WILL BE WRITTEN
     extern char recoverParticleDataRestartFileName[_MAX_STRING_LENGTH_PIC_]; //the file name FROM WHICH the particle data will be read
     extern bool ParticleDataRestartFileOverwriteMode;
 

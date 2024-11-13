@@ -90,10 +90,10 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
 
   //create the directory for the trajectory file
   sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   sprintf(command,"mkdir temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   getcwd(initDirectory,_MAX_STRING_LENGTH_PIC_);
   sprintf(command,"%s/temp.ICES.thread=%i",initDirectory,PIC::Mesh::mesh->ThisThread);
@@ -101,20 +101,20 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
 
   //copy the trajectory file in the currect directory
   sprintf(command,"cp ../icesCellCenterCoordinates.thread=%i .",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   sprintf(command,"mv icesCellCenterCoordinates.thread=%i mhd_traj.dat",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   //start the ices
   getcwd(cCurrentPath, sizeof(cCurrentPath));
   if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Getting the MHD data from ICES.... \nThe current working directory is: %s\n", cCurrentPath);
 
-  system("rm -f MHDRestart");
+  if (system("rm -f MHDRestart")==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   sprintf(command,"ln -s %s/Data/%s/MHD/ MHDRestart",locationICES,DataFile);
   if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"%s\n",command);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   if (PIC::Mesh::mesh->ThisThread==0) {
     sprintf(command,"%s/MHD/comet_mhd.exe",locationICES);
@@ -122,18 +122,18 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   }
   else sprintf(command,"%s/MHD/comet_mhd.exe > /dev/null",locationICES);
 
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
-  system("rm MHDRestart");
+  if (system("rm MHDRestart")==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   //copy the output file into the working directory
   sprintf(command,"mv mhd_values.dat ../icesCellCenterCoordinates.thread=%i.MHD.dat",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   chdir(initDirectory);
 
   sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
@@ -193,7 +193,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveDSMCdata(const char *Case,const char *Dat
   sprintf(command,"%s/DSMC/ices-dsmc -extractdatapoints -grid %s/Data/%s/DSMC/%s -testpointslist icesCellCenterCoordinates.thread=%i -datafile %s/Data/%s/DSMC/%s -dim 2 -symmetry cylindrical",locationICES,   locationICES,Case,MeshFile, PIC::Mesh::mesh->ThisThread,   locationICES,Case,DataFile);
 
   if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"ICES: retrive DSMC data \n Execute command: %s\n",command);
-  system(command);
+  if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 
