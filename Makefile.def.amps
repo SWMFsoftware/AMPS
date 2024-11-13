@@ -8,7 +8,7 @@ BUILDDIR  = ${COMMONDIR}/build
 LIBDIR    = ${COMMONDIR}/lib
 
 SOURCES=src
-WSD=build 
+WSD=build
 
 Lib=  -lm
 SPICE=nospice

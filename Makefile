@@ -4,7 +4,7 @@ DEFAULT_TARGET : amps
 
 # These definitions may be overwritten by Makefile.def
 SOURCES=src
-WSD=build 
+WSD=build
 SPICE=nospice
 OPENMP=off
 

@@ -330,15 +330,17 @@ if ($CompileProcessedCodeFlag==1) {
   }
 
   #compile the code 
-  print "Compile the code\n";
+  if ($CompileProcessedCodeFlag == 1) { 
+    print "Compile the code\n";
   
-  if (defined $nCompilingThreads) {
-    my $result = system("make -j $nCompilingThreads"); 
-    die "Failed to make: $!" if $result != 0;
-  }
-  else {
-    my $result = system("make -j");
-    die "Failed to make: $!" if $result != 0;
+    if (defined $nCompilingThreads) {
+      my $result = system("make -j $nCompilingThreads"); 
+      die "Failed to make: $!" if $result != 0;
+    }
+    else {
+      my $result = system("make -j");
+      die "Failed to make: $!" if $result != 0;
+    }
   }
 }
 
