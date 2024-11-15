@@ -21,6 +21,7 @@ BOOST=noboost
 BATL=nobatl
 TESTMODE=off
 INTERFACE=off
+CHECKMACRO=on
 
 #Link the SWMF' shared library
 LINK_SWMF_SHARED_LIB=off
@@ -291,7 +292,10 @@ tar:
 
 ${WSD}:
 	./ampsConfig.pl -input ${InputFileAMPS} -no-compile 
+
+ifeq ($(CHECKMACRO),on)
 	./utility/CheckMacro.pl ${WSD} -in-place
+endif
 
 ifeq ($(COMPILE.mpicxx),nvcc)
 	cd ${WSD}/pic;../../utility/change-ext cpp cu  
