@@ -410,6 +410,34 @@ sub add_line_makefile_local{
 }
 
 
+#=============================== Read Makefiile.local to get a value of a variable  =============================
+# Example usage
+#my $value = get_var_value_makefile_local('var');
+#if (defined $value) {
+#   print "Value of 'var': $value\n";
+#} else {
+#    print "'var' not found in Makefile.local\n";
+#}
+sub get_var_value_makefile_local {
+  my ($var) = @_;
+  my $last_value;
+
+  # Open the file
+  open my $fh, '<', 'Makefile.local' or die "Cannot open Makefile.local: $!";
+
+  # Search for the line that matches the variable
+  while (my $line = <$fh>) {
+    chomp $line; # Remove trailing newline
+
+    if ($line =~ /^\s*\Q$var\E\s*=\s*(.*)$/) {
+      $last_value = $1; # Update the value to the most recent match 
+    }
+  }
+
+  close $fh;
+  return $last_value; # Return the last value or undef if not found
+}
+
 #=============================== INCLUDE an additional input file to the assemble =============================
 sub AssambleInputFile {
   my $line;
@@ -980,7 +1008,17 @@ sub ReadMainBlock {
       `cp -r $ProjectSpecificSourceDirectory $ampsConfigLib::WorkingSourceDirectory/main`;
     }
 
-    system("./utility/CheckMacro.pl $BuildDir -in-place");
+    my $check_flag=get_var_value_makefile_local('CHECKMACRO'); 
+
+    if (!defined $check_flag) {
+      $check_flag="on";
+    }
+
+    print "!!!!!!! $check_flag \n";
+
+    if ($check_flag eq "on") { 
+      system("./utility/CheckMacro.pl $BuildDir -in-place");
+    }
   }
   
   #setup the time-step and particle-weight modes

@@ -121,6 +121,8 @@ foreach (@Arguments) {
      print "-no-signals\t\t\tsupress interseption of the operating system signals\n";
      print "-input=[the name of the input file that is used at start after the code is compiled]\n";
 
+     print "-check_macro=[on,off]\t\tturns on/off checking the macro used to control elecutions of AMPS. In case -test_macro=on, additional compiler directives will be added to the source code before compilation to ensure that all macros used are defined. Config.pl -check_macro=[...] will recreate the build directory to remove any previous macro checks if they exist.\n\n";
+     
      print "-no-avx-matmul\t\t\tdisable AVX in the matrix multiplication functions\n";
      print "-no-avx-mover\t\t\tdisable AVX in the particle movers\n";
 
@@ -288,6 +290,24 @@ foreach (@Arguments) {
       die "Option is unrecognized: -openmpfgf=($1)";
     }
   }   
+
+  if (/^-check_macro=(.*)$/i) {
+    my $t;
+    $t=lc($1); 
+
+    if ( -e ".last_input_info") {
+      `rm .last_input_info`;
+    }
+
+    if ($t eq "on") { 
+      `echo CHECKMACRO=on >> Makefile.local`;
+    }
+    else {
+      `echo CHECKMACRO=off >> Makefile.local`;
+    }
+
+    next;
+  }
       
   if (/^-fexit=(.*)$/i) {
     my $t;
