@@ -438,6 +438,26 @@ sub get_var_value_makefile_local {
   return $last_value; # Return the last value or undef if not found
 }
 
+sub get_var_value_amps_conf {
+  my ($var) = @_;
+  my $last_value;
+
+  # Open the file
+  open my $fh, '<', '.amps.conf' or die "Cannot open .amps.conf: $!";
+
+  # Search for the line that matches the variable
+  while (my $line = <$fh>) {
+    chomp $line; # Remove trailing newline
+
+    if ($line =~ /^\s*\Q$var\E\s*=\s*(.*)$/) {
+      $last_value = $1; # Update the value to the most recent match
+    }
+  }
+
+  close $fh;
+  return $last_value; # Return the last value or undef if not found
+}
+
 #=============================== INCLUDE an additional input file to the assemble =============================
 sub AssambleInputFile {
   my $line;
@@ -1031,8 +1051,17 @@ sub ReadMainBlock {
   
   
   #change prefix,error log file and diagnostic stream
-  ampsConfigLib::RecursiveSubstitute('\$PREFIX:',$Prefix,$ampsConfigLib::WorkingSourceDirectory);
-  ampsConfigLib::RecursiveSubstitute('\$ERRORLOG',$ErrorLog,$ampsConfigLib::WorkingSourceDirectory);
+  my $prefixmode=get_var_value_amps_conf('PREFIXMODE');  
+
+  if (!defined $prefixmode) {
+    $prefixmode="on";
+  }
+
+  if ($prefixmode eq "on") {
+    ampsConfigLib::RecursiveSubstitute('\$PREFIX:',$Prefix,$ampsConfigLib::WorkingSourceDirectory);
+    ampsConfigLib::RecursiveSubstitute('\$ERRORLOG',$ErrorLog,$ampsConfigLib::WorkingSourceDirectory);
+  } 
+
   ampsConfigLib::ChangeValueOfVariable("char PIC::DiagnospticMessageStreamName\\[_MAX_STRING_LENGTH_PIC_\\]","\"".$DiagnosticStream."\"","pic/pic_init_const.cpp");
   ampsConfigLib::ChangeValueOfVariable("char PIC::OutputDataFileDirectory\\[_MAX_STRING_LENGTH_PIC_\\]","\"".$OutputDirectory."\"","pic/pic_init_const.cpp");
   ampsConfigLib::ChangeValueOfVariable("char PIC::InputDataFileDirectory\\[_MAX_STRING_LENGTH_PIC_\\]","\"".$InputDirectory."\"","pic/pic_init_const.cpp");
