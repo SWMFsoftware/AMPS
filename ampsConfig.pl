@@ -1034,8 +1034,6 @@ sub ReadMainBlock {
       $check_flag="on";
     }
 
-    print "!!!!!!! $check_flag \n";
-
     if ($check_flag eq "on") { 
       system("./utility/CheckMacro.pl $BuildDir -in-place");
     }
