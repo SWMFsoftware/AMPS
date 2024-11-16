@@ -1223,7 +1223,7 @@ void PIC::Debugger::MemoryLeakCatch::Trap(int nline,const char* fname) {
    struct mallinfo t=mallinfo();
 
    sprintf(msg,"The amount of memory allocated with malloc have increased by %e MB (thread=%i,line=%i,file=%s)\n",(t.uordblks-Baseline.uordblks)/1048576.0,PIC::ThisThread,nline,fname);
-   printf(msg); //here the memory leack can be intersepted in a debugger
+   printf("%s\n",msg); //here the memory leack can be intersepted in a debugger
 }  
 
 bool PIC::Debugger::MemoryLeakCatch::Test(int nline,const char* fname) {

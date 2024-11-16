@@ -490,10 +490,10 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
   void readAllocationParameters(FILE *fout) {
     clear();
 
-    fread(&nMaxElements,sizeof(long int),1,fout);
-    fread(&elementStackPointer,sizeof(long int),1,fout);
-    fread(&dataBufferListSize,sizeof(long int),1,fout);
-    fread(&dataBufferListPointer,sizeof(long int),1,fout);
+    if (fread(&nMaxElements,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&elementStackPointer,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&dataBufferListSize,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&dataBufferListPointer,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     //allocate the stack's buffers
     long int i,j,elementCountingNumber;
@@ -520,7 +520,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
 
     //read the elementStack
     for (i=0;i<dataBufferListPointer;i++) for (j=0;j<_STACK_DEFAULT_BUFFER_BUNK_SIZE_;j++) {
-      fread(&elementCountingNumber,sizeof(long int),1,fout);
+      if (fread(&elementCountingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       elementStackList[i][j]=GetEntryPointer(elementCountingNumber);
     } 
   }
@@ -1038,10 +1038,10 @@ if ( (cudaThreadLimitMallocHeapSize<sizeof(T)*_STACK_DEFAULT_BUFFER_BUNK_SIZE_) 
   void readAllocationParameters(FILE *fout) {
     clear();
 
-    fread(&nMaxElements,sizeof(long int),1,fout);
-    fread(&elementHeapPointer,sizeof(long int),1,fout);
-    fread(&dataBufferListSize,sizeof(long int),1,fout);
-    fread(&dataBufferListPointer,sizeof(long int),1,fout);
+    if (fread(&nMaxElements,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&elementHeapPointer,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&dataBufferListSize,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&dataBufferListPointer,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     //allocate the stack's buffers
     long int i;

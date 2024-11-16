@@ -9063,36 +9063,36 @@ nMPIops++;
     startNode->cleanDataBuffer();
 
     //read the tree node's pointers
-    fread(&countingNumber,sizeof(long int),1,fout);
+    if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed");
     startNode->upNode=treeNodes.GetEntryPointer(countingNumber);
 
     //read downNode[:]
     for (nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->downNode[nDownNode]=treeNodes.GetEntryPointer(countingNumber);      
 
       if (startNode->downNode[nDownNode]!=NULL) startNode->downNode[nDownNode]->upNode=startNode;
     }
 
     //read the node ID
-    fread(&startNode->AMRnodeID,sizeof(cAMRnodeID),1,fout);
+    if (fread(&startNode->AMRnodeID,sizeof(cAMRnodeID),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     //read the node neighbors
 #if _MESH_DIMENSION_ == 1
 //    cTreeNodeAMR *neibNodeFace[2];
     for (i=0;i<2;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed");
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 #elif _MESH_DIMENSION_ == 2
     for (i=0;i<4*2;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<4;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 #endif
@@ -9101,17 +9101,17 @@ nMPIops++;
 
 #if _MESH_GLOBAL_NODE_CONNECTION_INFO_MODE_ == _ON_AMR_MESH_
     for (i=0;i<6*4;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->neibNodeFace[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
     for (i=0;i<8;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->neibNodeCorner[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 
     for (i=0;i<12*2;i++) {
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       startNode->neibNodeEdge[i]=treeNodes.GetEntryPointer(countingNumber);
     }
 #endif
@@ -9126,21 +9126,21 @@ nMPIops++;
     */
 
     #if _AMR_DEBUGGER_MODE_ == _AMR_DEBUGGER_MODE_ON_
-    fread(&startNode->Temp_ID,sizeof(long int),1,fout);
+    if (fread(&startNode->Temp_ID,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
     #endif
 
     //read other tree nodes' parameters: xmin,xmax,RefinmentLevel,nodeDescriptor,Thread;
-    fread(startNode->xmin,_MESH_DIMENSION_*sizeof(double),1,fout);
-    fread(startNode->xmax,_MESH_DIMENSION_*sizeof(double),1,fout);
-    fread(&startNode->RefinmentLevel,sizeof(int),1,fout);
-    fread(&startNode->nodeDescriptor,sizeof(startNode->nodeDescriptor),1,fout);
+    if (fread(startNode->xmin,_MESH_DIMENSION_*sizeof(double),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(startNode->xmax,_MESH_DIMENSION_*sizeof(double),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&startNode->RefinmentLevel,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&startNode->nodeDescriptor,sizeof(startNode->nodeDescriptor),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
-    fread(startNode->xMinGlobalIndex,_MESH_DIMENSION_*sizeof(int),1,fout);
-    fread(&startNode->NodeGeometricSizeIndex,sizeof(int),1,fout);
+    if (fread(startNode->xMinGlobalIndex,_MESH_DIMENSION_*sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&startNode->NodeGeometricSizeIndex,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
 
 #if _AMR_PARALLEL_MODE_ == _AMR_PARALLEL_MODE_ON_
-    fread(&startNode->Thread,sizeof(int),1,fout);
+    if (fread(&startNode->Thread,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 #endif
 
     //save the list of nodes that intersect surfaces of the computational domain
@@ -10384,7 +10384,7 @@ nMPIops++;
     if (node->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
       if (node->block!=NULL) {
         for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-          fread(&Measure,sizeof(double),1,fData);
+          if (fread(&Measure,sizeof(double),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed");
 
           nd=getCenterNodeLocalNumber(i,j,k);
           if ((CenterNode=node->block->GetCenterNode(nd))!=NULL) CenterNode->Measure=Measure;

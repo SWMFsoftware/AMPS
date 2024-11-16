@@ -302,7 +302,7 @@ void Exosphere::Init_AfterParser() {
     char OrbitalDataFileName[_MAX_STRING_LENGTH_PIC_];
 
     sprintf(OrbitalDataFileName,"rm -f %s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
-    system(OrbitalDataFileName);
+    if (system(OrbitalDataFileName)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
     sprintf(OrbitalDataFileName,"%s/pic.OrbitalData.dat",PIC::OutputDataFileDirectory);
     FILE *fout=fopen(OrbitalDataFileName,"w");

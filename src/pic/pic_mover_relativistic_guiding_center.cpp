@@ -344,7 +344,7 @@ if (_PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_ == _PIC_MODE_ON_) 
   PIC::Mesh::cDataBlockAMR *block;
   
   if (PIC::Mesh::mesh->FindCellIndex(xFinal,i,j,k,newNode,false)==-1) {
-    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%d\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
+    printf("test 2 xFinal:%e,%e,%e, newNode->xmin:%e,%e,%e, newNode->xmax:%e,%e,%e,ptr:%ld\n",xFinal[0],xFinal[1],xFinal[2],newNode->xmin[0],newNode->xmin[1],
 	   newNode->xmin[2], newNode->xmax[0],newNode->xmax[1],newNode->xmax[2],ptr);
     exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
   }

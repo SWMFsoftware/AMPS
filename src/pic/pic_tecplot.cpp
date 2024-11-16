@@ -757,7 +757,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
     if (startNode->block==NULL) {
        //the block belongs to a other processor -> skip all data
       for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++)  {
-        fread(&savedLoadCellFlag,sizeof(char),1,fData);
+        if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
         if (savedLoadCellFlag==true) {
           //the cell data is saved -> skip it
@@ -767,7 +767,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
 
     }
     else for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-      fread(&savedLoadCellFlag,sizeof(char),1,fData);
+      if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
       if (savedLoadCellFlag==true) {
         //determine whether the cell data needed to be read
@@ -778,7 +778,7 @@ void PIC::CPLR::LoadCenterNodeAssociatedData(const char *fname,cTreeNodeAMR<PIC:
           offset=CenterNode->GetAssociatedDataBufferPointer();
 
           //read center cells' associated data
-          fread(offset,sizeof(char),CenterNode->AssociatedDataLength(),fData);
+          if (fread(offset,sizeof(char),CenterNode->AssociatedDataLength(),fData)!=CenterNode->AssociatedDataLength()) exit(__LINE__,__FILE__,"Error: fread failed"); 
         }
         else fseek(fData,CenterNodeAssociatedLength,SEEK_CUR);
       }
@@ -893,9 +893,7 @@ void PIC::CPLR::DATAFILE::TECPLOT::ImportData(const char* fname) {
   MPI_Gather(&TecplotInterpolationFinishFlag,1,MPI_INT,AllTecplotInterpolationFinishFlags,1,MPI_INT,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (PIC::ThisThread==0) {
-    char msg[5000];
-
-    sprintf(msg,"");
+    char msg[5000]=""; 
 
     for (thread=0;thread<PIC::nTotalThreads;thread++) if (AllTecplotInterpolationFinishFlags[thread]==false) {
       sprintf(msg,"%s\nTECPLOT interpolation is not finished (thread=%i)",msg,thread);

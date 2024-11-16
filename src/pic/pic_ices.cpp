@@ -95,9 +95,9 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   sprintf(command,"mkdir temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
   if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
-  getcwd(initDirectory,_MAX_STRING_LENGTH_PIC_);
+  if (getcwd(initDirectory,_MAX_STRING_LENGTH_PIC_)==NULL) exit(__LINE__,__FILE__,"Error: getcwd failed"); 
   sprintf(command,"%s/temp.ICES.thread=%i",initDirectory,PIC::Mesh::mesh->ThisThread);
-  chdir(command);
+  if (chdir(command)==-1) exit(__LINE__,__FILE__,"Error: chdir failed"); 
 
   //copy the trajectory file in the currect directory
   sprintf(command,"cp ../icesCellCenterCoordinates.thread=%i .",PIC::Mesh::mesh->ThisThread);
@@ -107,7 +107,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
   //start the ices
-  getcwd(cCurrentPath, sizeof(cCurrentPath));
+  if (getcwd(cCurrentPath, sizeof(cCurrentPath))==NULL) exit(__LINE__,__FILE__,"Error: getcwd failed"); 
   if (PIC::Mesh::mesh->ThisThread==0) fprintf(PIC::DiagnospticMessageStream,"Getting the MHD data from ICES.... \nThe current working directory is: %s\n", cCurrentPath);
 
   if (system("rm -f MHDRestart")==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
@@ -130,7 +130,7 @@ void PIC::CPLR::DATAFILE::ICES::retriveSWMFdata(const char *DataFile) {
   sprintf(command,"mv mhd_values.dat ../icesCellCenterCoordinates.thread=%i.MHD.dat",PIC::Mesh::mesh->ThisThread);
   if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
-  chdir(initDirectory);
+  if (chdir(initDirectory)==-1) exit(__LINE__,__FILE__,"Error: chdir failed"); 
 
   sprintf(command,"rm -f -r temp.ICES.thread=%i",PIC::Mesh::mesh->ThisThread);
   if (system(command)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 

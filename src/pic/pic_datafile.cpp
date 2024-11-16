@@ -706,7 +706,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
     if (startNode->block==NULL) {
       //the block belongs to a other processor -> skip all data
       for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++)  {
-        fread(&savedLoadCellFlag,sizeof(char),1,fData);
+        if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
         if (savedLoadCellFlag==true) {
           //the cell data is saved -> skip it
@@ -716,7 +716,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
 
     }
     else for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-      fread(&savedLoadCellFlag,sizeof(char),1,fData);
+      if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed");  
 
       if (savedLoadCellFlag==true) {
         //determine whether the cell data needed to be read
@@ -727,7 +727,7 @@ void PIC::CPLR::DATAFILE::LoadBinaryFile(const char *fNameBase,cTreeNodeAMR<PIC:
           offset=CenterNode->GetAssociatedDataBufferPointer();
 
           //read the data
-          fread(offset+CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset,nTotalBackgroundVariables*sizeof(double),1,fData);
+          if (fread(offset+CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset,nTotalBackgroundVariables*sizeof(double),1,fData)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
           if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_)           {
             PIC::Debugger::CatchOutLimitValue((double*)(offset+CenterNodeAssociatedDataOffsetBegin+MULTIFILE::CurrDataFileOffset),nTotalBackgroundVariables,__LINE__,__FILE__);

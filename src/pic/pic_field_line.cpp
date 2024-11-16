@@ -769,15 +769,15 @@ namespace PIC {
 
         if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_) {
           if (iVertex==0) {
-            fprintf(fout, "%e  %e  %e  %e  %ld  ",(double)nSegmentParticles[0],
+            fprintf(fout, "%e  %e  %e  %e  %d  ",(double)nSegmentParticles[0],
               (double)nSegmentParticles_mu_positive[0],(double)nSegmentParticles_mu_negative[0],ModelParticleSpeedTable[0],iVertex);
           }
           else if (iVertex==nVertex-1) {
-            fprintf(fout, "%e  %e  %e  %e %ld  ",(double)nSegmentParticles[iVertex-1],
+            fprintf(fout, "%e  %e  %e  %e %d  ",(double)nSegmentParticles[iVertex-1],
               (double)nSegmentParticles_mu_positive[iVertex-1],(double)nSegmentParticles_mu_negative[iVertex-1],ModelParticleSpeedTable[iVertex-1],iVertex); 
           }
           else {
-            fprintf(fout, "%e  %e  %e  %e  %ld  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 
+            fprintf(fout, "%e  %e  %e  %e  %d  ",0.5*(nSegmentParticles[iVertex-1]+nSegmentParticles[iVertex]), 
               0.5*(nSegmentParticles_mu_positive[iVertex-1]+nSegmentParticles_mu_positive[iVertex]),
               0.5*(nSegmentParticles_mu_negative[iVertex-1]+nSegmentParticles_mu_negative[iVertex]),
               0.5*(ModelParticleSpeedTable[iVertex-1]+ModelParticleSpeedTable[iVertex]),iVertex);
