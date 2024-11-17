@@ -127,6 +127,8 @@ foreach (@Arguments) {
      print "-no-avx-matmul\t\t\tdisable AVX in the matrix multiplication functions\n";
      print "-no-avx-mover\t\t\tdisable AVX in the particle movers\n";
 
+     print "-state-vector=[aligned,packed] \t\tthe mode of packing basic data in particle's state vector; aligned -- the length of particle's species id vector is sizeof(long int) and all fields of the state vector are aligned by 8; packed --  the length of the particle's species id is 1 byte, no alignment of the state vector fields\n\n";  
+
      print "-align=[on,off]\t\t\talign (8) state vectors and arrays when possible and improve the efficientcy\n";
      print "-align-base=base \t\talign change the base used for the alighnemnt of the particle state vector. The defail valus is 8 that correcpond to \"long int\" and \"double\". The case need to be changes if the state would contain varaibles with hight length, e.g. _mm256 \n";
  
@@ -455,6 +457,23 @@ foreach (@Arguments) {
 
   if (/^-no-avx-mover/i) {
     add_line_general_conf("#undef _AVX_PARTICLE_MOVER_ \n#define _AVX_PARTICLE_MOVER_ _OFF_");
+    next;
+  }
+
+  if (/^-state-vector=(.*)$/i) {
+    my $t;
+    $t=lc($1);
+
+    if ($t eq "aligned") {
+      add_line_amps_conf("STATE_VECTOR=ALIGNED");
+    }
+    elsif ($t eq "packed") { 
+      add_line_amps_conf("STATE_VECTOR=PACKED");
+    }
+    else {
+      die "Unknoen option of -state-vector";
+    }
+
     next;
   }
 

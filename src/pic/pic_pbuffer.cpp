@@ -61,19 +61,23 @@ void PIC::ParticleBuffer::Init(long int BufrerLength) {
 
 //  amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
 
+  //adjust the length of the particle state vector to be proportional to _ALIGN_STATE_VECTORS_BASE_
+  if (ParticleDataLength%_ALIGN_STATE_VECTORS_BASE_!=0) ParticleDataLength=_ALIGN_STATE_VECTORS_BASE_*(1+ParticleDataLength/_ALIGN_STATE_VECTORS_BASE_); 
+
+  
+
+
   #if defined(__linux__)
   if ( _CUDA_MODE_ == _ON_) {
     amps_malloc_device<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
   }
   else {
-    switch (_ALIGN_STATE_VECTORS_) {
-    case _ON_ :
-      ParticleDataLength=64*(1+(ParticleDataLength/64));
-      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(64,ParticleDataLength*MaxNPart));
-      break;
-
-    default:
+    switch (_ALIGN_STATE_VECTORS_BASE_) {
+    case 1:
       amps_malloc_managed<PIC::ParticleBuffer::byte>(ParticleDataBuffer,ParticleDataLength*MaxNPart);
+      break;
+    default:
+      ParticleDataBuffer=static_cast<PIC::ParticleBuffer::byte*>(aligned_alloc(_ALIGN_STATE_VECTORS_BASE_,ParticleDataLength*MaxNPart));
     }
   }
   #else

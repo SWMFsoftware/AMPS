@@ -449,6 +449,15 @@ when each MPI process that runs AMPS is discunected from each other (_PIC_DISCON
 #define _PIC_PARTICLE_EXCHANGE_BUFFERED_    0
 #define _PIC_PARTICLE_EXCHANGE_UNBUFFERED_  1
 #define _PIC_PARTICLE_EXCHANGE_ _PIC_PARTICLE_EXCHANGE_UNBUFFERED_
+ 
+//The length of the particle data state vector is proportional to _ALIGN_STATE_VECTORS_BASE_
+#define _ALIGN_STATE_VECTORS_BASE_ 1
+
+//the models of packing the basic data in the particle state vector 
+#define _STATE_VECTOR_MODE_PACKED_  0
+#define _STATE_VECTOR_MODE_ALIGNED_ 1
+#define _STATE_VECTOR_MODE_ _STATE_VECTOR_MODE_PACKED_
+
 
 #endif //_PIC_GLOBAL_DEFINITIONS_H_  
 

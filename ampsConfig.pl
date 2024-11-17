@@ -1056,15 +1056,27 @@ sub ReadMainBlock {
 
   if ($alignmentmode eq "ON") {
     $alignmentmode=get_var_value_amps_conf('ALIGN_STATE_VECTORS_BASE');
-
-    print "!!!!!!!!!!!!!\n";
-
     ampsConfigLib::RedefineMacro("_ALIGN_STATE_VECTORS_BASE_",$alignmentmode,"pic/picGlobal.dfn");
   }
   else {
     ampsConfigLib::RedefineMacro("_ALIGN_STATE_VECTORS_BASE_","1","pic/picGlobal.dfn");
   }
-  
+
+  #packing of the basic data in particle's state vector 
+  my $PackingMode=get_var_value_amps_conf('STATE_VECTOR');  
+
+  if (!defined $PackingMode) {
+    $PackingMode="PACKED";
+  }
+
+  if ($PackingMode eq "PACKED") {
+    ampsConfigLib::RedefineMacro("_STATE_VECTOR_MODE_","_STATE_VECTOR_MODE_PACKED_","pic/picGlobal.dfn");
+  }
+  else {
+    ampsConfigLib::RedefineMacro("_STATE_VECTOR_MODE_","_STATE_VECTOR_MODE_ALIGNED_","pic/picGlobal.dfn");
+  }
+
+
   #change prefix,error log file and diagnostic stream
   my $prefixmode=get_var_value_amps_conf('PREFIXMODE');  
 
