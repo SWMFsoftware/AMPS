@@ -18,6 +18,33 @@
 using namespace std;
 namespace fs = std::filesystem;
 
+// Output type sizeof()
+void OutputSizeof() {
+    std::cout << std::left << std::setw(15) << "Type" 
+              << std::right << std::setw(10) << "Size (bytes)" << std::endl;
+    std::cout << std::string(25, '-') << std::endl;
+
+    // Integer types
+    std::cout << std::left << std::setw(15) << "char" << std::right << std::setw(10) << sizeof(char) << std::endl;
+    std::cout << std::left << std::setw(15) << "short" << std::right << std::setw(10) << sizeof(short) << std::endl;
+    std::cout << std::left << std::setw(15) << "int" << std::right << std::setw(10) << sizeof(int) << std::endl;
+    std::cout << std::left << std::setw(15) << "long" << std::right << std::setw(10) << sizeof(long) << std::endl;
+    std::cout << std::left << std::setw(15) << "long long" << std::right << std::setw(10) << sizeof(long long) << std::endl;
+
+    // Floating-point types
+    std::cout << std::left << std::setw(15) << "float" << std::right << std::setw(10) << sizeof(float) << std::endl;
+    std::cout << std::left << std::setw(15) << "double" << std::right << std::setw(10) << sizeof(double) << std::endl;
+    std::cout << std::left << std::setw(15) << "long double" << std::right << std::setw(10) << sizeof(long double) << std::endl;
+
+    // Boolean and void
+    std::cout << std::left << std::setw(15) << "bool" << std::right << std::setw(10) << sizeof(bool) << std::endl;
+
+    // Wide character types
+    std::cout << std::left << std::setw(15) << "wchar_t" << std::right << std::setw(10) << sizeof(wchar_t) << std::endl;
+    std::cout << std::left << std::setw(15) << "char16_t" << std::right << std::setw(10) << sizeof(char16_t) << std::endl;
+    std::cout << std::left << std::setw(15) << "char32_t" << std::right << std::setw(10) << sizeof(char32_t) << std::endl;
+}
+
 // Helper class to parse and evaluate expressions
 class ExpressionParser {
 public:
@@ -672,6 +699,9 @@ int main(int argc, char *argv[]) {
 
     // Calls the new function to print sorted offset macros
     createOffsetTable(); 
+
+    // Output sizeof 
+    OutputSizeof();
 
     return 0;
 }
