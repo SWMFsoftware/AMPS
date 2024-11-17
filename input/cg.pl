@@ -27,7 +27,7 @@ use ampsConfigLib;
 
 my $InputFileName=$ARGV[0]; #"cg.input.Assembled.Block";   #$ARGV[0];
 my $SpeciesFileName=$InputFileName; $SpeciesFileName =~ s/\.Block$/.Species/; #"cg.input.Assembled.Species";
-my $WorkingSourceDirectory="srcTemp";  #$ARGV[1];
+my $WorkingSourceDirectory="build";  #$ARGV[1];
 
 $ampsConfigLib::WorkingSourceDirectory=$WorkingSourceDirectory;
 
