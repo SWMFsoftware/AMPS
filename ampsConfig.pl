@@ -1047,6 +1047,23 @@ sub ReadMainBlock {
   #check intersection of particle trajectory with the boundaries of the blocks (needed with local timestepping, local weight and when the internal surface has fine fiatures)
   if (defined $TrajectoryIntegrationCheckBlockFaceIntersection) {ampsConfigLib::RedefineMacro("_PIC__PARTICLE_MOVER__CHECK_BLOCK_FACE_INTERSECTION__MODE_",$TrajectoryIntegrationCheckBlockFaceIntersection,"pic/picGlobal.dfn");}
   
+  #change the alignment mode 
+  my $alignmentmode=get_var_value_amps_conf('ALIGN_STATE_VECTORS');
+
+  if (!defined $alignmentmode) {
+   $alignmentmode="OFF";
+  }
+
+  if ($alignmentmode eq "ON") {
+    $alignmentmode=get_var_value_amps_conf('ALIGN_STATE_VECTORS_BASE');
+
+    print "!!!!!!!!!!!!!\n";
+
+    ampsConfigLib::RedefineMacro("_ALIGN_STATE_VECTORS_BASE_",$alignmentmode,"pic/picGlobal.dfn");
+  }
+  else {
+    ampsConfigLib::RedefineMacro("_ALIGN_STATE_VECTORS_BASE_","1","pic/picGlobal.dfn");
+  }
   
   #change prefix,error log file and diagnostic stream
   my $prefixmode=get_var_value_amps_conf('PREFIXMODE');  
