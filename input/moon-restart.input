@@ -64,12 +64,12 @@ ParticleWeightCorrectionMode=off !on,off
   ControlParticleInsideNastranSurface=off !!!on,of
 
   SaveParticleRestartFile=off  \\  !on,off
-    file=ParticleData.restart=223 \\
+    file=ParticleData.restart \\
     SaveMode=newfile  \\ !overwrite, newfile
     IterationInterval=20
 
   RecoverParticleData=on  \\ !on, off
-    file=ParticleData.restart=223.restart=4
+    file=ParticleData.restart.restart=4
 
 #endGeneral
 
