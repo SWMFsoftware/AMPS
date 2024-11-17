@@ -251,7 +251,7 @@ public:
     if (sizeof(T)==0) return;
 
     if (elementStackPointer==0) {
-      printf("$PREFIX:ERROR: stack pointer is 0 (line=%ld, file= %s)\n",__LINE__,__FILE__);
+      printf("$PREFIX:ERROR: stack pointer is 0 (line=%d, file= %s)\n",__LINE__,__FILE__);
     } 
 
     long int elementStackBank,offset;

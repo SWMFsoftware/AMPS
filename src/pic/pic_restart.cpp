@@ -157,15 +157,15 @@ void PIC::Restart::SamplingData::Read(const char* fname) {
     exit(__LINE__,__FILE__,msg);
   }
 
-  fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
-  fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+  if (fread(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
+  if (fread(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
   int t;
 
-  fread(&t,sizeof(int),1, fRestart);
+  if (fread(&t,sizeof(int),1, fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
   if (t!=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength has changed");
 
-  fread(&t,sizeof(int),1,fRestart);
+  if (fread(&t,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
   if (t!=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength has changed");
 
   SamplingData::ReadBlock(fRestart);
@@ -228,7 +228,7 @@ void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
             
       if (cell!=NULL) {
         SamplingData=cell->GetAssociatedDataBufferPointer();
-        fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
+        if (fread(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart)!=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: fread failed");
       }
     }
       
@@ -238,7 +238,7 @@ void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
             
       if (corner!=NULL) {
         SamplingData=corner->GetAssociatedDataBufferPointer();
-        fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
+        if (fread(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart)!=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: fread failed");
       }
     }
   }
@@ -380,16 +380,16 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   if (UserAdditionalRestartDataRead!=NULL) UserAdditionalRestartDataRead(fRestart);
 
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
-  fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+  if (fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart)!=UserAdditionalRestartDataCompletedMarkerLength) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
   long int t;
-  fread(&t,sizeof(long int),1,fRestart);
+  if (fread(&t,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
   //read the particle weight table
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
     double tt[_TOTAL_SPECIES_NUMBER_];
 
-    fread(tt,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+    if (fread(tt,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fread failed"); 
   }
   else {
     exit(__LINE__,__FILE__,"Error: not implemented");
@@ -400,7 +400,7 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
     int nTotalParticleNumber=0;
 
     fseek(fRestart,sizeof(cAMRnodeID),SEEK_CUR);
-    fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
+    if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     res+=nTotalParticleNumber;
 
@@ -427,8 +427,8 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
     cAMRnodeID NodeId;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
-    fread(&NodeId,sizeof(cAMRnodeID),1,fRestart);
-    fread(&nTotalParticleNumber,sizeof(int),1,fRestart);
+    if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     if (nTotalParticleNumber!=0) {
       Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
@@ -508,15 +508,15 @@ void PIC::Restart::ReadParticleData(const char* fname) {
 
   //read the end-of-the-user-data-marker
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
-  fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
+  if (fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart)!=UserAdditionalRestartDataCompletedMarkerLength) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
   long int t;
-  fread(&t,sizeof(long int),1,fRestart);
+  if (fread(&t,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
   if (t!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: the value of the PIC::ParticleBuffer::ParticleDataLength haschanged");
 
   //save the particle weight table
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
-    fread(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+    if (fread(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fread failed"); 
   }
   else {
     exit(__LINE__,__FILE__,"Error: not implemented");

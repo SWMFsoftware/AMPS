@@ -496,9 +496,9 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
   fTrajectoryDataSet=fopen(str,"r");
   if (fTrajectoryDataSet==NULL) exit(__LINE__,__FILE__,"Error: cannot open the trajectory swtting file");
 
-  fread(&nTotalSpecies,sizeof(int),1,fTrajectoryDataSet);
-  fread(&nTotalThreads,sizeof(int),1,fTrajectoryDataSet);  //the total number of threads (OpenMP*MPI) used in the simulation
-  fread(&nMPIthread,sizeof(int),1,fTrajectoryDataSet);    //the number of the MPI threads used in the simulation
+  if (fread(&nTotalSpecies,sizeof(int),1,fTrajectoryDataSet)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
+  if (fread(&nTotalThreads,sizeof(int),1,fTrajectoryDataSet)!=1) exit(__LINE__,__FILE__,"Error: fread has failed");   //the total number of threads (OpenMP*MPI) used in the simulation
+  if (fread(&nMPIthread,sizeof(int),1,fTrajectoryDataSet)!=1) exit(__LINE__,__FILE__,"Error: fread has failed");     //the number of the MPI threads used in the simulation
 
 
   nTrajectoryListFiles=new unsigned long int[nTotalThreads];
@@ -519,7 +519,7 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     char ChemSymbol[_MAX_STRING_LENGTH_PIC_];
 
     TrajectoryCounter[spec]=0;
-    fread(ChemSymbol,sizeof(char),_MAX_STRING_LENGTH_PIC_,fTrajectoryDataSet);
+    if (fread(ChemSymbol,sizeof(char),_MAX_STRING_LENGTH_PIC_,fTrajectoryDataSet)!=_MAX_STRING_LENGTH_PIC_) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
     sprintf(str,"%s.s=%i.%s.dat",fname,spec,ChemSymbol);
 
@@ -580,13 +580,13 @@ void PIC::ParticleTracker::CreateTrajectoryOutputFiles(const char *fname,const c
     }
 
     if ((fTrajectoryList=fopen(str,"r"))==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
-    fread(&length,sizeof(unsigned long int),1,fTrajectoryList);
+    if (fread(&length,sizeof(unsigned long int),1,fTrajectoryList)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
     for (i=0;i<length;i++) {
       cTrajectoryListRecord Record;
       int el;
 
-      fread(&Record,sizeof(PIC::ParticleTracker::cTrajectoryListRecord),1,fTrajectoryList);
+      if (fread(&Record,sizeof(PIC::ParticleTracker::cTrajectoryListRecord),1,fTrajectoryList)!=1) exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
       el=Record.Trajectory.id+TrajectoryCounterOffset[Record.Trajectory.StartingThread];
       if ((el<0)||(el>=nTotalTracedTrajectories)) exit(__LINE__,__FILE__,"Error: out of range");

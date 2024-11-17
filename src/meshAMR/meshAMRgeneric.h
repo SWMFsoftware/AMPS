@@ -3331,7 +3331,7 @@ void GetMeshTreeStatistics(cTreeNodeAMR<cBlockAMR> *startNode=NULL) {
         }
 
 //        *DiagnospticMessageStream << "$PREFIX:" << thread << "\t" << nAllocatedBlocks << "\t\t\t\t\t" << nAllocatedBlocksUpperTreeBranches << "\t\t\t\t\t" << nAllocatedBoundaryLayerBlocks << "\t\t\t\t\t" << nBlocksPerProcessor[thread] <<  std::endl;
-        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%d\t\t\t\t\t%d\t\t\t\t\t%d\t\t\t\t\t%d\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
+        fprintf(DiagnospticMessageStream,"$PREFIX: %i\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\t\t\t\t\t%ld\n",thread,nAllocatedBlocks,nAllocatedBlocksUpperTreeBranches,nAllocatedBoundaryLayerBlocks,nBlocksPerProcessor[thread]);
 
 
       }
@@ -9145,10 +9145,10 @@ nMPIops++;
 
     //save the list of nodes that intersect surfaces of the computational domain
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-    fread(&countingNumber,sizeof(long int),1,fout);
+    if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
     startNode->DomainSurfaceBoundaryList_Next=treeNodes.GetEntryPointer(countingNumber);
 
-    fread(&countingNumber,sizeof(long int),1,fout);
+    if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
     startNode->DomainSurfaceBoundaryList_Prev=treeNodes.GetEntryPointer(countingNumber);
 
     //read the list of the boundary surface's descriptors
@@ -9156,19 +9156,19 @@ nMPIops++;
     cInternalBoundaryConditionsDescriptor *SurfaceDescriptor;
     list<cInternalBoundaryConditionsDescriptor>::iterator ptrDescriptorList,ptrDescriptorListEnd;
 
-    fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout);
+    if (fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
     if (InternalSurfaceBoundaryPresentFlag==true) {
 //      int i;
 
       ptrDescriptorListEnd=InternalBoundaryList.end();
-      fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout);
+      if (fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
       while (InternalSurfaceBoundaryPresentFlag==true) {
         SurfaceDescriptor=InternalBoundaryDescriptors.newElement();
 
-        fread(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout);
-        fread(&countingNumber,sizeof(long int),1,fout);
+        if (fread(SurfaceDescriptor,sizeof(cInternalBoundaryConditionsDescriptor),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+        if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
 
         for (i=0,SurfaceDescriptor->BoundaryElement=NULL,ptrDescriptorList=InternalBoundaryList.begin();ptrDescriptorList!=ptrDescriptorListEnd;i++,ptrDescriptorList++) {
           if (i==countingNumber) {
@@ -9182,7 +9182,7 @@ nMPIops++;
         SurfaceDescriptor->nextInternalBCelement=startNode->InternalBoundaryDescriptorList;
         startNode->InternalBoundaryDescriptorList=SurfaceDescriptor;
 
-        fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout);
+        if (fread(&InternalSurfaceBoundaryPresentFlag,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
       }
     }
 #endif
@@ -9341,29 +9341,29 @@ nMPIops++;
       fout=fopen(MeshFileName,"r");
 
       //save the mesh parameters: in the beginig of the mesh file keep the name of the mesh!
-      fread(MeshName,sizeof(char),STRING_LENGTH,fout) ;
+      if (fread(MeshName,sizeof(char),STRING_LENGTH,fout)!=STRING_LENGTH) exit(__LINE__,__FILE__,"Error fread has failed");  
 //      fread(&MeshSignature,sizeof(unsigned long),1,fout);
 
 
       //the global definition of the domain limits
-      fread(_MESH_AMR_XMAX_,sizeof(double),3,fout);
-      fread(_MESH_AMR_XMIN_,sizeof(double),3,fout);
+      if (fread(_MESH_AMR_XMAX_,sizeof(double),3,fout)!=3) exit(__LINE__,__FILE__,"Error fread has failed"); 
+      if (fread(_MESH_AMR_XMIN_,sizeof(double),3,fout)!=3) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
       //the global parameters of the mesh
-      fread(&EPS,sizeof(double),1,fout);
+      if (fread(&EPS,sizeof(double),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
 //      fread(&meshModifiedFlag,sizeof(bool),1,fout);
 
-      fread(&meshNodesNumber,sizeof(long int),1,fout);
-      fread(&meshBlocksNumber,sizeof(long int),1,fout);
-      fread(&meshMaximumRefinmentLevel,sizeof(int),1,fout);
+      if (fread(&meshNodesNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
+      if (fread(&meshBlocksNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
+      if (fread(&meshMaximumRefinmentLevel,sizeof(int),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
-      fread(&xGlobalMin,sizeof(double),_MESH_DIMENSION_,fout);
-      fread(&xGlobalMax,sizeof(double),_MESH_DIMENSION_,fout);
+      if (fread(&xGlobalMin,sizeof(double),_MESH_DIMENSION_,fout)!=_MESH_DIMENSION_) exit(__LINE__,__FILE__,"Error fread has failed"); 
+      if (fread(&xGlobalMax,sizeof(double),_MESH_DIMENSION_,fout)!=_MESH_DIMENSION_) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
-      fread(&AllowBlockAllocation,sizeof(bool),1,fout);
+      if (fread(&AllowBlockAllocation,sizeof(bool),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
       //read allocation for the stacks
-      fread(marker,sizeof(char),STRING_LENGTH,fout);
+      if (fread(marker,sizeof(char),STRING_LENGTH,fout)!=STRING_LENGTH) exit(__LINE__,__FILE__,"Error fread has failed"); 
       if (strcmp("AMR-MESH-FILE-MARKER:MEMORY_ALLOCATION",marker)!=0) exit(__LINE__,__FILE__,"SectionMarker in the mesh file is wrong");
 
 //      CornerNodes.readAllocationParameters(fout);
@@ -9371,21 +9371,21 @@ nMPIops++;
       treeNodes.readAllocationParameters(fout);
 
       //read the pointer to the rootTree
-      fread(&countingNumber,sizeof(long int),1,fout);
+      if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
       rootTree=treeNodes.GetEntryPointer(countingNumber);
 //    }
 
     //read the tree structure
-    fread(marker,sizeof(char),STRING_LENGTH,fout);
+    if (fread(marker,sizeof(char),STRING_LENGTH,fout)!=STRING_LENGTH) exit(__LINE__,__FILE__,"Error fread has failed"); 
     if (strcmp("AMR-MESH-FILE-MARKER:MESH-TREE",marker)!=0) exit(__LINE__,__FILE__,"SectionMarker in the mesh file is wrong"); 
     readTreeStructure(rootTree,fout);
 
 
     //read the list of nodes that intersect surfaces of the computational domain
 #if _INTERNAL_BOUNDARY_MODE_ == _INTERNAL_BOUNDARY_MODE_ON_
-    fread(marker,sizeof(char),STRING_LENGTH,fout);
+    if (fread(marker,sizeof(char),STRING_LENGTH,fout)!=STRING_LENGTH) exit(__LINE__,__FILE__,"Error fread has failed"); 
     if (strcmp("AMR-MESH-FILE-MARKER:BOUNDARY_NODES",marker)!=0) exit(__LINE__,__FILE__,"SectionMarker in the mesh file is wrong");
-    fread(&countingNumber,sizeof(long int),1,fout);
+    if (fread(&countingNumber,sizeof(long int),1,fout)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
     DomainSurfaceBoundaryList=treeNodes.GetEntryPointer(countingNumber);
 
 
@@ -9400,20 +9400,20 @@ nMPIops++;
             bool NextTriangleFaceExist=false;
             std::ptrdiff_t TriangleFaceID;
 
-            fread(&NextTriangleFaceExist,sizeof(bool),1,fout);
+            if (fread(&NextTriangleFaceExist,sizeof(bool),1,fout)!=1)  ::exit(__LINE__,__FILE__,"Error: fread has failed"); 
 
             while (NextTriangleFaceExist==true) {
               //set up the description of the cut face
               CutCell::cTriangleFaceDescriptor *t=CutCell::BoundaryTriangleFaceDescriptor.newElement();
 
-              fread(&TriangleFaceID,sizeof(std::ptrdiff_t),1,fout);
+              if (fread(&TriangleFaceID,sizeof(std::ptrdiff_t),1,fout)!=1) ::exit(__LINE__,__FILE__,"Error fread has failed"); 
               t->TriangleFace=CutCell::BoundaryTriangleFaces+TriangleFaceID;
 
               t->prev=NULL,t->next=node->FirstTriangleCutFace;
               if (node->FirstTriangleCutFace!=NULL) node->FirstTriangleCutFace->prev=t;
               node->FirstTriangleCutFace=t;
 
-              fread(&NextTriangleFaceExist,sizeof(bool),1,fout);
+              if (fread(&NextTriangleFaceExist,sizeof(bool),1,fout)!=1) ::exit(__LINE__,__FILE__,"Error fread has failed"); 
             }
           }
           else for (int nDownNode=0;nDownNode<(1<<_MESH_DIMENSION_);nDownNode++) LoadBlock(node->downNode[nDownNode],fout);
@@ -9432,7 +9432,7 @@ nMPIops++;
     */
 
     //read the 'end' marker 
-    fread(marker,sizeof(char),STRING_LENGTH,fout);
+    if (fread(marker,sizeof(char),STRING_LENGTH,fout)!=STRING_LENGTH) exit(__LINE__,__FILE__,"Error fread has failed"); 
     if (strcmp("AMR-MESH-FILE-MARKER:END",marker)!=0) exit(__LINE__,__FILE__,"SectionMarker in the mesh file is wrong");
     fclose(fout);
 
@@ -10560,7 +10560,7 @@ nMPIops++;
       //compare the number of the saved variables with 'nLoadVariables'
       int nSaveVariables;
 
-      fread(&nSaveVariables,sizeof(int),1,fData);
+      if (fread(&nSaveVariables,sizeof(int),1,fData)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
       if (nSaveVariables!=nLoadVariables) exit(__LINE__,__FILE__,"Error: the number of load varibles is different from the number of saved variables");
 
       //determine the size of the saved data
@@ -10590,7 +10590,7 @@ nMPIops++;
       if (node->block==NULL) {
          //the block belongs to a other processor -> skip all data
         for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++)  {
-          fread(&savedLoadCellFlag,sizeof(char),1,fData);
+          if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
           if (savedLoadCellFlag==true) {
             //the cell data is saved -> skip it
@@ -10600,7 +10600,7 @@ nMPIops++;
 
       }
       else for (k=kMin;k<=kMax;k++) for (j=jMin;j<=jMax;j++) for (i=iMin;i<=iMax;i++) {
-        fread(&savedLoadCellFlag,sizeof(char),1,fData);
+        if (fread(&savedLoadCellFlag,sizeof(char),1,fData)!=1) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
         if (savedLoadCellFlag==true) {
           //determine whether the cell data needed to be read
@@ -10611,7 +10611,7 @@ nMPIops++;
             offset=CenterNode->GetAssociatedDataBufferPointer();
 
             //read center cells' associated data
-            fread(data,sizeof(char),SavedDataLength,fData);
+            if (fread(data,sizeof(char),SavedDataLength,fData)!=SavedDataLength) exit(__LINE__,__FILE__,"Error fread has failed"); 
 
             //copy the data
             if (nLoadVariables==-1) memcpy(offset,data,CenterNode->AssociatedDataLength());

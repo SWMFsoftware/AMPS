@@ -277,7 +277,7 @@ namespace ElectricallyChargedDust {
         char cmd[_MAX_STRING_LENGTH_PIC_];
 
         sprintf(cmd,"mkdir -p %s",PIC::OutputDataFileDirectory);
-        system(cmd);
+        if (system(cmd)==-1) exit(__LINE__,__FILE__,"Error: system failed"); 
 
         //create and save the file
         sprintf(fname,"%s/DustGrainSizeDistribution.dat",PIC::OutputDataFileDirectory);

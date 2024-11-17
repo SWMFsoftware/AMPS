@@ -36,7 +36,9 @@ void PIC::Mesh::IrregularSurface::InitExternalNormalVector() {
       fflush(stdout);
     }
 
-    for (nface=0;nface<nBoundaryTriangleFaces;nface++) fread(BoundaryTriangleFaces[nface].ExternalNormal,sizeof(double),3,fExternalVectorFile);
+    for (nface=0;nface<nBoundaryTriangleFaces;nface++) {
+      if (fread(BoundaryTriangleFaces[nface].ExternalNormal,sizeof(double),3,fExternalVectorFile)!=3) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    }
 
     fclose(fExternalVectorFile);
     MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);

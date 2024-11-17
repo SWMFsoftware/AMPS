@@ -389,7 +389,7 @@ amps_malloc_managed<T*>(elementStackList[dataBufferListPointer],_STACK_DEFAULT_B
     MPI_Gather(&nMaxElements,1,MPI_LONG,TotalCapacityTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (rank==0) {
-      printf("%s:\nsizeof(T)=%i\n",msg,sizeof(T));
+      printf("%s:\nsizeof(T)=%li\n",msg,sizeof(T));
       printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
       for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);
@@ -663,7 +663,7 @@ public:
     MPI_Gather(&BaseElementStack.nMaxElements,1,MPI_LONG,TotalCapacityTable,1,MPI_LONG,0,MPI_GLOBAL_COMMUNICATOR);
 
     if (rank==0) {
-      printf("%s:\nsizeof(T)=%i\nAssociatedDataLength=%i\n",msg,sizeof(T),t.AssociatedDataLength());
+      printf("%s:\nsizeof(T)=%li\nAssociatedDataLength=%i\n",msg,sizeof(T),t.AssociatedDataLength());
       printf("|1thread:\n|2 MemoryAllocation\n|3 dataBufferListPointer\n|4 elementStackPointer\n|5 Total Capacity\n");
 
       for (int thread=0;thread<size;thread++) printf("%i\t%ld\t%ld\t%ld\t%ld\n",thread,MemAllocationTable[thread],dataBufferListPointerTable[thread],elementStackPointerTable[thread],TotalCapacityTable[thread]);

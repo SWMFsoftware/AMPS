@@ -223,7 +223,7 @@ void PIC::ParticleBuffer::PrintBufferChecksum(int nline,const char* fname) {
 
   char msg[500];
 
-  sprintf(msg," line=%ld, file=%s (Call Counter=%i)",nline,fname,CallCounter);
+  sprintf(msg," line=%d, file=%s (Call Counter=%i)",nline,fname,CallCounter);
   CheckSum.PrintChecksum(msg);
   CallCounter++;
 }
