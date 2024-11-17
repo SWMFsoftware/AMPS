@@ -435,7 +435,7 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nRe
   while ((!feof(fRestart))&&(nReadBytes<st_size)) {
     int nTotalParticleNumber=0;
     int ParticleNumberTable[_BLOCK_CELLS_X_][_BLOCK_CELLS_Y_][_BLOCK_CELLS_Z_];
-    long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
+    long int *FirstCellParticleTable;
     cAMRnodeID NodeId;
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
@@ -461,7 +461,7 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nRe
         nReadBlocks++;	
 	
         if (fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: file reading error");
-        memcpy(FirstCellParticleTable,Node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+        FirstCellParticleTable=Node->block->FirstCellParticleTable;
 	nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int);
 
         int i,j,k,np;
@@ -504,7 +504,6 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nRe
           }
         }
 
-        memcpy(Node->block->FirstCellParticleTable,FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
       }
     }
   }
