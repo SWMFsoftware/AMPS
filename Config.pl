@@ -127,8 +127,8 @@ foreach (@Arguments) {
      print "-no-avx-matmul\t\t\tdisable AVX in the matrix multiplication functions\n";
      print "-no-avx-mover\t\t\tdisable AVX in the particle movers\n";
 
-     print "-align\t\t\t\talign (8) state vectors and arrays when possible and improve the efficientcy\n";
-     print "-align-base \t\t\talign change the base used for the alighnemnt of the particle state vector. The defail valus is 8 that correcpond to \"long int\" and \"double\". The case need to be changes if the state would contain varaibles with hight length, e.g. _mm256 \n";
+     print "-align=[on,off]\t\t\talign (8) state vectors and arrays when possible and improve the efficientcy\n";
+     print "-align-base=base \t\talign change the base used for the alighnemnt of the particle state vector. The defail valus is 8 that correcpond to \"long int\" and \"double\". The case need to be changes if the state would contain varaibles with hight length, e.g. _mm256 \n";
  
 
      print "-concurrent_debug\n"; 
@@ -458,17 +458,28 @@ foreach (@Arguments) {
     next;
   }
 
-  if (/^-align/i) {
-    add_line_general_conf("#undef _ALIGN_STATE_VECTORS_ \n#define _ALIGN_STATE_VECTORS_ _ON_");
+  if (/^-align=(.*)$/i) {
+    my $t;
+    $t=lc($1);
+
+    if ($t eq "on") {
+      add_line_amps_conf("ALIGN_STATE_VECTORS=ON");
+      add_line_amps_conf("ALIGN_STATE_VECTORS_BASE=8"); 
+    }
+    else {
+      add_line_amps_conf("ALIGN_STATE_VECTORS=OFF");
+    }
+
     next;
   }
 
-  if (/^-align-base/i) {
-    my $t;
 
+  if (/^-align-base=(.*)$/i) {
+    my $t;
     $t=lc($1);
 
-    add_line_general_conf("#undef _ALIGN_STATE_VECTORS_BASE_ \n#define _ALIGN_STATE_VECTORS_BASE_ ".$t);
+    add_line_amps_conf("ALIGN_STATE_VECTORS=ON");
+    add_line_amps_conf("ALIGN_STATE_VECTORS_BASE=".$t);
     next;
   }
 
