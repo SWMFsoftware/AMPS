@@ -7853,10 +7853,10 @@ void DeleteAttachedParticles();
     void SetUserAdditionalRestartData(fUserAdditionalRestartData fRead,fUserAdditionalRestartData fSave);
 
     void SaveParticleData(const char*);
-    int  SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*);
+    int  SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*,FILE*,int&,int&);
 
     void ReadParticleData(const char*);
-    int ReadParticleDataBlock(FILE*);
+    int ReadParticleDataBlock(FILE*,int&,int&,int);
     long int GetRestartFileParticleNumber(const char *fname);
 
     //calcualte the check sum of the save/read particle data

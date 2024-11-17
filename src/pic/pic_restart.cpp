@@ -50,11 +50,11 @@ void PIC::Restart::SamplingData::Save(const char* fname) {
   if (fRestart==NULL) exit(__LINE__,__FILE__,"Error: cannot open file");
 
   if (PIC::ThisThread==0) {
-    fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart);
-    fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart);
+    if (fwrite(&PIC::LastSampleLength,sizeof(PIC::LastSampleLength),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+    if (fwrite(&PIC::DataOutputFileNumber,sizeof(PIC::DataOutputFileNumber),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
 
-    fwrite(&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength),1,fRestart);
-    fwrite(&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength),1,fRestart);
+    if (fwrite(&PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+    if (fwrite(&PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,sizeof(PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
   }
   
   //save the restart information
@@ -114,9 +114,9 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
       }
       
 
-      fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart);
-      fwrite(&nAllocatedCells,sizeof(int),1,fRestart);
-      fwrite(&nAllocatedCorners,sizeof(int),1,fRestart);     
+      if (fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+      if (fwrite(&nAllocatedCells,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+      if (fwrite(&nAllocatedCorners,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed");      
 
       //save the sampling data
       if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -126,7 +126,7 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
         if (cell==NULL) continue;
 
         SamplingData=cell->GetAssociatedDataBufferPointer();
-        fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart);
+        if (fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength,fRestart)!=PIC::Mesh::cDataCenterNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
       }
         
       if (node->block!=NULL) for (i=0;i<_BLOCK_CELLS_X_+1;i++) for (j=0;j<_BLOCK_CELLS_Y_+1;j++) for (k=0;k<_BLOCK_CELLS_Z_+1;k++) {
@@ -136,7 +136,7 @@ void PIC::Restart::SamplingData::SaveBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR
         if (corner==NULL) continue;
              
         SamplingData=corner->GetAssociatedDataBufferPointer();
-        fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart);
+        if (fwrite(SamplingData,sizeof(char),PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength,fRestart)!=PIC::Mesh::cDataCornerNode_static_data::totalAssociatedDataLength) exit(__LINE__,__FILE__,"Error: fwrite has failed");  
       }
     }
   }
@@ -247,7 +247,7 @@ void PIC::Restart::SamplingData::ReadBlock(FILE* fRestart) {
 //-------------------------------------- Save/Load Particle Data Restart File ---------------------------------------------------------
 void PIC::Restart::SaveParticleData(const char* fname) {
   FILE *fRestart=NULL;
-
+  int nSavedParticles,nTotalSavedParticles,nSavedBlocks=0,nTotalSavedBlocks,nSavedBytes=0,nTotalSavedBytes;
 
   //open the restart file
   char fname_full[300];
@@ -259,12 +259,16 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   if (PIC::ThisThread==0) {
     if (UserAdditionalRestartDataSave!=NULL)  UserAdditionalRestartDataSave(fRestart);
 
-    fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart);
-    fwrite(&PIC::ParticleBuffer::ParticleDataLength,sizeof(long int),1,fRestart); 
+    if (fwrite(UserAdditionalRestartDataCompletedMarker,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart)!=UserAdditionalRestartDataCompletedMarkerLength) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+    nSavedBytes+=sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength;
+
+    if (fwrite(&PIC::ParticleBuffer::ParticleDataLength,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed");  
+    nSavedBytes+=sizeof(long int);
 
     //save the particle weight table
     if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
-      fwrite(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart);
+      if (fwrite(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+      nSavedBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_;
     }
     else {
       exit(__LINE__,__FILE__,"Error: not implemented");
@@ -272,19 +276,19 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   }
 
   //save the restart information
-  int nSavedParticles,nTotalSavedParticles;
-
-  nSavedParticles=SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart);
+  nSavedParticles=SaveParticleDataBlock(PIC::Mesh::mesh->rootTree,fRestart,nSavedBlocks,nSavedBytes);
   fclose(fRestart);
 
   //combine the multiple files in a single restart file
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
   MPI_Reduce(&nSavedParticles,&nTotalSavedParticles,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&nSavedBlocks,&nTotalSavedBlocks,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+  MPI_Reduce(&nSavedBytes,&nTotalSavedBytes,1,MPI_INT,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
 
   if (ThisThread==0) {
     std::ofstream  dst(fname,   std::ios::binary);
 
-    printf("$PREFIX: Saving restart file: the total number of particles saved is %i\n", nTotalSavedParticles);
+    printf("$PREFIX: Saving restart file: particles saved - %i; blocks - %i; bytes - %i\n", nTotalSavedParticles,nTotalSavedBlocks,nTotalSavedBytes);
 
     for (int thread=0;thread<PIC::nTotalThreads;thread++) {
       sprintf(fname_full,"%s.thread=%i.tmp",fname,thread);
@@ -305,7 +309,7 @@ void PIC::Restart::SaveParticleData(const char* fname) {
   GetParticleDataCheckSum();
 }
 
-int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart) {
+int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node,FILE* fRestart,int &nSavedBlocks,int &nSavedBytes) {
   int res=0;
 
   //save the data
@@ -320,6 +324,7 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
       long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
 
       if (node->block!=NULL) {
+        nSavedBlocks++;
         memcpy(FirstCellParticleTable,node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
 
         for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -335,9 +340,14 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
 
         //save the particle number into the restart file
         if (nTotalParticleNumber!=0) {
-          fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart);
-          fwrite(&nTotalParticleNumber,sizeof(int),1,fRestart);
-          fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart);
+          if (fwrite(&node->AMRnodeID,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+          nSavedBytes+=sizeof(cAMRnodeID); 
+
+          if (fwrite(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+          nSavedBytes+=sizeof(int);
+
+          if (fwrite(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+	  nSavedBytes+=sizeof(int)*_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_;
 
           //save the particle data into the restart file
           //IMPORTANT: save the partilce data in the reverse order so, when thay are read back from the restart file they are in the seme order as
@@ -354,7 +364,8 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
               else ptr=PIC::ParticleBuffer::GetPrev(ptr);
 
               memcpy(tempParticleData,PIC::ParticleBuffer::GetParticleDataPointer(ptr),PIC::ParticleBuffer::ParticleDataLength);
-              fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart);
+              if (fwrite(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: fwrite has failed"); 
+	      nSavedBytes+=sizeof(char)*PIC::ParticleBuffer::ParticleDataLength;
 
               ++res;
             }
@@ -364,7 +375,7 @@ int PIC::Restart::SaveParticleDataBlock(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* 
     }
   }
   else {
-    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=SaveParticleDataBlock(node->downNode[nDownNode],fRestart);
+    for (int nDownNode=0;nDownNode<(1<<3);nDownNode++) if (node->downNode[nDownNode]!=NULL) res+=SaveParticleDataBlock(node->downNode[nDownNode],fRestart,nSavedBlocks,nSavedBytes);
   }
 
   return res;
@@ -416,11 +427,12 @@ long int PIC::Restart::GetRestartFileParticleNumber(const char *fname) {
   return res;
 }
 
-int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
+int PIC::Restart::ReadParticleDataBlock(FILE* fRestart,int &nReadBlocks,int &nReadBytes,int st_size) {
   int res=0;
 
+
   //read the data
-  while (feof(fRestart)==0) {
+  while ((!feof(fRestart))&&(nReadBytes<st_size)) {
     int nTotalParticleNumber=0;
     int ParticleNumberTable[_BLOCK_CELLS_X_][_BLOCK_CELLS_Y_][_BLOCK_CELLS_Z_];
     long int FirstCellParticleTable[_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_];
@@ -428,20 +440,29 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* Node;
 
     if (fread(&NodeId,sizeof(cAMRnodeID),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    nReadBytes+=sizeof(cAMRnodeID);
+
     if (fread(&nTotalParticleNumber,sizeof(int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    nReadBytes+=sizeof(int);
 
     if (nTotalParticleNumber!=0) {
       Node=PIC::Mesh::mesh->findAMRnodeWithID(NodeId);
 
       if (Node->Thread!=PIC::ThisThread) {
         //skip the data for this block
+	nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
+	  nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char); 
+
         if (fseek(fRestart,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int)+
           nTotalParticleNumber*PIC::ParticleBuffer::ParticleDataLength*sizeof(char),SEEK_CUR)!=0) return res;
       }
       else {
         //read the data for this block
+        nReadBlocks++;	
+	
         if (fread(&ParticleNumberTable[0][0][0],sizeof(int),_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_,fRestart)!=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_) exit(__LINE__,__FILE__,"Error: file reading error");
         memcpy(FirstCellParticleTable,Node->block->FirstCellParticleTable,_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(long int));
+	nReadBytes+=_BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_*sizeof(int);
 
         int i,j,k,np;
         char tempParticleData[PIC::ParticleBuffer::ParticleDataLength];
@@ -453,6 +474,7 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
             if (fread(tempParticleData,sizeof(char),PIC::ParticleBuffer::ParticleDataLength,fRestart)!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: file reading error");
             ptr=PIC::ParticleBuffer::GetNewParticle(FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)]);
             res++; 
+	    nReadBytes+=PIC::ParticleBuffer::ParticleDataLength;
 
             PIC::ParticleBuffer::CloneParticle((PIC::ParticleBuffer::byte*) PIC::ParticleBuffer::GetParticleDataPointer(ptr),(PIC::ParticleBuffer::byte*) tempParticleData);
 
@@ -493,6 +515,13 @@ int PIC::Restart::ReadParticleDataBlock(FILE* fRestart) {
 
 void PIC::Restart::ReadParticleData(const char* fname) {
   FILE *fRestart=NULL;
+  struct stat st;
+  int nReadBlocks=0,nReadBytes=0;
+
+
+  if (stat(fname, &st) != 0) {
+    exit(__LINE__,__FILE__,"Error getting file info");
+  }
 
   fRestart=fopen(fname,"r");
 
@@ -509,14 +538,17 @@ void PIC::Restart::ReadParticleData(const char* fname) {
   //read the end-of-the-user-data-marker
   char msg[UserAdditionalRestartDataCompletedMarkerLength];
   if (fread(msg,sizeof(char),UserAdditionalRestartDataCompletedMarkerLength,fRestart)!=UserAdditionalRestartDataCompletedMarkerLength) exit(__LINE__,__FILE__,"Error: fread failed"); 
+  nReadBytes+=sizeof(char)*UserAdditionalRestartDataCompletedMarkerLength;
 
   long int t;
   if (fread(&t,sizeof(long int),1,fRestart)!=1) exit(__LINE__,__FILE__,"Error: fread failed"); 
+  nReadBytes+=sizeof(long int);
   if (t!=PIC::ParticleBuffer::ParticleDataLength) exit(__LINE__,__FILE__,"Error: the value of the PIC::ParticleBuffer::ParticleDataLength haschanged");
 
   //save the particle weight table
   if (_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_) {
     if (fread(PIC::ParticleWeightTimeStep::GlobalParticleWeight,sizeof(double),_TOTAL_SPECIES_NUMBER_,fRestart)!=_TOTAL_SPECIES_NUMBER_) exit(__LINE__,__FILE__,"Error: fread failed"); 
+    nReadBytes+=sizeof(double)*_TOTAL_SPECIES_NUMBER_;
   }
   else {
     exit(__LINE__,__FILE__,"Error: not implemented");
@@ -528,7 +560,7 @@ void PIC::Restart::ReadParticleData(const char* fname) {
 
   int nLoadedParticles,nTotalLoadedParticles;
 
-  nLoadedParticles=ReadParticleDataBlock(fRestart);
+  nLoadedParticles=ReadParticleDataBlock(fRestart,nReadBlocks,nReadBytes,st.st_size);
   fclose(fRestart);
 
   MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
