@@ -83,7 +83,7 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
     }
 
     // Check if merging needed
-    if (totalParticles <= nParticleRangeMax) {
+    if (totalParticles < nParticleRangeMax) {
         return;
     }
 
@@ -185,6 +185,8 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleMerging(int spec,long in
             double mergedVNormal = totalMomentumNormal / mergedWeight;
             double mergedS = mergedSWeighted / mergedWeight;
 
+	    if ((isfinite(mergedVParallel)==false)||(isfinite(mergedVNormal)==false)||(isfinite(mergedS)==false)) exit(__LINE__,__FILE__,"Error: found nan"); 
+
             // Update first particle with merged properties
             PIC::ParticleBuffer::byte *ptr_data = PB::GetParticleDataPointer(p1.id);
             PB::SetVParallel(mergedVParallel, ptr_data);
@@ -258,9 +260,12 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
             pdata.s = PB::GetFieldLineCoord(p_data_temp);
             pdata.vParallel = PB::GetVParallel(p_data_temp);
             pdata.vNormal = PB::GetVNormal(p_data_temp);
-            pdata.w = PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec] *
-                     PB::GetIndividualStatWeightCorrection(p_data_temp);
+            pdata.w = PB::GetIndividualStatWeightCorrection(p_data_temp);
             pdata.id = p_temp;
+
+	    if (isfinite(pdata.w)==false) exit(__LINE__,__FILE__,"Error: nan is found");
+	    if (pdata.w==0.0) exit(__LINE__,__FILE__,"Error: stat weight is zero");
+	    if (std::isnormal(pdata.w)==false) exit(__LINE__,__FILE__,"Error: nan is found");
 
             particles.push_back(pdata);
             totalParticles++;
@@ -269,12 +274,15 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
     }
 
     // Check if splitting is needed
-    if (totalParticles <= nParticleRangeMax) {
+    if (totalParticles >  nParticleRangeMin) {
         return;
     }
 
     // Calculate target number of particles
     int targetParticles = static_cast<int>(0.5 * (nParticleRangeMax + nParticleRangeMin));
+
+    //Limit the number of new particle to be created by increased the total number of particle 
+    if (targetParticles>1.2*totalParticles) targetParticles=static_cast<int>(1.2*totalParticles); 
 
     // Sort particles by weight in descending order
     std::sort(particles.begin(), particles.end(),
@@ -287,7 +295,7 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
     double totalEnergyAfter = 0.0;
 
     // Split particles starting with highest weights until target is reached
-    for (const auto& p_to_split : particles) {
+    for (auto& p_to_split : particles) {
         if (totalParticles >= targetParticles) break;
 
         double newWeight = p_to_split.w / 2.0;
@@ -295,6 +303,9 @@ void PIC::FieldLine::cFieldLineSegment::WeightedParticleSplitting(int spec,long 
         // Calculate energy before splitting
         double energyBefore = 0.5 * p_to_split.w * (p_to_split.vParallel * p_to_split.vParallel +
                                                    p_to_split.vNormal * p_to_split.vNormal);
+
+
+        if (std::isnormal(newWeight)==false) continue;
 
         // Update weight of original particle
         PB::SetIndividualStatWeightCorrection(newWeight,p_to_split.id);
