@@ -69,6 +69,8 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   define _PIC_GLOBAL_TIME_COUNTER_MODE_  _PIC_MODE_ON_
 
+  define _PIC_PARTICLE_MOVER__RELATIVITY_MODE_ _PIC_MODE_ON_
+
 
   !define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover_Tenishev_2005_FL(ptr,LocalTimeStep,node)
 
