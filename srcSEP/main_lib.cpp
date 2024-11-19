@@ -238,7 +238,7 @@ void amps_init_mesh() {
 
       for (int iline=0;iline<SEP::Domain_nTotalParkerSpirals;iline++) {
         double x0[3],r,phi;  
-        double phi_max=25.0*Pi/180.0;
+        double phi_max=45.0*Pi/180.0;
 
         r=Vector3D::Length(xStart);
 
@@ -249,6 +249,19 @@ void amps_init_mesh() {
         x0[1]=r*cos(phi);
         x0[2]=0.0; 
 
+
+	//create a randomly located in 3D initial point 
+        double cos_phi_max=cos(phi_max);	
+	
+	do {
+          Vector3D::Distribution::Uniform(x0);
+	}
+        while (x0[0]<phi_max);
+
+        for (int i=0;i<3;i++) x0[i]*=r;	
+     
+
+
         field_line.clear();
 
         SEP::ParkerSpiral::CreateFileLine(&field_line,x0,7*250.0);
@@ -256,6 +269,12 @@ void amps_init_mesh() {
 
         SEP::Mesh::InitFieldLineAMPS(&field_line);
       } 
+
+      //init frame of references related to each segment of the field line 
+     // for (int iFieldLine=0; iFieldLine<PIC::FieldLine::nFieldLine; iFieldLine++) {
+     //   PIC::FieldLine::FieldLinesAll[iFieldLine].InitReferenceFrame(); 
+     // }
+
 
       if (PIC::ThisThread==0) PIC::FieldLine::Output("all-field-lines.dat",false);
     }
@@ -299,8 +318,14 @@ void amps_init_mesh() {
 
     SEP::Mesh::InitFieldLineAMPS(&field_line_old);
     SEP::Mesh::InitFieldLineAMPS(&field_line_new);
+    break;
+  default :
+    exit(__LINE__,__FILE__,"Error: the domain type is not recognized");
   }
 
+
+  //init domain decomposition of the field lines 
+  //PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(0.005);
 
   //refining the mesh along a set of magnetic field lines: use onle wher model SEP
   if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) { 
@@ -474,6 +499,15 @@ void amps_init() {
   PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=SEP::ParticleSource::OuterBoundary::BoundingBoxInjectionRate;
   PIC::ParticleWeightTimeStep::initParticleWeight_ConstantWeight(_H_PLUS_SPEC_);
 
+  //if the field lises are defined -> redefine the particle weight based on assumed location of the first point, shock speed, solar wind density, and injection efficientcy
+  if (PIC::FieldLine::FieldLinesAll!=NULL) {
+     double *x,w; 
+
+     x=PIC::FieldLine::FieldLinesAll[0].GetFirstSegment()->GetBegin()->GetX(); 
+
+     w=5.0E6*pow(_AU_/Vector3D::Length(x),2)*1800.0E3*PIC::ParticleWeightTimeStep::GlobalTimeStep[0]*0.1/SEP::FieldLine::InjectionParameters::nParticlesPerIteration; 
+     PIC::ParticleWeightTimeStep::GlobalParticleWeight[0]=w;
+  }
 
   //init magnetic filed
   std::function<void(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)> InitMagneticField; 
@@ -583,7 +617,11 @@ start:
     //make the time advance
      PIC::TimeStep();
 
-//     PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
+//    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(50,100); //(SEP::MinParticleLimit,SEP::MaxParticleLimit);
+    
+
+     PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,600,1000); 
+     PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(20,20,20,600,1000); 
 
 
      // write output file

@@ -218,6 +218,12 @@ void SEP::Sampling::Manager() {
     int iMu,iR,iLine; 
     double summ;
 
+    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
+    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
+    SEP::Sampling::PitchAngle::DmumuSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+    if (PIC::ThisThread!=0) goto end;
+
     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
       summ=0.0;
 
@@ -340,6 +346,8 @@ void SEP::Sampling::Manager() {
    }
 
    fclose(fout);
+
+end:
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
    SEP::Sampling::PitchAngle::DmumuSamplingTable=0.0;

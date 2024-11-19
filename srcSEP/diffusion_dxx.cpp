@@ -76,6 +76,37 @@ void SEP::Diffusion::GetDxx(double& D,double &dDxx_dx,double v,int spec,double F
     D=2.0*v*v/8.0*Quadrature::Gauss::Cube::GaussLegendre(1,6,DxxInternalNumerics::Integrant,xmin,xmax);  
   }
 
+  double DTEST,DTEST1,DDTEST1;
+
+  {
+  FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+  FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+  double *x0,*x1;
+  double w0,w1;
+
+    x0=VertexBegin->GetX();
+    x1=VertexEnd->GetX();
+
+      w1=fmod(FieldLineCoord,1);
+  w0=1.0-w1; 
+
+
+  double XTEST[3];
+
+  for (int idim=0;idim<3;idim++) {
+    double t;
+
+    t=w0*x0[idim]+w1*x1[idim];
+    XTEST[idim]=t;
+
+  }
+
+  DTEST = DLT::calculate_Dxx(Vector3D::Length(XTEST),v);
+
+  QLT::calculateAtHeliocentricDistance(DTEST,DDTEST1,Vector3D::Length(XTEST),v);
+
+  }
+
   ds=Segment->GetLength();
 
   DxxInternalNumerics::FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds);

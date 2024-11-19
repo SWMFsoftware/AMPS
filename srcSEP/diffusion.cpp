@@ -6,10 +6,12 @@
 
 #include "sep.h"
 
+double calculateDmuMu(double dB, double B, double r, double mu, double v_parallel); 
+
 double SEP::Diffusion::Jokopii1966AJ::k_ref_min=1.0E-10;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_max=1.0E-7;
 double SEP::Diffusion::Jokopii1966AJ::k_ref_R=_AU_;
-double SEP::Diffusion::Jokopii1966AJ::FractionValue=0.05;
+double SEP::Diffusion::Jokopii1966AJ::FractionValue=0.4;
 double SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex=0.0;
 int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
 
@@ -316,18 +318,39 @@ void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldL
   double absB2=0.0;
   int idim;
 
+  double XTEST[3];
+  double BINTERPOLATED[3];
+
   for (idim=0;idim<3;idim++) {
     double t;
 
     t=w0*B0[idim]+w1*B1[idim];
     absB2+=t*t;
 
+    BINTERPOLATED[idim]=t;
+
     t=w0*x0[idim]+w1*x1[idim]; 
     r2+=t*t;
+
+    XTEST[idim]=t;
+    
   }
   
   SummW=w0*(W0[0]+W0[1])+w1*(W1[0]+W1[1]);
   absB=sqrt(absB2);
+
+  double BTEST[3];
+  double r=sqrt(r2);
+  double r2test=Vector3D::DotProduct(XTEST,XTEST);
+
+   SEP::ParkerSpiral::GetB(BTEST,x0,400.0E3); 
+   SEP::ParkerSpiral::GetB(BTEST,XTEST,400.0E3);
+
+  if (SEP::DomainType==SEP::DomainType_ParkerSpiral) {
+    absB=Vector3D::Length(BTEST);
+  }
+
+
   
   //calculate dB 
   switch (Jokopii1966AJ::Mode) {
@@ -393,6 +416,10 @@ void SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient(double& D,
 
   D=c*(1.0-mu*mu);
   dD_dmu=-c*2*mu;
+
+  D=calculateDmuMu(dB,absB,sqrt(r2),mu,vParallel);
+  dD_dmu=-D/(1.0-mu*mu)*2*mu; 
+
 
   if ((SEP::Diffusion::LimitSpecialMuPointsMode==SEP::Diffusion::LimitSpecialMuPointsModeOn)&& (fabs(mu)>1.0-SEP::Diffusion::LimitSpecialMuPointsDistance)) {
     double mu_abs=1.0-SEP::Diffusion::LimitSpecialMuPointsDistance;

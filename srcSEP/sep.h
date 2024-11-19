@@ -1463,17 +1463,18 @@ namespace SEP {
 
         for (int idim=0;idim<3;idim++) xMiddle[idim]=0.5*(xBegin[idim]+xEnd[idim]); 
    
-        node=PIC::Mesh::Search::FindBlock(xMiddle);
-        
-        if (node==NULL) return;
-        if (node->block==NULL) return;
-
         double dmu=2.0/nPitchAngleBins;
         double vol=0.0;
         double xFirstFieldLine[3];
 
         switch (_PIC_PARTICLE_LIST_ATTACHING_) {
         case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+          node=PIC::Mesh::Search::FindBlock(xMiddle);
+	  SamplingTime+=node->block->GetLocalTimeStep(0);
+
+          if (node==NULL) return;
+          if (node->block==NULL) return;
+
           PIC::Mesh::mesh->FindCellIndex(xMiddle,i,j,k,node);
           ptr=node->block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
 
@@ -1481,6 +1482,15 @@ namespace SEP {
 
           break;
         case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+          node=NULL;
+
+         if (_SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_) { 
+           SamplingTime+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+	 }
+	 else {
+           exit(__LINE__,__FILE__,"not implemented");
+	 }
+
           ptr=Segment->FirstParticleIndex;
 
           FL::FieldLinesAll[iFieldLine].GetFirstSegment()->GetBegin()->GetX(xFirstFieldLine);
@@ -1491,7 +1501,6 @@ namespace SEP {
           exit(__LINE__,__FILE__,"Error: the option is unknown");
         }
  
-        SamplingTime+=node->block->GetLocalTimeStep(0);
         SamplingCounter++;
 
         while (ptr!=-1) {
@@ -1537,7 +1546,12 @@ double e_mev=e*J2MeV;
           if (iMuBin<0) iMuBin=0;
           if (iMuBin>=nPitchAngleBins) iMuBin=nPitchAngleBins-1;
 
-          double ParticleWeight=node->block->GetLocalParticleWeight(spec);
+	  #if _SIMULATION_PARTICLE_WEIGHT_MODE_ != _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_
+          exit(__LINE__,__FILE__,"Error: not implemented for this mode");
+	  #endif 
+
+
+          double ParticleWeight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
           ParticleWeight*=PB::GetIndividualStatWeightCorrection(ParticleData);
 
 //          double x[3],iMu_RSample,iR_RSample;
@@ -1566,6 +1580,10 @@ double e_mev=e*J2MeV;
       void OutputPitchAngleDistribution() {
         double dmu=2.0/nPitchAngleBins;  
         int j,ibin;
+
+	PitchAngleSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR); 
+
+	if (PIC::ThisThread==0) { 
 
         char fname[200];
         FILE *fout=NULL;
@@ -1609,8 +1627,11 @@ double e_mev=e*J2MeV;
         }
 
         //clear the ssampling buffer
-        PitchAngleSamplingTable=0.0; 
         fclose(fout);
+	}
+
+
+	PitchAngleSamplingTable=0.0;
       }
 
       void Clear() {
@@ -1623,26 +1644,45 @@ double e_mev=e*J2MeV;
       }
 
       void Output() {
-        fprintf(foutDensity,"%e ",SamplingTime);
 
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,"  %e", DensitySamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
+        auto reduce  =  [&] (double *t) {
+          double *temp;
+
+	  if (PIC::ThisThread==0) temp=new double [nEnergyBins];
+          MPI_Reduce(t,temp,nEnergyBins,MPI_DOUBLE,MPI_SUM,0,MPI_GLOBAL_COMMUNICATOR);
+
+          if (PIC::ThisThread==0) {
+            memcpy(t,temp,nEnergyBins*sizeof(double));
+            delete [] temp;
+	  }
+	};
+
+	reduce(DensitySamplingTable);
+	reduce(FluxSamplingTable);
+	reduce(ReturnFluxSamplingTable);
+
+        if (PIC::ThisThread==0) {
+          fprintf(foutDensity,"%e ",SamplingTime);
+
+          for (int i=0;i<nEnergyBins;i++) fprintf(foutDensity,"  %e", DensitySamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1)); 
         
-        fprintf(foutDensity,"\n");
-        fflush(foutDensity);
+          fprintf(foutDensity,"\n");
+          fflush(foutDensity);
 
-        fprintf(foutFlux,"%e ",SamplingTime);
+          fprintf(foutFlux,"%e ",SamplingTime);
 
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,"  %e", FluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
+          for (int i=0;i<nEnergyBins;i++) fprintf(foutFlux,"  %e", FluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
 
-        fprintf(foutFlux,"\n");
-        fflush(foutFlux);
+          fprintf(foutFlux,"\n");
+          fflush(foutFlux);
 
-        fprintf(foutReturnFlux,"%e ",SamplingTime);
+          fprintf(foutReturnFlux,"%e ",SamplingTime);
 
-        for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,"  %e", ReturnFluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
+          for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,"  %e", ReturnFluxSamplingTable[i]/((SamplingCounter!=0) ? SamplingCounter : 1));
 
-        fprintf(foutReturnFlux,"\n");
-        fflush(foutReturnFlux);
+          fprintf(foutReturnFlux,"\n");
+          fflush(foutReturnFlux);
+	}
 
 
         //output the pirch angle distribution
@@ -1666,6 +1706,8 @@ double e_mev=e*J2MeV;
 
         nPitchAngleBins=20;
         PitchAngleSamplingTable.init(nPitchAngleBins,nEnergyBins);
+
+	if (PIC::ThisThread!=0) goto end;
 
         sprintf(base_name,"%s",fname);
 
@@ -1701,6 +1743,8 @@ double e_mev=e*J2MeV;
         fprintf(foutReturnFlux,"VARIABLES=\"time\"");
         for (int i=0;i<nEnergyBins;i++) fprintf(foutReturnFlux,", \"E(%e MeV - %e MeV)\"",MinEnergy*exp(i*dLogEnergy)*J2MeV,MinEnergy*exp((i+1)*dLogEnergy)*J2MeV);
         fprintf(foutReturnFlux,"\n");
+
+end:
 
         SamplingTime=0.0;
         DensitySamplingTable=new double[nEnergyBins];
@@ -1960,7 +2004,9 @@ double e_mev=e*J2MeV;
         double GetShockSpeed();
         void UpdateShockLocation();
         double GetInjectionRate();
-        int GetInjectionLocation(int iFieldLine);
+	double GetSolarWindDensity();
+	int GetInjectionLocation(int iFieldLine,double &S,double *xInjection);
+	double GetCompressionRatio();
      }
 
     }

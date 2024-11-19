@@ -59,8 +59,10 @@ int main(int argc,char **argv) {
     //SEP::InitDriftVelData();
     amps_time_step();
 
-    PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
-
+    //PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
+    //
+    //PIC::ParticleSplitting::FledLine::WeightedParticleMerging(20,20,20,500,800); 
+    //PIC::ParticleSplitting::FledLine::WeightedParticleSplitting(20,20,20,500,800);    
   }
 
 

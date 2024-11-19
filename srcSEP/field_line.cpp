@@ -4,7 +4,7 @@
 #include "amps2swmf.h"
 
 
-int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=30;
+int SEP::FieldLine::InjectionParameters::nParticlesPerIteration=100;
 double SEP::FieldLine::InjectionParameters::PowerIndex=4.0;
 double SEP::FieldLine::InjectionParameters::emin=0.1,SEP::FieldLine::InjectionParameters::emax=500;
 double SEP::FieldLine::InjectionParameters::InjectionEfficiency=3.4E-4; //Sokolov-2004-AJ 
@@ -46,7 +46,13 @@ long int SEP::FieldLine::InjectParticleFieldLineBeginning(int spec,int iFieldLin
 
     if (Vector3D::DotProduct(p,l)<0.0) for (int idim=0;idim<3;idim++) p[idim]=-p[idim];
     
-    if (PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0)!=-1) nInjectedParticles++;
+    if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,ParticleWeightCorrectionFactor,iFieldLine,0))!=-1) {
+      nInjectedParticles++;
+
+      if (SEP::Offset::RadialLocation!=-1) {
+         *((double*)(PIC::ParticleBuffer::GetParticleDataPointer(newParticle)+SEP::Offset::RadialLocation))=0.0;
+      }
+    }
   }
    
   return nInjectedParticles;
@@ -75,7 +81,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   namespace FL = PIC::FieldLine;
 
   int iShockFieldLine,npart;
-  double anpart,p[3],ParticleWeightCorrectionFactor;
+  double xInjection[3]={0.0,0.0,0.0},S,anpart,p[3],ParticleWeightCorrectionFactor;
   int nInjectedParticles=0;
 
 
@@ -102,7 +108,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       #else 
       switch (InjectionParameters::UseAnalyticShockModel) {
       case InjectionParameters::AnalyticShockModel_Tenishev2005: 
-        iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine);
+	iShockFieldLine=SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(iFieldLine,S,xInjection);
 	break;
       case InjectionParameters::AnalyticShockModel_none:
         iShockFieldLine=0;
@@ -123,6 +129,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iShockFieldLine); 
 
   if (Segment==NULL) return 0;
+  //if (Segment->Thread!=PIC::ThisThread) return 0;
  
   //determine the volume swept by the shock wave during the time step 
   double xBegin[3],xEnd[3],xMiddle[3],rMiddle,xFirstFieldLine[3];
@@ -157,7 +164,24 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       exit(__LINE__,__FILE__,"Error: the option is unknown");
     }
 
-    vol*=node->block->GetLocalTimeStep(spec)*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
+    double LocalTimeStep=-1;
+
+    switch( _SIMULATION_TIME_STEP_MODE_) {
+    case _SPECIES_DEPENDENT_LOCAL_TIME_STEP_: 
+      LocalTimeStep=node->block->GetLocalTimeStep(spec); 
+      break;
+    case  _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_: 
+      LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+      break;
+    case  _SINGLE_GLOBAL_TIME_STEP_: 
+      LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+      break;
+    default:
+      exit(__LINE__,__FILE__,"not implemented");
+    }
+
+
+    vol*=LocalTimeStep*SEP::FieldLine::MagneticTubeRadius(xMiddle,iFieldLine);
   #endif
 
 
@@ -184,6 +208,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   switch (InjectionParameters::UseAnalyticShockModel) {
   case InjectionParameters::AnalyticShockModel_Tenishev2005:
     anpart=vol*SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate()/node->block->GetLocalParticleWeight(spec);
+    cout << "Shock locaiton=" << Vector3D::Length(xInjection)/_AU_ << "[AU], Source Rate=" << SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() << endl << flush; 
     break;
   case InjectionParameters::AnalyticShockModel_none:
     anpart=InjectionParameters::nParticlesPerIteration;
@@ -195,7 +220,8 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
   double GlobalWeightCorrectionFactor=1.0;
 
-  if (anpart<InjectionParameters::nParticlesPerIteration) {
+  if (anpart==0.0) return 0.0;
+  else if (anpart<InjectionParameters::nParticlesPerIteration) {
     GlobalWeightCorrectionFactor=anpart/InjectionParameters::nParticlesPerIteration;
     anpart=InjectionParameters::nParticlesPerIteration;
   }
@@ -212,7 +238,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double emin=InjectionParameters::emin*MeV2J;
     double emax=InjectionParameters::emax*MeV2J;
 
-    double s=InjectionParameters::PowerIndex;
+    double s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();    //InjectionParameters::PowerIndex;
     double q=3.0*s/(3-1.0);
 
     double pAbs,pmin,pmax,speed,pvect[3];
@@ -242,8 +268,6 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double log_pmax=log(pmax); 
 
     for (int i=0;i<nParticles;i++) {
-//      pAbsTable[i]=pmin+rnd()*(pmax-pmin);
-
       pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
       WeightCorrectionTable[i]=pAbsTable[i]/pmin*pow(pAbsTable[i],-q)/WeightNorm*GlobalWeightCorrectionFactor;
     }
@@ -309,8 +333,19 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
       Vector3D::Distribution::Uniform(p,pAbsTable[i]);
     } 
 
+    long int newParticle;
 
-    if (PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine)!=-1) nInjectedParticles++;  
+    if ((newParticle=PIC::FieldLine::InjectParticle_default(spec,p,GlobalWeightCorrectionFactor*WeightCorrectionTable[i],iFieldLine,iShockFieldLine))!=-1) {
+      nInjectedParticles++;
+
+      //Set the local coordinte to the shock location 
+      PIC::ParticleBuffer::SetFieldLineCoord(S,newParticle);
+
+      //set the initiali distance of the particle from the assigned magnetic field line 
+      if (SEP::Offset::RadialLocation!=-1) {
+         *((double*)(PIC::ParticleBuffer::GetParticleDataPointer(newParticle)+SEP::Offset::RadialLocation))=0.0;
+      }
+    } 
   }
 
   delete [] pAbsTable;

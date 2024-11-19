@@ -5,7 +5,13 @@ void SEP::Sampling::Energy::Output(int cnt) {
   double de,norm,t,max_val;
   int iLine,iE,iR;
 
-  REnergySamplingTable.find_nan(); 
+  //gather all sampled data 
+  REnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return; 
+
+  REnergySamplingTable.find_nan();
+
 
   //normalize the energy distribution 
   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
@@ -77,6 +83,12 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(int cnt)
   double dD,norm,t,max_val;
   int iLine,iR,iD;
 
+  //gather all sampled data
+  DisplacementSamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return; 
+  DisplacementSamplingTable.find_nan();
+
   //normalize the energy distribution
   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
     norm=0.0,max_val=0.0;
@@ -147,6 +159,12 @@ void SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(in
   namespace FL=PIC::FieldLine;
   double dD,norm,t,max_val;
   int iLine,iR,iD,iE;
+
+  //gather all sampled data
+  DisplacementEnergySamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return; 
+  DisplacementEnergySamplingTable.find_nan();
 
   //normalize the energy distribution
   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)  for (iE=0;iE<SEP::Sampling::PitchAngle::nEnergySamplingIntervals;iE++)  for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
@@ -226,6 +244,12 @@ void SEP::Sampling::LarmorRadius::Output(int cnt) {
   namespace FL=PIC::FieldLine;
   double dL,norm,t,max_val;
   int iLine,iR,iD,iL;
+
+  //gather all sampled data
+  SamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return; 
+  SamplingTable.find_nan();
 
   //normalize the energy distribution
   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)   for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {

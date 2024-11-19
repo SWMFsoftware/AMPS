@@ -24,6 +24,20 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
   rShock=MinFieldLineHeliocentricDistance;
 }
   
+double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
+  double r = rShock / _AU_;
+  double res;
+
+  if (r<0.04) {
+    res=1.7;
+  }
+  else {
+    res=2.0+(1.4-2.0)/(0.14-0.04)*(r-0.04);
+    if (res<1.0) res=1.0;
+  } 
+
+  return res;
+}
 
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed() {
   double r = rShock / _AU_;
@@ -57,30 +71,106 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation() {
   }
 }
 
+double SEP::ParticleSource::ShockWave::Tenishev2005::GetSolarWindDensity() {
+  double t=_AU_/rShock;
+  return 5.0E6*t*t;
+}
+
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionRate() {
-  double res;
+  double s,density,efficientcy,res;
 
   if (InitFlag==false) Init(); 
 
-  return pow(MinFieldLineHeliocentricDistance/rShock,2);
+  s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
+
+  density=GetSolarWindDensity();
+  efficientcy=(s-1.0)/s;
+  res=density*efficientcy;
+
+  return res;
 }
 
-int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine) {
+int SEP::ParticleSource::ShockWave::Tenishev2005::GetInjectionLocation(int iFieldLine,double &S,double *xInjection) {
   double r, *x, r2 = rShock * rShock;
   int iSegment;
   PIC::FieldLine::cFieldLineSegment *Segment =
       PIC::FieldLine::FieldLinesAll[iFieldLine].GetFirstSegment();
 
+
   UpdateShockLocation();
-  x=Segment->GetBegin()->GetX(); 
+  x = Segment->GetBegin()->GetX();
 
-  if (r2 <= Vector3D::DotProduct(x, x)) return -1; 
+  S = -1.0;
+  if (r2 <= Vector3D::DotProduct(x, x)) return -1;
 
-  for (iSegment=0; Segment != NULL; iSegment++,Segment = Segment->GetNext()) {
-    x = Segment->GetBegin()->GetX();
-    if (Vector3D::DotProduct(x, x) < r2) return iSegment; 
-  }
+  for (iSegment = 0; Segment != NULL; iSegment++, Segment = Segment->GetNext()) {
+    double *x1 = Segment->GetBegin()->GetX();
+    double r1_2 = Vector3D::DotProduct(x1, x1);
 
-  return -1;
+    if (r1_2 < r2) {
+        double *x2 = Segment->GetEnd()->GetX();
+        double r2_2 = Vector3D::DotProduct(x2, x2);
+
+        if (r2_2 >= r2) {
+            // Solve quadratic equation |x1 + t(x2-x1)|^2 = r2
+            double d[3];
+            double a = 0.0, b = 0.0, c = -r2;
+
+            for (int i = 0; i < 3; i++) {
+                d[i] = x2[i] - x1[i];
+                a += d[i] * d[i];           // |d|^2
+                b += 2.0 * x1[i] * d[i];    // 2(x1·d)
+                c += x1[i] * x1[i];         // |x1|^2
+            }
+
+            // Solve at^2 + bt + c = 0
+            double discriminant = b*b - 4*a*c;
+
+            if (discriminant < 0) {
+                // Use segment start point since it's inside shock
+                for (int i = 0; i < 3; i++) {
+                   xInjection[i] = x1[i];
+                }
+
+		S=iSegment; 
+                return iSegment;
+            }
+
+            // Two real solutions
+            double t1 = (-b - sqrt(discriminant))/(2*a);
+            double t2 = (-b + sqrt(discriminant))/(2*a);
+
+            // Find valid t
+            if (t1 >= 0 && t1 <= 1) {  // t1 is in [0,1]
+                for (int i = 0; i < 3; i++) {
+                    xInjection[i] = x1[i] + t1 * d[i];
+                }
+
+		S=t1+iSegment; 
+                return iSegment;
+            }
+            else if (t2 >= 0 && t2 <= 1) {  // t2 is in [0,1]
+                for (int i = 0; i < 3; i++) {
+                    xInjection[i] = x1[i] + t2 * d[i];
+                }
+
+		S=t2+iSegment; 
+                return iSegment;
+            }
+            else if (t1 < 0 && t2 > 1) {  // Solutions bracket the segment
+                for (int i = 0; i < 3; i++) {
+                    xInjection[i] = x1[i];
+                }
+
+		S=iSegment;
+                return iSegment;
+            }
+        }
+    }
 }
+
+
+return -1;
+}
+
 
