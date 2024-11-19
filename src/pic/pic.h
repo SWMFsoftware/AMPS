@@ -472,6 +472,11 @@ namespace PIC {
     //check consistency of the particles lists in case the particles lists are attached to the field line segments 
     void CheckParticleList();
 
+    //function that loops through all particles
+    long int TraverseAllFieldLines(void (*processParticle)(long int));
+    void check_particle(long int);
+
+
     //populate particle for a given segment of the field line 
     void PopulateSegment(int spec,double NumberDensity,double Temparature,double* BulkVelocity,double Volume,int iSegment,int iFieldLine,int nMaxInjectedParticles=-1);
 
@@ -913,6 +918,7 @@ namespace PIC {
     public:
       long int Temp_ID;
       bool ActiveFlag;
+      int Thread;
 
       //index of the first particle attached to the segment
       long int FirstParticleIndex;
@@ -947,7 +953,10 @@ namespace PIC {
       inline void SetAssociatedDataBufferPointer(char* ptr){}
 
     
-      cFieldLineSegment() {cleanDataBuffer();}
+      cFieldLineSegment() {
+        Thread=0;
+        cleanDataBuffer();
+      }
 
       //get cartesian coordinats of the location
       inline void GetCartesian(double* xOut, double S) {
@@ -2459,6 +2468,8 @@ void DeleteAttachedParticles();
       v[0]=t;
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
       #endif
@@ -2476,6 +2487,8 @@ void DeleteAttachedParticles();
       v[0]=t;
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
       #endif
@@ -2528,6 +2541,8 @@ void DeleteAttachedParticles();
       #endif
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
       #endif
@@ -2545,6 +2560,8 @@ void DeleteAttachedParticles();
       #endif
 
       #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (fabs(t)>SpeedOfLight) exit(__LINE__,__FILE__,"Error: exceed the limit");
+
       #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (isfinite(t)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
       #endif
@@ -2830,11 +2847,8 @@ void DeleteAttachedParticles();
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,long int ptr) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
-      if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-
-       if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
-    #endif
+    if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
+    if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
     #endif
 
     #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -2862,11 +2876,8 @@ void DeleteAttachedParticles();
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetIndividualStatWeightCorrection(double WeightCorrectionFactor,byte *ParticleDataStart) {
     #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       if (!isfinite(WeightCorrectionFactor)) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-
       if (WeightCorrectionFactor<1.0E-50) exit(__LINE__,__FILE__);
-    #endif
     #endif
 
     #if _PIC_DEBUGGER__SAVE_DATA_STREAM_MODE_ == _PIC_MODE_ON_
@@ -5304,6 +5315,35 @@ void DeleteAttachedParticles();
     void SetInitialValue(double InitalTimeCounterValue);
     double Get();
     void Update();
+  }
+
+  namespace ParallelFieldLines {
+    bool StaticDecompositionSegmentNumber();
+    void StaticDecompositionSegmentNumber(PIC::FieldLine::cFieldLineSegment* Segment);
+    bool StaticDecompositionSegmentNumberWindow(double SegmentWindowLengthFraction);
+
+    void StaticDecompositionFieldLineLength(double WindowLength=1.0);
+    void StaticDecompositionFieldLineLength(PIC::FieldLine::cFieldLineSegment* Segment,double WindowLength=1.0);
+
+    //output statistic of particle population for individual field line 
+    long int  GetFieldLinePopulationStat(PIC::FieldLine::cFieldLineSegment* FirstSegment);
+    void GetFieldLinePopulationStat();
+    void CheckLocalFieldLineParticleNumber();
+
+    //map of segments -- it will be used to exchange particles between processes 
+    class cThreadSegmentTable {
+    public:
+      PIC::FieldLine::cFieldLineSegment*** Table;
+      int* TableLength;
+
+      cThreadSegmentTable() {Table=NULL,TableLength=NULL;}
+    };
+
+    extern cThreadSegmentTable *ThreadSegmentTable;
+    void GenerateThreadSegmentTable();
+
+    void ExchangeFieldLineParticles(cThreadSegmentTable& ThreadSegmentTable);
+    void ExchangeFieldLineParticles();
   }
 
   namespace Parallel {

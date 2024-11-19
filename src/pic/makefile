@@ -8,6 +8,7 @@ include ../../Makefile.conf
 include ../../Makefile.local
 
 PICOBJ = pic.o \
+	field_line_parallel.o \
 	field_line_particle_split.o \
 	pic_time_step.o \
 	pic_parallel.o \

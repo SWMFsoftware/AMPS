@@ -376,7 +376,16 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
   //syncronize processes and exchange particle data
   SetExitErrorCode(__LINE__,_PIC__EXIT_CODE__LAST_FUNCTION__PIC_TimeStep_);
   ParticleExchangeTime=MPI_Wtime();
-  PIC::Parallel::ExchangeParticleData();
+
+  //if field lines are defined -> echange particles on the field lines; otherwise proceed with exchange the particles in the 3D computational domain
+  if (PIC::FieldLine::FieldLinesAll!=NULL) {
+    PIC::ParallelFieldLines::ExchangeFieldLineParticles();
+  }
+  else {
+    PIC::Parallel::ExchangeParticleData();
+  }
+
+
   ParticleExchangeTime=MPI_Wtime()-ParticleExchangeTime;
 
   if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {

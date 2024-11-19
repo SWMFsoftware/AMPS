@@ -475,9 +475,11 @@ namespace PIC {
       //verify that the 'x' belongs to the subdomain of the current MPI process
       cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=PIC::Mesh::mesh->findTreeNode(x,NULL);       
 
-      if (node==NULL) return -1;
-      if (node->block==NULL) return -1;
-      if (node->Thread!=PIC::ThisThread) return -1;
+      if (_PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_NODE_) {
+        if (node==NULL) return -1;
+        if (node->block==NULL) return -1;
+        if (node->Thread!=PIC::ThisThread) return -1;  
+      }	
       
       // fix kintic energy and pitch angle far now
       //    double cosPhi=pow(2,-0.5);
@@ -1703,9 +1705,18 @@ int _process_mode=_process_by_segments;
       x=PB::GetX(ParticleData);
       spec=PB::GetI(ParticleData);
 
-      node=PIC::Mesh::mesh->findTreeNode(x,node);
-      if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
-      if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+      switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+      case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+        node=NULL;
+        break;
+      case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+        node=PIC::Mesh::mesh->findTreeNode(x,node);
+        if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+        if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+	break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
 
       LocalTimeStep=node->block->GetLocalTimeStep(spec); 
       _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
@@ -1732,11 +1743,30 @@ int _process_mode=_process_by_segments;
        x=PB::GetX(ParticleData);
        spec=PB::GetI(ParticleData);
 
-       node=PIC::Mesh::mesh->findTreeNode(x,node);
-       if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
-       if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+      switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+      case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+        node=NULL;
 
-       LocalTimeStep=node->block->GetLocalTimeStep(spec);
+        #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+        LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+        #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+        LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+        #else
+        exit(__LINE__,__FILE__,"not implemented");
+        #endif
+
+        break;
+      case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+        node=PIC::Mesh::mesh->findTreeNode(x,node);
+        if (node==NULL) exit(__LINE__,__FILE__,"Error: the point is not found");
+        if (node->block==NULL) exit(__LINE__,__FILE__,"Error: the block is not allocated");
+        LocalTimeStep=node->block->GetLocalTimeStep(spec);
+
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option is unknown");
+      }
+
        _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node);
 
        ptr=ptr_next;
@@ -2308,4 +2338,42 @@ int PIC::FieldLine::InjectMaxwellianLineBeginning(int spec,double NumberDensity,
   return nInjectedParticles;
 }
   
+long int  PIC::FieldLine::TraverseAllFieldLines(void (*processParticle)(long int)) {
+    namespace FL = PIC::FieldLine;
+    long int cnt=0;
+
+    if (FL::FieldLinesAll == nullptr) {
+        if (PIC::ThisThread == 0) printf("TraverseAllFieldLines: ERROR -> FieldLinesAll is NULL\n");
+        return 0;
+    }
+
+    // Loop through all field lines
+    for (int iFieldLine = 0; iFieldLine < FL::nFieldLine; iFieldLine++) {
+        FL::cFieldLine& currentFieldLine = FL::FieldLinesAll[iFieldLine];
+        FL::cFieldLineSegment* currentSegment = currentFieldLine.GetFirstSegment();
+
+        // Loop through all segments in current field line
+        while (currentSegment != nullptr) {
+            // Only process segments assigned to this thread
+            if (currentSegment->Thread == PIC::ThisThread) {
+                // Get particles in current segment
+                long int particlePtr = currentSegment->FirstParticleIndex;
+
+                // Loop through all particles in current segment
+                while (particlePtr != -1) {
+                    // Process the particle using the provided function
+                    processParticle(particlePtr);
+                    cnt++;
+
+                    // Move to next particle
+                    particlePtr = PIC::ParticleBuffer::GetNext(particlePtr);
+                }
+            }
+
+            currentSegment = currentSegment->GetNext();
+        }
+    }
+
+    return cnt;
+}
   
