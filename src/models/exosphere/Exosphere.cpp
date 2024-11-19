@@ -2575,7 +2575,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintVariableList(FILE* fout) {
 
 void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout,long int nZenithPoint,long int nAzimuthalPoint,long int *SurfaceElementsInterpolationList,long int SurfaceElementsInterpolationListLength,cInternalSphericalData *Sphere,int spec,CMPI_channel* pipe,int ThisThread,int nTotalThreads) {
   int nInterpolationElement,nSurfaceElement;
-  double InterpolationNormalization=0.0,InterpolationCoefficient;
+  double InterpolationNormalization=0.0,InterpolationCoefficient,TimeStep;
 
   double t,TotalFluxDown=0.0,TotalFluxUp=0.0,SurfaceContent=0.0,BulkSpeedDown=0.0,BulkSpeedUp=0.0,SampleSpeciesSurfaceInjectionFlux=0.0;
   double FluxIV=0.0;
@@ -2585,8 +2585,15 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
   double FluxSW=0.0,SolarWindIncidentFlux=0.0;
   double FluxVI=0.0;
 
-  if (_SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) {
-    exit(__LINE__,__FILE__"Error: the model is implemeted only for _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_");
+  switch (_SIMULATION_TIME_STEP_MODE_) {
+  case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
+    TimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+    break;
+  case _SINGLE_GLOBAL_TIME_STEP_:
+    TimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    break;     
+  default:
+    exit(__LINE__,__FILE__,"Error: not implemented");
   }
 
 
@@ -2664,7 +2671,7 @@ void Exosphere::Sampling::OutputSurfaceDataFile::PrintDataStateVector(FILE* fout
       if (TotalFluxDown>0.0) BulkSpeedDown/=TotalFluxDown;
       if (SampleSpeciesSurfaceInjectionFlux>0.0) BulkSpeedUp/=SampleSpeciesSurfaceInjectionFlux;
 
-      TotalFluxDown/=PIC::LastSampleLength*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+      TotalFluxDown/=PIC::LastSampleLength*TimeStep;
       SurfaceContent/=PIC::LastSampleLength;
     }
 

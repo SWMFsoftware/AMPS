@@ -973,11 +973,13 @@ switch (DIM) {
         exit(__LINE__,__FILE__,"Error: the function is implemented only for the case _SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_. Changed input file.");
       }
 
+      /*
       if (DatumAtVertexFluence.is_active()==true) {
         if (_SIMULATION_TIME_STEP_MODE_ != _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_) {
            exit(__LINE__,__FILE__,"Error: the function is implemented only for the case _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_. Change input file."); 
         }
       }
+      */
 
 
       for (iFieldLine=0;iFieldLine<nFieldLine;iFieldLine++) {
@@ -1003,7 +1005,7 @@ switch (DIM) {
 
       // find the field line and location along it
       int iFieldLine = PB::GetFieldLineId(ptr);
-      double S = PB::GetFieldLineCoord(ptr);
+      double TimeStep,S = PB::GetFieldLineCoord(ptr);
 
       // weights of vertices
       double w = S - (int)S;
@@ -1024,6 +1026,17 @@ switch (DIM) {
 
       //PB::GetV(v, ptr);
 
+      //time step 
+      switch (_SIMULATION_TIME_STEP_MODE_) {
+      case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_:
+        TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec];
+	break;
+      case _SINGLE_GLOBAL_TIME_STEP_:
+        TimeStep=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
+        break;	
+      default:
+	exit(__LINE__,__FILE__,"Error: not implemented");
+      }
 
       v[0]=PB::GetVParallel(ptr);
       v[1]=PB::GetVNormal(ptr);
@@ -1079,7 +1092,7 @@ switch (DIM) {
         double t;
 
         V->GetDatum(DatumAtVertexFluence,t);
-        t+=Weight/volume*Vector3D::Length(v)*(1-w)/volume*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+        t+=Weight/volume*Vector3D::Length(v)*(1-w)/volume*TimeStep;
         V->SetDatum(DatumAtVertexFluence,t);
       }
 
@@ -1107,7 +1120,7 @@ switch (DIM) {
         double t;
 
         V->GetDatum(DatumAtVertexFluence,t);
-        t+=Weight/volume*Vector3D::Length(v)*(w)/volume*PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+        t+=Weight/volume*Vector3D::Length(v)*(w)/volume*TimeStep;
         V->SetDatum(DatumAtVertexFluence,t);
       }
 
