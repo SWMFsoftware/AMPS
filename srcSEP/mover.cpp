@@ -11,7 +11,7 @@
 #include "amps2swmf.h"
 
 bool SEP::AccountTransportCoefficient=true;
-SEP::fParticleMover SEP::ParticleMoverPtr=ParticleMover_Droge_2009_AJ;
+SEP::fParticleMover SEP::ParticleMoverPtr=ParticleMover_FTE;
 double SEP::MaxTurbulenceLevel=0.1;
 bool SEP::MaxTurbulenceEnforceLimit=false;
 
@@ -1164,6 +1164,189 @@ int SEP::ParticleMover_Kartavykh_2016_AJ(long int ptr,double dtTotal,cTreeNodeAM
 
   return _PARTICLE_MOTION_FINISHED_;
 }
+
+
+int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  namespace PB = PIC::ParticleBuffer;
+  namespace FL = PIC::FieldLine;
+
+  PIC::ParticleBuffer::byte *ParticleData;
+  double Speed,AbsB,L,vParallel,vNormal,DivAbsB,vParallelInit,vNormalInit;
+  double FieldLineCoord,xCartesian[3];
+  int iFieldLine,spec;
+  FL::cFieldLineSegment *Segment;
+
+  static int ncall=0;
+  ncall++;
+
+  if (ncall==290946) {
+	  double rr=0.0;
+  }
+
+  ParticleData=PB::GetParticleDataPointer(ptr);
+
+  FieldLineCoord=PB::GetFieldLineCoord(ParticleData);
+  iFieldLine=PB::GetFieldLineId(ParticleData);
+  spec=PB::GetI(ParticleData);
+
+  //velocity is in the frame moving with solar wind
+  vParallel=PB::GetVParallel(ParticleData);
+  vNormal=PB::GetVNormal(ParticleData);
+
+  if ((Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord))==NULL) {
+    exit(__LINE__,__FILE__,"Error: cannot find the segment");
+  }
+
+  double TimeCounter=0.0,dt;
+  double D_mumu,ds;
+  double energy,vnew[3],l[3],x[3],rHelio,v,mu,dmu,dmu_mean;
+
+  Segment->GetCartesian(x,FieldLineCoord);
+  rHelio=Vector3D::Length(x);
+  Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
+
+  v=sqrt(vParallel*vParallel+vNormal*vNormal);
+  mu=vParallel/v;
+
+  //get D_mu_mu and evaluate the time substep 
+  D_mumu=QLT::calculateDmuMu(v,mu,rHelio); 
+
+  dmu_mean=sqrt(2.0*D_mumu*dtTotal)*0.0797885; // means of |NormalDistribution|=0.0797885 
+
+  if (dmu_mean>0.2) {
+    double t=0.2/dmu_mean;
+
+    if (t<0.2) {
+      //the subtime step should be too small -> switch Parker eq instead 
+      return SEP::ParticleMover_Parker_MeanFreePath(ptr,dtTotal,node);
+    }
+
+    dt=dtTotal*t*t; 
+  }
+  else {
+    dt=dtTotal;
+  }
+
+  FL::cFieldLineSegment *LastSegment=NULL;
+
+  while (TimeCounter<dtTotal) {
+    D_mumu=QLT::calculateDmuMu(v,mu,rHelio);
+    ds=vParallel*dt;
+    
+    //calculate L 
+    if (Segment!=LastSegment) {
+      auto b=Segment->GetBegin();
+      auto e=Segment->GetEnd();
+      double *B0,*B1,dB=0.0,B=0.0;
+
+      B0=b->GetMagneticField();
+      B1=e->GetMagneticField();
+
+      for (int i=0;i<3;i++) {
+        double t;
+
+	t=0.5*(B0[i]+B1[i]);
+	B+=t*t;
+
+	t=B1[i]-B0[i];
+	dB+=t*t;
+      }
+
+      L=-Segment->GetLength()*sqrt(B/dB);
+      LastSegment=Segment;
+    } 
+
+    dmu=-(1.0-mu*mu)/(2.0*L)*v*dt;
+    dmu+=sqrt(2.0*D_mumu*dt)*Vector3D::Distribution::Normal(); 
+    mu+=dmu;
+
+    while ((-1.0>mu)||(mu>1.0)) {
+      if (mu>1.0) mu-=1.0;
+      if (mu<-1.0) mu=-1.0+(fabs(mu)-1.0); 
+    }
+
+    if (mu==1.0) mu=0.99;
+    if (mu==-1.0) mu=-1.0+0.001; 
+
+
+    vParallel=mu*v; 
+    FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+
+
+    static const int PerpScatteringMode_MeanFreePath=0;
+    static const int PerpScatteringMode_diffusion=1;
+    static const int PerpScatteringMode=PerpScatteringMode_diffusion;
+
+    //update the distance of the particle from the magnetic field line 
+    //x -> distance of the particle from a magnetic field line   
+    if (SEP::Offset::RadialLocation!=-1) {
+      double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
+      double dr,theta=PiTimes2*rnd();
+      double cos_theta=cos(theta),sin_theta=sin(theta);
+      double D_perp;
+
+      switch (PerpScatteringMode) {
+      case PerpScatteringMode_MeanFreePath:
+        r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
+        break;
+      case PerpScatteringMode_diffusion:
+        D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+        dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
+        r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
+        break;
+      default:
+        exit(__LINE__,__FILE__,"Error: the option in unknown");
+     }
+
+      *((double*)(ParticleData+SEP::Offset::RadialLocation))=r;
+    }
+
+    TimeCounter+=dt;
+
+    if (Segment==NULL) {
+      //the particle has left the simulation, and it is need to be deleted 
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    Segment->GetCartesian(x,FieldLineCoord);
+    rHelio=Vector3D::Length(x);
+  }
+
+  //set the new values of the normal and parallel particle velocities 
+  vNormal=sqrt(1.0-mu*mu)*v;
+  if (isfinite(vNormal)==false) exit(__LINE__,__FILE__,"Error: nan is found");  
+  
+  PB::SetVParallel(vParallel,ParticleData);
+  PB::SetVNormal(vNormal,ParticleData);
+
+  //set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+
+  //attach the particle to the temporaty list
+  switch (_PIC_PARTICLE_LIST_ATTACHING_) {
+  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+    break;
+  case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
+    {
+
+    long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
+    PIC::ParticleBuffer::SetNext(temp,ParticleData);
+    PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+    if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
+    }
+
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the option is unknown");
+  }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
 
 int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;

@@ -64,6 +64,22 @@ namespace QLT {
         return (k_parallel * P_k) / (B * B);
     }
 
+    //wrapper function for calculateDmuMu(double B, double dB, double v, double mu, double r) 
+    //turbulence paratemter heliocentric depandence is as in calculateAtHeliocentricDistance()
+    double calculateDmuMu(double v, double mu, double r) {
+        double B_1AU = 5e-9;      // Magnetic field at 1 AU (Tesla)
+        double dB_1AU = 2e-9;     // Magnetic field fluctuation at 1 AU (Tesla)
+
+        // Magnetic field scaling \( B(r) = B_{1AU} \left( \frac{r_0}{r} \right)^2 \)
+        double B = B_1AU * std::pow((r0 / r), 2);
+
+        // Magnetic field fluctuation scaling \( dB(r) = dB_{1AU} \left( \frac{r_0}{r} \right)^2 \)
+        double dB = dB_1AU * std::pow((r0 / r), 2);
+
+	return calculateDmuMu(B,dB,v,mu,r);
+    }
+
+
     // Spatial Diffusion Coefficient Calculation (calculateDxx)
     // The spatial diffusion coefficient \( D_{xx} \) is related to \( D_{\mu\mu} \) by:
     // \[ D_{xx} = \frac{v^2}{5 D_{\mu\mu}} \]
