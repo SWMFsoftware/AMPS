@@ -279,217 +279,190 @@ namespace FL = PIC::FieldLine;
 
 
 //===================================   EXCHANGE PARTICLES BETWEEN PROCESSES ============================================
+void PIC::ParallelFieldLines::ExchangeFieldLineParticles(cThreadSegmentTable &ThreadSegmentTable) {
+    int From, To;
+    long int Particle, newParticle;
+    int nTotalSendParticles[PIC::nTotalThreads] = {0};
+    int nRecvSegments[PIC::nTotalThreads] = {0};
+    int nSendSegments[PIC::nTotalThreads] = {0};
 
-void PIC::ParallelFieldLines::ExchangeFieldLineParticles(cThreadSegmentTable& ThreadSegmentTable) {
-    namespace FL = PIC::FieldLine;
+    MPI_Request RecvParticleDataRequestTable[PIC::nTotalThreads];
+    MPI_Request SendParticleDataRequestTable[PIC::nTotalThreads];
+    MPI_Request SendMessageSizeRequestTable[PIC::nTotalThreads];
+    MPI_Request RecvMessageSizeRequestTable[PIC::nTotalThreads];
 
-    struct ParticleMessageDescriptor {
+    MPI_Request SendDescriptorRequestTable[PIC::nTotalThreads];
+    int SendDescriptorRequestTableLength=0;
+
+    MPI_Request RecvDescriptorRequestTable[PIC::nTotalThreads];
+    int RecvDescriptorRequestTableLength=0; 
+
+    std::vector<int> SendMessageLength(PIC::nTotalThreads, 0);
+    std::vector<int> RecvMessageLength(PIC::nTotalThreads, 0);
+
+    struct cMessageDescriptor {
         int segmentIndex;
         int nParticles;
     };
 
-    const int nThreads = PIC::nTotalThreads;
-    const int descriptorSize = sizeof(ParticleMessageDescriptor);
-    
-    // Arrays for descriptor exchange (in bytes)
-    std::vector<int> sendDescCountsBytes(nThreads, 0);
-    std::vector<int> recvDescCountsBytes(nThreads, 0);
-    std::vector<int> sendDescDisplsBytes(nThreads, 0);
-    std::vector<int> recvDescDisplsBytes(nThreads, 0);
-    
-    // Arrays for particle exchange
-    std::vector<int> sendPartCounts(nThreads, 0);
-    
-    // First phase: Count descriptors and particles for each process
-    std::vector<std::vector<ParticleMessageDescriptor>> sendDescriptors(nThreads);
-    
-    for (int thread = 0; thread < nThreads; thread++) {
-        if (thread == PIC::ThisThread) continue;
-        
+    // Prepare messages to send particles
+    auto PrepareSendDescriptors = [&](std::vector<cMessageDescriptor> &MessageDescriptors,
+                                      std::vector<MPI_Aint> &SendParticleList, int &nTotalSendParticles, int thread) {
+        nTotalSendParticles = 0;
+
         for (int i = 0; i < ThreadSegmentTable.TableLength[thread]; i++) {
-            FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[thread][i];
-            
-            if (segment && segment->FirstParticleIndex != -1) {
-                int particleCount = 0;
-                long int ptr = segment->FirstParticleIndex;
-                while (ptr != -1) {
-                    particleCount++;
-                    ptr = PIC::ParticleBuffer::GetNext(ptr);
-                }
-                
-                if (particleCount > 0) {
-                    ParticleMessageDescriptor desc;
-                    desc.segmentIndex = i;
-                    desc.nParticles = particleCount;
-                    sendDescriptors[thread].push_back(desc);
-                    sendPartCounts[thread] += particleCount;
-                }
-            }
-        }
-        // Convert descriptor count to bytes
-        sendDescCountsBytes[thread] = sendDescriptors[thread].size() * descriptorSize;
-    }
+            auto segment = ThreadSegmentTable.Table[thread][i];
+            if (!segment || segment->FirstParticleIndex == -1) continue;
 
-    // Exchange descriptor byte counts
-    MPI_Alltoall(sendDescCountsBytes.data(), 1, MPI_INT,
-                 recvDescCountsBytes.data(), 1, MPI_INT,
-                 MPI_GLOBAL_COMMUNICATOR);
-
-    // Calculate byte displacements
-    int totalSendBytes = 0;
-    int totalRecvBytes = 0;
-    
-    for (int i = 0; i < nThreads; i++) {
-        sendDescDisplsBytes[i] = totalSendBytes;
-        recvDescDisplsBytes[i] = totalRecvBytes;
-        totalSendBytes += sendDescCountsBytes[i];
-        totalRecvBytes += recvDescCountsBytes[i];
-    }
-
-    // Prepare descriptor arrays based on byte counts
-    std::vector<ParticleMessageDescriptor> sendDescArray(totalSendBytes / descriptorSize);
-    std::vector<ParticleMessageDescriptor> recvDescArray(totalRecvBytes / descriptorSize);
-    
-    // Pack send descriptors
-    int descriptorOffset = 0;
-    for (int thread = 0; thread < nThreads; thread++) {
-        if (!sendDescriptors[thread].empty()) {
-            std::copy(sendDescriptors[thread].begin(), sendDescriptors[thread].end(),
-                     sendDescArray.begin() + descriptorOffset);
-            descriptorOffset += sendDescriptors[thread].size();
-        }
-    }
-
-    // Exchange descriptors using byte counts and displacements
-    MPI_Alltoallv(sendDescArray.data(), sendDescCountsBytes.data(), sendDescDisplsBytes.data(), MPI_BYTE,
-                  recvDescArray.data(), recvDescCountsBytes.data(), recvDescDisplsBytes.data(), MPI_BYTE,
-                  MPI_GLOBAL_COMMUNICATOR);
-
-    // Calculate number of descriptors received from each process
-    std::vector<int> recvDescCounts(nThreads);
-    for (int i = 0; i < nThreads; i++) {
-        recvDescCounts[i] = recvDescCountsBytes[i] / descriptorSize;
-    }
-
-    // Calculate descriptor displacements (in terms of number of descriptors)
-    std::vector<int> recvDescDispls(nThreads);
-    int totalRecvDesc = 0;
-    for (int i = 0; i < nThreads; i++) {
-        recvDescDispls[i] = totalRecvDesc;
-        totalRecvDesc += recvDescCounts[i];
-    }
-
-    // Exchange particle counts
-    std::vector<int> recvPartCounts(nThreads);
-    MPI_Alltoall(sendPartCounts.data(), 1, MPI_INT,
-                 recvPartCounts.data(), 1, MPI_INT,
-                 MPI_GLOBAL_COMMUNICATOR);
-
-    // Create basic particle datatype
-    MPI_Datatype particle_type;
-    MPI_Type_contiguous(PIC::ParticleBuffer::ParticleDataLength - 2*sizeof(long int), 
-                       MPI_BYTE, &particle_type);
-    MPI_Type_commit(&particle_type);
-
-    // Create arrays for per-thread MPI types
-    std::vector<MPI_Datatype> sendTypes(nThreads, MPI_DATATYPE_NULL);
-    std::vector<MPI_Datatype> recvTypes(nThreads, MPI_DATATYPE_NULL);
-    
-    // Prepare send types
-    for (int thread = 0; thread < nThreads; thread++) {
-        if (sendPartCounts[thread] > 0) {
-            std::vector<MPI_Aint> offsets;
-            offsets.reserve(sendPartCounts[thread]);
-            
-            for (const auto& desc : sendDescriptors[thread]) {
-                FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[thread][desc.segmentIndex];
-                long int ptr = segment->FirstParticleIndex;
-                
-                while (ptr != -1) {
-                    MPI_Aint offset;
-                    MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
-                                  PIC::ParticleBuffer::GetParticleDataOffset(ptr),
-                                  &offset);
-                    offsets.push_back(offset);
-                    ptr = PIC::ParticleBuffer::GetNext(ptr);
-                }
-            }
-            
-            MPI_Type_create_hindexed_block(offsets.size(), 1, offsets.data(), 
-                                         particle_type, &sendTypes[thread]);
-            MPI_Type_commit(&sendTypes[thread]);
-        }
-    }
-
-    // Process received descriptors in strict sender order
-    for (int sender = 0; sender < nThreads; sender++) {
-        if (sender == PIC::ThisThread || recvPartCounts[sender] == 0) continue;
-
-        std::vector<MPI_Aint> recvOffsets;
-        recvOffsets.reserve(recvPartCounts[sender]);
-        
-        // Get descriptor range for this sender
-        int descStart = recvDescDispls[sender];
-        int descEnd = descStart + recvDescCounts[sender];
-
-        // Process each descriptor from this sender in order
-        for (int i = descStart; i < descEnd; i++) {
-            const auto& desc = recvDescArray[i];
-            FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[PIC::ThisThread][desc.segmentIndex];
-            
-            // Allocate particles in order they'll be received from this sender
-            for (int j = 0; j < desc.nParticles; j++) {
-                long int newParticle = PIC::ParticleBuffer::GetNewParticle(segment->FirstParticleIndex);
-                if (newParticle == -1) {
-                    throw std::runtime_error("Failed to allocate new particle");
-                }
-                
-                MPI_Aint offset;
-                MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + 
-                              PIC::ParticleBuffer::GetParticleDataOffset(newParticle),
-                              &offset);
-                recvOffsets.push_back(offset);
-            }
-        }
-
-        // Create receive type for this sender
-        MPI_Type_create_hindexed_block(recvOffsets.size(), 1, recvOffsets.data(), 
-                                     particle_type, &recvTypes[sender]);
-        MPI_Type_commit(&recvTypes[sender]);
-    }
-
-    // Exchange particles using Alltoallw
-    std::vector<int> ones(nThreads, 1);
-    std::vector<int> displacements(nThreads, 0);
-    
-    MPI_Alltoallw(MPI_BOTTOM, ones.data(), displacements.data(), sendTypes.data(),
-                  MPI_BOTTOM, ones.data(), displacements.data(), recvTypes.data(),
-                  MPI_GLOBAL_COMMUNICATOR);
-
-    // Cleanup MPI types
-    MPI_Type_free(&particle_type);
-    for (int i = 0; i < nThreads; i++) {
-        if (sendTypes[i] != MPI_DATATYPE_NULL) MPI_Type_free(&sendTypes[i]);
-        if (recvTypes[i] != MPI_DATATYPE_NULL) MPI_Type_free(&recvTypes[i]);
-    }
-
-    // Delete sent particles and clean up segments
-    for (int thread = 0; thread < nThreads; thread++) {
-        for (const auto& desc : sendDescriptors[thread]) {
-            FL::cFieldLineSegment* segment = ThreadSegmentTable.Table[thread][desc.segmentIndex];
-            
-            // Delete all particles in segment
+            cMessageDescriptor descriptor = {i, 0};
             long int ptr = segment->FirstParticleIndex;
+
             while (ptr != -1) {
-                long int nextPtr = PIC::ParticleBuffer::GetNext(ptr);
-                PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr, true);
-                ptr = nextPtr;
+                MPI_Aint particle_address;
+                MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + PIC::ParticleBuffer::GetParticleDataOffset(ptr), &particle_address);
+                SendParticleList.push_back(particle_address);
+                descriptor.nParticles++;
+                nTotalSendParticles++;
+                ptr = PIC::ParticleBuffer::GetNext(ptr);
             }
-            
+
+	    if (descriptor.nParticles!=0) 
+              MessageDescriptors.push_back(descriptor);
+        }
+    };
+
+    // Initialize the send operation
+    auto InitSendOperation = [&](int To, int nTotalSendParticles, const std::vector<MPI_Aint> &SendParticleList) {
+	MPI_Request request;
+
+        MPI_Datatype particle_type;
+        MPI_Type_create_hindexed_block(nTotalSendParticles, PIC::ParticleBuffer::ParticleDataLength - 2 * sizeof(long int),
+                                       SendParticleList.data(), MPI_BYTE, &particle_type);
+        MPI_Type_commit(&particle_type);
+
+        MPI_Isend(MPI_BOTTOM, 1, particle_type, To, 12, MPI_GLOBAL_COMMUNICATOR, &request);
+        MPI_Type_free(&particle_type);
+
+	return request;
+    };
+
+    auto InitRecvOperation = [&](int From, int nTotalRecvParticles, const std::vector<MPI_Aint> &RecvParticleList) {
+	MPI_Request request;
+
+        MPI_Datatype particle_type;
+        MPI_Type_create_hindexed_block(nTotalRecvParticles, PIC::ParticleBuffer::ParticleDataLength - 2 * sizeof(long int),
+                                       RecvParticleList.data(), MPI_BYTE, &particle_type);
+        MPI_Type_commit(&particle_type);
+
+        MPI_Irecv(MPI_BOTTOM, 1, particle_type, From, 12, MPI_GLOBAL_COMMUNICATOR, &request);
+        MPI_Type_free(&particle_type);
+
+	return request;
+    };
+
+
+    // Handle received particles
+    auto HandleReceivedParticles = [&](int nRecvSegments, const cMessageDescriptor *RecvDescriptors, std::vector<MPI_Aint> &RecvParticleList) {
+        for (int i = 0; i < nRecvSegments; i++) {
+            const auto &descriptor = RecvDescriptors[i];
+            auto segment = ThreadSegmentTable.Table[PIC::ThisThread][descriptor.segmentIndex];
+
+            for (int j = 0; j < descriptor.nParticles; j++) {
+                long int new_particle = PIC::ParticleBuffer::GetNewParticle(segment->FirstParticleIndex, true);
+                MPI_Aint particle_address;
+                MPI_Get_address(PIC::ParticleBuffer::ParticleDataBuffer + PIC::ParticleBuffer::GetParticleDataOffset(new_particle), &particle_address);
+                RecvParticleList.push_back(particle_address);
+            }
+        }
+    };
+
+    // Prepare send data for each thread
+    std::vector<cMessageDescriptor> SendDescriptors[PIC::nTotalThreads];
+    std::vector<MPI_Aint> SendParticleList[PIC::nTotalThreads];
+    int cnt;
+
+    for (To = 0; To < PIC::nTotalThreads; To++) {
+        if (PIC::ThisThread == To) continue;
+
+        PrepareSendDescriptors(SendDescriptors[To], SendParticleList[To], nTotalSendParticles[To], To);
+
+        // Send number of segments 
+	nSendSegments[To]=SendDescriptors[To].size();
+
+	if (nSendSegments[To]!=0) {
+          MPI_Isend(SendDescriptors[To].data(), nSendSegments[To] * sizeof(cMessageDescriptor), MPI_BYTE, To, 10, MPI_GLOBAL_COMMUNICATOR, SendDescriptorRequestTable+SendDescriptorRequestTableLength); 
+	  SendDescriptorRequestTableLength++;
+	}
+    }
+
+    // All-to-all exchange of segment counts
+    MPI_Alltoall(nSendSegments, 1, MPI_INT,
+             nRecvSegments, 1, MPI_INT,
+             MPI_GLOBAL_COMMUNICATOR);
+
+    // Allocate buffers for receiving descriptors and particles
+    std::vector<cMessageDescriptor> RecvDescriptors[PIC::nTotalThreads];
+    std::vector<MPI_Aint> RecvParticleList[PIC::nTotalThreads];
+
+    int RecvParticleDataRequestTableLength=0;
+
+    for (From = 0; From < PIC::nTotalThreads; From++) {
+        if (PIC::ThisThread == From || nRecvSegments[From] == 0) continue;
+
+        RecvDescriptors[From].resize(nRecvSegments[From]);
+        MPI_Irecv(RecvDescriptors[From].data(), nRecvSegments[From] * sizeof(cMessageDescriptor), MPI_BYTE, From, 10, MPI_GLOBAL_COMMUNICATOR, RecvDescriptorRequestTable+RecvDescriptorRequestTableLength);
+	RecvDescriptorRequestTableLength++;
+    }
+
+    // Send particle data
+    int SendParticleDataRequestTableLength=0; 
+
+    for (To = 0,cnt=0; To < PIC::nTotalThreads; To++) {
+        if (PIC::ThisThread == To || nSendSegments[To] == 0) continue;
+
+        SendParticleDataRequestTable[SendParticleDataRequestTableLength]=InitSendOperation(To, nTotalSendParticles[To], SendParticleList[To]);
+	SendParticleDataRequestTableLength++;
+    }
+
+    MPI_Waitall(RecvDescriptorRequestTableLength, RecvDescriptorRequestTable, MPI_STATUSES_IGNORE);
+
+    // Handle received particles
+    RecvParticleDataRequestTableLength=0;
+
+    for (From = 0; From < PIC::nTotalThreads; From++) {
+        if (PIC::ThisThread == From || nRecvSegments[From] == 0) continue;
+
+        HandleReceivedParticles(nRecvSegments[From], RecvDescriptors[From].data(), RecvParticleList[From]);
+
+	RecvParticleDataRequestTable[RecvParticleDataRequestTableLength]=InitRecvOperation(From, RecvParticleList[From].size(), RecvParticleList[From]);
+	RecvParticleDataRequestTableLength++; 
+    }
+
+    MPI_Waitall(SendParticleDataRequestTableLength, SendParticleDataRequestTable, MPI_STATUSES_IGNORE);
+
+    // Remove sent particles
+    for (To = 0; To < PIC::nTotalThreads; To++) {
+        if (SendDescriptors[To].empty()) continue;
+
+        for (auto &descriptor : SendDescriptors[To]) {
+            auto segment = ThreadSegmentTable.Table[To][descriptor.segmentIndex];
+            long int ptr = segment->FirstParticleIndex;
+
+            while (ptr != -1) {
+                long int next = PIC::ParticleBuffer::GetNext(ptr);
+                PIC::ParticleBuffer::DeleteParticle_withoutTrajectoryTermination(ptr, true);
+                ptr = next;
+            }
+
             segment->FirstParticleIndex = -1;
         }
     }
+
+    MPI_Waitall(RecvParticleDataRequestTableLength, RecvParticleDataRequestTable, MPI_STATUSES_IGNORE);
+    MPI_Waitall(SendDescriptorRequestTableLength, SendDescriptorRequestTable, MPI_STATUSES_IGNORE);
+    MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
 }
+
 
 void PIC::FieldLine::check_particle(long int ptr) {
 namespace PB = PIC::ParticleBuffer;
@@ -522,7 +495,7 @@ namespace FL = PIC::FieldLine;
   static long int ncall=0;
   ncall++;
 
-  if ((ncall%1000==0)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) { 
+  if ((ncall%10==0)||(_PIC_DEBUGGER_MODE_==_PIC_DEBUGGER_MODE_ON_)) { 
     PIC::ParallelFieldLines::GetFieldLinePopulationStat();
     PIC::FieldLine::TraverseAllFieldLines(PIC::FieldLine::check_particle);
   }
