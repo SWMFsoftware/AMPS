@@ -129,7 +129,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
   FL::cFieldLineSegment* Segment=FL::FieldLinesAll[iFieldLine].GetSegment(iShockFieldLine); 
 
   if (Segment==NULL) return 0;
-  //if (Segment->Thread!=PIC::ThisThread) return 0;
+  if (Segment->Thread!=PIC::ThisThread) return 0;
  
   //determine the volume swept by the shock wave during the time step 
   double xBegin[3],xEnd[3],xMiddle[3],rMiddle,xFirstFieldLine[3];

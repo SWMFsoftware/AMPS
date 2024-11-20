@@ -325,7 +325,7 @@ void amps_init_mesh() {
 
 
   //init domain decomposition of the field lines 
-  //PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(0.005);
+  PIC::ParallelFieldLines::StaticDecompositionFieldLineLength(0.005);
 
   //refining the mesh along a set of magnetic field lines: use onle wher model SEP
   if (_MODEL_CASE_==_MODEL_CASE_SEP_TRANSPORT_) { 
