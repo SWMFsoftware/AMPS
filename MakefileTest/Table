@@ -488,6 +488,40 @@ Check=
 
 
 #>
+Name=SEP--Parker_spiral--ParkerEq 
+Time=4
+
+Compile=
+>>>@echo "test_SEP--Parker_spiral--ParkerEq_compile..." > test_SEP--Parker_spiral--ParkerEq${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+>>>./Config.pl -application=test/-application=test/sep_parker_spiral__field_line  -spice-path=nospice   -amps-test=on
+>>>rm -rf srcTemp
+>>>@($(MAKE) -j8 amps)
+>>>@echo "test_SEP--Parker_spiral--ParkerEq_compile... done" >> test_SEP--Parker_spiral--ParkerEq${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+
+Check=
+>>>@echo "SEP--Parker_spiral--ParkerEq_check..." >> test_SEP--Parker_spiral--ParkerEq${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+>>>@gunzip -kf output/test_SEP3D/SEP--Parker_spiral--ParkerEq--density.ref_np8.gz
+>>>@gunzip -kf output/test_SEP3D/SEP--Parker_spiral--ParkerEq--flux.ref_np8.gz
+>>>@gunzip -kf output/test_SEP3D/SEP--Parker_spiral--ParkerEq--pitch_angle.ref_np8.gz
+
+
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--ParkerEqDIR}/PT/plots/sample.density/field-line=0.r=2.000000e-01.dat  output/test_SEP3D/SEP--Parker_spiral--ParkerEq--density${TESTSEP--Parker_spiral--ParkerEq-REF}.ref_np`ls $(TESTSEP--Parker_spiral--ParkerEqDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--ParkerEq--density${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--ParkerEqDIR}/PT/plots/sample.flux/field-line=0.r=2.000000e-01.dat  output/test_SEP3D/SEP--Parker_spiral--ParkerEq--flux${TESTSEP--Parker_spiral--ParkerEq-REF}.ref_np`ls $(TESTSEP--Parker_spiral--ParkerEqDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--ParkerEq--flux${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker_spiral--ParkerEqDIR}/PT/plots/sample.pitch_angle_distribution/field-line=0.r=2.000000e-01.t=9.964500e+02.dat  output/test_SEP3D/SEP--Parker_spiral--ParkerEq--pitch_angle${TESTSEP--Parker_spiral--ParkerEq-REF}.ref_np`ls $(TESTSEP--Parker_spiral--ParkerEqDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker_spiral--ParkerEq--pitch_angle${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+
+>>>@ls -l test_SEP--Parker_spiral--ParkerEq--density${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+>>>@ls -l test_SEP--Parker_spiral--ParkerEq--flux${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+>>>@ls -l test_SEP--Parker_spiral--ParkerEq--pitch_angle${TESTSEP--Parker_spiral--ParkerEq-REF}.diff
+>>>@echo Test SEP--Parker_spiral--ParkerEq has finished: `date`
+<#
+
+
+
+
+#>
 Name=SEP--Parker_spiral--boris_relativistic      
 Time=4
 
