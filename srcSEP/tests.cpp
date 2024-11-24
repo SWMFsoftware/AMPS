@@ -543,7 +543,10 @@ void ScatteringBeyond1AU(double E) {
     }
   }  
 
-  if (Segment==NULL) exit(__LINE__,__FILE__,"Error: cannot find the location of 1 AU on the magnetic field line"); 
+  if (Segment==NULL) {
+    printf("Error: cannot find the location of 1 AU on the magnetic field line (%s@%d)\n",__FILE__,__LINE__); 
+    return;
+  }
    
   double vsw=400.0E3;
   double mu,speed,v_parallel;
