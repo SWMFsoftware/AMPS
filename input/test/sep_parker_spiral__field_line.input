@@ -129,6 +129,8 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   SphereInsideDomain=on ! place star inside the computational domain
 
+FieldLineRequestedLength=15
+
  !forces that determine particle's trajectories
  Forces=off, gravity, FrameRotation !off, gravity, Lorentz, FrameRotation
 
