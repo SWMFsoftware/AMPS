@@ -117,6 +117,14 @@ while ($line=<InputFile>) {
     ampsConfigLib::ChangeValueOfVariable("static const double Omega",$s1,"main/sep.h");        
  }
 
+  elsif($InputLine eq "FIELDLINEREQUESTEDLENGTH"){
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+
+    ampsConfigLib::ChangeValueOfVariable("const double FieldLineRequestedLength",$InputLine,"main/main_lib.cpp");
+ }
+
+
  ##the type of the computational domain 
  elsif ($InputLine eq "DOMAINTYPE") {
    ($InputLine,$InputComment)=split(' ',$InputComment,2);
