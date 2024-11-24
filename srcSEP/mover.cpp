@@ -1451,6 +1451,12 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
 
       FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
 
+      if (Segment==NULL) {
+        //the particle has left the simulation, and it is need to be deleted
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+
       //update the distance of the particle from the magnetic field line
       //x -> distance of the particle from a magnetic field line
       if (SEP::Offset::RadialLocation!=-1) {
