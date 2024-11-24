@@ -1384,7 +1384,7 @@ namespace SEP {
       extern array_3d<double> SamplingTable;
       void Output(int);
 
-      const double rLarmorRadiusMax=1.0E5;
+      const double rLarmorRadiusMax=1.0E6;
       const int nSampleIntervals=100;
       const double dLog=log(rLarmorRadiusMax)/nSampleIntervals;
     }
