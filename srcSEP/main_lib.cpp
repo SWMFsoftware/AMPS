@@ -34,6 +34,7 @@
 #endif
 
 
+const double FieldLineRequestedLength=40;
 
 //the parameters of the domain and the sphere
 
@@ -225,7 +226,7 @@ void amps_init_mesh() {
     PIC::FieldLine::VertexAllocationManager.PlasmaVelocity=true;
   
     if (SEP::Domain_nTotalParkerSpirals==1) { 
-      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,40*250.0);
+      SEP::ParkerSpiral::CreateFileLine(&field_line,xStart,FieldLineRequestedLength*215.0);
       SEP::Mesh::ImportFieldLine(&field_line);
 
       PIC::FieldLine::Init();
