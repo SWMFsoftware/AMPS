@@ -1272,6 +1272,13 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
     vParallel=mu*v; 
     FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
 
+    if (Segment==NULL) {
+      //the particle has left the simulation, and it is need to be deleted
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+
 
     static const int PerpScatteringMode_MeanFreePath=0;
     static const int PerpScatteringMode_diffusion=1;
@@ -1302,12 +1309,6 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
     }
 
     TimeCounter+=dt;
-
-    if (Segment==NULL) {
-      //the particle has left the simulation, and it is need to be deleted 
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
 
     Segment->GetCartesian(x,FieldLineCoord);
     rHelio=Vector3D::Length(x);
@@ -1406,6 +1407,13 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       //scattering occured begore the end of the time interval 
       FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
 
+      if (Segment==NULL) {
+        //the particle has left the simulation, and it is need to be deleted
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+
+
       //update the distance of the particle from the magnetic field line 
       //x -> distance of the particle from a magnetic field line   
       if (SEP::Offset::RadialLocation!=-1) {  
@@ -1470,12 +1478,6 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
 
 
     TimeCounter+=dt;  
-
-    if (Segment==NULL) {
-      //the particle has left the simulation, and it is need to be deleted 
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return _PARTICLE_LEFT_THE_DOMAIN_;
-    }
 
     Segment->GetCartesian(x,FieldLineCoord);
     rHelio=Vector3D::Length(x);
