@@ -1438,6 +1438,34 @@ Check=
 
 -------------------------------------------------------------------------------
 
+#>
+Name=unit_test
+Time=2
+
+Compile=
+>>>@echo "test_unit_test_compile..." > test_unit_test.diff
+>>>./Config.pl -application=test/unit-test
+>>>./Config.pl -spice-path=nospice
+>>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
+>>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
+>>>make -j8
+>>>@echo "test_unit_test_compile... done" >> test_unit_test.diff
+
+Run=
+>>>@echo "test_unit_test_run..." >> test_unit_test.diff
+>>>cd ${TESTunit_testDIR}; mpirun -np 1 ./amps
+>>>@echo "test_unit_test_run... done" >> test_unit_test.diff
+
+
+Check=
+>>>@echo "test_unit_test_check..." >> test_unit_test.diff
+>>>> test_unit_test.diff
+>>>@ls -l test_unit_test.diff
+>>>@echo Test test_unit_test has finished: `date`
+<#
+
+-------------------------------------------------------------------------------
+
 
 
 #>
