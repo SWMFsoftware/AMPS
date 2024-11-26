@@ -4589,7 +4589,9 @@ void DeleteAttachedParticles();
       extern fDoSimulateCellCollisions DoSimulateCellCollisions;
 
       //model of the particle collisions
+      void ModelCellCollisions_ntc(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void ntc();
+      
       void mf();
       void mf_new();
     }

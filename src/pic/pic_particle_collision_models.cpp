@@ -92,7 +92,8 @@ void PIC::MolecularCollisions::ParticleCollisionModel::Init() {
 
 
 //Non-time Counter collision procedure
-void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
+//Modeling collision in a cell
+void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int SigmaCrMax_nTest=100;
   double SigmaCrMax_SafetyMargin=1.3;
 
@@ -102,44 +103,304 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
     PIC::ParticleBuffer::byte *ParticleData;
   };
 
-  int s,s0,s1,i,j,k;
+  int s,s0,s1;
 
   int nParticleNumber[PIC::nTotalSpecies],nMaxSpecParticleNumber,cnt;
   long int FirstCellParticle,ptr;
   double cellMeasure;
   int thread;
-
-  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
   PIC::Mesh::cDataBlockAMR *block;
 
   //particle lists
   int ParticleDataListLength=100;
-  cParticleDataList *s0ParticleDataList[PIC::nTotalThreadsOpenMP]; //=new cParticleDataList[ParticleDataListLength];
-  cParticleDataList *s1ParticleDataList[PIC::nTotalThreadsOpenMP]; //=new cParticleDataList[ParticleDataListLength];  //s0ParticleDataList,s1ParticleDataList are used to store the actual data
+  cParticleDataList *s0ParticleDataList; //=new cParticleDataList[ParticleDataListLength];
+  cParticleDataList *s1ParticleDataList; //=new cParticleDataList[ParticleDataListLength];  //s0ParticleDataList,s1ParticleDataList are used to store the actual data
   cParticleDataList *s0List=NULL,*s1List=NULL; //s0List and s1List are used to access s0ParticleDataList and s1ParticleDataList
 
   //sampling data
   PIC::Mesh::cDataCenterNode *cell;
+  char *SamplingData=NULL;
 
-  //  #if _PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_
-  char *SamplingData;
-  //  #endif //_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__
+  block=node->block;
+  if (block==NULL) return;
 
-  for (thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-    s0ParticleDataList[thread]=new cParticleDataList[ParticleDataListLength];
-    s1ParticleDataList[thread]=new cParticleDataList[ParticleDataListLength];  //s0ParticleDataList,s1ParticleDataList are used to store the actual data
+  FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
+  cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+  if (cell==NULL) return;
+
+  //simulate particle's collisions
+  cellMeasure=cell->Measure;
+
+  if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+    SamplingData=cell->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
   }
+
+  if (FirstCellParticle!=-1) {
+    //simulate collision in the cell
+    //1. coalcualte the number of the model particles in the cell and re-allocate the particle lists if needed
+    for (s=0;s<PIC::nTotalSpecies;s++) nParticleNumber[s]=0;
+    for (ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) nParticleNumber[PIC::ParticleBuffer::GetI(ptr)]++;
+    for (nMaxSpecParticleNumber=0,s=0;s<PIC::nTotalSpecies;s++) if (nMaxSpecParticleNumber<nParticleNumber[s]) nMaxSpecParticleNumber=nParticleNumber[s];
+
+
+    ParticleDataListLength=nMaxSpecParticleNumber;
+    s0ParticleDataList=new cParticleDataList[ParticleDataListLength];
+    s1ParticleDataList=new cParticleDataList[ParticleDataListLength];
+
+
+    //loop through the first species
+    double m0,m1,am;
+    double LocalParticleWeight_s0,LocalParticleWeight_s1;
+    double LocalTimeStep_s0,LocalTimeStep_s1;
+    double minParticleWeightCorrection_s0,minParticleWeightCorrection_s1,sumWeightCorrection_s0,sumWeightCorrection_s1;
+    PIC::ParticleBuffer::byte *ParticleData;
+
+    for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
+      m0=PIC::MolecularData::GetMass(s0);
+      LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
+      LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
+      minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
+
+      //populate the particle list
+      s0List=s0ParticleDataList;
+
+      for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s0) {
+        ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+        PIC::ParticleBuffer::GetV(s0ParticleDataList[cnt].vel,ParticleData);
+        s0ParticleDataList[cnt].ParticleData=ParticleData;
+        s0ParticleDataList[cnt].ValueChangedFlag=false;
+
+        if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+          double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+          if (cnt == 0) {
+            minParticleWeightCorrection_s0 = wc;
+          } else if (wc < minParticleWeightCorrection_s0) {
+            minParticleWeightCorrection_s0 = wc;
+          }
+
+          sumWeightCorrection_s0 += wc;
+        } else {
+          sumWeightCorrection_s0 += 1.0;
+        }
+
+        cnt++;
+      }
+
+      //loop through the second speices
+      for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
+        //call a user-defined funstion to verify whether collision should be modeled in the cell
+        if (DoSimulateCellCollisions!=NULL) {
+          if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
+        }
+
+        m1=PIC::MolecularData::GetMass(s1);
+        am=m0+m1;
+        LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
+        LocalTimeStep_s1=PIC::ParticleWeightTimeStep::LocalTimeStep(s1,node);
+        sumWeightCorrection_s1=0.0;
+
+        //populate the list
+        if (s0==s1) s1List=s0List,minParticleWeightCorrection_s1=minParticleWeightCorrection_s0,sumWeightCorrection_s1=sumWeightCorrection_s0;
+        else {
+          s1List=s1ParticleDataList;
+
+          for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s1) {
+            ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+            PIC::ParticleBuffer::GetV(s1ParticleDataList[cnt].vel,ParticleData);
+            s1ParticleDataList[cnt].ParticleData=ParticleData;
+            s1ParticleDataList[cnt].ValueChangedFlag=false;
+
+            if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+              double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
+
+              if (cnt == 0) {
+                minParticleWeightCorrection_s1 = wc;
+              } else if (wc < minParticleWeightCorrection_s1) {
+                minParticleWeightCorrection_s1 = wc;
+              }
+
+              sumWeightCorrection_s1 += wc;
+            } else {
+              sumWeightCorrection_s1 += 1.0;
+            }
+
+            cnt++;
+          }
+        }
+
+        //simulate collsions between the pair of species
+        double SigmaCrMax=0.0,SigmaCr,ancoll;
+        long int ncoll;
+        double v0[3],v1[3],cr;
+
+        //1.Evaluate the maximum value of SigmaCr
+        for (int ntest=0;ntest<SigmaCrMax_nTest;ntest++) {
+          memcpy(v0,s0List[(int)(rnd()*nParticleNumber[s0])].vel,3*sizeof(double));
+          memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
+          cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
+
+          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+
+          if (SigmaCr>SigmaCrMax) SigmaCrMax=SigmaCr;
+        }
+
+        SigmaCrMax*=SigmaCrMax_SafetyMargin;
+
+        //2.Evaluate the prospective number of collisions
+        double maxLocalTimeStep,minLocalParticleWeight;
+
+        maxLocalTimeStep=max(LocalTimeStep_s0,LocalTimeStep_s1);
+        minLocalParticleWeight=min(LocalParticleWeight_s0*minParticleWeightCorrection_s0,LocalParticleWeight_s1*minParticleWeightCorrection_s1);
+
+        if (s0==s1) {
+          ancoll=0.5*sumWeightCorrection_s0/minParticleWeightCorrection_s0*
+            (sumWeightCorrection_s0/minParticleWeightCorrection_s0-1.0)*
+            LocalParticleWeight_s0*minParticleWeightCorrection_s0*SigmaCrMax*LocalTimeStep_s0/cellMeasure;
+        }
+        else {
+          ancoll=(sumWeightCorrection_s0*LocalParticleWeight_s0)*(sumWeightCorrection_s1*LocalParticleWeight_s1)*
+            SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
+        }
+
+        ncoll=(long int)ancoll;  
+        ancoll-=ncoll;
+        if (rnd()<ancoll) ncoll++;
+
+        //3. Collision Limiting
+        double CollisionLimitingFactor=1.0;
+
+        // Computation of collision limiting factor 
+        if (nParticleNumber[s0]*nParticleNumber[s1]<ancoll) {
+          CollisionLimitingFactor=ancoll/nParticleNumber[s0]*nParticleNumber[s1];
+          ancoll/=CollisionLimitingFactor;
+        }
+
+        //4. simulate collisions
+        int s0ptr,s1ptr,idim;
+        double vrel[3],vcm[3];
+
+        while (ncoll-->0) {
+          s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
+
+          if (s0!=s1) s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
+          else {
+            do {
+              s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
+            }
+            while (s0ptr==s1ptr);
+          }
+
+          memcpy(v0,s0List[s0ptr].vel,3*sizeof(double));
+          memcpy(v1,s1List[s1ptr].vel,3*sizeof(double));
+
+          for (cr=0.0,idim=0;idim<3;idim++) {
+            vrel[idim]=v1[idim]-v0[idim];
+            vcm[idim]=(m1*v1[idim]+m0*v0[idim])/(m1+m0);
+            cr+=vrel[idim]*vrel[idim];
+          }
+
+          cr=sqrt(cr);
+          SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
+
+          if (rnd()*SigmaCrMax>=SigmaCr) continue;
+
+          //determine weather the properties of particles were updated
+          double pUpdate_s0,pUpdate_s1;
+          bool UpdateFlag[2];
+
+          pUpdate_s0=minLocalParticleWeight/LocalParticleWeight_s0 * LocalTimeStep_s0/maxLocalTimeStep;
+          pUpdate_s1=minLocalParticleWeight/LocalParticleWeight_s1 * LocalTimeStep_s1/maxLocalTimeStep;
+
+          if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+            pUpdate_s0 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
+              s0List[s0ptr].ParticleData);
+            pUpdate_s1 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
+              s1List[s1ptr].ParticleData);
+          } // _INDIVIDUAL_PARTICLE_WEIGHT_MODE_
+
+          UpdateFlag[0]=(rnd()<pUpdate_s0) ? true :false;
+          UpdateFlag[1]=(rnd()<pUpdate_s1) ? true :false;
+
+          //model the internal energy exchange
+          if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {
+            double crInit=cr;
+
+            PIC::IDF::RedistributeEnergy(s0List[s0ptr].ParticleData,s1List[s1ptr].ParticleData,cr,UpdateFlag,cell);
+            for (int idim=0;idim<3;idim++) {
+              vrel[idim] = (cr > 1.0E-10) ? vrel[idim]*cr/crInit : 0.0;
+            }
+          }
+
+          //the collision is considered to be true
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(vrel,s0,s1);
+
+          //calcualte the new value of the particle's velocities
+          for (int idim=0;idim<3;idim++) {
+            v1[idim]=vcm[idim]+m0/am*vrel[idim];
+            v0[idim]=vcm[idim]-m1/am*vrel[idim];
+          }
+
+          //update the velocities in the lists
+          if (UpdateFlag[0]==true) {
+            s0List[s0ptr].ValueChangedFlag=true;
+            memcpy(s0List[s0ptr].vel,v0,3*sizeof(double));
+
+            if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+              int CollFreqOffset=CollsionFrequentcySampling::SamplingBufferOffset+sizeof(double)*CollsionFrequentcySampling::Offset(s0,s1);
+
+              *((double*)(SamplingData+CollFreqOffset))+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(s0List[s0ptr].ParticleData)*LocalParticleWeight_s0/LocalTimeStep_s0/cellMeasure*CollisionLimitingFactor; // calculate collision frequency taking into account the collision limiting factor
+            }
+          }
+
+          if (UpdateFlag[1]==true) {
+            s1List[s1ptr].ValueChangedFlag=true;
+            memcpy(s1List[s1ptr].vel,v1,3*sizeof(double));
+
+            if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+              int CollFreqOffset=CollsionFrequentcySampling::SamplingBufferOffset+sizeof(double)*CollsionFrequentcySampling::Offset(s1,s0);
+
+              *((double*)(SamplingData+CollFreqOffset))+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(s1List[s1ptr].ParticleData)*LocalParticleWeight_s1/LocalTimeStep_s1/cellMeasure*CollisionLimitingFactor; // calculate collision frequency taking into account the collision limiting factor
+            }
+          }
+        }
+
+        //update the velocities of the species 's1'
+        if (s0!=s1) {
+          for (cnt=0;cnt<nParticleNumber[s1];cnt++) if (s1List[cnt].ValueChangedFlag==true) {
+            PIC::ParticleBuffer::SetV(s1List[cnt].vel,s1List[cnt].ParticleData);
+          }
+        }
+      }
+
+      //update velocities of species 's0'
+      for (cnt=0;cnt<nParticleNumber[s0];cnt++) if (s0List[cnt].ValueChangedFlag==true) {
+        PIC::ParticleBuffer::SetV(s0List[cnt].vel,s0List[cnt].ParticleData);
+      }
+    }
+
+    delete [] s1ParticleDataList;
+    delete [] s0ParticleDataList;
+  }
+}
+
+//NTC: Manager
+void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
+  int thread;
 
   //global offsets
   int LoadBalancingMeasureOffset=PIC::Mesh::cDataBlockAMR_static_data::LoadBalancingMeasureOffset;
 
   //simulate particle's collisions
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
   if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
     //reset the balancing counters
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) {
       for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-        node=DomainBlockDecomposition::BlockTable[nLocalNode];
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=DomainBlockDecomposition::BlockTable[nLocalNode];
+
         if (node->block!=NULL) {
           *(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+
               LoadBalancingMeasureOffset))=0.0;
@@ -148,23 +409,11 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
     }
   } //_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
 
-#if _PIC__OPENMP_THREAD_SPLIT_MODE_ == _PIC__OPENMP_THREAD_SPLIT_MODE__BLOCKS_
-  const int nTotalCell= _BLOCK_CELLS_X_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_Z_; 
-
-#pragma omp parallel for schedule(dynamic,nTotalCell) default (none) firstprivate (ParticleDataListLength,SigmaCrMax_nTest,SigmaCrMax_SafetyMargin) \
-    private (DoSimulateCellCollisions,k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
-    shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleDataList,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::Mesh::mesh,PIC::ParticleWeightTimeStep::LocalTimeStep,PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset,LoadBalancingMeasureOffset) \
-    firstprivate(PIC::MolecularData::MolecularModels::GetTotalCrossSection) 
-#else
-#pragma omp parallel for schedule(dynamic,1) default (none) firstprivate (ParticleDataListLength,SigmaCrMax_nTest,SigmaCrMax_SafetyMargin) \
-    private (DoSimulateCellCollisions,k,j,i,node,block,thread,FirstCellParticle,cell,cellMeasure,SamplingData,s,nParticleNumber,ptr,nMaxSpecParticleNumber,s0,s1,s0List,s1List,cnt) \
-    shared (DomainBlockDecomposition::nLocalBlocks,s0ParticleDataList,s1ParticleDataList,PIC::Mesh::collectingCellSampleDataPointerOffset,PIC::DomainBlockDecomposition::BlockTable,PIC::Mesh::mesh,PIC::ParticleWeightTimeStep::LocalTimeStep,PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset,LoadBalancingMeasureOffset) \
-    firstprivate(PIC::MolecularData::MolecularModels::GetTotalCrossSection) 
-#endif  // _PIC__OPENMP_THREAD_SPLIT_MODE_
-
-#endif  //_COMPILATION_MODE_
+  #pragma omp parallel for schedule(dynamic,1) 
+  #endif  //_COMPILATION_MODE_
   for (int CellCounter=0;CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;CellCounter++) {
-    int nLocalNode,ii=CellCounter;
+    int nLocalNode,ii=CellCounter,i,j,k;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node;
 
     nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
     ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
@@ -179,304 +428,20 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
 
     double StartTime=MPI_Wtime();
 
-
     node=DomainBlockDecomposition::BlockTable[nLocalNode];
-    block=node->block;
-    if (block==NULL) continue;
+    auto block=node->block;
 
-#if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-    thread=omp_get_thread_num();
-#else
+    if (block==NULL) continue;  
+
+    ModelCellCollisions_ntc(i,j,k,node); 
+
+    #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+    thread=omp_get_thread_num(); 
+    #else
     thread=0;
-#endif
+    #endif
 
-    {{{
-
-      FirstCellParticle=block->FirstCellParticleTable[i+_BLOCK_CELLS_X_*(j+_BLOCK_CELLS_Y_*k)];
-
-      cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
-
-      if (cell==NULL) continue;
-
-
-      cellMeasure=cell->Measure;
-
-      if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
-        SamplingData=cell->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
-      }
-
-      if (FirstCellParticle!=-1) {
-        //simulate collision in the cell
-        //1. coalcualte the number of the model particles in the cell and re-allocate the particle lists if needed
-        for (s=0;s<PIC::nTotalSpecies;s++) nParticleNumber[s]=0;
-        for (ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) nParticleNumber[PIC::ParticleBuffer::GetI(ptr)]++;
-        for (nMaxSpecParticleNumber=0,s=0;s<PIC::nTotalSpecies;s++) if (nMaxSpecParticleNumber<nParticleNumber[s]) nMaxSpecParticleNumber=nParticleNumber[s];
-
-        //re-allocate the particle list if needed
-        if (nMaxSpecParticleNumber>ParticleDataListLength) {
-          delete [] s1ParticleDataList[thread];
-          delete [] s0ParticleDataList[thread];
-
-          ParticleDataListLength=std::max(1.2*nMaxSpecParticleNumber,2.0*ParticleDataListLength);
-          s0ParticleDataList[thread]=new cParticleDataList[ParticleDataListLength];
-          s1ParticleDataList[thread]=new cParticleDataList[ParticleDataListLength];
-        }
-
-
-        //loop through the first species
-        double m0,m1,am;
-        double LocalParticleWeight_s0,LocalParticleWeight_s1;
-        double LocalTimeStep_s0,LocalTimeStep_s1;
-        double minParticleWeightCorrection_s0,minParticleWeightCorrection_s1,sumWeightCorrection_s0,sumWeightCorrection_s1;
-        PIC::ParticleBuffer::byte *ParticleData;
-
-        for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
-
-
-
-          m0=PIC::MolecularData::GetMass(s0);
-          LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
-          LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
-          minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
-
-          //populate the particle list
-          s0List=s0ParticleDataList[thread];
-
-          for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s0) {
-            ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
-            PIC::ParticleBuffer::GetV(s0ParticleDataList[thread][cnt].vel,ParticleData);
-            s0ParticleDataList[thread][cnt].ParticleData=ParticleData;
-            s0ParticleDataList[thread][cnt].ValueChangedFlag=false;
-
-            if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-              double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-              if (cnt == 0) {
-                minParticleWeightCorrection_s0 = wc;
-              } else if (wc < minParticleWeightCorrection_s0) {
-                minParticleWeightCorrection_s0 = wc;
-              }
-
-              sumWeightCorrection_s0 += wc;
-            } else {
-              sumWeightCorrection_s0 += 1.0;
-            }
-
-            cnt++;
-          }
-
-          //loop through the second speices
-          for (s1=s0;s1<PIC::nTotalSpecies;s1++) if ((PIC::MolecularData::GetSpecieType(s1)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s1]!=0)) {
-
-
-            //call a user-feficed funstion to verify whether collision should be modeled in the cell
-
-            if (DoSimulateCellCollisions!=NULL) {
-              if (DoSimulateCellCollisions(cell,s0,s1)==false) continue;
-            }
-
-
-            m1=PIC::MolecularData::GetMass(s1);
-            am=m0+m1;
-            LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
-            LocalTimeStep_s1=PIC::ParticleWeightTimeStep::LocalTimeStep(s1,node);
-            sumWeightCorrection_s1=0.0;
-
-            //populate the list
-            if (s0==s1) s1List=s0List,minParticleWeightCorrection_s1=minParticleWeightCorrection_s0,sumWeightCorrection_s1=sumWeightCorrection_s0;
-            else {
-              s1List=s1ParticleDataList[thread];
-
-              for (cnt=0,ptr=FirstCellParticle;ptr!=-1;ptr=PIC::ParticleBuffer::GetNext(ptr)) if (PIC::ParticleBuffer::GetI(ptr)==(unsigned)s1) {
-                ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
-                PIC::ParticleBuffer::GetV(s1ParticleDataList[thread][cnt].vel,ParticleData);
-                s1ParticleDataList[thread][cnt].ParticleData=ParticleData;
-                s1ParticleDataList[thread][cnt].ValueChangedFlag=false;
-
-                if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-                  double wc = PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ParticleData);
-
-                  if (cnt == 0) {
-                    minParticleWeightCorrection_s1 = wc;
-                  } else if (wc < minParticleWeightCorrection_s1) {
-                    minParticleWeightCorrection_s1 = wc;
-                  }
-
-                  sumWeightCorrection_s1 += wc;
-                } else {
-                  sumWeightCorrection_s1 += 1.0;
-                }
-
-                cnt++;
-              }
-            }
-
-            //simulate collsions between the pair of species
-            double SigmaCrMax=0.0,SigmaCr,ancoll;
-            long int ncoll;
-            double v0[3],v1[3],cr;
-
-            //1.Evaluate the maximum value of SigmaCr
-            for (int ntest=0;ntest<SigmaCrMax_nTest;ntest++) {
-              memcpy(v0,s0List[(int)(rnd()*nParticleNumber[s0])].vel,3*sizeof(double));
-              memcpy(v1,s1List[(int)(rnd()*nParticleNumber[s1])].vel,3*sizeof(double));
-              cr=sqrt(pow(v1[0]-v0[0],2)+pow(v1[1]-v0[1],2)+pow(v1[2]-v0[2],2));
-
-              SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
-
-
-              if (SigmaCr>SigmaCrMax) SigmaCrMax=SigmaCr;
-            }
-
-            SigmaCrMax*=SigmaCrMax_SafetyMargin;
-
-            //2.Evaluate the prospective number of collisions
-            double maxLocalTimeStep,minLocalParticleWeight;
-
-            maxLocalTimeStep=max(LocalTimeStep_s0,LocalTimeStep_s1);
-            minLocalParticleWeight=min(LocalParticleWeight_s0*minParticleWeightCorrection_s0,LocalParticleWeight_s1*minParticleWeightCorrection_s1);
-
-            //                  if (s0==s1) ancoll=0.5*sumWeightCorrection_s0*(nParticleNumber[s0]-1.0)*LocalParticleWeight_s0*SigmaCrMax*LocalTimeStep_s0/cellMeasure;
-
-            if (s0==s1) {
-              ancoll=0.5*sumWeightCorrection_s0/minParticleWeightCorrection_s0*
-                  (sumWeightCorrection_s0/minParticleWeightCorrection_s0-1.0)*
-                  LocalParticleWeight_s0*minParticleWeightCorrection_s0*SigmaCrMax*LocalTimeStep_s0/cellMeasure;
-            }
-            else {
-              ancoll=(sumWeightCorrection_s0*LocalParticleWeight_s0)*(sumWeightCorrection_s1*LocalParticleWeight_s1)*
-                  SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
-            }
-
-            ncoll=(long int)ancoll;
-            ancoll-=ncoll;
-            if (rnd()<ancoll) ncoll++;
-
-
-            //3. Collision Limiting
-            double CollisionLimitingFactor=1.0;
-
-            // Computation of collision limiting factor 
-            if (nParticleNumber[s0]*nParticleNumber[s1]<ancoll) {
-              CollisionLimitingFactor=ancoll/nParticleNumber[s0]*nParticleNumber[s1];
-              ancoll/=CollisionLimitingFactor;
-            }
-
-
-            //4. simulate collisions
-            int s0ptr,s1ptr,idim;
-            double vrel[3],vcm[3];
-
-            while (ncoll-->0) {
-              s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
-
-              if (s0!=s1) s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
-              else {
-                do {
-                  s1ptr=(int)((int)(rnd()*nParticleNumber[s1]));
-                }
-                while (s0ptr==s1ptr);
-              }
-
-              memcpy(v0,s0List[s0ptr].vel,3*sizeof(double));
-              memcpy(v1,s1List[s1ptr].vel,3*sizeof(double));
-
-              for (cr=0.0,idim=0;idim<3;idim++) {
-                vrel[idim]=v1[idim]-v0[idim];
-                vcm[idim]=(m1*v1[idim]+m0*v0[idim])/(m1+m0);
-                cr+=vrel[idim]*vrel[idim];
-              }
-
-              cr=sqrt(cr);
-
-              SigmaCr=cr*PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0,v0,s1,v1);
-
-              if (rnd()*SigmaCrMax>=SigmaCr) continue;
-
-              //determine weather the properties of particles were updated
-              double pUpdate_s0,pUpdate_s1;
-              bool UpdateFlag[2];
-
-              pUpdate_s0=minLocalParticleWeight/LocalParticleWeight_s0 * LocalTimeStep_s0/maxLocalTimeStep;
-              pUpdate_s1=minLocalParticleWeight/LocalParticleWeight_s1 * LocalTimeStep_s1/maxLocalTimeStep;
-
-              if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
-                pUpdate_s0 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
-                    s0List[s0ptr].ParticleData);
-                pUpdate_s1 /= PIC::ParticleBuffer::GetIndividualStatWeightCorrection(
-                    s1List[s1ptr].ParticleData);
-              } // _INDIVIDUAL_PARTICLE_WEIGHT_MODE_
-
-              UpdateFlag[0]=(rnd()<pUpdate_s0) ? true :false;
-              UpdateFlag[1]=(rnd()<pUpdate_s1) ? true :false;
-
-              //model the internal energy exchange
-              if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {
-                double crInit=cr;
-
-                PIC::IDF::RedistributeEnergy(s0List[s0ptr].ParticleData,s1List[s1ptr].ParticleData,cr,UpdateFlag,cell);
-                for (int idim=0;idim<3;idim++) {
-                  vrel[idim] = (cr > 1.0E-10) ? vrel[idim]*cr/crInit : 0.0;
-                }
-              }
-
-              //the collision is considered to be true
-              PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(vrel,s0,s1);
-
-
-              //calcualte the new value of the particle's velocities
-              for (int idim=0;idim<3;idim++) {
-                v1[idim]=vcm[idim]+m0/am*vrel[idim];
-                v0[idim]=vcm[idim]-m1/am*vrel[idim];
-              }
-
-              //update the velocities in the lists
-              if (UpdateFlag[0]==true) {
-                s0List[s0ptr].ValueChangedFlag=true;
-                memcpy(s0List[s0ptr].vel,v0,3*sizeof(double));
-
-                if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
-                  int CollFreqOffset=CollsionFrequentcySampling::SamplingBufferOffset+sizeof(double)*CollsionFrequentcySampling::Offset(s0,s1);
-
-                  *((double*)(SamplingData+CollFreqOffset))+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(s0List[s0ptr].ParticleData)*LocalParticleWeight_s0/LocalTimeStep_s0/cellMeasure*CollisionLimitingFactor; // calculate collision frequency taking into account the collision limiting factor
-                }
-              }
-
-              if (UpdateFlag[1]==true) {
-                s1List[s1ptr].ValueChangedFlag=true;
-                memcpy(s1List[s1ptr].vel,v1,3*sizeof(double));
-
-                if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
-                  int CollFreqOffset=CollsionFrequentcySampling::SamplingBufferOffset+sizeof(double)*CollsionFrequentcySampling::Offset(s1,s0);
-
-                  *((double*)(SamplingData+CollFreqOffset))+=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(s1List[s1ptr].ParticleData)*LocalParticleWeight_s1/LocalTimeStep_s1/cellMeasure*CollisionLimitingFactor; // calculate collision frequency taking into account the collision limiting factor
-                }
-              }
-            }
-
-            //update the velocities of the species 's1'
-            if (s0!=s1) {
-              for (cnt=0;cnt<nParticleNumber[s1];cnt++) if (s1List[cnt].ValueChangedFlag==true) {
-                PIC::ParticleBuffer::SetV(s1List[cnt].vel,s1List[cnt].ParticleData);
-              }
-            }
-          }
-
-          //update velocities of species 's0'
-          for (cnt=0;cnt<nParticleNumber[s0];cnt++) if (s0List[cnt].ValueChangedFlag==true) {
-            PIC::ParticleBuffer::SetV(s0List[cnt].vel,s0List[cnt].ParticleData);
-          }
-        }
-
-      } //end simulation of collisons in a cell
-
-
-    }
-    }
-    }
-
+    
     if (_PIC_DYNAMIC_LOAD_BALANCING_MODE_ == _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_) {
       switch (_COMPILATION_MODE_) {
       case _COMPILATION_MODE__MPI_:
@@ -486,9 +451,9 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
       {
         int iThread_OpenMP=0;
 
-#if _COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_
+        #if _COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_
         iThread_OpenMP=omp_get_thread_num();
-#endif
+        #endif
 
         *(iThread_OpenMP+(double*)(block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset))+=MPI_Wtime()-StartTime;
       }
@@ -497,19 +462,12 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ntc() {
         exit(__LINE__,__FILE__,"The option is unknown");
       }
     }
-
   }
-
-  for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-    delete [] s1ParticleDataList[thread];
-    delete [] s0ParticleDataList[thread];
-  }
-
 
   if ((_COMPILATION_MODE_==_COMPILATION_MODE__HYBRID_)&&(_PIC_DYNAMIC_LOAD_BALANCING_MODE_==_PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_)) {
     //sum-up the balancing measure
     for (int nLocalNode=0;nLocalNode<DomainBlockDecomposition::nLocalBlocks;nLocalNode++) for (int thread=0;thread<PIC::nTotalThreadsOpenMP;thread++) {
-      node=DomainBlockDecomposition::BlockTable[nLocalNode];
+      auto node=DomainBlockDecomposition::BlockTable[nLocalNode];
       node->ParallelLoadMeasure+=*(thread+(double*)(node->block->GetAssociatedDataBufferPointer()+LoadBalancingMeasureOffset));
     }
   }
