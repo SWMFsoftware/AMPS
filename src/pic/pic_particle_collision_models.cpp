@@ -158,7 +158,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
     for (s0=0;s0<PIC::nTotalSpecies;s0++) if ((PIC::MolecularData::GetSpecieType(s0)==_PIC_SPECIE_TYPE__GAS_)&&(nParticleNumber[s0]!=0)) {
       m0=PIC::MolecularData::GetMass(s0);
       LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
-      LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
+      LocalTimeStep_s0=block->GetLocalTimeStep(s0);
       minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
 
       //populate the particle list
@@ -198,7 +198,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
         m1=PIC::MolecularData::GetMass(s1);
         am=m0+m1;
         LocalParticleWeight_s1=block->GetLocalParticleWeight(s1);
-        LocalTimeStep_s1=PIC::ParticleWeightTimeStep::LocalTimeStep(s1,node);
+        LocalTimeStep_s1=block->GetLocalTimeStep(s1);
         sumWeightCorrection_s1=0.0;
 
         //populate the list
@@ -265,10 +265,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
             SigmaCrMax*maxLocalTimeStep/minLocalParticleWeight/cellMeasure;
         }
 
-        ncoll=(long int)ancoll;  
-        ancoll-=ncoll;
-        if (rnd()<ancoll) ncoll++;
-
         //3. Collision Limiting
         double CollisionLimitingFactor=1.0;
 
@@ -277,6 +273,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           CollisionLimitingFactor=ancoll/nParticleNumber[s0]*nParticleNumber[s1];
           ancoll/=CollisionLimitingFactor;
         }
+
+	ncoll=(long int)ancoll;
+        ancoll-=ncoll;
+        if (rnd()<ancoll) ncoll++;
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
