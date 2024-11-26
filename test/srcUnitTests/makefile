@@ -4,7 +4,7 @@ DEFAULT_TARGET : lib
 
 include ../../Makefile.conf
 
-MAINLIBOBJ = main_lib.o pbuffer.o 
+MAINLIBOBJ = main_lib.o pbuffer.o collisions.o 
 MAINOBJ = main.o
 
 lib : $(MAINLIBOBJ)
