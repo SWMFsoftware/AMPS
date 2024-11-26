@@ -1,7 +1,7 @@
 
 #main  
 
-SpeciesList=Na  !, NA_Plus !lkdsjflksdj   
+SpeciesList=H2O  !, NA_Plus !lkdsjflksdj   
 
 
 !settings of the directories
@@ -70,12 +70,13 @@ ParticleWeightCorrectionMode=off !on,off
 
 #endGeneral
 
+
 #ParticleCollisions 
-  model = off !!off !HS ! HS, off
-  SampleCollisionFrequency=off !!on !on, off
+  model = NTC !!off !HS ! HS, off
+  SampleCollisionFrequency=on !!on !on, off
 
   CollisionCrossSection=const \\ !const, function 
-    const (Na,Na)= 1.23E-15
+    const (H2O,H2O)= 3.4E-19
 #endParticleCollisions
 
 
