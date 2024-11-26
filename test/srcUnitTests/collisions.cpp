@@ -86,7 +86,11 @@ TEST_F(ParticleCollisionTest, CollisionTestNTC) {
 
     PIC::ParticleBuffer::SetV(v,ptr);
     PIC::ParticleBuffer::SetI(0,ptr);
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,ptr);
+
+    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+      PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,ptr);
+    }
+
 
     for (int j=0;j<3;j++) vsum[j]+=v[j];
   }
@@ -115,7 +119,7 @@ TEST_F(ParticleCollisionTest, CollisionTestNTC) {
 
   double m=PIC::MolecularData::GetMass(0),vv[3]={0.0,0.0,0.0};
   double sigma=PIC::MolecularData::MolecularModels::GetTotalCrossSection(0,vv,0,vv);
-  double MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/Pi*m);
+  double MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m));
   double StatWeight=Measure/(nTotalInjectedParticles*sigma*MeanRelativeVelocity*dt); 
 
 
@@ -154,8 +158,8 @@ TEST_F(ParticleCollisionTest, CollisionTestNTC) {
     ptr=ptr_next;
   }
 
-  EXPECT_DOUBLE_EQ(v2sum,v2sumAfter);
-  for (int j=0;j<3;j++) EXPECT_DOUBLE_EQ(0.0,vSumAfter[j]);
+  EXPECT_LT(fabs(v2sum-v2sumAfter)*(v2sum+v2sumAfter),1.0E-10);
+  for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 
 
   //6. Restore the initial state

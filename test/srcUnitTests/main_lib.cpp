@@ -185,20 +185,7 @@ double localResolution(double *x) {
 double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode) {
   double CellSize,CharacteristicSpeed;
 
-  switch (spec) {
-	  case _NA_SPEC_: case _HE_SPEC_:case _NE_SPEC_: case _AR_SPEC_: 
-    CharacteristicSpeed=2.0E3;
-    break;
-
-	  case _NA_PLUS_SPEC_:case _NE_PLUS_SPEC_:case _AR_PLUS_SPEC_: 
-    CharacteristicSpeed=8.0E4;
-    break;
-
-  default:
-    exit(__LINE__,__FILE__,"Error: the species is not recognized");
-  }
-
-
+  CharacteristicSpeed=2.0E3;
   CellSize=startNode->GetCharacteristicCellSize();
   return 0.3*CellSize/CharacteristicSpeed;
 }
@@ -307,6 +294,13 @@ int ParticleSphereInteraction(int spec,long int ptr,double *x,double *v,double &
 }
 
 
+double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+  double res=1.0;
+
+// for (int idim=0;idim<DIM;idim++) res*=(node->xmax[idim]-node->xmin[idim]);
+
+  return res;
+}
 
 
 void amps_init() {
@@ -384,6 +378,22 @@ void amps_init() {
     PIC::Mesh::mesh->memoryAllocationReport();
     PIC::Mesh::mesh->GetMeshTreeStatistics();
 
+       char fname[_MAX_STRING_LENGTH_PIC_];
+
+
+    sprintf(fname,"%s/mesh.msh",PIC::OutputDataFileDirectory);
+    if (PIC::Mesh::mesh->ThisThread==0) {
+      PIC::Mesh::mesh->buildMesh();
+      PIC::Mesh::mesh->saveMeshFile(fname);
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+    }
+    else {
+      MPI_Barrier(MPI_GLOBAL_COMMUNICATOR);
+      PIC::Mesh::mesh->readMeshFile(fname);
+    }
+
+    PIC::Mesh::mesh->SetParallelLoadMeasure(InitLoadMeasure);
+    PIC::Mesh::mesh->CreateNewParallelDistributionLists();
 
     //initialize the blocks
     PIC::Mesh::mesh->AllowBlockAllocation=true;
@@ -408,7 +418,6 @@ void amps_init() {
     PIC::ParticleWeightTimeStep::initTimeStep();
 
     //set up the particle weight
-    if (_NA_SPEC_<0) exit(__LINE__,__FILE__,"Error: the species that is usd for defining the weight is used used in the simulation");
 
     /*
     PIC::ParticleWeightTimeStep::LocalBlockInjectionRate=localParticleInjectionRate;
