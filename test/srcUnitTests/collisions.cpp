@@ -81,7 +81,7 @@ namespace AMPS_COLLISON_TEST  {
     block->SetLocalParticleWeight(StatWeight,0);
 
     for (int i=0;i<nIterations;i++) {
-      PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(icell,jcell,kcell,node);
+      fCellCollision(icell,jcell,kcell,node);
     }
 
     //5. Verify the results
