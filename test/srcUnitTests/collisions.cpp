@@ -5,26 +5,36 @@ void collisions_test_for_linker() {}
 
 
 namespace AMPS_COLLISON_TEST  {
-  void HeatBath(double &v2sum,double &v2sumAfter,double *vSumAfter,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
+  double v2sum,v2sumAfter,vSumAfter[3];
+  double CollsionFrequentcyTheory,CollsionFrequentcy;
+
+  void HeatBath(void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
     int i,icell=0,jcell=0,kcell=0;
     long int ptr;
     PIC::Mesh::cDataCenterNode *cell;
     PIC::Mesh::cDataBlockAMR *block;
-    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
-  
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];    
+    
+    int CollFreqOffset=PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset+    
++     sizeof(double)*PIC::MolecularCollisions::ParticleCollisionModel::CollsionFrequentcySampling::Offset(0,0);
+
     //1. Identify the cell
     block=node->block;
     if (block==NULL) exit(__LINE__,__FILE__,"Block is NULL");
 
     cell=block->GetCenterNode(_getCenterNodeLocalNumber(icell,jcell,kcell));
     if (cell==NULL) exit(__LINE__,__FILE__,"Cell is NULL");
+
+    char *SamplingData=cell->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
+    SamplingData+=CollFreqOffset;
   
     //2. Populate the particle lists
     double Temp=300.0; //the temperature of the gas
     int nTotalInjectedParticles=100;
     double v[3],vbulk[3]={0.0,0.0,0.0},vsum[3]={0.0,0.0,0.0};
 
-    v2sum=0.0;
+    v2sum=0.0,CollsionFrequentcy=0.0;
+    *((double*)(SamplingData))=0.0;
  
     for (int i=0;i<nTotalInjectedParticles;i++) {
       ptr=PIC::ParticleBuffer::GetNewParticle(block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)]);
@@ -60,12 +70,15 @@ namespace AMPS_COLLISON_TEST  {
 
     //4. Simulate collisions: deermine the particle weight such that for dt=1, there will be 1 collision per particle
     double dt=1.0,Measure=1.0;
-    int nIterations=1000;
+    int nIterations=100000;
 
     double m=PIC::MolecularData::GetMass(0),vv[3]={0.0,0.0,0.0};
     double sigma=PIC::MolecularData::MolecularModels::GetTotalCrossSection(0,vv,0,vv);
     double MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m));
     double StatWeight=Measure/(nTotalInjectedParticles*sigma*MeanRelativeVelocity*dt); 
+
+    double n=nTotalInjectedParticles*StatWeight/Measure;
+    CollsionFrequentcyTheory=n*n*sigma*MeanRelativeVelocity;
 
 
     //set the weight, time step, and measure
@@ -84,7 +97,10 @@ namespace AMPS_COLLISON_TEST  {
       fCellCollision(icell,jcell,kcell,node);
     }
 
-    //5. Verify the results
+    //5. Get the collision frequency
+    CollsionFrequentcy=*((double*)(SamplingData))/nIterations;
+
+    //6. Verify the results
     v2sumAfter=0.0;
     for (int idim=0;idim<3;idim++) vSumAfter[idim]=0.0;
 
@@ -103,7 +119,7 @@ namespace AMPS_COLLISON_TEST  {
       ptr=ptr_next;
     }
 
-    //6. Restore the initial state
+    //7. Restore the initial state
     block->SetLocalTimeStep(InitTimeStep,0);
     block->SetLocalParticleWeight(InitWeight,0);
     block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)]=-1;
@@ -169,30 +185,36 @@ protected:
 
 //Test NTC collision model: tested conservations of momentum and energy, and colliaiio frequency
 TEST_F(ParticleCollisionTest, CollisionTestNTC) {
-  double v2sum,v2sumAfter,vSumAfter[3];
+  using namespace AMPS_COLLISON_TEST;
 
-  AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc);
+  HeatBath(PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc);
 
   EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(CollsionFrequentcy-CollsionFrequentcyTheory)/(CollsionFrequentcy+CollsionFrequentcyTheory),1.0E-5);
+  
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
 
 
 //Test MF collision model: tested conservations of momentum and energy, and colliaiio frequency
 TEST_F(ParticleCollisionTest, CollisionTestMF) {
-  double v2sum,v2sumAfter,vSumAfter[3];
+  using namespace AMPS_COLLISON_TEST;
 
-  AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf);
+  AMPS_COLLISON_TEST::HeatBath(PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf);
 
   EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(CollsionFrequentcy-CollsionFrequentcyTheory)/(CollsionFrequentcy+CollsionFrequentcyTheory),1.0E-5);
+
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
 
 TEST_F(ParticleCollisionTest, CollisionTestMF_improved) {
-  double v2sum,v2sumAfter,vSumAfter[3];
+  using namespace AMPS_COLLISON_TEST;
 
-  AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_improved);
+  AMPS_COLLISON_TEST::HeatBath(PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_improved);
 
   EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(CollsionFrequentcy-CollsionFrequentcyTheory)/(CollsionFrequentcy+CollsionFrequentcyTheory),1.0E-5);
+
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
