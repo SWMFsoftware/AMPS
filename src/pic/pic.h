@@ -4592,8 +4592,11 @@ void DeleteAttachedParticles();
       void ModelCellCollisions_ntc(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void ntc();
       
+      void ModelCellCollisions_mf(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void mf();
       void mf_new();
+
+      void CollisionModelManager(void (*CellCollisions)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*));
     }
 
     //models for calculation of the relative velocity after a collision
