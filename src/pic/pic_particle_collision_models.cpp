@@ -547,7 +547,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
     m0=PIC::MolecularData::GetMass(s0);
     LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
-    LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
+    LocalTimeStep_s0=block->GetLocalTimeStep(s0);
     minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
 
     //populate the particle list
@@ -869,7 +869,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_im
 
     m0=PIC::MolecularData::GetMass(s0);
     LocalParticleWeight_s0=block->GetLocalParticleWeight(s0);
-    LocalTimeStep_s0=PIC::ParticleWeightTimeStep::LocalTimeStep(s0,node);
+    LocalTimeStep_s0=block->GetLocalTimeStep(s0);
     minParticleWeightCorrection_s0=1,sumWeightCorrection_s0=0.0;
 
     //populate the particle list

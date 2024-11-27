@@ -4109,19 +4109,13 @@ void DeleteAttachedParticles();
     //return time step and the particle's weights
     _TARGET_HOST_ _TARGET_DEVICE_
     inline double GetLocalTimeStep(int spec,cDataBlockAMR* block) {
-      return *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()));
+      return block->GetLocalTimeStep(spec); 
     }
 
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetLocalTimeStep(double dt,int spec,cDataBlockAMR* block) {
-      *(spec+(double*)(cDataBlockAMR_static_data::LocalTimeStepOffset+block->GetAssociatedDataBufferPointer()))=dt;
+      block->SetLocalTimeStep(dt,spec);
     }
-
-    _TARGET_HOST_ _TARGET_DEVICE_
-    double GetLocalParticleWeight(int,cDataBlockAMR*);
-
-    _TARGET_HOST_ _TARGET_DEVICE_
-    void SetLocalParticleWeight(double,int,cDataBlockAMR*);
 
     void flushCompletedSamplingBuffer(cDataCenterNode*);
     void flushCollectingSamplingBuffer(cDataCenterNode*);
