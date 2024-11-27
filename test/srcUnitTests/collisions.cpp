@@ -173,7 +173,7 @@ TEST_F(ParticleCollisionTest, CollisionTestNTC) {
 
   AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc);
 
-  EXPECT_LT(fabs(v2sum-v2sumAfter)*(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
 
@@ -184,7 +184,7 @@ TEST_F(ParticleCollisionTest, CollisionTestMF) {
 
   AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf);
 
-  EXPECT_LT(fabs(v2sum-v2sumAfter)*(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
 
@@ -193,6 +193,6 @@ TEST_F(ParticleCollisionTest, CollisionTestMF_improved) {
 
   AMPS_COLLISON_TEST::HeatBath(v2sum,v2sumAfter,vSumAfter,PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_improved);
 
-  EXPECT_LT(fabs(v2sum-v2sumAfter)*(v2sum+v2sumAfter),1.0E-10);
+  EXPECT_LT(fabs(v2sum-v2sumAfter)/(v2sum+v2sumAfter),1.0E-10);
   for (int j=0;j<3;j++) EXPECT_LT(fabs(vSumAfter[j])/sqrt(v2sumAfter),1.0E-10);
 }
