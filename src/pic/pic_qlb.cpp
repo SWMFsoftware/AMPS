@@ -175,6 +175,7 @@ double PIC::IDF::qLB::GetFirstExitedVibLevelPopulationFraction(int nmode,int s,P
 
 //===================================================
 void PIC::IDF::qLB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
+	exit(__LINE__,__FILE__,"Error: not implemented");
 /*  PIC::ParticleBuffer::byte ptr[2];
   long int nptr;
   unsigned char s[2];
