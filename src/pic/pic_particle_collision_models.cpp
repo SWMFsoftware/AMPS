@@ -783,10 +783,10 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
       for (cnt=0;cnt<nParticleNumber[s0];cnt++) if (s0List[cnt].ValueChangedFlag==true) {
         PIC::ParticleBuffer::SetV(s0List[cnt].vel,s0List[cnt].ParticleData);
       }
-
-      delete [] s0ParticleDataList;
-      delete [] s1ParticleDataList;
     }
+
+    delete [] s0ParticleDataList;
+    delete [] s1ParticleDataList;
   } //end simulation of collisons in a cell
 }
 
