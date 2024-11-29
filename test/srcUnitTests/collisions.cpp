@@ -11,7 +11,7 @@ namespace AMPS_COLLISON_TEST  {
   double MeanRotEnergy[2],MeanRotEnergyAfter[2],MeanRotEnergyTheory[2];
   double MeanVibEnergy[2],MeanVibEnergyAfter[2],MeanVibEnergyTheory[2];
 
-  void  VelocityAfterCollision(double &RelativeErrorMomentum,double &RelativeErrorEnergy,double &RelativeErrorVel,int s0,int s1,void (*fVelocityAfterCollision)(double*,int, int)) {
+  void  VelocityAfterCollision(double &RelativeErrorMomentum,double &RelativeErrorEnergy,double &RelativeErrorVel,int s0,int s1,void (*fVelocityAfterCollision)(double*,double,double*,double)) {
     double v_s0[3],v_s1[3],m_s0,m_s1,am,vrel[3],vbulk[3]={0.0,0.0,0.0},mv2sum_init,mv2sum_after,mvsum_init,mvsum_after,vcm[3];
     double vrel_init,vrel_after;
     int nTest,i;
@@ -21,7 +21,6 @@ namespace AMPS_COLLISON_TEST  {
 
     m_s0=PIC::MolecularData::GetMass(s0);
     m_s1=PIC::MolecularData::GetMass(s1);
-    am=m_s0+m_s1;
 
     RelativeErrorMomentum=0.0;
     RelativeErrorEnergy=0.0;
@@ -41,25 +40,17 @@ namespace AMPS_COLLISON_TEST  {
         mv2sum_init+=t*v_s0[i];
         mvsum_init+=t;
 
-        t=m_s0*v_s1[i];
+        t=m_s1*v_s1[i];
         mv2sum_init+=t*v_s1[i];
         mvsum_init+=t; 
 
         vrel[i]=v_s0[i]-v_s1[i];
-        vcm[i]=(m_s0*v_s0[i]+m_s1*v_s1[i])/(m_s0+m_s1);
       }
+
+      vrel_init=Vector3D::Length(vrel);
 
       //redistribute the particle velocity
-      vrel_init=Vector3D::Length(vrel);
-      fVelocityAfterCollision(vrel,s0,s1);
-      vrel_after=Vector3D::Length(vrel);
-
-      RelativeErrorVel+=fabs(vrel_init-vrel_after)/(vrel_init+vrel_after);
-
-      for (i=0;i<3;i++) {
-        v_s1[i]=vcm[i]+m_s0/am*vrel[i];
-        v_s0[i]=vcm[i]-m_s1/am*vrel[i];
-      }
+      fVelocityAfterCollision(v_s0,m_s0,v_s1,m_s1);
 
       //Verify the result 
       mv2sum_after=0.0,mvsum_after=0.0;
@@ -70,10 +61,15 @@ namespace AMPS_COLLISON_TEST  {
         mv2sum_after+=t*v_s0[i];
         mvsum_after+=t;
 
-        t=m_s0*v_s1[i];
+        t=m_s1*v_s1[i];
         mv2sum_after+=t*v_s1[i];
         mvsum_after+=t; 
+
+        vrel[i]=v_s0[i]-v_s1[i];
       }   
+
+      vrel_after=Vector3D::Length(vrel);
+      RelativeErrorVel+=fabs(vrel_init-vrel_after)/(vrel_init+vrel_after);
 
       RelativeErrorEnergy+=fabs(mv2sum_init-mv2sum_after)/(mv2sum_init+mv2sum_after);  
       RelativeErrorMomentum+=fabs(mvsum_init-mvsum_after)/(mvsum_init+mvsum_after);    
@@ -546,7 +542,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 //particle velocity redistribution test 
 struct VelocityAfterCollisionTestCase {
-  void (*fVelocityAfterCollision)(double*,int, int); // Function pointer
+  void (*fVelocityAfterCollision)(double*,double,double*,double); // Function pointer
   int s0,s1;
   string name;
 };

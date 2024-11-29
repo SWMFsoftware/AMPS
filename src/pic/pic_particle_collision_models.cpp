@@ -335,13 +335,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(vrel,s0,s1);
-
-          //calcualte the new value of the particle's velocities
-          for (int idim=0;idim<3;idim++) {
-            v1[idim]=vcm[idim]+m0/am*vrel[idim];
-            v0[idim]=vcm[idim]-m1/am*vrel[idim];
-          }
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -733,14 +727,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(vrel,s0,s1);
-
-          //calcualte the new value of the particle's velocities
-          for (int idim=0;idim<3;idim++) {
-            v1[idim]=vcm[idim]+m0/am*vrel[idim];
-            v0[idim]=vcm[idim]-m1/am*vrel[idim];
-          }
-
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -1069,13 +1056,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(vrel,s0,s1);
-
-          //calcualte the new value of the particle's velocities
-          for (int idim=0;idim<3;idim++) {
-            v1[idim]=vcm[idim]+m0/am*vrel[idim];
-            v0[idim]=vcm[idim]-m1/am*vrel[idim];
-          }
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
