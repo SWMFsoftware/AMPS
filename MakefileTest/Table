@@ -1444,7 +1444,7 @@ Time=2
 
 Compile=
 >>>@echo "test_unit_test_compile..." > test_unit_test.diff
->>>./Config.pl -application=test/unit-test
+>>>./Config.pl -application=test/unit-tests/unit-test
 >>>./Config.pl -spice-path=nospice
 >>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
 >>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
