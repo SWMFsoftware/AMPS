@@ -216,6 +216,7 @@ namespace AMPS_COLLISON_TEST  {
 
 struct ParticleCollisionTestCase {
     void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*); // Function pointer
+    int s0,s1;
     string name;
 };
 
@@ -281,35 +282,30 @@ protected:
 //Test NTC collision model: tested conservations of momentum and energy, and colliaiio frequency
 TEST_P(ParticleCollisionTest, MyHandlesInputs) {
   using namespace AMPS_COLLISON_TEST;
+  int s0,s1;
 
   // Print the function name
   ParticleCollisionTestCase test_case=GetParam();
-  std::cout << "\033[1m" << "Testing function: " << test_case.name << "\033[0m" << std::endl;
+  s0=test_case.s0;
+  s1=test_case.s1;
 
-  HeatBath(0,0,test_case.fCellCollision); 
+  std::cout << "\033[1m" << "Testing function: " << test_case.name << " (s0=" << s0 << ", s1=" << s1 <<") \033[0m" << std::endl;
 
-  EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << " 0,0 (before the loop)" << endl;
-  EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-5) << test_case.name << " 0,0 (before the loop)" << endl;
-  
-  for (int j=0;j<3;j++) EXPECT_LT(fabs(mvSumAfter[j])/sqrt(mv2sumAfter),1.0E-10);
+  HeatBath(s0,s1,test_case.fCellCollision);
 
-  for (int s0=0;s0<2;s0++) for (int s1=s0;s1<2;s1++) {
-    HeatBath(s0,s1,test_case.fCellCollision);
-
-    if (s0==s1) {
-      EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << " s0=" << s0 << ", s1=" << s1 << endl; 
-      EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-5) << test_case.name << " s0=" << s0 << ", s1=" << s1 << endl;
-    }
-    else {
-      EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
-
-      for (int i=0;i<2;i++) for (int j=0;j<2;j++) {
-        EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),1.0E-5) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << ", i=" << i << ", j=" << j << endl;
-      }
-    }
-
-    for (int jj=0;jj<3;jj++) EXPECT_LT(fabs(mvSumAfter[jj])/sqrt(mv2sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << ", jj=" << jj <<  endl;
+  if (s0==s1) {
+    EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10); 
+    EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-5) << endl;
   }
+  else {
+    EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
+
+    for (int i=0;i<2;i++) for (int j=0;j<2;j++) {
+      EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),1.0E-5) << " i=" << i << ", j=" << j << endl;
+    }
+  }
+
+  for (int jj=0;jj<3;jj++) EXPECT_LT(fabs(mvSumAfter[jj])/sqrt(mv2sumAfter),1.0E-10) << ", jj=" << jj <<  endl;
 }
 
 
@@ -319,8 +315,19 @@ INSTANTIATE_TEST_SUITE_P(
     ParticleCollisionTest,                          // Test suite name
     ParticleCollisionTest,                    // Test fixture name
     ::testing::Values(                      // Test cases
-        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi, "mf_Yinsi"}, 
-        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf, "mf"}, 
-	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc, "ntc"} 
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,0,"mf_Yinsi"}, 
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,1,"mf_Yinsi"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,1,0,"mf_Yinsi"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,1,1,"mf_Yinsi"},
+
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,0,0,"mf"}, 
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,0,1,"mf"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,1,0,"mf"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,1,1,"mf"},
+
+	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,0,"ntc"}, 
+	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,1,"ntc"},
+	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,0,"ntc"},
+	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,1,"ntc"}
       )
 );
