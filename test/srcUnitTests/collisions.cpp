@@ -6,8 +6,10 @@ void collisions_test_for_linker() {}
 
 namespace AMPS_COLLISON_TEST  {
   double mv2sum,mv2sumAfter,mvSumAfter[3];
-  double CollsionFrequentcyTheory[_TOTAL_SPECIES_NUMBER_][_TOTAL_SPECIES_NUMBER_];
-  double CollsionFrequentcy[_TOTAL_SPECIES_NUMBER_][_TOTAL_SPECIES_NUMBER_];
+  double CollsionFrequentcyTheory[2][2];
+  double CollsionFrequentcy[2][2];
+  double MeanRotEnergy[2],MeanRotEnergyAfter[2],MeanRotEnergyTheory[2];
+  double MeanVibEnergy[2],MeanVibEnergyAfter[2],MeanVibEnergyTheory[2];
 
   void HeatBath(int s0,int s1,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
     namespace MD=PIC::MolecularData;
@@ -22,6 +24,11 @@ namespace AMPS_COLLISON_TEST  {
 
     int CollFreqOffset=MC::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset+    
       sizeof(double)*MC::ParticleCollisionModel::CollsionFrequentcySampling::Offset(0,0);
+
+    for (i=0;i<2;i++) {
+      MeanVibEnergy[i]=0.0,MeanVibEnergyAfter[i]=0.0,MeanVibEnergyTheory[i]=0.0;
+      MeanRotEnergy[i]=0.0,MeanRotEnergyAfter[i]=0.0,MeanRotEnergyTheory[i]=0.0;
+    }
 
     //1. Identify the cell
     block=node->block;
@@ -73,6 +80,20 @@ namespace AMPS_COLLISON_TEST  {
           PB::SetIndividualStatWeightCorrection(1.0,ptr);
         }
 
+	if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+          PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr); 
+
+          switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
+          case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
+            PIC::IDF::LB::InitRotTemp(Temp,ParticleData); 
+            PIC::IDF::LB::InitVibTemp(Temp,ParticleData); 
+	    break;
+
+          default:
+            exit(__LINE__,__FILE__,"Error: not implemented");
+	  }
+        }
+
         for (int j=0;j<3;j++) mvsum[j]+=m*v[j];
         msum+=m;
       }
@@ -83,20 +104,52 @@ namespace AMPS_COLLISON_TEST  {
 
     for (int j=0;j<3;j++) dv[j]=mvsum[j]/msum;
 
+    for (int i=0;i<2;i++) MeanVibEnergy[i]=0.0,MeanVibEnergyAfter[i]=0.0,MeanRotEnergy[i]=0.0,MeanRotEnergyAfter[i]=0.0;
 
     ptr=block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)];
 
     while (ptr!=-1) {
       double *v=PB::GetV(ptr);
-      double m=MD::GetMass(PB::GetI(ptr))/mmax;
+      int s=PB::GetI(ptr);
+      double m=MD::GetMass(s)/mmax;
+      int ispec=(s==s0) ? 0 : 1;
+
 
       for (int j=0;j<3;j++) {
         v[j]-=dv[j];
         mv2sum+=m*v[j]*v[j];
       }
 
+      if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+        PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+        switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
+        case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
+          MeanVibEnergy[ispec]+=PIC::IDF::LB::GetVibE(-1,ParticleData);
+          MeanRotEnergy[ispec]+=PIC::IDF::LB::GetRotE(ParticleData);
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: not implemented");
+	}	  
+      }
+
       ptr=PB::GetNext(ptr);
     }
+
+    //Calculate initial rotational and vibrational evergy
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+      if (s0==s1) {
+        MeanVibEnergy[0]/=2.0*nTotalInjectedParticles; 
+        MeanRotEnergy[0]/=2.0*nTotalInjectedParticles; 
+      }
+      else {
+        for (int i=0;i<2;i++) {
+          MeanVibEnergy[i]/=nTotalInjectedParticles;
+          MeanRotEnergy[i]/=nTotalInjectedParticles;
+        }
+      }
+    }
+
 
     //4. Simulate collisions: deermine the particle weight such that for dt=1, there will be 1 collision per particle
     double dt=1.0,Measure=1.0;
@@ -155,6 +208,36 @@ namespace AMPS_COLLISON_TEST  {
       }   
     }
 
+
+     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+        for (ispec=0;ispec<2;ispec++) {
+          int n,s=(ispec==0) ? s0 : s1;
+          double RotDF,EtaVib,c; 
+
+          switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
+          case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
+            RotDF=PIC::IDF::nTotalRotationalModes[s];
+	    MeanRotEnergyTheory[ispec]=0.5*RotDF*Kbol*Temp;
+
+	    MeanVibEnergyTheory[ispec]=0.0;
+
+            for (n=0;n<PIC::IDF::nTotalVibtationalModes[s];n++) {
+              double c,ThetaVib,EtaVib;
+	    
+	      ThetaVib=PIC::IDF::CharacteristicVibrationalTemperature[n+s*PIC::IDF::nSpeciesMaxVibrationalModes];
+	      c=ThetaVib/Temp;
+	      EtaVib=2.0*c/(exp(c)-1.0);
+	      MeanVibEnergyTheory[ispec]+=0.5*EtaVib*Kbol*Temp;
+	    }
+
+            break;
+          default:
+            exit(__LINE__,__FILE__,"Error: not implemented");
+          }
+        }
+      }
+
+
     for (int i=0;i<nIterations;i++) {
       fCellCollision(icell,jcell,kcell,node);
     }
@@ -189,16 +272,45 @@ namespace AMPS_COLLISON_TEST  {
 
     while (ptr!=-1) {
       double *v=PB::GetV(ptr);
-      double m=MD::GetMass(PB::GetI(ptr))/mmax;
+      int s=PB::GetI(ptr);
+      double m=MD::GetMass(s)/mmax;
+      int ispec=(s==s0) ? 0 : 1;
 
       for (int j=0;j<3;j++) {
         mvSumAfter[j]+=m*v[j];
         mv2sumAfter+=m*v[j]*v[j];
       }
 
+      if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+        PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+        switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
+        case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
+          MeanVibEnergyAfter[ispec]+=PIC::IDF::LB::GetVibE(-1,ParticleData);
+          MeanRotEnergyAfter[ispec]+=PIC::IDF::LB::GetRotE(ParticleData);
+          break;
+        default:
+          exit(__LINE__,__FILE__,"Error: not implemented");
+        }
+      }
+
       long int ptr_next=PB::GetNext(ptr);
       PB::DeleteParticle(ptr);
       ptr=ptr_next;
+    }
+
+    //Calculate final rotational and vibrational evergy
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+      if (s0==s1) {
+        MeanVibEnergyAfter[0]/=2.0*nTotalInjectedParticles;
+        MeanRotEnergyAfter[0]/=2.0*nTotalInjectedParticles;
+      }
+      else {
+        for (int i=0;i<2;i++) {
+          MeanVibEnergyAfter[i]/=nTotalInjectedParticles;
+          MeanRotEnergyAfter[i]/=nTotalInjectedParticles;
+        }
+      }
     }
 
     //7. Restore the initial state
@@ -296,6 +408,20 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
   if (s0==s1) {
     EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10); 
     EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-5) << endl;
+
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+      if (MeanVibEnergyTheory[0]+MeanVibEnergy[0]!=0.0) 
+        EXPECT_LT(fabs(MeanVibEnergyTheory[0]-MeanVibEnergy[0])/(MeanVibEnergyTheory[0]+MeanVibEnergy[0]),1.0E-5);
+
+      if (MeanRotEnergyTheory[0]+MeanRotEnergy[0]!=0.0)
+        EXPECT_LT(fabs(MeanRotEnergyTheory[0]-MeanRotEnergy[0])/(MeanRotEnergyTheory[0]+MeanRotEnergy[0]),1.0E-5); 
+
+      if (MeanVibEnergyAfter[0]+MeanVibEnergy[0]!=0.0)
+        EXPECT_LT(fabs(MeanVibEnergyAfter[0]-MeanVibEnergy[0])/(MeanVibEnergyAfter[0]+MeanVibEnergy[0]),1.0E-5);
+
+      if (MeanRotEnergyAfter[0]+MeanRotEnergy[0]!=0.0)
+        EXPECT_LT(fabs(MeanRotEnergyAfter[0]-MeanRotEnergy[0])/(MeanRotEnergyAfter[0]+MeanRotEnergy[0]),1.0E-5);
+    }
   }
   else {
     EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
@@ -303,6 +429,22 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
     for (int i=0;i<2;i++) for (int j=0;j<2;j++) {
       EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),1.0E-5) << " i=" << i << ", j=" << j << endl;
     }
+
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+      for (int i=0;i<2;i++) {
+        if (MeanVibEnergyAfter[i]+MeanVibEnergy[i]!=0.0)
+          EXPECT_LT(fabs(MeanVibEnergyAfter[i]-MeanVibEnergy[i])/(MeanVibEnergyAfter[i]+MeanVibEnergy[i]),1.0E-5) << " i=" << i << endl;
+
+        if (MeanRotEnergyAfter[i]+MeanRotEnergy[i]!=0.0)
+          EXPECT_LT(fabs(MeanRotEnergyAfter[i]-MeanRotEnergy[i])/(MeanRotEnergyAfter[i]+MeanRotEnergy[i]),1.0E-5) << " i=" << i << endl;
+
+        if (MeanVibEnergyTheory[i]+MeanVibEnergy[i]!=0.0)
+          EXPECT_LT(fabs(MeanVibEnergyTheory[i]-MeanVibEnergy[i])/(MeanVibEnergyTheory[i]+MeanVibEnergy[i]),1.0E-5) << " i=" << i << endl;
+
+        if (MeanRotEnergyTheory[i]+MeanRotEnergy[i]!=0.0)
+          EXPECT_LT(fabs(MeanRotEnergyTheory[i]-MeanRotEnergy[i])/(MeanRotEnergyTheory[i]+MeanRotEnergy[i]),1.0E-5) << " i=" << i << endl;
+      }
+    } 
   }
 
   for (int jj=0;jj<3;jj++) EXPECT_LT(fabs(mvSumAfter[jj])/sqrt(mv2sumAfter),1.0E-10) << ", jj=" << jj <<  endl;
@@ -312,9 +454,9 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
 
 
 INSTANTIATE_TEST_SUITE_P(
-    ParticleCollisionTest,                          // Test suite name
-    ParticleCollisionTest,                    // Test fixture name
-    ::testing::Values(                      // Test cases
+    ParticleCollisionTest,             // Test suite name
+    ParticleCollisionTest,             // Test fixture name
+    ::testing::Values(                 // Test cases
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,0,"mf_Yinsi"}, 
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,1,"mf_Yinsi"},
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,1,0,"mf_Yinsi"},
@@ -325,9 +467,9 @@ INSTANTIATE_TEST_SUITE_P(
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,1,0,"mf"},
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf,1,1,"mf"},
 
-	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,0,"ntc"}, 
-	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,1,"ntc"},
-	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,0,"ntc"},
-	ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,1,"ntc"}
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,0,"ntc"}, 
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,0,1,"ntc"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,0,"ntc"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc,1,1,"ntc"}
       )
 );
