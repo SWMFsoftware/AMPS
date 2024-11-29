@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <random>
 
 #ifndef _RND_
 #define _RND_
@@ -17,6 +18,10 @@
 #include "global.h"
 //#endif 
 
+
+//type of the generator 
+#define _RND_MODE_ _RND_MODE_DEFAULT_    
+ 
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #include <omp.h>
@@ -34,6 +39,9 @@
 namespace RandomNumberGenerator {
   extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned long int rndLastSeed;
   extern _TARGET_DEVICE_ _CUDA_MANAGED_ unsigned long int *rndLastSeedArray;
+
+  //Mersenne Twister with a fixed seed
+  extern thread_local std::mt19937 gen;  
 }
 
 
@@ -86,6 +94,10 @@ _TARGET_HOST_ _TARGET_DEVICE_
 inline double rnd() {
   double res;
   cRndSeedContainer SeedContainer;
+
+  if (_RND_MODE_==_RND_MODE_MERSENNE_TWISTER_) {
+    return RandomNumberGenerator::gen() / static_cast<double>(RandomNumberGenerator::gen.max());
+  } 
 
   #ifdef __CUDA_ARCH__
   return rndGPU();

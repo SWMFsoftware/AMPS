@@ -798,12 +798,12 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf() {
 
 
 //Majorant Frequency collision procedure
-void PIC::MolecularCollisions::ParticleCollisionModel::mf_improved() {
-  CollisionModelManager(ModelCellCollisions_mf_improved);
+void PIC::MolecularCollisions::ParticleCollisionModel::mf_Yinsi() {
+  CollisionModelManager(ModelCellCollisions_mf_Yinsi);
 }
 
 
-void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_improved(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int SigmaCrMax_nTest=100;
   double SigmaCrMax_SafetyMargin=1.3;
 

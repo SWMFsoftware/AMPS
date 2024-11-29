@@ -1,7 +1,7 @@
 
 #main  
 
-SpeciesList=H2O  !, NA_Plus !lkdsjflksdj   
+SpeciesList=H2O,O  !, NA_Plus !lkdsjflksdj   
 
 
 !settings of the directories
@@ -60,6 +60,8 @@ ParticleWeightCorrectionMode=off !on,off
   GhostCells=2,2,2
 ! CutCellVolumeCalculationMaxRefinmentLevel=1
 
+  Rnd=MersenneTwister !!default ! default,MersenneTwister
+
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
@@ -76,7 +78,9 @@ ParticleWeightCorrectionMode=off !on,off
   SampleCollisionFrequency=on !!on !on, off
 
   CollisionCrossSection=const \\ !const, function 
-    const (H2O,H2O)= 3.4E-19
+    const (H2O,H2O)= 3.4E-19 \\
+    const (H2O,O)= 3.4E-19 \\
+    const (O,O)= 3.4E-19  
 #endParticleCollisions
 
 

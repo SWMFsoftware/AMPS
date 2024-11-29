@@ -1391,6 +1391,21 @@ sub ReadGeneralBlock {
       }
     }
 
+    #type of the random number generator
+    elsif ($InputLine eq "RND") {
+      ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+      if ($InputLine eq "DEFAULT") {
+         ampsConfigLib::RedefineMacro("_RND_MODE_","_RND_MODE_DEFAULT_","general/rnd.h");
+      }
+      elsif ($InputLine eq "MERSENNETWISTER") { 
+         ampsConfigLib::RedefineMacro("_RND_MODE_","_RND_MODE_MERSENNE_TWISTER_","general/rnd.h");
+      }
+      else {
+         die "Option is unknown";
+      }
+    }
+
     #read the block that defines a type of the boundary processing routine used for processing of a particle when it crosses the boundary of the computational domain
     elsif ($InputLine eq "DOMAINBOUNDARYPARTICLEINTERSECTION") {
       my $Mode=-1;

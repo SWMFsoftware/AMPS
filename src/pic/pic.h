@@ -4589,8 +4589,8 @@ void DeleteAttachedParticles();
       void ModelCellCollisions_mf(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
       void mf();
 
-      void ModelCellCollisions_mf_improved(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
-      void mf_improved();
+      void ModelCellCollisions_mf_Yinsi(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node);
+      void mf_Yinsi();
 
       void CollisionModelManager(void (*CellCollisions)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*));
     }

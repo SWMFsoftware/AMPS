@@ -34,5 +34,7 @@
 //Align state vectors/arrays when possible and needed
 #define _ALIGN_STATE_VECTORS_ _OFF_
 
-
+//type of the random numberdenerator 
+#define _RND_MODE_DEFAULT_           0
+#define _RND_MODE_MERSENNE_TWISTER_  1
 

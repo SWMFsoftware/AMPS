@@ -8,6 +8,7 @@
 #include "mpi.h"
 
 #include "rnd.h"
+#include "specfunc.h"
 
 #if _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
 #include <omp.h>
@@ -15,6 +16,7 @@
 
 _CUDA_MANAGED_ _TARGET_DEVICE_ unsigned long int RandomNumberGenerator::rndLastSeed=0;
 _CUDA_MANAGED_ _TARGET_DEVICE_ unsigned long int *RandomNumberGenerator::rndLastSeedArray=NULL;
+thread_local std::mt19937 RandomNumberGenerator::gen(42);
 
 #if _CUDA_MODE_ == _ON_
 void rnd_seedGPU(int seed) {
@@ -31,7 +33,16 @@ void rnd_seed(int seed) {
 
   if (seed==-1) seed=1+thread;
 
-  RandomNumberGenerator::rndLastSeed=seed;
+ switch  (_RND_MODE_) {
+  case _RND_MODE_DEFAULT_:
+    RandomNumberGenerator::rndLastSeed=seed;
+    break;
+  case _RND_MODE_MERSENNE_TWISTER_:
+    RandomNumberGenerator::gen.seed(seed);
+    break;  
+  default:
+    exit(__LINE__,__FILE__,"Error: unknown option");
+  }
 
   #if _CUDA_MODE_ == _ON_
   rnd_seedGPU(seed);
