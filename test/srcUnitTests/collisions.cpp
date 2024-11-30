@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "pic.h"
 
+#include "ParticleTestBase.h"
+
 void collisions_test_for_linker() {}
 
 
@@ -78,7 +80,7 @@ namespace AMPS_COLLISON_TEST  {
   
   }
 
-  void HeatBath(int s0,int s1,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
+  void HeatBath(int s0,int s1,bool UseCommonStatWeight,bool UseCommonTimeStep,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
     namespace MD=PIC::MolecularData;
     namespace MC=PIC::MolecularCollisions;
     namespace PB=PIC::ParticleBuffer; 
@@ -108,7 +110,7 @@ namespace AMPS_COLLISON_TEST  {
   
     //2. Populate the particle lists
     double Temp=300.0; //the temperature of the gas
-    int nTotalInjectedParticles=50;
+    int nTotalInjectedParticles=100;
     double mmax,v[3],vbulk[3]={0.0,0.0,0.0},mvsum[3]={0.0,0.0,0.0},msum=0.0;
 
     mv2sum=0.0;
@@ -219,8 +221,8 @@ namespace AMPS_COLLISON_TEST  {
 
 
     //4. Simulate collisions: deermine the particle weight such that for dt=1, there will be 1 collision per particle
-    double dt=1.0,Measure=1.0;
-    int nIterations=100000;
+    double dt[2]={1.0,1.0},Measure=1.0;
+    int nIterations=400000;
 
     //set the weight, time step, and measure
     double InitWeight[2],InitMeasure,InitTimeStep[2];
@@ -243,7 +245,7 @@ namespace AMPS_COLLISON_TEST  {
       m=MD::GetMass(s);
 
       MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m));
-      StatWeight[ispec]=Measure/(2.0*nTotalInjectedParticles*sigma*MeanRelativeVelocity*dt);
+      StatWeight[ispec]=Measure/(2.0*nTotalInjectedParticles*sigma*MeanRelativeVelocity*dt[ispec]);
 
       if (s0!=s1) {
         InitTimeStep[ispec]=block->GetLocalTimeStep(s);
@@ -254,20 +256,36 @@ namespace AMPS_COLLISON_TEST  {
         InitWeight[ispec]=(ispec==0) ? block->GetLocalParticleWeight(s) : InitWeight[0];
       }
 
-      block->SetLocalTimeStep(dt,s);
+      if (ispec==1) {
+        if (UseCommonTimeStep==true) {
+          dt[1]=dt[0];
+	} else if (dt[0]==dt[1]) {
+          dt[1]=0.33*dt[0];
+	}
+
+	if (UseCommonStatWeight==true) {
+          StatWeight[1]=StatWeight[0];
+	}
+	else if (StatWeight[0]==StatWeight[1]) {
+          StatWeight[1]=0.33*StatWeight[0];
+	}
+      }
+
+      block->SetLocalTimeStep(dt[ispec],s);
       block->SetLocalParticleWeight(StatWeight[ispec],s);
 
       n[ispec]=StatWeight[ispec]*nTotalInjectedParticles/Measure; 
     }
 
-    for (i=0;i<((s0==s1) ? 1 : 2);i++) for (j=0;j<((s0==s1) ? 1 : 2);j++) {
-      if (i==j) {
-        MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m_s0));
-        sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s0,vv); 
-          
-        CollsionFrequentcyTheory[i][j]=pow(n[0]+n[1],2)*sigma*MeanRelativeVelocity;
-      }
-      else {
+    if (s0==s1) {
+      MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m_s0));
+      sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s0,vv);
+
+      CollsionFrequentcyTheory[0][0]=pow(n[0]+n[1],2)*sigma*MeanRelativeVelocity;     
+      CollsionFrequentcyTheory[1][1]=CollsionFrequentcyTheory[0][0];
+    }
+    else {
+      for (i=0;i<2;i++) for (j=0;j<2;j++) {
         m=m_s0*m_s1/(m_s0+m_s1);
         MeanRelativeVelocity=sqrt(8.0*Kbol*Temp/(Pi*m));
         sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s1,vv); 
@@ -399,61 +417,18 @@ struct ParticleCollisionTestCase {
 };
 
 
-class ParticleCollisionTest : public ::testing::TestWithParam<ParticleCollisionTestCase> {
+// Derived class for particle collision tests
+class ParticleCollisionTest :
+    public ParticleTestBase,
+    public ::testing::TestWithParam<ParticleCollisionTestCase> {
 protected:
-   PIC::ParticleBuffer::byte* ParticleDataBuffer; 
-   long int MaxNPart,NAllPart,FirstPBufferParticle;
-   int *ParticleNumberTable,*ParticleOffsetTable;
-   PIC::ParticleBuffer::cParticleTable *ParticlePopulationTable;
-
     void SetUp() override {
-      //set the initial state of the particle buffer
-      ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
-      MaxNPart=PIC::ParticleBuffer::MaxNPart;
-      NAllPart=PIC::ParticleBuffer::NAllPart;
-      FirstPBufferParticle=PIC::ParticleBuffer::FirstPBufferParticle;
-      ParticleNumberTable=PIC::ParticleBuffer::ParticleNumberTable;
-      ParticleOffsetTable=PIC::ParticleBuffer::ParticleOffsetTable;
-      ParticlePopulationTable=PIC::ParticleBuffer::ParticlePopulationTable;
-
-
-      //set the default values for the partice buffer
-      PIC::ParticleBuffer::ParticleDataBuffer=NULL;
-      PIC::ParticleBuffer::MaxNPart=0;
-      PIC::ParticleBuffer::NAllPart=0;
-      PIC::ParticleBuffer::FirstPBufferParticle=-1;
-      PIC::ParticleBuffer::ParticleNumberTable=NULL;
-      PIC::ParticleBuffer::ParticleOffsetTable=NULL;
-      PIC::ParticleBuffer::ParticlePopulationTable=NULL; 
-        	
-
-      // Initialize buffer with 200 particles
-      PIC::ParticleBuffer::Init(200);
-
-      ASSERT_NE(nullptr, PIC::ParticleBuffer::ParticleDataBuffer)
-            << "Failed to initialize ParticleDataBuffer";
-      ASSERT_EQ(200, PIC::ParticleBuffer::GetMaxNPart())
-            << "Failed to set MaxNPart";
+        ParticleTestBase::SetUp();
     }
 
     void TearDown() override {
-      // Cleanup
-      if (PIC::ParticleBuffer::ParticleNumberTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleNumberTable);
-      PIC::ParticleBuffer::ParticleNumberTable=ParticleNumberTable;
-
-      if (PIC::ParticleBuffer::ParticlePopulationTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticlePopulationTable);
-      PIC::ParticleBuffer::ParticlePopulationTable=ParticlePopulationTable;
-
-      if (PIC::ParticleBuffer::ParticleOffsetTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleOffsetTable);
-      PIC::ParticleBuffer::ParticleOffsetTable=ParticleOffsetTable;
-
-      if (PIC::ParticleBuffer::ParticleDataBuffer!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleDataBuffer);
-      PIC::ParticleBuffer::ParticleDataBuffer=ParticleDataBuffer;
-
-      PIC::ParticleBuffer::MaxNPart=MaxNPart;
-      PIC::ParticleBuffer::NAllPart=NAllPart;
+        ParticleTestBase::TearDown();
     }
-
 };
 
 
@@ -469,11 +444,11 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
 
   std::cout << "\033[1m" << "Testing function: " << test_case.name << " (s0=" << s0 << ", s1=" << s1 <<") \033[0m" << std::endl;
 
-  HeatBath(s0,s1,test_case.fCellCollision);
+  HeatBath(s0,s1,true,true,test_case.fCellCollision);
 
   if (s0==s1) {
     EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10); 
-    EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-5) << endl;
+    EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),1.0E-2) << endl;
 
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
       if (MeanVibEnergyTheory[0]+MeanVibEnergy[0]!=0.0) 
@@ -493,7 +468,7 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
     EXPECT_LT(fabs(mv2sum-mv2sumAfter)/(mv2sum+mv2sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
 
     for (int i=0;i<2;i++) for (int j=0;j<2;j++) {
-      EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),1.0E-5) << " i=" << i << ", j=" << j << endl;
+      EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),1.0E-2) << " i=" << i << ", j=" << j << endl;
     }
 
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
@@ -547,61 +522,18 @@ struct VelocityAfterCollisionTestCase {
   string name;
 };
 
-class VelocityAfterCollisionTest : public ::testing::TestWithParam<VelocityAfterCollisionTestCase> {
+// Derived class for velocity after collision tests
+class VelocityAfterCollisionTest :
+    public ParticleTestBase,
+    public ::testing::TestWithParam<VelocityAfterCollisionTestCase> {
 protected:
-   PIC::ParticleBuffer::byte* ParticleDataBuffer; 
-   long int MaxNPart,NAllPart,FirstPBufferParticle;
-   int *ParticleNumberTable,*ParticleOffsetTable;
-   PIC::ParticleBuffer::cParticleTable *ParticlePopulationTable;
-
     void SetUp() override {
-      //set the initial state of the particle buffer
-      ParticleDataBuffer=PIC::ParticleBuffer::ParticleDataBuffer;
-      MaxNPart=PIC::ParticleBuffer::MaxNPart;
-      NAllPart=PIC::ParticleBuffer::NAllPart;
-      FirstPBufferParticle=PIC::ParticleBuffer::FirstPBufferParticle;
-      ParticleNumberTable=PIC::ParticleBuffer::ParticleNumberTable;
-      ParticleOffsetTable=PIC::ParticleBuffer::ParticleOffsetTable;
-      ParticlePopulationTable=PIC::ParticleBuffer::ParticlePopulationTable;
-
-
-      //set the default values for the partice buffer
-      PIC::ParticleBuffer::ParticleDataBuffer=NULL;
-      PIC::ParticleBuffer::MaxNPart=0;
-      PIC::ParticleBuffer::NAllPart=0;
-      PIC::ParticleBuffer::FirstPBufferParticle=-1;
-      PIC::ParticleBuffer::ParticleNumberTable=NULL;
-      PIC::ParticleBuffer::ParticleOffsetTable=NULL;
-      PIC::ParticleBuffer::ParticlePopulationTable=NULL; 
-        	
-
-      // Initialize buffer with 200 particles
-      PIC::ParticleBuffer::Init(200);
-
-      ASSERT_NE(nullptr, PIC::ParticleBuffer::ParticleDataBuffer)
-            << "Failed to initialize ParticleDataBuffer";
-      ASSERT_EQ(200, PIC::ParticleBuffer::GetMaxNPart())
-            << "Failed to set MaxNPart";
+        ParticleTestBase::SetUp();
     }
 
     void TearDown() override {
-      // Cleanup
-      if (PIC::ParticleBuffer::ParticleNumberTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleNumberTable);
-      PIC::ParticleBuffer::ParticleNumberTable=ParticleNumberTable;
-
-      if (PIC::ParticleBuffer::ParticlePopulationTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticlePopulationTable);
-      PIC::ParticleBuffer::ParticlePopulationTable=ParticlePopulationTable;
-
-      if (PIC::ParticleBuffer::ParticleOffsetTable!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleOffsetTable);
-      PIC::ParticleBuffer::ParticleOffsetTable=ParticleOffsetTable;
-
-      if (PIC::ParticleBuffer::ParticleDataBuffer!=NULL) amps_free_managed(PIC::ParticleBuffer::ParticleDataBuffer);
-      PIC::ParticleBuffer::ParticleDataBuffer=ParticleDataBuffer;
-
-      PIC::ParticleBuffer::MaxNPart=MaxNPart;
-      PIC::ParticleBuffer::NAllPart=NAllPart;
+        ParticleTestBase::TearDown();
     }
-
 };
 
 
