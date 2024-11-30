@@ -673,7 +673,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
         //set the initial value of the counter
         TimeCounter=0.0;
-        TimeCounter=rnd()*log(rnd())/MajorantFrequency;
 
         while ((TimeCounter+=-log(rnd())/MajorantFrequency)<maxLocalTimeStep) {
           s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
