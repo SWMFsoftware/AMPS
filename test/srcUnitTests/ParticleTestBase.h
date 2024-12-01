@@ -3,6 +3,7 @@
 #ifndef _PARTICLE_TEST_BASE_CLASS_
 #define _PARTICLE_TEST_BASE_CLASS_
 
+template<size_t BufferSize = 200>
 class ParticleTestBase {
 protected:
     PIC::ParticleBuffer::byte* ParticleDataBuffer; 
@@ -30,12 +31,12 @@ protected:
         PIC::ParticleBuffer::ParticlePopulationTable = NULL;
 
         // Initialize buffer
-        PIC::ParticleBuffer::Init(200);
+        PIC::ParticleBuffer::Init(BufferSize);
 
         // Verify initialization
         ASSERT_NE(nullptr, PIC::ParticleBuffer::ParticleDataBuffer)
             << "Failed to initialize ParticleDataBuffer";
-        ASSERT_EQ(200, PIC::ParticleBuffer::GetMaxNPart())
+        ASSERT_EQ(BufferSize, PIC::ParticleBuffer::GetMaxNPart())
             << "Failed to set MaxNPart";
     }
 

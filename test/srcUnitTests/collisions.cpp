@@ -419,15 +419,15 @@ struct ParticleCollisionTestCase {
 
 // Derived class for particle collision tests
 class ParticleCollisionTest :
-    public ParticleTestBase,
+    public ParticleTestBase<>,
     public ::testing::TestWithParam<ParticleCollisionTestCase> {
 protected:
     void SetUp() override {
-        ParticleTestBase::SetUp();
+        ParticleTestBase<>::SetUp();
     }
 
     void TearDown() override {
-        ParticleTestBase::TearDown();
+        ParticleTestBase<>::TearDown();
     }
 };
 
@@ -524,15 +524,15 @@ struct VelocityAfterCollisionTestCase {
 
 // Derived class for velocity after collision tests
 class VelocityAfterCollisionTest :
-    public ParticleTestBase,
+    public ParticleTestBase<>,
     public ::testing::TestWithParam<VelocityAfterCollisionTestCase> {
 protected:
     void SetUp() override {
-        ParticleTestBase::SetUp();
+        ParticleTestBase<>::SetUp();
     }
 
     void TearDown() override {
-        ParticleTestBase::TearDown();
+        ParticleTestBase<>::TearDown();
     }
 };
 
