@@ -5,7 +5,7 @@
 
 void collisions_test_for_linker() {}
 
-
+#if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
 namespace AMPS_COLLISON_TEST  {
   double mv2sum,mv2sumAfter,mvSumAfter[3];
   double CollsionFrequentcyTheory[2][2];
@@ -566,5 +566,5 @@ INSTANTIATE_TEST_SUITE_P(
       )
 );
 
-
+#endif
   

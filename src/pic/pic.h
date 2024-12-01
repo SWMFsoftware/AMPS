@@ -1495,6 +1495,8 @@ void DeleteAttachedParticles();
       particle_num_limit_min=particle_num_limit_min_in,particle_num_limit_max=particle_num_limit_max_in;
       apply_non_uniform_x_shift=non_uniform_x_shift;
     }
+    
+    void MergeParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber);
 
 
     namespace Split {
