@@ -2021,6 +2021,7 @@ namespace PB = PIC::ParticleBuffer;
                 ParticleInfo* p2 = *it2;
                 ParticleInfo* p3 = *it3;
 
+                particlePtrs.erase(it1,std::next(it3));
 
                 // Compute total weight and set new weights
                 double W_total = p1->weight + p2->weight + p3->weight;
@@ -2066,7 +2067,6 @@ namespace PB = PIC::ParticleBuffer;
 
                 // Remove the original third particle from PB
                 PB::DeleteParticle(p3->index,FirstParticle);
-                particlePtrs.erase(it3, std::next(it3));
 		p3->active=false;
 
                 // Update weight ang velocity in the first two particles 
@@ -2085,6 +2085,19 @@ namespace PB = PIC::ParticleBuffer;
 
                 p2->weight = W_new;
                 p2->v[0] = vB[0]; p2->v[1] = vB[1]; p2->v[2] = vB[2];
+
+		//Place p1 anps p2 in the appropriate locations in particlePtrs 
+		auto pos = std::find_if(particlePtrs.begin(), particlePtrs.end(),
+                  [&p1](ParticleInfo* elem) { return elem->weight > p1->weight; });
+
+                if (pos !=particlePtrs.end()) {
+                  particlePtrs.emplace(pos,std::move(p1));
+		  particlePtrs.emplace(pos,std::move(p2));
+                }
+                else {
+                  particlePtrs.emplace_back(std::move(p1));
+		  particlePtrs.emplace_back(std::move(p2));
+                }
 
                 // Update bin size
                 binNode.binSize--;
