@@ -2595,7 +2595,10 @@ void DeleteAttachedParticles();
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void GetV(double* v,long int ptr) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
+      v[0]=GetVParallel(ptr);
+      v[1]=GetVParallel(ptr);
+      v[2]=0.0;
+      return;
       #endif
 
       memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
@@ -2609,7 +2612,10 @@ void DeleteAttachedParticles();
     _TARGET_HOST_ _TARGET_DEVICE_ 
     inline void GetV(double* v,byte *ParticleDataStart) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
+      v[0]=GetVParallel(ParticleDataStart);
+      v[1]=GetVParallel(ParticleDataStart);
+      v[2]=0.0;
+      return;
       #endif
 
       memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
@@ -2636,7 +2642,9 @@ void DeleteAttachedParticles();
 
 
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
+      SetVParallel(v[0],ptr);
+      SetVParallel(v[1],ptr);
+      return;
       #endif
 
 #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
@@ -2659,7 +2667,9 @@ void DeleteAttachedParticles();
       }*/
 
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
-      exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
+      SetVParallel(v[0],ParticleDataStart);
+      SetVParallel(v[1],ParticleDataStart);
+      return;
       #endif
 
 

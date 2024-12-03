@@ -16,6 +16,11 @@ namespace AMPS_SPLIT_MERGE_TEST {
     for (int i=0;i<nInjectedParticles;i++) {
       PIC::Distribution::MaxwellianVelocityDistribution(v,vbulk,Temp,s); 
 
+      if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+        v[1]=sqrt(v[1]*v[1]+v[2]*v[2]);
+	v[2]=0.0;
+      }
+
       p=PB::GetNewParticle(FirstParticles);
       PB::SetI(s,p);
       PB::SetV(v,p);
@@ -42,6 +47,11 @@ namespace AMPS_SPLIT_MERGE_TEST {
     for (int i=0;i<nInjectedParticles;i++) {
       for (int idim=0;idim<3;idim++) v[idim]=(-2.0+rnd()*4.0)*thermal_speed;
       w=exp(-beta*Vector3D::DotProduct(v,v));         
+
+      if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+        v[1]=sqrt(v[1]*v[1]+v[2]*v[2]);
+        v[2]=0.0;
+      }
 
       p=PB::GetNewParticle(FirstParticles);
       PB::SetI(s,p);
@@ -217,7 +227,7 @@ TEST_P(ParticleMergeTest, MyHandlesInputs) {
   }
 }
 
-
+#if _PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_
 INSTANTIATE_TEST_SUITE_P(
     ParticleMergeTest,             // Test suite name
     ParticleMergeTest,             // Test fixture name
@@ -228,6 +238,18 @@ INSTANTIATE_TEST_SUITE_P(
       ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"}
       )
     );
+#else 
+INSTANTIATE_TEST_SUITE_P(
+    ParticleMergeTest,             // Test suite name
+    ParticleMergeTest,             // Test fixture name
+    ::testing::Values(                 // Test cases
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"},
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"}
+      )
+    );
+#endif
 #endif
 
 
