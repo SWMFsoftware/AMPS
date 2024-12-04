@@ -97,39 +97,103 @@ TEST_F(ParticleBufferTest, ParticleDataAccessTest) {
     double pos[3] = {1.0, 2.0, 3.0};
     double vel[3] = {4.0, 5.0, 6.0};
 
-    // Set position and velocity
-    PIC::ParticleBuffer::SetX(pos, ptr);
-    PIC::ParticleBuffer::SetV(vel, ptr);
-
     // Verify data
-    double* readPos = PIC::ParticleBuffer::GetX(ptr);
-    double* readVel = PIC::ParticleBuffer::GetV(ptr);
+    if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) {
+      double* readPos = PIC::ParticleBuffer::GetX(ptr);
+      double* readVel = PIC::ParticleBuffer::GetV(ptr);
 
-    for(int i = 0; i < 3; i++) {
-        EXPECT_DOUBLE_EQ(pos[i], readPos[i]);
-        EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      // Set position and velocity
+      PIC::ParticleBuffer::SetX(pos, ptr);
+      PIC::ParticleBuffer::SetV(vel, ptr);
+
+
+      for(int i = 0; i < 3; i++) {
+          EXPECT_DOUBLE_EQ(pos[i], readPos[i]);
+          EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      }
+      
     }
+    else {
+      double readPos[3],readVel[3];
+      double S=4.5,readS,v_parallel,v_normal;
+
+      // Set position and velocity
+      PIC::ParticleBuffer::SetFieldLineCoord(S,ptr); 
+      PIC::ParticleBuffer::SetV(vel, ptr);
+
+
+      readS=PIC::ParticleBuffer::GetFieldLineCoord(ptr);
+      PIC::ParticleBuffer::GetV(readVel,ptr);
+
+      for(int i = 0; i < 2; i++) {
+        EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      }
+
+      EXPECT_DOUBLE_EQ(S,readS);
+
+      
+      v_parallel=PIC::ParticleBuffer::GetVParallel(ptr);
+      EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
+
+      
+      v_normal=PIC::ParticleBuffer::GetVNormal(ptr);
+      EXPECT_DOUBLE_EQ(v_normal, readVel[1]); 
+
+      EXPECT_DOUBLE_EQ(readVel[2],0.0);
+    }
+    
 }
+
 
 TEST_F(ParticleBufferTest, ParticleCloneTest) {
     long int srcPtr = PIC::ParticleBuffer::GetNewParticle(true);
     double pos[3] = {1.0, 2.0, 3.0};
-    double vel[3] = {4.0, 5.0, 6.0};
+    double S=4.5,vel[3] = {4.0, 5.0, 6.0};
+ 
+    if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) {
+      PIC::ParticleBuffer::SetX(pos, srcPtr);
+    }
+    else {
+      PIC::ParticleBuffer::SetFieldLineCoord(S,srcPtr);
+    }
 
-    PIC::ParticleBuffer::SetX(pos, srcPtr);
     PIC::ParticleBuffer::SetV(vel, srcPtr);
 
     long int destPtr = PIC::ParticleBuffer::GetNewParticle(true);
     PIC::ParticleBuffer::CloneParticle(destPtr, srcPtr);
 
-    double* readPos = PIC::ParticleBuffer::GetX(destPtr);
-    double* readVel = PIC::ParticleBuffer::GetV(destPtr);
+    if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) {
+      double* readPos = PIC::ParticleBuffer::GetX(destPtr);
+      double* readVel = PIC::ParticleBuffer::GetV(destPtr);
 
-
-    for(int i = 0; i < 3; i++) {
+      for(int i = 0; i < 3; i++) {
         EXPECT_DOUBLE_EQ(pos[i], readPos[i]);
 	EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      }
     }
+    else {
+      double readVel[3],readS,v_parallel,v_normal;
+
+      readS=PIC::ParticleBuffer::GetFieldLineCoord(destPtr);
+      PIC::ParticleBuffer::GetV(readVel,destPtr);
+
+      for(int i = 0; i < 2; i++) {
+        EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      }
+
+      EXPECT_DOUBLE_EQ(S,readS);
+
+
+      v_parallel=PIC::ParticleBuffer::GetVParallel(destPtr);
+      EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
+
+
+      v_normal=PIC::ParticleBuffer::GetVNormal(destPtr);
+      EXPECT_DOUBLE_EQ(v_normal, readVel[1]);
+
+      EXPECT_DOUBLE_EQ(readVel[2],0.0);
+    }
+
 }
 
 
@@ -201,18 +265,49 @@ TEST(ParticleBuffer, RequestDataStorageBeforeInit) {
     double a=3.1415;
 
     // Set position and velocity
-    PIC::ParticleBuffer::SetX(pos, ptr);
-    PIC::ParticleBuffer::SetV(vel, ptr);
-    *((double*)(ParticleData+offset))=a;
+    if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) { 
+      PIC::ParticleBuffer::SetX(pos, ptr);
+      PIC::ParticleBuffer::SetV(vel, ptr);
+      *((double*)(ParticleData+offset))=a;
+    }
+    else {
+     PIC::ParticleBuffer::SetFieldLineCoord(pos[0],ptr);
+     PIC::ParticleBuffer::SetV(vel, ptr);
+     *((double*)(ParticleData+offset))=a;
+    }
+
 
 
     // Verify data
-    double* readPos = PIC::ParticleBuffer::GetX(ptr);
-    double* readVel = PIC::ParticleBuffer::GetV(ptr);
+    if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) { 
+      double* readPos = PIC::ParticleBuffer::GetX(ptr);
+      double* readVel = PIC::ParticleBuffer::GetV(ptr);
 
-    for(int i = 0; i < 3; i++) {
+      for(int i = 0; i < 3; i++) {
         EXPECT_DOUBLE_EQ(pos[i], readPos[i]);
         EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+      }
+    }
+    else {
+       double readVel[3],readS,v_parallel,v_normal;
+
+       readS=PIC::ParticleBuffer::GetFieldLineCoord(ptr);
+       PIC::ParticleBuffer::GetV(readVel,ptr);
+
+       for(int i = 0; i < 2; i++) {
+         EXPECT_DOUBLE_EQ(vel[i], readVel[i]);
+       }
+
+       EXPECT_DOUBLE_EQ(pos[0],readS);
+
+       v_parallel=PIC::ParticleBuffer::GetVParallel(ptr);
+       EXPECT_DOUBLE_EQ(v_parallel, readVel[0]);
+
+
+       v_normal=PIC::ParticleBuffer::GetVNormal(ptr);
+       EXPECT_DOUBLE_EQ(v_normal, readVel[1]);
+
+       EXPECT_DOUBLE_EQ(readVel[2],0.0);
     }
 
     EXPECT_DOUBLE_EQ(*((double*)(ParticleData+offset)),a);

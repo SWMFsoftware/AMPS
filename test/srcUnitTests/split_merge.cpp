@@ -69,7 +69,7 @@ namespace AMPS_SPLIT_MERGE_TEST {
   void GetMomentumAndEnergy(int s,double* Momentum,double& Energy,long int FirstParticle) {
     namespace MD=PIC::MolecularData;
     namespace PB=PIC::ParticleBuffer;
-    double m,*v,w;
+    double m,v[3],w;
     int i;
 
     m=MD::GetMass(s);
@@ -79,11 +79,11 @@ namespace AMPS_SPLIT_MERGE_TEST {
       
     while (FirstParticle!=-1) {
       if (PB::GetI(FirstParticle)==s) {
-        v=PB::GetV(FirstParticle);
+        PB::GetV(v,FirstParticle);
 	w=PB::GetIndividualStatWeightCorrection(FirstParticle);
 
         Energy+=0.5*m*w*Vector3D::DotProduct(v,v);
-	for (i=0;i<3;i++) Momentum[i]+=m*w*v[i];
+        for (i=0;i<3;i++) Momentum[i]+=m*w*v[i];
       }
 
       FirstParticle=PB::GetNext(FirstParticle);

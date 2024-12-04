@@ -2596,7 +2596,7 @@ void DeleteAttachedParticles();
     inline void GetV(double* v,long int ptr) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       v[0]=GetVParallel(ptr);
-      v[1]=GetVParallel(ptr);
+      v[1]=GetVNormal(ptr);
       v[2]=0.0;
       return;
       #endif
@@ -2613,7 +2613,7 @@ void DeleteAttachedParticles();
     inline void GetV(double* v,byte *ParticleDataStart) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       v[0]=GetVParallel(ParticleDataStart);
-      v[1]=GetVParallel(ParticleDataStart);
+      v[1]=GetVNormal(ParticleDataStart);
       v[2]=0.0;
       return;
       #endif
@@ -2643,7 +2643,7 @@ void DeleteAttachedParticles();
 
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       SetVParallel(v[0],ptr);
-      SetVParallel(v[1],ptr);
+      SetVNormal(v[1],ptr);
       return;
       #endif
 
@@ -2668,7 +2668,7 @@ void DeleteAttachedParticles();
 
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       SetVParallel(v[0],ParticleDataStart);
-      SetVParallel(v[1],ParticleDataStart);
+      SetVNormal(v[1],ParticleDataStart);
       return;
       #endif
 

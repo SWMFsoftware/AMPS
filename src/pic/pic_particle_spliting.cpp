@@ -2054,9 +2054,17 @@ namespace PB = PIC::ParticleBuffer;
 
                 double sin_theta = sin(theta);
                 double delta_v[3];
-                delta_v[0] = delta_v_magnitude * sin_theta * cos(phi);
-                delta_v[1] = delta_v_magnitude * sin_theta * sin(phi);
-                delta_v[2] = delta_v_magnitude * cos(theta);
+
+		if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) { 
+                  delta_v[0] = delta_v_magnitude * sin_theta * cos(phi);
+                  delta_v[1] = delta_v_magnitude * sin_theta * sin(phi);
+                  delta_v[2] = delta_v_magnitude * cos(theta);
+		}
+		else {
+                  delta_v[0] = delta_v_magnitude * cos(phi);
+                  delta_v[1] = delta_v_magnitude * sin(phi);
+                  delta_v[2] = 0.0;
+		} 
 
                 // Compute new velocities
                 double vA[3], vB[3];
