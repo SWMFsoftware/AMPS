@@ -1497,6 +1497,7 @@ void DeleteAttachedParticles();
     }
     
     void MergeParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber);
+    void SplitParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber);
 
 
     namespace Split {

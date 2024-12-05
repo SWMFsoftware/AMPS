@@ -250,6 +250,143 @@ INSTANTIATE_TEST_SUITE_P(
       )
     );
 #endif
+
+
+//========================================================================
+// Particle Split tests
+//Test particle merging  
+TEST_P(ParticleSplitTest, MyHandlesInputs) {
+  namespace PB=PIC::ParticleBuffer;
+  using namespace AMPS_SPLIT_MERGE_TEST;
+
+  long int FirstParticle=-1;
+  ParticleMergeTestCase test_case=GetParam();
+  double p_init,p;
+  int s0,s1;
+
+  s0=test_case.s0;
+  s1=test_case.s1;
+
+  std::cout << "\033[1m" << "Testing function: " << test_case.name << " (s0=" << s0 << ", s1=" << s1 <<") \033[0m" << std::endl;
+
+  auto GetParticleNumber =  [&] (int s) {
+    long int ptr=FirstParticle; 
+    int res=0;
+
+    while (ptr!=-1) {
+      if (PB::GetI(ptr)==s) res++;   
+      ptr=PB::GetNext(ptr);
+    }
+
+    return res;
+  }; 
+
+  //init particles 
+  double Temp=400.0; 
+  test_case.fGenerateParticlePopulation(s0,Temp,test_case.nInjectParticles,FirstParticle);
+  test_case.fGenerateParticlePopulation(s1,Temp,test_case.nInjectParticles,FirstParticle);
+
+  //get initial momentum and energy   
+  double Energy_s0,Energy_s1,Momentum_s0[3],Momentum_s1[3];
+  double Energy_init_s0,Energy_init_s1,Momentum_init_s0[3],Momentum_init_s1[3];
+  int npart,npart_init_s0,npart_init_s1,n_requested_particles;
+
+  //reduce the number of particles (s0) 
+  if (s0==s1) { 
+    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    npart_init_s0=GetParticleNumber(s0);
+    n_requested_particles=3*test_case.nInjectParticles;
+    PIC::ParticleSplitting::SplitParticleList(s0,FirstParticle,n_requested_particles);
+
+    npart=GetParticleNumber(s0); 
+    EXPECT_NE(npart,npart_init_s0);
+    EXPECT_EQ(npart,n_requested_particles);
+
+    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
+    p_init=Vector3D::Length(Momentum_init_s0);
+    p=Vector3D::Length(Momentum_s0);
+    EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
+    EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+  }
+  else {
+    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,Momentum_init_s1,Energy_init_s1,FirstParticle);
+
+     //reduce the number of particles (s0)
+    npart_init_s0=GetParticleNumber(s0);
+    npart_init_s1=GetParticleNumber(s1);
+    n_requested_particles=0.3*test_case.nInjectParticles;
+    PIC::ParticleSplitting::SplitParticleList(s0,FirstParticle,n_requested_particles);
+
+    npart=GetParticleNumber(s0);
+    EXPECT_EQ(npart,n_requested_particles); 
+
+    npart=GetParticleNumber(s1);
+    EXPECT_EQ(npart_init_s1,npart);
+
+    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+
+    p_init=Vector3D::Length(Momentum_init_s0);
+    p=Vector3D::Length(Momentum_s0);
+    EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
+    EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+
+    p_init=Vector3D::Length(Momentum_init_s1);
+    p=Vector3D::Length(Momentum_s1);
+    EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
+    EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+
+    //reduce the number of particles (s1)
+    npart_init_s0=GetParticleNumber(s0);
+    npart_init_s1=GetParticleNumber(s1);
+    n_requested_particles=0.3*test_case.nInjectParticles;
+    PIC::ParticleSplitting::MergeParticleList(s1,FirstParticle,n_requested_particles);
+
+    npart=GetParticleNumber(s0);
+    EXPECT_EQ(npart_init_s0,npart);
+
+    npart=GetParticleNumber(s1);
+    EXPECT_EQ(npart,n_requested_particles);
+
+    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+
+    p_init=Vector3D::Length(Momentum_init_s0);
+    p=Vector3D::Length(Momentum_s0);
+    EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
+    EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+
+    p_init=Vector3D::Length(Momentum_init_s1);
+    p=Vector3D::Length(Momentum_s1);
+    EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
+    EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+  }
+}
+
+#if _PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_
+INSTANTIATE_TEST_SUITE_P(
+    ParticleMergeTest,             // Test suite name
+    ParticleMergeTest,             // Test fixture name
+    ::testing::Values(                 // Test cases
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},   	      
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"},
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"}
+      )
+    );
+#else 
+INSTANTIATE_TEST_SUITE_P(
+    ParticleSplitTest,             // Test suite name
+    ParticleSplitTest,             // Test fixture name
+    ::testing::Values(                 // Test cases
+      ParticleMergeTestCase{0,0,20,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
+      ParticleMergeTestCase{0,1,20,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
+      ParticleMergeTestCase{0,0,20,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"},
+      ParticleMergeTestCase{0,1,20,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"}
+      )
+    );
+#endif
 #endif
 
 
