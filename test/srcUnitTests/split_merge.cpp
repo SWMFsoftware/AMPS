@@ -102,10 +102,24 @@ struct ParticleMergeTestCase {
 
 
 
+
 // Derived class for particle merge tests
 class ParticleMergeTest :
     public ParticleTestBase<10000>,
     public ::testing::TestWithParam<ParticleMergeTestCase> { 
+protected:
+    void SetUp() override {
+        ParticleTestBase<10000>::SetUp();
+    }
+
+    void TearDown() override {
+        ParticleTestBase<10000>::TearDown();
+    }
+};
+
+class ParticleSplitTest :
+    public ParticleTestBase<10000>,
+    public ::testing::TestWithParam<ParticleMergeTestCase> {
 protected:
     void SetUp() override {
         ParticleTestBase<10000>::SetUp();
@@ -249,6 +263,19 @@ INSTANTIATE_TEST_SUITE_P(
       ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"}
       )
     );
+
+INSTANTIATE_TEST_SUITE_P(
+    ParticleMergeTest,             // Test suite name
+    ParticleMergeTest,             // Test fixture name
+    ::testing::Values(                 // Test cases
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
+      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"},
+      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"}
+      )
+    );
+
+
 #endif
 
 
@@ -364,18 +391,6 @@ TEST_P(ParticleSplitTest, MyHandlesInputs) {
   }
 }
 
-#if _PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_
-INSTANTIATE_TEST_SUITE_P(
-    ParticleMergeTest,             // Test suite name
-    ParticleMergeTest,             // Test fixture name
-    ::testing::Values(                 // Test cases
-      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},   	      
-      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
-      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"},
-      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"}
-      )
-    );
-#else 
 INSTANTIATE_TEST_SUITE_P(
     ParticleSplitTest,             // Test suite name
     ParticleSplitTest,             // Test fixture name
@@ -386,7 +401,6 @@ INSTANTIATE_TEST_SUITE_P(
       ParticleMergeTestCase{0,1,20,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"}
       )
     );
-#endif
 #endif
 
 
