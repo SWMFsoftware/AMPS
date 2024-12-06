@@ -354,6 +354,18 @@ namespace Vector3D {
     return sqrt(res);
   } 
 
+  inline void Add(double *res,double *a,double *b) {
+    for (int idim=0;idim<3;idim++) res[idim]=a[idim]+b[idim];
+  }
+
+  inline void Substract(double *res,double *a,double *b) {
+    for (int idim=0;idim<3;idim++) res[idim]=a[idim]-b[idim];
+  }
+
+  inline void AddWeighted(double *res,double a,double *a_vec,double b,double *b_vec) {
+    for (int idim=0;idim<3;idim++) res[idim]=a*a_vec[idim]+b*b_vec[idim];
+  }
+
   inline bool IsInLimits(double *x,double *xmin,double *xmax) {
     for (int idim=0;idim<3;idim++) if ((x[idim]<xmin[idim])||(xmax[idim]<x[idim])) return false; 
   
