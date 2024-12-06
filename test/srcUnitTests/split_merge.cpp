@@ -18,7 +18,7 @@ namespace AMPS_SPLIT_MERGE_TEST {
 
       if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
         v[1]=sqrt(v[1]*v[1]+v[2]*v[2]);
-	v[2]=0.0;
+        v[2]=0.0;
       }
 
       p=PB::GetNewParticle(FirstParticles);
@@ -66,22 +66,23 @@ namespace AMPS_SPLIT_MERGE_TEST {
     }
   }
 
-  void GetMomentumAndEnergy(int s,double* Momentum,double& Energy,long int FirstParticle) {
+  void GetMomentumAndEnergy(int s,double& Weight,double* Momentum,double& Energy,long int FirstParticle) {
     namespace MD=PIC::MolecularData;
     namespace PB=PIC::ParticleBuffer;
     double m,v[3],w;
     int i;
 
     m=MD::GetMass(s);
-    Energy=0.0;
+    Energy=0.0,Weight=0.0;
 
     for (i=0;i<3;i++) Momentum[i]=0.0;
       
     while (FirstParticle!=-1) {
       if (PB::GetI(FirstParticle)==s) {
         PB::GetV(v,FirstParticle);
-	w=PB::GetIndividualStatWeightCorrection(FirstParticle);
+        w=PB::GetIndividualStatWeightCorrection(FirstParticle);
 
+        Weight+=w;
         Energy+=0.5*m*w*Vector3D::DotProduct(v,v);
         for (i=0;i<3;i++) Momentum[i]+=m*w*v[i];
       }
@@ -166,11 +167,12 @@ TEST_P(ParticleMergeTest, MyHandlesInputs) {
   //get initial momentum and energy   
   double Energy_s0,Energy_s1,Momentum_s0[3],Momentum_s1[3];
   double Energy_init_s0,Energy_init_s1,Momentum_init_s0[3],Momentum_init_s1[3];
+  double w_init_s0,w_init_s1,w_s0,w_s1;
   int npart,npart_init_s0,npart_init_s1,n_requested_particles;
 
   //reduce the number of particles (s0) 
   if (s0==s1) { 
-    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    GetMomentumAndEnergy(s0,w_init_s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
     npart_init_s0=GetParticleNumber(s0);
     n_requested_particles=0.3*test_case.nInjectParticles;
     PIC::ParticleSplitting::MergeParticleList(s0,FirstParticle,n_requested_particles);
@@ -179,15 +181,16 @@ TEST_P(ParticleMergeTest, MyHandlesInputs) {
     EXPECT_NE(npart,npart_init_s0);
     EXPECT_EQ(npart,n_requested_particles);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
   }
   else {
-    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_init_s1,Energy_init_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_init_s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_init_s1,Momentum_init_s1,Energy_init_s1,FirstParticle);
 
      //reduce the number of particles (s0)
     npart_init_s0=GetParticleNumber(s0);
@@ -201,18 +204,20 @@ TEST_P(ParticleMergeTest, MyHandlesInputs) {
     npart=GetParticleNumber(s1);
     EXPECT_EQ(npart_init_s1,npart);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_s1,Momentum_s1,Energy_s1,FirstParticle);
 
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
 
     p_init=Vector3D::Length(Momentum_init_s1);
     p=Vector3D::Length(Momentum_s1);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+    EXPECT_LT(fabs(w_init_s1-w_s1)/(w_init_s1+w_s1),1.0E-10);
 
     //reduce the number of particles (s1)
     npart_init_s0=GetParticleNumber(s0);
@@ -226,18 +231,20 @@ TEST_P(ParticleMergeTest, MyHandlesInputs) {
     npart=GetParticleNumber(s1);
     EXPECT_EQ(npart,n_requested_particles);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_s1,Momentum_s1,Energy_s1,FirstParticle);
 
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
 
     p_init=Vector3D::Length(Momentum_init_s1);
     p=Vector3D::Length(Momentum_s1);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+    EXPECT_LT(fabs(w_init_s1-w_s1)/(w_init_s1+w_s1),1.0E-10);
   }
 }
 
@@ -316,11 +323,12 @@ TEST_P(ParticleSplitTest, MyHandlesInputs) {
   //get initial momentum and energy   
   double Energy_s0,Energy_s1,Momentum_s0[3],Momentum_s1[3];
   double Energy_init_s0,Energy_init_s1,Momentum_init_s0[3],Momentum_init_s1[3];
+  double w_init_s0,w_s0,w_init_s1,w_s1;
   int npart,npart_init_s0,npart_init_s1,n_requested_particles;
 
-  //reduce the number of particles (s0) 
+  //increase the number of particles (s0) 
   if (s0==s1) { 
-    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    GetMomentumAndEnergy(s0,w_init_s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
     npart_init_s0=GetParticleNumber(s0);
     n_requested_particles=3*test_case.nInjectParticles;
     PIC::ParticleSplitting::SplitParticleList(s0,FirstParticle,n_requested_particles);
@@ -329,20 +337,21 @@ TEST_P(ParticleSplitTest, MyHandlesInputs) {
     EXPECT_NE(npart,npart_init_s0);
     EXPECT_EQ(npart,n_requested_particles);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
   }
   else {
-    GetMomentumAndEnergy(s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_init_s1,Energy_init_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_init_s0,Momentum_init_s0,Energy_init_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_init_s1,Momentum_init_s1,Energy_init_s1,FirstParticle);
 
-     //reduce the number of particles (s0)
+     //increase the number of particles (s0)
     npart_init_s0=GetParticleNumber(s0);
     npart_init_s1=GetParticleNumber(s1);
-    n_requested_particles=0.3*test_case.nInjectParticles;
+    n_requested_particles=3*test_case.nInjectParticles;
     PIC::ParticleSplitting::SplitParticleList(s0,FirstParticle,n_requested_particles);
 
     npart=GetParticleNumber(s0);
@@ -351,24 +360,26 @@ TEST_P(ParticleSplitTest, MyHandlesInputs) {
     npart=GetParticleNumber(s1);
     EXPECT_EQ(npart_init_s1,npart);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_s1,Momentum_s1,Energy_s1,FirstParticle);
 
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
 
     p_init=Vector3D::Length(Momentum_init_s1);
     p=Vector3D::Length(Momentum_s1);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+    EXPECT_LT(fabs(w_init_s1-w_s1)/(w_init_s1+w_s1),1.0E-10);
 
-    //reduce the number of particles (s1)
+    //increase the number of particles (s1)
     npart_init_s0=GetParticleNumber(s0);
     npart_init_s1=GetParticleNumber(s1);
-    n_requested_particles=0.3*test_case.nInjectParticles;
-    PIC::ParticleSplitting::MergeParticleList(s1,FirstParticle,n_requested_particles);
+    n_requested_particles=3*test_case.nInjectParticles;
+    PIC::ParticleSplitting::SplitParticleList(s1,FirstParticle,n_requested_particles);
 
     npart=GetParticleNumber(s0);
     EXPECT_EQ(npart_init_s0,npart);
@@ -376,18 +387,20 @@ TEST_P(ParticleSplitTest, MyHandlesInputs) {
     npart=GetParticleNumber(s1);
     EXPECT_EQ(npart,n_requested_particles);
 
-    GetMomentumAndEnergy(s0,Momentum_s0,Energy_s0,FirstParticle);
-    GetMomentumAndEnergy(s1,Momentum_s1,Energy_s1,FirstParticle);
+    GetMomentumAndEnergy(s0,w_s0,Momentum_s0,Energy_s0,FirstParticle);
+    GetMomentumAndEnergy(s1,w_s1,Momentum_s1,Energy_s1,FirstParticle);
 
     p_init=Vector3D::Length(Momentum_init_s0);
     p=Vector3D::Length(Momentum_s0);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s0-Energy_s0)/(Energy_init_s0+Energy_s0),1.0E-10);
+    EXPECT_LT(fabs(w_init_s0-w_s0)/(w_init_s0+w_s0),1.0E-10);
 
     p_init=Vector3D::Length(Momentum_init_s1);
     p=Vector3D::Length(Momentum_s1);
     EXPECT_LT(fabs(p_init-p)/(p_init+p),1.0E-10);
     EXPECT_LT(fabs(Energy_init_s1-Energy_s1)/(Energy_init_s1+Energy_s1),1.0E-10);
+    EXPECT_LT(fabs(w_init_s1-w_s1)/(w_init_s1+w_s1),1.0E-10);
   }
 }
 
