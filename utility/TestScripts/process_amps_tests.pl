@@ -244,7 +244,7 @@ $Table .= "</center>\n";
 
 open FILE, ">$indexfile" or die "$ERROR: could not open $indexfile\n";
 
-open TEMPLATEFILE, $templatefile;
+open TEMPLATEFILE, $templatefile or die "ERROR: cannot open $templatefile (copy to the current directory from  AMPS/utility/TestScripts/template.html)\n";
 while(<TEMPLATEFILE>){
     last  if /_TABLES_/;
     print FILE $_;
