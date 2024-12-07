@@ -1875,280 +1875,285 @@ PIC::ParticleBuffer::SetX(x0,pnew);*/
 void PIC::ParticleSplitting::MergeParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber) { 
 namespace PB = PIC::ParticleBuffer;
 
-    // Structure to hold particle information
-    struct ParticleInfo {
-        long int index;
-        double v[3];
-        double weight;
-	bool active;
-    };
+  // Structure to hold particle information
+  struct ParticleInfo {
+    long int index;
+    double v[3];
+    double weight;
+    bool active;
+  };
 
-    // Structure to represent a bin in the linked list
-    struct BinNode {
-        int binIndex;
-        int binSize;
-        std::list<ParticleInfo*>* particlePtrs;
-    };
+  // Structure to represent a bin in the linked list
+  struct BinNode {
+    int binIndex;
+    int binSize;
+    std::list<ParticleInfo*>* particlePtrs;
+  };
 
-    // Step 1: Collect all particles of the specified species in the cell
-    std::vector<ParticleInfo> particles;
-    long int particleIndex = FirstParticle;
+  // Step 1: Collect all particles of the specified species in the cell
+  std::vector<ParticleInfo> particles;
+  long int particleIndex = FirstParticle;
 
-    // Reserve memory for the particles vector now that we know the total number of particles
-    particles.reserve(2000);
+  // Reserve memory for the particles vector now that we know the total number of particles
+  particles.reserve(2000);
 
-    while (particleIndex != -1) {
-        if (PB::GetI(particleIndex) == spec) {
-            ParticleInfo p;
-            p.index = particleIndex;
-            PB::GetV(p.v, particleIndex);
-            p.weight = PB::GetIndividualStatWeightCorrection(particleIndex);
+  while (particleIndex != -1) {
+    if (PB::GetI(particleIndex) == spec) {
+      ParticleInfo p;
+      p.index = particleIndex;
+      PB::GetV(p.v, particleIndex);
+      p.weight = PB::GetIndividualStatWeightCorrection(particleIndex);
 	    p.active = true;
-            particles.emplace_back(std::move(p));
-        }
-        particleIndex = PB::GetNext(particleIndex);
+      particles.emplace_back(std::move(p));
     }
+    particleIndex = PB::GetNext(particleIndex);
+  }
 
-    // Early exit if no merging is needed
-    if (particles.size() <= nRequestedParticleNumber) {
-        return;
-    }
+  // Early exit if no merging is needed
+  if (particles.size() <= nRequestedParticleNumber) {
+    return;
+  }
 
-    int nTotalActiveParticles=particles.size();
+  int nTotalActiveParticles=particles.size();
 
-    // Step 2: Determine velocity range (calculate vMin and vMax once)
-    double vMin[3] = {particles[0].v[0], particles[0].v[1], particles[0].v[2]};
-    double vMax[3] = {particles[0].v[0], particles[0].v[1], particles[0].v[2]};
-    for (const auto &p : particles) {
-        for (int d = 0; d < 3; ++d) {
-            if (p.v[d] < vMin[d]) vMin[d] = p.v[d];
-            if (p.v[d] > vMax[d]) vMax[d] = p.v[d];
-        }
-    }
-
-    // Add safety margin to vMin and vMax
+  // Step 2: Determine velocity range (calculate vMin and vMax once)
+  double vMin[3] = {particles[0].v[0], particles[0].v[1], particles[0].v[2]};
+  double vMax[3] = {particles[0].v[0], particles[0].v[1], particles[0].v[2]};
+  
+  for (const auto &p : particles) {
     for (int d = 0; d < 3; ++d) {
-        double velocityRange = vMax[d] - vMin[d];
-        double safetyMargin = 0.01 * velocityRange; // 1% of the velocity range
-        vMin[d] -= safetyMargin;
-        vMax[d] += safetyMargin;
+      if (p.v[d] < vMin[d]) vMin[d] = p.v[d];
+      if (p.v[d] > vMax[d]) vMax[d] = p.v[d];
+    }
+  }
+
+  // Add safety margin to vMin and vMax
+  for (int d = 0; d < 3; ++d) {
+    double velocityRange = vMax[d] - vMin[d];
+    double safetyMargin = 0.01 * velocityRange; // 1% of the velocity range
+  
+    vMin[d] -= safetyMargin;
+    vMax[d] += safetyMargin;
+  }
+
+  // Define initial number of bins per dimension
+  int nBinsPerDimension = 10; // Starting value; adjust as needed
+  const int minBinsPerDimension = 1; // Minimum allowed value
+
+  while (nBinsPerDimension >= minBinsPerDimension && nTotalActiveParticles > nRequestedParticleNumber ) {
+    // Step 3: Define velocity bins using vMin and vMax with safety margin
+    double dv[3];
+   
+    for (int d = 0; d < 3; ++d) {
+      dv[d] = (vMax[d] - vMin[d]) / nBinsPerDimension;
+      if (dv[d] == 0.0) dv[d] = 1e-6; // Prevent division by zero
     }
 
-    // Define initial number of bins per dimension
-    int nBinsPerDimension = 10; // Starting value; adjust as needed
-    const int minBinsPerDimension = 1; // Minimum allowed value
+    // Compute total number of bins
+    int totalBins = nBinsPerDimension * nBinsPerDimension * nBinsPerDimension;
 
-    while (nBinsPerDimension >= minBinsPerDimension && nTotalActiveParticles > nRequestedParticleNumber ) {
-        // Step 3: Define velocity bins using vMin and vMax with safety margin
-        double dv[3];
-        for (int d = 0; d < 3; ++d) {
-            dv[d] = (vMax[d] - vMin[d]) / nBinsPerDimension;
-            if (dv[d] == 0.0) dv[d] = 1e-6; // Prevent division by zero
-        }
+    // Create bins: a vector of lists 
+    std::vector<std::list<ParticleInfo*>> bins(totalBins);
 
-        // Compute total number of bins
-        int totalBins = nBinsPerDimension * nBinsPerDimension * nBinsPerDimension;
+    // Step 4: Assign particles to bins using flat indices
+    for (auto &p : particles) if (p.active==true) {
+      int binIndex[3];
 
-        // Create bins: a vector of lists 
-        std::vector<std::list<ParticleInfo*>> bins(totalBins);
-
-        // Step 4: Assign particles to bins using flat indices
-        for (auto &p : particles) if (p.active==true) {
-            int binIndex[3];
-
-            for (int d = 0; d < 3; ++d) {
-                binIndex[d] = static_cast<int>((p.v[d] - vMin[d]) / dv[d]);
-                if (binIndex[d] >= nBinsPerDimension) binIndex[d] = nBinsPerDimension - 1;
-                if (binIndex[d] < 0) binIndex[d] = 0; // Clamp to 0
-            }
+      for (int d = 0; d < 3; ++d) {
+        binIndex[d] = static_cast<int>((p.v[d] - vMin[d]) / dv[d]);
+        if (binIndex[d] >= nBinsPerDimension) binIndex[d] = nBinsPerDimension - 1;
+        if (binIndex[d] < 0) binIndex[d] = 0; // Clamp to 0
+      }
 	    
-            int flatIndex = binIndex[0]
-                          + nBinsPerDimension * (binIndex[1]
-                          + nBinsPerDimension * binIndex[2]);
+      int flatIndex = binIndex[0]
+                    + nBinsPerDimension * (binIndex[1]
+                    + nBinsPerDimension * binIndex[2]);
 
-            bins[flatIndex].push_back(&p);
-        }
+      bins[flatIndex].push_back(&p);
+    }
 
-        // Step 5: Sort particles within each bin by ascending weight
-        for (auto &bin : bins) {
-            if (bin.size() >= 3) {
-                bin.sort([](const ParticleInfo* a, const ParticleInfo* b) {
-                    return a->weight < b->weight;
-                });
-            }
-        }
-
-        // Step 6: Create a sorted linked list of bins sorted by bin size descending
-        std::list<BinNode> binList;
-
-        for (int i = 0; i < totalBins; ++i) {
-            int binSize = bins[i].size();
-
-            if (binSize >= 3) {
-                BinNode node = {i, binSize, &bins[i]};
-                binList.emplace_back(std::move(node));
-            }
-        }
-
-        // Sort the binList in descending order of binSize
-        binList.sort([](const BinNode& a, const BinNode& b) {
-            return a.binSize > b.binSize;
+    // Step 5: Sort particles within each bin by ascending weight
+    for (auto &bin : bins) {
+      if (bin.size() >= 3) {
+        bin.sort([](const ParticleInfo* a, const ParticleInfo* b) {
+          return a->weight < b->weight;
         });
+      }
+    }
 
-        // Step 7: Merge particles in bins while conserving weight, momentum, and energy
-        auto currentBinIt = binList.begin();
-        int nextBinSize=-1; 
+    // Step 6: Create a sorted linked list of bins sorted by bin size descending
+    std::list<BinNode> binList;
 
-	if (std::next(currentBinIt)!=binList.end()) nextBinSize=std::next(currentBinIt)->binSize;
+    for (int i = 0; i < totalBins; ++i) {
+      int binSize = bins[i].size();
 
-        while (!binList.empty() && nTotalActiveParticles > nRequestedParticleNumber && currentBinIt != binList.end()) {
-            BinNode& binNode = *currentBinIt;
-            std::list<ParticleInfo*>& particlePtrs = *(binNode.particlePtrs);
+      if (binSize >= 3) {
+        BinNode node = {i, binSize, &bins[i]};
+        binList.emplace_back(std::move(node));
+      }
+    }
 
-	    if (particlePtrs.size()<3) {
-              //There is not more bins with the number of particles > 3 => break the current loop and repeat with smaller number if bins
-	      break;
-	    }
+    // Sort the binList in descending order of binSize
+    binList.sort([](const BinNode& a, const BinNode& b) {
+      return a.binSize > b.binSize;
+    });
 
-            // While there are at least three particles to merge in the bin
-            while (particlePtrs.size() >= 3 && nTotalActiveParticles > nRequestedParticleNumber) {
-                // Select the first three particles (smallest weights)
-                auto it1 = particlePtrs.begin();
-                auto it2 = std::next(it1);
-                auto it3 = std::next(it2);
+    // Step 7: Merge particles in bins while conserving weight, momentum, and energy
+    auto currentBinIt = binList.begin();
+    int nextBinSize=-1; 
+
+    if (std::next(currentBinIt)!=binList.end()) nextBinSize=std::next(currentBinIt)->binSize;
+
+    while (!binList.empty() && nTotalActiveParticles > nRequestedParticleNumber && currentBinIt != binList.end()) {
+      BinNode& binNode = *currentBinIt;
+      std::list<ParticleInfo*>& particlePtrs = *(binNode.particlePtrs);
+
+      if (particlePtrs.size()<3) {
+      //There is not more bins with the number of particles > 3 => break the current loop and repeat with smaller number if bins
+        break;
+      }
+
+      // While there are at least three particles to merge in the bin
+      while (particlePtrs.size() >= 3 && nTotalActiveParticles > nRequestedParticleNumber) {
+        // Select the first three particles (smallest weights)
+        auto it1 = particlePtrs.begin();
+        auto it2 = std::next(it1);
+        auto it3 = std::next(it2);
 	
-                ParticleInfo* p1 = *it1;
-                ParticleInfo* p2 = *it2;
-                ParticleInfo* p3 = *it3;
+        ParticleInfo* p1 = *it1;
+        ParticleInfo* p2 = *it2;
+        ParticleInfo* p3 = *it3;
 
-                particlePtrs.erase(it1,std::next(it3));
+        particlePtrs.erase(it1,std::next(it3));
 
-                // Compute total weight and set new weights
-                double W_total = p1->weight + p2->weight + p3->weight;
-                double W_new = W_total * 0.5;
+        // Compute total weight and set new weights
+        double W_total = p1->weight + p2->weight + p3->weight;
+        double W_new = W_total * 0.5;
 
-                // Compute total momentum and energy
-                double momentum_total[3] = {0.0, 0.0, 0.0};
-                double energy_total = p1->weight*Vector3D::DotProduct(p1->v,p1->v)+p2->weight*Vector3D::DotProduct(p2->v,p2->v)+p3->weight*Vector3D::DotProduct(p3->v,p3->v);
+        // Compute total momentum and energy
+        double momentum_total[3] = {0.0, 0.0, 0.0};
+        double energy_total = p1->weight*Vector3D::DotProduct(p1->v,p1->v)+p2->weight*Vector3D::DotProduct(p2->v,p2->v)+p3->weight*Vector3D::DotProduct(p3->v,p3->v);
 
-                for (int d = 0; d < 3; ++d) {
-                    momentum_total[d] = p1->weight * p1->v[d]
-                                      + p2->weight * p2->v[d]
-                                      + p3->weight * p3->v[d];
-                }
+        for (int d = 0; d < 3; ++d) {
+          momentum_total[d] = p1->weight * p1->v[d]
+                            + p2->weight * p2->v[d]
+                            + p3->weight * p3->v[d];
+        }
 
-                // Compute mean velocity
-                double v_mean[3];
+        // Compute mean velocity
+        double v_mean[3];
 
-                for (int d = 0; d < 3; ++d) {
-                    v_mean[d] = momentum_total[d] / W_total;
-                }
+        for (int d = 0; d < 3; ++d) {
+          v_mean[d] = momentum_total[d] / W_total;
+        }
 
-                // Compute magnitude of delta_v to satisfy energy conservation
-	        double delta_v_magnitude2=energy_total/W_total-Vector3D::DotProduct(v_mean,v_mean);
-		double delta_v_magnitude=(delta_v_magnitude2>0.0) ? sqrt(delta_v_magnitude2) : 0.0;
+        // Compute magnitude of delta_v to satisfy energy conservation
+        double delta_v_magnitude2=energy_total/W_total-Vector3D::DotProduct(v_mean,v_mean);
+        double delta_v_magnitude=(delta_v_magnitude2>0.0) ? sqrt(delta_v_magnitude2) : 0.0;
 	
-                // Generate random direction for delta_v
-                double theta = acos(1.0 - 2.0 * rnd()); // theta in [0, pi]
-                double phi = 2.0 * M_PI * rnd();        // phi in [0, 2*pi]
+        // Generate random direction for delta_v
+        double theta = acos(1.0 - 2.0 * rnd()); // theta in [0, pi]
+        double phi = 2.0 * M_PI * rnd();        // phi in [0, 2*pi]
 
-                double sin_theta = sin(theta);
-                double delta_v[3];
+        double sin_theta = sin(theta);
+        double delta_v[3];
 
-		if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) { 
-                  delta_v[0] = delta_v_magnitude * sin_theta * cos(phi);
-                  delta_v[1] = delta_v_magnitude * sin_theta * sin(phi);
-                  delta_v[2] = delta_v_magnitude * cos(theta);
-		}
-		else {
-                  delta_v[0] = delta_v_magnitude * cos(phi);
-                  delta_v[1] = delta_v_magnitude * sin(phi);
-                  delta_v[2] = 0.0;
-		} 
+        if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) { 
+          delta_v[0] = delta_v_magnitude * sin_theta * cos(phi);
+          delta_v[1] = delta_v_magnitude * sin_theta * sin(phi);
+          delta_v[2] = delta_v_magnitude * cos(theta);
+    	}
+        else {
+          delta_v[0] = delta_v_magnitude * cos(phi);
+          delta_v[1] = delta_v_magnitude * sin(phi);
+          delta_v[2] = 0.0;
+        } 
 
-                // Compute new velocities
-                double vA[3], vB[3];
-                for (int d = 0; d < 3; ++d) {
-                    vA[d] = v_mean[d] + delta_v[d];
-                    vB[d] = v_mean[d] - delta_v[d];
-                }
+        // Compute new velocities
+        double vA[3], vB[3];
+       
+        for (int d = 0; d < 3; ++d) {
+          vA[d] = v_mean[d] + delta_v[d];
+          vB[d] = v_mean[d] - delta_v[d];
+        }
 
-                // Remove the original third particle from PB
-                PB::DeleteParticle(p3->index,FirstParticle);
-		p3->active=false;
+        // Remove the original third particle from PB
+        PB::DeleteParticle(p3->index,FirstParticle);
+	      p3->active=false;
 
-                // Update weight ang velocity in the first two particles 
-                // Particle A
-                auto* dataA = PB::GetParticleDataPointer(p1->index);
-                PB::SetV(vA,dataA);
-                PB::SetIndividualStatWeightCorrection(W_new,dataA);
+        // Update weight ang velocity in the first two particles 
+        // Particle A
+        auto* dataA = PB::GetParticleDataPointer(p1->index);
+        PB::SetV(vA,dataA);
+        PB::SetIndividualStatWeightCorrection(W_new,dataA);
 
-                p1->weight = W_new;
-                p1->v[0] = vA[0]; p1->v[1] = vA[1]; p1->v[2] = vA[2];
+        p1->weight = W_new;
+        p1->v[0] = vA[0]; p1->v[1] = vA[1]; p1->v[2] = vA[2];
 
-                // Particle B
-                auto* dataB = PB::GetParticleDataPointer(p2->index);
-                PB::SetV(vB,dataB);
-                PB::SetIndividualStatWeightCorrection(W_new,dataB);
+        // Particle B
+        auto* dataB = PB::GetParticleDataPointer(p2->index);
+        PB::SetV(vB,dataB);
+        PB::SetIndividualStatWeightCorrection(W_new,dataB);
 
-                p2->weight = W_new;
-                p2->v[0] = vB[0]; p2->v[1] = vB[1]; p2->v[2] = vB[2];
+        p2->weight = W_new;
+        p2->v[0] = vB[0]; p2->v[1] = vB[1]; p2->v[2] = vB[2];
 
-		//Place p1 anps p2 in the appropriate locations in particlePtrs 
-		auto pos = std::find_if(particlePtrs.begin(), particlePtrs.end(),
+        //Place p1 anps p2 in the appropriate locations in particlePtrs 
+        auto pos = std::find_if(particlePtrs.begin(), particlePtrs.end(),
                   [&p1](ParticleInfo* elem) { return elem->weight > p1->weight; });
 
-                if (pos !=particlePtrs.end()) {
-                  particlePtrs.emplace(pos,std::move(p1));
-		  particlePtrs.emplace(pos,std::move(p2));
-                }
-                else {
-                  particlePtrs.emplace_back(std::move(p1));
-		  particlePtrs.emplace_back(std::move(p2));
-                }
+        if (pos !=particlePtrs.end()) {
+          particlePtrs.emplace(pos,std::move(p1));
+          particlePtrs.emplace(pos,std::move(p2));
+        }
+        else {
+          particlePtrs.emplace_back(std::move(p1));
+          particlePtrs.emplace_back(std::move(p2)); 
+        }
 
-                // Update bin size
-                binNode.binSize--;
-		nTotalActiveParticles--;
+        // Update bin size
+        binNode.binSize--;
+        nTotalActiveParticles--;
 
-                // Check if the bin needs to be repositioned in the list
-		if (binNode.binSize < nextBinSize) {
-                    // Remove current bin from its position
-                    auto currentBinCopy = binNode;
-		    binList.pop_front();
+        // Check if the bin needs to be repositioned in the list
+        if (binNode.binSize < nextBinSize) {
+          // Remove current bin from its position
+          auto currentBinCopy = binNode;
+		      binList.pop_front();
 
-                    // Find the appropriate position to insert the current bin
-                    auto insertIt = binList.begin();
-                    while (insertIt != binList.end() && insertIt->binSize > currentBinCopy.binSize) {
-                        ++insertIt;
-                    }
+          // Find the appropriate position to insert the current bin
+          auto insertIt = binList.begin();
+          
+          while (insertIt != binList.end() && insertIt->binSize > currentBinCopy.binSize) {
+            ++insertIt;
+          }
 
-                    // Insert the current bin at the correct position
-		    if (insertIt != binList.end()) { 
-                      currentBinIt = binList.emplace(insertIt, std::move(currentBinCopy));
-		    }
-		    else {
-                       binList.emplace_back(std::move(currentBinCopy)); 
-		    }
+          // Insert the current bin at the correct position
+          if (insertIt != binList.end()) { 
+            currentBinIt = binList.emplace(insertIt, std::move(currentBinCopy));
+          }
+          else {
+            binList.emplace_back(std::move(currentBinCopy)); 
+          }
 
-                    // Continue with the new most populated bin
-                    currentBinIt = binList.begin();
-		    nextBinSize = (std::next(currentBinIt)!=binList.end()) ? std::next(currentBinIt)->binSize : -1; 
-                    break;
-                }
-
-                // If the bin still has enough particles, continue merging within it
-            }
-	}
-
-        // If the merging was successful, exit the while loop
-        // Decrease nBinsPerDimension and retry
-        nBinsPerDimension = nBinsPerDimension / 2;
-        if (nBinsPerDimension < minBinsPerDimension) {
+          // Continue with the new most populated bin
+          currentBinIt = binList.begin();
+		      nextBinSize = (std::next(currentBinIt)!=binList.end()) ? std::next(currentBinIt)->binSize : -1; 
           break;
         }
-        
+
+        // If the bin still has enough particles, continue merging within it
+      }
     }
+
+    // If the merging was successful, exit the while loop
+    // Decrease nBinsPerDimension and retry
+    nBinsPerDimension = nBinsPerDimension / 2;
+    
+    if (nBinsPerDimension < minBinsPerDimension) {
+      break;
+    }     
+  }
 }
 
 
