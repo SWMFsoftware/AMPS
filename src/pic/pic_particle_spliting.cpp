@@ -1872,6 +1872,24 @@ PIC::ParticleBuffer::SetX(x0,pnew);*/
 } 
 
 //===============================================================================================
+/**
+ * PIC::ParticleSplitting::MergeParticleList(): 
+ * Merges three low-weight particles into two within the same species.
+ * 1. **Conservation Laws:** Ensures that weight, momentum, and energy are conserved during the merging process.
+ * 
+ * 2. **Merging Strategy:** 
+ *    - Prioritizes merging smaller (lower-weight) particles first to efficiently reduce particle count.
+ *    - Merges three particles into two, conserving statistical weight, momentum, and energy.
+ * 
+ * 3. **Velocity Space Binning:**
+ *    - Utilizes a binned velocity space to organize particles, enhancing the efficiency of locating suitable candidates for merging.
+ *    - Prioritizes merging within overpopulated bins to maintain an even distribution of particles across velocity space.
+ * 
+ * 4. **Operational Workflow:**
+ *    - Identifies overpopulated bins based on the defined thresholds.
+ *    - Selects the smallest particles within these bins for merging.
+ *    - Ensures that the closest particles in velocity space are chosen to maintain physical realism.
+ */
 void PIC::ParticleSplitting::MergeParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber) { 
 namespace PB = PIC::ParticleBuffer;
 
@@ -2158,6 +2176,98 @@ namespace PB = PIC::ParticleBuffer;
 
 
 //===============================================================================================
+/*
+    // Particle Splitting Procedure (Detailed Explanation)
+    //
+    // This procedure splits two initial particles (with masses w1 and w2, and velocities v1 and v2)
+    // into three particles. The resulting three-particle configuration conserves total mass, total 
+    // momentum, and total kinetic energy when a specific scaling factor is used.
+    //
+    // Steps:
+    //
+    // 1. Compute Total Mass and Center-of-Mass (CM) Velocity:
+    //    Given two particles of mass w1, w2 and velocities v1, v2:
+    //      - Total mass: W_total = w1 + w2
+    //      - Center-of-mass velocity: vCM = (w1*v1 + w2*v2) / (w1 + w2)
+    //
+    //    The center-of-mass frame simplifies the analysis. In the CM frame, the total momentum is zero.
+    //
+    // 2. Compute Relative Velocities in the CM Frame:
+    //    Transform to the CM frame by defining:
+    //      u1 = v1 - vCM
+    //      u2 = v2 - vCM
+    //
+    //    In this frame, the initial kinetic energy can be broken down into a "relative" part 
+    //    that depends on u1 and u2.
+    //
+    // 3. Mass Splitting:
+    //    We want to produce three particles with masses:
+    //      w1' = (2/3)*w1
+    //      w2' = (2/3)*w2
+    //      w3  = (1/3)*(w1 + w2)
+    //
+    //    This ensures total mass is conserved:
+    //      w1' + w2' + w3 = w1 + w2
+    //
+    //    At this point we have assigned the masses, but not the final velocities. Our goal is to choose 
+    //    final velocities that also conserve momentum and energy.
+    //
+    // 4. Ensuring Momentum Conservation:
+    //    We choose the final configuration such that the third particle is stationary in the CM frame:
+    //      u3' = 0
+    //
+    //    Thus, the final CM velocities become:
+    //      u1' = α * u1
+    //      u2' = α * u2
+    //      u3' = 0
+    //
+    //    We will determine α to ensure energy conservation. The choice of u3' = 0 simplifies momentum 
+    //    conservation since w1'u1' + w2'u2' + w3*u3' must be zero. Given w1'u1 + w2'u2 = constant 
+    //    and originally equals zero in the CM frame, scaling both u1 and u2 by the same factor α 
+    //    keeps that relationship intact (because u3' = 0).
+    //
+    // 5. Energy Conservation:
+    //    The initial relative kinetic energy in the CM frame is:
+    //      E_rel_initial = 0.5*(w1*u1² + w2*u2²)
+    //
+    //    After splitting:
+    //      E_rel_final = 0.5*(w1'*u1'² + w2'*u2'² + w3*u3'²)
+    //                   = 0.5*(w1'*(α² u1²) + w2'*(α² u2²))
+    //    Since u3' = 0, there's no contribution from the third particle here.
+    //
+    //    Substitute w1' = (2/3)*w1 and w2' = (2/3)*w2:
+    //      E_rel_final = 0.5 * α² * (2/3) * (w1*u1² + w2*u2²)
+    //                    = α² * (2/3) * E_rel_initial
+    //
+    //    For energy conservation, E_rel_final = E_rel_initial, hence:
+    //      α² * (2/3) = 1  =>  α² = 3/2  =>  α = sqrt(3/2)
+    //
+    // 6. Applying the Scaling:
+    //    Once α is known, we scale:
+    //      u1' = sqrt(3/2)*u1
+    //      u2' = sqrt(3/2)*u2
+    //
+    //    and set:
+    //      u3' = 0
+    //
+    //    Converting back to the lab frame by adding vCM:
+    //      v1' = vCM + u1'
+    //      v2' = vCM + u2'
+    //      v3' = vCM
+    //
+    //    Now we have final masses (w1', w2', w3) and final velocities (v1', v2', v3') that conserve 
+    //    total mass, total momentum, and total kinetic energy.
+    //
+    // Summary:
+    //    - Split the mass into w1' = 2/3 w1, w2' = 2/3 w2, and w3 = (w1 + w2)/3.
+    //    - Shift to CM frame, scale relative velocities by α = sqrt(3/2), set the third particle’s 
+    //      relative velocity to zero.
+    //    - Transform back to the lab frame.
+    //    - This ensures momentum and energy are both conserved.
+    //
+    // This comment should help in understanding the reasoning behind each step and verifying 
+    // that the implementation follows the theory.
+*/
 void PIC::ParticleSplitting::SplitParticleList(int spec,long int& FirstParticle,int nRequestedParticleNumber) { 
 namespace PB = PIC::ParticleBuffer;
 
