@@ -2024,7 +2024,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=test/Earth-Impulse-Source 
+Name=test/Earth-Impulse-Source@@(0+) 
 Time=6 
 
 Outs=test_Earth
@@ -2048,7 +2048,7 @@ Compile=
 <#
 
 #>
-Name=test/Earth-Impulse-Neutron-Source
+Name=test/Earth-Impulse-Neutron-Source@@(0+) 
 Time=6
 
 Outs=test_Earth-Impulse-Neutron 
@@ -3015,7 +3015,7 @@ Check=
 
 -------------------------------------------------------------------------------
 #>
-Name=photon-test
+Name=photon-test@@(0+) 
 Time=3
 
 Check=
