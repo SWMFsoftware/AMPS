@@ -17,6 +17,7 @@
 _CUDA_MANAGED_ _TARGET_DEVICE_ unsigned long int RandomNumberGenerator::rndLastSeed=0;
 _CUDA_MANAGED_ _TARGET_DEVICE_ unsigned long int *RandomNumberGenerator::rndLastSeedArray=NULL;
 thread_local std::mt19937 RandomNumberGenerator::gen(42);
+thread_local std::uniform_real_distribution<double> RandomNumberGenerator::dist(0.0, 1.0);
 
 #if _CUDA_MODE_ == _ON_
 void rnd_seedGPU(int seed) {

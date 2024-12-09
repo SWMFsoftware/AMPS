@@ -42,6 +42,7 @@ namespace RandomNumberGenerator {
 
   //Mersenne Twister with a fixed seed
   extern thread_local std::mt19937 gen;  
+  extern thread_local std::uniform_real_distribution<double> dist;
 }
 
 
@@ -96,7 +97,7 @@ inline double rnd() {
   cRndSeedContainer SeedContainer;
 
   if (_RND_MODE_==_RND_MODE_MERSENNE_TWISTER_) {
-    return RandomNumberGenerator::gen() / static_cast<double>(RandomNumberGenerator::gen.max());
+    return RandomNumberGenerator::dist(RandomNumberGenerator::gen); 
   } 
 
   #ifdef __CUDA_ARCH__
