@@ -498,6 +498,16 @@ INSTANTIATE_TEST_SUITE_P(
     ParticleCollisionTest,             // Test suite name
     ParticleCollisionTest,             // Test fixture name
     ::testing::Values(                 // Test cases
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_simplified,0,0,"mf_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_simplified,0,1,"mf_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_simplified,1,0,"mf_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_simplified,1,1,"mf_simplified"},
+
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified,0,0,"ntc_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified,0,1,"ntc_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified,1,0,"ntc_simplified"},
+        ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified,1,1,"ntc_simplified"},
+
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,0,"mf_Yinsi"}, 
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,0,1,"mf_Yinsi"},
         ParticleCollisionTestCase{PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi,1,0,"mf_Yinsi"},

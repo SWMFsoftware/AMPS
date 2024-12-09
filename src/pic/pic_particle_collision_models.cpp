@@ -93,9 +93,206 @@ void PIC::MolecularCollisions::ParticleCollisionModel::Init() {
 
 //Non-time Counter collision procedure
 //Modeling collision in a cell
+/*!
+ * Simplified version of the Non-time Counter (NTC) collision model implementation
+ * This version assumes:
+ * 1. All species have the same time step
+ * 2. All species have the same particle weight
+ * 3. No individual particle weight corrections (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ is off)
+ */
+void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_simplified(
+    int i, int j, int k, 
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
+    
+  const int SigmaCrMax_nTest = 100;
+  const double SigmaCrMax_SafetyMargin = 1.3;
+
+  // Structure to store particle data
+  struct cParticleDataList {
+    double *v;  // Direct pointer to velocity state vector
+    PIC::ParticleBuffer::byte *ParticleData;
+  };
+
+  // Get block and check validity
+  PIC::Mesh::cDataBlockAMR *block = node->block;
+  if (block == NULL) return;
+
+  // Get cell and check validity
+  PIC::Mesh::cDataCenterNode *cell = block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+  if (cell == NULL) return;
+
+  // Get first particle in cell and cell measure
+  long int FirstCellParticle = block->FirstCellParticleTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
+  double cellMeasure = cell->Measure;
+
+  // Get sampling data buffer if sampling mode is on
+  char *SamplingData = NULL;
+  if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+    SamplingData = cell->GetAssociatedDataBufferPointer() + PIC::Mesh::collectingCellSampleDataPointerOffset;
+  }
+
+  if (FirstCellParticle == -1) return;
+
+  // Count particles per species
+  int nParticleNumber[PIC::nTotalSpecies] = {0};
+  for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+    nParticleNumber[PIC::ParticleBuffer::GetI(ptr)]++;
+  }
+
+  // Find maximum number of particles among all species
+  int ParticleDataListLength = 0;
+  for (int s = 0; s < PIC::nTotalSpecies; s++) {
+    if (ParticleDataListLength < nParticleNumber[s]) {
+      ParticleDataListLength = nParticleNumber[s];
+    }
+  }
+
+  // Allocate particle lists
+  cParticleDataList *s0ParticleDataList = new cParticleDataList[ParticleDataListLength];
+  cParticleDataList *s1ParticleDataList = new cParticleDataList[ParticleDataListLength];
+
+  // Loop through first species s0
+  for (int s0 = 0; s0 < PIC::nTotalSpecies; s0++) {
+    if (nParticleNumber[s0] == 0 || PIC::MolecularData::GetSpecieType(s0) != _PIC_SPECIE_TYPE__GAS_) {
+      continue;
+    }
+
+    double m0 = PIC::MolecularData::GetMass(s0);
+    double LocalTimeStep = block->GetLocalTimeStep(s0);  // Same for all species
+    double LocalParticleWeight = block->GetLocalParticleWeight(s0);  // Same for all species
+
+    // Populate s0 particle list
+    cParticleDataList *s0List = s0ParticleDataList;
+    int cnt = 0;
+    for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+      if (PIC::ParticleBuffer::GetI(ptr) == (unsigned)s0) {
+        PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        s0List[cnt].ParticleData = ParticleData;
+        s0List[cnt].v = PIC::ParticleBuffer::GetV(ParticleData);
+        cnt++;
+      }
+    }
+
+    // Loop through second species s1
+    for (int s1 = s0; s1 < PIC::nTotalSpecies; s1++) {
+      if (nParticleNumber[s1] == 0 || PIC::MolecularData::GetSpecieType(s1) != _PIC_SPECIE_TYPE__GAS_) {
+        continue;
+      }
+
+      // Check if collisions should be simulated for this pair
+      if (DoSimulateCellCollisions != NULL) {
+        if (!DoSimulateCellCollisions(cell, s0, s1)) continue;
+      }
+
+      double m1 = PIC::MolecularData::GetMass(s1);
+
+      // Populate s1 particle list (if different from s0)
+      cParticleDataList *s1List = (s0 == s1) ? s0List : s1ParticleDataList;
+      if (s0 != s1) {
+        cnt = 0;
+        for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+          if (PIC::ParticleBuffer::GetI(ptr) == (unsigned)s1) {
+            PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+            s1List[cnt].ParticleData = ParticleData;
+            s1List[cnt].v = PIC::ParticleBuffer::GetV(ParticleData);
+            cnt++;
+          }
+        }
+      }
+
+      // Calculate maximum collision cross section
+      double SigmaCrMax = 0.0;
+      for (int ntest = 0; ntest < SigmaCrMax_nTest; ntest++) {
+        int s0ptr = (int)(rnd()*nParticleNumber[s0]);
+        int s1ptr = (int)(rnd()*nParticleNumber[s1]);
+        
+        double cr = Vector3D::Distance(s1List[s1ptr].v,s0List[s0ptr].v); 
+        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(
+            s0, s0List[s0ptr].v, s1, s1List[s1ptr].v);
+        
+        if (SigmaCr > SigmaCrMax) SigmaCrMax = SigmaCr;
+      }
+      
+      SigmaCrMax *= SigmaCrMax_SafetyMargin;
+
+      // Calculate number of collision pairs
+      double ancoll;
+      if (s0 == s1) {
+        ancoll = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0] - 1) * 
+                 LocalParticleWeight * SigmaCrMax * LocalTimeStep / cellMeasure;
+      } else {
+        ancoll = nParticleNumber[s0] * nParticleNumber[s1] * 
+                 LocalParticleWeight * SigmaCrMax * LocalTimeStep / cellMeasure;
+      }
+
+      // Apply collision limiting if needed
+      double CollisionLimitingFactor = 1.0;
+      if (nParticleNumber[s0] * nParticleNumber[s1] < ancoll) {
+        CollisionLimitingFactor = ancoll / (nParticleNumber[s0] * nParticleNumber[s1]);
+        ancoll /= CollisionLimitingFactor;
+      }
+
+      // Determine actual number of collisions
+      long int ncoll = (long int)ancoll;
+      if (rnd() < (ancoll - ncoll)) ncoll++;
+
+      // Simulate collisions
+      while (ncoll-- > 0) {
+        // Select random particle pairs
+        int s0ptr = (int)(rnd() * nParticleNumber[s0]);
+        int s1ptr;
+        do {
+          s1ptr = (int)(rnd() * nParticleNumber[s1]);
+        } while (s0 == s1 && s0ptr == s1ptr);
+
+        double *v0 = s0List[s0ptr].v;
+        double *v1 = s1List[s1ptr].v;
+
+        // Calculate relative velocity
+        double cr = 0.0;
+        double vrel[3], vcm[3];
+        for (int idim = 0; idim < 3; idim++) {
+          vrel[idim] = v1[idim] - v0[idim];
+          vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
+          cr += vrel[idim] * vrel[idim];
+        }
+        cr = sqrt(cr);
+
+        // Check if collision occurs
+        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
+        if (rnd() * SigmaCrMax >= SigmaCr) continue;
+
+        // Perform collision - directly modifies v0 and v1 which point to particle state
+        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0, m0, v1, m1);
+
+        // Sample collision frequency if sampling is enabled
+        if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+          // Sample for first species
+          int CollFreqOffset_s0 = CollsionFrequentcySampling::SamplingBufferOffset + 
+                                 sizeof(double) * CollsionFrequentcySampling::Offset(s0, s1);
+          *((double*)(SamplingData + CollFreqOffset_s0)) += LocalParticleWeight / 
+                                                           LocalTimeStep / cellMeasure * 
+                                                           CollisionLimitingFactor;
+
+          // Sample for second species (if different from first)
+            int CollFreqOffset_s1 = CollsionFrequentcySampling::SamplingBufferOffset + 
+                                   sizeof(double) * CollsionFrequentcySampling::Offset(s1, s0);
+            *((double*)(SamplingData + CollFreqOffset_s1)) += LocalParticleWeight / 
+                                                             LocalTimeStep / cellMeasure * 
+                                                             CollisionLimitingFactor;
+        }
+      }
+    }
+  }
+
+  // Clean up
+  delete [] s1ParticleDataList;
+  delete [] s0ParticleDataList;
+}
+
 void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int SigmaCrMax_nTest=100;
-  double SigmaCrMax_SafetyMargin=1.3;
+  double SigmaCrMax_SafetyMargin=1.05;
 
   struct cParticleDataList {
     double vel[3];
@@ -280,7 +477,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3],vcm[3];
+        double vrel[3];
 
         while (ncoll-->0) {
           s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
@@ -298,7 +495,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
-            vcm[idim]=(m1*v1[idim]+m0*v0[idim])/(m1+m0);
             cr+=vrel[idim]*vrel[idim];
           }
 
@@ -474,9 +670,202 @@ void PIC::MolecularCollisions::ParticleCollisionModel::CollisionModelManager(voi
 
 //Majorant Frequency collision procedure
 //Modeling collision in a cell
+void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_simplified(int i, int j, int k,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) { 
+  const int SigmaCrMax_nTest = 100;
+  const double SigmaCrMax_SafetyMargin = 1.05;
+
+  // Structure to store particle data
+  struct cParticleDataList {
+    double *v;  // Direct pointer to velocity state vector
+    PIC::ParticleBuffer::byte *ParticleData;
+  };
+
+  // Get block and check validity
+  PIC::Mesh::cDataBlockAMR *block = node->block;
+  if (block == NULL) return;
+
+  // Get cell and check validity
+  PIC::Mesh::cDataCenterNode *cell = block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+  if (cell == NULL) return;
+
+  double cellMeasure=cell->Measure;
+
+  // Get first particle in cell and cell measure
+  long int FirstCellParticle = block->FirstCellParticleTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
+  // Get sampling data buffer if sampling mode is on
+  char *SamplingData = NULL;
+  if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+    SamplingData = cell->GetAssociatedDataBufferPointer() + PIC::Mesh::collectingCellSampleDataPointerOffset;
+  }
+
+  // If no particles in cell, return
+  if (FirstCellParticle == -1) return;
+
+  // Count particles per species
+  int nParticleNumber[PIC::nTotalSpecies] = {0};
+  for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+    nParticleNumber[PIC::ParticleBuffer::GetI(ptr)]++;
+  }
+
+  // Find maximum number of particles among all species
+  int ParticleDataListLength = 0;
+  for (int s = 0; s < PIC::nTotalSpecies; s++) {
+    if (ParticleDataListLength < nParticleNumber[s]) {
+      ParticleDataListLength = nParticleNumber[s];
+    }
+  }
+
+  // Allocate particle lists
+  cParticleDataList *s0ParticleDataList = new cParticleDataList[ParticleDataListLength];
+  cParticleDataList *s1ParticleDataList = new cParticleDataList[ParticleDataListLength];
+
+  // Loop through first species s0
+  for (int s0 = 0; s0 < PIC::nTotalSpecies; s0++) {
+    if (nParticleNumber[s0] == 0 || PIC::MolecularData::GetSpecieType(s0) != _PIC_SPECIE_TYPE__GAS_) {
+      continue;
+    }
+
+    double m0 = PIC::MolecularData::GetMass(s0);
+    double LocalTimeStep = block->GetLocalTimeStep(s0);  // Same for all species
+    double LocalParticleWeight = block->GetLocalParticleWeight(s0);  // Same for all species
+    
+    // Populate s0 particle list
+    cParticleDataList *s0List = s0ParticleDataList;
+    int cnt = 0;
+    for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+      if (PIC::ParticleBuffer::GetI(ptr) == (unsigned)s0) {
+        PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+        s0List[cnt].ParticleData = ParticleData;
+        s0List[cnt].v = PIC::ParticleBuffer::GetV(ParticleData);
+        cnt++;
+      }
+    }
+
+    // Loop through second species s1
+    for (int s1 = s0; s1 < PIC::nTotalSpecies; s1++) {
+      if (nParticleNumber[s1] == 0 || PIC::MolecularData::GetSpecieType(s1) != _PIC_SPECIE_TYPE__GAS_) {
+        continue;
+      }
+
+      // Check if collisions should be simulated for this pair
+      if (DoSimulateCellCollisions != NULL) {
+        if (!DoSimulateCellCollisions(cell, s0, s1)) continue;
+      }
+
+      double m1 = PIC::MolecularData::GetMass(s1);
+      
+      // Populate s1 particle list (if different from s0)
+      cParticleDataList *s1List = (s0 == s1) ? s0List : s1ParticleDataList;
+      if (s0 != s1) {
+        cnt = 0;
+        for (long int ptr = FirstCellParticle; ptr != -1; ptr = PIC::ParticleBuffer::GetNext(ptr)) {
+          if (PIC::ParticleBuffer::GetI(ptr) == (unsigned)s1) {
+            PIC::ParticleBuffer::byte *ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+            s1List[cnt].ParticleData = ParticleData;
+            s1List[cnt].v = PIC::ParticleBuffer::GetV(ParticleData);
+            cnt++;
+          }
+        }
+      }
+
+      // Calculate maximum collision cross section
+      double SigmaCrMax = 0.0;
+      double SigmaCrMean = 0.0;
+      
+      for (int ntest = 0; ntest < SigmaCrMax_nTest; ntest++) {
+        int s0ptr = (int)(rnd()*nParticleNumber[s0]);
+        int s1ptr = (int)(rnd()*nParticleNumber[s1]);
+        
+        double cr = Vector3D::Distance(s1List[s1ptr].v,s0List[s0ptr].v);
+        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, s0List[s0ptr].v, s1, s1List[s1ptr].v); 
+        
+        SigmaCrMean += SigmaCr;
+        if (SigmaCr > SigmaCrMax) SigmaCrMax = SigmaCr;
+      }
+      
+      SigmaCrMax *= SigmaCrMax_SafetyMargin;
+      SigmaCrMean *= SigmaCrMax_SafetyMargin / SigmaCrMax_nTest;
+
+      // Calculate majorant collision frequency
+      double MajorantFrequency;
+      if (s0 == s1) {
+        MajorantFrequency = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0]-1) * 
+                           LocalParticleWeight * SigmaCrMax / cellMeasure;
+      } else {
+        MajorantFrequency = nParticleNumber[s0] * nParticleNumber[s1] * 
+                           LocalParticleWeight * SigmaCrMax / cellMeasure;
+      }
+
+      // Apply collision limiting if needed
+      double CollisionLimitingFactor = 1.0;
+      if (LocalTimeStep * MajorantFrequency > CollisionLimitingThrehold * 
+          max(nParticleNumber[s0], nParticleNumber[s1])) {
+        CollisionLimitingFactor = LocalTimeStep * MajorantFrequency / 
+                                (CollisionLimitingThrehold * max(nParticleNumber[s0], nParticleNumber[s1]));
+        MajorantFrequency /= CollisionLimitingFactor;
+      }
+
+      // Simulate collisions using Majorant Frequency scheme
+      double TimeCounter = 0.0;
+
+      while ((TimeCounter += -log(rnd())/MajorantFrequency) < LocalTimeStep) {
+        // Get particle pointers
+        int s0ptr = (int)(rnd() * nParticleNumber[s0]);
+        int s1ptr;
+        do {
+          s1ptr = (int)(rnd() * nParticleNumber[s1]);
+        } while (s0 == s1 && s0ptr == s1ptr);
+
+        double *v0 = s0List[s0ptr].v;
+        double *v1 = s1List[s1ptr].v;
+
+        // Calculate relative velocity
+        double cr = 0.0;
+        double vrel[3];
+        for (int idim = 0; idim < 3; idim++) {
+          vrel[idim] = v1[idim] - v0[idim];
+          cr += vrel[idim] * vrel[idim];
+        }
+        cr = sqrt(cr);
+
+        // Check if collision occurs
+        double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
+        if (rnd() * SigmaCrMax >= SigmaCr) continue;
+
+        // Perform collision - directly modifies v0 and v1 which point to particle state
+        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0, m0, v1, m1);
+
+        // Sample collision frequency if sampling is enabled
+        if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
+          // Sample for first species
+          int CollFreqOffset_s0 = CollsionFrequentcySampling::SamplingBufferOffset + 
+                                 sizeof(double) * CollsionFrequentcySampling::Offset(s0, s1);
+          *((double*)(SamplingData + CollFreqOffset_s0)) += LocalParticleWeight / 
+                                                           LocalTimeStep / cellMeasure * 
+                                                           CollisionLimitingFactor;
+
+          // Sample for second species (if different from first)
+          int CollFreqOffset_s1 = CollsionFrequentcySampling::SamplingBufferOffset + 
+                                   sizeof(double) * CollsionFrequentcySampling::Offset(s1, s0);
+          *((double*)(SamplingData + CollFreqOffset_s1)) += LocalParticleWeight / 
+                                                             LocalTimeStep / cellMeasure * 
+                                                             CollisionLimitingFactor;
+        }
+      }
+
+      // No need to update particle buffer - velocities are modified directly
+    }
+  }
+
+  // Clean up
+  delete [] s1ParticleDataList;
+  delete [] s0ParticleDataList;
+}
+
+
 void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int SigmaCrMax_nTest=100;
-  double SigmaCrMax_SafetyMargin=1.3;
+  double SigmaCrMax_SafetyMargin=1.05;
 
   struct cParticleDataList {
     double vel[3];
@@ -669,7 +1058,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3],vcm[3];
+        double vrel[3];
 
         //set the initial value of the counter
         TimeCounter=0.0;
@@ -690,7 +1079,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
-            vcm[idim]=(m1*v1[idim]+m0*v0[idim])/(m1+m0);
             cr+=vrel[idim]*vrel[idim];
           }
 
@@ -791,7 +1179,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::mf_Yinsi() {
 
 void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yinsi(int i,int j,int k, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node) {
   int SigmaCrMax_nTest=100;
-  double SigmaCrMax_SafetyMargin=1.3;
+  double SigmaCrMax_SafetyMargin=1.05;
 
   PIC::MolecularCollisions::ParticleCollisionModel::CollisionLimitingThrehold=40.0;
 
@@ -996,7 +1384,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3],vcm[3];
+        double vrel[3];
 
         //set the initial value of the counter
         TimeCounter=0.0;
@@ -1018,7 +1406,6 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
 
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
-            vcm[idim]=(m1*v1[idim]+m0*v0[idim])/(m1+m0);
             cr+=vrel[idim]*vrel[idim];
           }
 
