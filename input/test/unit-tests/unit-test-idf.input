@@ -1,7 +1,7 @@
 
 #main  
 
-SpeciesList=H2O,O  !, NA_Plus !lkdsjflksdj   
+SpeciesList=H2O,O,O2,CO2  !, NA_Plus !lkdsjflksdj   
 
 
 !settings of the directories
@@ -83,18 +83,35 @@ ParticleWeightCorrectionMode=off !on,off
     const (O,O)= 3.4E-19  
 #endParticleCollisions
 
+
 #IDF
   Model=LB  !off,LB,qLB
-  vtRelaxation=off !on,off
+  vtRelaxation=on !on,off
   vvRelaxation=off !on,off
   rtRelaxation=on !on,off
 
-  nVibModes(H2O=2)
+  nVibModes(H2O=3)
+  nVibModes(O=2)
+  nVibModes(O2=1)
+  nVibModes(CO2=0)
+
+
   nRotModes(H2O=3)
+  nRotModes(O=2)
+  nRotModes(O2=1)
+  nRotModes(CO2=0)
 
   RotZnum(H2O=5)
-  VibTemp(H2O=400) !artificually smaller number is used to get effect at small testing temeparture and limited number of particles  
+  RotZnum(O=5)
+  RotZnum(O2=5)
+  RotZnum(CO2=5)
+
+  VibTemp(H2O=200,300,400)
+  VibTemp(O=500,600)
+  VibTemp(O2=700)
+
 #endIDF
+
 
 #Sampling 
   SampleParallelTangentialKineticTemperature=on \\ !on,off direction=const(0.0,0.0,0.0); direction=function(??????)
@@ -143,6 +160,8 @@ ReferenceGroundBasedObservationTime= \\
   define _TARGET_ _MOON_ 
   
   define _PIC_PHOTOLYTIC_REACTIONS_MODE_ _PIC_PHOTOLYTIC_REACTIONS_MODE_ON_
+
+  define _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_  _PIC_MODE_ON_
   
 
 ! define _EXOSPHERE_SOURCE__SOLAR_WIND_SPUTTERING_            _EXOSPHERE_SOURCE__ON_
