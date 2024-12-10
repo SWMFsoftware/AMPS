@@ -3201,6 +3201,8 @@ sub ReadIDF {
   my @nTotalRotModes=(0)x$TotalSpeciesNumber;
   my @CharacteristicVibTemp=(0)x$TotalSpeciesNumber;
   my @RotationalZnumber=(0)x$TotalSpeciesNumber;
+
+  my @VibTempTable = map { [] } (1..$TotalSpeciesNumber);  # Create $rows empty array references
   
   #temeprature index
   my @TemperatureIndexTable;
@@ -3340,8 +3342,17 @@ sub ReadIDF {
               warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
               die "Cannot recognize species '$s0' in line $InputFileLineNumber ($line) in $InputFileName.Assembled\n";
             }
+
+	    my @Table;
+
+	    while (defined $s1) {
+              push @Table, $s1;
+	      ($s1,$InputComment)=split(' ',$InputComment,2);
+            }
           
             $CharacteristicVibTemp[$nspec]=$s1;     
+
+	     push @{ $VibTempTable[$nspec] }, @Table;
           } 
         }      
       }     
@@ -3442,7 +3453,22 @@ sub ReadIDF {
   
   ampsConfigLib::ChangeValueOfArray("static const int nTotalVibtationalModes\\[\\]",\@nTotalVibModes,"pic/pic.h");
   ampsConfigLib::ChangeValueOfArray("static const int nTotalRotationalModes\\[\\]",\@nTotalRotModes,"pic/pic.h");
-  ampsConfigLib::ChangeValueOfArray("static const double CharacteristicVibrationalTemperature\\[\\]",\@CharacteristicVibTemp,"pic/pic.h");
+
+
+  my @VibTempLinearTable;
+
+  for my $r (0 .. $#VibTempTable) {
+    # Copy existing elements
+    push @VibTempLinearTable, @{$VibTempTable[$r]};
+    
+    # If this row is shorter than max_columns, pad with -1
+    my $shortage = $nSpeciesMaxVibrationalModes - scalar @{$VibTempTable[$r]};
+    if ($shortage > 0) {
+        push @VibTempLinearTable, (-1) x $shortage;
+    }
+  }
+
+  ampsConfigLib::ChangeValueOfArray("static const double CharacteristicVibrationalTemperature\\[\\]",\@VibTempLinearTable,"pic/pic.h");
   ampsConfigLib::ChangeValueOfArray("static const double RotationZnumber\\[\\]",\@RotationalZnumber,"pic/pic.h");
   
   ampsConfigLib::ChangeValueOfVariable("static const int nSpeciesMaxVibrationalModes",$nSpeciesMaxVibrationalModes,"pic/pic.h");
