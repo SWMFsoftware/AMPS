@@ -403,15 +403,16 @@ void PIC::IDF::LB::Init() {
 
   //check consistency of the model setting
   for (int s=0;s<PIC::nTotalSpecies;s++) {
-    if (nTotalVibtationalModes[s]!=0) {
-      if (CharacteristicVibrationalTemperature[s]==0.0) exit(__LINE__,__FILE__,"error: CharacteristicVibrationalTemperature must be defined");
+    for (int nmode=0;nmode<nTotalVibtationalModes[s];nmode++) {
+      if (CharacteristicVibrationalTemperature[nmode+s*PIC::IDF::nSpeciesMaxVibrationalModes]<=0.0) {
+        exit(__LINE__,__FILE__,"error: CharacteristicVibrationalTemperature must be defined -- check the input file");
+      }
     }
 
     if (nTotalRotationalModes[s]!=0) {
-      if (RotationZnumber[s]==0.0) exit(__LINE__,__FILE__,"error: RotationZnumber must be defined");
+      if (RotationZnumber[s]==0.0) exit(__LINE__,__FILE__,"error: RotationZnumber must be defined -- check the input file");
     }
   }
-
 }
 
 //print the model data
