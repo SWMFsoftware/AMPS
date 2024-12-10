@@ -73,6 +73,9 @@ TEST_F(IDFTest, IDFDataAccessTest) {
 
     auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
+    EXPECT_NE(PIC::IDF::LB::_ROTATIONAL_ENERGY_OFFSET_,-1);
+    EXPECT_NE(PIC::IDF::LB::_VIBRATIONAL_ENERGY_OFFSET_,-1);
+
     // Verify data
     if (_PIC_FIELD_LINE_MODE_!=_PIC_MODE_ON_) {
       double* readPos = PIC::ParticleBuffer::GetX(ptr);
@@ -168,3 +171,72 @@ TEST_F(IDFTest, IDFDataAccessTest) {
 }
 
 
+// Test particle state vector
+TEST_F(IDFTest, IDFRotEnregyGenerationTest) {
+  int ntest;
+  double RotEtheory,SampledRotE=0.0;
+  long int ptr = PIC::ParticleBuffer::GetNewParticle(true);
+  auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+  double Temp=300.0;
+  int nTotalTests=1000000;
+
+  for (int s=0;s<PIC::nTotalSpecies;s++) {
+    PIC::ParticleBuffer::SetI(s,ptr);
+    SampledRotE=0.0;
+
+    for (ntest=0;ntest<nTotalTests;ntest++) {
+      PIC::IDF::LB::InitRotTemp(Temp,ParticleData);
+      SampledRotE+=PIC::IDF::LB::GetRotE(ParticleData);
+    }
+
+    SampledRotE/=nTotalTests;
+    RotEtheory=PIC::IDF::nTotalRotationalModes[s]/2.0*Kbol*Temp;
+
+    if (PIC::IDF::nTotalRotationalModes[s]==0) {
+      EXPECT_LT(fabs(SampledRotE),0.01) << "RotE distribution: s=" << s << endl;
+    }
+    else {
+      EXPECT_LT(fabs(SampledRotE-RotEtheory)/(SampledRotE+RotEtheory),0.01) << "RotE distribution: s=" << s << ", Rotational Modes=" << PIC::IDF::nTotalRotationalModes[s] << endl;
+    }
+  }
+}
+
+TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
+  int nmode,ntest;
+  double VibEtheory,SampledVibE[10];
+  long int ptr = PIC::ParticleBuffer::GetNewParticle(true);
+  auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+  double Temp=300.0;
+  int nTotalTests=20000;
+
+  for (int iTempTest=0;iTempTest<3;iTempTest++) {
+    for (int s=0;s<PIC::nTotalSpecies;s++) {
+      Temp=0.5*(1+iTempTest)*PIC::IDF::CharacteristicVibrationalTemperature[s];
+      PIC::ParticleBuffer::SetI(s,ptr);
+      for (nmode=0;nmode<PIC::IDF::nTotalVibtationalModes[s];nmode++) SampledVibE[nmode]=0.0;
+
+      for (ntest=0;ntest<nTotalTests;ntest++) {
+        PIC::IDF::LB::InitVibTemp(Temp,ParticleData);
+
+        for (nmode=0;nmode<PIC::IDF::nTotalVibtationalModes[s];nmode++) {
+          SampledVibE[nmode]+=PIC::IDF::LB::GetVibE(nmode,ParticleData);
+        }
+      }
+
+      for (nmode=0;nmode<PIC::IDF::nTotalVibtationalModes[s];nmode++) {
+        double ThetaVib,c,EtaVib; 
+
+	ThetaVib=PIC::IDF::CharacteristicVibrationalTemperature[nmode+s*PIC::IDF::nSpeciesMaxVibrationalModes]; 
+	c=ThetaVib/Temp;
+        EtaVib=2.0*c/(exp(c)-1.0);
+
+        SampledVibE[nmode]/=nTotalTests;
+        VibEtheory=EtaVib/2.0*Kbol*Temp;
+
+        EXPECT_LT(fabs(SampledVibE[nmode]-VibEtheory)/(SampledVibE[nmode]+VibEtheory),0.01) << "VibE distribution: s=" << s << ", nmode=" << nmode << ", Temp=" << Temp <<  endl;
+      }
+    }
+  }
+}
