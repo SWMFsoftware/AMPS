@@ -209,7 +209,7 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
   auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
   double Temp=300.0;
-  int nTotalTests=20000;
+  int nTotalTests=200000;
 
   for (int iTempTest=0;iTempTest<3;iTempTest++) {
     for (int s=0;s<PIC::nTotalSpecies;s++) {
@@ -238,5 +238,36 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
         EXPECT_LT(fabs(SampledVibE[nmode]-VibEtheory)/(SampledVibE[nmode]+VibEtheory),0.01) << "VibE distribution: s=" << s << ", nmode=" << nmode << ", Temp=" << Temp <<  endl;
       }
     }
+  }
+}
+
+TEST_F(IDFTest, IDFEnergyDistributionTest) {
+  int nmode,ntest;
+  double VibEtheory,SampledVibE[10];
+  long int ptr = PIC::ParticleBuffer::GetNewParticle(true);
+  auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+
+  double Temp=300.0;
+  int nTotalTests=200000;
+  double CollisionEnergy_init=6.0*Kbol*Temp;
+  double CollisionEnergy,InternalEnergy,InternalEnergy_sum=0.0,TranslationalEnergy,TranslationalEnergy_sum=0.0;
+
+  for (int nInternalDF=1;nInternalDF<=3;nInternalDF++) {
+    for (int nTranslationalDF=1;nTranslationalDF<=3;nTranslationalDF++) {
+      for (int iTest=0;iTest<nTotalTests;iTest++) {
+        CollisionEnergy=CollisionEnergy_init;
+        PIC::IDF::LB::DistributeEnergy(InternalEnergy,CollisionEnergy,nInternalDF,nTranslationalDF);
+
+        TranslationalEnergy_sum+=TranslationalEnergy;
+        InternalEnergy_sum+=InternalEnergy;
+      }
+
+      TranslationalEnergy_sum/=nTotalTests*nTranslationalDF;
+      InternalEnergy_sum/=nTotalTests*nInternalDF;
+
+      EXPECT_LT(fabs(TranslationalEnergy_sum-InternalEnergy_sum)/(TranslationalEnergy_sum+InternalEnergy_sum),0.01) << 
+      "EnergyDistributionTest: nInternalDF=" << nInternalDF << ", nTranslationalDF=" << nTranslationalDF <<  endl;
+    }
+
   }
 }
