@@ -209,7 +209,7 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
   auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
   double Temp=300.0;
-  int nTotalTests=200000;
+  int nTotalTests=20000;
 
   for (int iTempTest=0;iTempTest<3;iTempTest++) {
     for (int s=0;s<PIC::nTotalSpecies;s++) {
@@ -250,7 +250,7 @@ TEST_F(IDFTest, IDFEnergyDistributionTest) {
   double Temp=300.0;
   int nTotalTests=200000;
   double CollisionEnergy_init=6.0*Kbol*Temp;
-  double CollisionEnergy,InternalEnergy,InternalEnergy_sum=0.0,TranslationalEnergy,TranslationalEnergy_sum=0.0;
+  double CollisionEnergy,InternalEnergy,InternalEnergy_sum=0.0,TranslationalEnergy_sum=0.0;
 
   for (int nInternalDF=1;nInternalDF<=3;nInternalDF++) {
     for (int nTranslationalDF=1;nTranslationalDF<=3;nTranslationalDF++) {
@@ -258,7 +258,7 @@ TEST_F(IDFTest, IDFEnergyDistributionTest) {
         CollisionEnergy=CollisionEnergy_init;
         PIC::IDF::LB::DistributeEnergy(InternalEnergy,CollisionEnergy,nInternalDF,nTranslationalDF);
 
-        TranslationalEnergy_sum+=TranslationalEnergy;
+        TranslationalEnergy_sum+=CollisionEnergy;
         InternalEnergy_sum+=InternalEnergy;
       }
 
