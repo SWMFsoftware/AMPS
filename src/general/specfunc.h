@@ -684,8 +684,25 @@ namespace Vector3D {
     }
 
     //normal distribution p(x) ~ exp(-x^2/2)
+    //two random numbers can be generated concurrently --> save one to reduce the number of operations
     inline double Normal() {
-      return sqrt(-2.0*log(rnd()))*cos(2.0*Pi*rnd());
+      static bool flag=false;
+      static double r;
+
+      if (flag==true) {
+        flag=false;
+	return r;
+      }
+
+      double phi,t;
+
+      t=sqrt(-2.0*log(rnd()));
+      phi=2.0*Pi*rnd();
+
+      r=t*cos(phi);
+      flag=true;
+
+      return t*sin(phi);
     }
 
     inline void Normal(double *res,int length) {
@@ -704,6 +721,47 @@ namespace Vector3D {
 
       if (length%2!=0) res[length-1]=Normal();
     }
+
+    inline double Gamma(double shape) {
+      double res;
+
+    if (shape <= 0) {
+        throw std::invalid_argument("Shape parameter must be positive"); // Gamma distribution is defined only for positive shape parameters
+	exit(__LINE__,__FILE__,"Shape parameter must be positive"); 
+    }
+
+    // Case 1: Shape parameter > 1 (Marsaglia and Tsang's method)
+    if (shape > 1) {
+        double d = shape - 1.0 / 3.0;              // `d` is a constant used for adjusting the shape parameter
+        double c = 1.0 / std::sqrt(9.0 * d);       // `c` adjusts the scaling of the candidate random variable
+
+        while (true) { // Loop until a valid random sample is accepted
+            double z = Normal();           // Generate a random sample from a normal distribution
+            double v = 1.0 + c * z;                 // Candidate value, scaled by `c` and adjusted by `z`
+            if (v <= 0) continue;                   // Reject negative or zero values of `v`
+            v = v * v * v;                          // Cube the candidate value
+
+            double u = rnd();          // Generate a uniform random number
+            if (u < 1.0 - 0.0331 * z * z * z * z) { // First acceptance condition (fast check)
+                res=d * v;                       // Return the generated sample
+		break;
+            }
+            // Second acceptance condition (more precise check)
+            if (std::log(u) < 0.5 * z * z + d * (1.0 - v + std::log(v))) {
+                res=d * v;                       // Return the generated sample if it meets the condition
+		break;
+            }
+        }
+    }
+    // Case 2: Shape parameter <= 1
+    else {
+        // Transform the problem using the relationship:
+        // Gamma(shape) = Gamma(shape + 1) * U^(1 / shape)
+        res=Gamma(shape + 1) * std::pow(rnd(), 1.0 / shape);
+    }
+
+    return res;
+}
 
     namespace SphericalShell {
       inline void Uniform(double *a,double Radius=1.0) {  
