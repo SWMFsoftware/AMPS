@@ -763,6 +763,44 @@ namespace Vector3D {
     return res;
 }
 
+/*
+ * Scaling Relationship Between Gamma Distributions:
+ * If X ~ Gamma(alpha, 1) is a random variable following a Gamma distribution
+ * with shape parameter alpha and scale parameter 1, and Y = X / beta,
+ * then the scaled random variable Y follows a Gamma distribution with:
+ *
+ * Shape parameter: alpha (unchanged),
+ * Scale parameter: 1 / beta.
+ *
+ * Parameters:
+ * - alpha (> 0): Controls the shape of the distribution.
+ *   - If alpha < 1, the distribution is highly skewed with a sharp peak near zero.
+ *   - If alpha = 1, the Gamma distribution reduces to an exponential distribution.
+ *   - If alpha > 1, the distribution becomes less skewed and more symmetric as alpha increases.
+ * - beta (> 0): The rate parameter, which inversely scales the distribution.
+ *   - Larger beta values result in faster decay (narrower distribution).
+ *   - Smaller beta values result in slower decay (wider distribution).
+ *
+ * Formula for Conversion:
+ * Given X ~ Gamma(alpha, 1), transform X as:
+ *   Y = X / beta,
+ * to obtain Y ~ Gamma(alpha, 1 / beta).
+ *
+ * Practical Usage:
+ * 1. If you have samples from Gamma(alpha, 1), divide each sample by beta to
+ *    obtain samples from Gamma(alpha, 1 / beta).
+ * 2. Conversely, to scale samples from Gamma(alpha, 1 / beta) back to Gamma(alpha, 1),
+ *    multiply each sample by beta.
+ */
+   inline double Gamma(double shape,double beta) {
+     double res;
+
+     res=Gamma(shape); // Sample from Gamma(alpha, 1.0) 
+     res/=beta; // Rescale to Gamma(alpha, 1.0 / beta)
+
+     return res;
+   } 
+
     namespace SphericalShell {
       inline void Uniform(double *a,double Radius=1.0) {  
          Distribution::Uniform(a,Radius);
