@@ -264,17 +264,6 @@ INSTANTIATE_TEST_SUITE_P(
     ParticleMergeTest,             // Test suite name
     ParticleMergeTest,             // Test fixture name
     ::testing::Values(                 // Test cases
-      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
-      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Field lines: Single particle weight test"},
-      ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"},
-      ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Field lines: Variable particle weight test"}
-      )
-    );
-
-INSTANTIATE_TEST_SUITE_P(
-    ParticleMergeTest,             // Test suite name
-    ParticleMergeTest,             // Test fixture name
-    ::testing::Values(                 // Test cases
       ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
       ParticleMergeTestCase{0,1,1000,AMPS_SPLIT_MERGE_TEST::GenerateSingleWeight,"Single particle weight test"},
       ParticleMergeTestCase{0,0,1000,AMPS_SPLIT_MERGE_TEST::GenerateVariableWeight,"Variable particle weight test"},
