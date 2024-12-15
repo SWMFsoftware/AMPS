@@ -1459,9 +1459,34 @@ Run=
 
 Check=
 >>>@echo "test_unit_test_check..." >> test_unit_test.diff
->>>> test_unit_test.diff
 >>>@ls -l test_unit_test.diff
 >>>@echo Test test_unit_test has finished: `date`
+<#
+
+#>
+Name=unit_test_field-lines 
+Time=2
+
+Compile=
+>>>@echo "test_unit_test_field-lines_compile..." > test_unit_test_field-lines.diff
+>>>./Config.pl -application=test/unit-tests/unit-test-field-lines 
+>>>./Config.pl -spice-path=nospice
+>>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
+>>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
+>>>make -j8
+>>>@echo "test_unit_test_field-lines_compile... done" >> test_unit_test_field-lines.diff
+
+Run=
+>>>@echo "test_unit_test_field-lines_run..." >> test_unit_test_field-lines.diff
+>>>cd ${TESTunit_test_field-linesDIR}; mpirun -np 1 ./amps
+>>>@echo "test_unit_test_field-lines_run... done" >> test_unit_test_field-lines.diff
+
+
+Check=
+>>>@echo "test_unit_test_field-lines_check..." >> test_unit_test_field-lines.diff
+>>>@diff test_summary_report.txt output/test_amps/test_field-lines_summary_report.txt > test_unit_test_field-lines.diff 
+>>>@ls -l test_unit_test_field-lines.diff
+>>>@echo Test test_unit_test_field-lines has finished: `date`
 <#
 
 -------------------------------------------------------------------------------
