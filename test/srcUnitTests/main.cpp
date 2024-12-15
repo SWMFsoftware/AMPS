@@ -50,15 +50,15 @@ void amps_time_step();
 
 void pbuffer_test_for_linker(); 
 void collisions_test_for_linker();
-
+void idf_test_for_linker();
 void split_merge_test_for_linker();
 
 int main(int argc,char **argv) {
 
   pbuffer_test_for_linker();
   collisions_test_for_linker();
-  
-split_merge_test_for_linker();
+  idf_test_for_linker();
+  split_merge_test_for_linker();
 
   clock_t runtime =-clock();
 

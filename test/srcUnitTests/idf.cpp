@@ -193,7 +193,7 @@ TEST_F(IDFTest, IDFRotEnregyGenerationTest) {
     SampledRotE/=nTotalTests;
     RotEtheory=PIC::IDF::nTotalRotationalModes[s]/2.0*Kbol*Temp;
 
-    if (PIC::IDF::nTotalRotationalModes[s]==0) {
+    if (PIC::IDF::nTotalRotationalModes[s]<=1) {
       EXPECT_LT(fabs(SampledRotE),0.01) << "RotE distribution: s=" << s << endl;
     }
     else {
@@ -209,7 +209,7 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
   auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
   double Temp=300.0;
-  int nTotalTests=20000;
+  int nTotalTests=80000;
 
   for (int iTempTest=0;iTempTest<3;iTempTest++) {
     for (int s=0;s<PIC::nTotalSpecies;s++) {
@@ -242,11 +242,6 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
 }
 
 TEST_F(IDFTest, IDFEnergyDistributionTest) {
-  int nmode,ntest;
-  double VibEtheory,SampledVibE[10];
-  long int ptr = PIC::ParticleBuffer::GetNewParticle(true);
-  auto ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-
   double Temp=300.0;
   int nTotalTests=200000;
   double CollisionEnergy_init=6.0*Kbol*Temp;
@@ -271,3 +266,11 @@ TEST_F(IDFTest, IDFEnergyDistributionTest) {
 
   }
 }
+
+
+
+
+
+
+
+
