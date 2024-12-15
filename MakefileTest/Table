@@ -1484,9 +1484,35 @@ Run=
 
 Check=
 >>>@echo "test_unit_test_field-lines_check..." >> test_unit_test_field-lines.diff
->>>@diff test_summary_report.txt output/test_amps/test_field-lines_summary_report.txt > test_unit_test_field-lines.diff 
+>>>-@diff test_summary_report.txt output/test_amps/test_field-lines_summary_report.txt > test_unit_test_field-lines.diff 
 >>>@ls -l test_unit_test_field-lines.diff
 >>>@echo Test test_unit_test_field-lines has finished: `date`
+<#
+
+#>
+Name=unit_test_particle_distribution 
+Time=2
+
+Compile=
+>>>@echo "test_unit_test_particle_distribution_compile..." > test_particle_distribution.diff
+>>>./Config.pl -application=test/unit-tests/unit-test-distribution 
+>>>./Config.pl -spice-path=nospice
+>>>./Config.pl -compiler-option=-I/home/vtenishe/gtest/include
+>>>./Config.pl -cpp-link-option=-L/home/vtenishe/gtest/lib:-lgtest:-pthread
+>>>make -j8
+>>>@echo "test_unit_test_particle_distribution_compile... done" >> test_unit_test_particle_distribution.diff
+
+Run=
+>>>@echo "test_unit_test_particle_distribution_run..." >> test_unit_test_particle_distribution.diff
+>>>cd ${TESTunit_test_particle_distributionDIR}; mpirun -np 1 ./amps
+>>>@echo "test_unit_test_particle_distribution_run... done" >> test_unit_test_particle_distribution.diff
+
+
+Check=
+>>>@echo "test_unit_test_particle_distribution_check..." >> test_unit_test_particle_distribution.diff
+>>>-@diff test_summary_report.txt output/test_amps/test_particle_distribution_summary_report.txt > test_unit_test_particle_distribution.diff
+>>>@ls -l test_unit_test_particle_distribution.diff
+>>>@echo Test test_unit_test_particle_distribution has finished: `date`
 <#
 
 -------------------------------------------------------------------------------
