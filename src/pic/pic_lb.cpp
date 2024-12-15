@@ -39,23 +39,16 @@ void PIC::IDF::LB::InitVibTemp(double VibTemp,PIC::ParticleBuffer::byte *Particl
     double c,p,EtaVib,Evib,dE,EvibMax;
     double F,Fmax;
 
-//Bird, Eq 5.53
+    //Bird, Eq 5.53
     c=ThetaVib/VibTemp;
     EtaVib=2.0*c/(exp(c)-1.0);
 
-    EvibMax=10.0;
-    dE=EvibMax/10000.0;
+    //Function to sample from the distribution E^a * exp(-E / (kT))
+    double a=EtaVib/2.0-1.0;
+    double alpha=a+1;
+    double beta=1.0/(Kbol*VibTemp);
 
-    Fmax=pow(dE,EtaVib/2.0-1.0)*exp(-EtaVib/2.0*dE);
-
-    do {
-      Evib=dE+rnd()*(EvibMax-dE);
-      F=pow(Evib,EtaVib/2.0-1.0)*exp(-EtaVib/2.0*Evib);
-      p=F/Fmax;
-    }
-    while (rnd()>p);
-
-    Evib*=EtaVib/2.0*Kbol*VibTemp;
+    Evib=Vector3D::Distribution::Gamma(alpha, beta);
     SetVibE(Evib,nmode,ParticleDataStart);
   }
 }
@@ -67,7 +60,7 @@ void PIC::IDF::LB::InitRotTemp(double RotTemp,PIC::ParticleBuffer::byte *Particl
   s=PIC::ParticleBuffer::GetI(ParticleDataStart);
   RotDF=nTotalRotationalModes[s];
 
-  if (RotDF<1.0E-8) {
+  if (RotDF<=1.0) {
     SetRotE(0.0,ParticleDataStart);
     return;
   }
