@@ -64,6 +64,11 @@ ParticleWeightCorrectionMode=on !on,off
 
   define _PIC_FIELD_LINE_MODE_ _PIC_MODE_ON_
 
+  
+  define LINK_BUFFER_TEST
+  define LINK_SPLIT_MERGE_TEST
+
+
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
 
