@@ -4995,12 +4995,114 @@ void DeleteAttachedParticles();
       extern int _ROTATIONAL_ENERGY_OFFSET_,_VIBRATIONAL_ENERGY_OFFSET_;
 
 
+      inline void gamma_based_sampling(double a1, double a2, double CollisionEnergy, double& internal_energies) {
+        // Calculate alpha and beta for Gamma distributions
+        double alpha = a2 + 1.0;
+        double beta_param = a1 + 1.0;
+
+        // Validate parameters
+        if (alpha <= 0.0) {
+          exit(__LINE__,__FILE__,"Error: Parameter a2 must satisfy a2 > -1 to ensure alpha = a2 + 1 > 0.");
+        }
+        
+        if (beta_param <= 0.0) {
+          exit(__LINE__,__FILE__,"Error: Parameter a1 must satisfy a1 > -1 to ensure beta = a1 + 1 > 0.");
+        } 
+
+        // Initialize random number generators -- below is anothe appraoch using rnd provided by stl;
+        // std::random_device rd;
+        // std::mt19937 gen(rd()); 
+        // std::gamma_distribution<> gamma_dist_alpha(alpha, 1.0); // Shape=alpha, Scale=1
+        // std::gamma_distribution<> gamma_dist_beta(beta_param, 1.0); // Shape=beta, Scale=1
+
+        double X,Y;
+
+        do {
+          X = Vector3D::Distribution::Gamma(alpha); //gamma_dist_alpha(gen);
+          Y = Vector3D::Distribution::Gamma(beta_param); //gamma_dist_beta(gen);
+        }
+        while (X + Y == 0.0);
+
+        double Z = X / (X + Y);
+        double InternalEnergy = (1.0 - Z) * CollisionEnergy;
+       internal_energies=InternalEnergy;
+     }
+
+
+
+      inline void DistributeEnergy(double &InternalEnergy,double &CollisionEnergy, double InternalDF, double TranslationalDF) {
+        InternalEnergy=0.0;
+
+        if (InternalDF>0.0) {
+          double a1,a2,c;
+
+          a1=InternalDF/2.0-1.0;
+          a2=TranslationalDF/2.0-1.0;
+
+	        gamma_based_sampling(a1,a2, CollisionEnergy,InternalEnergy);
+	        CollisionEnergy-=InternalEnergy;
+	        return;
+
+	        // Calculate alpha and beta
+          double alpha = a2 + 1.0;
+          double beta_param = a1 + 1.0;
+
+          // Check parameter validity
+          if (alpha <= 0.0 || beta_param <= 0.0) {
+            exit(__LINE__,__FILE__,"Error: Parameters must satisfy a2 > -1 and a1 > -1.");
+          }
+
+          // Calculate the mode of the Beta distribution
+          double c_star,M;
+    
+          if (alpha > 1.0 && beta_param > 1.0) {
+            c_star = (alpha - 1.0) / (alpha + beta_param - 2.0);
+            M = std::pow(c_star, a2) * std::pow(1.0 - c_star, a1);
+         } 
+         else if (alpha <= 1.0 && beta_param > 1.0) {
+          c_star = 0.0;
+          M = std::pow(1.0 - c_star, a1); // f(0) = 0^a2 * (1 - 0)^a1
+         }
+         else if (beta_param <= 1.0 && alpha > 1.0) {
+           c_star = 1.0;
+           M = std::pow(c_star, a2) * std::pow(1.0 - c_star, a1); // f(1) = 1^a2 * 0^a1
+         }
+         else {
+          // When both alpha <=1 and beta_param <=1, set M to 1
+          // Since f(c) <=1 for c in [0,1] in this scenario
+          c_star = 0.0; // Arbitrary
+          M = 1.0;
+         }
+
+         // Handle cases where M might be zero or undefined
+         if (M <= 0.0 || std::isnan(M) || std::isinf(M)) {
+          exit(__LINE__,__FILE__,"Error: Maximum of f(c) is non-positive or undefined. AR method cannot proceed.");
+         }
+
+         // Initialize random number generators
+         double u,fc;
+
+         do { 
+           c = rnd(); // Sample from g(c) = Uniform(0,1)
+           u = rnd(); // Sample u ~ Uniform(0,1)
+
+           // Calculate f(c)
+           double fc = std::pow(c, a2) * std::pow(1.0 - c, a1);
+         }
+         while(M*rnd()>fc);
+
+         InternalEnergy=c*CollisionEnergy;
+        }
+        
+        CollisionEnergy-=InternalEnergy;
+      }
+ 
       inline double GetRotE(PIC::ParticleBuffer::byte *ParticleDataStart) {
         return *((double*)(ParticleDataStart+_ROTATIONAL_ENERGY_OFFSET_));
       }
 
       inline void SetRotE(double e,PIC::ParticleBuffer::byte *ParticleDataStart) {
-         *((double*)(ParticleDataStart+_ROTATIONAL_ENERGY_OFFSET_))=e;
+        *((double*)(ParticleDataStart+_ROTATIONAL_ENERGY_OFFSET_))=e;
       }
 
       inline double GetVibE(int nmode,PIC::ParticleBuffer::byte *ParticleDataStart) {
