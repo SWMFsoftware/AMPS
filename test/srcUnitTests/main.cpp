@@ -45,7 +45,10 @@ private:
     int total_tests_ = 0;
     int passed_tests_ = 0;
     int failed_tests_ = 0;
-    std::ostringstream report_stream_;
+
+    // Stream to store details of failed and passed tests
+    std::ostringstream failed_tests_report_;
+    std::ostringstream passed_tests_report_;
 
 public:
     explicit SummaryReportListener(std::unique_ptr<::testing::TestEventListener> default_listener)
@@ -96,9 +99,10 @@ public:
         total_tests_++;
         if (test_info.result()->Passed()) {
             passed_tests_++;
+	    passed_tests_report_ << "Test Passed: " << test_info.test_case_name() << "." << test_info.name() << "\n";
         } else {
             failed_tests_++;
-            report_stream_ << "Test Failed: " << test_info.test_case_name() << "." << test_info.name() << "\n";
+            failed_tests_report_ << "Test Failed: " << test_info.test_case_name() << "." << test_info.name() << "\n";
         }
         default_listener_->OnTestEnd(test_info);
     }
@@ -114,8 +118,9 @@ public:
             report_file << "Total tests run: " << total_tests_ << "\n";
             report_file << "Tests passed: " << passed_tests_ << "\n";
             report_file << "Tests failed: " << failed_tests_ << "\n";
-            report_file << "\nDetails of failed tests:\n";
-            report_file << report_stream_.str();
+
+	    report_file << "\nDetails of passed tests:\n" << passed_tests_report_.str() << "\n";
+            report_file << "Details of failed tests:\n" << failed_tests_report_.str() << "\n";
             report_file.close();
         } else {
             std::cerr << "Error: Unable to write test summary report.\n";
@@ -131,6 +136,7 @@ void pbuffer_test_for_linker();
 void collisions_test_for_linker();
 void idf_test_for_linker();
 void split_merge_test_for_linker();
+void distribution_test_for_linker();
 
 int main(int argc,char **argv) {
 
@@ -149,6 +155,11 @@ int main(int argc,char **argv) {
   #ifdef LINK_SPLIT_MERGE_TEST
   split_merge_test_for_linker();
   #endif
+
+  #ifdef LINK_DISTRIBUTION_TEST
+  distribution_test_for_linker();
+  #endif
+
 
   clock_t runtime =-clock();
 
