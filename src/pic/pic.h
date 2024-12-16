@@ -4985,6 +4985,53 @@ void DeleteAttachedParticles();
     extern int _VIBRATIONAL_ENERGY_SAMPLE_DATA_OFFSET_[PIC::nTotalSpecies];
     extern int _TOTAL_SAMPLE_PARTICLE_WEIGHT_SAMPLE_DATA_OFFSET_;
 
+    /* @brief Samples a value E1 and E2 from the distribution proportional to E1^a1 * (Esum - E1)^a2; E1=Esum - E1 
+    *
+    * This function utilizes the relationship between the Beta and Gamma distributions
+    * to sample E1. Specifically, it samples two independent Gamma-distributed random
+    * variables and uses them to construct a Beta-distributed variable, which is then
+    * scaled by Esum to obtain E1.
+    *
+    * Mathematical Background:
+    * If X ~ Gamma(a1 + 1, 1) and Y ~ Gamma(a2 + 1, 1), then:
+    * E1 = Esum * (X / (X + Y))
+    * follows the desired distribution:
+    * p(E1) ∝ E1^a1 * (Esum - E1)^a2, for 0 < E1 < Esum
+    *
+    * @param a1  Exponent parameter for E1 (must be > -1).
+    * @param a2  Exponent parameter for (Esum - E1) (must be > -1).
+    * @param Esum The upper bound for E1 (must be > 0).
+    * @throws std::invalid_argument if a1 <= -1, a2 <= -1, or Esum <= 0.
+    * @throws std::runtime_error if the sum of Gamma samples X + Y equals zero. */ 
+    inline void distribute_energy(double &E1,double &E2,double a1,double a2,double Etot) {
+      if (a1 <= -1.0) {
+        exit(__LINE__,__FILE__,"Parameter a1 must be greater than -1.");
+      }
+      if (a2 <= -1.0) {
+        exit(__LINE__,__FILE__,"Parameter a2 must be greater than -1.");
+      }
+      if (Etot <= 0.0) {
+        exit(__LINE__,__FILE__,"Etot must be greater than 0.");
+      }
+
+      /*
+      * Define Gamma Distributions for X and Y:
+      * - X is sampled from Gamma(a1 + 1, 1), where (a1 + 1) is the shape parameter.
+      * - Y is sampled from Gamma(a2 + 1, 1), where (a2 + 1) is the shape parameter.
+      * - The scale parameter for both Gamma distributions is set to 1.
+      */
+      double X,Y;
+
+      do {
+        X=Vector3D::Distribution::Gamma(a1 + 1.0);
+        Y=Vector3D::Distribution::Gamma(a2 + 1.0); 
+      }
+      while (X + Y == 0.0); 
+
+      E1 = Etot * (X / (X + Y));
+      E2 = Etot-E1; 
+    }
+
     namespace LB {
       extern int _ROTATIONAL_ENERGY_OFFSET_,_VIBRATIONAL_ENERGY_OFFSET_;
 
@@ -5126,6 +5173,9 @@ void DeleteAttachedParticles();
       double GetCellMeanRotE(int s,PIC::Mesh::cDataCenterNode* cell);
       double GetCellMeanVibE(int nmode,int s,PIC::Mesh::cDataCenterNode* cell);
 
+       
+      void CalculateRTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1,double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega);
+      void CalculateVTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1,double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega);
       void RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell);
 
       //request data for the model

@@ -190,171 +190,204 @@ double PIC::IDF::LB::GetCellMeanVibE(int nmode,int s,PIC::Mesh::cDataCenterNode*
   return res;
 }
 
-void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
-  PIC::ParticleBuffer::byte* ptr[2];
-  int s[2],nptr;
-  double TempIndex,Ec,TrDF;
-  double m[2],mr;
+void PIC::IDF::LB::CalculateRTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1, 
+    double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega) {
+    
+    int s[2];
+    s[0]=PIC::ParticleBuffer::GetI(ptr0);
+    s[1]=PIC::ParticleBuffer::GetI(ptr1);
+    
+    double RotDF=PIC::IDF::nTotalRotationalModes[s[0]]+PIC::IDF::nTotalRotationalModes[s[1]];
+    
+    if (RotDF>0.0) {
+        Ec+=GetRotE(ptr0)+GetRotE(ptr1);
+        double Erot;
 
-//RedistributionEnergyFlag==false <= none of internal modes were relaxed
-//RedistributionEnergyFlag==true  <= at least one of internal modes was relaxed
-  bool RedistributionEnergyFlag=false;
+        //divide the energy between rotational and translational degrees of freedom
+        PIC::IDF::distribute_energy(Ec,Erot,1.5-TempIndexOmega,RotDF/2.0-1.0,Ec);
 
-  ptr[0]=ptr0;
-  ptr[1]=ptr1;
-
-  s[0]=PIC::ParticleBuffer::GetI(ptr0);
-  s[1]=PIC::ParticleBuffer::GetI(ptr1);
-  TempIndex=GetTempIndex(s[0],s[1]);
-  TrDF=2.5-TempIndex;
-
-  m[0]=PIC::MolecularData::GetMass(s[0]);
-  m[1]=PIC::MolecularData::GetMass(s[1]);
-  mr=m[0]*m[1]/(m[0]+m[1]);
-
-  Ec=0.5*mr*vrel*vrel;
-
-  for (nptr=0;nptr<2;nptr++) {
-
-//Vibrational-Translational (VT) relaxaton
-if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_  == _PIC_MODE_ON_) {
-    if (PIC::IDF::nTotalVibtationalModes[s[nptr]]!=0) {
-      double Evib,ThetaVib,EtaVib,VibDF;
-
-      exit(__LINE__,__FILE__,"Error: the next two lines in the code need to be implemented");
-      /* the part is the comment need to be implemented in AMPS 
-      Evib=GetVibE(0,ptr[nptr]);
-      ThetaVib=mol.GetThetaVib(0,s[nptr]);
-      */
-
-  //Bird, Eq.5.52 , 1.31
-      double a,Tvib; //,Temp_coll;
-      a=Evib/(Kbol*ThetaVib);
-      if (a>1.0E-300) {
-        Tvib=ThetaVib/log(1.0+1.0/a);
-        EtaVib=2.0*Evib/(Tvib*Kbol);
-      }
-      else {
-        Tvib=0.0;
-        EtaVib=0.0;
-      }
-
-      VibDF=EtaVib/2.0;
-
-
-      printf("There are some pronbems in void Cdsmc::Cidf::Cqlb::RedistEnergy's VT relaxation\n");
-      exit(__LINE__,__FILE__);
-
-      //    Temp_coll=(Ec+Evib)/(TrDF+VibDF)/Kbol;
-
-      //    Temp_coll=this_dsmc->GetTrTemp(0,0);
-      //    a=ThetaVib/Temp_coll;
-      //    VibDF=a/(exp(a)-1.0);
-
-      /*
-          switch (nptr) {
-          case 0 :
-            Zv=mol.GetZvib(s[0],Temp_coll,s[1]);
-            break;
-          case 1 :
-            Zv=mol.GetZvib(s[1],Temp_coll,s[0]);
-            break;
-          }
-      */
-
-
-        if (rnd()<0.5) { //1.0/Zv) {
-          double c,p,a1,a2;
-
-          Ec+=Evib;
-          a1=VibDF-1.0,a2=TrDF-1.0;
-
-          if (fabs(a1)<1.0E-5) Evib=(1.0-pow(rnd(),1.0/TrDF))*Ec;
-          else if (a1>0.0) {
-            do {
-              c=rnd();
-              p=pow((a1+a2)/a1*c,a1)*pow((a1+a2)/a2*(1.0-c),a2);
-            }
-            while (rnd()>p);
-
-            Evib=c*Ec;
-          }
-          else {
-            double Pmax;
-            c=0.0001*Ec;
-            Pmax=pow(c,a1)*pow(1.0-c,a2);
-
-            do {
-              c=rnd()*Ec;
-              p=pow(c,a1)*pow(1.0-c,a2);
-            }
-            while (Pmax*rnd()>p);
-
-            Evib=c;
-          }
-
-          Ec-=Evib;
-          if (ChangeParticlePropertiesFlag[nptr]==true) SetVibE(Evib,0,ptr[nptr]);
-
-          RedistributionEnergyFlag=true;
-          break;
+        //Distribute rotational energy between the particles  
+        double Erot0,Erot1;
+        int RotDF0=PIC::IDF::nTotalRotationalModes[s[0]];
+        int RotDF1=PIC::IDF::nTotalRotationalModes[s[1]];
+ 
+        if (RotDF0==0) {
+            Erot0=0.0,Erot1=Erot;
         }
-      }
-}
-
-  //Vibrational-Vibrational (VV) relaxation
-if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VV_RELAXATION_MODE_ == _PIC_MODE_ON_) {
-    exit(__LINE__,__FILE__,"not implemented");
-}
-
-  //Rotational-Translational (TR) relaxation
-if  (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_) {
-    double RotDF=PIC::IDF::nTotalRotationalModes[s[nptr]];
-    double Zrot=PIC::IDF::RotationZnumber[s[nptr]];
-
-    if (RotDF>0.0) if (rnd()<1.0/Zrot) {
-      double a1,a2,Erot,p,c;
-
-      Ec+=GetRotE(ptr[nptr]);
-      a1=RotDF/2.0-1.0;
-      a2=TrDF-1.0;
-
-
-      if (fabs(a1)<1.0E-5) Erot=(1.0-pow(rnd(),1.0/TrDF))*Ec;
-      else if (a1>0.0) {
-        do {
-          c=rnd();
-          p=pow((a1+a2)/a1*c,a1)*pow((a1+a2)/a2*(1.0-c),a2);
+        else if (RotDF1==0) {
+            Erot0=Erot,Erot1=0.0;
         }
-        while (rnd()>p);
-
-        Erot=c*Ec;
-      }
-      else {
-        double Pmax;
-        c=0.0001;
-        Pmax=pow(c,a1)*pow(1.0-c,a2);
-
-        do {
-          c=rnd();
-          p=pow(c,a1)*pow(1.0-c,a2);
+        else {
+            PIC::IDF::distribute_energy(Erot0,Erot1,RotDF0/2.0-1.0,RotDF1/2.0-1.0,Erot);
         }
-        while (Pmax*rnd()>p);
+      
+        if (ChangeParticlePropertiesFlag[0]==true) SetRotE(Erot0,ptr0);
+        if (ChangeParticlePropertiesFlag[1]==true) SetRotE(Erot1,ptr1);
 
-        Erot=c*Ec;
-      }
-
-      if (ChangeParticlePropertiesFlag[nptr]==true) SetRotE(Erot,ptr[nptr]);
-      Ec-=Erot;
-
-      RedistributionEnergyFlag=true;
-      break;
+        RedistributionEnergyFlag=true;
     }
 }
 
-  }
+void PIC::IDF::LB::CalculateVTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::ParticleBuffer::byte *ptr1, 
+    double &Ec, bool* ChangeParticlePropertiesFlag, bool &RedistributionEnergyFlag, double TempIndexOmega) {
+    
+    int s[2];
+    s[0]=PIC::ParticleBuffer::GetI(ptr0);
+    s[1]=PIC::ParticleBuffer::GetI(ptr1);
 
-  if (RedistributionEnergyFlag==true) vrel=sqrt(2.0*Ec/mr);
+
+    exit(__LINE__,__FILE__,"The implimentation is not tests or verified");
+
+    // Get total internal energy (rotational + vibrational)
+    double Eint = GetRotE(ptr0) + GetRotE(ptr1);
+    for(int i=0; i<2; i++) {
+        for(int nmode=0; nmode<nTotalVibtationalModes[s[i]]; nmode++) {
+            Eint += GetVibE(nmode, (i==0) ? ptr0 : ptr1);
+        }
+    }
+
+    // Total energy to redistribute
+    double Etot = Ec + Eint;
+
+    // First split translational and total internal energy
+    double TotalDF = 1.5-TempIndexOmega;  // Translational DF
+    double InternalDF = 0.0;
+
+    // Calculate total internal degrees of freedom
+    double RotDF = PIC::IDF::nTotalRotationalModes[s[0]] + PIC::IDF::nTotalRotationalModes[s[1]];
+    double VibDF = 0.0;
+    for(int i=0; i<2; i++) {
+        for(int nmode=0; nmode<nTotalVibtationalModes[s[i]]; nmode++) {
+            VibDF += 2.0;  // Each vibrational mode contributes 2 degrees of freedom
+        }
+    }
+    InternalDF = (RotDF/2.0 - 1.0) + VibDF/2.0;
+
+    // Split total energy between translational and internal
+    PIC::IDF::distribute_energy(Ec, Eint, TotalDF, InternalDF, Etot);
+
+    // Now split internal energy between rotational and vibrational
+    double Erot, Evib;
+    if(RotDF > 0.0 && VibDF > 0.0) {
+        PIC::IDF::distribute_energy(Erot, Evib, RotDF/2.0-1.0, VibDF/2.0, Eint);
+    }
+    else if(RotDF > 0.0) {
+        Erot = Eint;
+        Evib = 0.0;
+    }
+    else {
+        Erot = 0.0;
+        Evib = Eint;
+    }
+
+    // Distribute rotational energy between particles
+    if(RotDF > 0.0) {
+        double Erot0, Erot1;
+        int RotDF0=PIC::IDF::nTotalRotationalModes[s[0]];
+        int RotDF1=PIC::IDF::nTotalRotationalModes[s[1]];
+        
+        if(RotDF0==0) {
+            Erot0=0.0; Erot1=Erot;
+        }
+        else if(RotDF1==0) {
+            Erot0=Erot; Erot1=0.0;
+        }
+        else {
+            PIC::IDF::distribute_energy(Erot0,Erot1,RotDF0/2.0-1.0,RotDF1/2.0-1.0,Erot);
+        }
+        
+        if(ChangeParticlePropertiesFlag[0]) SetRotE(Erot0,ptr0);
+        if(ChangeParticlePropertiesFlag[1]) SetRotE(Erot1,ptr1);
+    }
+
+    // Distribute vibrational energy between particles
+    if(VibDF > 0.0) {
+        double Evib0=0.0, Evib1=0.0;
+        double VibDF0=2.0*nTotalVibtationalModes[s[0]];
+        double VibDF1=2.0*nTotalVibtationalModes[s[1]];
+        
+        if(VibDF0==0.0) {
+            Evib0=0.0; Evib1=Evib;
+        }
+        else if(VibDF1==0.0) {
+            Evib0=Evib; Evib1=0.0;
+        }
+        else {
+            PIC::IDF::distribute_energy(Evib0,Evib1,VibDF0/2.0,VibDF1/2.0,Evib);
+        }
+        
+        // Distribute among modes for each particle
+        if(ChangeParticlePropertiesFlag[0] && VibDF0>0.0) {
+            double modeEnergy = Evib0/nTotalVibtationalModes[s[0]];
+            for(int nmode=0; nmode<nTotalVibtationalModes[s[0]]; nmode++) {
+                SetVibE(modeEnergy,nmode,ptr0);
+            }
+        }
+        
+        if(ChangeParticlePropertiesFlag[1] && VibDF1>0.0) {
+            double modeEnergy = Evib1/nTotalVibtationalModes[s[1]];
+            for(int nmode=0; nmode<nTotalVibtationalModes[s[1]]; nmode++) {
+                SetVibE(modeEnergy,nmode,ptr1);
+            }
+        }
+    }
+
+    RedistributionEnergyFlag=true;
+}
+
+void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,
+    double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
+    
+    int s[2];
+    double TempIndexOmega,Ec,m[2],mr;
+    bool RedistributionEnergyFlag=false;
+
+    s[0]=PIC::ParticleBuffer::GetI(ptr0);
+    s[1]=PIC::ParticleBuffer::GetI(ptr1);
+    
+    TempIndexOmega=GetTempIndex(s[0],s[1]);
+
+    m[0]=PIC::MolecularData::GetMass(s[0]);
+    m[1]=PIC::MolecularData::GetMass(s[1]);
+    mr=m[0]*m[1]/(m[0]+m[1]);
+
+    Ec=0.5*mr*vrel*vrel;
+
+    // Set collision numbers
+    const double Zrot=5.0;
+    const double Zvib=0.5;
+    
+    // Calculate total relaxation probability: 1/Z = 1/Zrot + 1/Zvib
+    double totalRelaxProb = 0.0;
+    
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zrot;
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zvib;
+    
+    if (rnd() < totalRelaxProb) {
+        //redistribution of the internal energy happened => decide via which channel
+        if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_ == _PIC_MODE_OFF_) {
+            //only RT is available 
+            CalculateRTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
+        }
+        else if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_ == _PIC_MODE_OFF_) {
+            //only VT is available 
+            CalculateVTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
+        }
+        else {
+            // Both modes are available
+            // Probability of RT given relaxation = (1/Zrot)/(1/Zrot + 1/Zvib)
+            double probRTGivenRelax = (1.0/Zrot)/totalRelaxProb;
+            
+            if (rnd() < probRTGivenRelax) {
+                CalculateRTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
+            }
+            else {
+                CalculateVTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
+            }
+        }
+    }
+
+    if (RedistributionEnergyFlag==true) vrel=sqrt(2.0*Ec/mr);
 }
 
 //request the data for the model
