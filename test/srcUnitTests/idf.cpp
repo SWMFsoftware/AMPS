@@ -267,8 +267,89 @@ TEST_F(IDFTest, IDFEnergyDistributionTest) {
   }
 }
 
+TEST_F(IDFTest, RTTransitionTest) {
+    const double Temp = 300.0;
+    const int nTotalTests = 100000;
+    const double InitialEnergy = 6.0 * Kbol * Temp;
+    const double TempIndexOmega = 1.0; // Adjust based on your specific needs
+    
+    // Allocate particle buffers
+    long int p0 = PIC::ParticleBuffer::GetNewParticle(true);
+    long int p1 = PIC::ParticleBuffer::GetNewParticle(true);
+
+    auto ptr0=PIC::ParticleBuffer::GetParticleDataPointer(p0);
+    auto ptr1=PIC::ParticleBuffer::GetParticleDataPointer(p1);
+    
+    // Loop through species pairs
+    for (int s0 = 0; s0 < PIC::nTotalSpecies; s0++) {
+        for (int s1 = s0; s1 < PIC::nTotalSpecies; s1++) {   
+           double rotationalEnergyFraction[2]={0.0};
+
+            // Run multiple tests for statistical averaging
+            for (int iTest = 0; iTest < nTotalTests; iTest++) {
+                // Initialize particle properties
+                PIC::ParticleBuffer::SetI(s0, ptr0);
+                PIC::ParticleBuffer::SetI(s1, ptr1);
+                
+                // Set initial energies
+                double Ec = InitialEnergy;
+                double initialTotalEnergy = Ec;
+                
+                // Set initial rotational energies
+                PIC::IDF::LB::SetRotE(0.0,ptr0);
+                PIC::IDF::LB::SetRotE(0.0,ptr1);
+                
+                // Flags for the transition
+                bool ChangeParticlePropertiesFlag[2] = {true,true};
+                bool RedistributionEnergyFlag = false;
+                
+                // Perform RT transition
+                PIC::IDF::LB::CalculateRTTransition(ptr0, ptr1, Ec, 
+                    ChangeParticlePropertiesFlag, RedistributionEnergyFlag, 
+                    TempIndexOmega);
+                
+                // Get final rotational energies
+                double E_rot0_final = PIC::IDF::GetRotE(ptr0);
+                double E_rot1_final = PIC::IDF::GetRotE(ptr1);
+                
+                // Calculate total final energy
+                double finalTotalEnergy = Ec + E_rot0_final + E_rot1_final;
+                
+                // Test energy conservation
+                EXPECT_LT(abs(initialTotalEnergy-finalTotalEnergy)/(initialTotalEnergy+finalTotalEnergy),1.0E-6)
+                    << "Energy not conserved for species pair (" << s0 << "," << s1 << ")";
+                      
+                // Calculate average energy fractions
+                rotationalEnergyFraction[0]+=E_rot0_final;
+                rotationalEnergyFraction[1]+=E_rot1_final;
+            }
+
+            int RotDF_s0=PIC::IDF::nTotalRotationalModes[s0];
+            int RotDF_s1=PIC::IDF::nTotalRotationalModes[s1];
+
+            if ((RotDF_s0==0)&&(RotDF_s1==0)) {
+              EXPECT_EQ(rotationalEnergyFraction[0], 0.0);
+              EXPECT_EQ(rotationalEnergyFraction[1], 0.0);
+            }
+            else if (RotDF_s0==0) {
+              EXPECT_EQ(rotationalEnergyFraction[0], 0.0);
+              EXPECT_NE(rotationalEnergyFraction[1], 0.0);             
+            }
+            else if (RotDF_s1==0) {
+              EXPECT_EQ(rotationalEnergyFraction[1], 0.0);
+              EXPECT_NE(rotationalEnergyFraction[2], 0.0);   
+            }
+            else {
+              double r1=rotationalEnergyFraction[0]/(rotationalEnergyFraction[0]+rotationalEnergyFraction[1]);
+              double r2=RotDF_s0/((double)(RotDF_s0+RotDF_s1));
+
+              EXPECT_LT(fabs(r1-r2)/(r1+r2),0.02) << "Energy division between rotational degrees of fredom (" << RotDF_s0 << "," << RotDF_s1 << ")";
+            }          
+        }            
 
 
+    }
+}
 
 
 
