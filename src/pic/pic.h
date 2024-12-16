@@ -4613,16 +4613,10 @@ void DeleteAttachedParticles();
     //models for calculation of the relative velocity after a collision
     namespace VelocityScattering {
       namespace HS {
-        inline void VelocityAfterCollision(double* v0,double m0,double* v1, double m1) {
-          double Vrc,V[3],vrel[3],vcm[3],am=m0+m1;
+        inline void VelocityAfterCollision(double* v0,double m0,double* v1,double m1,double *vcm,double *vrel) {
+          double Vrc,V[3],am=m0+m1;
           double CosKsi,SinKsi,CosEps,SinEps,D,c;
           int idim;
-
-          //Init
-          for (idim=0;idim<3;idim++) {
-            vrel[idim]=v1[idim]-v0[idim];
-            vcm[idim]=(m1*v1[idim]+m0*v0[idim])/am;
-          }
 
           //generate the new value of the relative velocity
           CosKsi=2.0*rnd()-1.0;

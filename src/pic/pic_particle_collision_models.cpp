@@ -251,6 +251,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
         // Calculate relative velocity
         double cr = 0.0;
         double vrel[3], vcm[3];
+
         for (int idim = 0; idim < 3; idim++) {
           vrel[idim] = v1[idim] - v0[idim];
           vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
@@ -262,8 +263,21 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
         double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
         if (rnd() * SigmaCrMax >= SigmaCr) continue;
 
+        //model the internal energy exchange
+        if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {
+          double crInit = cr;
+	  bool UpdateFlag[2]={true,true};
+
+          PIC::IDF::RedistributeEnergy(s0List[s0ptr].ParticleData,s1List[s1ptr].ParticleData, cr, UpdateFlag, cell);
+
+          for (int idim = 0; idim < 3; idim++) {
+            vrel[idim] = (cr > 1.0E-10) ? vrel[idim] * cr / crInit : 0.0;
+          }
+        }
+
+
         // Perform collision - directly modifies v0 and v1 which point to particle state
-        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0, m0, v1, m1);
+        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
 
         // Sample collision frequency if sampling is enabled
         if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
@@ -477,7 +491,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3];
+        double vrel[3],vcm[3];
 
         while (ncoll-->0) {
           s0ptr=(int)((int)(rnd()*nParticleNumber[s0]));
@@ -496,6 +510,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
             cr+=vrel[idim]*vrel[idim];
+	    vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
           }
 
           cr=sqrt(cr);
@@ -531,7 +546,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -821,10 +836,12 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
 
         // Calculate relative velocity
         double cr = 0.0;
-        double vrel[3];
+        double vrel[3],vcm[3];
+
         for (int idim = 0; idim < 3; idim++) {
           vrel[idim] = v1[idim] - v0[idim];
           cr += vrel[idim] * vrel[idim];
+	  vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
         }
         cr = sqrt(cr);
 
@@ -832,8 +849,20 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
         double SigmaCr = cr * PIC::MolecularData::MolecularModels::GetTotalCrossSection(s0, v0, s1, v1);
         if (rnd() * SigmaCrMax >= SigmaCr) continue;
 
+	//model the internal energy exchange
+        if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_) {
+          double crInit = cr;
+          bool UpdateFlag[2]={true,true};
+
+          PIC::IDF::RedistributeEnergy(s0List[s0ptr].ParticleData,s1List[s1ptr].ParticleData, cr, UpdateFlag, cell);
+
+          for (int idim = 0; idim < 3; idim++) {
+            vrel[idim] = (cr > 1.0E-10) ? vrel[idim] * cr / crInit : 0.0;
+          }
+        }
+
         // Perform collision - directly modifies v0 and v1 which point to particle state
-        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0, m0, v1, m1);
+        PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
 
         // Sample collision frequency if sampling is enabled
         if (_PIC__PARTICLE_COLLISION_MODEL__SAMPLE_COLLISION_FREQUENTCY_MODE__ == _PIC_MODE_ON_) {
@@ -1058,7 +1087,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3];
+        double vrel[3],vcm[3];
 
         //set the initial value of the counter
         TimeCounter=0.0;
@@ -1080,6 +1109,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
             cr+=vrel[idim]*vrel[idim];
+	    vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
           }
 
           cr=sqrt(cr);
@@ -1114,7 +1144,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
@@ -1384,7 +1414,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
 
         //4. simulate collisions
         int s0ptr,s1ptr,idim;
-        double vrel[3];
+        double vrel[3],vcm[3];
 
         //set the initial value of the counter
         TimeCounter=0.0;
@@ -1407,6 +1437,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
           for (cr=0.0,idim=0;idim<3;idim++) {
             vrel[idim]=v1[idim]-v0[idim];
             cr+=vrel[idim]*vrel[idim];
+	    vcm[idim] = (m1*v1[idim] + m0*v0[idim])/(m1 + m0);
           }
 
           cr=sqrt(cr);
@@ -1442,7 +1473,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
           }
 
           //the collision is considered to be true
-          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1);
+          PIC::MolecularCollisions::VelocityScattering::HS::VelocityAfterCollision(v0,m0,v1,m1,vcm,vrel);
 
           //update the velocities in the lists
           if (UpdateFlag[0]==true) {
