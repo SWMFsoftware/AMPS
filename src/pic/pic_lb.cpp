@@ -65,7 +65,8 @@ void PIC::IDF::LB::InitRotTemp(double RotTemp,PIC::ParticleBuffer::byte *Particl
     return;
   }
 
-  if (RotDF==2.0) Er=-log(rnd());
+  /*
+    if (RotDF==2.0) Er=-log(rnd());
   else {
     //Bird: Eq. 11.23
     do {
@@ -76,6 +77,21 @@ void PIC::IDF::LB::InitRotTemp(double RotTemp,PIC::ParticleBuffer::byte *Particl
   }
 
   Er*=Kbol*RotTemp;
+  SetRotE(Er,ParticleDataStart);
+
+  return;
+*/
+
+  if (RotDF==2.0) Er=-Kbol*RotTemp*log(rnd());
+  else {
+    //Bird: Eq. 11.23
+    double a=RotDF/2.0-1.0;
+    double alpha=a+1;
+    double beta=1.0/(Kbol*RotTemp);
+
+    Er=Vector3D::Distribution::Gamma(alpha, beta);
+  }
+
   SetRotE(Er,ParticleDataStart);
 }
 
