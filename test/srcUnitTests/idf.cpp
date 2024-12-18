@@ -213,12 +213,15 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
 
   for (int iTempTest=0;iTempTest<3;iTempTest++) {
     for (int s=0;s<PIC::nTotalSpecies;s++) {
+      double TotalVibEnergyTheory=0.0,TotalSampledVibE=0.0;
+
       Temp=0.5*(1+iTempTest)*PIC::IDF::CharacteristicVibrationalTemperature[s];
       PIC::ParticleBuffer::SetI(s,ptr);
       for (nmode=0;nmode<PIC::IDF::nTotalVibtationalModes[s];nmode++) SampledVibE[nmode]=0.0;
 
       for (ntest=0;ntest<nTotalTests;ntest++) {
         PIC::IDF::LB::InitVibTemp(Temp,ParticleData);
+	TotalSampledVibE+=PIC::IDF::LB::GetVibE(-1,ParticleData); 
 
         for (nmode=0;nmode<PIC::IDF::nTotalVibtationalModes[s];nmode++) {
           SampledVibE[nmode]+=PIC::IDF::LB::GetVibE(nmode,ParticleData);
@@ -234,8 +237,14 @@ TEST_F(IDFTest, IDFVibEnregyGenerationTest) {
 
         SampledVibE[nmode]/=nTotalTests;
         VibEtheory=EtaVib/2.0*Kbol*Temp;
+	TotalVibEnergyTheory+=VibEtheory;
 
         EXPECT_LT(fabs(SampledVibE[nmode]-VibEtheory)/(SampledVibE[nmode]+VibEtheory),0.01) << "VibE distribution: s=" << s << ", nmode=" << nmode << ", Temp=" << Temp <<  endl;
+      }
+
+      if (TotalVibEnergyTheory>0.0) {
+        TotalSampledVibE/=nTotalTests;
+        EXPECT_LT(fabs(TotalSampledVibE-TotalVibEnergyTheory)/(TotalSampledVibE+TotalVibEnergyTheory),0.01) << "VibE distribution: s=" << s << ", nmode=" << nmode << ", Temp=" << Temp <<  endl;
       }
     }
   }
