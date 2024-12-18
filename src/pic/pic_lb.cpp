@@ -216,8 +216,10 @@ void PIC::IDF::LB::CalculateRTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::P
     double RotDF=PIC::IDF::nTotalRotationalModes[s[0]]+PIC::IDF::nTotalRotationalModes[s[1]];
     
     if (RotDF>0.0) {
-        Ec+=GetRotE(ptr0)+GetRotE(ptr1);
         double Erot;
+
+	if (PIC::IDF::nTotalRotationalModes[s[0]]>0) Ec+=GetRotE(ptr0);
+        if (PIC::IDF::nTotalRotationalModes[s[1]]>0) Ec+=GetRotE(ptr1); 	
 
         //divide the energy between rotational and translational degrees of freedom
         PIC::IDF::distribute_energy(Ec,Erot,1.5-TempIndexOmega,RotDF/2.0-1.0,Ec);
