@@ -353,6 +353,39 @@ void PIC::IDF::LB::CalculateVTTransition(PIC::ParticleBuffer::byte *ptr0, PIC::P
     RedistributionEnergyFlag=true;
 }
 
+/*
+  Summary of the Energy Distribution of a Colliding Pair in a Thermalized Gas
+
+  When two particles are drawn at random from a Maxwell-Boltzmann (MB) distribution
+  at temperature \( T \), their relative kinetic energy \( E \) (where
+  \( E = \frac{1}{2}\mu g^{2} \) and \(\mu\) is the reduced mass, \(g\) the relative speed)
+  follows an MB-like distribution. For randomly chosen pairs (no collision weighting):
+
+    \[
+      f_{\text{pair}}(E) \propto E^{1/2} e^{-E/(k_B T)}.
+    \]
+
+  However, the energy distribution of pairs that actually collide is different. Collisions
+  occur at a rate proportional to \( g \sigma(g) \), where \(\sigma(g)\) is the collision
+  cross section. If \(\sigma(g)\) is constant (\(\sigma = \text{const}\)):
+
+    \[
+      f_{\text{collision}}(E) \propto E e^{-E/(k_B T)},
+    \]
+
+  which differs from the unweighted distribution by an extra factor of \( E^{1/2} \to E \).
+
+  If the cross section depends on relative speed as \(\sigma(g) \propto g^{v}\), then:
+
+    \[
+      f_{\text{collision}}(E) \propto E^{1 + \frac{v}{2}} e^{-E/(k_B T)}.
+    \]
+
+  Thus, the exponent in the energy distribution depends on the parameter \( v \) characterizing
+  the cross section's speed dependence, shifting the relative weighting of low- or high-energy
+  collisions accordingly.
+*/
+
 void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::ParticleBuffer::byte *ptr1,
     double& vrel,bool* ChangeParticlePropertiesFlag,PIC::Mesh::cDataCenterNode* cell) {
     

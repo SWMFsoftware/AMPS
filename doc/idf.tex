@@ -1,0 +1,184 @@
+\chapter{The model of internal degrees of freedom}
+
+
+\chapter{Energy Distribution of a Colliding Pair in a Thermalized Gas}
+
+\section{Introduction}
+
+In a gas at thermal equilibrium at temperature $T$, the particles' velocities are distributed according to the Maxwell-Boltzmann distribution. Consider two particles selected at random from this gas. One may ask: what is the probability distribution of their \emph{relative kinetic energy}? Moreover, if we focus on pairs of particles that are actually colliding, the effective weighting of different relative speeds (and hence energies) changes due to the collision cross section and relative velocity dependence.
+
+In this chapter, we derive the probability distributions for the relative energy of a pair of particles first in the absence of any collision-weighting factor (i.e., selecting pairs at random), and then considering a collision-weighted scenario where the collision frequency depends on the relative speed $g$ and the collision cross section $\sigma(g)$. We also consider the case where $\sigma(g)$ is a power-law function of $g$, i.e., $\sigma(g) \propto g^{v}$.
+
+\section{Relative Velocity and Energy Distributions}
+
+\subsection{Maxwell-Boltzmann Distribution for Relative Velocity}
+
+Consider two particles with masses $m_1$ and $m_2$ in a gas at thermal equilibrium at temperature $T$. Define the reduced mass
+\begin{equation}
+  \mu = \frac{m_1 m_2}{m_1 + m_2}.
+\end{equation}
+
+The velocity distribution of each particle is Maxwell-Boltzmann. The relative velocity of the pair is given by
+\begin{equation}
+  \mathbf{g} = \mathbf{v}_1 - \mathbf{v}_2.
+\end{equation}
+
+In three dimensions, the probability density function (PDF) for the magnitude of the relative speed $g = |\mathbf{g}|$ (when the particles are independently drawn from a Maxwellian distribution) is:
+\begin{equation}
+  f(g) \propto g^{2} \exp\left(-\frac{\mu g^{2}}{2 k_B T}\right).
+\end{equation}
+
+This result stems from the convolution of two Maxwellian distributions and the definition of the reduced mass. The key point is that the relative velocity itself follows a Maxwellian form with mass parameter $\mu$.
+
+\subsection{Energy Distribution for Randomly Chosen Pairs}
+
+The relative kinetic energy of the pair is defined as
+\begin{equation}
+  E = \frac{1}{2}\mu g^{2}.
+\end{equation}
+
+To find the distribution in terms of $E$, we rewrite:
+\begin{equation}
+  g^{2} = \frac{2E}{\mu}.
+\end{equation}
+Thus,
+\begin{equation}
+  f(g) \propto \left(\frac{2E}{\mu}\right)^{\!1} \exp\left(-\frac{E}{k_B T}\right).
+\end{equation}
+
+We must also change variables from $g$ to $E$. Since $E = \frac{1}{2}\mu g^{2}$, the differential relation is
+\begin{equation}
+  dE = \mu g \, dg \implies dg = \frac{dE}{\mu g} = \frac{dE}{\mu \sqrt{\frac{2E}{\mu}}} = \frac{dE}{\sqrt{2\mu E}}.
+\end{equation}
+
+Substituting $g = \sqrt{2E/\mu}$ into $f(g)$ and including the Jacobian $dg/dE$, we have
+\begin{align}
+  f(E) &= f(g) \frac{dg}{dE} \nonumber \\
+       &\propto \left(\frac{2E}{\mu}\right) \exp\left(-\frac{E}{k_B T}\right) \cdot \frac{1}{\sqrt{2\mu E}}.
+\end{align}
+
+Simplifying the powers of $E$:
+\begin{equation}
+  \left(\frac{2E}{\mu}\right) \frac{1}{\sqrt{2\mu E}} = E^{1 - \frac{1}{2}} = E^{1/2}.
+\end{equation}
+
+Thus, the unweighted distribution of the relative energy of two randomly chosen particles is
+\begin{equation}
+  f_{\text{pair}}(E) \propto E^{1/2} e^{-E/(k_B T)}.
+\end{equation}
+
+\section{Collision-Weighted Distribution}
+
+\subsection{Inclusion of Collision Frequency}
+
+When considering the energy distribution of pairs \emph{at the moment they collide}, we must weight the distribution by the collision frequency. The collision frequency for two particles at relative speed $g$ is proportional to
+\begin{equation}
+  \text{collision frequency} \propto g \sigma(g),
+\end{equation}
+where $\sigma(g)$ is the collision cross section. Physically, $g$ represents how fast one particle "encounters" the other, and $\sigma(g)$ represents the effective area for collision at that relative speed.
+
+Therefore, the collision-weighted speed distribution becomes
+\begin{equation}
+  f_{\text{collision}}(g) \propto f(g) \, g \sigma(g).
+\end{equation}
+
+\subsection{Constant Cross Section Case}
+
+First, consider the simplest case $\sigma(g) = \text{const}$. Let $\sigma(g) = \sigma_0$. In this case,
+\begin{equation}
+  f_{\text{collision}}(g) \propto f(g) \cdot g = g^{3} e^{-\frac{\mu g^{2}}{2 k_B T}}.
+\end{equation}
+
+Converting to energy:
+\begin{equation}
+  f_{\text{collision}}(E) \propto E e^{-E/(k_B T)},
+\end{equation}
+after going through the same change-of-variables steps as before. Notice that this differs from the unweighted distribution by an extra factor of $E^{1/2}$ turning into $E$, reflecting the bias towards higher relative speeds in actual collisions.
+
+\subsection{General Case: $\sigma(g) \propto g^{v}$}
+
+Now consider a more general scenario where the collision cross section depends on relative speed as a power-law:
+\begin{equation}
+  \sigma(g) \propto g^{v}.
+\end{equation}
+
+In that case, the collision-weighted distribution in terms of $g$ is
+\begin{equation}
+  f_{\text{collision}}(g) \propto f(g) \cdot g \cdot g^{v} = g^{3+v} \exp\left(-\frac{\mu g^{2}}{2 k_B T}\right).
+\end{equation}
+
+Again, we transform to energy $E = \tfrac{1}{2}\mu g^{2}$. Thus,
+\begin{equation}
+  g^{2} = \frac{2E}{\mu} \implies g = \sqrt{\frac{2E}{\mu}}.
+\end{equation}
+So
+\begin{equation}
+  g^{3+v} = \left(\frac{2E}{\mu}\right)^{\frac{3+v}{2}}.
+\end{equation}
+
+The collision-weighted distribution in terms of $E$ is
+\begin{equation}
+  f_{\text{collision}}(E) \propto \left(\frac{2E}{\mu}\right)^{\frac{3+v}{2}} e^{-E/(k_B T)} \cdot \frac{dE}{dg}.
+\end{equation}
+
+Recall:
+\begin{equation}
+  dg = \frac{dE}{\sqrt{2\mu E}},
+\end{equation}
+so
+\begin{equation}
+  \frac{dg}{dE} = \frac{1}{\sqrt{2\mu E}}.
+\end{equation}
+
+Substituting this, we get
+\begin{align}
+  f_{\text{collision}}(E) &\propto \left(\frac{2E}{\mu}\right)^{\frac{3+v}{2}} e^{-\frac{E}{k_B T}} \frac{1}{\sqrt{2\mu E}} \\
+  &= \left(\frac{2E}{\mu}\right)^{\frac{3+v}{2}} \frac{1}{(2\mu E)^{1/2}} e^{-\frac{E}{k_B T}}.
+\end{align}
+
+Focus on the powers of $E$:
+\begin{equation}
+  E^{\frac{3+v}{2}} \cdot E^{-\frac{1}{2}} = E^{\frac{3+v}{2} - \frac{1}{2}} = E^{\frac{2+v}{2}} = E^{1 + \frac{v}{2}}.
+\end{equation}
+
+Thus, the final form is:
+\begin{equation}
+  f_{\text{collision}}(E) \propto E^{1 + \frac{v}{2}} e^{-\frac{E}{k_B T}}.
+\end{equation}
+
+\section{Discussion and Special Cases}
+
+The exponent in the energy dependence is directly influenced by the exponent $v$ in the cross section's speed dependence:
+\begin{itemize}
+  \item For $v=0$ (constant cross section), we recover 
+  \[
+  f_{\text{collision}}(E) \propto E \, e^{-\frac{E}{k_B T}},
+  \]
+  which is the standard collision-energy distribution with no additional $g$-dependence in the cross section.
+
+  \item For $v > 0$, higher speeds are more favorable, increasing the exponent of $E$ and thus placing more weight on higher energies.
+
+  \item For $v < 0$, lower speeds are more favorable, decreasing the exponent of $E$ and thus placing more weight on lower energies.
+\end{itemize}
+
+\section{Conclusion}
+
+In summary:
+\begin{enumerate}
+  \item A randomly chosen pair of particles from a Maxwellian gas has a relative energy distribution
+  \[
+  f_{\text{pair}}(E) \propto E^{1/2} e^{-\frac{E}{k_B T}}.
+  \]
+
+  \item Actual collisions are biased towards pairs with higher relative speeds. If the collision cross section is constant, the energy distribution of colliding pairs becomes
+  \[
+  f_{\text{collision}}(E) \propto E \, e^{-\frac{E}{k_B T}}.
+  \]
+
+  \item If the collision cross section scales as $\sigma(g) \propto g^{v}$, this modifies the distribution to
+  \[
+  f_{\text{collision}}(E) \propto E^{1 + \frac{v}{2}} e^{-\frac{E}{k_B T}}.
+  \]
+  \end{enumerate}
+
+These results provide a comprehensive picture of how the underlying physics of collision cross sections and relative motion influences the observed distribution of collision energies in a thermalized gas.
