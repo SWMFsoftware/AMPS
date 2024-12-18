@@ -2,16 +2,58 @@
 #include "pic.h"
 
 #include "ParticleTestBase.h"
+#include "sampling.h"
 
 void collisions_test_for_linker() {}
 
 #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_OFF_
 namespace AMPS_COLLISON_TEST  {
-  double energy_sum,energy_sumAfter,mvSumAfter[3];
-  double CollsionFrequentcyTheory[2][2];
-  double CollsionFrequentcy[2][2];
-  double MeanRotEnergy[2],MeanRotEnergyAfter[2],MeanRotEnergyTheory[2];
-  double MeanVibEnergy[2],MeanVibEnergyAfter[2],MeanVibEnergyTheory[2];
+  double energySumInit=0.0,energySumAfter=0.0,mvSumInit[3]={0.0,0.0,0.0},mvSumAfter[3]={0.0,0.0,0.0};
+  cSampledValues vSumAfter[3],mSpeedSumAfter[2],mSpeedSumInit[2];
+  cSampledValues CollsionFrequentcyTheory[2][2];
+  cSampledValues CollsionFrequentcy[2][2];
+  cSampledValues MeanRotEnergyInit[2],MeanRotEnergyAfter[2],MeanRotEnergyTheory[2];
+  cSampledValues MeanVibEnergyInit[2],MeanVibEnergyAfter[2],MeanVibEnergyTheory[2];
+  cSampledValues MeanKineticEnergyInit[2],MeanKineticEnergyAfter[2];
+
+
+  void ResetAll() {
+    // Reset single variables
+    energySumInit=0.0;
+    energySumAfter=0.0;
+
+    // Reset arrays of size 3
+    for (int i = 0; i < 3; i++) {
+        mvSumInit[i]=0.0;
+        mvSumAfter[i]=0.0;
+        vSumAfter[i].Reset();
+    }
+
+    // Reset arrays of size 2
+    for (int i = 0; i < 2; i++) {
+        mSpeedSumAfter[i].Reset();
+        mSpeedSumInit[i].Reset();
+        MeanRotEnergyInit[i].Reset();
+        MeanRotEnergyAfter[i].Reset();
+        MeanRotEnergyTheory[i].Reset();
+
+        MeanVibEnergyInit[i].Reset();
+        MeanVibEnergyAfter[i].Reset();
+        MeanVibEnergyTheory[i].Reset();
+
+	MeanKineticEnergyInit[i].Reset();
+        MeanKineticEnergyAfter[i].Reset();
+    }
+
+    // Reset 2x2 arrays
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            CollsionFrequentcyTheory[i][j].Reset();
+            CollsionFrequentcy[i][j].Reset();
+        }
+    }
+}
+
 
   void  VelocityAfterCollision(double &RelativeErrorMomentum,double &RelativeErrorEnergy,double &RelativeErrorVel,int s0,int s1,void (*fVelocityAfterCollision)(double*,double,double*,double,double*,double*)) {
     double v_s0[3],v_s1[3],m_s0,m_s1,am,vrel[3],vbulk[3]={0.0,0.0,0.0},energy_sum_init,energy_sum_after,mvsum_init[3],mvsum_after[3],vcm[3];
@@ -48,7 +90,7 @@ namespace AMPS_COLLISON_TEST  {
         mvsum_init[i]+=t; 
 
         vrel[i]=v_s0[i]-v_s1[i];
-	vcm[i]=(m_s0*v_s0[i]+m_s1*v_s1[i])/(m_s0+m_s1);
+	      vcm[i]=(m_s0*v_s0[i]+m_s1*v_s1[i])/(m_s0+m_s1);
       }
 
       vrel_init=Vector3D::Length(vrel);
@@ -82,7 +124,7 @@ namespace AMPS_COLLISON_TEST  {
   
   }
 
-  void HeatBath(int s0,int s1,bool UseCommonStatWeight,bool UseCommonTimeStep,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
+  void HeatBath(int s0,int s1,double Tkin, double Trot,double Tvib,bool UseCommonStatWeight,bool UseCommonTimeStep,void (*fCellCollision)(int, int, int, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*)) {
     namespace MD=PIC::MolecularData;
     namespace MC=PIC::MolecularCollisions;
     namespace PB=PIC::ParticleBuffer; 
@@ -96,11 +138,6 @@ namespace AMPS_COLLISON_TEST  {
     int CollFreqOffset=MC::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset+    
       sizeof(double)*MC::ParticleCollisionModel::CollsionFrequentcySampling::Offset(0,0);
 
-    for (i=0;i<2;i++) {
-      MeanVibEnergy[i]=0.0,MeanVibEnergyAfter[i]=0.0,MeanVibEnergyTheory[i]=0.0;
-      MeanRotEnergy[i]=0.0,MeanRotEnergyAfter[i]=0.0,MeanRotEnergyTheory[i]=0.0;
-    }
-
     //1. Identify the cell
     block=node->block;
     if (block==NULL) exit(__LINE__,__FILE__,"Block is NULL");
@@ -111,11 +148,8 @@ namespace AMPS_COLLISON_TEST  {
     char *SamplingData=cell->GetAssociatedDataBufferPointer()+PIC::Mesh::collectingCellSampleDataPointerOffset;
   
     //2. Populate the particle lists
-    double Temp=300.0; //the temperature of the gas
     int nTotalInjectedParticles=30;
     double v[3],vbulk[3]={0.0,0.0,0.0},mvsum[3]={0.0,0.0,0.0},msum=0.0;
-
-    energy_sum=0.0;
 
     if (s0==s1) {
       CollFreqOffset=MC::ParticleCollisionModel::CollsionFrequentcySampling::SamplingBufferOffset+
@@ -140,7 +174,7 @@ namespace AMPS_COLLISON_TEST  {
 
       for (int i=0;i<nTotalInjectedParticles;i++) {
         ptr=PB::GetNewParticle(block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)]);
-        PIC::Distribution::MaxwellianVelocityDistribution(v,vbulk,Temp,s);
+        PIC::Distribution::MaxwellianVelocityDistribution(v,vbulk,Tkin,s);
 
         PB::SetV(v,ptr);
         PB::SetI(s,ptr);
@@ -154,8 +188,8 @@ namespace AMPS_COLLISON_TEST  {
 
           switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
           case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
-            PIC::IDF::LB::InitRotTemp(Temp,ParticleData); 
-            PIC::IDF::LB::InitVibTemp(Temp,ParticleData); 
+            PIC::IDF::LB::InitRotTemp(Trot,ParticleData); 
+            PIC::IDF::LB::InitVibTemp(Tvib,ParticleData); 
           break;
 
           default:
@@ -168,13 +202,7 @@ namespace AMPS_COLLISON_TEST  {
       }
     }
 
-    //3. Correct builk velocity
-    double dv[3];
-
-    for (int j=0;j<3;j++) dv[j]=mvsum[j]/msum;
-
-    for (int i=0;i<2;i++) MeanVibEnergy[i]=0.0,MeanVibEnergyAfter[i]=0.0,MeanRotEnergy[i]=0.0,MeanRotEnergyAfter[i]=0.0;
-
+    //3. Calculate the initial momentum and energy 
     ptr=block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)];
 
     while (ptr!=-1) {
@@ -185,20 +213,22 @@ namespace AMPS_COLLISON_TEST  {
 
 
       for (int j=0;j<3;j++) {
-        v[j]-=dv[j];
-        energy_sum+=0.5*m*v[j]*v[j];
+        energySumInit+=0.5*m*v[j]*v[j];
+        mvSumInit[j]+=m*v[j];
       }
+
+      MeanKineticEnergyInit[ispec]+=0.5*m*Vector3D::DotProduct(v,v);
 
       if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
         PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
 
         switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
         case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
-          MeanVibEnergy[ispec]+=PIC::IDF::LB::GetVibE(-1,ParticleData);
-          MeanRotEnergy[ispec]+=PIC::IDF::LB::GetRotE(ParticleData);
+          MeanVibEnergyInit[ispec]+=PIC::IDF::LB::GetVibE(-1,ParticleData);
+          MeanRotEnergyInit[ispec]+=PIC::IDF::LB::GetRotE(ParticleData);
 
-          energy_sum+=PIC::IDF::LB::GetVibE(-1,ParticleData);
-          energy_sum+=PIC::IDF::LB::GetRotE(ParticleData);
+          energySumInit+=PIC::IDF::LB::GetVibE(-1,ParticleData);
+          energySumInit+=PIC::IDF::LB::GetRotE(ParticleData);
           break;
         default:
           exit(__LINE__,__FILE__,"Error: not implemented"); 
@@ -206,29 +236,6 @@ namespace AMPS_COLLISON_TEST  {
       }
 
       ptr=PB::GetNext(ptr);
-    }
-
-    //Calculate initial rotational and vibrational evergy
-    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
-      if (s0==s1) {
-        MeanVibEnergy[0]/=2.0*nTotalInjectedParticles; 
-        MeanRotEnergy[0]/=2.0*nTotalInjectedParticles; 
-      }
-      else {
-        for (int i=0;i<2;i++) {
-          MeanVibEnergy[i]/=nTotalInjectedParticles;
-          MeanRotEnergy[i]/=nTotalInjectedParticles;
-        }
-      }
-    }
-
-    //Calcualte the effective temperature based on the acruall summed kineric energy 
-    //The effective temeprature is calculate to account for a statistical error in generating the 
-    //initial particle distribution and further calcualtion of the collision frequentct. 
-    //The is done only when no internal degrees of freedomg is used becase the number of the vibrational 
-    //degrees of freedom is a function of efergy, which complicates everything 
-    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_OFF_) { 
-       Temp=2.0*energy_sum/(3.0*Kbol*2.0*nTotalInjectedParticles);
     }
 
 
@@ -245,7 +252,7 @@ namespace AMPS_COLLISON_TEST  {
     m_s0=MD::GetMass(s0);
     m_s1=MD::GetMass(s1); 
     m=m_s0*m_s1/(m_s0+m_s1);
-    MeanRelativeVelocity=sqrt(8.0*Kbol*Temp/(Pi*m));
+    MeanRelativeVelocity=sqrt(8.0*Kbol*Tkin/(Pi*m));
 
     InitMeasure=cell->Measure;
     cell->Measure=Measure;
@@ -256,7 +263,7 @@ namespace AMPS_COLLISON_TEST  {
       sigma=MD::MolecularModels::GetTotalCrossSection(s,vv,s,vv);
       m=MD::GetMass(s);
 
-      MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m));
+      MeanRelativeVelocity=sqrt(16.0*Kbol*Tkin/(Pi*m));
       StatWeight[ispec]=Measure/(2.0*nTotalInjectedParticles*sigma*MeanRelativeVelocity*dt[ispec]);
 
       if (s0!=s1) {
@@ -290,7 +297,7 @@ namespace AMPS_COLLISON_TEST  {
   }
 
     if (s0==s1) {
-      MeanRelativeVelocity=sqrt(16.0*Kbol*Temp/(Pi*m_s0));
+      MeanRelativeVelocity=sqrt(16.0*Kbol*Tkin/(Pi*m_s0));
       sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s0,vv);
 
       CollsionFrequentcyTheory[0][0]=pow(n[0]+n[1],2)*sigma*MeanRelativeVelocity;     
@@ -299,7 +306,7 @@ namespace AMPS_COLLISON_TEST  {
     else {
       for (i=0;i<2;i++) for (j=0;j<2;j++) {
         m=m_s0*m_s1/(m_s0+m_s1);
-        MeanRelativeVelocity=sqrt(8.0*Kbol*Temp/(Pi*m));
+        MeanRelativeVelocity=sqrt(8.0*Kbol*Tkin/(Pi*m));
         sigma=MD::MolecularModels::GetTotalCrossSection(s0,vv,s1,vv); 
         CollsionFrequentcyTheory[i][j]=n[0]*n[1]*sigma*MeanRelativeVelocity;
       }   
@@ -309,22 +316,23 @@ namespace AMPS_COLLISON_TEST  {
      if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
         for (ispec=0;ispec<2;ispec++) {
           int n,s=(ispec==0) ? s0 : s1;
-          double RotDF,EtaVib,c; 
+          double RotDF,EtaVib,c,e=0.0; 
 
           switch (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL_) {
           case _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODEL__LB_:
             RotDF=PIC::IDF::nTotalRotationalModes[s];
-            MeanRotEnergyTheory[ispec]=0.5*RotDF*Kbol*Temp;
-            MeanVibEnergyTheory[ispec]=0.0;
+            MeanRotEnergyTheory[ispec]=0.5*RotDF*Kbol*Trot;
 
             for (n=0;n<PIC::IDF::nTotalVibtationalModes[s];n++) {
               double c,ThetaVib,EtaVib;
 	    
               ThetaVib=PIC::IDF::CharacteristicVibrationalTemperature[n+s*PIC::IDF::nSpeciesMaxVibrationalModes];
-              c=ThetaVib/Temp;
+              c=ThetaVib/Tvib;
               EtaVib=2.0*c/(exp(c)-1.0);
-              MeanVibEnergyTheory[ispec]+=0.5*EtaVib*Kbol*Temp;
+              e+=0.5*EtaVib*Kbol*Tvib;
             }
+
+            MeanVibEnergyTheory[ispec]=e;
 
             break;
           default:
@@ -361,9 +369,6 @@ namespace AMPS_COLLISON_TEST  {
 
 
     //6. Verify the results
-    energy_sumAfter=0.0;
-    for (int idim=0;idim<3;idim++) mvSumAfter[idim]=0.0;
-
     ptr=block->FirstCellParticleTable[icell+_BLOCK_CELLS_X_*(jcell+_BLOCK_CELLS_Y_*kcell)];
 
     while (ptr!=-1) {
@@ -374,8 +379,11 @@ namespace AMPS_COLLISON_TEST  {
 
       for (int j=0;j<3;j++) {
         mvSumAfter[j]+=m*v[j];
-        energy_sumAfter+=0.5*m*v[j]*v[j];
+	      vSumAfter[j]+=v[j];
+        energySumAfter+=0.5*m*v[j]*v[j];
       }
+
+      MeanKineticEnergyAfter[ispec]+=0.5*m*Vector3D::DotProduct(v,v);
 
       if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
         PIC::ParticleBuffer::byte *ParticleData=PIC::ParticleBuffer::GetParticleDataPointer(ptr);
@@ -385,8 +393,8 @@ namespace AMPS_COLLISON_TEST  {
           MeanVibEnergyAfter[ispec]+=PIC::IDF::LB::GetVibE(-1,ParticleData);
           MeanRotEnergyAfter[ispec]+=PIC::IDF::LB::GetRotE(ParticleData);
 
-          energy_sumAfter+=PIC::IDF::LB::GetVibE(-1,ParticleData);
-          energy_sumAfter+=PIC::IDF::LB::GetRotE(ParticleData);
+          energySumAfter+=PIC::IDF::LB::GetVibE(-1,ParticleData);
+          energySumAfter+=PIC::IDF::LB::GetRotE(ParticleData);
           break;
         default:
           exit(__LINE__,__FILE__,"Error: not implemented");
@@ -396,20 +404,6 @@ namespace AMPS_COLLISON_TEST  {
       long int ptr_next=PB::GetNext(ptr);
       PB::DeleteParticle(ptr);
       ptr=ptr_next;
-    }
-
-    //Calculate final rotational and vibrational evergy
-    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
-      if (s0==s1) {
-        MeanVibEnergyAfter[0]/=2.0*nTotalInjectedParticles;
-        MeanRotEnergyAfter[0]/=2.0*nTotalInjectedParticles;
-      }
-      else {
-        for (int i=0;i<2;i++) {
-          MeanVibEnergyAfter[i]/=nTotalInjectedParticles;
-          MeanRotEnergyAfter[i]/=nTotalInjectedParticles;
-        }
-      }
     }
 
     //7. Restore the initial state
@@ -459,51 +453,100 @@ TEST_P(ParticleCollisionTest, MyHandlesInputs) {
 
   std::cout << "\033[1m" << "Testing function: " << test_case.name << " (s0=" << s0 << ", s1=" << s1 <<") \033[0m" << std::endl;
 
-  HeatBath(s0,s1,true,true,test_case.fCellCollision);
+  AMPS_COLLISON_TEST::ResetAll();
+
+  for (int itest=0;itest<16;itest++) {
+    HeatBath(s0,s1,300,300,300,true,true,test_case.fCellCollision);
+  }
+
+  double TkinInit[2],Tkin[2],Trot[2]={0.0,0.0};
+  cRelativeDiff RelativeDiff;
 
   if (s0==s1) {
-    EXPECT_LT(fabs(energy_sum-energy_sumAfter)/(energy_sum+energy_sumAfter),1.0E-10); 
-    EXPECT_LT(fabs(CollsionFrequentcy[0][0]-CollsionFrequentcyTheory[0][0])/(CollsionFrequentcy[0][0]+CollsionFrequentcyTheory[0][0]),3.0E-2) << endl;
+    EXPECT_LT(RelativeDiff(energySumInit,energySumAfter),1.0E-10); 
+    EXPECT_LT(RelativeDiff(CollsionFrequentcy[0][0],CollsionFrequentcyTheory[0][0]),3.0E-2) << endl;
+
+    for (int jj=0;jj<3;jj++) if (mvSumAfter[jj]+mvSumInit[jj]>0.0) {
+      EXPECT_LT(RelativeDiff(mvSumAfter[jj],mvSumInit[jj]),1.0E-10) << " jj=" << jj << endl;
+    }
+
+    TkinInit[0]=2.0*MeanKineticEnergyInit[0]/(3.0*Kbol);
+    Tkin[0]=2.0*MeanKineticEnergyAfter[0]/(3.0*Kbol);
 
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
-      if (MeanVibEnergyTheory[0]+MeanVibEnergy[0]!=0.0) 
-        EXPECT_LT(fabs(MeanVibEnergyTheory[0]-MeanVibEnergy[0])/(MeanVibEnergyTheory[0]+MeanVibEnergy[0]),1.0E-5);
+      int RotDF=PIC::IDF::nTotalRotationalModes[s0];
 
-      if (MeanRotEnergyTheory[0]+MeanRotEnergy[0]!=0.0)
-        EXPECT_LT(fabs(MeanRotEnergyTheory[0]-MeanRotEnergy[0])/(MeanRotEnergyTheory[0]+MeanRotEnergy[0]),1.0E-5); 
+      if (RotDF!=0) {
+        Trot[0]=2.0/(RotDF*Kbol)*MeanRotEnergyAfter[0];
+        EXPECT_LT(RelativeDiff(Tkin[0],Trot[0]),1.0E-2);
+      }
 
-      if (MeanVibEnergyAfter[0]+MeanVibEnergy[0]!=0.0)
-        EXPECT_LT(fabs(MeanVibEnergyAfter[0]-MeanVibEnergy[0])/(MeanVibEnergyAfter[0]+MeanVibEnergy[0]),1.0E-5);
+      if (MeanVibEnergyTheory[0]+MeanVibEnergyInit[0]!=0.0) 
+        EXPECT_LT(RelativeDiff(MeanVibEnergyTheory[0],MeanVibEnergyInit[0]),1.0E-5);
 
-      if (MeanRotEnergyAfter[0]+MeanRotEnergy[0]!=0.0)
-        EXPECT_LT(fabs(MeanRotEnergyAfter[0]-MeanRotEnergy[0])/(MeanRotEnergyAfter[0]+MeanRotEnergy[0]),1.0E-5);
+      if (MeanRotEnergyTheory[0]+MeanRotEnergyInit[0]!=0.0)
+        EXPECT_LT(RelativeDiff(MeanRotEnergyTheory[0],MeanRotEnergyInit[0]),1.0E-5); 
+
+      if (MeanVibEnergyAfter[0]+MeanVibEnergyInit[0]!=0.0)
+        EXPECT_LT(RelativeDiff(MeanVibEnergyAfter[0],MeanVibEnergyInit[0]),1.0E-5);
+
+      if (MeanRotEnergyAfter[0]+MeanRotEnergyInit[0]!=0.0)
+        EXPECT_LT(RelativeDiff(MeanRotEnergyAfter[0],MeanRotEnergyInit[0]),1.0E-5);
     }
   }
   else {
-    EXPECT_LT(fabs(energy_sum-energy_sumAfter)/(energy_sum+energy_sumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
+    EXPECT_LT(RelativeDiff(energySumInit,energySumAfter),1.0E-10) << test_case.name << ", s0=" << s0 << ", s1=" << s1 << endl;
 
     for (int i=0;i<2;i++) for (int j=0;j<2;j++) {
-      EXPECT_LT(fabs(CollsionFrequentcy[i][j]-CollsionFrequentcyTheory[i][j])/(CollsionFrequentcy[i][j]+CollsionFrequentcyTheory[i][j]),3.0E-2) << " i=" << i << ", j=" << j << endl;
+      EXPECT_LT(RelativeDiff(CollsionFrequentcy[i][j],CollsionFrequentcyTheory[i][j]),3.0E-2) << " i=" << i << ", j=" << j << endl;
     }
 
+    for (int jj=0;jj<3;jj++) if (mvSumAfter[jj]+mvSumInit[jj]>0.0) {
+      EXPECT_LT(RelativeDiff(mvSumAfter[jj],mvSumInit[jj]),1.0E-10) << " jj=" << jj << endl;
+    }
+
+    TkinInit[0]=2.0*MeanKineticEnergyInit[0]/(3.0*Kbol);
+    TkinInit[1]=2.0*MeanKineticEnergyInit[1]/(3.0*Kbol);
+
+    EXPECT_LT(fabs(TkinInit[0]-TkinInit[1])/(TkinInit[0]+TkinInit[1]),1.0E-2);
+
+    Tkin[0]=2.0*MeanKineticEnergyAfter[0]/(3.0*Kbol);
+    Tkin[1]=2.0*MeanKineticEnergyAfter[1]/(3.0*Kbol);
+
+    EXPECT_LT(fabs(Tkin[0]-Tkin[1])/(Tkin[0]+Tkin[1]),1.0E-2);
+
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_==_PIC_MODE_ON_) {
+      int RotDF;
+
+      RotDF=PIC::IDF::nTotalRotationalModes[s0];
+      if (RotDF!=0) {
+        Trot[0]=2.0/(RotDF*Kbol)*MeanRotEnergyAfter[0];
+        EXPECT_LT(RelativeDiff(Tkin[0],Trot[0]),1.0E-2);
+      }
+
+      RotDF=PIC::IDF::nTotalRotationalModes[s1];
+      if (RotDF!=0) {
+        Trot[1]=2.0/(RotDF*Kbol)*MeanRotEnergyAfter[1];
+        EXPECT_LT(RelativeDiff(Tkin[1],Trot[1]),1.0E-2);
+      }
+	    
       for (int i=0;i<2;i++) {
-        if (MeanVibEnergyAfter[i]+MeanVibEnergy[i]!=0.0)
-          EXPECT_LT(fabs(MeanVibEnergyAfter[i]-MeanVibEnergy[i])/(MeanVibEnergyAfter[i]+MeanVibEnergy[i]),1.0E-5) << " i=" << i << endl;
+        if (MeanVibEnergyAfter[i]+MeanVibEnergyInit[i]!=0.0)
+          EXPECT_LT(RelativeDiff(MeanVibEnergyAfter[i],MeanVibEnergyInit[i]),1.0E-5) << " i=" << i << endl;
 
-        if (MeanRotEnergyAfter[i]+MeanRotEnergy[i]!=0.0)
-          EXPECT_LT(fabs(MeanRotEnergyAfter[i]-MeanRotEnergy[i])/(MeanRotEnergyAfter[i]+MeanRotEnergy[i]),1.0E-5) << " i=" << i << endl;
+        if (MeanRotEnergyAfter[i]+MeanRotEnergyInit[i]!=0.0)
+          EXPECT_LT(RelativeDiff(MeanRotEnergyAfter[i],MeanRotEnergyInit[i]),1.0E-5) << " i=" << i << endl;
 
-        if (MeanVibEnergyTheory[i]+MeanVibEnergy[i]!=0.0)
-          EXPECT_LT(fabs(MeanVibEnergyTheory[i]-MeanVibEnergy[i])/(MeanVibEnergyTheory[i]+MeanVibEnergy[i]),1.0E-5) << " i=" << i << endl;
+        if (MeanVibEnergyTheory[i]+MeanVibEnergyInit[i]!=0.0)
+          EXPECT_LT(RelativeDiff(MeanVibEnergyTheory[i],MeanVibEnergyInit[i]),1.0E-5) << " i=" << i << endl;
 
-        if (MeanRotEnergyTheory[i]+MeanRotEnergy[i]!=0.0)
-          EXPECT_LT(fabs(MeanRotEnergyTheory[i]-MeanRotEnergy[i])/(MeanRotEnergyTheory[i]+MeanRotEnergy[i]),1.0E-5) << " i=" << i << endl;
+        if (MeanRotEnergyTheory[i]+MeanRotEnergyInit[i]!=0.0)
+          EXPECT_LT(RelativeDiff(MeanRotEnergyTheory[i],MeanRotEnergyInit[i]),1.0E-5) << " i=" << i << endl;
       }
     } 
   }
 
-  for (int jj=0;jj<3;jj++) EXPECT_LT(fabs(mvSumAfter[jj])/sqrt(energy_sumAfter),1.0E-10) << ", jj=" << jj <<  endl;
+  for (int jj=0;jj<3;jj++) EXPECT_LT(fabs(vSumAfter[jj]),1.0E-10) << ", jj=" << jj <<  endl;
 }
 
 
