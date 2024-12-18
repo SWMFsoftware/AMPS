@@ -70,6 +70,11 @@ ParticleWeightCorrectionMode=off !on,off
     SaveMode=newfile  \\ !overwrite, newfile
     IterationInterval=20
 
+
+  define LINK_BUFFER_TEST
+  define LINK_COLLISIONS_TEST
+  define LINK_IDF_TEST
+
 #endGeneral
 
 
@@ -86,7 +91,7 @@ ParticleWeightCorrectionMode=off !on,off
 
 #IDF
   Model=LB  !off,LB,qLB
-  vtRelaxation=on !on,off
+  vtRelaxation=off !on,off
   vvRelaxation=off !on,off
   rtRelaxation=on !on,off
 
@@ -98,7 +103,7 @@ ParticleWeightCorrectionMode=off !on,off
 
   nRotModes(H2O=3)
   nRotModes(O=2)
-  nRotModes(O2=1)
+  nRotModes(O2=0)
   nRotModes(CO2=0)
 
   RotZnum(H2O=5)
@@ -109,6 +114,23 @@ ParticleWeightCorrectionMode=off !on,off
   VibTemp(H2O=200,300,400)
   VibTemp(O=500,600)
   VibTemp(O2=700)
+
+  TemperatureIndex(H2O,H2O)=0.5
+  TemperatureIndex(H2O,O)=0.5
+  TemperatureIndex(H2O,O2)=0.5
+  TemperatureIndex(H2O,CO2)=0.5
+
+  TemperatureIndex(O,O)=0.5
+  TemperatureIndex(O,O2)=0.5
+  TemperatureIndex(O,CO2)=0.5
+
+  TemperatureIndex(O2,O2)=0.5
+  TemperatureIndex(O2,CO2)=0.5
+
+  TemperatureIndex(CO2,CO2)=0.5
+
+
+
 
 #endIDF
 
