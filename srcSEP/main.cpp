@@ -48,7 +48,9 @@ int main(int argc,char **argv) {
   amps_init_mesh();
   amps_init();
 
-  TestManager();
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
+    TestManager();
+  }
 
   int TotalIterations=(_PIC_NIGHTLY_TEST_MODE_==_PIC_MODE_ON_) ? PIC::RequiredSampleLength+10 : 100000001;  
 
