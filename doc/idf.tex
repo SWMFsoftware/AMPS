@@ -182,3 +182,141 @@ In summary:
   \end{enumerate}
 
 These results provide a comprehensive picture of how the underlying physics of collision cross sections and relative motion influences the observed distribution of collision energies in a thermalized gas.
+
+
+
+\chapter{Energy Distribution of Colliding Pairs in a Two-Component Gas}
+
+\section{Introduction}
+
+In the previous chapters, we examined the energy distribution of colliding pairs in a single-component gas. Here, we generalize the discussion to a two-component gas mixture at thermal equilibrium, both components sharing the same temperature \( T \) but having different masses. Let the two species be labeled as 1 and 2, with masses \( m_1 \) and \( m_2 \), respectively.
+
+We assume that each species follows a Maxwell-Boltzmann distribution at temperature \( T \). The collisions can occur between pairs of the same species (1–1 or 2–2) or between unlike species (1–2). We will see that the overall form of the energy distributions derived for the single-component case remains similar, but now each pair type involves a different reduced mass and potentially different relative abundances.
+
+\section{Reduced Mass and Relative Speed Distributions}
+
+\subsection{Reduced Mass for Different Pairings}
+
+Consider two particles from the mixture. Depending on the pair:
+
+\begin{itemize}
+  \item Same-species pair of type 1–1: Reduced mass
+    \[
+    \mu_{11} = \frac{m_1}{2}.
+    \]
+
+  \item Same-species pair of type 2–2: Reduced mass
+    \[
+    \mu_{22} = \frac{m_2}{2}.
+    \]
+
+  \item Cross-species pair of type 1–2: Reduced mass
+    \[
+    \mu_{12} = \frac{m_1 m_2}{m_1 + m_2}.
+    \]
+\end{itemize}
+
+Each of these reduced masses will determine the scaling of the relative velocity and energy distributions for that particular collision pair.
+
+\subsection{Relative Speed Distributions}
+
+In a gas at thermal equilibrium, the velocity distribution for each species is Maxwellian. For two particles drawn independently from these distributions, the relative velocity \(\mathbf{g} = \mathbf{v}_1 - \mathbf{v}_2\) also follows a Maxwell-Boltzmann type distribution but characterized by the appropriate reduced mass.
+
+For a pair of species \( i \) and \( j \) (which could be the same or different), the probability density function (PDF) for the relative speed \( g = |\mathbf{g}| \) is:
+\[
+f_{ij}(g) \propto g^{2} \exp\left(-\frac{\mu_{ij} g^{2}}{2 k_B T}\right),
+\]
+where \(\mu_{ij}\) is the reduced mass of the pair. Explicitly:
+\[
+f_{11}(g) \propto g^{2} \exp\left(-\frac{\frac{m_1}{2} g^{2}}{2 k_B T}\right), \quad
+f_{22}(g) \propto g^{2} \exp\left(-\frac{\frac{m_2}{2} g^{2}}{2 k_B T}\right),
+\]
+\[
+f_{12}(g) \propto g^{2} \exp\left(-\frac{\mu_{12} g^{2}}{2 k_B T}\right).
+\]
+
+\section{Energy Distribution for Randomly Chosen Pairs}
+
+The relative kinetic energy of the pair \( (i,j) \) is defined as
+\[
+E_{ij} = \frac{1}{2}\mu_{ij} g^{2}.
+\]
+
+When converting the speed distribution to an energy distribution for \emph{randomly chosen pairs} (i.e., without collision weighting), the derivation follows the same steps as in the single-component case. For any pair type \( (i,j) \), we find:
+\[
+f_{\text{pair},ij}(E) \propto E^{1/2} \exp\left(-\frac{E}{k_B T}\right).
+\]
+
+Notice that the \emph{functional form} of the distribution in terms of \( E \) does not change. The scaling and definitions shift only through the reduced mass \(\mu_{ij}\). However, since in the energy form we have factored out the \(\mu_{ij}\) dependence, the shape of \( f_{\text{pair},ij}(E) \) is universal. What differs in practice is the mapping between \( g \) and \( E \), and how likely different pairings are to occur, depending on the gas composition.
+
+\section{Collision-Weighted Distributions}
+
+\subsection{Collision Frequency and Cross Section}
+
+When focusing on pairs that are actually colliding, we must weight the distribution by the collision frequency. For a pair with relative speed \( g \), the collision frequency is proportional to:
+\[
+g \sigma(g),
+\]
+where \(\sigma(g)\) is the collision cross section.
+
+\subsection{Constant Cross Section}
+
+For a constant cross section, \(\sigma(g)=\sigma_0\), the collision-weighted speed distribution for a pair \( (i,j) \) becomes:
+\[
+f_{\text{collision},ij}(g) \propto f_{ij}(g) \cdot g = g^{3} \exp\left(-\frac{\mu_{ij} g^{2}}{2 k_B T}\right).
+\]
+
+Changing variables to energy \( E_{ij} = \frac{1}{2}\mu_{ij} g^{2} \) and following the same procedure as before (including the Jacobian \( dg/dE \)), we find the collision-weighted energy distribution:
+\[
+f_{\text{collision},ij}(E) \propto E \exp\left(-\frac{E}{k_B T}\right).
+\]
+
+Thus, for each pair type, when \(\sigma(g)\) is constant, the energy distribution shifts from \( E^{1/2} e^{-E/(k_B T)} \) to \( E e^{-E/(k_B T)} \).
+
+\subsection{Cross Section with Power-Law Dependence on \( g \)}
+
+If the cross section depends on \( g \) as a power law:
+\[
+\sigma(g) \propto g^{v},
+\]
+then the collision-frequency factor is:
+\[
+g \sigma(g) \propto g^{1+v}.
+\]
+
+Thus, the collision-weighted speed distribution for pairs of type \( (i,j) \) is:
+\[
+f_{\text{collision},ij}(g) \propto g^{2} e^{-\frac{\mu_{ij} g^{2}}{2 k_B T}} \cdot g^{1+v} = g^{3+v} \exp\left(-\frac{\mu_{ij} g^{2}}{2 k_B T}\right).
+\]
+
+Converting to energy, we find the collision-weighted energy distribution for that pair type:
+\[
+f_{\text{collision},ij}(E) \propto E^{1 + \frac{v}{2}} \exp\left(-\frac{E}{k_B T}\right).
+\]
+
+\section{Overall Mixture Distribution}
+
+In a two-component mixture, collisions can occur between any pair:
+- 1–1 collisions,
+- 2–2 collisions, and
+- 1–2 collisions.
+
+If the number densities of species 1 and 2 are \( n_1 \) and \( n_2 \), and if the relative frequencies of collisions depend on these densities and the cross sections, the total collision-energy distribution is a weighted sum:
+\[
+f_{\text{collision,total}}(E) = \alpha_{11} f_{\text{collision},11}(E) + \alpha_{22} f_{\text{collision},22}(E) + \alpha_{12} f_{\text{collision},12}(E),
+\]
+where \(\alpha_{ij}\) are weighting factors determined by the relative abundances of each type of collision event. These weighting factors depend on the partial pressures, number densities, and cross sections of the species involved.
+
+\section{Discussion and Conclusion}
+
+The key points are:
+\begin{enumerate}
+  \item The fundamental shapes of the distributions (either \( E^{1/2} e^{-E/(k_B T)} \) for randomly chosen pairs or \( E^{1+\frac{v}{2}} e^{-E/(k_B T)} \) for collision-weighted pairs with a power-law cross section) remain the same as in the single-species case.
+
+  \item The difference lies in the reduced mass \(\mu_{ij}\), which changes the scaling of \( E \) with respect to \( g \). Although the final forms in terms of \( E \) look similar, the effective mass parameter differs.
+
+  \item In a mixture, the total observed collision-energy distribution is a combination of the distributions from each pair type. The relative importance of each component depends on the composition of the mixture (i.e., the ratio \( n_1:n_2 \)) and the relative cross sections.
+\end{enumerate}
+
+In essence, transitioning from a single-component to a two-component gas does not alter the functional form of the energy distribution for collisions; it only introduces multiple channels (1–1, 2–2, and 1–2), each with its own reduced mass and associated weighting factor. The same logic used for a single species applies, but now you sum over the contributions from different pairs.
+
