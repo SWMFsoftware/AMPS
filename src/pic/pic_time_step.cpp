@@ -378,11 +378,14 @@ void PIC::TimeStepInternal::ExecutionTrackDefault(double& ParticleMovingTime,dou
   ParticleExchangeTime=MPI_Wtime();
 
   //if field lines are defined -> echange particles on the field lines; otherwise proceed with exchange the particles in the 3D computational domain
-  if (PIC::FieldLine::FieldLinesAll!=NULL) {
-    PIC::ParallelFieldLines::ExchangeFieldLineParticles();
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) {
+    if (PIC::FieldLine::FieldLinesAll!=NULL) {
+      PIC::ParallelFieldLines::ExchangeFieldLineParticles();
+    }
+    else exit(__LINE__,__FILE__,"Error: field lines are not allocated");
   }
   else {
-    PIC::Parallel::ExchangeParticleData();
+      PIC::Parallel::ExchangeParticleData();
   }
 
 
