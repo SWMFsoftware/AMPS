@@ -55,7 +55,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   ReferenceInjectionParticleNumber=200
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
-  InitialSampleLength=400
+  InitialSampleLength=40
 
 
   BlockCells=6,6,6
@@ -123,6 +123,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   DomainType=ParkerSpiral !ParkerSpiral,FLAMPA
   ParticleTrajectory=RelativisticBoris  !FieldLine,RelativisticBoris,GuidingCenter,IgorFieldLine
+  Mover=SEP::ParticleMover_default
 
 #endblock
 
