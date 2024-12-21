@@ -218,7 +218,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc_s
       // Calculate number of collision pairs
       double ancoll;
       if (s0 == s1) {
-        ancoll = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0] - 1) * 
+        ancoll = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0] /*- 1*/) * 
                  LocalParticleWeight * SigmaCrMax * LocalTimeStep / cellMeasure;
       } else {
         ancoll = nParticleNumber[s0] * nParticleNumber[s1] * 
@@ -468,7 +468,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_ntc(i
 
         if (s0==s1) {
           ancoll=0.5*sumWeightCorrection_s0/minParticleWeightCorrection_s0*
-            (sumWeightCorrection_s0/minParticleWeightCorrection_s0-1.0)*
+            (sumWeightCorrection_s0/minParticleWeightCorrection_s0 /*-1.0*/)*
             LocalParticleWeight_s0*minParticleWeightCorrection_s0*SigmaCrMax*LocalTimeStep_s0/cellMeasure;
         }
         else {
@@ -804,7 +804,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_si
       // Calculate majorant collision frequency
       double MajorantFrequency;
       if (s0 == s1) {
-        MajorantFrequency = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0]-1) * 
+        MajorantFrequency = 0.5 * nParticleNumber[s0] * (nParticleNumber[s0] /*-1*/) * 
                            LocalParticleWeight * SigmaCrMax / cellMeasure;
       } else {
         MajorantFrequency = nParticleNumber[s0] * nParticleNumber[s1] * 
@@ -1065,7 +1065,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf(in
 
         if (s0==s1) {
           MajorantFrequency=0.5*sumWeightCorrection_s0/minParticleWeightCorrection_s0*
-           (sumWeightCorrection_s0/minParticleWeightCorrection_s0-1.0)*
+           (sumWeightCorrection_s0/minParticleWeightCorrection_s0 /*-1.0*/)*
             LocalParticleWeight_s0*minParticleWeightCorrection_s0*SigmaCrMax/cellMeasure;
         }
         else {
@@ -1375,7 +1375,7 @@ void PIC::MolecularCollisions::ParticleCollisionModel::ModelCellCollisions_mf_Yi
         minLocalParticleWeight[1]=LocalParticleWeight_s1*minParticleWeightCorrection_s1;
 
         if (s0==s1) {
-          MajorantFrequency[0]=0.5*(nParticleNumber[s0]-1)*
+          MajorantFrequency[0]=0.5*(nParticleNumber[s0] /*-1*/)*
              (sumWeightCorrection_s0*LocalParticleWeight_s0)*SigmaCrMax/cellMeasure;
           //N_a* (sum weight)/cellVol*vel
           // 0.5* n0* (n0-1)* w0 *sigma*relV/ cellV
