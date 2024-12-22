@@ -645,6 +645,21 @@ namespace Vector3D {
     }
   }
 
+  _TARGET_HOST_ _TARGET_DEVICE_
+  inline void GetRandomNormDirection(double *e0,double *z) {
+    double e0temp[3],e1temp[3],theta,sin_theta,cos_theta;
+
+    GetNormFrame(e0temp,e1temp,z);
+    theta=rnd()*PiTimes2;
+    sin_theta=sin(theta);
+    cos_theta=cos(theta);
+
+    for (int idim=0;idim<3;idim++) {
+      e0[idim]=cos_theta*e0temp[idim]+sin_theta*e1temp[idim];
+    }
+  }
+
+
   _TARGET_DEVICE_ _TARGET_HOST_
   inline double Normalize(double *x,double NewLength=1.0) {
     double l,l0;
