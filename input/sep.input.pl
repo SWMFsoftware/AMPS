@@ -173,6 +173,9 @@ while ($line=<InputFile>) {
     if ($InputLine eq "RELATIVISTICBORIS") {
       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_RelativisticBoris","main/mesh.cpp");
     }
+    elsif ($InputLine eq "PARKER3D") {
+      ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_Parker3D_MeanFreePath","main/mesh.cpp");
+    }
     elsif ($InputLine eq "GUIDINGCENTER") {
       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleTrajectoryCalculation","SEP::ParticleTrajectoryCalculation_GuidingCenter","main/mesh.cpp");
     }
