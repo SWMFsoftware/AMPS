@@ -630,28 +630,28 @@ Check=
 <#
 
 #>
-Name=SEP--focused_transport--borovikov
+Name=SEP--Parker3D--ParkerIMF 
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport--borovikov_compile..." > test_SEP--focused_transport--borovikov${TESTSEP--focused_transport--borovikov-REF}.diff
+>>>@echo "test_SEP--Parker3D--ParkerIMF_compile..." > test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
 >>>./Config.pl -application=test/sep_focused_transport--borovikov -spice-path=nospice   -amps-test=on
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
->>>@echo "test_SEP--focused_transport--borovikov_compile... done" >> test_SEP--focused_transport--borovikov${TESTSEP--focused_transport--borovikov-REF}.diff
+>>>@echo "test_SEP--Parker3D--ParkerIMF_compile... done" >> test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
 
 Check=
->>>@echo "SEP--focused_transport--borovikov_check..." >> test_SEP--focused_transport--borovikov${TESTSEP--focused_transport--borovikov-REF}.diff
->>>@${TESTSEP--focused_transport--borovikovDIR}/../utility/ReduceFile.pl ${TESTSEP--focused_transport--borovikovDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
+>>>@echo "SEP--Parker3D--ParkerIMF_check..." >> test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
+>>>@${TESTSEP--Parker3D--ParkerIMFDIR}/../utility/ReduceFile.pl ${TEST--Parker3D--ParkerIMFDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--focused_transport--borovikovDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker_spiral--focused_transport--borovikov-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--focused_transport--borovikov-REF}.ref_np`ls $(TESTSEP--focused_transport--borovikovDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--focused_transport--borovikov${TESTSEP--focused_transport--borovikov-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker3D--ParkerIMFDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker3D--ParkerIMFD-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEPParker3D--ParkerIMF-REF}.ref_np`ls $(TESTSEPParker3D--ParkerIMFDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEPParker3D--ParkerIMFD${TESTSEPParker3D--ParkerIMFD-REF}.diff
 
 
->>>@ls -l test_SEP--focused_transport--borovikov${TESTSEP--focused_transport--borovikov-REF}.diff
->>>@echo Test SEP--focused_transport--borovikov has finished: `date`
+>>>@ls -l test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
+>>>@echo Test SEP--Parker3D--ParkerIMF has finished: `date`
 <#
 
 -------------------------------------------------------------------------------
