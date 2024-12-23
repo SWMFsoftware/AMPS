@@ -94,7 +94,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
   while ((TimeCounter+=-log(rnd())/ModelParticlesInjectionRate)<LocalTimeStep) {
 
     switch (SEP::ParticleTrajectoryCalculation) {
-    case SEP::ParticleTrajectoryCalculation_RelativisticBoris:
+    case SEP::ParticleTrajectoryCalculation_RelativisticBoris: case SEP::ParticleTrajectoryCalculation_Parker3D_MeanFreePath: 
       Vector3D::Distribution::Uniform(x,sphereRadius);   
       break;
     case ParticleTrajectoryCalculation_FieldLine: case  ParticleTrajectoryCalculation_IgorFieldLine:
@@ -123,7 +123,7 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
     nInjectedParticles++;
 
     switch (SEP::ParticleTrajectoryCalculation) {
-    case SEP::ParticleTrajectoryCalculation_RelativisticBoris:
+    case SEP::ParticleTrajectoryCalculation_RelativisticBoris: case SEP::ParticleTrajectoryCalculation_Parker3D_MeanFreePath: 
       Vector3D::Distribution::Uniform(v,speed);
       if (Vector3D::DotProduct(x,v)<0.0) for (int i=0;i<3;i++) v[i]=-v[i];
 
