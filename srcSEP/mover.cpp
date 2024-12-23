@@ -515,6 +515,9 @@ int SEP::ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mes
   case ParticleTrajectoryCalculation_FieldLine:
     res=PIC::Mover::FieldLine::Mover_SecondOrder(ptr,dtTotal,startNode);
     break;
+  case ParticleTrajectoryCalculation_Parker3D_MeanFreePath:
+    res=ParticleMover_Parker3D_MeanFreePath(ptr,dtTotal,startNode);
+    break;
   }
 
   if (res==_PARTICLE_MOTION_FINISHED_) {
@@ -1343,6 +1346,120 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   default:
     exit(__LINE__,__FILE__,"Error: the option is unknown");
   }
+
+  return _PARTICLE_MOTION_FINISHED_;
+}
+
+
+int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
+  // Access particle data as in Boris
+  PIC::ParticleBuffer::byte *ParticleData;
+  double *x, *v,B[3],vParallel,vNormal,bUnit[3],Speed;
+
+  ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  v=PIC::ParticleBuffer::GetV(ParticleData);
+  x=PIC::ParticleBuffer::GetX(ParticleData);
+  Speed=Vector3D::Length(v);
+
+  double timeCounter = 0.0;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode = startNode;
+
+
+  auto PerpendicularDiffusion = [&](double dt) {
+    double D_perp,dr,l[3],rHelio,Speed;
+
+    rHelio=Vector3D::Length(x);
+    Speed=Vector3D::Length(v);
+    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed);
+    dr = sqrt(2.0 * D_perp * dt) * Vector3D::Distribution::Normal();
+
+    // Recalculate the 3D vector x due to diffusion
+    Vector3D::GetRandomNormDirection(l,bUnit);  
+    for (int idim=0;idim<3;idim++) x[idim]+=dr*l[idim];
+  };
+
+  auto AdvanceLocation = [&] (double dt) -> bool {
+   for (int idim=0;idim<3;idim++) x[idim]+=bUnit[idim]*vParallel*dt;
+
+    // Find new node containing particle
+    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+      
+    // Check if particle left domain
+    if (newNode == NULL || newNode->IsUsedInCalculationFlag == false) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false; //  _PARTICLE_LEFT_THE_DOMAIN_;
+    }
+
+    return true;
+  };
+
+  // Main time stepping loop
+  while (timeCounter < dtTotal) {      
+      // Get local magnetic field
+      PIC::CPLR::InitInterpolationStencil(x, newNode);
+      PIC::CPLR::GetBackgroundMagneticField(B);
+ 
+      
+      double AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
+      if (AbsB < 1E-20) AbsB = 1E-20;
+      
+      // Normalize B field direction
+      bUnit[0]=B[0]/AbsB;
+      bUnit[1]=B[1]/AbsB; 
+      bUnit[2]=B[2]/AbsB; 
+            
+      // Calculate parallel and perpendicular components
+      vParallel = v[0]*bUnit[0] + v[1]*bUnit[1] + v[2]*bUnit[2];
+      vNormal = sqrt(Speed*Speed - vParallel*vParallel);
+
+      //determine time till the next scattering event
+      double ds,dt,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x));
+
+      ds=-MeanFreePath*log(rnd());
+      dt=ds/fabs(vParallel);
+
+      if (timeCounter+dt<dtTotal) {
+        //scattering can occus
+        if (AdvanceLocation(dt)==false) return _PARTICLE_LEFT_THE_DOMAIN_; 
+        Vector3D::Distribution::Uniform(v,Speed);
+
+        //perpendicular diffusion
+        PerpendicularDiffusion(dt);
+      }
+      else {
+        //there is not suffcicnet time for particle scattering left
+        if (AdvanceLocation(dtTotal-timeCounter)==false) return _PARTICLE_LEFT_THE_DOMAIN_;
+      } 
+
+      timeCounter += dt;
+  }
+
+  // Update particle lists
+  int i,j,k;
+
+  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  
+  
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
+  long int tempFirstCellParticle = atomic_exchange(
+      newNode->block->tempParticleMovingListTable + i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k), 
+      ptr
+  );
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
+  if (tempFirstCellParticle != -1) {
+      PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
+  }
+  #else
+  // Similar particle list management for non-MPI case
+  long int tempFirstCellParticle = newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
+  if (tempFirstCellParticle != -1) {
+      PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
+  }
+  newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)] = ptr;
+  #endif
 
   return _PARTICLE_MOTION_FINISHED_;
 }
