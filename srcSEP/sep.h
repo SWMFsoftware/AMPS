@@ -1781,6 +1781,7 @@ end:
   const int ParticleTrajectoryCalculation_RelativisticBoris=1;
   const int ParticleTrajectoryCalculation_IgorFieldLine=2;
   const int ParticleTrajectoryCalculation_FieldLine=3;
+  const int ParticleTrajectoryCalculation_Parker3D_MeanFreePath=4;
 
   extern int ParticleTrajectoryCalculation;
 
@@ -1834,6 +1835,9 @@ end:
   int ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
   int ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
+  int ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node);
+
 
   void GetTransportCoefficients(double& dP,double& dLogP,double& dmu,double v,double mu,PIC::FieldLine::cFieldLineSegment *Segment,double FieldLineCoord,double dt,int iFieldLine,double& vSolarWindParallel);
 
