@@ -2185,7 +2185,7 @@ void Comet::TrajectoryTracking::Init() {
 }
 
 bool Comet::TrajectoryTracking::TrajectoryTrackingCondition(double *x,double *v,int spec,void *ParticleData) {
-  bool res;
+  bool res=false;
   long int nZenithElement,nAzimuthalElement,el;
 
 #if _PIC_MODEL__DUST__MODE_ == _PIC_MODEL__DUST__MODE__ON_
@@ -2204,8 +2204,9 @@ bool Comet::TrajectoryTracking::TrajectoryTrackingCondition(double *x,double *v,
   res=true; //PIC::ParticleTracker::TrajectoryTrackingCondition_default(x,v,spec,ParticleData);
 
   if (res==true) TracedParticleNumber_LOCAL[el]++;
-  return res;
 #endif
+
+  return res;
 }
 
 void Comet::TrajectoryTracking::UpdateParticleCounter() {
