@@ -95,6 +95,9 @@ ParticleWeightCorrectionMode=on
   !define _PIC_DYNAMIC_LOAD_BALANCING_MODE_ _PIC_DYNAMIC_LOAD_BALANCING_EXECUTION_TIME_
 
   define _PIC_NIGHTLY_TEST__GRID_RESOLUTION_FLOOR_VALUE_ 0.2
+
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) PIC::Mover::TrajectoryTrackingMover(ptr,LocalTimeStep,node
 #endGeneral
 
 
