@@ -60,12 +60,6 @@ public:
 };
 
 
-TEST(SimpleTest, Addition) {
-    int a = 2;
-    int b = 3;
-    EXPECT_EQ(a + b, 5); // Check if the sum is correct
-}
-
 // Define the test fixture class
 class TriangleIntersectionTest : public ::testing::Test {
 public:
@@ -493,6 +487,81 @@ TEST_F(RayTracingBlockTransitionTest, BlockTransitionConsistencyTest) {
     std::cout << "Final success rate: "
               << (100.0 * successCount / numTests) << "%\n";
 }
+
+// Test ray intersection with the the entire triangulation 
+class RayTriangulationIntersectionTest : public TriangleIntersectionTest {};
+
+TEST_F(RayTriangulationIntersectionTest, SurfaceIntersection) {
+    // Setup test parameters
+    const int nTestCases = 10000;
+    const double tolerance = PIC::Mesh::mesh->EPS;
+    const double R=1737000.0*5.0E-7;
+
+    double l[3],x0[3];
+
+auto calculateIntersections = [&]() -> int {
+    // Calculate coefficients for the quadratic equation
+    double a = l[0] * l[0] + l[1] * l[1] + l[2] * l[2];
+    double b = 2.0 * (x0[0] * l[0] + x0[1] * l[1] + x0[2] * l[2]);
+    double c = x0[0] * x0[0] + x0[1] * x0[1] + x0[2] * x0[2] - R * R;
+    int positiveRoots = 0;
+
+    // Discriminant of the quadratic equation
+    double discriminant = b * b - 4 * a * c;
+
+    if (discriminant > 0) {
+        // Calculate both roots
+        double root1 = (-b + sqrt(discriminant)) / (2 * a);
+        double root2 = (-b - sqrt(discriminant)) / (2 * a);
+
+        // Count positive roots
+        if (root1 > 0) positiveRoots++;
+        if (root2 > 0) positiveRoots++;
+
+    } else if (discriminant == 0) {
+        // One root, check if it's positive
+        double root = -b / (2 * a);
+        if (root > 0) positiveRoots = 1;
+    }
+
+    return positiveRoots;
+};
+
+    for (int testCase = 0; testCase < nTestCases; ++testCase) {
+        // Generate random ray origin and direction
+	
+     do {
+       for (int idim=0;idim<3;idim++) {
+         x0[idim]=-1.3*R+rnd()*2.6*R;
+       }
+     }
+     while (Vector3D::DotProduct(x0,x0)<R*R);
+
+     Vector3D::Distribution::Uniform(l);
+	
+        // Count intersections with triangulated surface
+        int numIntersections = 0;
+        std::vector<double> intersectionTimes;
+
+        // Loop through all cut faces
+        for (int iFace = 0; iFace < CutCell::nBoundaryTriangleFaces; iFace++) {
+            double intersectionTime;
+            bool isIntersected = CutCell::BoundaryTriangleFaces[iFace].RayIntersection(
+                x0, l, intersectionTime, tolerance);
+
+            if (isIntersected) {
+                numIntersections++;
+            }
+        }
+
+        // Compare with analytical solution
+        int expectedIntersections = calculateIntersections();
+        EXPECT_EQ(numIntersections, expectedIntersections)
+            << "Test case " << testCase
+            << ": Mismatch in number of intersections";
+    }
+}
+
 
 // Test ray intersection with the triangulates sphere  
 class RayIntersectionTest : public TriangleIntersectionTest {}; 
