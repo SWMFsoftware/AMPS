@@ -283,7 +283,218 @@ TEST_F(TriangleIntersectionTest, TriangleSegmentIntersection) {
     }
 }
 
-// Then update the test to properly inherit from the fixture
+class MeshPointLocationTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Any setup needed before each test
+    }
+
+    // Helper function to check if point is within node bounds
+    bool isPointInNodeBounds(double* point, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
+        for (int i = 0; i < 3; i++) {
+            if (point[i] < node->xmin[i] || point[i] > node->xmax[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Helper function to generate random point within mesh bounds
+    void generateRandomPoint(double* point) {
+        for (int i = 0; i < 3; i++) {
+            double range = PIC::Mesh::mesh->xGlobalMax[i] - PIC::Mesh::mesh->xGlobalMin[i];
+            point[i] = PIC::Mesh::mesh->xGlobalMin[i] + rnd() * range;
+        }
+    }
+};
+
+TEST_F(MeshPointLocationTest, RandomPointLocationTest) {
+    const int numTests = 100000;
+    double x_LOCAL_SO_OBJECT[3];
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode = PIC::Mesh::mesh->rootTree;
+
+    for (int test = 0; test < numTests; test++) {
+        // Generate random point within mesh bounds
+        generateRandomPoint(x_LOCAL_SO_OBJECT);
+
+        // Find the block containing the point
+        startNode = PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT, startNode);
+
+        // Verify the point is found in a valid node
+        ASSERT_NE(startNode, nullptr)
+            << "Test " << test << ": Point ("
+            << x_LOCAL_SO_OBJECT[0] << ", "
+            << x_LOCAL_SO_OBJECT[1] << ", "
+            << x_LOCAL_SO_OBJECT[2] << ") not found in any node";
+
+        // Verify point is within node bounds
+        EXPECT_TRUE(isPointInNodeBounds(x_LOCAL_SO_OBJECT, startNode))
+            << "Test " << test << ": Point ("
+            << x_LOCAL_SO_OBJECT[0] << ", "
+            << x_LOCAL_SO_OBJECT[1] << ", "
+            << x_LOCAL_SO_OBJECT[2] << ") outside node bounds\n"
+            << "Node bounds: ["
+            << startNode->xmin[0] << ", " << startNode->xmax[0] << "] x ["
+            << startNode->xmin[1] << ", " << startNode->xmax[1] << "] x ["
+            << startNode->xmin[2] << ", " << startNode->xmax[2] << "]";
+
+        // Optional: Print progress every 10000 tests
+        if ((test + 1) % 10000 == 0) {
+            std::cout << "Completed " << (test + 1) << " tests\n";
+        }
+    }
+}
+
+
+class RayTracingBlockTransitionTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Any setup needed before each test
+    }
+
+    // Helper function to generate random point within mesh bounds
+    void generateRandomPoint(double* point) {
+        for (int i = 0; i < 3; i++) {
+            double range = PIC::Mesh::mesh->xGlobalMax[i] - PIC::Mesh::mesh->xGlobalMin[i];
+            point[i] = PIC::Mesh::mesh->xGlobalMin[i] + rnd() * range;
+        }
+    }
+
+    // Helper function to advance point along direction until new block is reached
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* advanceToNewBlock(
+        double* x, const double* l,
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* currentNode,
+        double* xExit) {
+
+        // Calculate mesh diagonal length and use it to determine small_distance
+        double meshDiagonal = 0.0;
+        for (int i = 0; i < 3; i++) {
+            double dim = PIC::Mesh::mesh->xGlobalMax[i] - PIC::Mesh::mesh->xGlobalMin[i];
+            meshDiagonal += dim * dim;
+        }
+        meshDiagonal = sqrt(meshDiagonal);
+        const double small_distance = 0.0000001 * meshDiagonal;
+        double distance = 0.0;
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* nextNode = currentNode;
+
+        while (nextNode == currentNode) {
+            distance += small_distance;
+            for (int i = 0; i < 3; i++) {
+                xExit[i] = x[i] + distance * l[i];
+            }
+            nextNode = PIC::Mesh::mesh->findTreeNode(xExit, currentNode);
+        }
+
+        return nextNode;
+    }
+};
+
+TEST_F(RayTracingBlockTransitionTest, BlockTransitionConsistencyTest) {
+    const int numTests = 1000;
+    double x_LOCAL_SO_OBJECT[3];
+    double l[3];
+    double xNodeExit[3];
+    double xFaceExitLocal[3];  // Local coordinates of the exit point
+    int nExitFace;             // Exit face number
+
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode = PIC::Mesh::mesh->rootTree;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* nextNodeMethod1 = nullptr;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* nextNodeMethod2 = nullptr;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* nextNodeMethod3 = nullptr;
+
+    int successCount = 0;
+
+    for (int test = 0; test < numTests; test++) {
+        // Generate random starting point
+        generateRandomPoint(x_LOCAL_SO_OBJECT);
+
+        // Generate random direction vector
+        Vector3D::Distribution::Uniform(l);
+
+        // Find initial block
+        startNode = PIC::Mesh::mesh->findTreeNode(x_LOCAL_SO_OBJECT, startNode);
+        ASSERT_NE(startNode, nullptr)
+            << "Test " << test << ": Initial point not found in any block";
+
+        // Method 1: Use GetBlockExitPoint to find exit point
+        bool exitFound = PIC::RayTracing::GetBlockExitPoint(
+            startNode->xmin, startNode->xmax,
+            x_LOCAL_SO_OBJECT, l,
+            xNodeExit, xFaceExitLocal, nExitFace);
+
+        ASSERT_TRUE(exitFound)
+            << "Test " << test << ": Failed to find block exit point";
+
+        // Add small offset to ensure we're in the next block
+        const double epsilon = 1.0E-10;
+        double xNextBlock[3];
+        for (int i = 0; i < 3; i++) {
+            xNextBlock[i] = xNodeExit[i] + epsilon * l[i];
+        }
+
+        // Find next block using exit point (Method 1)
+        nextNodeMethod1 = PIC::Mesh::mesh->findTreeNode(xNextBlock, startNode);
+
+        // Method 2: Advance point gradually until new block
+        nextNodeMethod2 = advanceToNewBlock(
+            x_LOCAL_SO_OBJECT, l, startNode, xNodeExit);
+
+        // Method 3: Use neighbor face information
+        double xFaceExitLocal[2];  // Local coordinates on the exit face
+        int nExitFace, iFace, jFace;
+
+        exitFound = PIC::RayTracing::GetBlockExitPoint(
+            startNode->xmin, startNode->xmax,
+            x_LOCAL_SO_OBJECT, l,
+            xNodeExit, xFaceExitLocal, nExitFace);
+
+        ASSERT_TRUE(exitFound)
+            << "Test " << test << ": Failed to find block exit point for Method 3";
+
+        // Determine face indices based on local coordinates
+        iFace = (xFaceExitLocal[0] < 0.5) ? 0 : 1;
+        jFace = (xFaceExitLocal[1] < 0.5) ? 0 : 1;
+
+        // Get neighboring block through face
+        nextNodeMethod3 = startNode->GetNeibFace(nExitFace, iFace, jFace, PIC::Mesh::mesh);
+
+        // Verify all three methods found the same block
+        EXPECT_EQ(nextNodeMethod1, nextNodeMethod2)
+            << "Test " << test << ": Methods 1 and 2 found different blocks";
+        EXPECT_EQ(nextNodeMethod2, nextNodeMethod3)
+            << "Test " << test << ": Methods 2 and 3 found different blocks";
+        EXPECT_EQ(nextNodeMethod1, nextNodeMethod3)
+            << "Test " << test << ": Methods 1 and 3 found different blocks"
+            << "Test " << test << ": Methods found different blocks\n"
+            << "Initial point: ("
+            << x_LOCAL_SO_OBJECT[0] << ", "
+            << x_LOCAL_SO_OBJECT[1] << ", "
+            << x_LOCAL_SO_OBJECT[2] << ")\n"
+            << "Direction: ("
+            << l[0] << ", " << l[1] << ", " << l[2] << ")\n"
+            << "Exit point: ("
+            << xNodeExit[0] << ", "
+            << xNodeExit[1] << ", "
+            << xNodeExit[2] << ")";
+
+        if (nextNodeMethod1 == nextNodeMethod2 && nextNodeMethod2 == nextNodeMethod3) {
+            successCount++;
+        }
+
+        // Print progress every 10000 tests
+        if ((test + 1) % 10000 == 0) {
+            std::cout << "Completed " << (test + 1) << " tests. "
+                     << "Success rate: "
+                     << (100.0 * successCount / (test + 1)) << "%\n";
+        }
+    }
+
+    // Print final statistics
+    std::cout << "Final success rate: "
+              << (100.0 * successCount / numTests) << "%\n";
+}
+
+// Test ray intersection with the triangulates sphere  
 class RayIntersectionTest : public TriangleIntersectionTest {}; 
 TEST_F(RayIntersectionTest, TriangleSegmentIntersection) {
   double x0[3],l[3];
@@ -291,30 +502,33 @@ TEST_F(RayIntersectionTest, TriangleSegmentIntersection) {
 
   const double R=1737000.0*5.0E-7;
 
-  auto calculateIntersections = [&]() -> int {
+auto calculateIntersections = [&]() -> int {
     // Calculate coefficients for the quadratic equation
     double a = l[0] * l[0] + l[1] * l[1] + l[2] * l[2];
     double b = 2.0 * (x0[0] * l[0] + x0[1] * l[1] + x0[2] * l[2]);
     double c = x0[0] * x0[0] + x0[1] * x0[1] + x0[2] * x0[2] - R * R;
-    int res;
+    int positiveRoots = 0;
 
     // Discriminant of the quadratic equation
     double discriminant = b * b - 4 * a * c;
 
-    // Determine the number of intersections based on the discriminant
     if (discriminant > 0) {
-      // Two intersections
-         res=2;
-      } else if (discriminant == 0) {
-         // Tangent to the sphere (one intersection)
-         res=1;
-      } else {
-         // No intersection
-         res= 0;
-      }
+        // Calculate both roots
+        double root1 = (-b + sqrt(discriminant)) / (2 * a);
+        double root2 = (-b - sqrt(discriminant)) / (2 * a);
+        
+        // Count positive roots
+        if (root1 > 0) positiveRoots++;
+        if (root2 > 0) positiveRoots++;
 
-      return res;
-   };
+    } else if (discriminant == 0) {
+        // One root, check if it's positive
+        double root = -b / (2 * a);
+        if (root > 0) positiveRoots = 1;
+    }
+
+    return positiveRoots;
+};
 
    for (int i = 0; i < 1000000; ++i) {
      // Generate random interval endpoints
@@ -330,7 +544,7 @@ TEST_F(RayIntersectionTest, TriangleSegmentIntersection) {
 
      double xTarget[3];
 
-     for (int idim=0;idim<3;idim++) xTarget[idim]=x0[idim]+3*R*l[idim];
+     for (int idim=0;idim<3;idim++) xTarget[idim]=x0[idim]+30*R*l[idim];
 
      //get the analytic number of intersection 
      nIntereseactionAnalytic=calculateIntersections();
@@ -341,6 +555,11 @@ TEST_F(RayIntersectionTest, TriangleSegmentIntersection) {
 
      EXPECT_EQ(nIntereseactionAnalytic,nIntersections);
 
+
+     if (nIntereseactionAnalytic!=nIntersections) {
+       nIntereseactionAnalytic=calculateIntersections();
+       nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
+     }
 
      //get numerical number of intersection
      nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
