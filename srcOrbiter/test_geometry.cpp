@@ -551,6 +551,20 @@ auto calculateIntersections = [&]() -> int {
 
             if (isIntersected) {
                 numIntersections++;
+
+
+     double xTarget[3],d;
+
+     for (int idim=0;idim<3;idim++) xTarget[idim]=x0[idim]+30*R*l[idim];
+     
+     int     nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
+
+     if (nIntersections==0) {
+	     nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
+     }
+
+
+
             }
         }
 
@@ -597,7 +611,7 @@ auto calculateIntersections = [&](double& d) -> int {
         if (root > 0) positiveRoots = 1;
     }
 
-    d=sqrt(Vector3D::DotProduct(x0,x0)-pow(Vector3D::DotProduct(x0,l),2)); 
+    d=sqrt(Vector3D::DotProduct(x0,x0)-pow(Vector3D::DotProduct(x0,l),2))/R; 
 
     return positiveRoots;
 };
@@ -632,6 +646,29 @@ auto calculateIntersections = [&](double& d) -> int {
       nErrors++;
        nIntereseactionAnalytic=calculateIntersections(d);
        nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
+
+
+       //find the cut face for intersection 
+       for (int iFace = 0; iFace < CutCell::nBoundaryTriangleFaces; iFace++) {
+            double intersectionTime;
+            bool isIntersected = CutCell::BoundaryTriangleFaces[iFace].RayIntersection(
+                x0, l, intersectionTime, PIC::Mesh::mesh->EPS);
+
+            if (isIntersected) {
+               auto face=CutCell::BoundaryTriangleFaces+iFace;
+	       double x[3];
+		       
+		       
+               face->GetCenterPosition(x);
+	       auto  startNode = PIC::Mesh::mesh->findTreeNode(x,NULL);
+               bool found=false;
+
+
+            }
+        }
+
+
+
      }
 
      //get numerical number of intersection
