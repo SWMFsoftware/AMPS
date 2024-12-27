@@ -568,10 +568,12 @@ class RayIntersectionTest : public TriangleIntersectionTest {};
 TEST_F(RayIntersectionTest, TriangleSegmentIntersection) {
   double x0[3],l[3];
   int nIntersections,nIntereseactionAnalytic;
-
+  int nErrors=0;
+  
+  int nTotalTests=1000000;
   const double R=1737000.0*5.0E-7;
 
-auto calculateIntersections = [&]() -> int {
+auto calculateIntersections = [&](double& d) -> int {
     // Calculate coefficients for the quadratic equation
     double a = l[0] * l[0] + l[1] * l[1] + l[2] * l[2];
     double b = 2.0 * (x0[0] * l[0] + x0[1] * l[1] + x0[2] * l[2]);
@@ -589,17 +591,18 @@ auto calculateIntersections = [&]() -> int {
         // Count positive roots
         if (root1 > 0) positiveRoots++;
         if (root2 > 0) positiveRoots++;
-
     } else if (discriminant == 0) {
         // One root, check if it's positive
         double root = -b / (2 * a);
         if (root > 0) positiveRoots = 1;
     }
 
+    d=sqrt(Vector3D::DotProduct(x0,x0)-pow(Vector3D::DotProduct(x0,l),2)); 
+
     return positiveRoots;
 };
 
-   for (int i = 0; i < 1000000; ++i) {
+   for (int i = 0; i < nTotalTests; ++i) {
      // Generate random interval endpoints
 
      do {
@@ -611,28 +614,31 @@ auto calculateIntersections = [&]() -> int {
 
      Vector3D::Distribution::Uniform(l);
 
-     double xTarget[3];
+     double xTarget[3],d;
 
      for (int idim=0;idim<3;idim++) xTarget[idim]=x0[idim]+30*R*l[idim];
 
      //get the analytic number of intersection 
-     nIntereseactionAnalytic=calculateIntersections();
+     nIntereseactionAnalytic=calculateIntersections(d);
 
 
      //get numerical number of intersection  
      nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
 
-     EXPECT_EQ(nIntereseactionAnalytic,nIntersections);
+     EXPECT_EQ(nIntereseactionAnalytic,nIntersections) << "d=" << d <<endl;
 
 
      if (nIntereseactionAnalytic!=nIntersections) {
-       nIntereseactionAnalytic=calculateIntersections();
+      nErrors++;
+       nIntereseactionAnalytic=calculateIntersections(d);
        nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
      }
 
      //get numerical number of intersection
      nIntersections=PIC::RayTracing::CountFaceIntersectionNumber(x0,xTarget,-1,false,NULL);
    }
+
+   cout << "Test RayIntersectionTest: error rate is " << (double)nErrors/nTotalTests << endl; 
 }
 
 
