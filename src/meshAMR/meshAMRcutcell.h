@@ -528,7 +528,6 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
 
         // Calculate determinant
         const double a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
-        //if (a > -EPS && a < EPS) return false;
 	if (std::abs(a) < EPS) return false;
 
         const double f = 1.0 / a;
@@ -538,7 +537,6 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
 
         // Calculate u parameter
         const double u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
-        //if (u < 0.0 || u > 1.0) return false;
 	if (u < -EPS || u > 1.0 + EPS) return false;  // Added tolerance
 
         // Calculate q vector
@@ -550,7 +548,6 @@ auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double plan
 
         // Calculate v parameter
         const double v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
-        //if (v < 0.0 || u + v > 1.0) return false;
 	if (v < -EPS || u + v > 1.0 + EPS) return false;  // Added tolerance
 
         // Calculate t
