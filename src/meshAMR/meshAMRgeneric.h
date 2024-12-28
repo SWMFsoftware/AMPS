@@ -2554,7 +2554,7 @@ public:
      AllowBlockAllocation=true;
      DeallocateUnusedBlocks=true;
 
-     EPS=1.0E-20;
+     EPS = 0.000001; //=1.0E-20;
 
      ThisThread=0,nTotalThreads=1;
      ParallelSendRecvMap=NULL;

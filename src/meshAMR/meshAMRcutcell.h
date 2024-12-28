@@ -195,7 +195,6 @@ unsigned long int GetTriangulationSignature();
 
   class cTriangleFace {
   public:
-  //  list<cCutBlockNode>::iterator node[3];
     cNASTRANnode *node[3];
     list<cTriangleEdge>::iterator edge[3];
     int Temp_ID,MeshFileID;
@@ -336,25 +335,6 @@ unsigned long int GetTriangulationSignature();
       lNorm=l[0]*ExternalNormal[0]+l[1]*ExternalNormal[1]+l[2]*ExternalNormal[2];
       length=(x0[0]-x0Face[0])*ExternalNormal[0]+(x0[1]-x0Face[1])*ExternalNormal[1]+(x0[2]-x0Face[2])*ExternalNormal[2];
 
-/*      if (fabs(length)<EPS) {
-        t=0.0;
-      }
-      else {
-        if (lNorm==0.0) {
-          t=0.0;
-          return false;
-        }
-
-        t=-length/lNorm;
-        if (t<0.0) return false;
-      }*/
-
-/*      if (lNorm==0.0) {
-        t=0.0;
-        return true;
-      }*/
-
-
       if (lNorm==0.0) {
         t=0.0;
         return false;
@@ -366,41 +346,10 @@ unsigned long int GetTriangulationSignature();
       if (t<0.0) return false;
 
       //find position of the intersection in the internal frame related to the face
-/*      double c0=0.0,c1=0.0,xLocal[2];
-
-      for (int i=0;i<3;i++) {
-        double x=x0[i]+l[i]*t-x0Face[i];
-
-        c0+=x*e0[i],c1+=x*e1[i];
-      }
-
-      c=c11*c00-c01*c01;
-      xLocal[0]=(c0*c11-c1*c01)/c;
-      xLocal[1]=(c1*c00-c01*c0)/c;*/
-
- //     double x[3],xLocal[2];
-
       for (int i=0;i<3;i++) xIntersection[i]=x0[i]+l[i]*t;
       GetProjectedLocalCoordinates(xLocal,xIntersection);
 
-      //determine weather the node in outside of the face
-/*      double a0=e0Length*xLocal[0],a1=e1Length*xLocal[1];
-
-      if ((a0<-EPS)||(a0>EPS+e0Length)) return false;
-      else if ((a1<-EPS)||(a1>EPS+e1Length)) return false;
-      else if (xLocal[0]+xLocal[1]>1.0) return false;*/
-
-///      if ((xLocal[0]<0.0)||(xLocal[0]>1.0) || (xLocal[1]<0.0)||(xLocal[1]>1.0) || (xLocal[0]+xLocal[1]>1.0)) return false;
-
-
-
- if ((xLocal[0]<xLocalMargin)||(xLocal[0]>1.0-xLocalMargin) || (xLocal[1]<xLocalMargin)||(xLocal[1]>1.0-xLocalMargin) || (xLocal[0]+xLocal[1]>1.0-xLocalMargin)) return false;
-
-// if ((xLocal[0]<1.0E-5)||(xLocal[0]>1.0-1.0E-5) || (xLocal[1]<1.0E-5)||(xLocal[1]>1.0-1.0E-5) || (xLocal[0]+xLocal[1]>1.0-1.0E-5)) return false;
-
-
-// TEST:
-//      if ((xLocal[0]<-1.0E-5)||(xLocal[0]>1.0+1.0E-5) || (xLocal[1]<-1.0E-5)||(xLocal[1]>1.0+1.0E-5) || (xLocal[0]+xLocal[1]>1.0+1.0E-5)) return false;
+      if ((xLocal[0]<xLocalMargin)||(xLocal[0]>1.0-xLocalMargin) || (xLocal[1]<xLocalMargin)||(xLocal[1]>1.0-xLocalMargin) || (xLocal[0]+xLocal[1]>1.0-xLocalMargin)) return false;
 
       return true;
     }
@@ -451,94 +400,193 @@ unsigned long int GetTriangulationSignature();
     }
 
 
-    bool BlockIntersection(double *xmin,double *xmax,double EPS) {
-      int idim,pedge,pface;
-      bool flag;
+/**
+ * Determines if this triangular face intersects with a block defined by min/max bounds
+ * Uses a conservative approach to ensure consistency with block subdivision
+ * Determines if this triangular face intersects with a block defined by min/max bounds
+ * Checks three types of intersections:
+ * 1. Any triangle vertex lies inside the block
+ * 2. Any triangle edge intersects with block faces
+ * 3. Any block edge intersects with the triangle face
+ * 
+ * @param xmin Minimum coordinates of the block
+ * @param xmax Maximum coordinates of the block
+ * @param EPS Epsilon value for floating-point comparisons
+ * @return true if any intersection is detected, false otherwise
+ */
+bool BlockIntersection(double *xmin, double *xmax, double EPS) {
+    // Helper function to check if a 3D point lies inside the block
+    
+  auto isPointNearBlock = [&](const double* point, const double* xmin, const double* xmax) -> bool {
+    for (int i = 0; i < 3; i++) {
+        if (point[i] < xmin[i] - EPS || point[i] > xmax[i] + EPS) return false;
+    }
+    return true;
+   };
 
-      //check if any of the face's node is within the block
-      bool x0flag=true,x1flag=true,x2flag=true;
+    //-------------------------------------------------------------------------
+    // PART 1: Check if any triangle vertex is inside the block
+    //-------------------------------------------------------------------------
+    if (isPointNearBlock(x0Face, xmin, xmax)) return true;
+    if (isPointNearBlock(x1Face, xmin, xmax)) return true;
+    if (isPointNearBlock(x2Face, xmin, xmax)) return true;
 
-      for (idim=0;idim<3;idim++) {
-        if ((x0Face[idim]<xmin[idim])||(xmax[idim]<x0Face[idim])) x0flag=false;
-        if ((x1Face[idim]<xmin[idim])||(xmax[idim]<x1Face[idim])) x1flag=false;
-        if ((x2Face[idim]<xmin[idim])||(xmax[idim]<x2Face[idim])) x2flag=false;
-      }
+    // Helper function to check if a line segment intersects with an axis-aligned plane
+auto lineIntersectsPlane = [EPS](const double* p1, const double* p2, double planePos, int axis) -> bool {
+    const double min_val = std::min(p1[axis], p2[axis]);
+    const double max_val = std::max(p1[axis], p2[axis]);
+    return (min_val <= planePos + EPS && max_val >= planePos - EPS);
+};
 
-      if ((x0flag==true)||(x1flag==true)||(x2flag==true)) return true;
-
-      //check intersection of the face with the edges of the block
-      static const double x0EdgeMap[12][3]={{0,0,0},{0,1,0},{0,1,1},{0,0,1},  {0,0,0},{1,0,0},{1,0,1},{0,0,1},  {0,0,0},{1,0,0},{1,1,0},{0,1,0}};
-      static const double x1EdgeMap[12][3]={{1,0,0},{1,1,0},{1,1,1},{1,0,1},  {0,1,0},{1,1,0},{1,1,1},{0,1,1},  {0,0,1},{1,0,1},{1,1,1},{0,1,1}};
-
-      double x0[3],x1[3],t;
-
-      for (pedge=0;pedge<12;pedge++) {
-        for (idim=0;idim<3;idim++) {
-          x0[idim]=xmin[idim]+x0EdgeMap[pedge][idim]*(xmax[idim]-xmin[idim]);
-          x1[idim]=xmin[idim]+x1EdgeMap[pedge][idim]*(xmax[idim]-xmin[idim]);
-        }
-
-        if (IntervalIntersection(x0,x1,EPS)==true) return true;
-      }
-
-      //check intersection of the edges of the face with the faces of the block
-      static const double x0Block[6][3]={{0,0,0},{1,0,0},   {0,0,0},{0,1,0},   {0,0,0},{0,0,1}};
-      static const double normBlock[6][3]={{1,0,0},{1,0,0},   {0,1,0},{0,1,0},    {0,0,1},{0,0,1}};
-  //    static const double e0Block[6][3]={{0,1,0},{1,1,0},    {1,0,0}, {1,1,0},   {1,0,0},{1,0,1}};
-  //    static const double e1Block[6][3]={{0,0,1},{1,0,1},     {0,0,1},{0,1,1},   {0,1,0},{0,1,1}};
-      static const int skipBlockFaceDirection[6]={0,0,1,1,2,2};
-
-      double *x0Edge,lEdge[3],lNorm,xNorm;
-
-      for (pface=0;pface<6;pface++) for (int pFaceEdge=0;pFaceEdge<3;pFaceEdge++) {
-        lNorm=0.0,xNorm=0.0;
-
-        switch (pFaceEdge) {
-        case 0:
-          x0Edge=x1Face;
-          for (int i=0;i<3;i++) lEdge[i]=x2Face[i]-x1Face[i];
-          break;
-        case 1:
-          x0Edge=x0Face;
-          for (int i=0;i<3;i++) lEdge[i]=x2Face[i]-x0Face[i];
-          break;
-        case 2:
-          x0Edge=x0Face;
-          for (int i=0;i<3;i++) lEdge[i]=x1Face[i]-x0Face[i];
-        }
-
-        for (int i=0;i<3;i++) {
-          lNorm+=lEdge[i]*normBlock[pface][i];
-          xNorm+=(x0Edge[i]- (xmin[i]+x0Block[pface][i]*(xmax[i]-xmin[i])) )*normBlock[pface][i];
-        }
-
-        if (fabs(lNorm)<=fabs(xNorm)) continue;
-
-        if (fabs(xNorm)<EPS) t=0.0;
-        else {
-          t=-xNorm/lNorm;
-        }
-
-        if (t<0.0) continue;
-
-
-
-        for (flag=true,idim=0;idim<3;idim++) if (idim!=skipBlockFaceDirection[pface]) {
-          double x=x0Edge[idim]+t*lEdge[idim];
-
-          if ((x<xmin[idim])||(xmax[idim]<x)) {
-            flag=false;
-            break;
-          }
-        }
-
-        if (flag==true) return true;
-      }
-
-      return false;
+    // Compute triangle bounds with epsilon tolerance
+    double triMin[3], triMax[3];
+    for (int i = 0; i < 3; i++) {
+        triMin[i] = std::min(x0Face[i],std::min(x1Face[i],x2Face[i])) - EPS;
+        triMax[i] = std::max(x0Face[i],std::max(x1Face[i],x2Face[i])) + EPS;
     }
 
+    // Quick reject if bounding boxes don't overlap
+    bool boxesOverlap = true;
+    for (int i = 0; i < 3; i++) {
+        if (triMax[i] < xmin[i] - EPS || triMin[i] > xmax[i] + EPS) {
+            boxesOverlap = false;
+            break;
+        }
+    }
+    if (!boxesOverlap) return false;
 
+
+    // Store triangle edges for easier access
+    const double* edges[3][2] = {
+        {x0Face, x1Face},  // First edge
+        {x1Face, x2Face},  // Second edge
+        {x2Face, x0Face}   // Third edge
+    };
+
+    //-------------------------------------------------------------------------
+    // PART 2: Check intersection of triangle edges with block faces
+    //-------------------------------------------------------------------------
+    for (int axis = 0; axis < 3; axis++) {
+        for (int e = 0; e < 3; e++) {
+            // Check both min and max planes with tolerance
+            //for (const double planePos : {xmin[axis], xmax[axis]}) {
+            for (int ii=0;ii<2;ii++) {
+              double planePos=(ii==0) ? xmin[axis] : xmax[axis];
+
+
+                if (lineIntersectsPlane(edges[e][0], edges[e][1], planePos, axis)) {
+                    // Compute intersection point with tolerance
+                    const double edge_vector[3] = {
+                        edges[e][1][0] - edges[e][0][0],
+                        edges[e][1][1] - edges[e][0][1],
+                        edges[e][1][2] - edges[e][0][2]
+                    };
+                    
+                    if (std::abs(edge_vector[axis]) < EPS) continue;  // Edge parallel to plane
+
+                    const double t = (planePos - edges[e][0][axis]) / edge_vector[axis];
+                    if (t < -EPS || t > 1.0 + EPS) continue;  // Intersection outside edge
+
+                    double intersectPoint[3];
+                    for (int i = 0; i < 3; i++) {
+                        intersectPoint[i] = edges[e][0][i] + t * edge_vector[i];
+                    }
+
+                    // Check if intersection point is within block face bounds (with tolerance)
+                    bool isInFace = true;
+                    for (int i = 0; i < 3; i++) {
+                        if (i != axis) {  // Skip check for intersection axis
+                            if (intersectPoint[i] < xmin[i] - EPS || 
+                                intersectPoint[i] > xmax[i] + EPS) {
+                                isInFace = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (isInFace) return true;
+                }
+            }
+        }
+    } 
+
+
+
+
+    /**
+     * Helper function implementing Möller–Trumbore ray-triangle intersection algorithm
+     */
+    auto rayTriangleIntersect = [&](const double* orig, const double* dir, double& t) -> bool {
+        const double edge1[3] = {x1Face[0] - x0Face[0], x1Face[1] - x0Face[1], x1Face[2] - x0Face[2]};
+        const double edge2[3] = {x2Face[0] - x0Face[0], x2Face[1] - x0Face[1], x2Face[2] - x0Face[2]};
+
+        // Calculate cross product of ray direction and edge2
+        const double h[3] = {
+            dir[1] * edge2[2] - dir[2] * edge2[1],
+            dir[2] * edge2[0] - dir[0] * edge2[2],
+            dir[0] * edge2[1] - dir[1] * edge2[0]
+        };
+
+        // Calculate determinant
+        const double a = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2];
+        //if (a > -EPS && a < EPS) return false;
+	if (std::abs(a) < EPS) return false;
+
+        const double f = 1.0 / a;
+        
+        // Calculate s vector
+        const double s[3] = {orig[0] - x0Face[0], orig[1] - x0Face[1], orig[2] - x0Face[2]};
+
+        // Calculate u parameter
+        const double u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+        //if (u < 0.0 || u > 1.0) return false;
+	if (u < -EPS || u > 1.0 + EPS) return false;  // Added tolerance
+
+        // Calculate q vector
+        const double q[3] = {
+            s[1] * edge1[2] - s[2] * edge1[1],
+            s[2] * edge1[0] - s[0] * edge1[2],
+            s[0] * edge1[1] - s[1] * edge1[0]
+        };
+
+        // Calculate v parameter
+        const double v = f * (dir[0] * q[0] + dir[1] * q[1] + dir[2] * q[2]);
+        //if (v < 0.0 || u + v > 1.0) return false;
+	if (v < -EPS || u + v > 1.0 + EPS) return false;  // Added tolerance
+
+        // Calculate t
+        t = f * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2]);
+
+        return t > EPS;
+    };
+
+    //-------------------------------------------------------------------------
+    // PART 3: Check intersection of block edges with triangle face
+    //-------------------------------------------------------------------------
+    for (int axis = 0; axis < 3; axis++) {
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 2; j++) {
+                // Create edge start point and direction
+                double start[3] = {0, 0, 0}, dir[3] = {0, 0, 0};
+                
+                start[axis] = i == 0 ? xmin[axis] : xmax[axis];
+                start[(axis + 1) % 3] = j == 0 ? xmin[(axis + 1) % 3] : xmax[(axis + 1) % 3];
+                start[(axis + 2) % 3] = xmin[(axis + 2) % 3];
+                
+                dir[(axis + 2) % 3] = xmax[(axis + 2) % 3] - xmin[(axis + 2) % 3];
+
+                // Check intersection with triangle
+                double t;
+                if (rayTriangleIntersect(start, dir, t)) {
+                    if (t >= 0.0 && t <= 1.0) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
 
     cTriangleFace() {
       SurfaceArea=0.0,CharacteristicFaceSize=0.0;
