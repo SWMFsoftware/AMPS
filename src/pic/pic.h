@@ -1991,42 +1991,55 @@ void DeleteAttachedParticles();
       namespace HS {
         //the table of the constant collsion cross sections and reference diameter
         static const double ConstantCollisionCrossSectionTable[1][1]={{0.0}};
-        static const double ConstantReferenceDiameter[1][1]={{0.0}};
+        static const double ReferenceDiameterHs[]={0.0};
 
 
         inline double GetTotalCrossSection(int s0,double* v0,int s1,double* v1) {return ConstantCollisionCrossSectionTable[s0][s1];}
-        inline double GetDiam(int s0,int s1) {return ConstantReferenceDiameter[s0][s1];}
-        inline double GetRefDiam(int s0,int s1) {return ConstantReferenceDiameter[s0][s1];}
-
+	inline double GetRefDiam(int s0) {return ReferenceDiameterHs[s0];}
       }
 
       namespace VHS {
       using namespace HS;
+        static const double ReferenceSpeedVhs[]={0.0}; 
+	static const double PowerIndexVhs[]={0.0};
+
+	inline double GetTotalCrossSection(int s0,int s1,double cr) {
+          double d;
+
+	  if (s0==s1) d=ReferenceDiameterHs[s0]*pow(ReferenceSpeedVhs[s0]/cr,PowerIndexVhs[s0]);
+	  else {
+            double d_s0=ReferenceDiameterHs[s0]*pow(ReferenceSpeedVhs[s0]/cr,PowerIndexVhs[s0]);
+	    double d_s1=ReferenceDiameterHs[s1]*pow(ReferenceSpeedVhs[s1]/cr,PowerIndexVhs[s1]);
+
+	    d=0.5*(d_s0+d_s1);
+	  }
+
+	  return Pi*d*d;
+	} 
+
+	inline double GetTotalCrossSection(int s0,int s1,double *vrel) {
+          return GetTotalCrossSection(s0,s1,Vector3D::Length(vrel));
+        }
+
+	inline double GetTotalCrossSection(int s0,double *v0,int s1,double* v1) {
+          double vrel[3];
+	  
+	  for (int i=0;i<3;i++) vrel[i]=v1[i]-v0[i];
+	  return GetTotalCrossSection(s0,s1,Vector3D::Length(vrel));
+        }
+
+        inline double GetRefSpeed(int s) {return ReferenceSpeedVhs[s];}	
+	inline double GetPowerIntex(int s) {return PowerIndexVhs[s];}
 
       }
 
       namespace VSS {
       using namespace VHS;
+        static const double ChiVssTable[]={0.0};
+
+	inline double GetChi(int s) {return ChiVssTable[s];}
 
       }
-    }
-
-    inline double GetRefDiam(int s0,int s1) {
-#if _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
-      return MolecularModels::HS::GetRefDiam(s0,s1);
-#else
-      exit(__LINE__,__FILE__,"not implemented");
-      return 1.0;
-#endif
-    }
-
-    inline double GetDiam(int s0,int s1) {
-#if _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_ == _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
-      return MolecularModels::HS::GetRefDiam(s0,s1);
-#else
-      exit(__LINE__,__FILE__,"not implemented");
-      return 1.0;
-#endif
     }
 
     //init the molecular data buffers
