@@ -6053,6 +6053,7 @@ Run=
 >>>cd SWMF; ./Config.pl -v=Empty,GM/BATSRUS,PC/AMPS
 >>>cd SWMF; ./Config.pl -o=GM:u=FluxRope,e=MhdHypPe,ng=2,g=8,8,4
 >>>cd SWMF; ./Config.pl -o=PC:spice-path=nospice,spice-kernels=nospice,application=fluxrope-dynamic,amps-test=on,avx=256
+>>>cd SWMF; $(MAKE) clean
 >>>cd SWMF; $(MAKE) SWMF
 >>>cd SWMF; $(MAKE) PIDL
 
