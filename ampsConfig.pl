@@ -2542,14 +2542,60 @@ sub ParticleCollisionModel {
         warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
         die "not implemented\n";
       }
+      elsif ($InputLine eq "VHS" || $InputLine eq "VSS") {
+        my @d_ref_table=((0)x$TotalSpeciesNumber);
+	my @cr_ref_table=((0)x$TotalSpeciesNumber); 
+	my @chi_ref_table=((0)x$TotalSpeciesNumber);
+	my @power_index_table=((0)x$TotalSpeciesNumber);
+        my ($t0,$t1,$t2,$t3,$s);
+
+	if ($InputLine eq "VHS") {
+          ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__VHS_","pic/picGlobal.dfn");
+        }
+	else {
+          ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__VSS_","pic/picGlobal.dfn");
+        }
+
+	$InputComment=~s/[(),=]/ /g;
+
+	while (defined $InputComment) {
+          ($t0,$t1,$t2,$InputComment)=split(' ',$InputComment,4);
+
+	  if ($t0 eq "D_REF") {
+            $s=ampsConfigLib::GetElementNumber($t1,\@SpeciesList);
+            $d_ref_table[$s]=$t2;
+          }
+	  elsif ($t0 eq "CR_REF") {
+            $s=ampsConfigLib::GetElementNumber($t1,\@SpeciesList);
+            $cr_ref_table[$s]=$t2;
+	  }
+	  elsif ($t0 eq "CHI") {
+            $s=ampsConfigLib::GetElementNumber($t1,\@SpeciesList);
+            $chi_ref_table[$s]=$t2;
+          }
+          elsif ($t0 eq "POWERINDEX") {
+            $s=ampsConfigLib::GetElementNumber($t1,\@SpeciesList);
+            $power_index_table[$s]=$t2;
+          }
+	  else {
+            warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
+            die "Unknown option\n";
+          }
+	}
+
+
+	ampsConfigLib::ChangeValueOfArray("static const double ReferenceDiameterHs\\[\\]",\@d_ref_table,"pic/pic.h");
+	ampsConfigLib::ChangeValueOfArray("static const double ReferenceSpeedVhs\\[\\]",\@cr_ref_table,"pic/pic.h");
+	ampsConfigLib::ChangeValueOfArray("static const double ChiVssTable\\[\\]",\@chi_ref_table,"pic/pic.h");
+      }
       elsif ($InputLine eq "CONST") {
         my @CrossSectionTable;
         my ($t0,$t1,$t2,$t3,$s0,$s1,$cnt);
 
         ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_","pic/picGlobal.dfn");
+
+	$InputComment=~s/[(),=]/ /g;
         
-        $InputComment=~s/[(),=]/ /g;
-                
         for (my $i=0;$i<$TotalSpeciesNumber;$i++) {
           my @tmp=((0)x$TotalSpeciesNumber);
           push(@CrossSectionTable, [@tmp]);
