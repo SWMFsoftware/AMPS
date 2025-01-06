@@ -47,6 +47,9 @@ void SEP::ParticleMoverSet(int ParticleMoverModel) {
   case _Tenishev_2005_FL_:
     ParticleMoverPtr=ParticleMover_Tenishev_2005_FL;
     break;
+  case _ParkerMeanFreePath_FL_:
+    ParticleMoverPtr=ParticleMover_Parker_MeanFreePath;
+    break;
   default:
     exit(__LINE__,__FILE__,"Error: the function code is unknown");
   }

@@ -11,10 +11,11 @@
 
 #include <math.h>
 
-#define _SEP_MOVER_DEFUALT_              0
-#define _SEP_MOVER_BOROVIKOV_2019_ARXIV_ 1
-#define _SEP_MOVER_HE_2019_AJL_          2 
-#define _SEP_MOVER_KARTAVYKH_2016_AJ_    3 
+#define _SEP_MOVER_DEFUALT_               0
+#define _SEP_MOVER_BOROVIKOV_2019_ARXIV_  1
+#define _SEP_MOVER_HE_2019_AJL_           2 
+#define _SEP_MOVER_KARTAVYKH_2016_AJ_     3 
+#define _SEP_MOVER_PARKER_MEAN_FREE_PATH_ 4
 
 #ifndef _SEP_MOVER_
 #define _SEP_MOVER_ _SEP_MOVER_DEFUALT_ 
@@ -1821,6 +1822,7 @@ end:
   const int _Droge_2009_AJ1_=4;
   const int _MeanFreePathScattering_=5;
   const int _Tenishev_2005_FL_=6;
+  const int _ParkerMeanFreePath_FL_=7;
 
   int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
