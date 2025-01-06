@@ -86,9 +86,9 @@ namespace QLT1 {
     /// \param v Proton speed in meters per second.
     /// \param deltaB_over_B Magnetic field fluctuation ratio (dimensionless), default value 0.3.
     /// \return Mean free path in meters.
-    double calculateMeanFreePath(double r, double v, double deltaB_over_B) {
+    double calculateMeanFreePath(double r, double v, double AbsB,double deltaB_over_B) {
         // Compute the magnetic field strength at distance r
-        double B_r = B(r);  // Magnetic field at r in Tesla
+        double B_r = AbsB; //B(r);  // Magnetic field at r in Tesla
 
         // Compute the proton gyrofrequency Omega
         double Omega = gyrofrequency(B_r);  // Gyrofrequency in rad/s
@@ -124,8 +124,8 @@ namespace QLT1 {
     /// \param v Proton speed in meters per second.
     /// \param deltaB_over_B Magnetic field fluctuation ratio (dimensionless), default value 0.3.
     /// \return Spatial diffusion coefficient Dxx in square meters per second.
-    double calculateDxx(double r, double v, double deltaB_over_B) {
-        double lambda = calculateMeanFreePath(r, v, deltaB_over_B); // Calculate mean free path λ
+    double calculateDxx(double r, double v, double AbsB,double deltaB_over_B) {
+        double lambda = calculateMeanFreePath(r, v, AbsB,deltaB_over_B); // Calculate mean free path λ
         return (1.0 / 3.0) * lambda * v; // Dxx = (1/3) * λ * v
     }
 
@@ -189,11 +189,11 @@ namespace QLT1 {
  *
  * where coefficient_scaling ≈ 0.02 and scaling_exponent ≈ 0.5 in typical solar wind conditions.
  */
-double calculatePerpendicularDiffusion(double r, double v, double deltaB_over_B) {
+double calculatePerpendicularDiffusion(double r, double v, double AbsB,double deltaB_over_B) {
   const double COEFFICIENT_SCALING = 0.02; // Empirical scaling factor (typically between 0.02 - 0.1)
   const double SCALING_EXPONENT = 0.5;     // Scaling exponent for Kolmogorov turbulence
 
-  double D_xx=calculateDxx(r, v,deltaB_over_B);  
+  double D_xx=calculateDxx(r, v,AbsB,deltaB_over_B);  
 
   // Calculate D_perp using the empirical formula:
   // D_perp = COEFFICIENT_SCALING * (D_xx ^ SCALING_EXPONENT)

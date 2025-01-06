@@ -32,9 +32,9 @@ namespace QLT1 {
     extern double larmor_radius(double v_perp, double Omega);
     extern double L_c(double r);
    
-    extern double calculateMeanFreePath(double r, double v, double deltaB_over_B = 0.3);
-    extern double calculateDxx(double r, double v, double deltaB_over_B = 0.3);
-    extern double calculatePerpendicularDiffusion(double r, double v, double deltaB_over_B=0.3);  
+    extern double calculateMeanFreePath(double r, double v, double AbsB,double deltaB_over_B = 0.3);
+    extern double calculateDxx(double r, double v, double AbsB,double deltaB_over_B = 0.3);
+    extern double calculatePerpendicularDiffusion(double r, double v, double AbsB,double deltaB_over_B=0.3);  
 
     extern double adiabaticCooling(double r,double v_sw);
 } // namespace QLT3

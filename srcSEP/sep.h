@@ -173,6 +173,52 @@ namespace SEP {
   extern int *CompositionGroupTableIndex;
   extern int nCompositionGroups;
 
+  //Get physical datat from the magnetic field line 
+  namespace FieldLineData {
+    inline void GetB(double *B,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) { 
+      namespace FL = PIC::FieldLine;
+      double *B0,*B1,*W0,*W1,w0,w1,*x0,*x1;
+      double PlasmaDensity0,PlasmaDensity1,PlasmaDensity;
+      int idim;
+
+      if (Segment==NULL) Segment=FL::FieldLinesAll[iFieldLine].GetSegment(FieldLineCoord);
+      if (Segment==NULL) exit(__LINE__,__FILE__,"Error: Segment==NULL");
+
+      FL::cFieldLineVertex* VertexBegin=Segment->GetBegin();
+      FL::cFieldLineVertex* VertexEnd=Segment->GetEnd();
+
+      //get the magnetic field and the plasma waves at the corners of the segment
+      B0=VertexBegin->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+      B1=VertexEnd->GetDatum_ptr(FL::DatumAtVertexMagneticField);
+
+      //determine the interpolation coefficients
+      w1=fmod(FieldLineCoord,1);
+      w0=1.0-w1;
+
+      for (idim=0;idim<3;idim++) {
+        B[idim]=w0*B0[idim]+w1*B1[idim];
+      }
+    } 
+
+
+    inline double GetAbsB(double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,int iFieldLine) {
+      double B[3];
+
+      GetB(B,FieldLineCoord,Segment,iFieldLine); 
+      return Vector3D::Length(B);
+    }
+  }
+
+  namespace ParkerSpiral {
+    inline double GetAbsB(double r) {
+      // B0: Magnetic field at reference distance R0.
+      // For the inner heliosphere, B0 ~ 5e-5 T at R0 = 0.1 AU.
+      double B0 = 5e-5;               // Magnetic field at reference distance (Tesla)
+      double R0 = 0.1 * _AU_;           // Reference distance (meters)
+      return B0 * pow(R0 / r, 2);
+    }
+  }
+
   //scattering path the particles (used witu Parker spiral simulations) 
   namespace Scattering {
     namespace Tenishev2005AIAA {

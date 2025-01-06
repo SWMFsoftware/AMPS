@@ -1234,6 +1234,7 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   }
 
   FL::cFieldLineSegment *LastSegment=NULL;
+  double B;
 
   while (TimeCounter<dtTotal) {
     D_mumu=QLT::calculateDmuMu(v,mu,rHelio);
@@ -1243,10 +1244,11 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
     if (Segment!=LastSegment) {
       auto b=Segment->GetBegin();
       auto e=Segment->GetEnd();
-      double *B0,*B1,dB=0.0,B=0.0;
+      double *B0,*B1,dB=0.0;
 
       B0=b->GetMagneticField();
       B1=e->GetMagneticField();
+      B=0.0;
 
       for (int i=0;i<3;i++) {
         double t;
@@ -1303,7 +1305,7 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
         r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
         break;
       case PerpScatteringMode_diffusion:
-        D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+        D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed,B);
         dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
         r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
         break;
@@ -1357,7 +1359,7 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   // Access particle data as in Boris
   PIC::ParticleBuffer::byte *ParticleData;
-  double *x, *v,B[3],vParallel,vNormal,bUnit[3],Speed;
+  double *x, *v,AbsB,B[3],vParallel,vNormal,bUnit[3],Speed;
 
   ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   v=PIC::ParticleBuffer::GetV(ParticleData);
@@ -1373,7 +1375,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
 
     rHelio=Vector3D::Length(x);
     Speed=Vector3D::Length(v);
-    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed);
+    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed,AbsB);
     dr = sqrt(2.0 * D_perp * dt) * Vector3D::Distribution::Normal();
 
     // Recalculate the 3D vector x due to diffusion
@@ -1403,7 +1405,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
       PIC::CPLR::GetBackgroundMagneticField(B);
  
       
-      double AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
+      AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
       if (AbsB < 1E-20) AbsB = 1E-20;
       
       // Normalize B field direction
@@ -1416,7 +1418,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
       vNormal = sqrt(Speed*Speed - vParallel*vParallel);
 
       //determine time till the next scattering event
-      double ds,dt,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x));
+      double ds,dt,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
 
       ds=-MeanFreePath*log(rnd());
       dt=ds/fabs(vParallel);
@@ -1512,7 +1514,18 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
       */
 
-    MeanFreePath=QLT1::calculateMeanFreePath(Speed,rHelio);
+    //get the value of the backgound magnetic field 
+    double AbsB; 
+
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      AbsB=SEP::FieldLineData::GetAbsB(FieldLineCoord,Segment,iFieldLine); 
+      break;
+    default:
+      AbsB=SEP::ParkerSpiral::GetAbsB(rHelio);
+    }
+
+    MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
 
 
     ds=-MeanFreePath*log(rnd());
@@ -1547,7 +1560,7 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
           r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
           break;
         case PerpScatteringMode_diffusion:
-          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed,AbsB);
           dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
           r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
           break;
@@ -1590,7 +1603,7 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
           r=sqrt(r*r+vNormal*dt*(2.0*sin_theta*r+vNormal*dt));
 	  break;
 	case PerpScatteringMode_diffusion:
-          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed);
+          D_perp=QLT1::calculatePerpendicularDiffusion(rHelio,Speed,AbsB);
           dr=sqrt(2.0*D_perp*dt)*Vector3D::Distribution::Normal();
           r=sqrt(r*r+dr*dr+2.0*r*dr*sin_theta);
 	  break;
@@ -1680,7 +1693,18 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
       pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
 
-    MeanFreePath=QLT1::calculateMeanFreePath(Speed,r);
+    //get the value of the backgound magnetic field 
+    double AbsB;
+
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      AbsB=SEP::FieldLineData::GetAbsB(FieldLineCoord,Segment,iFieldLine);
+      break;
+    default:
+      AbsB=SEP::ParkerSpiral::GetAbsB(r);
+    }
+
+    MeanFreePath=QLT1::calculateMeanFreePath(r,Speed,AbsB);
 
 
     //determine d (Dxx)/dx
@@ -1695,7 +1719,7 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       Segment->GetCartesian(xx,s);
       rr=Vector3D::Length(xx);
 
-      dxx_minus=QLT1::calculateDxx(rr,Speed);  
+      dxx_minus=QLT1::calculateDxx(rr,Speed,AbsB);  
     }
     else {
       f_minus=false;
@@ -1708,7 +1732,7 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       Segment->GetCartesian(xx,s);
       rr=Vector3D::Length(xx);
 
-      dxx_plus=QLT1::calculateDxx(r,Speed);
+      dxx_plus=QLT1::calculateDxx(r,Speed,AbsB);
     }
     else {
       f_plus=false;
@@ -1721,7 +1745,7 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
       exit(__LINE__,__FILE__,"Error: cannot calculate d_dxx_dx -> both points are outdise of the field line");
     }
     else {
-      dxx=QLT1::calculateDxx(r,Speed);
+      dxx=QLT1::calculateDxx(r,Speed,AbsB);
       d_dxx_dx=(f_minus==true) ? (dxx-dxx_minus)/ds : (dxx_plus-dxx)/ds;  
     }	    
 
