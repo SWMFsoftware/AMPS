@@ -523,6 +523,20 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     }
 
+    else if (Command == "#SEP_INJECTION_TYPE_FL_TENISHEV_2005AIAA") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
+
+      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
+      #endif
+    }
+
+
     else if (Command == "#SEP_NUMERICAL_DIFFERENTIATION_STEP") {
       cout << "PT: "  << param_list.front().second << endl;
 
