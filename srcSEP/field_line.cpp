@@ -238,11 +238,23 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double emin=InjectionParameters::emin*MeV2J;
     double emax=InjectionParameters::emax*MeV2J;
 
-    double s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();    //InjectionParameters::PowerIndex;
-    double q=3.0*s/(3-1.0);
+    double s;
+    
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      s=AMPS2SWMF::ShockData[iFieldLine].CompressionRatio; 
+      break;
+    default:
+      s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();    //InjectionParameters::PowerIndex;
+    }
 
+    if (s>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) s=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
+
+    double q=3.0*s/(3-1.0);
     double pAbs,pmin,pmax,speed,pvect[3];
     double mass=PIC::MolecularData::GetMass(spec);
+
+    if (q<1.0) q=1.0;
 
     pmin=Relativistic::Energy2Momentum(emin,mass);
     pmax=Relativistic::Energy2Momentum(emax,mass);
@@ -255,11 +267,7 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
     pmax=Relativistic::Speed2Momentum(speed,mass);
 
-
-    double A0=pow(pmin,-q+1.0);
-    double A=pow(pmax,-q+1.0)-A0;
-
-    double WeightNorm=pow(pmin,-q);
+    double WeightNorm=pow(pmin,1.0-q);
 
     //to cover the entire range of the particle momentum, the momentum will be generated in the log(p) space 
     //that will be accounted for with a statistical weight correction
@@ -269,12 +277,11 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
 
     for (int i=0;i<nParticles;i++) {
       pAbsTable[i]=pmin*exp(rnd()*(log_pmax-log_pmin));
-      WeightCorrectionTable[i]=pAbsTable[i]/pmin*pow(pAbsTable[i],-q)/WeightNorm*GlobalWeightCorrectionFactor;
+      WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-q)/WeightNorm;
     }
   }; 
 
   auto GetMomentum_Sokolov2004AJ = [&] (double *pAbsTable,double *WeightCorrectionTable,int nParticles) { 
-    double pmin=sqrt(10.0*KeV2J*2.0*PIC::MolecularData::GetMass(spec));
     double e,r;
 
     double p_injection_min=Relativistic::Energy2Momentum(SEP::FieldLine::InjectionParameters::emin,PIC::MolecularData::GetMass(spec));
@@ -283,10 +290,13 @@ long int SEP::FieldLine::InjectParticlesSingleFieldLine(int spec,int iFieldLine)
     double log_p_injection_min=log(p_injection_min);
     double log_p_injection_max=log(p_injection_max);
 
+    double WeightNorm=pow(log_p_injection_min,1.0-InjectionParameters::PowerIndex);
+
+    if (InjectionParameters::PowerIndex<1.0) exit(__LINE__,__FILE__,"InjectionParameters::PowerIndex is out of range: must be more then 1");
+
     for (int i=0;i<nParticles;i++) {
-      pAbsTable[i]=exp(log_p_injection_min+rnd()*(log_p_injection_max-log_p_injection_min));  
-      WeightCorrectionTable[i]=pow(p_injection_min/pAbsTable[i],InjectionParameters::PowerIndex);
-      WeightCorrectionTable[i]*=1.0/pAbsTable[i];
+      pAbsTable[i]=p_injection_min*exp(rnd()*(log_p_injection_max-log_p_injection_min));  
+      WeightCorrectionTable[i]=pow(pAbsTable[i],1.0-InjectionParameters::PowerIndex)/WeightNorm;
     } 
   };
 

@@ -7,6 +7,7 @@
 #endif
 
 int SEP::ParticleSource::ShockWave::ShockStateFlag_offset=-1;
+double SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio=3.0;
 
 //condition for presence of a shock in a given cell
 bool SEP::ParticleSource::ShockWave::IsShock(PIC::Mesh::cDataCenterNode *CenterNode) {

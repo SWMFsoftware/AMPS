@@ -2042,6 +2042,9 @@ end:
 
       extern int ShockStateFlag_offset;
 
+      //upper limit on the compression ratio
+      extern double MaxLimitCompressionRatio;
+
       namespace Output {
         void PrintVariableList(FILE* fout,int DataSetNumber);
         void PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,int CenterNodeThread,PIC::Mesh::cDataCenterNode *CenterNode);
