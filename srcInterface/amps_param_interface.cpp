@@ -487,24 +487,6 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
 
 
-    else if (Command == "#SEP_INJECTION_TYPE_FL_POWER_LAW") {
-      cout << "PT: "  << param_list.front().second << endl;
-
-      #ifdef _SEP_MODEL_ON_
-      t=param_list.front().first;
-      cout << "PT: "  << param_list.front().second << endl;
-      param_list.pop_front();
-      SEP::FieldLine::InjectionParameters::PowerIndex=atof(t.c_str());
-
-      t=param_list.front().first;
-      cout << "PT: "  << param_list.front().second << endl;
-      param_list.pop_front();
-      SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
-        
-      SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
-      #endif
-    }
-
     else if (Command == "#SEP_INJECTION_TYPE_FL_SOKOLOV_2004AJ") {
       cout << "PT: "  << param_list.front().second << endl;
 
@@ -532,10 +514,26 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
       SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
 
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio=atof(t.c_str());
+
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
       #endif
     }
 
+
+    else if (Command == "#SEP_SAMPLING_EMAX") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+      SEP::Sampling::MaxSampleEnergy=atof(t.c_str())*MeV2J;
+      #endif
+    }
 
     else if (Command == "#SEP_NUMERICAL_DIFFERENTIATION_STEP") {
       cout << "PT: "  << param_list.front().second << endl;
