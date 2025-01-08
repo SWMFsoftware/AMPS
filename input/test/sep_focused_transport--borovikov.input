@@ -35,7 +35,7 @@ ForceRepeatableSimulationPath=on ! on,off
 
 StdoutErrorLog=off !on,off -> print out error message on the screen
 
-TimeStepMode= SpeciesGlobalTimeStep !SingleGlobalTimeStep !SingleGlobalTimeStep, SpeciesGlobalTimeStep, SingleLocalTimeStep, SpeciesLocalTimeStep  
+TimeStepMode=SingleGlobalTimeStep ! SpeciesGlobalTimeStep !SingleGlobalTimeStep !SingleGlobalTimeStep, SpeciesGlobalTimeStep, SingleLocalTimeStep, SpeciesLocalTimeStep  
 ParticleWeightMode=SpeciesGlobalParticleWeight !SingleGlobalParticleWeight, SpeciesGlobalParticleWeight, SingleLocalParticleWeight, SpeciesLocalParticleWeight 
 ParticleWeightCorrectionMode=on !on,off
 
@@ -123,7 +123,9 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   DomainType=ParkerSpiral !ParkerSpiral,FLAMPA
   ParticleTrajectory=Parker3D ! RelativisticBoris  !FieldLine,RelativisticBoris,GuidingCenter,IgorFieldLine
-  Mover=SEP::ParticleMover_default
+  !Mover=SEP::ParticleMover_default
+
+  Mover=ParticleMover_Parker_MeanFreePath 
 
 #endblock
 
