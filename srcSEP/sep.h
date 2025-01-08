@@ -1399,7 +1399,7 @@ namespace SEP {
     const int SamplingHeliocentricDistanceTableLength=6;
     const double SamplingHeliocentricDistanceTable[]={16.0*_RADIUS_(_SUN_),0.2*_AU_,0.4*_AU_,0.6*_AU_,0.8*_AU_,1.0*_AU_};
     const double MinSampleEnergy=0.1*MeV2J;
-    const double MaxSampleEnergy=3000.0*MeV2J;
+    extern double MaxSampleEnergy; //=3000.0*MeV2J;
     const int nSampleIntervals=10;
 
     /*SamplingHeliocentricDistanceTable can be set in AMPS' input file while SamplingHeliocentricDistanceList is defined in SWMF's PARAM.in. The latter has priority*/

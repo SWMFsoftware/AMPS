@@ -19,6 +19,7 @@ double SEP::Sampling::PitchAngle::emin=0.01*MeV2J;
 double SEP::Sampling::PitchAngle::emax=3000.0*MeV2J;
 int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=70;
 double SEP::Sampling::PitchAngle::dLogE; 
+double SEP::Sampling::MaxSampleEnergy=3000.0*MeV2J;
 
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
