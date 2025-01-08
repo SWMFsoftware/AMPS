@@ -813,6 +813,30 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         int i;
         cFieldLineVertex *Vertex;
 
+	auto GetCompressionRatio = [&] (cFieldLineSegment* Segment) {
+          double rho0,rho1;
+
+          Segment->GetBegin()->GetDatum(DatumAtVertexPlasmaDensity,&rho0);
+          Segment->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,&rho1);
+
+	  return max(rho0/rho1,rho1/rho0);
+	};
+
+        auto GetShockSpeed = [&] (cFieldLineSegment* Segment) {
+          double rho0,rho1,V0[3],V1[3],res;
+
+          Segment->GetBegin()->GetDatum(DatumAtVertexPlasmaDensity,&rho0);
+          Segment->GetEnd()->GetDatum(DatumAtVertexPlasmaDensity,&rho1);
+
+	  Segment->GetBegin()->GetPlasmaVelocity(V0);
+	  Segment->GetEnd()->GetPlasmaVelocity(V1);
+
+	  res=(rho0-rho1!=0.0) ? fabs((rho1*Vector3D::Length(V1)-rho0*Vector3D::Length(V0))/(rho1-rho0)) : 0.0;
+
+	  return res; 
+	}; 	
+
+
         auto DensityTemporalVariation = [&] () {
           int imin=AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock;
           double shock_flag=0.0;
@@ -892,8 +916,10 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
               iSegmentShock=iSegment;
 
               AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=iSegment;
-              AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=0.0;
+              AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed=GetShockSpeed(s);
               AMPS2SWMF::ShockData[iImportFieldLine].DownStreamDensity=min(rho0,rho1);
+
+	      AMPS2SWMF::ShockData[iImportFieldLine].CompressionRatio=GetCompressionRatio(s);
             }
           }
         }; 
@@ -993,9 +1019,21 @@ while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (fals
         }
         else { 
           AMPS2SWMF::ShockData[iImportFieldLine].iSegmentShock=-1; 
+        } 
+
+
+	double rShock=0.0;
+
+	if (iSegmentShock!=-1) {
+	  PIC::FieldLine::cFieldLineSegment *Segment=PIC::FieldLine::FieldLinesAll[iImportFieldLine].GetFirstSegment();
+
+	  for (int i=0;i<iSegmentShock-1;i++,Segment=Segment->GetNext());
+
+          double *xShock=Segment->GetBegin()->GetX();
+	  rShock=Vector3D::Length(xShock)/_AU_;
         }
 
-        cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", ratio=" << max_ratio << endl;
+        cout << "AMPS: Field line=" << iImportFieldLine << "(thread=" << PIC::ThisThread << "), localtion of the shock: iSegment=" << iSegmentShock << ", r=" << rShock << ", ratio=" << max_ratio << ", speed=" << AMPS2SWMF::ShockData[iImportFieldLine].ShockSpeed <<  endl;
       }
     };
 

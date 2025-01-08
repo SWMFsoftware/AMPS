@@ -76,11 +76,11 @@ namespace AMPS2SWMF {
   class cShockData {
   public:
     int iSegmentShock;
-    double ShockSpeed,DownStreamDensity;
+    double ShockSpeed,DownStreamDensity,CompressionRatio;
 
     cShockData() {
       iSegmentShock=-1;
-      ShockSpeed=0.0,DownStreamDensity=0.0;
+      ShockSpeed=0.0,DownStreamDensity=0.0,CompressionRatio=1.0;
     }
   };
 
