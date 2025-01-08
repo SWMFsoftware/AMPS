@@ -370,7 +370,7 @@ Compile=
 Check=
 >>>@echo "test_test-1853-shape_check..." >> test_test-1853-shape$(TESTtest-1853-shape).diff
 
->>>-@gunzip  output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat.gz 
+>>>-@gunzip -kf output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat.gz 
 
 >>>@${TESTtest-1853-shapeDIR}/../utility/ReduceFile.pl ${TESTtest-1853-shapeDIR}/PT/plots/pic.H2O.s=0.out=5.dat 20
 >>>-@${SCRIPTDIR}/DiffNum.pl -a=4.0E-13 ${TESTtest-1853-shapeDIR}/PT/plots/pic.H2O.s=0.out=5.dat.Reduced.Step=20 output/test_test-1853-shape/pic.H2O.s=0.out=5.dat.Reduced.Step=20.ref_np`ls $(TESTtest-1853-shapeDIR)/PT/thread* |wc -l |tr -d ' '`.dat > test_test-1853-shape$(TESTtest-1853-shape).diff
@@ -1904,7 +1904,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_Earth-cutoff-rigidity_t05_rundir..." >> test_Earth-cutoff-rigidity_t05$(TESTEarth-cutoff-rigidity_t05-REF).diff
->>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
+>>>-gunzip -kf data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
 >>>@mkdir -p $(TESTEarth-cutoff-rigidity_t05DIR)
 >>>@mv amps $(TESTEarth-cutoff-rigidity_t05DIR)
 >>>@cp earth_cutoff_rigidity_model/AMPS/input/test/geospace-rigidity.in--cutoff-sphere $(TESTEarth-cutoff-rigidity_t05DIR)/geospace-rigidity.in 
@@ -1948,7 +1948,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_Earth-cutoff-rigidity-points_t05_rundir..." >> test_Earth-cutoff-rigidity-points_t05$(TESTEarth-cutoff-rigidity-points_t05-REF).diff
->>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
+>>>-gunzip -kf data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
 >>>@mkdir -p $(TESTEarth-cutoff-rigidity-points_t05DIR)
 >>>@mv amps $(TESTEarth-cutoff-rigidity-points_t05DIR)
 >>>@cp earth_cutoff_rigidity_model/AMPS/input/test/geospace-rigidity.in--cutoff-points $(TESTEarth-cutoff-rigidity-points_t05DIR)/geospace-rigidity.in
@@ -2008,7 +2008,7 @@ Compile=
 
 Rundir=
 >>>@echo "test_Earth-geo_t05_rundir..." >> test_Earth-geo_t05$(TESTEarth-geo_t05-REF).diff
->>>-gunzip data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
+>>>-gunzip -kf data/T05/2017_OMNI_5m_with_TS05_variables.dat.gz
 >>>@mkdir -p $(TESTEarth-geo_t05DIR)
 >>>@mv amps $(TESTEarth-geo_t05DIR)
 >>>@cp earth_cutoff_rigidity_model/AMPS/input/geospace-rigidity.in $(TESTEarth-geo_t05DIR)/geospace-rigidity.in
@@ -3712,7 +3712,7 @@ Compile=
 >>>./Config.pl -application=CG -spice-path=nospice -spice-kernels=nospice -model-data-path=$(PTDIR)/data/input/Rosetta  -amps-test=on $(TESTCGKEYS)
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
->>>gunzip $(PTDIR)/data/input/Rosetta/SHAP5_stefano.bdf.gz
+>>>gunzip -kf $(PTDIR)/data/input/Rosetta/SHAP5_stefano.bdf.gz
 >>>@echo "test_CG_compile... done" >> test_CG$(TESTCG-REF).diff
 
 <#
@@ -4395,7 +4395,7 @@ Check=
 >>>output/test_Europa-test2/test_Europa-test2.ref_np`ls ${TESTEuropa-test2DIR}/PT/thread* |wc -l |tr -d ' '` > test_Europa-test2.diff
 
 >>>-${TESTEuropa-test2DIR}/../utility/ReduceFile.pl ${TESTEuropa-test2DIR}/loaded.SavedCellData.dat 100 
->>>-gunzip output/test_Europa-test2/loaded.SavedCellData.dat.Reduced.Step=100.gz
+>>>-gunzip -kf output/test_Europa-test2/loaded.SavedCellData.dat.Reduced.Step=100.gz
 >>>-${SCRIPTDIR}/DiffNum.pl ${TESTEuropa-test2DIR}/loaded.SavedCellData.dat.Reduced.Step=100 \
 >>>output/test_Europa-test2/loaded.SavedCellData.dat.Reduced.Step=100 > test_Europa-test2-background-plasma-model.diff 
 
