@@ -320,4 +320,81 @@ void SEP::Sampling::LarmorRadius::Output(int cnt) {
 
 
 
+void SEP::Sampling::MeanFreePath::Output(int cnt) {
+  namespace FL=PIC::FieldLine;
+  double d,norm,t,max_val;
+  int iLine,iR,i;
+
+  //gather all sampled data
+  SamplingTable.reduce(0,MPI_SUM,MPI_GLOBAL_COMMUNICATOR);
+
+  if (PIC::ThisThread!=0) return;
+  SamplingTable.find_nan();
+
+  //normalize the energy distribution
+  for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true)   for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+    norm=0.0,max_val=0.0;
+
+    for (i=0;i<nSampleIntervals;i++) {
+      d=MinSampledMeanFreePath*(exp((i+1)*dLogMeanFreePath)-exp(i*dLogMeanFreePath));
+
+      norm+=SamplingTable(i,iR,iLine)*d;
+    }
+
+
+    if (norm>0.0) {
+      for (i=0;i<nSampleIntervals;i++) {
+        SamplingTable(i,iR,iLine)/=norm;
+
+        if ((t=SamplingTable(i,iR,iLine))>max_val) max_val=t;
+      }
+
+
+      for (i=0;i<nSampleIntervals;i++) {
+        SamplingTable(i,iR,iLine)/=max_val;
+      }
+    }
+  }
+
+  //output the distribution in a file
+  FILE *fout;
+  char fname[200];
+
+  sprintf(fname,"mkdir -p %s/MeanFreePath",PIC::OutputDataFileDirectory);
+  system(fname);
+
+  sprintf(fname,"%s/MeanFreePath/cnt=%i.dat",PIC::OutputDataFileDirectory,cnt);
+  fout=fopen(fname,"w");
+
+  fprintf(fout,"VARIABLES=\"MeanFreePath [AU]\"");
+
+   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
+      if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
+        for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+          fprintf(fout,", \"F=%i (%.2e-%.2e)AU\"",iLine,
+            iR*SEP::Sampling::PitchAngle::dR/_AU_,(iR+1)*SEP::Sampling::PitchAngle::dR/_AU_);
+        }
+      }
+   }
+
+   fprintf(fout,"\n");
+
+   //output the data
+   for (i=0;i<nSampleIntervals;i++) {
+     fprintf(fout," %.2e",MinSampledMeanFreePath*exp(i*dLogMeanFreePath)/_AU_);
+
+     for (iLine=0;iLine<FL::nFieldLineMax;iLine++) {
+       if (FL::FieldLinesAll[iLine].IsInitialized()==true)  {
+         for (iR=0;iR<SEP::Sampling::PitchAngle::nRadiusIntervals;iR++) {
+           fprintf(fout," %.2e",SamplingTable(i,iR,iLine));
+         }
+       }
+     }
+
+     fprintf(fout,"\n");
+   }
+
+   fclose(fout);
+}
+
 

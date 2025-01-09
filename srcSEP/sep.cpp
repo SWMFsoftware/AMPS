@@ -6,6 +6,7 @@ int SEP::Offset::CosPitchAngle=-1;
 int SEP::Offset::p_par=-1;
 int SEP::Offset::p_norm=-1;
 int SEP::Offset::RadialLocation=-1;
+int SEP::Offset::MeanFreePath=-1;
 
 //in the case the model is run as a part of the SWMF, FreezeTimeSimulationMHD  is the sumulation time starting which the control of the
 //model run is not returned to the SWMF and the sumulation continues with AMPS only and "freezed" MHD solar wind
@@ -108,4 +109,8 @@ void SEP::RequestParticleData() {
   //request the memory to store particle's distance from the magnetic field line 
   PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
   Offset::RadialLocation=offset;   
+
+  //request the memory to store particle's mean free path for sample  
+  PIC::ParticleBuffer::RequestDataStorage(offset,sizeof(double));
+  Offset::MeanFreePath=offset; 
 }

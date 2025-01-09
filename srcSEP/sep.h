@@ -1436,6 +1436,16 @@ namespace SEP {
       const double dLog=log(rLarmorRadiusMax)/nSampleIntervals;
     }
 
+    namespace MeanFreePath {
+      extern array_3d<double> SamplingTable;
+      void Output(int);
+
+      extern bool active_flag;
+      extern double MaxSampledMeanFreePath,MinSampledMeanFreePath,dLogMeanFreePath;
+      extern int nSampleIntervals;
+    }       
+ 
+
     namespace RadialDisplacement {
       extern  array_3d<double>  DisplacementSamplingTable;
       extern array_4d<double> DisplacementEnergySamplingTable;
@@ -1844,6 +1854,9 @@ end:
 
     //offset of the variable containing the radial distance of a particle from the attached magnetic field line 
     extern int RadialLocation;
+
+    //offset to keep the particle's mean free path for sampling 
+    extern int MeanFreePath; 
   }
 
   //request data in the particle state vector

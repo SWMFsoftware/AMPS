@@ -21,6 +21,22 @@ int SEP::Sampling::PitchAngle::nEnergySamplingIntervals=70;
 double SEP::Sampling::PitchAngle::dLogE; 
 double SEP::Sampling::MaxSampleEnergy=3000.0*MeV2J;
 
+//sample particle's mean free path
+double SEP::Sampling::MeanFreePath::MaxSampledMeanFreePath=3.0*_AU_;
+double SEP::Sampling::MeanFreePath::MinSampledMeanFreePath=1.0E-7*_AU_;
+
+int SEP::Sampling::MeanFreePath::nSampleIntervals=100;
+double SEP::Sampling::MeanFreePath::dLogMeanFreePath; 
+bool SEP::Sampling::MeanFreePath::active_flag=true;
+array_3d<double> SEP::Sampling::MeanFreePath::SamplingTable;
+
+
+//sample particle's Dxx
+
+
+//sample particle's D\mu\mu 
+
+
 void SEP::Sampling::Init() {
   namespace FL=PIC::FieldLine; 
 
@@ -32,6 +48,15 @@ void SEP::Sampling::Init() {
   SamplingBufferTable=new cSamplingBuffer* [FL::nFieldLineMax];
 
   for (int i=0;i<FL::nFieldLineMax;i++) SamplingBufferTable[i]=NULL;
+
+  if (MeanFreePath::active_flag==true) {
+    MeanFreePath::dLogMeanFreePath=log(MeanFreePath::MaxSampledMeanFreePath/MeanFreePath::MinSampledMeanFreePath)/MeanFreePath::nSampleIntervals; 
+
+    MeanFreePath::SamplingTable.init(MeanFreePath::nSampleIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
+    MeanFreePath::SamplingTable=0.0;
+  }
+
+
 
   SEP::Sampling::PitchAngle::dLogE=log(SEP::Sampling::PitchAngle::emax/SEP::Sampling::PitchAngle::emin)/SEP::Sampling::PitchAngle::nEnergySamplingIntervals;
   PitchAngle::PitchAngleREnergySamplingTable.init(PitchAngle::nMuIntervals,SEP::Sampling::PitchAngle::nEnergySamplingIntervals,PitchAngle::nRadiusIntervals,FL::nFieldLineMax);
@@ -151,35 +176,59 @@ void SEP::Sampling::Manager() {
 	  SEP::Sampling::Energy::REnergySamplingTable(iE,iR,iFieldLine)+=ParticleWeight;
 
 	  //sample particle Larmor radius 
-	  if (rLarmor<1.0) {
-             iL=0;
-           }
-           else if (rLarmor>=SEP::Sampling::LarmorRadius::rLarmorRadiusMax) {
-             iL=SEP::Sampling::LarmorRadius::nSampleIntervals-1;
-           }
-           else {
-             iL=(int)(log(rLarmor)/Sampling::LarmorRadius::dLog);
-	   }
+	  if (isfinite(rLarmor)==true) { 
+	    if (rLarmor<1.0) {
+               iL=0;
+             }
+             else if (rLarmor>=SEP::Sampling::LarmorRadius::rLarmorRadiusMax) {
+               iL=SEP::Sampling::LarmorRadius::nSampleIntervals-1;
+             }
+             else {
+               iL=(int)(log(rLarmor)/Sampling::LarmorRadius::dLog);
+	     }
             
-	  SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;  
+	    SEP::Sampling::LarmorRadius::SamplingTable(iL,iR,iFieldLine)+=ParticleWeight;  
+	  }
+
+	  //sample mean free path 
+	  if ((SEP::Offset::MeanFreePath!=-1)&&(SEP::Sampling::MeanFreePath::active_flag==true)) {
+            double v=*((double*)(ParticleData+SEP::Offset::MeanFreePath));
+	    int i;
+
+	    if (isfinite(v)==true) {
+	      if (v<SEP::Sampling::MeanFreePath::MinSampledMeanFreePath) {
+	        i=0;
+	      }
+	      else if (v>=SEP::Sampling::MeanFreePath::MaxSampledMeanFreePath) {
+	        i=nSampleIntervals-1;
+	      }
+	      else {
+                i=(int)(log(v/SEP::Sampling::MeanFreePath::MinSampledMeanFreePath)/SEP::Sampling::MeanFreePath::dLogMeanFreePath); 
+	      }
+
+	      SEP::Sampling::MeanFreePath::SamplingTable(i,iR,iFieldLine)+=ParticleWeight; 
+	    }
+          }   
 
 	  //sample displacement of a particle from the magnetic field line 
          if (SEP::Offset::RadialLocation!=-1) {
            double r=*((double*)(ParticleData+SEP::Offset::RadialLocation));
 	   int iD;
 
-	   if (r<1.0) {
-             iD=0;
-	   }
-	   else if (r>=SEP::Sampling::RadialDisplacement::rDisplacementMax) {
-	     iD=SEP::Sampling::RadialDisplacement::nSampleIntervals-1;
-           }
-           else {
-             iD=(int)(log(r)/Sampling::RadialDisplacement::dLogDisplacement); 
-	   }	   
+	   if (isfinite(r)==true) {
+	     if (r<1.0) {
+               iD=0;
+  	     }
+	     else if (r>=SEP::Sampling::RadialDisplacement::rDisplacementMax) {
+	       iD=SEP::Sampling::RadialDisplacement::nSampleIntervals-1;
+             }
+             else {
+               iD=(int)(log(r)/Sampling::RadialDisplacement::dLogDisplacement); 
+	     }	   
 
-	   Sampling::RadialDisplacement::DisplacementSamplingTable(iD,iR,iFieldLine)+=ParticleWeight;
-	   Sampling::RadialDisplacement::DisplacementEnergySamplingTable(iD,iE,iR,iFieldLine)+=ParticleWeight;
+	     Sampling::RadialDisplacement::DisplacementSamplingTable(iD,iR,iFieldLine)+=ParticleWeight;
+	     Sampling::RadialDisplacement::DisplacementEnergySamplingTable(iD,iE,iR,iFieldLine)+=ParticleWeight;
+	   }
 	 }
 
 
@@ -207,12 +256,13 @@ void SEP::Sampling::Manager() {
   }
 
 
-  if (cnt%1200==0) {
+  if (cnt%20==0) {
     //output data in a file 
     SEP::Sampling::Energy::Output(cnt);
     SEP::Sampling::RadialDisplacement::OutputDisplacementSamplingTable(cnt);
     SEP::Sampling::RadialDisplacement::OutputDisplacementEnergySamplingTable(cnt);
     SEP::Sampling::LarmorRadius::Output(cnt);
+    SEP::Sampling::MeanFreePath::Output(cnt);
 
     //output sampled pitch angle distribution
     //1. notmalize the distribution
@@ -359,6 +409,8 @@ end:
 
    SEP::Sampling::Energy::REnergySamplingTable=0.0;
    SEP::Sampling::LarmorRadius::SamplingTable=0.0;
+
+   SEP::Sampling::MeanFreePath::SamplingTable=0.0;
 
   }
 

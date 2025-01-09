@@ -1527,6 +1527,11 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
 
     MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
 
+    if ((SEP::Offset::MeanFreePath!=-1)&&(SEP::Sampling::MeanFreePath::active_flag==true)) {
+      *((double*)(ParticleData+SEP::Offset::MeanFreePath))=MeanFreePath;
+    } 
+
+
 
     ds=-MeanFreePath*log(rnd());
     dt=ds/fabs(vParallel);
