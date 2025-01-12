@@ -306,6 +306,9 @@ namespace SEP {
     double GetSegmentVolume(PIC::FieldLine::cFieldLineSegment* Segment,int iFieldLine); 
     double MagneticTubeRadius(PIC::FieldLine::cFieldLineVertex* Vertex,int iFieldLine);
     double MagneticTubeRadius(double *x,int iFieldLine);
+
+    //output field line backgound data 
+    void OutputBackgroundData(char* fname, int iFieldLine);
   }
 
   //the namespace contains the diffution models

@@ -398,6 +398,15 @@ void SEP::Sampling::Manager() {
 
    fclose(fout);
 
+   //output the field line background data 
+   for (iLine=0;iLine<FL::nFieldLineMax;iLine++) if (FL::FieldLinesAll[iLine].IsInitialized()==true) {
+     sprintf(fname,"%s/background.fl=%i.cnt=%i.dat",PIC::OutputDataFileDirectory,iLine,cnt);
+     SEP::FieldLine::OutputBackgroundData(fname,iLine);
+   }
+
+
+
+
 end:
    SEP::Sampling::PitchAngle::PitchAngleRSamplingTable=0.0;
    SEP::Sampling::PitchAngle::PitchAngleREnergySamplingTable=0.0; 
