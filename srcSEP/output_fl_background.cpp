@@ -7,18 +7,34 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
   double s=0.0,*x0,*x1;
   FL::cFieldLineSegment *Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
 
-  fprintf(fout,"VARIABLES=\"S[AU]\", \"Heliocentric Distance [AU]\", \"AbsB [T]\", \"AbsB (Parker) [T]\"");
+  fprintf(fout,"VARIABLES=\"S[AU]\", \"Heliocentric Distance [AU]\", \"AbsB (Parker) [T]\"");
+
+  if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+    fprintf(fout,", \"AbsB [T]\", \"Number Density\", \"Speed\", \"Temp\", \"Pressure\", \"w+\", \"w-\"");
+  }
+
+  fprintf(fout,"\n");
 
   auto OutputVertex = [&] (double s,double r,FL::cFieldLineVertex* v) {
-    fprintf(fout,"%e %e ",s/_AU_,r/_AU_);
+    double AbsB_Parker;
 
-    double AbsB,AbsB_Parker; 
+    AbsB_Parker=SEP::ParkerSpiral::GetAbsB(r); 
+    fprintf(fout,"%e %e %e ",s/_AU_,r/_AU_,AbsB_Parker);
 
-    AbsB=Vector3D::Length(v->GetDatum_ptr(FL::DatumAtVertexMagneticField)); 
-    AbsB_Parker=SEP::ParkerSpiral::GetAbsB(r);
+    if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+      double pv[3],n,t,p,*W,AbsB;
 
-    fprintf(fout,"%e %e \n",AbsB,AbsB_Parker); 
+      AbsB=Vector3D::Length(v->GetMagneticField());
+      v->GetPlasmaVelocity(pv);
+      v->GetPlasmaDensity(n);
+      v->GetPlasmaTemperature(t);
+      v->GetPlasmaPressure(p);
+      W=v->GetDatum_ptr(FL::DatumAtVertexPlasmaWaves);
 
+      fprintf(fout,"%e %e %e %e %e %e %e ", AbsB,n,Vector3D::Length(pv),t,p,W[0],W[1]);
+    }
+
+    fprintf(fout,"\n");
   };  
 
   x0=Segment->GetBegin()->GetX(); 
