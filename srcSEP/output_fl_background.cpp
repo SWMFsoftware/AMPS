@@ -4,8 +4,11 @@
 void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
   namespace FL = PIC::FieldLine;
   FILE *fout=fopen(fname,"w");
-  double s=0.0,*x0,*x1;
+  double s=0.0,*x0,*x1,FieldLineCoord=0.0;
   FL::cFieldLineSegment *Segment=FL::FieldLinesAll[iFieldLine].GetFirstSegment();
+
+  const int nEnergyLevels=3;
+  double EnergyLevelTable[nEnergyLevels]={10.0*MeV2J,100.0*MeV2J,300.0*MeV2J};
 
   fprintf(fout,"VARIABLES=\"S[AU]\", \"Heliocentric Distance [AU]\", \"AbsB (Parker) [T]\"");
 
@@ -13,9 +16,39 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     fprintf(fout,", \"AbsB [T]\", \"Number Density\", \"Speed\", \"Temp\", \"Pressure\", \"w+\", \"w-\"");
   }
 
+  //output mean free path 
+  for (int i=0;i<nEnergyLevels;i++) { 
+    fprintf(fout,", \"Lambda(QLT,%.2e Mev)\",  \"Lambda(QLT1,Parker,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+
+    if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) fprintf(fout,", \"Lambda(QLT1,SWMF,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J);       
+
+    fprintf(fout,", \"Lambda(Tenishev2005AIAA,%.2e Mev)\",  \"Lambda(Chen2024AA,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+  }
+
   fprintf(fout,"\n");
 
-  auto OutputVertex = [&] (double s,double r,FL::cFieldLineVertex* v) {
+  auto GetMeanFreePathVector = [&] (double r,double e,double Speed,double FieldLineCoord,FL::cFieldLineSegment *Segment,vector<double>& MeanFreePath) {
+    double dxx,AbsB;
+
+    MeanFreePath.push_back(QLT::calculateMeanFreePath(r,Speed));
+
+    AbsB=SEP::ParkerSpiral::GetAbsB(r); 
+    MeanFreePath.push_back(QLT1::calculateMeanFreePath(r,Speed,AbsB));
+
+    if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) {
+       AbsB=SEP::FieldLineData::GetAbsB(FieldLineCoord,Segment,iFieldLine);
+       MeanFreePath.push_back(QLT1::calculateMeanFreePath(r,Speed,AbsB));
+    }
+
+    MeanFreePath.push_back(SEP::Scattering::Tenishev2005AIAA::lambda0*
+      pow(e/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta));
+
+    dxx=SEP::Diffusion::Chen2024AA::GetDxx(r,e);
+    MeanFreePath.push_back(3.0*dxx/Speed); //Eq, 15, Liu-2024-arXiv; 
+  }; 
+
+  auto OutputVertex = [&] (double s,double r,FL::cFieldLineVertex* v,double FieldLineCoord,FL::cFieldLineSegment *Segment) {
     double AbsB_Parker;
 
     AbsB_Parker=SEP::ParkerSpiral::GetAbsB(r); 
@@ -34,6 +67,16 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
       fprintf(fout,"%e %e %e %e %e %e %e ", AbsB,n,Vector3D::Length(pv),t,p,W[0],W[1]);
     }
 
+    double speed;
+    vector<double> MeanFreePath;
+
+    for (int i=0;i<nEnergyLevels;i++) {
+      speed=Relativistic::E2Speed(EnergyLevelTable[i],_H__MASS_); 
+      GetMeanFreePathVector(r,EnergyLevelTable[i],speed,FieldLineCoord,Segment,MeanFreePath);
+    }  
+
+    for (auto t : MeanFreePath) fprintf(fout,"%e ",t);
+
     fprintf(fout,"\n");
   };  
 
@@ -44,12 +87,13 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     s+=Vector3D::Distance(x0,x1);
     x0=x1;
 
-    OutputVertex(s,Vector3D::Length(x1),Segment->GetBegin());
+    OutputVertex(s,Vector3D::Length(x1),Segment->GetBegin(),FieldLineCoord,Segment);
+    FieldLineCoord+=1;
 
     if (Segment->GetNext()==NULL) {
        x1=Segment->GetEnd()->GetX();
        s+=Vector3D::Distance(x0,x1);
-       OutputVertex(s,Vector3D::Length(x1),Segment->GetEnd());
+       OutputVertex(s,Vector3D::Length(x1),Segment->GetEnd(),FieldLineCoord,Segment);
     }
   }
 
