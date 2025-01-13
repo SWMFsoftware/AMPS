@@ -25,6 +25,16 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     fprintf(fout,", \"Lambda(Tenishev2005AIAA,%.2e Mev)\",  \"Lambda(Chen2024AA,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
   }
 
+  //output Dxx
+  for (int i=0;i<nEnergyLevels;i++) {
+    fprintf(fout,", \"Dxx(QLT,%.2e Mev)\",  \"Dxx(QLT1,Parker,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+
+    if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) fprintf(fout,", \"Dxx(QLT1,SWMF,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J);
+
+    fprintf(fout,", \"Dxx(Tenishev2005AIAA,%.2e Mev)\",  \"Dxx(Chen2024AA,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+  } 
+
+
   fprintf(fout,"\n");
 
   auto GetMeanFreePathVector = [&] (double r,double e,double Speed,double FieldLineCoord,FL::cFieldLineSegment *Segment,vector<double>& MeanFreePath) {
@@ -48,6 +58,26 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     MeanFreePath.push_back(3.0*dxx/Speed); //Eq, 15, Liu-2024-arXiv; 
   }; 
 
+  auto GetDxxVector = [&] (double r,double e,double Speed,double FieldLineCoord,FL::cFieldLineSegment *Segment,vector<double>& Dxx) {
+    double AbsB;
+
+    Dxx.push_back(QLT::calculateMeanFreePath(r,Speed)*Speed/3.0);
+
+    AbsB=SEP::ParkerSpiral::GetAbsB(r); 
+    Dxx.push_back(QLT1::calculateMeanFreePath(r,Speed,AbsB)*Speed/3.0);
+
+    if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) {
+       AbsB=SEP::FieldLineData::GetAbsB(FieldLineCoord,Segment,iFieldLine);
+       Dxx.push_back(QLT1::calculateMeanFreePath(r,Speed,AbsB)*Speed/3.0);
+    }
+
+    Dxx.push_back(SEP::Scattering::Tenishev2005AIAA::lambda0*
+      pow(e/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta)*Speed/3.0);
+
+    Dxx.push_back(SEP::Diffusion::Chen2024AA::GetDxx(r,e));
+  };
+
   auto OutputVertex = [&] (double s,double r,FL::cFieldLineVertex* v,double FieldLineCoord,FL::cFieldLineSegment *Segment) {
     double AbsB_Parker;
 
@@ -68,14 +98,16 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     }
 
     double speed;
-    vector<double> MeanFreePath;
+    vector<double> MeanFreePath,Dxx;
 
     for (int i=0;i<nEnergyLevels;i++) {
       speed=Relativistic::E2Speed(EnergyLevelTable[i],_H__MASS_); 
       GetMeanFreePathVector(r,EnergyLevelTable[i],speed,FieldLineCoord,Segment,MeanFreePath);
+      GetDxxVector(r,EnergyLevelTable[i],speed,FieldLineCoord,Segment,Dxx);
     }  
 
     for (auto t : MeanFreePath) fprintf(fout,"%e ",t);
+    for (auto t : Dxx) fprintf(fout,"%e ",t); 
 
     fprintf(fout,"\n");
   };  
