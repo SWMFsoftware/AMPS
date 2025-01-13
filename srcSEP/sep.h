@@ -221,6 +221,12 @@ namespace SEP {
 
   //scattering path the particles (used witu Parker spiral simulations) 
   namespace Scattering {
+    extern int MeanFreePathMode;
+    const int MeanFreePathMode_QLT=0; 
+    const int MeanFreePathMode_QLT1=1; 
+    const int MeanFreePathMode_Tenishev2005AIAA=2; 
+    const int MeanFreePathMode_Chen2024AA=3;
+
     namespace Tenishev2005AIAA {
       extern double alpha,beta,lambda0;
       
@@ -238,6 +244,12 @@ namespace SEP {
       const int _awsom=0;
       const int _fraction=1;
       extern double FractionValue,FractionPowerIndex;
+   }
+
+   namespace Chen2024AA {
+     inline double GetDxx(double r,double E) {
+       return 5.16E14*pow(r/_AU_,1.17)*pow(E*J2KeV,0.71); //Eq 4, Checn-2024-AA
+     } 
    }
  }
 

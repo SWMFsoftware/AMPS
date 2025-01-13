@@ -27,8 +27,8 @@ int SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDiffere
 
 //parameters of the scattering model
 int SEP::Scattering::Tenishev2005AIAA::status=SEP::Scattering::Tenishev2005AIAA::_disabled;
-double SEP::Scattering::Tenishev2005AIAA::alpha=0.0;
-double SEP::Scattering::Tenishev2005AIAA::beta=0.0;
+double SEP::Scattering::Tenishev2005AIAA::alpha=1.0/3.0;
+double SEP::Scattering::Tenishev2005AIAA::beta=2.0/3.0;
 double SEP::Scattering::Tenishev2005AIAA::lambda0=0.4*_AU_;
 
 //the limit to switch from solving FTE to the Parker Equation when the D_{\mu\mu} is to high

@@ -10,6 +10,10 @@
 
 #include "sep.h"
 
+
+int SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA;
+
+
 double SEP::Scattering::AIAA2005::MeanFreePath(PIC::ParticleBuffer::byte *ParticleData) {
   double lambda,kinetic_enery,r;
   double *v,*x;
