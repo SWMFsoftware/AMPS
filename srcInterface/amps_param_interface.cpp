@@ -411,6 +411,30 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     }     
 
+    else if (Command == "#SEP_MEAN_FREE_PATH_MODEL") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "Tenishev2005AIAA") {
+        SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA;
+      }
+      else if (t=="QLT") {
+        SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_QLT; 
+      }
+      else if (t=="QLT1") {
+        SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_QLT1;
+      }
+      else if (t=="Chen2024AA") {
+        SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_Chen2024AA;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    } 
+    
     else if (Command == "#SEP_LIMIT_MEAN_FREE_PATH") {
       cout << "PT: "  << param_list.front().second << endl;
 
