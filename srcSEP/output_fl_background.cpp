@@ -23,6 +23,7 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) fprintf(fout,", \"Lambda(QLT1,SWMF,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J);       
 
     fprintf(fout,", \"Lambda(Tenishev2005AIAA,%.2e Mev)\",  \"Lambda(Chen2024AA,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+    fprintf(fout,", \"Lambda(Jokopii1966AJ,Fraction,%.2e Mev)\", \"Lambda(Jokopii1966AJ,AWSOM,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J); 
   }
 
   //output Dxx
@@ -32,6 +33,7 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
     if (_PIC_COUPLER_MODE_==_PIC_COUPLER_MODE__SWMF_) fprintf(fout,", \"Dxx(QLT1,SWMF,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J);
 
     fprintf(fout,", \"Dxx(Tenishev2005AIAA,%.2e Mev)\",  \"Dxx(Chen2024AA,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
+    fprintf(fout,", \"Dxx(Jokopii1966AJ,Fraction,%.2e Mev)\", \"Dxx(Jokopii1966AJ,AWSOM,%.2e Mev)\" ",EnergyLevelTable[i]/MeV2J,EnergyLevelTable[i]/MeV2J);
   } 
 
 
@@ -56,10 +58,28 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
 
     dxx=SEP::Diffusion::Chen2024AA::GetDxx(r,e);
     MeanFreePath.push_back(3.0*dxx/Speed); //Eq, 15, Liu-2024-arXiv; 
+
+    //Jokopii1966AJ:
+    auto fptr=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+    auto mode=SEP::Diffusion::Jokopii1966AJ::Mode;
+    double dDxx_dx; 
+
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
+    SEP::Diffusion::GetDxx(dxx,dDxx_dx,Speed,0,FieldLineCoord,Segment,iFieldLine);
+    MeanFreePath.push_back(3.0*dxx/Speed);
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_awsom;
+    SEP::Diffusion::GetDxx(dxx,dDxx_dx,Speed,0,FieldLineCoord,Segment,iFieldLine);
+    MeanFreePath.push_back(3.0*dxx/Speed); 
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=mode;
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=fptr;
   }; 
 
   auto GetDxxVector = [&] (double r,double e,double Speed,double FieldLineCoord,FL::cFieldLineSegment *Segment,vector<double>& Dxx) {
-    double AbsB;
+    double dxx,AbsB;
 
     Dxx.push_back(QLT::calculateMeanFreePath(r,Speed)*Speed/3.0);
 
@@ -76,6 +96,24 @@ void SEP::FieldLine::OutputBackgroundData(char* fname, int iFieldLine) {
       pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta)*Speed/3.0);
 
     Dxx.push_back(SEP::Diffusion::Chen2024AA::GetDxx(r,e));
+
+    //Jokopii1966AJ:
+    auto fptr=SEP::Diffusion::GetPitchAngleDiffusionCoefficient;
+    auto mode=SEP::Diffusion::Jokopii1966AJ::Mode;
+    double dDxx_dx;
+
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction;
+    SEP::Diffusion::GetDxx(dxx,dDxx_dx,Speed,0,FieldLineCoord,Segment,iFieldLine);
+    Dxx.push_back(dxx);
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_awsom;
+    SEP::Diffusion::GetDxx(dxx,dDxx_dx,Speed,0,FieldLineCoord,Segment,iFieldLine);
+    Dxx.push_back(dxx); 
+
+    SEP::Diffusion::Jokopii1966AJ::Mode=mode;
+    SEP::Diffusion::GetPitchAngleDiffusionCoefficient=fptr;
   };
 
   auto OutputVertex = [&] (double s,double r,FL::cFieldLineVertex* v,double FieldLineCoord,FL::cFieldLineSegment *Segment) {
