@@ -1235,6 +1235,8 @@ void DeleteAttachedParticles();
         double res = SInit;
         Segment = GetSegment(SInit);
 
+	if (Segment==NULL) return -1.0;
+
         double Length = Segment->GetLength();
         double remain;
 
