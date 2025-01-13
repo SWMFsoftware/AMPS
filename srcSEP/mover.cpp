@@ -1497,23 +1497,13 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
 
   double TimeCounter=0.0,dt;
   double MeanFreePath,ds;
-  double energy,vnew[3],l[3],x[3],rHelio; 
+  double energy,vnew[3],l[3],x[3],rHelio,dxx; 
 
   Segment->GetCartesian(x,FieldLineCoord);
   rHelio=Vector3D::Length(x);
   Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
 
   while (TimeCounter<dtTotal) {
-//    MeanFreePath=QLT::calculateMeanFreePath(r,Speed); 
-
-/*
-    energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
-
-    MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
-      pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
-      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
-      */
-
     //get the value of the backgound magnetic field 
     double AbsB; 
 
@@ -1525,7 +1515,30 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
       AbsB=SEP::ParkerSpiral::GetAbsB(rHelio);
     }
 
-    MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
+    switch (SEP::Scattering::MeanFreePathMode) {
+    case SEP::Scattering::MeanFreePathMode_QLT:
+      MeanFreePath=QLT::calculateMeanFreePath(rHelio,Speed);
+      break;
+    case SEP::Scattering::MeanFreePathMode_QLT1:
+      MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA:
+      energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+
+      MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
+        pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+        pow(rHelio/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Chen2024AA:
+       energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+       dxx=SEP::Diffusion::Chen2024AA::GetDxx(rHelio,energy); 
+       MeanFreePath=3.0*dxx/Speed; //Eq, 15, Liu-2024-arXiv; 
+       break;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: the oprion is unknown");
+    }
+
 
     if ((SEP::Offset::MeanFreePath!=-1)&&(SEP::Sampling::MeanFreePath::active_flag==true)) {
       *((double*)(ParticleData+SEP::Offset::MeanFreePath))=MeanFreePath;
