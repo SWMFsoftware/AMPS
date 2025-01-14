@@ -301,6 +301,24 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       #endif
     } 
 
+    else if (Command == "#SEP_BACKGOUND_IMF") {
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "SWMF") {
+        SEP::Diffusion::ModeIMF=SEP::Diffusion::ModeIMF_SWMF;
+      }
+      else if (t == "ParkerSpiral") {
+        SEP::Diffusion::ModeIMF=SEP::Diffusion::ModeIMF_ParkerSpiral;
+      }	
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+      #endif
+    }
+
     else if (Command == "#SEP_PITCH_ANGLE_SCATTERING_FUCTION") {
       #ifdef _SEP_MODEL_ON_
       t=param_list.front().first;

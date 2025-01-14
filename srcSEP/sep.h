@@ -1328,6 +1328,9 @@ namespace SEP {
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 
     //calculate the parameters of the background IMF 
+    extern int ModeIMF;
+    const int ModeIMF_ParkerSpiral=0;
+    const int ModeIMF_SWMF=1;
     void GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2); 
 
     //calculate Dxx
