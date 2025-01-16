@@ -46,14 +46,19 @@ long int SEP::ParticleSource::InnerBoundary::sphereParticleInjection(int spec,in
 #endif
 
 
-#if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
-  LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
-#elif _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_LOCAL_TIME_STEP_
-  LocalTimeStep=Sphere->maxIntersectedNodeTimeStep[spec];
-#else
-  exit(__LINE__,__FILE__,"Error: the time step node is not defined");
-#endif
-
+  switch (_SIMULATION_TIME_STEP_MODE_) {
+  case _SINGLE_GLOBAL_TIME_STEP_: 
+    LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+    break;
+  case _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_: 
+    LocalTimeStep=PIC::ParticleWeightTimeStep::GlobalTimeStep[spec];
+    break;
+  case   _SPECIES_DEPENDENT_LOCAL_TIME_STEP_:  
+    LocalTimeStep=Sphere->maxIntersectedNodeTimeStep[spec];
+    break;
+  default:
+    exit(__LINE__,__FILE__,"Error: the time step node is not defined");
+  }
   
   double TimeCounter=0.0;
   double ModelParticlesInjectionRate=sphereInjectionRate(spec,BoundaryElementType,SphereDataPointer)/ParticleWeight;
