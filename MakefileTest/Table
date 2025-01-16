@@ -605,28 +605,28 @@ Check=
 
 
 #>
-Name=SEP--focused_transport
+Name=SEP--3D-ParkerIMF--cut-domain--RelativisticBoris 
 Time=4
 
 Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport_compile..." > test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
->>>./Config.pl -application=test/sep_focused_transport -spice-path=nospice   -amps-test=on
+>>>@echo "test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_compile..." > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
+>>>./Config.pl -application=test/sep_3d_cut-domain_parkerimf_relativisticboris -spice-path=nospice   -amps-test=on
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
->>>@echo "test_SEP--focused_transport_compile... done" >> test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+>>>@echo "test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_compile... done" >> test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
 
 Check=
->>>@echo "SEP--focused_transport_check..." >> test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
->>>@${TESTSEP--focused_transportDIR}/../utility/ReduceFile.pl ${TESTSEP--focused_transportDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
+>>>@echo "SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_check..." >> test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
+>>>@${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/../utility/ReduceFile.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--focused_transportDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker_spiral--focused_transport-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--focused_transport-REF}.ref_np`ls $(TESTSEP--focused_transportDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker_spiral--focused_transport-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.ref_np`ls $(TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
 
 
->>>@ls -l test_SEP--focused_transport${TESTSEP--focused_transport-REF}.diff
->>>@echo Test SEP--focused_transport has finished: `date`
+>>>@ls -l test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
+>>>@echo Test SEP--3D-ParkerIMF--cut-domain--RelativisticBoris has finished: `date`
 <#
 
 #>
