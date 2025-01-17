@@ -622,7 +622,9 @@ Check=
 >>>@echo "SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_check..." >> test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
 >>>@${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/../utility/ReduceFile.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker_spiral--focused_transport-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.ref_np`ls $(TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
+>>>@gunzip -fk output/test_SEP3D/3D-ParkerIMF--cut-domain--RelativisticBoris.ref_np8.gz
+
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.ref_np`ls $(TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
 
 
 >>>@ls -l test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
