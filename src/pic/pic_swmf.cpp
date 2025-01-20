@@ -686,11 +686,15 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
 
             //DivU
             if ((DIVU_SWMF2AMPS>0)&&(PlasmaDivUOffset>=0)) {
+              if (isfinite(data[offset+DIVU_SWMF2AMPS])==false) data[offset+DIVU_SWMF2AMPS]=0.0;
+
               *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUOffset))=data[offset+DIVU_SWMF2AMPS];
             } 
 
             //DivUdX 
             if ((DIVUDX_SWMF2AMPS>0)&&(PlasmaDivUdXOffset>=0)) {
+              if (isfinite(data[offset+DIVUDX_SWMF2AMPS])==false) data[offset+DIVUDX_SWMF2AMPS]=0.0;
+
               *((double*)(cell->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset))=data[offset+DIVUDX_SWMF2AMPS];
             }
 
