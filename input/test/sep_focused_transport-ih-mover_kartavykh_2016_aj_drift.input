@@ -19,3 +19,18 @@ CouplerMode=swmf !!T96 !ices !!off, ices, swmf
   OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
 
 #endGeneral
+
+
+#block ../input/sep.input.pl !process settings of the moon module
+
+  SphereInsideDomain=on ! place star inside the computational domain
+
+ !forces that determine particle's trajectories
+ Forces=off, gravity, FrameRotation !off, gravity, Lorentz, FrameRotation
+
+  ParticleTrajectory=RelativisticBoris  !FieldLine,RelativisticBoris,GuidingCenter,IgorFieldLine
+
+  Mover=ParticleMover_default
+
+#endblock
+
