@@ -1359,7 +1359,7 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   // Access particle data as in Boris
   PIC::ParticleBuffer::byte *ParticleData;
-  double *x, *v,AbsB,B[3],vParallel,vNormal,bUnit[3],Speed;
+  double *x, *v,AbsB,B[3],vParallel,vNormal,bUnit[3],Speed,dt;
 
   ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   v=PIC::ParticleBuffer::GetV(ParticleData);
@@ -1406,22 +1406,29 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
  
       
       AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
-      if (AbsB < 1E-20) AbsB = 1E-20;
-      
-      // Normalize B field direction
-      bUnit[0]=B[0]/AbsB;
-      bUnit[1]=B[1]/AbsB; 
-      bUnit[2]=B[2]/AbsB; 
+
+      if (AbsB > 1E-20) { 
+        // Normalize B field direction
+        bUnit[0]=B[0]/AbsB;
+        bUnit[1]=B[1]/AbsB; 
+        bUnit[2]=B[2]/AbsB; 
             
-      // Calculate parallel and perpendicular components
-      vParallel = v[0]*bUnit[0] + v[1]*bUnit[1] + v[2]*bUnit[2];
-      vNormal = sqrt(Speed*Speed - vParallel*vParallel);
+        // Calculate parallel and perpendicular components
+        vParallel = v[0]*bUnit[0] + v[1]*bUnit[1] + v[2]*bUnit[2];
+        vNormal = sqrt(Speed*Speed - vParallel*vParallel);
 
-      //determine time till the next scattering event
-      double ds,dt,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
+        //determine time till the next scattering event
+        double ds,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
 
-      ds=-MeanFreePath*log(rnd());
-      dt=ds/fabs(vParallel);
+        ds=-MeanFreePath*log(rnd());
+        dt=ds/fabs(vParallel);
+      }
+      else {
+        for (int i=0;i<3;i++) bUnit[i]=v[i];
+        vParallel=Vector3D::Normalize(bUnit);	
+	vNormal=0.0;
+	dt=dtTotal-timeCounter;
+      }
 
       if (timeCounter+dt<dtTotal) {
         //scattering can occus
@@ -1455,7 +1462,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
   if (tempFirstCellParticle != -1) {
       PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
   }
-  #else
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
   // Similar particle list management for non-MPI case
   long int tempFirstCellParticle = newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
@@ -1464,7 +1471,18 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
       PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
   }
   newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)] = ptr;
-  #endif
+#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+
+  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
+  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first=ptr;
+#else
+#error The option is unknown
+#endif
 
   return _PARTICLE_MOTION_FINISHED_;
 }
