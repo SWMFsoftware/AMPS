@@ -640,7 +640,7 @@ Ref=1{gcc}@@(0+valeriy)
 
 Compile=
 >>>@echo "test_SEP--Parker3D--ParkerIMF_compile..." > test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
->>>./Config.pl -application=test/sep_focused_transport--borovikov -spice-path=nospice   -amps-test=on
+>>>./Config.pl -application=test/sep_3d_cut-domain_parkerimf_parker3d -spice-path=nospice   -amps-test=on
 >>>rm -rf srcTemp
 >>>@($(MAKE) -j8 amps)
 >>>@echo "test_SEP--Parker3D--ParkerIMF_compile... done" >> test_SEP--Parker3D--ParkerIMF${TESTSEP--Parker3D--ParkerIMF-REF}.diff
