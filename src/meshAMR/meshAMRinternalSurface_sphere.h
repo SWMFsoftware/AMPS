@@ -240,6 +240,13 @@ public:
     x[2]=Radius*x[2]+OriginPosition[2];
   }
 
+  inline void GetSurfaceElementRandomPoint(double *x,int SurfaceElementNumber) {
+    int nZenithElement,nAzimuthalElement;
+
+    GetSurfaceElementIndex(nZenithElement,nAzimuthalElement,SurfaceElementNumber);
+    GetSurfaceElementRandomPoint(x,nZenithElement,nAzimuthalElement);
+  } 
+
   inline void GetSurfaceElementProjectionIndex(double *x,double &ZenithAngle,long int &nZenithElement,double &AzimuthalAngle,long int &nAzimuthalElement) {
     double r,r2,xNormalized[3];
     int idim;
