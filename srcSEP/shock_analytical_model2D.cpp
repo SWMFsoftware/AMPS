@@ -90,6 +90,8 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
   long int newParticle;
   PIC::ParticleBuffer::byte *newParticleData;
 
+  InitGenerationSurfaceElement=false;
+
   TotalInjectionRate=GetTotalSourceRate();
   TotalInjectionRate/=PIC::ParticleWeightTimeStep::GlobalParticleWeight[0];
 
@@ -102,11 +104,19 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
   pmin=Relativistic::Speed2Momentum(speed,mass);
 
   //the loop to generate new particles 
-  double s,dt,dtTotal,x[3],v[3],p,m,q;
+  double s,dtCounter=0.0,dtTotal,x[3],v[3],p,m,q;
   int el;
 
+  #if _SIMULATION_TIME_STEP_MODE_ == _SPECIES_DEPENDENT_GLOBAL_TIME_STEP_
+  dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+  #elif _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
+  dtTotal=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+  #else
+  exit(__LINE__,__FILE__,"Error: the global time counter cannot be applied for this case");
+  #endif
 
-  while ((dt-=TotalInjectionRate*log(rnd()))<dtTotal) {
+
+  while ((dtCounter-=log(rnd())/TotalInjectionRate)<dtTotal) {
     //1. Generate new particle position 
     el=GetInjectionSurfaceElement(x);
     
@@ -132,7 +142,7 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
     double d=0.0;
 
     for (int i=0;i<3;i++) d+=v[i]*(x[i]-ShockSurface.OriginPosition[i]);  
-    if (d<0.0) continue;
+    if (d<0.0) for (int i=0;i<3;i++) v[i]*=-1.0;
 
     //generate a new particle 
     newParticle=PIC::ParticleBuffer::GetNewParticle();
