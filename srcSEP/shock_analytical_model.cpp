@@ -1,7 +1,7 @@
 #include "sep.h"
 //analytic model of a shock wave (Tenishev-2005-AIAA-4928
 
-double SEP::ParticleSource::ShockWave::Tenishev2005::rShock = 0.0;
+double SEP::ParticleSource::ShockWave::Tenishev2005::rShock =1.0E-5*_SUN__RADIUS_;
 bool SEP::ParticleSource::ShockWave::Tenishev2005::InitFlag=false;
 double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;  
 
