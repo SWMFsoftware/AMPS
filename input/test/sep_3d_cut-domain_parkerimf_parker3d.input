@@ -57,6 +57,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   EnforceRequestedMeshResolution=on !on,off
   InitialSampleLength=40
 
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
 
   BlockCells=6,6,6
   GhostCells=2,2,2
