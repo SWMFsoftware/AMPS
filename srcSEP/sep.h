@@ -2068,6 +2068,22 @@ end:
     void PopulateFieldLine(int iFieldLine);
 
 
+    namespace ShockWaveSphere {
+      extern cInternalSphericalData ShockSurface;
+
+      extern double *CompressionRatioTable,*SourceRateTable,InjectionEffcientcy;  
+      extern int nSurfaceElements;
+      extern cSingleVariableDiscreteDistribution<int> ShockInjectionDistribution;
+      extern bool InitGenerationSurfaceElement; 
+
+      void Init();
+      double GetTotalSourceRate();
+      int GetInjectionSurfaceElement(double *x);
+      void Flush();
+      double GetSolarWindDensity(double*);
+      long int InjectionModel();
+    }
+
     namespace ShockWave {
       bool IsShock(PIC::Mesh::cDataCenterNode *CenterNode);
 
