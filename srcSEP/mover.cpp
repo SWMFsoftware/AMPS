@@ -1360,15 +1360,47 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
   // Access particle data as in Boris
   PIC::ParticleBuffer::byte *ParticleData;
   double *x, *v,AbsB,B[3],vParallel,vNormal,bUnit[3],Speed,dt;
+  int spec;
 
   ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
   v=PIC::ParticleBuffer::GetV(ParticleData);
   x=PIC::ParticleBuffer::GetX(ParticleData);
+  spec=PIC::ParticleBuffer::GetI(ParticleData);
   Speed=Vector3D::Length(v);
 
   double timeCounter = 0.0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode = startNode;
 
+
+  auto CalculateMeanFreePath = [&] (int spec,double rHelio,double Speed,double AbsB) {
+    double MeanFreePath,dxx,energy;
+	  
+    switch (SEP::Scattering::MeanFreePathMode) {
+    case SEP::Scattering::MeanFreePathMode_QLT:
+      MeanFreePath=QLT::calculateMeanFreePath(rHelio,Speed);
+      break;
+    case SEP::Scattering::MeanFreePathMode_QLT1:
+      MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA:
+      energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+
+      MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
+        pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
+        pow(rHelio/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Chen2024AA:
+       energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
+       dxx=SEP::Diffusion::Chen2024AA::GetDxx(rHelio,energy);
+       MeanFreePath=3.0*dxx/Speed; //Eq, 15, Liu-2024-arXiv; 
+       break;
+
+    default:
+      exit(__LINE__,__FILE__,"Error: the oprion is unknown");
+    }
+
+    return MeanFreePath; 
+  };
 
   auto PerpendicularDiffusion = [&](double dt) {
     double D_perp,dr,l[3],rHelio,Speed;
@@ -1418,7 +1450,11 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
         vNormal = sqrt(Speed*Speed - vParallel*vParallel);
 
         //determine time till the next scattering event
-        double ds,MeanFreePath=QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
+        double ds,MeanFreePath=-1; ///=SEP::Scattering::MeanFreePathMode(  QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
+
+	MeanFreePath=CalculateMeanFreePath(spec,Vector3D::Length(x),Speed,AbsB);
+
+
 
         ds=-MeanFreePath*log(rnd());
         dt=ds/fabs(vParallel);
