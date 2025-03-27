@@ -27,6 +27,7 @@
 //the particle class
 #include "constants.h"
 #include "sep.h"
+#include "sep.dfn"
 #include "tests.h"
 
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
@@ -185,7 +186,7 @@ void amps_init_mesh() {
     Sphere->faceat=0;
     Sphere->ParticleSphereInteraction=ParticleSphereInteraction;
 
-    if (_DOMAIN_GEOMETRY_!=_DOMAIN_GEOMETRY_BOX_) {
+    if ((_DOMAIN_GEOMETRY_!=_DOMAIN_GEOMETRY_BOX_)&&(_SPHERICAL_SHOCK_INJECTION_!=_PIC_MODE_ON_)) { 
       Sphere->InjectionBoundaryCondition=SEP::ParticleSource::InnerBoundary::sphereParticleInjection;
     }
 
@@ -197,6 +198,11 @@ void amps_init_mesh() {
     SEP::Planet=Sphere;
     Sphere->Allocate<cInternalSphericalData>(PIC::nTotalSpecies,PIC::BC::InternalBoundary::Sphere::TotalSurfaceElementNumber,_EXOSPHERE__SOURCE_MAX_ID_VALUE_,Sphere);
   }
+
+  //inject particles from the surface of the moving spherical shock 
+  if (_SPHERICAL_SHOCK_INJECTION_==_PIC_MODE_ON_) {
+     PIC::BC::UserDefinedParticleInjectionFunction=SEP::ParticleSource::ShockWaveSphere::InjectionModel;
+  }  
 
   //init the solver
   PIC::Mesh::initCellSamplingDataBuffer();
