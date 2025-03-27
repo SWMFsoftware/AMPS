@@ -116,6 +116,23 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
   #endif
 
 
+  //limit the number of injected limit the number of injected particle  
+  const int nMaxInjectedParticle=100;
+  double WeightCorrectionFactor=1.0;
+
+  if (TotalInjectionRate*dtTotal>nMaxInjectedParticle) {
+    double c=nMaxInjectedParticle/(TotalInjectionRate*dtTotal);
+
+
+    TotalInjectionRate*=c;
+    WeightCorrectionFactor=1.0/c;
+
+    if (_INDIVIDUAL_PARTICLE_WEIGHT_MODE_ != _INDIVIDUAL_PARTICLE_WEIGHT_ON_) {
+      exit(__LINE__,__FILE__,"Error: set _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_");
+    }
+  }
+
+
   while ((dtCounter-=log(rnd())/TotalInjectionRate)<dtTotal) {
     //1. Generate new particle position 
     el=GetInjectionSurfaceElement(x);
@@ -153,7 +170,7 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
     PIC::ParticleBuffer::SetI(0,newParticleData);
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(1.0,newParticleData);
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightCorrectionFactor,newParticleData);
     #endif
 
     //apply condition of tracking the particle
