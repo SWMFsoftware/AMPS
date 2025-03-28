@@ -7663,11 +7663,11 @@ if (_MESH_DIMENSION_ == 3)  if ((cell->r<0.0001)&&(fabs(cell->GetX()[0])+fabs(ce
         fprintf(fVariables,", \"Thread\"");
         #endif
 
-        if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+        //if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
         CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fVariables,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-        if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+        //if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
         CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fVariables,DataSetNumber);
         #endif
 
@@ -8592,11 +8592,11 @@ nMPIops++;
         fprintf(fout,", \"Thread\"");
         #endif
 
-        if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+    //    if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
         CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-        if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+        //if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
         CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
@@ -8615,11 +8615,11 @@ nMPIops++;
         fprintf(fout,", \"Thread\"");
         #endif
 
-        if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+   //     if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
         CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-        if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+        //if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
         CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
@@ -8644,11 +8644,11 @@ nMPIops++;
         fprintf(fout,", \"Thread\"");
         #endif
 
-        if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
+    //    if (CornerNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CornerNodes are not allocated");
         CornerNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
 
         #if  _AMR_CENTER_NODE_ == _ON_AMR_MESH_
-        if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
+        //if (CenterNodes.usedElements()==0) exit(__LINE__,__FILE__,"Error: CenterNodes are not allocated");
         CenterNodes.GetElementStackList()[0][0]->PrintVariableList(fout,DataSetNumber);
         #endif
 
