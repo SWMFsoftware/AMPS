@@ -44,6 +44,12 @@ int PIC::TimeStep() {
    double UserDefinedParticleProcessingTime=0.0;
    static double summIterationExecutionTime=0.0;
 
+   //update the global simualtion time step 
+   if (_SIMULATION_TIME_STEP_MODE_==_SINGLE_GLOBAL_TIME_STEP_) {
+     PIC::SimulationTime::TimeCounter+=PIC::ParticleWeightTimeStep::GlobalTimeStep[0];
+   }
+
+
    if (_PIC_LOGGER_MODE_==_PIC_MODE_ON_) {
      Debugger::LoggerData.erase();
      Debugger::logger.func_enter(__LINE__,"PIC::TimeStep()",&Debugger::LoggerData,0,_PIC_LOGGER_TIME_LIMIT_);
