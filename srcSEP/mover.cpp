@@ -1368,6 +1368,10 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
   spec=PIC::ParticleBuffer::GetI(ParticleData);
   Speed=Vector3D::Length(v);
 
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  if (Speed>3.0E8) exit(__LINE__,__FILE__);
+  #endif 
+
   double timeCounter = 0.0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode = startNode;
 
