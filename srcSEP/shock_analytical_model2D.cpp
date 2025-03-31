@@ -47,8 +47,10 @@ double SEP::ParticleSource::ShockWaveSphere::GetTotalSourceRate() {
 
   Flush();
 
+  SEP::ParticleSource::ShockWave::Tenishev2005::UpdateShockLocation();
+  ShockSurface.Radius=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
+
   for (int i = 0; i < nSurfaceElements; ++i) {
-    ShockSurface.Radius=SEP::ParticleSource::ShockWave::Tenishev2005::rShock;
     ShockSurface.GetSurfaceElementMiddlePoint(x,i); 
 
     if (Vector3D::DotProduct(x,x)<_SUN__RADIUS_*_SUN__RADIUS_) {
