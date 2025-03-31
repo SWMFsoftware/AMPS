@@ -125,8 +125,7 @@ void SEP::OutputAMPS::SamplingParticleData::Interpolate(PIC::Mesh::cDataCenterNo
   int idim,i;
   char *SamplingBuffer,*StencilSamplingBuffer;
 
-
-  SamplingBuffer=CenterNode->GetAssociatedDataBufferPointer();
+  SamplingBuffer=CenterNode->GetAssociatedDataBufferPointer()+PIC::Mesh::completedCellSampleDataPointerOffset;
 
   double *ptr_NumberDensity_PlusMu=(double*)(SamplingBuffer+NumberDensity_PlusMu);
   double *ptr_NumberDensity_MinusMu=(double*)(SamplingBuffer+NumberDensity_MinusMu);
@@ -140,7 +139,6 @@ void SEP::OutputAMPS::SamplingParticleData::Interpolate(PIC::Mesh::cDataCenterNo
 
   double Measure=0.0;
   
-
   for (i=0;i<nInterpolationCoeficients;i++) { 
     StencilSamplingBuffer=InterpolationList[i]->GetAssociatedDataBufferPointer();
     Measure+=InterpolationList[i]->Measure;
