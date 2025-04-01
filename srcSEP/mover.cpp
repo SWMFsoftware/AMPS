@@ -24,7 +24,11 @@ bool SEP::LimitScatteringUpcomingWave=false;
 bool SEP::NumericalScatteringEventMode=false;
 double SEP::NumericalScatteringEventLimiter=-1.0;
 
+//type of the trajectory integration method for calculation of the particle displacement along a magnetic field line 
+int SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_;
 
+//account for the perpendicular diffusion when modeling particle transport in 3D
+bool SEP::PerpendicularDiffusionMode=false;
 
 
 void SEP::ParticleMoverSet(int ParticleMoverModel) {
@@ -1620,10 +1624,23 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
   // Method selector function
   auto AdvanceLocation = [&](double dt) -> bool {
+    int res;
 
-    //return AdvanceLocation_Euler(dt);
-    //return AdvanceLocation_RK2(dt);
-    return AdvanceLocation_RK4(dt);
+    switch (SEP::ParticleFieldLineDisplacementMethod) {
+    case _TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_:
+      res=AdvanceLocation_Euler(dt);
+      break;
+    case _TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_:
+      res=AdvanceLocation_RK2(dt);
+      break;
+    case _TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK4_:
+      res=AdvanceLocation_RK4(dt);
+      break;
+    default:
+      exit(__LINE__,__FILE__,"Error: the option is not found");
+    }
+
+    return res;
   };
 
   // Main time stepping loop
@@ -1668,7 +1685,9 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
       Vector3D::Distribution::Uniform(v, Speed);
 
       // Apply perpendicular diffusion
-      PerpendicularDiffusion(dt);
+      if (SEP::PerpendicularDiffusionMode==true) {
+        PerpendicularDiffusion(dt);
+      }
     }
     else {
       // Not enough time left for scattering

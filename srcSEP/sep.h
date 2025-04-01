@@ -134,6 +134,13 @@ public:
 namespace SEP {
   using namespace Exosphere;
 
+  //type of the trajectory integration method for calculation of the particle displacement along a magnetic field line
+  extern int ParticleFieldLineDisplacementMethod;
+
+  //account for the perpendicular diffusion when modeling particle transport in 3D
+  extern bool PerpendicularDiffusionMode;
+
+
   //max turbolence level
   extern double MaxTurbulenceLevel;
   extern bool MaxTurbulenceEnforceLimit;

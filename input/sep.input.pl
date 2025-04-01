@@ -189,6 +189,41 @@ while ($line=<InputFile>) {
     }
  }
 
+
+  ##type of the particle trajectory integration in 3D along a magnetic field line 
+   elsif ($InputLine eq "PARTICLETRAJECTORYINTEGRATIONALONGFIELDLINE3D") {
+     ($InputLine,$InputComment)=split(' ',$InputComment,2);
+     $InputLine=~s/ //g;
+ 
+     if ($InputLine eq "RK1") {
+       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_","main/mover.cpp");
+     }
+     elsif ($InputLine eq "RK2") {
+       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_","main/mover.cpp");
+     }
+     elsif ($InputLine eq "RK4") {
+       ampsConfigLib::ChangeValueOfVariable("int SEP::ParticleFieldLineDisplacementMethod","_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK4_","main/mover.cpp");
+     }
+     else {
+       die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+     }
+   }
+ 
+   #set usage of the perpendicular diffusion model
+   elsif ($InputLine eq "PERPENDICULARDIFFUSIONMODE") {
+     ($InputLine,$InputComment)=split(' ',$InputComment,2);
+     $InputLine=~s/ //g;
+ 
+     if ($InputLine eq "ON") {
+       ampsConfigLib::ChangeValueOfVariable("bool SEP::PerpendicularDiffusionMode","true","main/mover.cpp");
+     }
+     elsif ($InputLine eq "OFF") {
+       ampsConfigLib::ChangeValueOfVariable("bool SEP::PerpendicularDiffusionMode","false","main/mover.cpp");
+     }
+     else {
+       die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+     }
+   }
   
 
    ##allow particle scattering in SEP::ParticleMover_Tenishev_2005_FL 
