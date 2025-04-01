@@ -9,6 +9,7 @@ util/
 data
 .general.conf
 .amps.conf
+.last_input_info
 Makefile.local
 Makefile.test
 output
