@@ -1355,143 +1355,336 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
   return _PARTICLE_MOTION_FINISHED_;
 }
 
-
-int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
+// Modified ParticleMover_Parker3D_MeanFreePath function with integration method options
+int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   // Access particle data as in Boris
   PIC::ParticleBuffer::byte *ParticleData;
-  double *x, *v,AbsB,B[3],vParallel,vNormal,bUnit[3],Speed,dt;
+  double *x, *v, AbsB, B[3], vParallel, vNormal, bUnit[3], Speed, dt;
   int spec;
 
   ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-  v=PIC::ParticleBuffer::GetV(ParticleData);
-  x=PIC::ParticleBuffer::GetX(ParticleData);
-  spec=PIC::ParticleBuffer::GetI(ParticleData);
-  Speed=Vector3D::Length(v);
+  v = PIC::ParticleBuffer::GetV(ParticleData);
+  x = PIC::ParticleBuffer::GetX(ParticleData);
+  spec = PIC::ParticleBuffer::GetI(ParticleData);
+  Speed = Vector3D::Length(v);
 
   #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-  if (Speed>3.0E8) exit(__LINE__,__FILE__);
+  if (Speed > 3.0E8) exit(__LINE__,__FILE__);
   #endif 
 
   double timeCounter = 0.0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode = startNode;
 
-
-  auto CalculateMeanFreePath = [&] (int spec,double rHelio,double Speed,double AbsB) {
-    double MeanFreePath,dxx,energy;
-	  
+  auto CalculateMeanFreePath = [&] (int spec, double rHelio, double Speed, double AbsB) {
+    double MeanFreePath, dxx, energy;
+    
     switch (SEP::Scattering::MeanFreePathMode) {
     case SEP::Scattering::MeanFreePathMode_QLT:
-      MeanFreePath=QLT::calculateMeanFreePath(rHelio,Speed);
+      MeanFreePath = QLT::calculateMeanFreePath(rHelio, Speed);
       break;
     case SEP::Scattering::MeanFreePathMode_QLT1:
-      MeanFreePath=QLT1::calculateMeanFreePath(rHelio,Speed,AbsB);
+      MeanFreePath = QLT1::calculateMeanFreePath(rHelio, Speed, AbsB);
       break;
     case SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA:
-      energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
-
-      MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
-        pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
-        pow(rHelio/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
+      energy = Relativistic::Speed2E(Speed, PIC::MolecularData::GetMass(spec));
+      MeanFreePath = SEP::Scattering::Tenishev2005AIAA::lambda0 *
+        pow(energy/GeV2J, SEP::Scattering::Tenishev2005AIAA::alpha) *
+        pow(rHelio/_AU_, SEP::Scattering::Tenishev2005AIAA::beta);
       break;
     case SEP::Scattering::MeanFreePathMode_Chen2024AA:
-       energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
-       dxx=SEP::Diffusion::Chen2024AA::GetDxx(rHelio,energy);
-       MeanFreePath=3.0*dxx/Speed; //Eq, 15, Liu-2024-arXiv; 
-       break;
-
+      energy = Relativistic::Speed2E(Speed, PIC::MolecularData::GetMass(spec));
+      dxx = SEP::Diffusion::Chen2024AA::GetDxx(rHelio, energy);
+      MeanFreePath = 3.0 * dxx / Speed; // Eq. 15, Liu-2024-arXiv
+      break;
     default:
-      exit(__LINE__,__FILE__,"Error: the oprion is unknown");
+      exit(__LINE__, __FILE__, "Error: the option is unknown");
     }
 
     return MeanFreePath; 
   };
 
   auto PerpendicularDiffusion = [&](double dt) {
-    double D_perp,dr,l[3],rHelio,Speed;
-
-    rHelio=Vector3D::Length(x);
-    Speed=Vector3D::Length(v);
-    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed,AbsB);
+    double D_perp, dr, l[3], rHelio;
+    
+    rHelio = Vector3D::Length(x);
+    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed, AbsB);
     dr = sqrt(2.0 * D_perp * dt) * Vector3D::Distribution::Normal();
 
     // Recalculate the 3D vector x due to diffusion
-    Vector3D::GetRandomNormDirection(l,bUnit);  
-    for (int idim=0;idim<3;idim++) x[idim]+=dr*l[idim];
+    Vector3D::GetRandomNormDirection(l, bUnit);  
+    for (int idim = 0; idim < 3; idim++) x[idim] += dr * l[idim];
   };
 
-  auto AdvanceLocation = [&] (double dt) -> bool {
-   for (int idim=0;idim<3;idim++) x[idim]+=bUnit[idim]*vParallel*dt;
+  // Get magnetic field vector at a position using CPLR interpolation
+  auto GetMagneticField = [&](double *pos, double *field) {
+    // Find the node containing the position
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node = PIC::Mesh::mesh->findTreeNode(pos, newNode);
+    // Check if node is NULL first
+    if (node == NULL) {
+      // Position is outside the domain
+      return false;
+    }
+    
+    // Then check if node is used in calculation
+    if (node->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      return false;
+    }
+    
+    // Initialize the interpolation stencil at the given position
+    PIC::CPLR::InitInterpolationStencil(pos, node);
+    
+    // Retrieve the interpolated magnetic field at the position
+    PIC::CPLR::GetBackgroundMagneticField(field);
+    
+    return true;
+  };
 
+  // Different trajectory advancement methods
+  
+  // Euler method
+  auto AdvanceLocation_Euler = [&](double dt) -> bool {
+    // Simple Euler step
+    for (int idim = 0; idim < 3; idim++) {
+      x[idim] += bUnit[idim] * vParallel * dt;
+    }
+      
     // Find new node containing particle
     newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
       
     // Check if particle left domain
-    if (newNode == NULL || newNode->IsUsedInCalculationFlag == false) {
+    if (newNode == NULL) {
+      // Position is outside the domain
       PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false; //  _PARTICLE_LEFT_THE_DOMAIN_;
+      return false;
     }
-
+    
+    if (newNode->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
     return true;
+  };
+
+  // 2nd order Runge-Kutta (midpoint) method
+  auto AdvanceLocation_RK2 = [&](double dt) -> bool {
+    double k1[3], k2[3], xMid[3], BMid[3], bMid[3], AbsBMid;
+    
+    // k1 = f(x)
+    for (int idim = 0; idim < 3; idim++) {
+      k1[idim] = bUnit[idim] * vParallel;
+    }
+    
+    // Calculate midpoint position
+    for (int idim = 0; idim < 3; idim++) {
+      xMid[idim] = x[idim] + 0.5 * dt * k1[idim];
+    }
+    
+    // Get magnetic field at midpoint
+    if (!GetMagneticField(xMid, BMid)) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    // Normalize midpoint B field direction
+    AbsBMid = Vector3D::Length(BMid);
+    if (AbsBMid < 1E-20) {
+      // Fall back to Euler if B field is too weak
+      return AdvanceLocation_Euler(dt);
+    }
+    
+    for (int idim = 0; idim < 3; idim++) {
+      bMid[idim] = BMid[idim] / AbsBMid;
+      k2[idim] = bMid[idim] * vParallel;
+    }
+    
+    // Update position using k2
+    for (int idim = 0; idim < 3; idim++) {
+      x[idim] += dt * k2[idim];
+    }
+    
+    // Find new node containing particle
+    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+      
+    // Check if particle left domain
+    if (newNode == NULL) {
+      // Position is outside the domain
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    if (newNode->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    return true;
+  };
+
+  // 4th order Runge-Kutta method
+  auto AdvanceLocation_RK4 = [&](double dt) -> bool {
+    double k1[3], k2[3], k3[3], k4[3];
+    double xTmp[3], BTmp[3], bTmp[3], AbsBTmp;
+    
+    // k1 = f(x)
+    for (int idim = 0; idim < 3; idim++) {
+      k1[idim] = bUnit[idim] * vParallel;
+    }
+    
+    // Calculate k2 = f(x + dt/2 * k1)
+    for (int idim = 0; idim < 3; idim++) {
+      xTmp[idim] = x[idim] + 0.5 * dt * k1[idim];
+    }
+    
+    if (!GetMagneticField(xTmp, BTmp)) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    AbsBTmp = Vector3D::Length(BTmp);
+    if (AbsBTmp < 1E-20) {
+      return AdvanceLocation_Euler(dt);
+    }
+    
+    for (int idim = 0; idim < 3; idim++) {
+      bTmp[idim] = BTmp[idim] / AbsBTmp;
+      k2[idim] = bTmp[idim] * vParallel;
+    }
+    
+    // Calculate k3 = f(x + dt/2 * k2)
+    for (int idim = 0; idim < 3; idim++) {
+      xTmp[idim] = x[idim] + 0.5 * dt * k2[idim];
+    }
+    
+    if (!GetMagneticField(xTmp, BTmp)) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    AbsBTmp = Vector3D::Length(BTmp);
+    if (AbsBTmp < 1E-20) {
+      return AdvanceLocation_Euler(dt);
+    }
+    
+    for (int idim = 0; idim < 3; idim++) {
+      bTmp[idim] = BTmp[idim] / AbsBTmp;
+      k3[idim] = bTmp[idim] * vParallel;
+    }
+    
+    // Calculate k4 = f(x + dt * k3)
+    for (int idim = 0; idim < 3; idim++) {
+      xTmp[idim] = x[idim] + dt * k3[idim];
+    }
+    
+    if (!GetMagneticField(xTmp, BTmp)) {
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    AbsBTmp = Vector3D::Length(BTmp);
+    if (AbsBTmp < 1E-20) {
+      return AdvanceLocation_Euler(dt);
+    }
+    
+    for (int idim = 0; idim < 3; idim++) {
+      bTmp[idim] = BTmp[idim] / AbsBTmp;
+      k4[idim] = bTmp[idim] * vParallel;
+    }
+    
+    // Final update using weighted sum
+    for (int idim = 0; idim < 3; idim++) {
+      x[idim] += dt * (k1[idim] + 2.0 * k2[idim] + 2.0 * k3[idim] + k4[idim]) / 6.0;
+    }
+    
+    // Find new node containing particle
+    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+      
+    // Check if particle left domain
+    if (newNode == NULL) {
+      // Position is outside the domain
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    if (newNode->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    return true;
+  };
+
+  // Method selector function
+  auto AdvanceLocation = [&](double dt) -> bool {
+
+    //return AdvanceLocation_Euler(dt);
+    //return AdvanceLocation_RK2(dt);
+    return AdvanceLocation_RK4(dt);
   };
 
   // Main time stepping loop
   while (timeCounter < dtTotal) {      
-      // Get local magnetic field
-      PIC::CPLR::InitInterpolationStencil(x, newNode);
-      PIC::CPLR::GetBackgroundMagneticField(B);
- 
+    // Get local magnetic field
+    PIC::CPLR::InitInterpolationStencil(x, newNode);
+    PIC::CPLR::GetBackgroundMagneticField(B);
+    
+    AbsB = Vector3D::Length(B);
+
+    if (AbsB > 1E-20) { 
+      // Normalize B field direction
+      for (int idim = 0; idim < 3; idim++) {
+        bUnit[idim] = B[idim] / AbsB;
+      }
+          
+      // Calculate parallel and perpendicular components
+      vParallel = Vector3D::DotProduct(v, bUnit);
+      vNormal = sqrt(Speed * Speed - vParallel * vParallel);
+
+      // Determine time till the next scattering event
+      double ds, MeanFreePath;
+      MeanFreePath = CalculateMeanFreePath(spec, Vector3D::Length(x), Speed, AbsB);
+
+      // Distance to next scattering
+      ds = -MeanFreePath * log(rnd());
+      dt = ds / fabs(vParallel);
+    }
+    else {
+      // If magnetic field is too weak, use velocity direction
+      for (int i = 0; i < 3; i++) bUnit[i] = v[i];
+      vParallel = Vector3D::Normalize(bUnit);	
+      vNormal = 0.0;
+      dt = dtTotal - timeCounter;
+    }
+
+    if (timeCounter + dt < dtTotal) {
+      // Scattering can occur during this time step
+      if (AdvanceLocation(dt) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
       
-      AbsB = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
+      // Apply scattering - randomize velocity direction while preserving speed
+      Vector3D::Distribution::Uniform(v, Speed);
 
-      if (AbsB > 1E-20) { 
-        // Normalize B field direction
-        bUnit[0]=B[0]/AbsB;
-        bUnit[1]=B[1]/AbsB; 
-        bUnit[2]=B[2]/AbsB; 
-            
-        // Calculate parallel and perpendicular components
-        vParallel = v[0]*bUnit[0] + v[1]*bUnit[1] + v[2]*bUnit[2];
-        vNormal = sqrt(Speed*Speed - vParallel*vParallel);
+      // Apply perpendicular diffusion
+      PerpendicularDiffusion(dt);
+    }
+    else {
+      // Not enough time left for scattering
+      if (AdvanceLocation(dtTotal - timeCounter) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
+    } 
 
-        //determine time till the next scattering event
-        double ds,MeanFreePath=-1; ///=SEP::Scattering::MeanFreePathMode(  QLT1::calculateMeanFreePath(Speed,Vector3D::Length(x),AbsB);
-
-	MeanFreePath=CalculateMeanFreePath(spec,Vector3D::Length(x),Speed,AbsB);
-
-
-
-        ds=-MeanFreePath*log(rnd());
-        dt=ds/fabs(vParallel);
-      }
-      else {
-        for (int i=0;i<3;i++) bUnit[i]=v[i];
-        vParallel=Vector3D::Normalize(bUnit);	
-	vNormal=0.0;
-	dt=dtTotal-timeCounter;
-      }
-
-      if (timeCounter+dt<dtTotal) {
-        //scattering can occus
-        if (AdvanceLocation(dt)==false) return _PARTICLE_LEFT_THE_DOMAIN_; 
-        Vector3D::Distribution::Uniform(v,Speed);
-
-        //perpendicular diffusion
-        PerpendicularDiffusion(dt);
-      }
-      else {
-        //there is not suffcicnet time for particle scattering left
-        if (AdvanceLocation(dtTotal-timeCounter)==false) return _PARTICLE_LEFT_THE_DOMAIN_;
-      } 
-
-      timeCounter += dt;
+    timeCounter += dt;
   }
 
   // Update particle lists
-  int i,j,k;
-
-  if (PIC::Mesh::mesh->FindCellIndex(x,i,j,k,newNode,false)==-1) exit(__LINE__,__FILE__,"Error: cannot find the cellwhere the particle is located");
+  int i, j, k;
+  if (PIC::Mesh::mesh->FindCellIndex(x, i, j, k, newNode, false) == -1) {
+    exit(__LINE__, __FILE__, "Error: cannot find the cell where the particle is located");
+  }
   
-  
+  // Particle list management code
   #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
   PIC::ParticleBuffer::SetPrev(-1, ParticleData);
   long int tempFirstCellParticle = atomic_exchange(
@@ -1503,7 +1696,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
       PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
   }
   #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
-  // Similar particle list management for non-MPI case
+  // Similar particle list management for MPI case
   long int tempFirstCellParticle = newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
   PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
   PIC::ParticleBuffer::SetPrev(-1, ParticleData);
@@ -1511,22 +1704,22 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr,double dtTotal,cTreeNo
       PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
   }
   newNode->block->tempParticleMovingListTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)] = ptr;
-#elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
-  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData=block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(),i,j,k);
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData = 
+    newNode->block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(), i, j, k);
 
-  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first,ParticleData);
-  PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first, ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
 
-  if (ThreadTempParticleMovingData->last==-1) ThreadTempParticleMovingData->last=ptr;
-  if (ThreadTempParticleMovingData->first!=-1) PIC::ParticleBuffer::SetPrev(ptr,ThreadTempParticleMovingData->first);
-  ThreadTempParticleMovingData->first=ptr;
-#else
-#error The option is unknown
-#endif
+  if (ThreadTempParticleMovingData->last == -1) ThreadTempParticleMovingData->last = ptr;
+  if (ThreadTempParticleMovingData->first != -1) PIC::ParticleBuffer::SetPrev(ptr, ThreadTempParticleMovingData->first);
+  ThreadTempParticleMovingData->first = ptr;
+  #else
+  #error The option is unknown
+  #endif
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-
 
 
 int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
