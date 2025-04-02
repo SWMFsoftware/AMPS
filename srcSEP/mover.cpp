@@ -1753,6 +1753,11 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     else {
       // Not enough time left for scattering
       if (AdvanceLocation(dtTotal - timeCounter) == false) return _PARTICLE_LEFT_THE_DOMAIN_;
+
+      // Apply perpendicular diffusion
+      if (SEP::PerpendicularDiffusionMode==true) {
+        PerpendicularDiffusion(dt);
+      }
     } 
 
     timeCounter += dt;
