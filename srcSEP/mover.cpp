@@ -1376,6 +1376,29 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   if (Speed > 3.0E8) exit(__LINE__,__FILE__);
   #endif 
 
+  // Get initial magnetic field
+  PIC::CPLR::InitInterpolationStencil(x, startNode);
+  PIC::CPLR::GetBackgroundMagneticField(B);
+  AbsB = Vector3D::Length(B);
+
+  // Calculate initial vParallel and vNormal outside the loop
+  if (AbsB > 1E-20) { 
+    // Normalize B field direction
+    for (int idim = 0; idim < 3; idim++) {
+      bUnit[idim] = B[idim] / AbsB;
+    }
+      
+    // Calculate parallel and perpendicular components
+    vParallel = Vector3D::DotProduct(v, bUnit);
+    vNormal = sqrt(Speed * Speed - vParallel * vParallel);
+  }
+  else {
+    // If magnetic field is too weak, use velocity direction
+    for (int i = 0; i < 3; i++) bUnit[i] = v[i];
+    vParallel = Vector3D::Normalize(bUnit);
+    vNormal = 0.0;
+  }
+
   double timeCounter = 0.0;
   cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *newNode = startNode;
 
@@ -1446,6 +1469,32 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
   // Different trajectory advancement methods
   
+  // Special case for weak magnetic field - advance using full velocity vector
+  auto AdvanceLocation_WeakField = [&](double dt) -> bool {
+    // Simple advancement using full velocity vector
+    for (int idim = 0; idim < 3; idim++) {
+      x[idim] += v[idim] * dt;
+    }
+      
+    // Find new node containing particle
+    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+      
+    // Check if particle left domain
+    if (newNode == NULL) {
+      // Position is outside the domain
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    if (newNode->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+    
+    return true;
+  };
+  
   // Euler method
   auto AdvanceLocation_Euler = [&](double dt) -> bool {
     // Simple Euler step
@@ -1495,8 +1544,8 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     // Normalize midpoint B field direction
     AbsBMid = Vector3D::Length(BMid);
     if (AbsBMid < 1E-20) {
-      // Fall back to Euler if B field is too weak
-      return AdvanceLocation_Euler(dt);
+      // Fall back to WeakField handler if B field is too weak
+      return AdvanceLocation_WeakField(dt);
     }
     
     for (int idim = 0; idim < 3; idim++) {
@@ -1550,7 +1599,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     
     AbsBTmp = Vector3D::Length(BTmp);
     if (AbsBTmp < 1E-20) {
-      return AdvanceLocation_Euler(dt);
+      return AdvanceLocation_WeakField(dt);
     }
     
     for (int idim = 0; idim < 3; idim++) {
@@ -1570,7 +1619,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     
     AbsBTmp = Vector3D::Length(BTmp);
     if (AbsBTmp < 1E-20) {
-      return AdvanceLocation_Euler(dt);
+      return AdvanceLocation_WeakField(dt);
     }
     
     for (int idim = 0; idim < 3; idim++) {
@@ -1624,8 +1673,13 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
   // Method selector function
   auto AdvanceLocation = [&](double dt) -> bool {
+    // First check if we need to use the weak field handler
+    if (AbsB <= 1E-20) {
+      return AdvanceLocation_WeakField(dt);
+    }
+    
+    // Otherwise use the selected integration method
     int res;
-
     switch (SEP::ParticleFieldLineDisplacementMethod) {
     case _TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_:
       res=AdvanceLocation_Euler(dt);
@@ -1644,37 +1698,21 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   };
 
   // Main time stepping loop
-  while (timeCounter < dtTotal) {      
-    // Get local magnetic field
-    PIC::CPLR::InitInterpolationStencil(x, newNode);
-    PIC::CPLR::GetBackgroundMagneticField(B);
+  while (timeCounter < dtTotal) {
+    // Determine time till the next scattering event
+    double ds, MeanFreePath;
+    double rHelio = Vector3D::Length(x);
     
-    AbsB = Vector3D::Length(B);
+    MeanFreePath = CalculateMeanFreePath(spec, rHelio, Speed, AbsB);
 
-    if (AbsB > 1E-20) { 
-      // Normalize B field direction
-      for (int idim = 0; idim < 3; idim++) {
-        bUnit[idim] = B[idim] / AbsB;
-      }
-          
-      // Calculate parallel and perpendicular components
-      vParallel = Vector3D::DotProduct(v, bUnit);
-      vNormal = sqrt(Speed * Speed - vParallel * vParallel);
-
-      // Determine time till the next scattering event
-      double ds, MeanFreePath;
-      MeanFreePath = CalculateMeanFreePath(spec, Vector3D::Length(x), Speed, AbsB);
-
-      // Distance to next scattering
-      ds = -MeanFreePath * log(rnd());
-      dt = ds / fabs(vParallel);
-    }
-    else {
-      // If magnetic field is too weak, use velocity direction
-      for (int i = 0; i < 3; i++) bUnit[i] = v[i];
-      vParallel = Vector3D::Normalize(bUnit);	
-      vNormal = 0.0;
+    // Distance to next scattering
+    ds = -MeanFreePath * log(rnd());
+    dt = ds / fabs(vParallel);
+    
+    if (AbsB <= 1E-20) {
+      // If magnetic field is too weak, use default time step
       dt = dtTotal - timeCounter;
+      // We'll use the AdvanceLocation_WeakField handler
     }
 
     if (timeCounter + dt < dtTotal) {
@@ -1683,6 +1721,29 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
       
       // Apply scattering - randomize velocity direction while preserving speed
       Vector3D::Distribution::Uniform(v, Speed);
+      
+      // After scattering, we need to recalculate parallel and perpendicular components
+      // Get local magnetic field at new position
+      PIC::CPLR::InitInterpolationStencil(x, newNode);
+      PIC::CPLR::GetBackgroundMagneticField(B);
+      AbsB = Vector3D::Length(B);
+      
+      if (AbsB > 1E-20) {
+        // Normalize B field direction
+        for (int idim = 0; idim < 3; idim++) {
+          bUnit[idim] = B[idim] / AbsB;
+        }
+        
+        // Calculate parallel and perpendicular components after scattering
+        vParallel = Vector3D::DotProduct(v, bUnit);
+        vNormal = sqrt(Speed * Speed - vParallel * vParallel);
+      }
+      else {
+        // If magnetic field is too weak, use velocity direction
+        for (int i = 0; i < 3; i++) bUnit[i] = v[i];
+        vParallel = Vector3D::Normalize(bUnit);
+        vNormal = 0.0;
+      }
 
       // Apply perpendicular diffusion
       if (SEP::PerpendicularDiffusionMode==true) {
@@ -1695,6 +1756,32 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     } 
 
     timeCounter += dt;
+  }
+
+  // Get final magnetic field direction for calculating final velocity vector
+  PIC::CPLR::InitInterpolationStencil(x, newNode);
+  PIC::CPLR::GetBackgroundMagneticField(B);
+  AbsB = Vector3D::Length(B);
+  
+  // Calculate the final velocity vector using vParallel, vNormal and magnetic field direction
+  if (AbsB > 1E-20) {
+    // Normalize B field direction
+    for (int idim = 0; idim < 3; idim++) {
+      bUnit[idim] = B[idim] / AbsB;
+    }
+    
+    // Get a vector perpendicular to B
+    double ePerp[3];
+    Vector3D::GetRandomNormDirection(ePerp, bUnit);
+    
+    // Construct final velocity from parallel and perpendicular components
+    for (int idim = 0; idim < 3; idim++) {
+      v[idim] = vParallel * bUnit[idim] + vNormal * ePerp[idim];
+    }
+  }
+  else {
+    // If magnetic field is too weak, set velocity in a random direction
+    Vector3D::Distribution::Uniform(v, Speed);
   }
 
   // Update particle lists
@@ -1739,7 +1826,6 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-
 
 int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;
