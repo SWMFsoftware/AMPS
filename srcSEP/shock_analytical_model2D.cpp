@@ -9,6 +9,9 @@ int SEP::ParticleSource::ShockWaveSphere::nSurfaceElements=0;
 cSingleVariableDiscreteDistribution<int> SEP::ParticleSource::ShockWaveSphere::ShockInjectionDistribution; 
 bool SEP::ParticleSource::ShockWaveSphere::InitGenerationSurfaceElement=false; 
 
+
+double SEP::ParticleSource::ShockWaveSphere::SphericalShockOpeningAngleLimit=Pi/4.0;
+
 void SEP::ParticleSource::ShockWaveSphere::Init() {
   nSurfaceElements=ShockSurface.GetTotalSurfaceElementsNumber(); 
 
@@ -57,7 +60,7 @@ double SEP::ParticleSource::ShockWaveSphere::GetTotalSourceRate() {
   ShockSurface.OriginPosition[2]=0.0;
 
 
-  const double cosThetaLimit=cos(Pi/4.0);
+  const double cosThetaLimit=cos(SphericalShockOpeningAngleLimit);
 
 
   if (PIC::ThisThread==0) cout << ShockSurface.Radius/_SUN__RADIUS_ << endl;

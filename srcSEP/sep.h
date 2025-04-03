@@ -2082,6 +2082,7 @@ end:
       extern int nSurfaceElements;
       extern cSingleVariableDiscreteDistribution<int> ShockInjectionDistribution;
       extern bool InitGenerationSurfaceElement; 
+      extern double SphericalShockOpeningAngleLimit;
 
       void Init();
       double GetTotalSourceRate();

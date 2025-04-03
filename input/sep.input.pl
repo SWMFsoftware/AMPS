@@ -224,7 +224,14 @@ while ($line=<InputFile>) {
        die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
      }
    }
-  
+
+   #set the "opening angle limit" for the graction of the sphere representing a spherical shock where SEPs can be injected 
+   elsif ($InputLine eq "SPHERICALSHOCKOPENINGANGLELIMIT") {
+    $line=~s/[=()]/ /g;
+    ($s0,$s1,$s2)=split(' ',$line,3);
+
+    ampsConfigLib::ChangeValueOfVariable("double SEP::ParticleSource::ShockWaveSphere::SphericalShockOpeningAngleLimit",$s1,"main/shock_analytical_model2D.cpp");
+  } 
 
    ##allow particle scattering in SEP::ParticleMover_Tenishev_2005_FL 
   elsif ($InputLine eq "PARTICLEMOVER_TENISHEV_2005_FL_SCATTERING") {
