@@ -51,8 +51,25 @@ double SEP::ParticleSource::ShockWaveSphere::GetTotalSourceRate() {
   ShockSurface.Radius=SEP::ParticleSource::ShockWave::Tenishev2005::rShock-_SUN__RADIUS_;
   if (ShockSurface.Radius<1.0E-5*_SUN__RADIUS_) ShockSurface.Radius=1.0E-5*_SUN__RADIUS_;
 
+  ShockSurface.Radius/=2.0;
+  ShockSurface.OriginPosition[0]=_SUN__RADIUS_+ShockSurface.Radius;
+  ShockSurface.OriginPosition[1]=0.0;
+  ShockSurface.OriginPosition[2]=0.0;
+
+
+  const double cosThetaLimit=cos(Pi/4.0);
+
+
+  if (PIC::ThisThread==0) cout << ShockSurface.Radius/_SUN__RADIUS_ << endl;
+
   for (int i = 0; i < nSurfaceElements; ++i) {
     ShockSurface.GetSurfaceElementMiddlePoint(x,i); 
+
+    //limit the fraction of the sphere where the particle injection can occur
+    if ((x[0]-ShockSurface.OriginPosition[0])/sqrt(pow(x[0]-ShockSurface.OriginPosition[0],2)+x[1]*x[1]+x[2]*x[2])<cosThetaLimit) {
+      SourceRateTable[i]=0.0;
+      continue;
+    }
 
     if (Vector3D::DotProduct(x,x)<_SUN__RADIUS_*_SUN__RADIUS_) {
       SourceRateTable[i]=0.0;
