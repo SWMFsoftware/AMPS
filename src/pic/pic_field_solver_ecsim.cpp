@@ -577,7 +577,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::PoissonGetStencil(int i, int j, i
     //convert length
     dx[iDim] =dx_no[iDim]* length_conv;
     CoeffSqr[iDim] = 1./(dx[iDim]*dx[iDim]);
-    x[iDim]=node->xmin[iDim]+(index[iDim]+0.5)*dx_no[iDim];
+    x[iDim]=node->xmin[iDim]*length_conv+(index[iDim]+0.5)*dx_no[iDim];
   }
 
   if (isBoundaryCell(x,dx_no,node)) {  
@@ -685,7 +685,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::GetStencil(int i,int j,int k,int 
     //convert length
     dx[iDim] *= length_conv;
 
-    x[iDim]=node->xmin[iDim]+index[iDim]*(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
+    x[iDim]=node->xmin[iDim]*length_conv+index[iDim]*(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];
 
     coeff[iDim] = cDt/dx[iDim]*theta; // for  test purpose
     coeffSqr[iDim] = coeff[iDim]*coeff[iDim];
@@ -1413,7 +1413,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::ComputeDivE(){
     
     double CellVolume=1;
     double dx[3];
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];    
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;    
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
     
     for (int k=0;k<_BLOCK_CELLS_Z_;k++) {
@@ -4106,7 +4106,7 @@ void PIC::FieldSolver::Electromagnetic::ECSIM::CorrectParticleLocation(){
     FirstCellParticleTable=block->FirstCellParticleTable;
     double CellVolume=1;
     double dx[3];
-    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim];  
+    for (int iDim=0; iDim<3;iDim++) dx[iDim]=(node->xmax[iDim]-node->xmin[iDim])/nCell[iDim]*length_conv;  
    
     for (int iDim=0; iDim<3;iDim++) CellVolume*=dx[iDim];
     
