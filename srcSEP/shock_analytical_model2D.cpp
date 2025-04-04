@@ -156,6 +156,43 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
   }
 
 
+  auto GetMomentum_Tenishev2005AIAA = [&] (double& pAbs,double& WeightCorrection,double CompressionRatio,int spec) {
+    double emin=SEP::FieldLine::InjectionParameters::emin*MeV2J;
+    double emax=SEP::FieldLine::InjectionParameters::emax*MeV2J;
+
+    if (CompressionRatio>SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio) CompressionRatio=SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio;
+
+    double q=3.0*CompressionRatio/(3-1.0);
+    double pmin,pmax,speed,pvect[3];
+    double mass=PIC::MolecularData::GetMass(spec);
+
+    if (q<1.0) q=1.0;
+
+    pmin=Relativistic::Energy2Momentum(emin,mass);
+    pmax=Relativistic::Energy2Momentum(emax,mass);
+
+    double cMin=pow(pmin,-q);
+
+    speed=Relativistic::E2Speed(emin,PIC::MolecularData::GetMass(spec));
+    pmin=Relativistic::Speed2Momentum(speed,mass);
+
+    speed=Relativistic::E2Speed(emax,PIC::MolecularData::GetMass(spec));
+    pmax=Relativistic::Speed2Momentum(speed,mass);
+
+    double WeightNorm=pow(pmin,1.0-q);
+
+    //to cover the entire range of the particle momentum, the momentum will be generated in the log(p) space 
+    //that will be accounted for with a statistical weight correction
+
+    double log_pmin=log(pmin);
+    double log_pmax=log(pmax);
+
+    pAbs=pmin*exp(rnd()*(log_pmax-log_pmin));
+    WeightCorrection=pow(pAbs,1.0-q)/WeightNorm;
+  };
+
+
+
   while ((dtCounter-=log(rnd())/TotalInjectionRate)<dtTotal) {
     //1. Generate new particle position 
     el=GetInjectionSurfaceElement(x);
@@ -167,12 +204,11 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
     if (startNode->Thread!=PIC::Mesh::mesh->ThisThread) continue;
 
     //2. generate particle velocity  
-    s=CompressionRatioTable[el]; 
-    q=3.0*s/(s-1.0);
+    double WeightTotalCorrectionFactor;
 
-    double misc1=pow(pmax,1-q);
-    double misc2=pow(pmin,1-q);
-    p=pow(rnd()*(misc1-misc2)+misc2,1.0/(1.0-q));  
+    s=CompressionRatioTable[el]; 
+    GetMomentum_Tenishev2005AIAA(p,WeightTotalCorrectionFactor,s,0);
+    WeightTotalCorrectionFactor*=WeightCorrectionFactor;
 
     //convert to particle speed 
     speed=Relativistic::Momentum2Speed(p,_H__MASS_);
@@ -193,7 +229,7 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
     PIC::ParticleBuffer::SetI(0,newParticleData);
 
     #if _INDIVIDUAL_PARTICLE_WEIGHT_MODE_ == _INDIVIDUAL_PARTICLE_WEIGHT_ON_
-    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightCorrectionFactor,newParticleData);
+    PIC::ParticleBuffer::SetIndividualStatWeightCorrection(WeightTotalCorrectionFactor,newParticleData);
     #endif
 
     //apply condition of tracking the particle
