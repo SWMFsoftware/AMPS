@@ -1679,7 +1679,8 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     }
     
     // Otherwise use the selected integration method
-    int res;
+    bool res;
+
     switch (SEP::ParticleFieldLineDisplacementMethod) {
     case _TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_:
       res=AdvanceLocation_Euler(dt);
@@ -1692,6 +1693,14 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
       break;
     default:
       exit(__LINE__,__FILE__,"Error: the option is not found");
+    }
+
+    if (res == true) {
+      if (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+        //the particle is inside the Sun -> remove it
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return false;
+      }
     }
 
     return res;
