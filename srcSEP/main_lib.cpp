@@ -77,7 +77,10 @@ void amps_init_mesh() {
   PIC::FieldLine::cFieldLine::OutputLengthConversionFactor.second="AU";
 
   //set the function for the particle sampling 
-  SEP::Sampling::Init();
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
+    SEP::Sampling::Init();
+  }
+
   SEP::Init();
 
   //set the particle injection function used in case magnetic field lines are used 
