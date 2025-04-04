@@ -1431,15 +1431,43 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   };
 
   auto PerpendicularDiffusion = [&](double dt) {
-    double D_perp, dr, l[3], rHelio;
+    double D_perp, D_xx,dr, l[3], rHelio;
     
     rHelio = Vector3D::Length(x);
-    D_perp = QLT1::calculatePerpendicularDiffusion(rHelio, Speed, AbsB);
+    D_xx=CalculateMeanFreePath(spec,rHelio,Speed,AbsB)*Speed/3.0;  
+
+    const double C=0.02,alpha=0.5;
+    D_perp=C*pow(D_xx,alpha);
+
     dr = sqrt(2.0 * D_perp * dt) * Vector3D::Distribution::Normal();
 
     // Recalculate the 3D vector x due to diffusion
     Vector3D::GetRandomNormDirection(l, bUnit);  
     for (int idim = 0; idim < 3; idim++) x[idim] += dr * l[idim];
+
+    // Find new node containing particle
+    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+
+    // Check if particle left domain
+    if (newNode == NULL) {
+      // Position is outside the domain
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+
+    if (newNode->IsUsedInCalculationFlag == false) {
+      // Position is in an inactive region
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+
+    if (x[0]*x[0]+x[1]*x[1]+x[2]*x[2]<_RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+      //the particle is inside the Sun -> remove it
+      PIC::ParticleBuffer::DeleteParticle(ptr);
+      return false;
+    }
+
+    return true;
   };
 
   // Get magnetic field vector at a position using CPLR interpolation
@@ -1756,7 +1784,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
       // Apply perpendicular diffusion
       if (SEP::PerpendicularDiffusionMode==true) {
-        PerpendicularDiffusion(dt);
+        if (PerpendicularDiffusion(dt) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
       }
     }
     else {
@@ -1765,7 +1793,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
       // Apply perpendicular diffusion
       if (SEP::PerpendicularDiffusionMode==true) {
-        PerpendicularDiffusion(dt);
+        if (PerpendicularDiffusion(dt) == false) return _PARTICLE_LEFT_THE_DOMAIN_; 
       }
     } 
 
