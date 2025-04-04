@@ -29,8 +29,8 @@ DiagnosticStream=PT
 OutputDirectory=PT/plots
 
 
-DebuggerMode=on !on,off
-ForceRepeatableSimulationPath=on ! on,off
+!DebuggerMode=on !on,off
+!ForceRepeatableSimulationPath=on ! on,off
 
 
 StdoutErrorLog=off !on,off -> print out error message on the screen
@@ -55,7 +55,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   ReferenceInjectionParticleNumber=200
   MaxMeshRefinmentLevel=12
   EnforceRequestedMeshResolution=on !on,off
-  InitialSampleLength=40
+  InitialSampleLength=400 
 
   OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
 
@@ -128,7 +128,7 @@ CouplerMode=T96 !ices !!off, ices, swmf
   Mover=ParticleMover_default 
 
   ParticleTrajectoryIntegrationAlongFieldLine3D=RK4 ! RK1,RK2,RK4
-  PerpendicularDiffusionMode=off !on,off
+  PerpendicularDiffusionMode=on !on,off
 
   SphericalShockOpeningAngleLimit=Pi/4
 
