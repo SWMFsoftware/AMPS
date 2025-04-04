@@ -1784,10 +1784,6 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
       v[idim] = vParallel * bUnit[idim] + vNormal * ePerp[idim];
     }
   }
-  else {
-    // If magnetic field is too weak, set velocity in a random direction
-    Vector3D::Distribution::Uniform(v, Speed);
-  }
 
   // Update particle lists
   int i, j, k;
