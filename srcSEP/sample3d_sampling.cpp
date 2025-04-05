@@ -118,11 +118,11 @@
          double volume = dx * dy * dz;
          
          // Get the magnetic field direction at the cell center point
-	 double xCenter[3],b[3]={0.0,0.0,0.0},xtest[3];
+	 double xCenter[3],b[3]={0.0,0.0,0.0};
 	 PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
 
 	 for (int i=0;i<3;i++) xCenter[i]=0.5*(cellMin[i]+cellMax[i]); 
-	 PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest, node, Stencil);
+	 PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xCenter, node, Stencil);
 	 
          // Interpolate B field from the mesh
          for (int iStencil = 0; iStencil < Stencil.Length; iStencil++) {
