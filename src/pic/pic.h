@@ -6576,6 +6576,7 @@ void DeleteAttachedParticles();
       _TARGET_DEVICE_ _TARGET_HOST_  
       void AddCell(double w,T* c,int id) {
         if (Length==nMaxStencilLength) exit(__LINE__,__FILE__,"Error: the stencil length exeeds 'nMaxStencilLength'. Need to increase 'nMaxStencilLength'");
+	if (w<0.0) exit(__LINE__,__FILE__,"Error: found a negative interpolation weight");
 
         Weight[Length]=w;
         cell[Length]=c;
