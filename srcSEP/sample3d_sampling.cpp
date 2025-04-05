@@ -92,7 +92,8 @@
          
          // Find the node and cell containing the sampling point
          cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node = PIC::Mesh::mesh->findTreeNode(SamplingPoints[pointIndex].x);
-         if (node == NULL || node->block == NULL) return;
+         if (node == NULL) return;
+	 if (node->block == NULL) return;
          
          int i, j, k;
          if (PIC::Mesh::mesh->FindCellIndex(SamplingPoints[pointIndex].x, i, j, k, node) == -1) {
@@ -116,28 +117,25 @@
          // Calculate cell volume
          double volume = dx * dy * dz;
          
-         // Sample the magnetic field at the sampling point
-         if (PIC::ThisThread == 0) {
-             PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
-             PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(
-                 SamplingPoints[pointIndex].x, node, Stencil);
-                 
-             // Get the magnetic field
-             double* B = BackgroundB[pointIndex];
-             for (int iDim = 0; iDim < 3; iDim++) {
-                 B[iDim] = 0.0;
-             }
-             
-             // Interpolate B field from the mesh
-             for (int iStencil = 0; iStencil < Stencil.Length; iStencil++) {
-                 double* ptr_b = (double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer() 
-                                  + PIC::CPLR::SWMF::MagneticFieldOffset);
-                 
-                 for (int iDim = 0; iDim < 3; iDim++) {
-                     B[iDim] += Stencil.Weight[iStencil] * ptr_b[iDim];
-                 }
-             }
+         // Get the magnetic field direction at the cell center point
+	 double xCenter[3],b[3]={0.0,0.0,0.0},xtest[3];
+	 PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
+
+	 for (int i=0;i<3;i++) xCenter[i]=0.5*(cellMin[i]+cellMax[i]); 
+	 PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xtest, node, Stencil);
+	 
+         // Interpolate B field from the mesh
+         for (int iStencil = 0; iStencil < Stencil.Length; iStencil++) {
+            double* ptr_b = (double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer() 
+                 + PIC::CPLR::SWMF::MagneticFieldOffset);
+              
+            for (int iDim = 0; iDim < 3; iDim++) {
+              b[iDim] += Stencil.Weight[iStencil] * ptr_b[iDim];
+            }
          }
+
+	 Vector3D::Normalize(b);
+
          
          // Get first particle in the cell
          long int ptr = node->block->FirstCellParticleTable[i + _BLOCK_CELLS_X_*(j + _BLOCK_CELLS_Y_*k)];
@@ -178,31 +176,7 @@
              }
              
              // Calculate pitch angle (relative to local magnetic field)
-             double B[3];
-             memcpy(B, BackgroundB[pointIndex], 3 * sizeof(double));
-             double B_mag = sqrt(B[0]*B[0] + B[1]*B[1] + B[2]*B[2]);
-             
-             // Normalize B
-             if (B_mag > 0.0) {
-                 for (int iDim = 0; iDim < 3; iDim++) {
-                     B[iDim] /= B_mag;
-                 }
-             } else {
-                 // Default B direction if B_mag is zero
-                 B[0] = 0.0; B[1] = 0.0; B[2] = 1.0;
-             }
-             
-             // Calculate cosine of pitch angle (dot product of normalized velocity and B)
-             double v_norm[3];
-             if (speed > 0.0) {
-                 for (int iDim = 0; iDim < 3; iDim++) {
-                     v_norm[iDim] = v[iDim] / speed;
-                 }
-             } else {
-                 v_norm[0] = 0.0; v_norm[1] = 0.0; v_norm[2] = 1.0;
-             }
-             
-             double mu = B[0]*v_norm[0] + B[1]*v_norm[1] + B[2]*v_norm[2];
+             double mu = Vector3D::DotProduct(v,b)/Vector3D::Length(v);
              if (mu < -1.0) mu = -1.0;
              if (mu > 1.0) mu = 1.0;
              

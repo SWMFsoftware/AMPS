@@ -40,7 +40,7 @@
        int MaxTimePoints = 1000;  // Maximum number of time points to store
        
        // Output directories
-       std::string OutputDir = "PT/plots/Sample3D";
+       std::string OutputDir = "Sample3D";
        std::string PopulationDir;
        std::string FluxDir;
        std::string ReturnFluxDir;
