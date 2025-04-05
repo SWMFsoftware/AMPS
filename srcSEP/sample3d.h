@@ -20,7 +20,8 @@
  namespace SEP {
    namespace Sampling {
      namespace Sample3D {
-       
+       extern size_t MaxSampleLocations;  // Maximum number of sampling locations 
+
        // Structure to define a sampling point in 3D space
        struct SamplingPoint {
          double x[3];          // Position in 3D space
@@ -82,7 +83,8 @@
        
        // Functions
        void Init();                                  // Initialize the sampling module
-       void AddSamplingPoint(const SamplingPoint& point); // Add a sampling point
+       void InitSampleLocations(size_t maxLocations); // Set the maximum number of sample locations
+       bool AddSamplingPoint(const SamplingPoint& point); // Add a sampling point
        void SetEnergyRange(double emin, double emax, int nbins); // Set the energy range and bins
        void SetPitchAngleBins(int nbins);           // Set the number of pitch angle bins
        void SetOutputIterations(int iterations);    // Set number of iterations between outputs

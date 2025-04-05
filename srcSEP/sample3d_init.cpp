@@ -14,6 +14,7 @@
  namespace SEP {
    namespace Sampling {
      namespace Sample3D {
+       size_t MaxSampleLocations = 50;  // Default maximum number of sampling locations
        
        // Energy channel information
        double MinEnergy = 0.01 * MeV2J;     // Default minimum energy: 0.01 MeV 
@@ -119,107 +120,141 @@
          SamplingCounter = 0;
          internalCounter = 0;
        }
+
+
+//----------------------------------------------------------------------------
+// Initialize the vector sizes and max number of sample locations
+//----------------------------------------------------------------------------
+void InitSampleLocations(size_t maxLocations) {
+    // Set the maximum number of sample locations
+    MaxSampleLocations = maxLocations;
+    
+    // Reserve space for all vectors
+    SamplingPoints.reserve(MaxSampleLocations);
+    EnergyChannelPopulation.reserve(MaxSampleLocations);
+    PitchAngleDistribution.reserve(MaxSampleLocations);
+    FluxByEnergy.reserve(MaxSampleLocations);
+    ReturnFluxByEnergy.reserve(MaxSampleLocations);
+    BackgroundB.reserve(MaxSampleLocations);
+    OutputPopulationFiles.reserve(MaxSampleLocations);
+    OutputFluxFiles.reserve(MaxSampleLocations);
+    OutputReturnFluxFiles.reserve(MaxSampleLocations);
+    OutputPitchAngleFiles.reserve(MaxSampleLocations);
+}
+
      
        //----------------------------------------------------------------------------
        // Function to add a sampling point
        //----------------------------------------------------------------------------
-       void AddSamplingPoint(const SamplingPoint& point) {
-         // Add to the vector of sampling points
-         SamplingPoints.push_back(point);
-         int pointIndex = SamplingPoints.size() - 1;
-         
-         // Allocate memory for data structures for this point
-         array_3d<double> newEnergyPopulation;
-         array_4d<double> newPitchAngleDistribution;
-         array_3d<double> newFlux;
-         array_3d<double> newReturnFlux;
-         
-         // Initialize with appropriate dimensions
-         newEnergyPopulation.init(nEnergyBins, MaxTimePoints, 1);
-         newPitchAngleDistribution.init(nPitchAngleBins, nEnergyBins, MaxTimePoints, 1);
-         newFlux.init(nEnergyBins, MaxTimePoints, 1);
-         newReturnFlux.init(nEnergyBins, MaxTimePoints, 1);
-         
-         // Initialize with zeros
-         newEnergyPopulation = 0.0;
-         newPitchAngleDistribution = 0.0;
-         newFlux = 0.0;
-         newReturnFlux = 0.0;
-         
-         // Add to vectors
-         EnergyChannelPopulation.push_back(newEnergyPopulation);
-         PitchAngleDistribution.push_back(newPitchAngleDistribution);
-         FluxByEnergy.push_back(newFlux);
-         ReturnFluxByEnergy.push_back(newReturnFlux);
-         
-         // Allocate and initialize background B field
-         double* newB = new double[3];
-         newB[0] = 0.0; newB[1] = 0.0; newB[2] = 0.0;
-         BackgroundB.push_back(newB);
-         
-         // If this process is the main thread, create output files
-         if (PIC::ThisThread == 0) {
-             char filename[MAX_FILENAME_LEN];
-             FILE* file;
-             
-             // Population file
-             sprintf(filename, "%s/%s.dat", PopulationDir.c_str(), point.label.c_str());
-             file = fopen(filename, "w");
-             if (file != NULL) {
-                 fprintf(file, "VARIABLES = \"Time [s]\"");
-                 for (int i = 0; i < nEnergyBins; i++) {
-                     fprintf(file, ", \"E(%e-%e) MeV\"", 
-                         MinEnergy * exp(i * dLogEnergy) * J2MeV, 
-                         MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
-                 }
-                 fprintf(file, "\n");
-                 OutputPopulationFiles.push_back(file);
-             }
-             
-             // Flux file
-             sprintf(filename, "%s/%s.dat", FluxDir.c_str(), point.label.c_str());
-             file = fopen(filename, "w");
-             if (file != NULL) {
-                 fprintf(file, "VARIABLES = \"Time [s]\"");
-                 for (int i = 0; i < nEnergyBins; i++) {
-                     fprintf(file, ", \"E(%e-%e) MeV\"", 
-                         MinEnergy * exp(i * dLogEnergy) * J2MeV, 
-                         MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
-                 }
-                 fprintf(file, "\n");
-                 OutputFluxFiles.push_back(file);
-             }
-             
-             // Return flux file
-             sprintf(filename, "%s/%s.dat", ReturnFluxDir.c_str(), point.label.c_str());
-             file = fopen(filename, "w");
-             if (file != NULL) {
-                 fprintf(file, "VARIABLES = \"Time [s]\"");
-                 for (int i = 0; i < nEnergyBins; i++) {
-                     fprintf(file, ", \"E(%e-%e) MeV\"", 
-                         MinEnergy * exp(i * dLogEnergy) * J2MeV, 
-                         MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
-                 }
-                 fprintf(file, "\n");
-                 OutputReturnFluxFiles.push_back(file);
-             }
-             
-             // Pitch angle file
-             sprintf(filename, "%s/%s.dat", PitchAngleDir.c_str(), point.label.c_str());
-             file = fopen(filename, "w");
-             if (file != NULL) {
-                 fprintf(file, "VARIABLES = \"Time [s]\", \"Pitch Angle [cos(PA)]\"");
-                 for (int i = 0; i < nEnergyBins; i++) {
-                     fprintf(file, ", \"E(%e-%e) MeV\"", 
-                         MinEnergy * exp(i * dLogEnergy) * J2MeV, 
-                         MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
-                 }
-                 fprintf(file, "\n");
-                 OutputPitchAngleFiles.push_back(file);
-             }
-         }
-       }
-     
+bool  AddSamplingPoint(const SamplingPoint& point) {
+    // Check if we've reached the maximum number of sampling points
+    if (SamplingPoints.size() >= MaxSampleLocations) {
+       exit(__LINE__,__FILE__,"Error: the max number of sampling locations is reached; Increase the limit with  InitSampleLocations(size_t maxLocations)");
+       return false;
+    }
+
+    // Add to the vector of sampling points
+    SamplingPoints.push_back(point);
+    
+    // Use emplace_back to construct the objects directly inside the vector
+    EnergyChannelPopulation.emplace_back();
+    PitchAngleDistribution.emplace_back();
+    FluxByEnergy.emplace_back();
+    ReturnFluxByEnergy.emplace_back();
+    
+    // Get references to the new objects
+    array_3d<double>& newEnergyPopulation = EnergyChannelPopulation.back();
+    array_4d<double>& newPitchAngleDistribution = PitchAngleDistribution.back();
+    array_3d<double>& newFlux = FluxByEnergy.back();
+    array_3d<double>& newReturnFlux = ReturnFluxByEnergy.back();
+    
+    // Initialize with appropriate dimensions
+    newEnergyPopulation.init(nEnergyBins, MaxTimePoints, 1);
+    newPitchAngleDistribution.init(nPitchAngleBins, nEnergyBins, MaxTimePoints, 1);
+    newFlux.init(nEnergyBins, MaxTimePoints, 1);
+    newReturnFlux.init(nEnergyBins, MaxTimePoints, 1);
+    
+    // Initialize with zeros
+    newEnergyPopulation = 0.0;
+    newPitchAngleDistribution = 0.0;
+    newFlux = 0.0;
+    newReturnFlux = 0.0;
+    
+    // Allocate and initialize background B field
+    double* newB = new double[3];
+    newB[0] = 0.0; newB[1] = 0.0; newB[2] = 0.0;
+    BackgroundB.push_back(newB);
+    
+    // If this process is the main thread, create output files
+    if (PIC::ThisThread == 0) {
+        char filename[MAX_FILENAME_LEN];
+        FILE* file;
+        
+        // Population file
+        sprintf(filename, "%s/%s.dat", PopulationDir.c_str(), point.label.c_str());
+        file = fopen(filename, "w");
+        if (file != NULL) {
+            fprintf(file, "VARIABLES = \"Time [s]\"");
+            for (int i = 0; i < nEnergyBins; i++) {
+                fprintf(file, ", \"E(%e-%e) MeV\"", 
+                    MinEnergy * exp(i * dLogEnergy) * J2MeV, 
+                    MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
+            }
+            fprintf(file, "\n");
+	    fflush(file);
+            OutputPopulationFiles.push_back(file);
+        }
+        
+        // Flux file
+        sprintf(filename, "%s/%s.dat", FluxDir.c_str(), point.label.c_str());
+        file = fopen(filename, "w");
+        if (file != NULL) {
+            fprintf(file, "VARIABLES = \"Time [s]\"");
+            for (int i = 0; i < nEnergyBins; i++) {
+                fprintf(file, ", \"E(%e-%e) MeV\"", 
+                    MinEnergy * exp(i * dLogEnergy) * J2MeV, 
+                    MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
+            }
+            fprintf(file, "\n");
+	    fflush(file);
+            OutputFluxFiles.push_back(file);
+        }
+        
+        // Return flux file
+        sprintf(filename, "%s/%s.dat", ReturnFluxDir.c_str(), point.label.c_str());
+        file = fopen(filename, "w");
+        if (file != NULL) {
+            fprintf(file, "VARIABLES = \"Time [s]\"");
+            for (int i = 0; i < nEnergyBins; i++) {
+                fprintf(file, ", \"E(%e-%e) MeV\"", 
+                    MinEnergy * exp(i * dLogEnergy) * J2MeV, 
+                    MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
+            }
+            fprintf(file, "\n");
+	    fflush(file);
+            OutputReturnFluxFiles.push_back(file);
+        }
+        
+        // Pitch angle file
+        sprintf(filename, "%s/%s.dat", PitchAngleDir.c_str(), point.label.c_str());
+        file = fopen(filename, "w");
+        if (file != NULL) {
+            fprintf(file, "VARIABLES = \"Time [s]\", \"Pitch Angle [cos(PA)]\"");
+            for (int i = 0; i < nEnergyBins; i++) {
+                fprintf(file, ", \"E(%e-%e) MeV\"", 
+                    MinEnergy * exp(i * dLogEnergy) * J2MeV, 
+                    MinEnergy * exp((i + 1) * dLogEnergy) * J2MeV);
+            }
+            fprintf(file, "\n");
+	    fflush(file);
+            OutputPitchAngleFiles.push_back(file);
+        }
+    }
+
+    return true;
+}     
+
+
        //----------------------------------------------------------------------------
        // Function to set the energy range and bins
        //----------------------------------------------------------------------------
