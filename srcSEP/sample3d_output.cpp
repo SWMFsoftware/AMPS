@@ -177,10 +177,7 @@
          // This can be configured using SetOutputIterations()
          if (internalCounter % OutputIterations == 0) {
              Output();
-             
-             // Clear the buffers after output to save memory, if needed
-             // This is optional and depends on whether you want to keep historical data
-             // Clear();
+             Clear();
          }
        }
        

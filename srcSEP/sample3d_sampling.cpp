@@ -119,21 +119,11 @@
          
          // Get the magnetic field direction at the cell center point
 	 double xCenter[3],b[3]={0.0,0.0,0.0};
-	 PIC::InterpolationRoutines::CellCentered::cStencil Stencil;
 
 	 for (int i=0;i<3;i++) xCenter[i]=0.5*(cellMin[i]+cellMax[i]); 
-	 PIC::InterpolationRoutines::CellCentered::Linear::InitStencil(xCenter, node, Stencil);
-	 
-         // Interpolate B field from the mesh
-         for (int iStencil = 0; iStencil < Stencil.Length; iStencil++) {
-            double* ptr_b = (double*)(Stencil.cell[iStencil]->GetAssociatedDataBufferPointer() 
-                 + PIC::CPLR::SWMF::MagneticFieldOffset);
-              
-            for (int iDim = 0; iDim < 3; iDim++) {
-              b[iDim] += Stencil.Weight[iStencil] * ptr_b[iDim];
-            }
-         }
-
+         
+	 PIC::CPLR::InitInterpolationStencil(xCenter,node);
+	 PIC::CPLR::GetBackgroundMagneticField(b);
 	 Vector3D::Normalize(b);
 
          
@@ -146,8 +136,9 @@
              int spec = PB::GetI(particleData);
              
              // Get particle velocity
-             double v[3];
-             PB::GetV(v, particleData);
+             double *v,*x;
+             v=PB::GetV(particleData);
+	     x=PB::GetX(particleData);
              
              // Calculate magnitude of velocity and energy
              double speed = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
@@ -198,8 +189,8 @@
              // Update flux
              FluxByEnergy[pointIndex](energyBin, timeIndex, 0) += particleWeight / volume * speed;
              
-             // Check if particle moving sunward (negative mu)
-             if (mu < 0.0) {
+             // Check if particle moving sunward 
+             if (Vector3D::DotProduct(x,v)<0.0) {
                  ReturnFluxByEnergy[pointIndex](energyBin, timeIndex, 0) += particleWeight / volume * speed;
              }
              

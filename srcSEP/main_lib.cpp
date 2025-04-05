@@ -50,6 +50,118 @@ const double dxMinSphere=DebugRunMultiplier*4.0*1.0/100/2.5,dxMaxSphere=DebugRun
 
 const double MarkNotUsedRadiusLimit=100.0;
 
+//set up the sampling in 3D 
+// Function to initialize the 3D particle sampling
+void InitializeSEPSampling3D() {
+    // Initialize the sampling module
+    SEP::Sampling::Sample3D::Init();
+    
+    // Configure energy channels - from 0.01 MeV to 300.0 MeV with 50 bins
+    double minEnergy = 0.01 * MeV2J;  // Convert to Joules
+    double maxEnergy = 300.0 * MeV2J; 
+    int numEnergyBins = 50;
+    SEP::Sampling::Sample3D::SetEnergyRange(minEnergy, maxEnergy, numEnergyBins);
+    
+    // Configure pitch angle sampling with 20 bins (covering -1 to +1 range of cos(pitch angle))
+    SEP::Sampling::Sample3D::SetPitchAngleBins(20);
+    
+    // Set output frequency - output data every 100 iterations
+    SEP::Sampling::Sample3D::SetOutputIterations(100);
+
+    // Set up space for a maximum of 20 sampling locations
+    SEP::Sampling::Sample3D::InitSampleLocations(20);
+    
+    // Define and add sampling points at various locations of interest
+    SEP::Sampling::Sample3D::SamplingPoint P1(
+        0.0084 * 1.496e+11,     // x = 1 AU
+        0.0,            // y = 0
+        0.0,            // z = 0
+        "P1"         // label for output files
+    );
+    SEP::Sampling::Sample3D::AddSamplingPoint(P1);
+
+    SEP::Sampling::Sample3D::SamplingPoint P2(
+        0.09 * 1.496e+11,     // x = 1 AU
+        0.008 * 1.496e+11,            // y = 0
+        0.0,            // z = 0
+        "P2"         // label for output files
+    );
+    SEP::Sampling::Sample3D::AddSamplingPoint(P2);
+
+
+    
+    
+    /*
+    // Earth (1 AU on x-axis)
+    SEP::Sampling::Sample3D::SamplingPoint earthPoint(
+        1.0 * _AU_,     // x = 1 AU
+        0.0,            // y = 0 
+        0.0,            // z = 0
+        "Earth"         // label for output files
+    );
+    SEP::Sampling::Sample3D::AddSamplingPoint(earthPoint);
+    
+    // Multiple points along the x-axis at different distances
+    double distances[] = {0.3, 0.5, 0.7, 1.0, 1.5, 2.0}; // distances in AU
+    for (int i = 0; i < 6; i++) {
+        char label[20];
+        sprintf(label, "Point_%.1fAU", distances[i]);
+        
+        SEP::Sampling::Sample3D::SamplingPoint point(
+            distances[i] * _AU_,  // x coordinate
+            0.0,                  // y coordinate
+            0.0,                  // z coordinate
+            label
+        );
+        SEP::Sampling::Sample3D::AddSamplingPoint(point);
+    }
+    
+    // Points at different heliolongitudes at 1 AU
+    double angles[] = {0, 30, 60, 90, 120, 150, 180}; // angles in degrees
+    for (int i = 0; i < 7; i++) {
+        double angle_rad = angles[i] * Pi / 180.0;
+        char label[20];
+        sprintf(label, "Long_%03ddeg", (int)angles[i]);
+        
+        SEP::Sampling::Sample3D::SamplingPoint point(
+            cos(angle_rad) * _AU_,  // x = r * cos(?)
+            sin(angle_rad) * _AU_,  // y = r * sin(?)
+            0.0,                   // z = 0
+            label
+        );
+        SEP::Sampling::Sample3D::AddSamplingPoint(point);
+    }
+    
+    // Points at different heliolatitudes at 1 AU
+    for (int lat = -60; lat <= 60; lat += 30) {
+        double lat_rad = lat * Pi / 180.0;
+        char label[20];
+        sprintf(label, "Lat_%+03ddeg", lat);
+        
+        SEP::Sampling::Sample3D::SamplingPoint point(
+            cos(lat_rad) * _AU_,  // x = r * cos(?)
+            0.0,                  // y = 0
+            sin(lat_rad) * _AU_,  // z = r * sin(?)
+            label
+        );
+        SEP::Sampling::Sample3D::AddSamplingPoint(point);
+    }
+    
+    // Custom point somewhere in the heliosphere
+    SEP::Sampling::Sample3D::SamplingPoint customPoint(
+        0.8 * _AU_,     // x coordinate
+        0.6 * _AU_,     // y coordinate
+        0.2 * _AU_,     // z coordinate
+        "Custom_Point"  // label
+    );
+    SEP::Sampling::Sample3D::AddSamplingPoint(customPoint);
+    */ 
+    
+    // The setup is now complete
+    // The Manager() function will be called automatically during the simulation
+    // to collect samples and output data at the specified intervals
+}
+
 
 double InitLoadMeasure(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   double res=1.0;
@@ -79,6 +191,9 @@ void amps_init_mesh() {
   //set the function for the particle sampling 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
     SEP::Sampling::Init();
+  }
+  else {
+    InitializeSEPSampling3D();
   }
 
   SEP::Init();

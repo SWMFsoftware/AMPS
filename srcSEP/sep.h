@@ -75,6 +75,7 @@
 #endif
 
 #include "sep.dfn"
+#include "sample3d.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
