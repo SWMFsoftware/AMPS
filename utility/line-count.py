@@ -3,7 +3,7 @@
 Line Counter Script
 
 This script counts the number of lines in files with specified extensions.
-By default, it searches in the current directory for .cpp, .f90, .c, .for, .pl, and .py files.
+By default, it searches in the current directory for .h .cpp, .f90, .c, .for, .pl, and .py files.
 
 Usage:
     python line_counter.py [options]
@@ -37,7 +37,7 @@ def count_lines(file_path):
 
 def main():
     # Default file extensions to search for
-    default_extensions = ['cpp', 'f90', 'c', 'for', 'pl', 'py']
+    default_extensions = ['h', 'cpp', 'f90', 'c', 'for', 'pl', 'py']
     extensions = default_extensions
     recursive = False
     
