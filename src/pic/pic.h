@@ -2596,6 +2596,11 @@ void DeleteAttachedParticles();
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
       #endif
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      double *v=(double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
+      #endif
+
       return (double*) (ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
     }
     //.........................................................................
@@ -2603,6 +2608,11 @@ void DeleteAttachedParticles();
     inline double *GetV(byte *ParticleDataStart) {
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       exit(__LINE__,__FILE__,"Error: the function can be used only when _PIC_FIELD_LINE_MODE_ == _PIC_MODE_OFF_");
+      #endif
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      double *v=(double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
       #endif
 
       return (double*) (ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_);
@@ -2618,11 +2628,15 @@ void DeleteAttachedParticles();
       #endif
 
       memcpy(v,ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-    #endif
-    #endif
+      #endif
+      #endif
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
+      #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_ 
@@ -2636,11 +2650,13 @@ void DeleteAttachedParticles();
 
       memcpy(v,ParticleDataStart+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,3*sizeof(double));
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-    #endif
-    #endif
+      #endif
+
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
+      #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
@@ -2674,26 +2690,31 @@ void DeleteAttachedParticles();
       #endif
 
       memcpy(ParticleDataBuffer+ptr*ParticleDataLength+_PIC_PARTICLE_DATA__VELOCITY_OFFSET_,v,3*sizeof(double));
+
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
+      #endif
     }
     //.........................................................................
     _TARGET_HOST_ _TARGET_DEVICE_
     inline void SetV(double* v,byte *ParticleDataStart) {
-/*      if (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]>1.0e9) {
-        exit(__LINE__,__FILE__,"the velocity is too large");
-      }*/
-
       #if _PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_ 
       SetVParallel(v[0],ParticleDataStart);
       SetVNormal(v[1],ParticleDataStart);
       return;
       #endif
 
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      for (int idim=0;idim<3;idim++) if (fabs(v[idim])>1.0E10) exit(__LINE__,__FILE__);
+      #endif
 
-    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
-    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
       for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
-    #endif
-    #endif
+      #endif
+      #endif
 
       #if _PIC__DEBUG_CONCURRENT_RUNS_ == _PIC_MODE_ON_
       PIC::Debugger::ConcurrentDebug::cData d;
