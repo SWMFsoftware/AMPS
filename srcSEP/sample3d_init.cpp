@@ -82,6 +82,9 @@
          if (PIC::ThisThread == 0) {
              // Create the main directory
              char cmd[MAX_FILENAME_LEN];
+
+	     sprintf(cmd, "rm -rf %s", OutputDir.c_str());
+             system(cmd); 
              
              sprintf(cmd, "mkdir -p %s", OutputDir.c_str());
              system(cmd);
