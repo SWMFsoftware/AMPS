@@ -248,6 +248,22 @@ while ($line=<InputFile>) {
     }
  }
 
+
+   ##Account for the effect of the adiabatic cooling   
+  elsif ($InputLine eq "ADIABATICCOOLING") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+    $InputLine=~s/ //g;
+
+    if ($InputLine eq "ON") {
+      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","true","main/mover.cpp");
+    }
+    elsif ($InputLine eq "OFF") {
+      ampsConfigLib::ChangeValueOfVariable("bool SEP::AccountAdiabaticCoolingFlag","false","main/mover.cpp");
+    }    else {
+      die "The option is not recognized, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+ }
+
  
  
   elsif ($InputLine eq "#ENDBLOCK") {

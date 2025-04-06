@@ -132,6 +132,8 @@ CouplerMode=T96 !ices !!off, ices, swmf
 
   SphericalShockOpeningAngleLimit=Pi/4
 
+  AdiabaticCooling=on !on,off
+
 #endblock
 
 
