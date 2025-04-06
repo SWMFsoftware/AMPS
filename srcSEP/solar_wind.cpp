@@ -37,7 +37,7 @@ namespace SEP {
          */
         int RequestDataBuffer(int offset) {
             DivSolarWindVelocityOffset = offset;
-            int TotalDataLength = 3;
+            int TotalDataLength = 1;
             
             return TotalDataLength * sizeof(double);
         }
