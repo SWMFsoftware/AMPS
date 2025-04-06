@@ -196,6 +196,11 @@ void amps_init_mesh() {
     InitializeSEPSampling3D();
   }
 
+  //init the solar wind model when SEP adiabatic cooling is accounted for in 3D modeling
+  if (SEP::AccountAdiabaticCoolingFlag==true) {
+    SEP::SolarWind::Init();
+  }
+
   SEP::Init();
 
   //set the particle injection function used in case magnetic field lines are used 
@@ -738,6 +743,21 @@ void amps_time_step(){
       SEP::ParticleSource::PopulateAllFieldLines();
     }
     #endif
+
+
+    static bool init_divVsw=false;
+
+    if ((init_divVsw==false)&&(SEP::AccountAdiabaticCoolingFlag==true)) {
+       init_divVsw=true;
+
+       if (_PIC_COUPLER_MODE_!=_PIC_COUPLER_MODE__SWMF_) {
+          PIC::DomainBlockDecomposition::UpdateBlockTable();
+          SEP::SolarWind::SetDivSolarWindVelocity();
+       }
+      else {
+         exit(__LINE__,__FILE__,"Error: not implemented");
+      }
+    }
 
 start:
 

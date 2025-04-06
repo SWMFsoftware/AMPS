@@ -30,6 +30,8 @@ int SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_
 //account for the perpendicular diffusion when modeling particle transport in 3D
 bool SEP::PerpendicularDiffusionMode=false;
 
+// Apply adiabatic cooling only if the flag is set
+bool SEP::AccountAdiabaticCoolingFlag=true;
 
 void SEP::ParticleMoverSet(int ParticleMoverModel) {
   switch (ParticleMoverModel) {
@@ -1495,6 +1497,70 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
     return true;
   };
 
+
+// Lambda for adiabatic cooling calculations that can be reused across different integration methods
+auto ApplyAdiabaticCooling = [&](double* position, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* positionNode, double dt) -> void {
+  // Start with current speed
+  double updatedSpeed = Speed;
+  
+  // Apply adiabatic cooling only if the flag is set
+  if (SEP::AccountAdiabaticCoolingFlag == true) {
+    // Calculate divergence of solar wind velocity at the provided position
+    double divVsw = SEP::SolarWind::InterpolateDivSolarWindVelocity(position, positionNode);
+    
+    // Handle non-finite values
+    if (!isfinite(divVsw)) {
+      exit(__LINE__,__FILE__,"Error: divVsw is not finite");
+    }
+    
+    // Convert velocity to momentum
+    double p;
+    
+    // Use appropriate conversion based on relativity mode
+    switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+    case _PIC_MODE_OFF_:
+      p = updatedSpeed * PIC::MolecularData::GetMass(spec);
+      break;
+    case _PIC_MODE_ON_:
+      p = Relativistic::Speed2Momentum(updatedSpeed, PIC::MolecularData::GetMass(spec));
+      break;
+    }
+    
+    // Apply adiabatic cooling using exponential form
+    const double alpha = 1.0/3.0;
+    p *= exp(-alpha * divVsw * dt);
+    
+    // Convert back to speed
+    switch (_PIC_PARTICLE_MOVER__RELATIVITY_MODE_) {
+    case _PIC_MODE_OFF_:
+      updatedSpeed = p / PIC::MolecularData::GetMass(spec);
+      break;
+    case _PIC_MODE_ON_:
+      updatedSpeed = Relativistic::Momentum2Speed(p, PIC::MolecularData::GetMass(spec));
+      break;
+    }
+    
+    // Apply speed limit if necessary
+    if (updatedSpeed > 0.99 * SpeedOfLight) {
+      updatedSpeed = 0.99 * SpeedOfLight;
+    }
+    
+    // Calculate the velocity scaling factor
+    double velocityFactor = updatedSpeed / Speed;
+    
+    // Update velocity components
+    vParallel *= velocityFactor;
+    vNormal *= velocityFactor;
+
+    for (int idim = 0; idim < 3; idim++) {
+      v[idim] *= velocityFactor;
+    }
+   
+    // Update the global Speed variable
+    Speed = updatedSpeed;
+  }
+};
+
   // Different trajectory advancement methods
   
   // Special case for weak magnetic field - advance using full velocity vector
@@ -1524,180 +1590,296 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   };
   
   // Euler method
-  auto AdvanceLocation_Euler = [&](double dt) -> bool {
-    // Simple Euler step
+ // Euler method with adiabatic cooling
+auto AdvanceLocation_Euler = [&](double dt) -> bool {
+  // Store initial position to calculate midpoint later
+  double xInitial[3];
+  for (int idim = 0; idim < 3; idim++) {
+    xInitial[idim] = x[idim];
+  }
+  
+  // Simple Euler step along magnetic field line
+  for (int idim = 0; idim < 3; idim++) {
+    x[idim] += bUnit[idim] * vParallel * dt;
+  }
+  
+  // Calculate the midpoint between initial and final positions
+  double xMid[3];
+  for (int idim = 0; idim < 3; idim++) {
+    xMid[idim] = 0.5 * (xInitial[idim] + x[idim]);
+  }
+  
+  // Find node containing the midpoint
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* midNode = PIC::Mesh::mesh->findTreeNode(xMid, newNode);
+  // Handle null node or node not used in calculation
+  if (midNode == NULL) {
+    midNode = newNode;
     for (int idim = 0; idim < 3; idim++) {
-      x[idim] += bUnit[idim] * vParallel * dt;
+      xMid[idim] = xInitial[idim];
     }
-      
-    // Find new node containing particle
-    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
-      
-    // Check if particle left domain
-    if (newNode == NULL) {
-      // Position is outside the domain
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
+  } else if (midNode->IsUsedInCalculationFlag == false) {
+    midNode = newNode;
+    for (int idim = 0; idim < 3; idim++) {
+      xMid[idim] = xInitial[idim];
     }
+  }
     
-    if (newNode->IsUsedInCalculationFlag == false) {
-      // Position is in an inactive region
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    return true;
-  };
+  // Find new node containing particle
+  newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+  
+  // Check if particle left domain
+  if (newNode == NULL) {
+    // Position is outside the domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  if (newNode->IsUsedInCalculationFlag == false) {
+    // Position is in an inactive region
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  // Check if particle is inside the Sun
+  if (x[0]*x[0] + x[1]*x[1] + x[2]*x[2] < _RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
 
-  // 2nd order Runge-Kutta (midpoint) method
-  auto AdvanceLocation_RK2 = [&](double dt) -> bool {
-    double k1[3], k2[3], xMid[3], BMid[3], bMid[3], AbsBMid;
-    
-    // k1 = f(x)
-    for (int idim = 0; idim < 3; idim++) {
-      k1[idim] = bUnit[idim] * vParallel;
+    // Apply adiabatic cooling using the reusable lambda
+    if (SEP::AccountAdiabaticCoolingFlag == true) {
+      ApplyAdiabaticCooling(xMid, midNode, dt);
     }
-    
-    // Calculate midpoint position
-    for (int idim = 0; idim < 3; idim++) {
-      xMid[idim] = x[idim] + 0.5 * dt * k1[idim];
-    }
-    
-    // Get magnetic field at midpoint
-    if (!GetMagneticField(xMid, BMid)) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    // Normalize midpoint B field direction
-    AbsBMid = Vector3D::Length(BMid);
-    if (AbsBMid < 1E-20) {
-      // Fall back to WeakField handler if B field is too weak
-      return AdvanceLocation_WeakField(dt);
-    }
-    
-    for (int idim = 0; idim < 3; idim++) {
-      bMid[idim] = BMid[idim] / AbsBMid;
-      k2[idim] = bMid[idim] * vParallel;
-    }
-    
-    // Update position using k2
-    for (int idim = 0; idim < 3; idim++) {
-      x[idim] += dt * k2[idim];
-    }
-    
-    // Find new node containing particle
-    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
-      
-    // Check if particle left domain
-    if (newNode == NULL) {
-      // Position is outside the domain
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    if (newNode->IsUsedInCalculationFlag == false) {
-      // Position is in an inactive region
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    return true;
-  };
 
-  // 4th order Runge-Kutta method
-  auto AdvanceLocation_RK4 = [&](double dt) -> bool {
-    double k1[3], k2[3], k3[3], k4[3];
-    double xTmp[3], BTmp[3], bTmp[3], AbsBTmp;
-    
-    // k1 = f(x)
+  return true;
+};
+
+// 2nd order Runge-Kutta (midpoint) method with adiabatic cooling
+auto AdvanceLocation_RK2 = [&](double dt) -> bool {
+  double k1[3], k2[3], xMid[3], BMid[3], bMid[3], AbsBMid;
+  
+  // k1 = f(x) for position
+  for (int idim = 0; idim < 3; idim++) {
+    k1[idim] = bUnit[idim] * vParallel;
+  }
+  
+  // Calculate midpoint position
+  for (int idim = 0; idim < 3; idim++) {
+    xMid[idim] = x[idim] + 0.5 * dt * k1[idim];
+  }
+  
+  // Get magnetic field at midpoint
+  if (!GetMagneticField(xMid, BMid)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  // Normalize midpoint B field direction
+  AbsBMid = Vector3D::Length(BMid);
+  if (AbsBMid < 1E-20) {
+    // Fall back to WeakField handler if B field is too weak
+    return AdvanceLocation_WeakField(dt);
+  }
+  
+  for (int idim = 0; idim < 3; idim++) {
+    bMid[idim] = BMid[idim] / AbsBMid;
+    k2[idim] = bMid[idim] * vParallel;
+  }
+  
+  // Store initial position to calculate final midpoint later
+  double xInitial[3];
+  for (int idim = 0; idim < 3; idim++) {
+    xInitial[idim] = x[idim];
+  }
+  
+  // Update position using k2
+  for (int idim = 0; idim < 3; idim++) {
+    x[idim] += dt * k2[idim];
+  }
+  
+  // Now apply adiabatic cooling after advancing position
+  // Calculate the true midpoint between initial and final positions
+  for (int idim = 0; idim < 3; idim++) {
+    xMid[idim] = 0.5 * (xInitial[idim] + x[idim]);
+  }
+  
+  // Find node containing the true midpoint
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* midNode = PIC::Mesh::mesh->findTreeNode(xMid, newNode);
+  // Handle null node or node not used in calculation
+  if (midNode == NULL) {
+    midNode = newNode;
     for (int idim = 0; idim < 3; idim++) {
-      k1[idim] = bUnit[idim] * vParallel;
+      xMid[idim] = xInitial[idim];
     }
-    
-    // Calculate k2 = f(x + dt/2 * k1)
+  } else if (midNode->IsUsedInCalculationFlag == false) {
+    midNode = newNode;
     for (int idim = 0; idim < 3; idim++) {
-      xTmp[idim] = x[idim] + 0.5 * dt * k1[idim];
+      xMid[idim] = xInitial[idim];
     }
+  }
+  
+  // Find new node containing particle
+  newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
     
-    if (!GetMagneticField(xTmp, BTmp)) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    AbsBTmp = Vector3D::Length(BTmp);
-    if (AbsBTmp < 1E-20) {
-      return AdvanceLocation_WeakField(dt);
-    }
-    
+  // Check if particle left domain
+  if (newNode == NULL) {
+    // Position is outside the domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  if (newNode->IsUsedInCalculationFlag == false) {
+    // Position is in an inactive region
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  // Check if particle is inside the Sun
+  if (x[0]*x[0] + x[1]*x[1] + x[2]*x[2] < _RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  // Apply adiabatic cooling using the reusable lambda
+  if (SEP::AccountAdiabaticCoolingFlag == true) {
+    ApplyAdiabaticCooling(xMid, midNode, dt);
+  }
+
+  return true;
+};
+
+ // 4th order Runge-Kutta method with adiabatic cooling
+auto AdvanceLocation_RK4 = [&](double dt) -> bool {
+  double k1[3], k2[3], k3[3], k4[3];
+  double xTmp[3], BTmp[3], bTmp[3], AbsBTmp;
+  
+  // Store initial position to calculate final midpoint later
+  double xInitial[3];
+  for (int idim = 0; idim < 3; idim++) {
+    xInitial[idim] = x[idim];
+  }
+  
+  // k1 = f(x)
+  for (int idim = 0; idim < 3; idim++) {
+    k1[idim] = bUnit[idim] * vParallel;
+  }
+  
+  // Calculate k2 = f(x + dt/2 * k1)
+  for (int idim = 0; idim < 3; idim++) {
+    xTmp[idim] = x[idim] + 0.5 * dt * k1[idim];
+  }
+  
+  if (!GetMagneticField(xTmp, BTmp)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  AbsBTmp = Vector3D::Length(BTmp);
+  if (AbsBTmp < 1E-20) {
+    return AdvanceLocation_WeakField(dt);
+  }
+  
+  for (int idim = 0; idim < 3; idim++) {
+    bTmp[idim] = BTmp[idim] / AbsBTmp;
+    k2[idim] = bTmp[idim] * vParallel;
+  }
+  
+  // Calculate k3 = f(x + dt/2 * k2)
+  for (int idim = 0; idim < 3; idim++) {
+    xTmp[idim] = x[idim] + 0.5 * dt * k2[idim];
+  }
+  
+  if (!GetMagneticField(xTmp, BTmp)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  AbsBTmp = Vector3D::Length(BTmp);
+  if (AbsBTmp < 1E-20) {
+    return AdvanceLocation_WeakField(dt);
+  }
+  
+  for (int idim = 0; idim < 3; idim++) {
+    bTmp[idim] = BTmp[idim] / AbsBTmp;
+    k3[idim] = bTmp[idim] * vParallel;
+  }
+  
+  // Calculate k4 = f(x + dt * k3)
+  for (int idim = 0; idim < 3; idim++) {
+    xTmp[idim] = x[idim] + dt * k3[idim];
+  }
+  
+  if (!GetMagneticField(xTmp, BTmp)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  AbsBTmp = Vector3D::Length(BTmp);
+  if (AbsBTmp < 1E-20) {
+    return AdvanceLocation_Euler(dt);
+  }
+  
+  for (int idim = 0; idim < 3; idim++) {
+    bTmp[idim] = BTmp[idim] / AbsBTmp;
+    k4[idim] = bTmp[idim] * vParallel;
+  }
+  
+  // Final update using weighted sum
+  for (int idim = 0; idim < 3; idim++) {
+    x[idim] += dt * (k1[idim] + 2.0 * k2[idim] + 2.0 * k3[idim] + k4[idim]) / 6.0;
+  }
+  
+  // Calculate the midpoint between initial and final positions
+  double xMid[3];
+  for (int idim = 0; idim < 3; idim++) {
+    xMid[idim] = 0.5 * (xInitial[idim] + x[idim]);
+  }
+  
+  // Find node containing the midpoint
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* midNode = PIC::Mesh::mesh->findTreeNode(xMid, newNode);
+  // Handle null node or node not used in calculation
+  if (midNode == NULL) {
+    midNode = newNode;
     for (int idim = 0; idim < 3; idim++) {
-      bTmp[idim] = BTmp[idim] / AbsBTmp;
-      k2[idim] = bTmp[idim] * vParallel;
+      xMid[idim] = xInitial[idim];
     }
-    
-    // Calculate k3 = f(x + dt/2 * k2)
+  } else if (midNode->IsUsedInCalculationFlag == false) {
+    midNode = newNode;
     for (int idim = 0; idim < 3; idim++) {
-      xTmp[idim] = x[idim] + 0.5 * dt * k2[idim];
+      xMid[idim] = xInitial[idim];
     }
+  }
     
-    if (!GetMagneticField(xTmp, BTmp)) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    AbsBTmp = Vector3D::Length(BTmp);
-    if (AbsBTmp < 1E-20) {
-      return AdvanceLocation_WeakField(dt);
-    }
-    
-    for (int idim = 0; idim < 3; idim++) {
-      bTmp[idim] = BTmp[idim] / AbsBTmp;
-      k3[idim] = bTmp[idim] * vParallel;
-    }
-    
-    // Calculate k4 = f(x + dt * k3)
-    for (int idim = 0; idim < 3; idim++) {
-      xTmp[idim] = x[idim] + dt * k3[idim];
-    }
-    
-    if (!GetMagneticField(xTmp, BTmp)) {
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    AbsBTmp = Vector3D::Length(BTmp);
-    if (AbsBTmp < 1E-20) {
-      return AdvanceLocation_Euler(dt);
-    }
-    
-    for (int idim = 0; idim < 3; idim++) {
-      bTmp[idim] = BTmp[idim] / AbsBTmp;
-      k4[idim] = bTmp[idim] * vParallel;
-    }
-    
-    // Final update using weighted sum
-    for (int idim = 0; idim < 3; idim++) {
-      x[idim] += dt * (k1[idim] + 2.0 * k2[idim] + 2.0 * k3[idim] + k4[idim]) / 6.0;
-    }
-    
-    // Find new node containing particle
-    newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
-      
-    // Check if particle left domain
-    if (newNode == NULL) {
-      // Position is outside the domain
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    if (newNode->IsUsedInCalculationFlag == false) {
-      // Position is in an inactive region
-      PIC::ParticleBuffer::DeleteParticle(ptr);
-      return false;
-    }
-    
-    return true;
-  };
+  // Find new node containing particle
+  newNode = PIC::Mesh::mesh->findTreeNode(x, newNode);
+  
+  // Check if particle left domain
+  if (newNode == NULL) {
+    // Position is outside the domain
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  if (newNode->IsUsedInCalculationFlag == false) {
+    // Position is in an inactive region
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+  
+  // Check if particle is inside the Sun
+  if (x[0]*x[0] + x[1]*x[1] + x[2]*x[2] < _RADIUS_(_SUN_)*_RADIUS_(_SUN_)) {
+    PIC::ParticleBuffer::DeleteParticle(ptr);
+    return false;
+  }
+ 
+  // Apply adiabatic cooling using the reusable lambda
+  if (SEP::AccountAdiabaticCoolingFlag == true) {
+    ApplyAdiabaticCooling(xMid, midNode, dt);
+  }
+
+  return true;
+};
 
   // Method selector function
   auto AdvanceLocation = [&](double dt) -> bool {

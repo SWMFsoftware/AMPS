@@ -76,6 +76,7 @@
 
 #include "sep.dfn"
 #include "sample3d.h"
+#include "solar_wind.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -1908,6 +1909,9 @@ end:
   const int _MeanFreePathScattering_=5;
   const int _Tenishev_2005_FL_=6;
   const int _ParkerMeanFreePath_FL_=7;
+
+  // Apply adiabatic cooling only if the flag is set
+  extern bool AccountAdiabaticCoolingFlag;
 
   int ParticleMover_HE_2019_AJL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
   int ParticleMover_BOROVIKOV_2019_ARXIV(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode);
