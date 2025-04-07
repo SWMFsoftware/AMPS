@@ -605,33 +605,6 @@ Check=
 
 
 #>
-Name=SEP--3D-ParkerIMF--cut-domain--RelativisticBoris 
-Time=4
-
-Ref=2{icc}@@(0+valeriy)
-Ref=1{gcc}@@(0+valeriy)
-
-Compile=
->>>@echo "test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_compile..." > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
->>>./Config.pl -application=test/sep_3d_cut-domain_parkerimf_relativisticboris -spice-path=nospice   -amps-test=on
->>>rm -rf srcTemp
->>>@($(MAKE) -j8 amps)
->>>@echo "test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_compile... done" >> test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
-
-Check=
->>>@echo "SEP--3D-ParkerIMF--cut-domain--RelativisticBoris_check..." >> test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
->>>@${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/../utility/ReduceFile.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat 500
-
->>>@gunzip -fk output/test_SEP3D/3D-ParkerIMF--cut-domain--RelativisticBoris.ref_np8.gz
-
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.ref_np`ls $(TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBorisDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
-
-
->>>@ls -l test_SEP--3D-ParkerIMF--cut-domain--RelativisticBoris${TESTSEP--3D-ParkerIMF--cut-domain--RelativisticBoris-REF}.diff
->>>@echo Test SEP--3D-ParkerIMF--cut-domain--RelativisticBoris has finished: `date`
-<#
-
-#>
 Name=SEP--Parker3D--ParkerIMF 
 Time=4
 
@@ -661,7 +634,7 @@ Check=
 -------------------------------------------------------------------------------
 
 #>
-Name=SEP--focused_transport-IH-borovikov
+Name=SEP--Parker3D--SWMF_IMF
 Time=4
 Type=swmf
 
@@ -669,7 +642,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--focused_transport-IH-borovikov_compile..." > test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_compile..." > test_SEP--Parker3D--SWMF_IMF{TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
@@ -698,34 +671,37 @@ Compile=
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SC:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=IH:u=AwsomR,e=Awsom,ng=2,g=4,4,4
 >>>-cd SWMF-IH/SWMF;./Config.pl -o=SP:g=2000
->>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_focused_transport-ih-borovikov,amps-test=on
+>>>-cd SWMF-IH/SWMF;./Config.pl -o=PT:spice-path=nospice,spice-kernels=nospice,application=test/sep_3d_cut-domain_swmfimf_parker3d,amps-test=on
 >>>-cd SWMF-IH/SWMF;${MAKE} SWMF
 >>>-cd SWMF-IH/SWMF;make PIDL
 
->>>@echo "test_SEP--focused_transport-IH-borovikov_compile... done" >> test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_compile... done" >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 Rundir=
->>>@echo "test_SEP--focused_transport-IH-borovikov_rundir..." >> test_SEP--focused_transport-IH-borovikov.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir..." >> test_SEP--Parker3D--SWMF_IMF.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
->>>@echo "test_SEP--focused_transport-IH-borovikov_rundir... done" >> test_SEP--focused_transport-IH-borovikov.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir... done" >> test_SEP--Parker3D--SWMF_IMF.diff
 
 Run=
->>>@echo "test_SEP--focused_transport-IH-borovikov_run..." >> test_SEP--focused_transport-IH-borovikov.diff
->>>@echo Test test_SEP--focused_transport-IH-borovikov has started: `date`
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_run..." >> test_SEP--Parker3D--SWMF_IMF.diff
+>>>@echo Test test_SEP--Parker3D--SWMF_IMF has started: `date`
 >>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog 
->>>@echo "test_SEP--focused_transport-IH-borovikov_run... done" >> test_SEP--focused_transport-IH-borovikov.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_run... done" >> test_SEP--Parker3D--SWMF_IMF.diff
 
 
 
 Check=
->>>@echo "SEP--focused_transport-IH-borovikov_check..." >> test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
+>>>@echo "SEP--Parker3D--SWMF_IMF_check..." >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat 500
->>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat.Reduced.Step=500 output/test_SEP3D/PT-SC-IH.Step=500${TESTSEP--focused_transport-IH-borovikov-REF}.ref > test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
+>>>@gunzip -kf output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls $(TESTSEP--Parker3D--SWMF_IMFDIR)/PT/thread* |wc -l |tr -d ' '`.gz 
 
->>>@ls -l test_SEP--focused_transport-IH-borovikov${TESTSEP--focused_transport-IH-borovikov-REF}.diff
->>>@echo Test SEP--focused_transport-IH-borovikov has finished: `date`
+>>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker3D--SWMF_IMFDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls $(TESTSEP--Parker3D--SWMF_IMFDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
+
+
+>>>@ls -l test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
+>>>@echo Test SEP--Parker3D--SWMF_IMF has finished: `date`
 <#
 
 
