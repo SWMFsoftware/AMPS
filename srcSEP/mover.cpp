@@ -1368,12 +1368,12 @@ int SEP::ParticleMover_FTE(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::c
 int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) { 
   // Access particle data as in Boris
   PIC::ParticleBuffer::byte *ParticleData;
-  double *x, *v, AbsB, B[3], vParallel, vNormal, bUnit[3], Speed, dt;
+  double x[3], v[3], AbsB, B[3], vParallel, vNormal, bUnit[3], Speed, dt;
   int spec;
 
   ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
-  v = PIC::ParticleBuffer::GetV(ParticleData);
-  x = PIC::ParticleBuffer::GetX(ParticleData);
+  PIC::ParticleBuffer::GetV(v,ParticleData);
+  PIC::ParticleBuffer::GetX(x,ParticleData);
   spec = PIC::ParticleBuffer::GetI(ParticleData);
   Speed = Vector3D::Length(v);
 
@@ -2025,6 +2025,11 @@ auto AdvanceLocation_RK4 = [&](double dt) -> bool {
       v[idim] = vParallel * bUnit[idim] + vNormal * ePerp[idim];
     }
   }
+
+  //update particle location and velocity 
+  PIC::ParticleBuffer::SetV(v,ParticleData);
+  PIC::ParticleBuffer::SetX(x,ParticleData);
+ 
 
   // Update particle lists
   int i, j, k;
