@@ -515,6 +515,9 @@ int SEP::ParticleMover_default(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mes
   double xInit[3];
   int res;
 
+  static long int ncalls=0;
+  ncalls++;
+
   PIC::ParticleBuffer::GetX(xInit,ptr);
 
   switch (SEP::ParticleTrajectoryCalculation) {
@@ -1378,6 +1381,14 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   if (Speed > 3.0E8) exit(__LINE__,__FILE__);
   #endif 
 
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+  for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+  #endif
+  #endif
+
+
+
   // Get initial magnetic field
   PIC::CPLR::InitInterpolationStencil(x, startNode);
   PIC::CPLR::GetBackgroundMagneticField(B);
@@ -1392,7 +1403,9 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
       
     // Calculate parallel and perpendicular components
     vParallel = Vector3D::DotProduct(v, bUnit);
-    vNormal = sqrt(Speed * Speed - vParallel * vParallel);
+
+    double misc=Speed * Speed - vParallel * vParallel;
+    vNormal=(misc>0) ? sqrt(misc) : 0.0;
   }
   else {
     // If magnetic field is too weak, use velocity direction
@@ -1913,6 +1926,13 @@ auto AdvanceLocation_RK4 = [&](double dt) -> bool {
       }
     }
 
+    #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+    #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+    for (int idim=0;idim<3;idim++) if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+    #endif
+    #endif
+
+
     return res;
   };
 
@@ -1955,7 +1975,9 @@ auto AdvanceLocation_RK4 = [&](double dt) -> bool {
         
         // Calculate parallel and perpendicular components after scattering
         vParallel = Vector3D::DotProduct(v, bUnit);
-        vNormal = sqrt(Speed * Speed - vParallel * vParallel);
+
+        double misc=Speed * Speed - vParallel * vParallel;
+        vNormal=(misc>0.0) ? sqrt(misc) : 0.0;
       }
       else {
         // If magnetic field is too weak, use velocity direction
