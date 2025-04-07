@@ -208,6 +208,13 @@ namespace SEP {
                 div += weight * div_cell;
             }
             
+
+            #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+            #if _PIC_DEBUGGER_MODE__CHECK_FINITE_NUMBER_ == _PIC_DEBUGGER_MODE_ON_
+            if (isfinite(div)==false) exit(__LINE__,__FILE__,"Error: Floating Point Exeption");
+            #endif
+            #endif
+
             return div;
         }
 
