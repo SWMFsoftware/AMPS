@@ -755,7 +755,8 @@ void amps_time_step(){
           SEP::SolarWind::SetDivSolarWindVelocity();
        }
       else {
-         exit(__LINE__,__FILE__,"Error: not implemented");
+          PIC::DomainBlockDecomposition::UpdateBlockTable();
+          SEP::SolarWind::SetDivSolarWindVelocity();
       }
     }
 
