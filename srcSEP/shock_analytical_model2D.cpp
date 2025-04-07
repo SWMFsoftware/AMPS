@@ -70,11 +70,13 @@ double SEP::ParticleSource::ShockWaveSphere::GetTotalSourceRate() {
 
     //limit the fraction of the sphere where the particle injection can occur
     if ((x[0]-ShockSurface.OriginPosition[0])/sqrt(pow(x[0]-ShockSurface.OriginPosition[0],2)+x[1]*x[1]+x[2]*x[2])<cosThetaLimit) {
+      CompressionRatioTable[i]=0.0;
       SourceRateTable[i]=0.0;
       continue;
     }
 
     if (Vector3D::DotProduct(x,x)<_SUN__RADIUS_*_SUN__RADIUS_) {
+      CompressionRatioTable[i]=0.0;
       SourceRateTable[i]=0.0;
     }
     else {
@@ -82,6 +84,7 @@ double SEP::ParticleSource::ShockWaveSphere::GetTotalSourceRate() {
       s=SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio();
       efficientcy=(s-1.0)/s; 
      
+      CompressionRatioTable[i]=s;
       SourceRateTable[i]=n*efficientcy*SEP::ParticleSource::ShockWave::Tenishev2005::GetShockSpeed()*ShockSurface.GetSurfaceElementArea(i); 
       res+=SourceRateTable[i];
     }
@@ -107,6 +110,7 @@ int SEP::ParticleSource::ShockWaveSphere::GetInjectionSurfaceElement(double *x) 
   return el;
 }
 
+//__attribute__((optimize("O0")))
 long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
   int res=0;
   double TotalInjectionRate,CompressionRatio;
@@ -189,6 +193,8 @@ long int SEP::ParticleSource::ShockWaveSphere::InjectionModel() {
 
     pAbs=pmin*exp(rnd()*(log_pmax-log_pmin));
     WeightCorrection=pow(pAbs,1.0-q)/WeightNorm;
+
+    if (isfinite(WeightCorrection)==false) exit(__LINE__,__FILE__,"Error: nan is found");
   };
 
 
