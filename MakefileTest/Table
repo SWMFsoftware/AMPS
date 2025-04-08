@@ -678,16 +678,16 @@ Compile=
 >>>@echo "test_SEP--Parker3D--SWMF_IMF_compile... done" >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 Rundir=
->>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir..." >> test_SEP--Parker3D--SWMF_IMF.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir..." >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 >>>-cd SWMF-IH/SWMF;${MAKE} test15_rundir
 >>>cp data/input/SEP/IH/PARAM.in SWMF-IH/SWMF/run_test
->>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir... done" >> test_SEP--Parker3D--SWMF_IMF.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_rundir... done" >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 Run=
->>>@echo "test_SEP--Parker3D--SWMF_IMF_run..." >> test_SEP--Parker3D--SWMF_IMF.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_run..." >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 >>>@echo Test test_SEP--Parker3D--SWMF_IMF has started: `date`
 >>>-cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe > runlog 
->>>@echo "test_SEP--Parker3D--SWMF_IMF_run... done" >> test_SEP--Parker3D--SWMF_IMF.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_run... done" >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 
 
@@ -695,9 +695,9 @@ Check=
 >>>@echo "SEP--Parker3D--SWMF_IMF_check..." >> test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 >>>@utility/ReduceFile.pl SWMF-IH/SWMF/run_test/pic.H_PLUS.s=0.out=2.dat 500
->>>@gunzip -kf output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls $(TESTSEP--Parker3D--SWMF_IMFDIR)/PT/thread* |wc -l |tr -d ' '`.gz 
+>>>@gunzip -kf output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls SWMF-IH/SWMF/run_test/PT/thread* |wc -l |tr -d ' '`.gz 
 
->>>-@${SCRIPTDIR}/DiffNum.pl ${TESTSEP--Parker3D--SWMF_IMFDIR}/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls $(TESTSEP--Parker3D--SWMF_IMFDIR)/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
+>>>-@${SCRIPTDIR}/DiffNum.pl SWMF-IH/SWMF/rund_test/PT/plots/pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500 output/test_SEP3D/Parker3D--SWMF_IMF-pic.H_PLUS.s=0.out=0.dat.Reduced.Step=500${TESTSEP--Parker3D--SWMF_IMF-REF}.ref_np`ls SWMF-IH/SWMF/run_test/PT/thread* |wc -l |tr -d ' '` > test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 
 
 >>>@ls -l test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
