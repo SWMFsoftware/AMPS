@@ -6764,10 +6764,12 @@ void DeleteAttachedParticles();
       extern int _TARGET_DEVICE_ _CUDA_MANAGED_ MagneticFieldOffset,TotalDataLength,BulkVelocityOffset,PlasmaPressureOffset;
       extern int PlasmaNumberDensityOffset,PlasmaTemperatureOffset;
       extern int AlfvenWaveI01Offset,PlasmaDivUOffset,PlasmaDivUdXOffset;
+      extern int PlasmaDivUOffset_derived;
 
       extern int MagneticFieldOffset_last,BulkVelocityOffset_last,PlasmaPressureOffset_last;
       extern int PlasmaNumberDensityOffset_last,PlasmaTemperatureOffset_last;
       extern int AlfvenWaveI01Offset_last,PlasmaDivUOffset_last,PlasmaDivUdXOffset_last;
+      extern int PlasmaDivUOffset_derived_last;
 
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
@@ -6782,6 +6784,10 @@ void DeleteAttachedParticles();
       //init the coupler
       void init();
       void ConvertMpiCommunicatorFortran2C(signed int* iComm,signed int* iProc,signed int* nProc);
+
+
+      // Calculates the divergence of plasma velocity for each cell
+      void CalculatePlasmaDivU();
 
       //output the interpolated data into a file
       int RequestDataBuffer(int offset);

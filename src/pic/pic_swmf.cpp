@@ -39,6 +39,7 @@ int PIC::CPLR::SWMF::PlasmaTemperatureOffset=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset=-1;
 int PIC::CPLR::SWMF::PlasmaDivUOffset=-1;
 int PIC::CPLR::SWMF::PlasmaDivUdXOffset=-1;
+int PIC::CPLR::SWMF::PlasmaDivUOffset_derived=-1;
 
 int PIC::CPLR::SWMF::MagneticFieldOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaNumberDensityOffset_last=-1;
@@ -48,6 +49,7 @@ int PIC::CPLR::SWMF::PlasmaTemperatureOffset_last=-1;
 int PIC::CPLR::SWMF::AlfvenWaveI01Offset_last=-1;
 int PIC::CPLR::SWMF::PlasmaDivUOffset_last=-1;
 int PIC::CPLR::SWMF::PlasmaDivUdXOffset_last=-1;
+int PIC::CPLR::SWMF::PlasmaDivUOffset_derived_last=-1;
 
 
 bool PIC::CPLR::SWMF::OhCouplingFlag=false;
@@ -109,6 +111,9 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
   if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) {
     PlasmaDivUOffset=offset+TotalDataLength*sizeof(double);
     TotalDataLength+=1;
+
+    PlasmaDivUOffset_derived=offset+TotalDataLength*sizeof(double);
+    TotalDataLength+=1;
   }
 
   if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
@@ -146,6 +151,11 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
       TotalDataLength+=1;
     }
 
+    if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) {
+      PlasmaDivUOffset_derived_last=offset+TotalDataLength*sizeof(double);
+      TotalDataLength+=1;
+    }
+
     if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
       PlasmaDivUdXOffset_last=offset+TotalDataLength*sizeof(double);
       TotalDataLength+=1;
@@ -167,6 +177,7 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     }
 
     PlasmaDivUOffset_last=PlasmaDivUOffset;
+    PlasmaDivUOffset_derived_last=PlasmaDivUOffset_derived;
     PlasmaDivUdXOffset_last=PlasmaDivUdXOffset;
   } 
      
@@ -186,6 +197,10 @@ void PIC::CPLR::SWMF::PrintVariableList(FILE* fout,int DataSetNumber) {
     fprintf(fout,",\"Plasma Div U\"");
   }
 
+  if (PIC::CPLR::SWMF::PlasmaDivUOffset_derived>0) {
+    fprintf(fout,",\"Plasma Div U [derived]\"");
+  }
+
   if (PIC::CPLR::SWMF::PlasmaDivUdXOffset>0) {
     fprintf(fout,",\"Plasma Div U dX\"");
   }
@@ -193,7 +208,7 @@ void PIC::CPLR::SWMF::PrintVariableList(FILE* fout,int DataSetNumber) {
 }
 
 void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList,double *InterpolationCoeficients,int nInterpolationCoeficients,PIC::Mesh::cDataCenterNode *CenterNode) {
-  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0,DivU=0.0,DivUdX=0.0;
+  double B[3]={0.0,0.0,0.0},V[3]={0.0,0.0,0.0},P=0.0,Rho=0.0,i01=0.0,i02=0.0,DivU=0.0,DivUdX=0.0,DivU_derived=0.0;
   int i,idim;
   char *SamplingBuffer;
 
@@ -214,6 +229,10 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
       DivU+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUOffset)))*InterpolationCoeficients[i];
     }
 
+    if (PlasmaDivUOffset_derived>=0) {
+      DivU_derived+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUOffset_derived)))*InterpolationCoeficients[i];
+    }
+
     if (PlasmaDivUdXOffset>=0) {
       DivUdX+=(*((double*)(InterpolationList[i]->GetAssociatedDataBufferPointer()+PlasmaDivUdXOffset)))*InterpolationCoeficients[i];
     }
@@ -232,6 +251,10 @@ void PIC::CPLR::SWMF::Interpolate(PIC::Mesh::cDataCenterNode** InterpolationList
 
   if (PlasmaDivUOffset>=0) {
     memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset,&DivU,sizeof(double));
+  }
+
+  if (PlasmaDivUOffset_derived>=0) {
+    memcpy(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset_derived,&DivU_derived,sizeof(double));
   }
 
   if (PlasmaDivUdXOffset>=0) {
@@ -322,6 +345,20 @@ void PIC::CPLR::SWMF::PrintData(FILE* fout,int DataSetNumber,CMPI_channel *pipe,
   if (PlasmaDivUOffset>=0) {
     if (gather_print_data==true) { 
       t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset));
+    }
+
+    if ((PIC::ThisThread==0)||(pipe==NULL)) {
+      if ((CenterNodeThread!=0)&&(pipe!=NULL)) pipe->recv(t,CenterNodeThread);
+
+      fprintf(fout,"%e ",t);
+    }
+    else pipe->send(t);
+  }
+
+  //DivU_derived 
+  if (PlasmaDivUOffset_derived>=0) {
+    if (gather_print_data==true) {
+      t= *((double*)(CenterNode->GetAssociatedDataBufferPointer()+PlasmaDivUOffset_derived));
     }
 
     if ((PIC::ThisThread==0)||(pipe==NULL)) {
@@ -586,6 +623,10 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
     PlasmaDivUOffset_last=PlasmaDivUOffset;
     PlasmaDivUOffset=t; 
 
+    t=PlasmaDivUOffset_derived_last;
+    PlasmaDivUOffset_derived_last=PlasmaDivUOffset_derived;
+    PlasmaDivUOffset_derived=t;
+
     t=PlasmaDivUdXOffset_last;
     PlasmaDivUdXOffset_last=PlasmaDivUdXOffset;
     PlasmaDivUdXOffset=t;
@@ -760,6 +801,223 @@ void PIC::CPLR::SWMF::RecieveCenterPointData(char* ValiableList, int nVarialbes,
           }
         }
     }
+  }
+}
+
+//================================================================================================================================================
+// PIC::CPLR::SWMF::CalculatePlasmaDivU()
+//
+// Calculates the divergence of plasma velocity for each cell
+// in the current subdomain using a central difference method.
+// Uses a spatial step of 2*cell size for each direction.
+// Falls back to one-sided derivatives near boundaries when needed.
+// The divergence is stored in each cell's data buffer at
+// PIC::CPLR::DATAFILE::Offset::PlasmaDivU_derived.RelativeOffset.
+//==========================================================
+void PIC::CPLR::SWMF::CalculatePlasmaDivU() {
+  PIC::Mesh::cDataCenterNode *cell;
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node=PIC::Mesh::mesh->ParallelNodesDistributionList[PIC::Mesh::mesh->ThisThread];
+  PIC::Mesh::cDataBlockAMR *block;
+  double x[3], v_plus[3], v_minus[3];
+  double dx[3], div;
+  int i, j, k, thread;
+  
+  for (int CellCounter=0; CellCounter<DomainBlockDecomposition::nLocalBlocks*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_; CellCounter++) {
+    int nLocalNode, ii=CellCounter;
+    
+    nLocalNode=ii/(_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=nLocalNode*_BLOCK_CELLS_Z_*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    
+    k=ii/(_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_);
+    ii-=k*_BLOCK_CELLS_Y_*_BLOCK_CELLS_X_;
+    
+    j=ii/_BLOCK_CELLS_X_;
+    ii-=j*_BLOCK_CELLS_X_;
+    
+    i=ii;
+    
+    node=DomainBlockDecomposition::BlockTable[nLocalNode];
+    block=node->block;
+    
+    if (block==NULL) continue;
+    
+    cell=block->GetCenterNode(_getCenterNodeLocalNumber(i,j,k));
+    if (cell==NULL) continue;
+    
+    // Get cell center coordinates
+    cell->GetX(x);
+    
+    // Initialize node_stencil variable for finding the correct tree node
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node_stencil;
+    
+    // Calculate cell size in each dimension
+    dx[0] = (node->xmax[0] - node->xmin[0])/_BLOCK_CELLS_X_;
+    dx[1] = (node->xmax[1] - node->xmin[1])/_BLOCK_CELLS_Y_;
+    dx[2] = (node->xmax[2] - node->xmin[2])/_BLOCK_CELLS_Z_;
+    
+    // Initialize divergence
+    div = 0.0;
+    
+    // Lambda to calculate center velocity - will be called only if needed, and at most once
+    bool center_calculated = false;
+    double v_center[3] = {0.0, 0.0, 0.0};
+    
+    auto getCenterVelocity = [&]() -> bool {
+        if (center_calculated) return true; // Already calculated
+        
+        double x_center[3] = {x[0], x[1], x[2]}; // Save original center coordinates
+        cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *center_node = PIC::Mesh::mesh->findTreeNode(x_center, node);
+        
+        if (center_node != NULL) {
+            if (center_node->block != NULL) {
+                PIC::CPLR::InitInterpolationStencil(x_center, center_node);
+                CPLR::GetBackgroundPlasmaVelocity(v_center);
+                center_calculated = true;
+                return true;
+            }
+        }
+        
+        return false; // Center velocity couldn't be calculated
+    };
+    
+    // Calculate dVx/dx with proper error checking
+    bool plus_valid = false, minus_valid = false;
+    
+    // Try positive direction
+    x[0] += dx[0];  // x+dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_plus);
+            plus_valid = true;
+        }
+    }
+    
+    // Try negative direction
+    x[0] -= 2.0*dx[0];  // x-dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_minus);
+            minus_valid = true;
+        }
+    }
+    
+    // Calculate derivative based on available data
+    if (plus_valid && minus_valid) {
+        // Central difference
+        div += (v_plus[0] - v_minus[0]) / (2.0*dx[0]);
+    } else if (plus_valid) {
+        // Forward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_plus[0] - v_center[0]) / dx[0];
+        }
+    } else if (minus_valid) {
+        // Backward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_center[0] - v_minus[0]) / dx[0];
+        }
+    }
+    // If neither is valid, contribution to divergence is 0 (implicitly handled)
+    
+    // Reset x to cell center
+    x[0] += dx[0];
+    
+    // Calculate dVy/dy with proper error checking
+    plus_valid = false;
+    minus_valid = false;
+    
+    // Try positive direction
+    x[1] += dx[1];  // y+dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_plus);
+            plus_valid = true;
+        }
+    }
+    
+    // Try negative direction
+    x[1] -= 2.0*dx[1];  // y-dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_minus);
+            minus_valid = true;
+        }
+    }
+    
+    // Calculate derivative based on available data
+    if (plus_valid && minus_valid) {
+        // Central difference
+        div += (v_plus[1] - v_minus[1]) / (2.0*dx[1]);
+    } else if (plus_valid) {
+        // Forward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_plus[1] - v_center[1]) / dx[1];
+        }
+    } else if (minus_valid) {
+        // Backward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_center[1] - v_minus[1]) / dx[1];
+        }
+    }
+    // If neither is valid, contribution to divergence is 0 (implicitly handled)
+    
+    // Reset y to cell center
+    x[1] += dx[1];
+    
+    // Calculate dVz/dz with proper error checking
+    plus_valid = false;
+    minus_valid = false;
+    
+    // Try positive direction
+    x[2] += dx[2];  // z+dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_plus);
+            plus_valid = true;
+        }
+    }
+    
+    // Try negative direction
+    x[2] -= 2.0*dx[2];  // z-dx position
+    node_stencil = PIC::Mesh::mesh->findTreeNode(x, node);
+    if (node_stencil != NULL) {
+        if (node_stencil->block != NULL) {
+            PIC::CPLR::InitInterpolationStencil(x, node_stencil);
+            CPLR::GetBackgroundPlasmaVelocity(v_minus);
+            minus_valid = true;
+        }
+    }
+    
+    // Calculate derivative based on available data
+    if (plus_valid && minus_valid) {
+        // Central difference
+        div += (v_plus[2] - v_minus[2]) / (2.0*dx[2]);
+    } else if (plus_valid) {
+        // Forward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_plus[2] - v_center[2]) / dx[2];
+        }
+    } else if (minus_valid) {
+        // Backward difference (one-sided) - need center velocity
+        if (getCenterVelocity()) {
+            div += (v_center[2] - v_minus[2]) / dx[2];
+        }
+    }
+    // If neither is valid, contribution to divergence is 0 (implicitly handled)
+    
+    div += (v_plus[2] - v_minus[2]) / (2.0*dx[2]);
+    
+    // Save the calculated divergence in the cell data buffer
+    *((double*)(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::PlasmaDivUOffset_derived)) = div;
   }
 }
 
