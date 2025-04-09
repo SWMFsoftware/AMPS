@@ -276,6 +276,8 @@ void amps_init_mesh() {
     //correct radiust of the  sphere to be consistent with the location of the inner boundary of the SWMF/SC
     //use taht in case of coupling to the SWMF
     #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+    if (AMPS2SWMF::Heliosphere::rMin<0.0) AMPS2SWMF::Heliosphere::rMin=1.05*_RADIUS_(_SUN_);
+
     if (AMPS2SWMF::Heliosphere::rMin>0.0) rSphere=AMPS2SWMF::Heliosphere::rMin;
     #endif
 

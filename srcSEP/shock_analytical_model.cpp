@@ -1,6 +1,10 @@
 #include "sep.h"
 //analytic model of a shock wave (Tenishev-2005-AIAA-4928
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "../srcInterface/amps2swmf.h"
+#endif
+
 double SEP::ParticleSource::ShockWave::Tenishev2005::rShock =1.0E-5*_SUN__RADIUS_;
 bool SEP::ParticleSource::ShockWave::Tenishev2005::InitFlag=false;
 double SEP::ParticleSource::ShockWave::Tenishev2005::MinFieldLineHeliocentricDistance=-1.0;  
@@ -22,6 +26,12 @@ void SEP::ParticleSource::ShockWave::Tenishev2005::Init() {
   }
 
   rShock=MinFieldLineHeliocentricDistance;
+
+  #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+  if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_OFF_) { 
+    rShock=AMPS2SWMF::Heliosphere::rMin;
+  }
+  #endif 
 }
   
 double SEP::ParticleSource::ShockWave::Tenishev2005::GetCompressionRatio() {
