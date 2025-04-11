@@ -642,7 +642,7 @@ Ref=2{icc}@@(0+valeriy)
 Ref=1{gcc}@@(0+valeriy)
 
 Compile=
->>>@echo "test_SEP--Parker3D--SWMF_IMF_compile..." > test_SEP--Parker3D--SWMF_IMF{TESTSEP--Parker3D--SWMF_IMF-REF}.diff
+>>>@echo "test_SEP--Parker3D--SWMF_IMF_compile..." > test_SEP--Parker3D--SWMF_IMF${TESTSEP--Parker3D--SWMF_IMF-REF}.diff
 >>>echo "Installing SWMF....."
 
 <<<ifeq ($(wildcard SWMF-IH/*),)
