@@ -12,6 +12,9 @@
 #include "global.h"
 #include "PhotolyticReactions.h"
 
+#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
+#include "../../srcInterface/amps2swmf.h"
+#endif
 
 //git test
 
@@ -1587,9 +1590,23 @@ void PIC::Sampling::Sampling() {
 #else
     exit(__LINE__,__FILE__,"Error: the option is not recognized");
 #endif
+   }
 
-
-  }
+   //Recalculate cakgrounmd plosma DivU_derived if needed 
+   #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
+   if (PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode==PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_OutputAMPS) {
+     if (PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateCounter!=DataOutputFileNumber) {
+        PIC::CPLR::SWMF::CalculatePlasmaDivU();  
+        PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateCounter=DataOutputFileNumber;
+     }
+   }
+   else if (PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode==PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_CouplingSWMF) {
+     if (PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateCounter!=AMPS2SWMF::RecvCouplingEventCounter) {
+        PIC::CPLR::SWMF::CalculatePlasmaDivU();
+        PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateCounter=AMPS2SWMF::RecvCouplingEventCounter;
+     }     
+   }
+   #endif
 }
 
 

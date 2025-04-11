@@ -6771,6 +6771,12 @@ void DeleteAttachedParticles();
       extern int AlfvenWaveI01Offset_last,PlasmaDivUOffset_last,PlasmaDivUdXOffset_last;
       extern int PlasmaDivUOffset_derived_last;
 
+      //the modes for updating the PlasmaDivU [derived]
+      const int PlasmaDivU_derived_UpdateMode_none=0;
+      const int PlasmaDivU_derived_UpdateMode_CouplingSWMF=1;
+      const int PlasmaDivU_derived_UpdateMode_OutputAMPS=2; 
+      extern int PlasmaDivU_derived_UpdateMode,PlasmaDivU_derived_UpdateCounter;
+
       //the mean mass of the plasma speies atoms/molecules (needed to conver mass density into number density)
       extern double MeanPlasmaAtomicMass;
       extern int nCommunicatedIonFluids;

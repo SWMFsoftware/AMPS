@@ -840,6 +840,38 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       }
     }
 
+    else if (Command == "#CALCULATE_DIVU") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      t=param_list.front().first;
+      param_list.pop_front();
+
+      if (t == "T") {
+        t=param_list.front().first;
+	cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+
+        if (t == "coupling") {
+           PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode=PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_CouplingSWMF;
+	}
+	else if (t == "output") {
+           PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode=PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_OutputAMPS;
+	}
+	else exit(__LINE__,__FILE__,"Error: the option is not found"); 
+      }
+      else if (t=="F") {
+        t=param_list.front().first;
+        cout << "PT: "  << param_list.front().second << endl;
+        param_list.pop_front();
+
+	PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode=PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_none;
+      }
+      else {
+        exit(__LINE__,__FILE__,"Error: the option is not decognized");
+      }
+    }
+
+
     else if (Command == "#COUPLE_DIVUDX") {
       cout << "PT: "  << param_list.front().second << endl;
 

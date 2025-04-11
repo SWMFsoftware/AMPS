@@ -52,6 +52,9 @@ bool AMPS2SWMF::ImportPlasmaDivUdXFlag=false;
 //shock DivUdX threhold
 double AMPS2SWMF::DivUdXShockLocationThrehold=-1.0;
 
+//couter of the coupling events
+int AMPS2SWMF::RecvCouplingEventCounter=0;
+
 //step in importing the magnetic field line point
 int AMPS2SWMF::bl_import_point_step=1;
 
@@ -313,6 +316,7 @@ extern "C" {
 
 
   void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    AMPS2SWMF::RecvCouplingEventCounter++;
     
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime);
@@ -322,14 +326,17 @@ extern "C" {
   }
 
   void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    AMPS2SWMF::RecvCouplingEventCounter++;
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainSC);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_oh_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    AMPS2SWMF::RecvCouplingEventCounter++;
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainOH);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
+    AMPS2SWMF::RecvCouplingEventCounter++;
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainIH);
   }
 
@@ -347,6 +354,7 @@ extern "C" {
   
   
   void amps_recieve_batsrus2amps_corner_point_data_(char *NameVar, int *nVar, double *data,int *index) {
+   AMPS2SWMF::RecvCouplingEventCounter++;
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_    
     PIC::CPLR::FLUID::ReceiveCornerPointData(NameVar,*nVar,data,index);
 #endif  

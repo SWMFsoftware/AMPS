@@ -23,6 +23,9 @@ namespace AMPS2SWMF {
   extern char ComponentName[10];
   extern int ComponentID;
 
+  //couter of the recieving coupling events
+  extern int RecvCouplingEventCounter;
+
   //import plasma DivU mode
   extern bool ImportPlasmaDivUFlag; 
   inline void SetImportPlasmaDivUFlag(bool flag) {ImportPlasmaDivUFlag=flag;}

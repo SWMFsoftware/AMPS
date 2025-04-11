@@ -62,6 +62,10 @@ bool PIC::CPLR::SWMF::FirstCouplingOccured=false;
 list<PIC::CPLR::SWMF::fSendCenterPointData> PIC::CPLR::SWMF::SendCenterPointData;
 int PIC::CPLR::SWMF::nCommunicatedIonFluids=1;
 
+//the modes for updating the PlasmaDivU [derived]
+int PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode=PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode_none;
+int PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateCounter=0; 
+
 
 //the SWMF simulation time when the last two couplings have occured
 double PIC::CPLR::SWMF::CouplingTime=-1.0; 
@@ -112,8 +116,10 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     PlasmaDivUOffset=offset+TotalDataLength*sizeof(double);
     TotalDataLength+=1;
 
-    PlasmaDivUOffset_derived=offset+TotalDataLength*sizeof(double);
-    TotalDataLength+=1;
+    if ( PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode!=PlasmaDivU_derived_UpdateMode_none) {
+      PlasmaDivUOffset_derived=offset+TotalDataLength*sizeof(double);
+      TotalDataLength+=1;
+    }
   }
 
   if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
@@ -152,8 +158,10 @@ int PIC::CPLR::SWMF::RequestDataBuffer(int offset) {
     }
 
     if (AMPS2SWMF::GetImportPlasmaDivUFlag()==true) {
-      PlasmaDivUOffset_derived_last=offset+TotalDataLength*sizeof(double);
-      TotalDataLength+=1;
+      if ( PIC::CPLR::SWMF::PlasmaDivU_derived_UpdateMode!=PlasmaDivU_derived_UpdateMode_none) {
+        PlasmaDivUOffset_derived_last=offset+TotalDataLength*sizeof(double);
+        TotalDataLength+=1;
+      }
     }
 
     if (AMPS2SWMF::GetImportPlasmaDivUdXFlag()==true) {
