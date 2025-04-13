@@ -64,6 +64,8 @@ CouplerMode=swmf !ices !!off, ices, swmf
 
   NastranSurfaceUserData=on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,of
+  
+  define _SEP_MODEL_ON_
 
   define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_TIME_STEP_(ptr,LocalTimeStep,node) ::SEP::ParticleMover(ptr,LocalTimeStep,node)
   define _SEP_MOVER_ _SEP_MOVER_BOROVIKOV_2019_ARXIV_ 
