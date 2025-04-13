@@ -1337,9 +1337,6 @@ namespace SEP {
     extern fGetPitchAngleDiffusionCoefficient GetPitchAngleDiffusionCoefficient;
 
     //calculate the parameters of the background IMF 
-    extern int ModeIMF;
-    const int ModeIMF_ParkerSpiral=0;
-    const int ModeIMF_SWMF=1;
     void GetIMF(double& absB,double &dB, double& SummW,double FieldLineCoord,PIC::FieldLine::cFieldLineSegment *Segment,double& r2); 
 
     //calculate Dxx
@@ -1861,6 +1858,11 @@ end:
   extern int DomainType;
   extern int Domain_nTotalParkerSpirals;
 
+  //IMF used in the calcualtions: either Parker spiral or background magnetif field
+  const int ModeIMF_background=0;
+  const int ModeIMF_ParkerSpiral=1;
+  extern int ModeIMF; 
+
   const int ParticleTrajectoryCalculation_GuidingCenter=0;
   const int ParticleTrajectoryCalculation_RelativisticBoris=1;
   const int ParticleTrajectoryCalculation_IgorFieldLine=2;
@@ -2088,6 +2090,11 @@ end:
       extern cSingleVariableDiscreteDistribution<int> ShockInjectionDistribution;
       extern bool InitGenerationSurfaceElement; 
       extern double SphericalShockOpeningAngleLimit;
+
+      //the model for solar wind density 
+      const int SolarWindDensityMode_analytic=0;
+      const int SolarWindDensityMode_swmf=1;
+      extern int SolarWindDensityMode;
 
       void Init();
       double GetTotalSourceRate();

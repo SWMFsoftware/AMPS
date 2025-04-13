@@ -1487,6 +1487,15 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
   // Get magnetic field vector at a position using CPLR interpolation
   auto GetMagneticField = [&](double *pos, double *field) {
+
+    //In case the Parker spiral IMF model is used:
+    if (SEP::ModeIMF==SEP::ModeIMF_ParkerSpiral) {
+      SEP::ParkerSpiral::GetB(B,x);
+      return true;
+    }
+
+
+
     // Find the node containing the position
     cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *node = PIC::Mesh::mesh->findTreeNode(pos, newNode);
     // Check if node is NULL first

@@ -17,8 +17,6 @@ int SEP::Diffusion::Jokopii1966AJ::Mode=SEP::Diffusion::Jokopii1966AJ::_fraction
 
 double SEP::Diffusion::muNumericalDifferentiationStep=0.01;
 
-int SEP::Diffusion::ModeIMF=SEP::Diffusion::ModeIMF_SWMF;
-
 //limit the calculation for rotation of a partilce during a time step
 double SEP::Diffusion::muTimeStepVariationLimit=2.0;
 bool SEP::Diffusion::muTimeStepVariationLimitFlag=true;
@@ -345,7 +343,7 @@ void SEP::Diffusion::GetIMF(double& absB,double &dB, double& SummW,double FieldL
   double r=sqrt(r2);
   double r2test=Vector3D::DotProduct(XTEST,XTEST);
 
-  if (ModeIMF==ModeIMF_ParkerSpiral) {
+  if (SEP::ModeIMF==SEP::ModeIMF_ParkerSpiral) {
     SEP::ParkerSpiral::GetB(BTEST,x0,400.0E3); 
     SEP::ParkerSpiral::GetB(BTEST,XTEST,400.0E3);
 

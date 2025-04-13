@@ -22,6 +22,10 @@ cInternalSphericalData* SEP::InnerBoundary=NULL;
 //the type of the equations that is soleved 
 int SEP::ModelEquation=SEP::ModelEquationFTE;
 
+//IMF used in the calcualtions: either Parker spiral or background magnetif field
+int SEP::ModeIMF=SEP::ModeIMF_background;
+
+
 //types of the differentiation of the pitch angle diffusion coeffcient
 int SEP::Diffusion::PitchAngleDifferentialMode=SEP::Diffusion::PitchAngleDifferentialModeAnalytical; 
 
@@ -36,6 +40,10 @@ double SEP::TimeStepRatioSwitch_FTE2PE=-1.0;
 
 //min/max particle number limit during a run 
 int SEP::MinParticleLimit=10,SEP::MaxParticleLimit=20;
+
+//the model for solar wind density
+int SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode=SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_analytic;
+
 
 //title that will be printed inn Tecplot output file (simuation time)
 void SEP::TecplotFileTitle(char* title) {

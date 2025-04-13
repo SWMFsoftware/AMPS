@@ -36,7 +36,18 @@ void SEP::ParticleSource::ShockWaveSphere::Flush() {
 
 //solar wind density model 
 double SEP::ParticleSource::ShockWaveSphere::GetSolarWindDensity(double *x) {
-  return 5.0E6*_AU_*_AU_/Vector3D::DotProduct(x,x); 
+  double res;
+
+  switch ( SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode) {
+  case SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_analytic: 
+    res=5.0E6*_AU_*_AU_/Vector3D::DotProduct(x,x); 
+    break;
+  case SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_swmf: 
+  default:
+    exit(__LINE__,__FILE__,"Error: not implemented");
+  }
+
+  return res;
 }
 
 //calcualte the source rate table 
