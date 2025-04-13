@@ -1490,7 +1490,7 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
 
     //In case the Parker spiral IMF model is used:
     if (SEP::ModeIMF==SEP::ModeIMF_ParkerSpiral) {
-      SEP::ParkerSpiral::GetB(B,x);
+      SEP::ParkerSpiral::GetB(field,pos);
       return true;
     }
 
