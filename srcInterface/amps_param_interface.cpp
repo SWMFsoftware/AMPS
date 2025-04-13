@@ -490,9 +490,43 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
     }
 
 
+    else if (Command == "#IMF_MODE") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "background") {
+        SEP::ModeIMF=SEP::ModeIMF_background;
+      }
+      else if (t=="parker") {
+        SEP::ModeIMF=SEP::ModeIMF_ParkerSpiral;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    }
 
 
-    
+    else if (Command == "#SPHERICAL_SHOCK_SW_DENSITY_MODE") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "analytic") {
+         SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode=SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_analytic;
+      }
+      else if (t=="swmf") {
+         SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode=SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_swmf;
+      }
+      else exit(__LINE__,__FILE__);
+      #endif
+    }
+
     else if (Command == "#SEP_INJECTION_FL") {
       std::string::size_type sz;
      
