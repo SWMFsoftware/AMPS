@@ -212,7 +212,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       if (t=="scattering") SEP::Diffusion::AccelerationType=SEP::Diffusion::AccelerationTypeScattering;
       else if (t=="diffusion") SEP::Diffusion::AccelerationType=SEP::Diffusion::AccelerationTypeDiffusion;
       else exit(__LINE__,__FILE__,"Error: the option is unknown");
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
     else if (Command == "#SEP_ACCELERATION_MODEL_VELOCITY_SWITCH_FACTOR") {
       #ifdef _SEP_MODEL_ON_
@@ -221,7 +223,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
       
       SEP::Diffusion::AccelerationModelVelocitySwitchFactor=atof(t.c_str());
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
     else if (Command == "#SEP_SWITCH2_PITCH_ANGLE_SCATTERING") {
       #ifdef _SEP_MODEL_ON_
@@ -247,7 +251,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::Diffusion::muTimeStepVariationLimitFlag=false; 
       }
       else exit(__LINE__,__FILE__,"Error: the option is not recognized");
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
     else if (Command == "#SEP_MOVER1D") {
       #ifdef _SEP_MODEL_ON_
@@ -263,7 +269,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else if (t=="MeanFreePathScattering") SEP::ParticleMoverSet(SEP::_MeanFreePathScattering_);
       else if (t=="Tenishev_2005_FL") SEP::ParticleMoverSet(SEP::_Tenishev_2005_FL_);
       else exit(__LINE__,__FILE__,"Error: the parameter value is not recognized");
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_PREPOPULATE_FIELD_LINES") {
@@ -288,7 +296,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       SEP::MaxTurbulenceLevel=atof(t.c_str());
       SEP::MaxTurbulenceEnforceLimit=true;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
     
     else if (Command == "#SEP_FREEZE_SOLAR_WIND_MODEL_TIME") {
@@ -298,26 +308,10 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
 
       SEP::FreezeSolarWindModelTime=atof(t.c_str());
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     } 
-
-    else if (Command == "#SEP_BACKGOUND_IMF") {
-      #ifdef _SEP_MODEL_ON_
-      t=param_list.front().first;
-      cout << "PT: "  << param_list.front().second << endl;
-      param_list.pop_front();
-
-      if (t == "SWMF") {
-        SEP::Diffusion::ModeIMF=SEP::Diffusion::ModeIMF_SWMF;
-      }
-      else if (t == "ParkerSpiral") {
-        SEP::Diffusion::ModeIMF=SEP::Diffusion::ModeIMF_ParkerSpiral;
-      }	
-      else {
-        exit(__LINE__,__FILE__,"Error: the option is not decognized");
-      }
-      #endif
-    }
 
     else if (Command == "#SEP_PITCH_ANGLE_SCATTERING_FUCTION") {
       #ifdef _SEP_MODEL_ON_
@@ -347,7 +341,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
     
     else if (Command == "#SEP_PITCH_ANGLE_JOKOPII_DIFFUSION") {
@@ -391,7 +387,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::Diffusion::Jokopii1966AJ::FractionPowerIndex=atof(t.c_str());
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_PARTICLE_LIMIT") {
@@ -408,7 +406,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::MaxParticleLimit=atof(t.c_str())*MeV2J;
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_TRANSPORT_FORCE") { 
@@ -426,7 +426,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::AccountTransportCoefficient=false;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }     
 
     else if (Command == "#SEP_MEAN_FREE_PATH_MODEL") {
@@ -450,7 +452,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::Scattering::MeanFreePathMode=SEP::Scattering::MeanFreePathMode_Chen2024AA;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     } 
     
     else if (Command == "#SEP_LIMIT_MEAN_FREE_PATH") {
@@ -468,7 +472,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::LimitMeanFreePath=false;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_SCATTER_ONLY_INCOMING_WAVES") {
@@ -486,7 +492,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::LimitScatteringUpcomingWave=false;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
 
@@ -505,7 +513,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         SEP::ModeIMF=SEP::ModeIMF_ParkerSpiral;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
 
@@ -524,7 +534,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
          SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode=SEP::ParticleSource::ShockWaveSphere::SolarWindDensityMode_swmf;
       }
       else exit(__LINE__,__FILE__);
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_INJECTION_FL") {
@@ -559,7 +571,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else {
         exit(__LINE__,__FILE__,"Error: the option is not recognized");
       }
-      #endif    
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif    
     }
 
 
@@ -578,7 +592,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
 
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_sokolov2004aj;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_INJECTION_TYPE_FL_TENISHEV_2005AIAA") {
@@ -596,7 +612,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::ParticleSource::ShockWave::MaxLimitCompressionRatio=atof(t.c_str());
 
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_tenishev2005aiaa;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
 
@@ -608,7 +626,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
       SEP::Sampling::MaxSampleEnergy=atof(t.c_str())*MeV2J;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_NUMERICAL_DIFFERENTIATION_STEP") {
@@ -619,7 +639,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
       SEP::Diffusion::muNumericalDifferentiationStep=atof(t.c_str());
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_LIMIT_SCATTERING_EVENT_NUMBER") {
@@ -631,7 +653,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       param_list.pop_front();
       SEP::NumericalScatteringEventLimiter=atof(t.c_str());
       SEP::NumericalScatteringEventMode=true;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
 
@@ -655,7 +679,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
 
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_const_energy;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_INJECTION_TYPE_FL_CONST_SPEED") {
@@ -678,7 +704,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       SEP::FieldLine::InjectionParameters::InjectionEfficiency=atof(t.c_str());
 
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_const_speed;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#SEP_INJECTION_TYPE_BACKGROUND_SW") {
@@ -686,7 +714,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       #ifdef _SEP_MODEL_ON_
       SEP::FieldLine::InjectionParameters::InjectionMomentumModel=SEP::FieldLine::InjectionParameters::_background_sw_temperature;
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     
@@ -714,7 +744,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
         r=PIC::Parser::Evaluate(t);
         SEP::Sampling::SamplingHeliocentricDistanceList.push_back(r);
       }
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#LOCATE_SHOCK") {
@@ -765,7 +797,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       #ifdef _SEP_MODEL_ON_
       SEP::TimeStepRatioSwitch_FTE2PE=atof(t.c_str());
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
 
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
@@ -784,7 +818,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
 
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
@@ -803,7 +839,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
 
       cout << "PT: "  << param_list.front().second << endl;
       param_list.pop_front();
@@ -814,7 +852,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
 
       #ifdef _SEP_MODEL_ON_
       SEP::Diffusion::LimitSpecialMuPointsDistance=atof(t.c_str());
-      #endif 
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif 
     }
 
     else if (Command == "#SEP_PITCH_ANGLE_DIFERENTIAL") {
@@ -832,7 +872,9 @@ int AMPS2SWMF::PARAMIN::read_paramin(list<pair<string,string> >& param_list) {
       else {
         exit(__LINE__,__FILE__,"Error: the option is not decognized");
       }
-      #endif
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
     }
 
     else if (Command == "#BL_POINT_IMPORT_STEP") {
