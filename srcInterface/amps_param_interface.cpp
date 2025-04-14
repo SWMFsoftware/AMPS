@@ -457,6 +457,70 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
 #endif
     } 
     
+
+    else if (Command == "#SEP_TRAJECTORY_INTEGRATION_METHOD") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "RK1") {
+        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK1_;
+      }
+      else if (t=="RK2") {
+        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK2_;
+      }
+      else if (t=="RK4") {
+        SEP::ParticleFieldLineDisplacementMethod=_TRAJECTORY_INTEGRATION_FIELD_LINE_3D__RK4_;
+      }
+      else exit(__LINE__,__FILE__);
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
+    }
+
+    else if (Command == "#SEP_ADIABATIC_COOLING") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        SEP::AccountAdiabaticCoolingFlag=true;
+      }
+      else if (t=="F") {
+        SEP::AccountAdiabaticCoolingFlag=false;
+      }
+      else exit(__LINE__,__FILE__);
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
+    }
+
+    else if (Command == "#SEP_PERPENDICULAR_DIFFUSION") {
+      cout << "PT: "  << param_list.front().second << endl;
+
+      #ifdef _SEP_MODEL_ON_
+      t=param_list.front().first;
+      cout << "PT: "  << param_list.front().second << endl;
+      param_list.pop_front();
+
+      if (t == "T") {
+        SEP::PerpendicularDiffusionMode=true;
+      }
+      else if (t=="F") {
+        SEP::PerpendicularDiffusionMode=false;
+      }
+      else exit(__LINE__,__FILE__);
+      #else
+exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_");
+#endif
+    }
+
     else if (Command == "#SEP_LIMIT_MEAN_FREE_PATH") {
       cout << "PT: "  << param_list.front().second << endl;
 
