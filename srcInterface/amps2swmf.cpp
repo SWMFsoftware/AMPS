@@ -281,15 +281,21 @@ extern "C" {
   }
 
   void amps_get_center_point_number_sc_(int *nCenterPoints) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_sc_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainSC);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_center_point_number_ih_(int *nCenterPoints) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_sc_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainIH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_center_point_number_oh_(int *nCenterPoints) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_oh_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointNumber(nCenterPoints,IsDomainOH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_center_point_coordinates_(double *x) {
@@ -303,61 +309,81 @@ extern "C" {
   }
 
   void amps_get_center_point_coordinates_sc_(double *x) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_sc_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainSC);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_center_point_coordinates_ih_(double *x) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_ih_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainIH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_center_point_coordinates_oh_(double *x) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_center_point_number_oh_", __LINE__, __FILE__);
     PIC::CPLR::SWMF::GetCenterPointCoordinates(x,IsDomainOH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
 
   void amps_recieve_batsrus2amps_center_point_data_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     AMPS2SWMF::RecvCouplingEventCounter++;
     
+    AMPS2SWMF::ExecutionTimer.Start("amps_recieve_batsrus2amps_center_point_data", __LINE__, __FILE__);
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime);
 #elif _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
     //PIC::CPLR::FLUID::RecieveCenterPointData(NameVar,*nVar,data,index);
 #endif 
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_sc_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     AMPS2SWMF::RecvCouplingEventCounter++;
+    AMPS2SWMF::ExecutionTimer.Start("amps_recieve_batsrus2amps_center_point_data_sc", __LINE__, __FILE__);
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainSC);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_oh_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     AMPS2SWMF::RecvCouplingEventCounter++;
+    AMPS2SWMF::ExecutionTimer.Start("amps_recieve_batsrus2amps_center_point_data_oh", __LINE__, __FILE__);
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainOH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_recieve_batsrus2amps_center_point_data_ih_(char *NameVar, int *nVar, double *data,int *index,double *SimulationTime) {
     AMPS2SWMF::RecvCouplingEventCounter++;
+    AMPS2SWMF::ExecutionTimer.Start("amps_recieve_batsrus2amps_center_point_data_ih", __LINE__, __FILE__);
     PIC::CPLR::SWMF::RecieveCenterPointData(NameVar,*nVar,data,index,*SimulationTime,IsDomainIH);
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_get_corner_point_number_(int *nCornerPoints) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_corner_point_number", __LINE__, __FILE__);
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
     PIC::CPLR::FLUID::GetCornerPointNumber(nCornerPoints);
 #endif
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
   
   void amps_get_corner_point_coordinates_(double *x) {
+    AMPS2SWMF::ExecutionTimer.Start("amps_get_corner_point_coordinates_", __LINE__, __FILE__);
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_
     PIC::CPLR::FLUID::GetCornerPointCoordinates(x);
 #endif
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
   
   
   void amps_recieve_batsrus2amps_corner_point_data_(char *NameVar, int *nVar, double *data,int *index) {
    AMPS2SWMF::RecvCouplingEventCounter++;
+   AMPS2SWMF::ExecutionTimer.Start("amps_recieve_batsrus2amps_corner_point_data_", __LINE__, __FILE__);
 #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_    
     PIC::CPLR::FLUID::ReceiveCornerPointData(NameVar,*nVar,data,index);
 #endif  
+   AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
 
@@ -372,7 +398,8 @@ extern "C" {
   }
 
   void amps_send_batsrus2amps_center_point_data_(char *NameVar, int *nVarIn, int *nDimIn, int *nPoint, double *Xyz_DI, double *Data_VI) {
-#if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
+    AMPS2SWMF::ExecutionTimer.Start("amps_send_batsrus2amps_center_point_data_", __LINE__, __FILE__);
+    #if _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_ 
     list<PIC::CPLR::SWMF::fSendCenterPointData>::iterator f;
 #elif  _PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__FLUID_ 
     list<PIC::CPLR::FLUID::fSendCenterPointData>::iterator f;
@@ -392,7 +419,7 @@ extern "C" {
       (*f)(NameVar,nVarIn,nDimIn,nPoint,Xyz_DI,Data_VI);
     }
 #endif
-
+    AMPS2SWMF::ExecutionTimer.Stop(__LINE__);
   }
 
   void amps_timestep_(double* TimeSimulation, double* TimeSimulationLimit,int* ForceReachingSimulationTimeLimit) {
@@ -493,6 +520,10 @@ do {
 }
 while ((*ForceReachingSimulationTimeLimit!=0)&&(call_amps_flag==true)); // (false); // ((swmfTimeAccurate==true)&&(call_amps_flag==true));
 
+
+  if (ncalls%100==0) {
+    ExecutionTimer.PrintSampledDataMPI();
+  }
 
   }
 
