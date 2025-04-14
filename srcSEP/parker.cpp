@@ -134,3 +134,55 @@ void SEP::ParkerSpiral::CreateStraitFileLine(list<SEP::cFieldLine> *field_line,d
     field_line->push_back(p);
   }
 }
+
+//init the magnetic field in teh entire domain with Parker spiral 
+void SEP::ParkerSpiral::InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode) {
+  if (startNode==NULL) startNode=PIC::Mesh::mesh->rootTree;
+
+  if (startNode->lastBranchFlag()==_BOTTOM_BRANCH_TREE_) {
+    PIC::Mesh::cDataBlockAMR *block;
+
+    if ((block=startNode->block)!=NULL) {
+      double B[3],x[3];
+      int idim,i,j,k,LocalCellNumber;
+      PIC::Mesh::cDataCenterNode *cell;
+      double *data;
+
+      for (i=0;i<_BLOCK_CELLS_X_;i++) for (j=0;j<_BLOCK_CELLS_Y_;j++) for (k=0;k<_BLOCK_CELLS_Z_;k++) {
+        LocalCellNumber=_getCenterNodeLocalNumber(i,j,k);
+
+        if ((cell=block->GetCenterNode(LocalCellNumber))!=NULL) {
+          cell->GetX(x);
+          SEP::ParkerSpiral::GetB(B,x);
+
+          if (cell->Measure==0.0) {
+            PIC::Mesh::mesh->InitCellMeasureBlock(startNode);
+
+            if (cell->Measure==0.0) {
+              PIC::Mesh::mesh->CenterNodes.deleteElement(cell);
+              startNode->block->SetCenterNode(NULL,LocalCellNumber);
+              continue;
+            }
+          }
+
+          if (_PIC_COUPLER_MODE_ == _PIC_COUPLER_MODE__SWMF_) {
+            data=(double*)(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::SWMF::MagneticFieldOffset);
+	  } else {
+            data=(double*)(cell->GetAssociatedDataBufferPointer()+PIC::CPLR::DATAFILE::Offset::MagneticField.RelativeOffset);
+	  }
+
+          for (idim=0;idim<3;idim++) data[idim]=B[idim];
+        }
+      }
+    }
+  }
+  else {
+    int iDownNode;
+    cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *downNode;
+
+    for (iDownNode=0;iDownNode<(1<<DIM);iDownNode++) if ((downNode=startNode->downNode[iDownNode])!=NULL) {
+      InitDomain(downNode);
+    }
+  }
+}
+

@@ -226,6 +226,8 @@ namespace SEP {
       double R0 = 0.1 * _AU_;           // Reference distance (meters)
       return B0 * pow(R0 / r, 2);
     }
+
+    void InitDomain(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node=NULL);
   }
 
   //scattering path the particles (used witu Parker spiral simulations) 
