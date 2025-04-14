@@ -6195,19 +6195,21 @@ void DeleteAttachedParticles();
 
       //print sampled information
       printf("$PREFIX: ================================================================================\n");
-      bool first_pass=false;
+      //bool first_pass=false;
       
       for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
         double TotalTime=0.0;
         
         for (const auto& it : p->second) TotalTime+=it->TotalSampledTime;
         
+	/*
         if (first_pass==false) {
           first_pass=true;
         }
         else {
           printf("\n");
         }
+	*/
         
         printf("$PREFIX: Sampled Segment Label: %s\n",p->first.segment_name.c_str());
         if (p->first.file_name!="") printf("$PREFIX: Sampled Segment File: %s\n",p->first.file_name.c_str());
@@ -6265,19 +6267,21 @@ void DeleteAttachedParticles();
 
       //print sampled information
       if (PIC::ThisThread==0) printf("$PREFIX: ================================================================================\n");
-      bool first_pass=false;
+      //bool first_pass=false;
       
       for (auto p=LabelTable.begin();p!=LabelTable.end();p++) {
         double TotalTime=0.0;
         
         for (const auto& it : p->second) TotalTime+=it->TotalSampledTime;
         
+	/*
         if (first_pass==false) {
           first_pass=true;
         }
         else {
           printf("\n");
         }
+	*/
         
         if (PIC::ThisThread==0) {
           printf("$PREFIX: Sampled Segment Label: %s\n",p->first.segment_name.c_str());
