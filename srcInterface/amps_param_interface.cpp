@@ -575,6 +575,7 @@ exit(__LINE__,__FILE__,"Error: the option can be used only with _SEP_MODEL_ON_")
       }
       else if (t=="parker") {
         SEP::ModeIMF=SEP::ModeIMF_ParkerSpiral;
+	AMPS2SWMF::ProcessSWMFdata=SEP::ParkerSpiral::InitDomain;
       }
       else exit(__LINE__,__FILE__);
       #else

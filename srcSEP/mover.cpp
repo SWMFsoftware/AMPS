@@ -1488,11 +1488,13 @@ int SEP::ParticleMover_Parker3D_MeanFreePath(long int ptr, double dtTotal, cTree
   // Get magnetic field vector at a position using CPLR interpolation
   auto GetMagneticField = [&](double *pos, double *field) {
 
+/*
     //In case the Parker spiral IMF model is used:
     if (SEP::ModeIMF==SEP::ModeIMF_ParkerSpiral) {
       SEP::ParkerSpiral::GetB(field,pos);
       return true;
     }
+    */
 
 
 

@@ -35,6 +35,10 @@ namespace AMPS2SWMF {
   inline void SetImportPlasmaDivUdXFlag(bool flag) {ImportPlasmaDivUdXFlag=flag;}
   inline bool GetImportPlasmaDivUdXFlag() {return ImportPlasmaDivUdXFlag;}
 
+  //a user-defined function that would be called before AMPS is celled in case coupling occurs to process the data recieved from the coupler if needed
+  typedef void (*fProcessSWMFdata)(cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>*);
+  extern fProcessSWMFdata ProcessSWMFdata;
+
 
   //step in importing the magnetic field line point
   extern int bl_import_point_step;

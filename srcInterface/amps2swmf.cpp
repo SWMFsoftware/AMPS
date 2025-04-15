@@ -79,6 +79,10 @@ double AMPS2SWMF::MagneticFieldLineUpdate::LastLastCouplingTime=-1.0;
 //shock search mode
 int AMPS2SWMF::ShockSearchMode=AMPS2SWMF::_disabled;
 
+//a user-defined function that would be called before AMPS is celled in case coupling occurs to process the data recieved from the coupler if needed
+AMPS2SWMF::fProcessSWMFdata AMPS2SWMF::ProcessSWMFdata=NULL;
+
+
 //in case sampling in AMPS is disabled SamplingOutputCadence is the interval when the sampling get tempoparely enabled to output a data file 
 int AMPS2SWMF::SamplingOutputCadence=1;
 
@@ -511,6 +515,14 @@ do {
     counter++;
 
     if (call_amps_flag==true) {
+      static int LastProcessedRecvCoupling=0;
+  
+      if (LastProcessedRecvCoupling!=RecvCouplingEventCounter) { 
+        LastProcessedRecvCoupling=RecvCouplingEventCounter;
+
+        if (ProcessSWMFdata!=NULL) ProcessSWMFdata(NULL);
+      }
+
       amps_time_step();
 
       PIC::Restart::LoadRestartSWMF=false; //in case the AMPS was set to read a restart file  
