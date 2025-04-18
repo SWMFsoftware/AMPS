@@ -506,6 +506,8 @@ do {
     case _PIC_COUPLER_MODE__FLUID_:
       call_amps_flag=coupler_fluid();
       break;
+    default:
+      exit(__LINE__,__FILE__,"Error: _PIC_COUPLER_MODE_ has to be set either _PIC_COUPLER_MODE__SWMF_ or _PIC_COUPLER_MODE__FLUID_");
     }
 
     ExecutionTimer.SwitchTimeSegment(__LINE__);
