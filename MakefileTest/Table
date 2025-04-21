@@ -5112,6 +5112,68 @@ Check=
 <#
 
 --------------------------------------------------------------------------------------------------------------------------
+#>
+Name=SEP_SWMF_test19
+Time=10
+Type=swmf
+
+Compile=
+>>>@echo "test_SEP_SWMF_test19_compile..." > test_SEP_SWMF_test19.diff
+>>>echo "Installing SWMF....."
+
+<<<ifeq ($(wildcard SWMF-IH/*),)
+>>>mkdir -p SWMF-IH
+>>>cd SWMF-IH;git clone --depth 1 git@github.com:SWMFsoftware/SWMF
+>>>ln -s ${PTDIR}/SWMF_data ${PTDIR}/SWMF-IH/SWMF/SWMF_data
+
+<<<ifeq ($(COMPILE.c),icc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=ifort,iccmpicxx
+<<<endif
+
+<<<ifeq ($(COMPILE.c),gcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=gfortran,gcc_mpicc
+<<<endif
+
+<<<ifeq ($(COMPILE.c),pgcc)
+>>>-cd SWMF-IH/SWMF;./Config.pl  -sleep=10 -install -compiler=pgf90,pgccmpicxx
+<<<endif
+<<<endif
+
+>>>@echo "test_SEP_SWMF_test19_compile... done" >> test_SEP_SWMF_test19.diff
+
+Rundir=
+>>>@echo "test_SEP_SWMF_test19_rundir..." >> test_SEP_SWMF_test19.diff
+>>>@echo "test_SEP_SWMF_test19_rundir... done" >> test_SEP_SWMF_test19.diff
+
+
+Run=
+>>>@echo "test_SEP_SWMF_test19_run..." > test_SEP_SWMF_test19.diff
+>>>cd SWMF-IH/SWMF; make test19_rundir -j 
+
+>>>cd SWMF-IH/SWMF;./Config.pl -v=Empty,SC/BATSRUS,IH/BATSRUS,OH/BATSRUS,PT/AMPS
+>>>cd SWMF-IH/SWMF;./Config.pl -o=PT:application=test/sep_3d_cut-domain_swmfimf_parker3d,spice-path=nospice,amps-test=on
+>>>cd SWMF-IH/SWMF/PT/AMPS; rm -rf build
+
+>>>cd SWMF-IH/SWMF;${MAKE} SWMF -j
+
+>>>cp data/input/SEP/IH/PARAM.in-test19-Parker3D SWMF-IH/SWMF/run_test/PARAM.in
+
+>>>cd SWMF-IH/SWMF/run_test;mpirun -np 8 ./SWMF.exe >> runlog
+>>>@echo "test_SEP_SWMF_test19_run... done" >> test_SEP_SWMF_test19.diff
+
+
+Check=
+>>>@echo "test_SEP_SWMF_test19_check..." >> test_SEP_SWMF_test19.diff
+
+>>>-(${SCRIPTDIR}/DiffNum.pl -a=2.0E-14 SWMF-IH/SWMF/run_test/PT/plots/amps.dat data/output/test_SEP_SWMF_test19/amps.ref  > test_SEP_SWMF_test19.diff)
+
+>>>@ls -l test_SEP_SWMF_test19.diff
+
+>>>@echo Test test_SEP_SWMF_test19 has finished: `date`
+
+<#
+
+--------------------------------------------------------------------------------------------------------------------------
 
 #>
 Name=SEP-SC-IH--FL--FL-attachment--GC
