@@ -114,6 +114,12 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
 !  model = NTC !!off !HS ! HS, off
   SampleCollisionFrequency=on !!on !on, off
 
+
+! CollisionCrossSection=function \\
+!   skdjhfkjsdhk 
+
+  CollisionCrossSection=HS
+
 ! CollisionCrossSection=const \\ !const, function
 !   const (H2O,H2O)= 3.4E-19 
 #endParticleCollisions
