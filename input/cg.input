@@ -91,9 +91,6 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
 
 !  define _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_  _PIC_RECOVER_SAMPLING_DATA_RESTART_FILE__MODE_ON_
 
-  define _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_   _PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__USER_DEFINED_ !!_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__HS_
-  define _PIC__PARTICLE_COLLISION_MODEL__MODE_ _PIC_MODE_ON_
-
   define _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_  _PIC_GENERIC_PARTICLE_TRANSFORMATION_MODE_OFF_
   define _PIC_PARTICLE_MOVER__GENERIC_TRANSFORMATION_PROCESSOR_(xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode) ElectricallyChargedDust::DustChargingProcessor_SteadyState(xInit,xFinal,vFinal,spec,ptr,ParticleData,dtMin,startNode) 
 
@@ -106,12 +103,14 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
   define _PIC_PHOTOLYTIC_REACTIONS__TOTAL_LIFETIME_(t0,t1,t2,t3,t4) Comet::LossProcesses::ExospherePhotoionizationLifeTime(t0,t1,t2,t3,t4)
   
 
+  OutputMode=DistributedFiles !!SingleFile !SingleFile,DistributedFiles
+
 #endGeneral
 
 
 
 #ParticleCollisions
-!  model = NTC !!off !HS ! HS, off
+  model = NTC !!off !HS ! HS, off
   SampleCollisionFrequency=on !!on !on, off
 
 
