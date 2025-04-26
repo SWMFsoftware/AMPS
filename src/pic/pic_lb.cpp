@@ -411,7 +411,7 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
     // Calculate total relaxation probability: 1/Z = 1/Zrot + 1/Zvib
     double totalRelaxProb = 0.0;
     
-    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zrot;
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zrot;
     if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_ == _PIC_MODE_ON_) totalRelaxProb += 1.0/Zvib;
     
     if (rnd() < totalRelaxProb) {
@@ -420,7 +420,7 @@ void PIC::IDF::LB::RedistributeEnergy(PIC::ParticleBuffer::byte *ptr0,PIC::Parti
             //only RT is available 
             CalculateRTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
         }
-        else if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_ == _PIC_MODE_OFF_) {
+        else if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_ == _PIC_MODE_OFF_) {
             //only VT is available 
             CalculateVTTransition(ptr0, ptr1, Ec, ChangeParticlePropertiesFlag, RedistributionEnergyFlag, TempIndexOmega);
         }
@@ -480,14 +480,18 @@ void PIC::IDF::LB::Init() {
 
   //check consistency of the model setting
   for (int s=0;s<PIC::nTotalSpecies;s++) {
-    for (int nmode=0;nmode<nTotalVibtationalModes[s];nmode++) {
-      if (CharacteristicVibrationalTemperature[nmode+s*PIC::IDF::nSpeciesMaxVibrationalModes]<=0.0) {
-        exit(__LINE__,__FILE__,"error: CharacteristicVibrationalTemperature must be defined -- check the input file");
+    if ( _PIC_INTERNAL_DEGREES_OF_FREEDOM__VT_RELAXATION_MODE_==_PIC_MODE_ON_) {
+      for (int nmode=0;nmode<nTotalVibtationalModes[s];nmode++) {
+        if (CharacteristicVibrationalTemperature[nmode+s*PIC::IDF::nSpeciesMaxVibrationalModes]<=0.0) {
+          exit(__LINE__,__FILE__,"error: CharacteristicVibrationalTemperature must be defined -- check the input file");
+        }
       }
     }
 
-    if (nTotalRotationalModes[s]!=0) {
-      if (RotationZnumber[s]==0.0) exit(__LINE__,__FILE__,"error: RotationZnumber must be defined -- check the input file");
+    if (_PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_==_PIC_MODE_ON_) {
+      if (nTotalRotationalModes[s]!=0) {
+        if (RotationZnumber[s]==0.0) exit(__LINE__,__FILE__,"error: RotationZnumber must be defined -- check the input file");
+      }
     }
   }
 }
