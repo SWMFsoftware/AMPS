@@ -149,7 +149,7 @@ namespace Titan {
       //set up the intermal energy if needed
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_  == _PIC_MODE_ON_
       PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
 #endif
 
@@ -247,7 +247,7 @@ namespace Titan {
       //set up the intermal energy if needed
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
       
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_  == _PIC_MODE_ON_
       PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
 #endif
       
@@ -386,7 +386,7 @@ namespace Titan {
       //set up the intermal energy if needed
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_  == _PIC_MODE_ON_
       PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
 #endif
 
@@ -473,7 +473,7 @@ for (int i=0;i<3;i++)  v_LOCAL_IAU_OBJECT[i]=-ExternalNormal[i]*1.0E3;
       //set up the intermal energy if needed
 #if _PIC_INTERNAL_DEGREES_OF_FREEDOM_MODE_ == _PIC_MODE_ON_
 
-#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__TR_RELAXATION_MODE_  == _PIC_MODE_ON_
+#if _PIC_INTERNAL_DEGREES_OF_FREEDOM__RT_RELAXATION_MODE_  == _PIC_MODE_ON_
       PIC::IDF::InitRotTemp(ImpactVaporization_SourceTemperature[spec],tempParticleData);
 #endif
 
