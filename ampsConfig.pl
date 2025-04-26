@@ -2539,9 +2539,38 @@ sub ParticleCollisionModel {
       ($InputLine,$InputComment)=split(' ',$InputComment,2);
       
       if ($InputLine eq "FUNCTION") {
-        warn ("Cannot recognize the option (line=$InputLine, nline=$InputFileLineNumber)");
-        die "not implemented\n";
+        my $FunctionName;
+  
+        # Extract function name from the line
+        $line=~s/[()=,]/ /g;
+        chomp($line);
+        $line=~s/\s+$//;
+  
+        ($InputComment, $InputLine)=split('!', $line, 2);
+  
+        while (defined $InputComment) {
+          ($InputLine, $InputComment)=split(' ', $InputComment, 2);
+    
+          $InputLine=uc($InputLine);
+    
+          if ($InputLine eq "FUNCTION") {
+            ($FunctionName, $InputComment)=split(' ', $InputComment, 2);
+      
+            #Set the collision cross section function
+	    ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection",$FunctionName,"pic/pic_init_const.cpp");
+            last;
+          }
+        }
+  
+        if (!defined $FunctionName) {
+          warn ("Function name is not defined (line=$InputLine, nline=$InputFileLineNumber)");
+          die "Function name is not defined (line=$InputLine, nline=$InputFileLineNumber)\n";
+        }
       }
+      elsif ($InputLine eq "HS") {
+        ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::HS::GetTotalCrossSection","pic/pic_init_const.cpp");
+      }
+
       elsif ($InputLine eq "VHS" || $InputLine eq "VSS") {
         my @d_ref_table=((0)x$TotalSpeciesNumber);
 	my @cr_ref_table=((0)x$TotalSpeciesNumber); 
@@ -2550,10 +2579,10 @@ sub ParticleCollisionModel {
         my ($t0,$t1,$t2,$t3,$s);
 
 	if ($InputLine eq "VHS") {
-          ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__VHS_","pic/picGlobal.dfn");
+           ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::VHS::GetTotalCrossSection","pic/pic_init_const.cpp");
         }
 	else {
-          ampsConfigLib::RedefineMacro("_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION_","_PIC__PARTICLE_COLLISION_MODEL__CROSS_SECTION__VSS_","pic/picGlobal.dfn");
+           ampsConfigLib::ChangeValueOfVariable("PIC::MolecularData::MolecularModels::GetTotalCrossSection","PIC::MolecularData::MolecularModels::VSS::GetTotalCrossSection","pic/pic_init_const.cpp");
         }
 
 	$InputComment=~s/[(),=]/ /g;
