@@ -137,7 +137,25 @@ while ($line=<InputFile>) {
       die "Option is unknown, line=$InputFileLineNumber ($InputFileName)\n";
     }     
   }
-  
+
+
+  #set flag that blocks cutting the nucleus out of the domain 
+  if ($InputLine eq "CUTNUCLEUSOUT") {
+    ($InputLine,$InputComment)=split(' ',$InputComment,2);
+
+    if ($InputLine eq "TRUE") {
+      ampsConfigLib::ChangeValueOfVariable("bool CutNucleusOut","true","main/main.cpp");
+    }
+    elsif ($InputLine eq "FALSE") {
+      ampsConfigLib::ChangeValueOfVariable("bool CutNucleusOut","false","main/main.cpp");
+    }
+    else {
+      warn("Option is unknown ($InputLine), line=$InputFileLineNumber ($InputFileName)");
+      die "Option is unknown, line=$InputFileLineNumber ($InputFileName)\n";
+    }
+  }
+
+
   #turn on sampling of the Rosina data
   elsif ($InputLine eq "ROSINADATASAMPLING") {
     ($InputLine,$InputComment)=split(' ',$InputComment,2);

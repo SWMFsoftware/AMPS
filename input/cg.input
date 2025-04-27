@@ -198,6 +198,8 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
 
   Gravity3D=off !on,off
 
+  CutNucleusOut=true !false ! false, true
+
   HeliocentricDistance=1.88*_AU_
   subSolarPointAzimuth=5.2090
   subSolarPointZenith=1.3973
