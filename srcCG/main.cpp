@@ -43,6 +43,10 @@
 #include "SpiceUsr.h"
 #endif
 
+//flag the defined cutting out the nucleus from the mesh 
+bool CutNucleusOut=true;
+
+
 extern bool *definedFluxBjorn;
 extern bool *probabilityFunctionDefinedNASTRAN;
 extern double positionSun[3];
@@ -692,13 +696,15 @@ int main(int argc,char **argv) {
   //initialize the blocks
   PIC::Mesh::initCellSamplingDataBuffer();
 
-  PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
+  if (CutNucleusOut==true) PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
+  else if (_PIC_OUTPUT_MODE_!=_PIC_OUTPUT_MODE_SINGLE_FILE_) exit(__LINE__,__FILE__,"To disable cutting out the nucleus from the domain: set CutNucleusOut=false and OutputMode=SingleFile"); 
 
   PIC::Mesh::mesh->AllowBlockAllocation=true;
   PIC::Mesh::mesh->AllocateTreeBlocks();
 
 
-  PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
+  if (CutNucleusOut==true) PIC::Mesh::mesh->MarkUnusedInsideObjectBlocks();
+  else if (_PIC_OUTPUT_MODE_!=_PIC_OUTPUT_MODE_SINGLE_FILE_) exit(__LINE__,__FILE__,"To disable cutting out the nucleus from the domain: set CutNucleusOut=false and OutputMode=SingleFile");
 
 
 
