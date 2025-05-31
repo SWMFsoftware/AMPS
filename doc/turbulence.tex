@@ -1270,220 +1270,606 @@ That closes the loop between turbulence transport and Parker-equation particle e
 \end{tcolorbox}
 
 
-With this formulation you can couple a Parker (isotropic) transport Monte-Carlo to a Kolmogorov Alfvénic turbulence model \textbf{without ever introducing \( \mu \) explicitly}, yet still retain the essential physics of pitch-angle scattering and ion heating by resonant waves.
+\begin{tcolorbox}[colback=white, colframe=black, title={From Parker‐Equation Transport Coefficient $D_{xx}$ to a Monte-Carlo Scattering Probability}, fonttitle=\bfseries]
 
+In an \textbf{isotropic} Parker equation the spatial diffusion coefficient parallel to the mean field is
+\begin{equation}
+D_{xx} = \frac{1}{3} v \lambda,
+\tag{1}
+\end{equation}
+where
+\begin{itemize}
+  \item $v$ – particle speed in the plasma frame,
+  \item $\lambda$ – \textit{scattering mean free path} (average distance travelled between independent pitch-angle randomisations).
+\end{itemize}
 
+\medskip
 
+\textbf{1. Scattering frequency}
 
+Solve Eq.~(1) for $\lambda$:
+\[
+\lambda = \frac{3 D_{xx}}{v}.
+\]
 
-With this formulation you can couple a Parker (isotropic) transport Monte-Carlo to a Kolmogorov Alfvénic turbulence model **without ever introducing $\mu$ explicitly**, yet still retain the essential physics of pitch-angle scattering and ion heating by resonant waves.
-
-
-Below is a **step-by-step coupling scheme** that marries the **isotropic-Parker Monte-Carlo module** (previous reply) to a **transport equation for the turbulence–energy density**.  The scheme keeps only **one Kolmogorov amplitude per propagation sense** $A_\pm(r,t)$ yet still:
-
-* advects Alfvén-wave energy with the solar wind,
-* accounts for nonlinear (Kolmogorov) cascade,
-* damps/feeds the waves through **exact energy exchange with the particles**.
-
----
-
-## 1 Wave-energy transport equation (single Kolmogorov amplitude)
-
-Integrate the 1-D spectral wave equation over $k$ using
-$W_\pm(k)=A_\pm k^{-5/3}$.  The result for the *total* energy density $\mathcal W_\pm=A_\pm N$ (with $N=\!\int_{k_{\min}}^{k_{\max}}k^{-5/3}dk$) is
-
-$$
-\boxed{
-\frac{\partial\mathcal W_\pm}{\partial t}
-+\bigl(V_A\!\mp\!U\bigr)\frac{\partial\mathcal W_\pm}{\partial r}
-= -\,\underbrace{\frac{\mathcal W_\pm}{\tau_{\rm cas}}}_{\text{Kolmogorov cascade}}
-\;-\;\underbrace{Q_{\rm ion}}_{\text{particle damping}}
-\;+\;S_{\rm inj}(r,t)} \tag{1}
-$$
-
-* **Advection speed:** group velocity $V_A\mp U$.
-* **Cascade term:** choose e.g.
-  $\displaystyle \tau_{\rm cas}^{-1}=\frac{C_K}{L_\perp}\sqrt{\frac{\delta B^2}{4\pi\rho}}\!)
-  or adopt a constant fraction of the nonlinear time; remove the energy from \(\mathcal W_\pm$ and deposit it at $k\!>\!k_{\max}$ (not followed).
-* **Particle term:**
-  $Q_{\rm ion}=\sum_{\text{all MC particles in cell}}\!\!(-\Delta E_p)/\Delta r$
-  with $\Delta E_p$ from Eq.(5) in the previous answer.
-* **$S_{\rm inj}$:** optional Alfvén-wave source (e.g. at the coronal base).
-
-Since $\mathcal W_\pm=A_\pm N$ and $N$ is a constant, you can update **either** $\mathcal W_\pm$ **or** $A_\pm$; below we keep $A_\pm$.
-
----
-
-## 2 Discretisation in a radial mesh
-
-*Radial grid:* $r_j,\;j=0\dots J$ (log-spacing is convenient).
-*Time step:* $\Delta t$ limited by CFL:
-$\Delta t < \min_j\{\Delta r_j / |V_A\!\mp\!U|\}$.
-
-### Finite-volume update for $A_\pm$
-
-$$
-A_\pm^{\,n+1}(j)=A_\pm^{\,n}(j)
--\frac{\Delta t}{\Delta r_j} \Bigl[F_{j+1/2}-F_{j-1/2}\Bigr]
--\frac{\Delta t}{N}\Bigl[\frac{A_\pm N}{\tau_{\rm cas}}+Q_{\rm ion}-S_{\rm inj}\Bigr]_j
+A particle that moves at speed $v$ crosses one mean free path in the \textbf{scattering time}
+\begin{equation}
+\tau_{\text{sc}} = \frac{\lambda}{v} = \frac{3 D_{xx}}{v^2}.
 \tag{2}
-$$
+\end{equation}
 
-* **Upwind fluxes**
-  $F_{j+1/2}=(V_A\!\mp\!U)_{j+1/2}\,A_\pm^{\text{up}}$.
-  Use van-Leer or piecewise-linear reconstruction for second-order accuracy.
+Hence the \textbf{scattering frequency}
+\begin{equation}
+\nu_{\text{sc}} = \tau_{\text{sc}}^{-1} = \frac{v^2}{3 D_{xx}}.
+\tag{3}
+\end{equation}
 
-* **Cascade / particle / source** terms are cell-centred.
+\medskip
 
----
+\textbf{2. Probability of at least one scattering in a time step $\Delta t$}
 
-## 3 Monte-Carlo ↔ turbulence coupling at each global step
+Scattering events are Poisson-distributed with rate $\nu_{\text{sc}}$. Therefore
+\begin{equation}
+\boxed{
+P_{\text{scatt}}(\Delta t) = 1 - \exp\!\left[-\nu_{\text{sc}} \Delta t\right] = 1 - \exp\!\left[-\frac{v^2 \Delta t}{3 D_{xx}}\right]}.
+\tag{4}
+\end{equation}
 
-```pseudo
-============================================
-(1)  Advection / Cascade sub-step for A±
-============================================
-  for each radial cell j:
-        # 1a. build upwind fluxes  F
-        # 1b. update A_± with eq.(2)   (no particle term yet)
+\begin{itemize}
+  \item \textbf{Small-step limit:} If $\Delta t \ll \tau_{\text{sc}}$ (typical Monte-Carlo choice),
+  \[
+  P_{\text{scatt}} \approx \frac{v^2}{3 D_{xx}} \Delta t.
+  \]
+  
+  \item \textbf{Relativistic extension:} Replace $v$ with $v = \beta c$ and, if desired, scale $D_{xx}$ with the particle’s rigidity $R$; the form of Eq.~(4) is unchanged.
+\end{itemize}
 
-============================================
-(2)  Particle sub-step in each cell j
-============================================
-  initialise   Q_ion(j) = 0
+\medskip
 
-  loop over Monte-Carlo particles:
-         # 2a. scattering decision with overall ν_sc(v)   (equ. (2) previous reply)
-         # 2b. speed diffusion  v  →  v'                 (equ. (4))
-         # 2c. energy change    ΔE_p = ½m(v'^2 - v^2)
-         # 2d. update particle position by Parker drifts
-         Q_ion(home_cell)  -= ΔE_p / Δt      # power density
-
-============================================
-(3)  Particle damping ↔ wave update
-============================================
-  for each radial cell j:
-        A_±(j)  ←  A_±(j)  -  (Δt / N) · Q_ion(j)        # Eq.(2) term
-
-        A_±(j)  =  max(A_±(j), 0)    # maintain positivity
-```
-
-*Step-ordering:* split the advection/cascade and particle feedback for clarity; operator-splitting error is $\mathcal O(\Delta t)$ and can be reduced with Strang splitting.
-
----
-
-## 4 What the coupling achieves
-
-| Module                        | Uses                                                                    | Provides to the other               |
-| ----------------------------- | ----------------------------------------------------------------------- | ----------------------------------- |
-| **Monte-Carlo Parker solver** | local $A_\pm(r,t)$ to compute $ν_{\rm sc}$ and $D_{vv}$                 | energy sink $Q_{\rm ion}$ (heating) |
-| **Wave-transport solver**     | $Q_{\rm ion}$ to damp $\mathcal W_\pm$; cascade law; boundary injection | updated $A_\pm(r,t+\Delta t)$       |
-
-*Energy is conserved* cell-by-cell because the exact negative of each particle’s $\Delta E_p$ is removed from $A_\pm N$.
-
----
-
-## 5 Boundary and initial conditions
-
-* At $r=r_0$ (coronal base) prescribe an **injected amplitude** $A_{+,0}$ (outward) and optionally a reflection coefficient to seed $A_-$.
-* At the outer boundary $r=r_{\max}$ use free-outflow for $A_+$ and impose a small inflowing $A_-$ if interstellar turbulence is required.
-
-Initial $A_\pm(r,0)$ can be set from empirical $\delta B/B\propto r^{-3/2}$ or any magnetogram-based model.
-
----
-
-## 6 Practical diagnostics
-
-* **Ion heating rate:** $Q_{\rm ion}(r)$.
-* **Wave energy flux:** $F_\pm=A_\pm N (V_A\!\mp\!U)$.
-* **Residual energy ratio:** $\delta B^2/B_0^2 = 2\! \int W_\pm(k)\,dk /B_0^2 = 2A_\pm N/B_0^2$.
-
-Consistent trends—outward $A_+$ decays by cascade and ion heating; inward $A_-$ is generated by reflection or parametric decay—reproduce standard fast-wind observations.
-
----
-
-### In one sentence
-
-> **Advance $A_\pm$ with an upwind-cascade equation, subtract exactly the power $Q_{\rm ion}$ that your isotropic Parker Monte-Carlo adds to the particles, and feed the updated $A_\pm$ back into the next step’s scattering frequency.**
-
-That closes the loop between turbulence transport and Parker-equation particle evolution without ever tracking $\mu$ explicitly.
+\textbf{3. Implementation snippet}
+\begin{lstlisting}[mathescape=true, basicstyle=\ttfamily\small]
+# inputs: $v$, $D_{xx}$, $\Delta t$
+$\nu_{\text{sc}} = \dfrac{v \times v}{3.0 \times D_{xx}}$
+$P_{\text{sc}} = 1.0 - \exp(-\nu_{\text{sc}} \times \Delta t)$
+if random() < $P_{\text{sc}}$:
+    # perform isotropic re-orientation (full scattering)
+\end{lstlisting}
 
 
-**Turbulence cascade** is the chain‐reaction process by which energy (or some other conserved quantity such as cross-helicity or magnetic flux) that is injected into a fluid or plasma at **large spatial scales** is passed down, step-by-step, to **progressively smaller scales** until it reaches scales where microscopic dissipation processes can convert it irreversibly into heat.
+Choose $\Delta t$ so that $P_{\text{scatt}} \lesssim 0.3$ for numerical stability; larger probabilities can be handled but require multi-scatter logic.
 
----
+\medskip
 
-### 1.  The big picture
+\textbf{Result:}
 
-| Stage                           | Characteristic scale                       | What happens                                                                                                                                                                                                                                                                                    |
-| ------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Injection / driving**         | Largest eddies or wave packets, size $L$   | Energy is supplied by stirring, shear, shocks, reconnection, etc.                                                                                                                                                                                                                               |
-| **Inertial (Kolmogorov) range** | $L \gg \ell \gg \ell_d$                    | Non-linear interactions redistribute the energy from one scale to the next without significant loss: the **cascade**. A classical result is Kolmogorov’s $E(k)\propto k^{-5/3}$ spectrum in hydrodynamics (and often observed in MHD/plasma turbulence too). ([Wikipedia][1], [Altair Help][2]) |
-| **Dissipation range**           | Smallest eddies or kinetic scales $\ell_d$ | Viscosity (fluids) or kinetic effects such as Landau/cyclotron damping (plasmas) convert the cascading energy into particle heat. ([Frontiers][3])                                                                                                                                              |
+Using only the Parker-equation coefficient $D_{xx}$, the probability that a particle undergoes an Alfvén-wave pitch-angle scattering during the next interval $\Delta t$ is given by Eq.~(4).
 
-*In plasmas* (e.g., the solar wind) the same picture holds, but the “eddies” can be **Alfvénic wave packets** and the final dissipation often occurs at the ion or electron gyroradius scales instead of the viscous scale of a neutral fluid. ([Frontiers][3])
+\end{tcolorbox}
 
----
 
-### 2.  How the cascade works mathematically
+\begin{tcolorbox}[colback=white, colframe=black, title={Setup}]
+\begin{itemize}
+\item Two counter-propagating Alfvén-wave populations: 
+$W_{+}(k)$ – outward (anti-Sunward) waves, and $W_{-}(k)$ – inward (Sunward) waves.
+\item A particle of speed $v$, pitch-angle cosine $\mu$ resonates with a single wavenumber in each population:
+\[
+k_{\text{res}}^{\,+} = \frac{\Omega}{v\mu - V_A}, \qquad
+k_{\text{res}}^{\,-} = \frac{\Omega}{v\mu + V_A}.
+\]
+\item The \textbf{pitch-angle diffusion coefficient} is the sum of the two contributions:
+\[
+D_{\mu\mu}(\mu) = D_{\mu\mu}^{\,+}(\mu) + D_{\mu\mu}^{\,-}(\mu),
+\]
+where (quasi-linear theory)
+\[
+D_{\mu\mu}^{\,\pm}(\mu) = \frac{\pi \Omega^{2}}{B_0^{2}} (1 - \mu^{2}) 
+\frac{W_{\pm}\!\left(k_{\text{res}}^{\pm}\right)}{\left|k_{\text{res}}^{\pm}\right|}.
+\]
+\end{itemize}
 
-In Fourier (wavenumber) space the energy density per unit $k$ is $E(k)$.  Non-linear terms in the Navier–Stokes or MHD equations couple neighbouring modes, producing a conservative flux $\varepsilon$ that is **constant with $k$** throughout the inertial range:
+\medskip
 
-$$
-\frac{\partial E(k,t)}{\partial t}
-   +\frac{\partial}{\partial k}\Bigl[\varepsilon(k)\Bigr]=0,
+\textbf{1. Probability that \emph{a} scattering occurs in the next interval $\Delta t$}
+
+Each wave population supplies an independent Poisson process with rate 
+$\nu_{\pm} = 2 D_{\mu\mu}^{\,\pm}(\mu)$. The total rate is
+\[
+\nu_{\text{tot}} = 2\left(D_{\mu\mu}^{\,+} + D_{\mu\mu}^{\,-}\right) \equiv 2 D_{\mu\mu}.
+\]
+Hence
+\begin{equation}
+\boxed{
+P_{\text{scatt}}(\Delta t) = 1 - \exp\left[-\nu_{\text{tot}} \Delta t\right] = 1 - \exp\left[-2 D_{\mu\mu} \Delta t\right]
+}.
+\tag{1}
+\end{equation}
+
+Small-step approximation ($2 D_{\mu\mu} \Delta t \ll 1$):
+\[
+P_{\text{scatt}} \simeq 2 D_{\mu\mu} \Delta t.
+\]
+
+\medskip
+
+\end{tcolorbox}
+\begin{tcolorbox}[colback=white, colframe=black, title={Setup}]
+
+\textbf{2. Probability that the scattering comes from a \emph{particular} wave band}
+
+Divide each population into narrow $k$-bins (or ``bands'') labelled by index $j$. For band $j$ in the $+$ population let
+\[
+\nu_{j}^{\,+} = 2 D_{\mu\mu,j}^{\,+} 
+= \frac{2\pi \Omega^{2}}{B_0^{2}} (1 - \mu^{2}) \frac{W_{+,j}}{k_{j}},
+\]
+and analogously $\nu_{j}^{\,-} = 2 D_{\mu\mu,j}^{\,-}$.
+
+\medskip
+
+\textbf{2-a Absolute probability in the next $\Delta t$}
+
+Because the individual Poisson processes are independent,
+\begin{equation}
+P_{j}^{\pm}(\Delta t) = 1 - \exp\left[-\nu_{j}^{\pm} \Delta t\right]
+\approx \nu_{j}^{\pm} \Delta t = 2 D_{\mu\mu,j}^{\pm} \Delta t.
+\tag{2}
+\end{equation}
+
+\medskip
+
+\textbf{2-b Conditional probability given that a scattering \emph{will} occur}
+
+If you first decide whether any scattering happens (probability $P_{\text{scatt}}$), then choose which band caused it, the branching ratio is
+\begin{equation}
+\boxed{
+\mathcal{P}_{j}^{\pm} = 
+\frac{\nu_{j}^{\pm}}{\nu_{\text{tot}}} = 
+\frac{D_{\mu\mu,j}^{\pm}}{D_{\mu\mu}^{\,+} + D_{\mu\mu}^{\,-}}
+}.
+\tag{3}
+\end{equation}
+so that $\sum_{j} \left( \mathcal{P}_{j}^{+} + \mathcal{P}_{j}^{-} \right) = 1$.
+
+\medskip
+
+\textbf{Monte-Carlo algorithm (per particle per step)}
+\begin{lstlisting}[mathescape=true, basicstyle=\ttfamily\small]
+$\Delta t$ chosen so that $\nu_{\text{tot}} \times \Delta t \lesssim 0.3$
+$\nu_{j}^{+}  = 2 \times D_{\mu\mu,j}^{+}$      # for all k-bins that resonate
+$\nu_{j}^{-}  = 2 \times D_{\mu\mu,j}^{-}$
+$\nu_{\text{tot}} = \sum \left( \nu_{j}^{+} + \nu_{j}^{-} \right )$
+
+# 1. decide if any scatter
+if random() < 1 - exp($-\nu_{\text{tot}} \times \Delta t$):      # Eq. (1)
+    # 2. pick band and direction
+    r = random() $\times \nu_{\text{tot}}$                      # roulette wheel
+    cumulative = 0
+    for each j:
+        cumulative += $\nu_{j}^{+}$
+        if r < cumulative: choose band j, direction +
+        break
+        cumulative += $\nu_{j}^{-}$
+        if r < cumulative: choose band j, direction -
+        break
+    # 3. draw Gaussian kick $\Delta \mu$ with variance $2 D_{\mu\mu,j}^{\pm} \times \Delta t$
+\end{lstlisting}
+
+This procedure exactly realizes the probabilities (1)–(3).
+
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=white, colframe=black, title={Pitch–Angle Cosine After a Single Monte-Carlo Scattering Step}]
+
+\textbf{1. Frames of reference}
+\begin{itemize}
+\item \textbf{Plasma frame (lab)} – the Parker equation and your Monte-Carlo particles are expressed here; pitch-angle cosine is
+\[
+\mu \equiv \cos\theta = \frac{\mathbf{v} \cdot \mathbf{B}_0}{v B_0}.
+\]
+\item \textbf{Wave frame} – the frame translating along the mean field at the Alfvén speed $V_A$ in the direction of the resonant wave packet ($+$ for anti-Sunward, $-$ for Sunward waves).
+In this frame the electric field of the Alfvén wave vanishes and the gyro-resonant diffusion coefficient $D_{\mu\mu}$ is derived.
+\end{itemize}
+
+You \emph{apply} the stochastic pitch-angle kick in the \textbf{wave frame}, then convert the new cosine back to the plasma frame.
+
+\medskip
+
+\textbf{2. Diffusive kick in the wave frame}
+
+For a time step $\Delta t$, the quasilinear theory gives
+\[
+\langle(\Delta \mu_{\text{wf}})^2\rangle = 2 D_{\mu\mu}^{\text{(res)}} \Delta t.
+\]
+Draw one Gaussian deviate $\xi \sim \mathcal{N}(0,1)$ and set
+\begin{equation}
+\boxed{
+\mu_{\text{wf}}' = \mu_{\text{wf}} + \sqrt{2 D_{\mu\mu}^{\text{(res)}} \Delta t} \, \xi
+}
+\tag{1}
+\end{equation}
+where $\mu_{\text{wf}}$ is the particle’s current pitch-angle cosine measured in the wave frame:
+\[
+\mu_{\text{wf}} = \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu},
 \qquad
-\varepsilon(k)\simeq\text{const}= \varepsilon.
-$$
+\beta_A \equiv \frac{V_A}{c}, \quad
+\sigma = \begin{cases}
++1 & (\text{outward wave})\\[3pt]
+-1 & (\text{inward wave}).
+\end{cases}
+\]
 
-Setting $\varepsilon$ constant leads directly to Kolmogorov’s famous scaling $E(k)\propto \varepsilon^{2/3}k^{-5/3}$ for an isotropic, steady cascade. ([Cushman][4])
+\medskip
 
-In numerical models this conservative transfer is often represented by a **spectral diffusion term**
+\textbf{3. Boundary reflection}
 
-$$
--\frac{\partial}{\partial k}\!\left[D_{kk}(k)\,\frac{\partial E}{\partial k}\right],
-\quad\text{with }D_{kk}\propto k^{7/3},
-$$
+If $|\mu_{\text{wf}}'| > 1$ after Eq.~(1), use specular reflection to keep it inside $[-1,1]$:
+\[
+\mu_{\text{wf}}' \gets
+\begin{cases}
+2 - \mu_{\text{wf}}', & \mu_{\text{wf}}' > 1, \\[2pt]
+-2 - \mu_{\text{wf}}', & \mu_{\text{wf}}' < -1.
+\end{cases}
+\]
+(Iterate once more if an extreme kick overshoots both walls.)
 
-which mimics the net effect of many local, non-linear triad interactions.
+\medskip
 
----
+\textbf{4. Transform back to the plasma frame}
 
-### 3.  Forward vs. inverse cascades
+A Lorentz boost of velocity components parallel to $B_0$ gives
+\begin{equation}
+\boxed{
+\mu' = \frac{\mu_{\text{wf}}' + \sigma \beta_A}{1 + \sigma \beta_A \mu_{\text{wf}}'}
+}
+\tag{2}
+\end{equation}
+with the same sign $\sigma$ used in step 2.
 
-* **Forward (direct) cascade** – energy moves from **large to small scales**; this is the default in 3-D hydrodynamics and most space-plasma turbulence.
-* **Inverse cascade** – certain invariants (e.g., 2-D kinetic energy, magnetic helicity) can flow **from small to large scales**, building system-sized structures; but even then, a simultaneous forward cascade of another quantity (enstrophy, cross-helicity) often co-exists. ([Wikipedia][1])
+\medskip
 
----
+\textit{Non-relativistic or SEP limit $v \gg V_A$:}
+\[
+\beta_A \ll 1 \quad \Rightarrow \quad \mu' \simeq \mu_{\text{wf}}'
+\]
+to better than $V_A / v$.
 
-### 4.  Why the cascade matters in heliophysics
+\medskip
 
-* **Heating:** The eventually dissipated cascade power explains why the solar wind remains hotter than adiabatic expansion alone predicts. ([Frontiers][3])
-* **Particle transport:** The scale-dependent wave energy $W(k)$ that the cascade maintains sets the scattering rate of energetic particles (SEPs, cosmic rays) through gyro-resonance.
-* **Chronometer of energy flow:** Measuring $E(k)$ and its evolution gives a direct diagnostic of how much mechanical or magnetic energy is being converted into heat per unit time in astrophysical plasmas.
+\end{tcolorbox}
+\begin{tcolorbox}[colback=white, colframe=black, title={Pitch–Angle Cosine After a Single Monte-Carlo Scattering Step}]
 
----
+\textbf{5. Summary algorithm (per particle)}
+\begin{lstlisting}[mathescape=true, basicstyle=\ttfamily\small]
+# inputs: $\mu$ (plasma frame), sign $\sigma$ (wave direction), $D_{\mu\mu}^{\text{(res)}}$, $\Delta t$
+$\beta_A$   = $V_A / c$
+$\mu_{\text{wf}}$ = ( $\mu - \sigma \beta_A$ ) / ( $1 - \sigma \beta_A \mu$ )
 
-### 5.  Connection to your Monte-Carlo + Parker model
+# Gaussian kick in wave frame
+$\Delta \mu$ = sqrt( $2 D_{\mu\mu}^{\text{(res)}} \Delta t$ ) * normal_rand()
+$\mu_{\text{wf}}^{\text{new}}$ = $\mu_{\text{wf}} + \Delta \mu$
+$\mu_{\text{wf}}^{\text{new}}$ = reflect( $\mu_{\text{wf}}^{\text{new}}$ )      # keep in [-1,1]
 
-In the coupled algorithm we discussed earlier:
-
-* The **cascade term** $-\mathcal W_\pm/\tau_{\text{cas}}$ in the turbulence-energy transport equation is the large-scale representation of the forward cascade: it drains energy from the Kolmogorov range at a rate $\varepsilon = \mathcal W_\pm/\tau_{\text{cas}}$ and ultimately hands it to dissipation (or to smaller-scale waves not modelled explicitly).
-* You do **not** need to resolve every intermediate scale in detail; prescribing a cascade time $\tau_{\text{cas}} \sim (L_\perp / \delta v)$ or using the $D_{kk}$-diffusion form reproduces the net flux that sustains the $k^{-5/3}$ shape while letting you track only the total amplitude $A_\pm(r,t)$.
-
----
-
-**In one sentence:**
-*A turbulence cascade is the scale-by-scale hand-off of energy (or any conserved invariant) from the big structures that are stirred by drivers all the way down to the tiny structures where microscopic physics can finally convert that energy into heat.*
-
-[1]: https://en.wikipedia.org/wiki/Energy_cascade?utm_source=chatgpt.com "Energy cascade - Wikipedia"
-[2]: https://help.altair.com/hwcfdsolvers/acusolve/topics/acusolve/training_manual/turb_scales_energy_cascasde_r.htm?utm_source=chatgpt.com "Turbulence Scales and Energy Cascade"
-[3]: https://www.frontiersin.org/journals/astronomy-and-space-sciences/articles/10.3389/fspas.2024.1371058/full?utm_source=chatgpt.com "The unsolved problem of solar-wind turbulence - Frontiers"
-[4]: https://cushman.host.dartmouth.edu/courses/engs250/Kolmogorov.pdf?utm_source=chatgpt.com "[PDF] Kolmogorov's Theory of Inertial Turbulence - Benoit Cushman-Roisin"
+# transform back to plasma frame
+$\mu^{\text{new}}$ = ( $\mu_{\text{wf}}^{\text{new}} + \sigma \beta_A$ ) / ( $1 + \sigma \beta_A \mu_{\text{wf}}^{\text{new}}$ )
+\end{lstlisting}
 
 
+\medskip
+
+\textbf{Result:}
+
+Equation (1) gives the stochastic update of pitch angle \emph{in the wave frame}; Equation (2) returns the new cosine $\mu'$ that your Monte-Carlo solver stores in the plasma (Parker) frame.
+
+\end{tcolorbox}
 
 
-=================================
+\begin{tcolorbox}[colback=white, colframe=black, title={Why Does the Frame‐Change Formula Use $V_A/c$ Instead of Just $V_A$?}]
+
+\textbf{1. Two frames and one boost}
+
+\medskip
+
+\begin{tabular}{@{}p{0.35\linewidth} p{0.25\linewidth} p{0.35\linewidth}@{}}
+\toprule
+\textbf{Frame} & \textbf{Symbol} & \textbf{Velocity of the boost} \\
+\midrule
+Plasma (lab) frame & unprimed quantities $(\mu, v_\parallel, v)$ & -- \\
+Wave frame (co-moving with an Alfvén wave packet) & ``wf'' quantities $(\mu_{\rm wf})$ & $+V_A$ along $\mathbf{B}_0$ for outward waves ($\sigma = +1$); $-V_A$ for inward waves ($\sigma = -1$) \\
+\bottomrule
+\end{tabular}
+
+\medskip
+
+To move from the plasma frame to the wave frame you perform a \textbf{Lorentz boost} of speed $\sigma V_A$ along the magnetic-field direction.
+
+\medskip
+
+\textbf{2. Lorentz transformation of a velocity component}
+
+\medskip
+
+For any velocity component parallel to the boost, special relativity gives
+\[
+v_\parallel^{\rm(wf)} = \frac{v_\parallel - \sigma V_A}{1 - \sigma \dfrac{v_\parallel V_A}{c^2}},
+\]
+where $c$ is the \textbf{speed of light in vacuum}.
+
+\medskip
+
+\textbf{3. Expressing the result as a pitch-angle cosine}
+
+\medskip
+
+Divide by the particle speed $v$ to get pitch-angle cosine:
+\[
+\mu_{\rm wf}
+= \frac{v_\parallel^{\rm(wf)}}{v}
+= \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}, 
+\qquad 
+\beta_A \equiv \frac{V_A}{c}.
+\]
+
+Hence the appearance of the $\boldsymbol{V_A/c}$ ratio.
+
+\medskip
+
+\textbf{4. Why use the full relativistic formula even for non-relativistic SEPs?}
+
+\begin{itemize}
+    \item \textbf{Correct for all energies} – Some Monte-Carlo particles may reach relativistic speeds; the exact boost keeps the algorithm valid without extra branches.
+    \item \textbf{Consistency across modules} – Wave growth and damping formulas already rely on relativistic gyro-frequency $\Omega = qB/(\gamma m)$; using the same kinematics avoids subtle bookkeeping errors.
+    \item \textbf{Negligible overhead} – Computing with $\beta_A = V_A/c \lesssim 10^{-3}$ adds one multiply and divide per particle — insignificant compared to random-number generation.
+\end{itemize}
+
+\medskip
+
+In the common SEP limit where $v \gg V_A$ (e.g., $v \sim 30{,}000\,\text{km/s}$ vs $V_A \sim 50\,\text{km/s}$),
+$\beta_A \ll 1$ and the formula reduces to the intuitive Galilean shift:
+\[
+\mu_{\rm wf} \simeq \mu - \sigma \frac{V_A}{v},
+\]
+but writing it with $V_A/c$ ensures exactness whenever it matters.
+
+\medskip
+
+\end{tcolorbox}
+\begin{tcolorbox}[colback=white, colframe=black, title={Why Does the Frame‐Change Formula Use $V_A/c$ Instead of Just $V_A$?}]
+
+\textbf{5. What is $c$ here?}
+
+\medskip
+
+$c$ is the fundamental constant 
+\[
+c = 2.9979 \times 10^{8}\;\text{m\,s}^{-1}.
+\]
+Its role is purely kinematic: it scales the boost velocity $V_A$ into a dimensionless $\beta_A = V_A/c$ so that the relativistic velocity‐addition law can be applied.
+
+\end{tcolorbox}
 
 
+\begin{tcolorbox}[colback=white, colframe=black, title={Detailed Derivation of the Pitch–Angle Cosine in the \textbf{Wave Frame}}]
+
+\[
+\boxed{
+\mu_{\text{wf}} = \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}
+},
+\qquad
+\beta_A \equiv \frac{V_A}{c}, \quad
+\sigma = 
+\begin{cases}
++1 & \text{(outward wave)} \\ 
+-1 & \text{(inward wave)}
+\end{cases}
+\]
+
+\medskip
+
+\textbf{Step 0: Set the geometry}
+
+\begin{itemize}
+\item Choose the $z$-axis along the mean magnetic field $\vb{B}_0$.
+\item \textbf{Plasma (lab) frame:} particle velocity components $\vb{v} = (v_\perp, v_\parallel)$ with $\mu = v_\parallel / v$.
+\item \textbf{Wave frame:} moves at speed $\sigma V_A$ along $+z$ (Alfvén speed). Denote wave-frame quantities with subscript ``wf''.
+\end{itemize}
+
+\medskip
+
+\textbf{Step 1: Lorentz boost along the field}
+
+For a boost of speed $u = \sigma V_A$ parallel to $z$, the exact special-relativistic velocity–addition law gives
+\begin{equation}
+v_\parallel^{\text{(wf)}} = \frac{v_\parallel - u}{1 - \dfrac{u v_\parallel}{c^2}}.
+\tag{1}
+\end{equation}
+
+The perpendicular component transforms as $v_\perp^{\text{(wf)}} = v_\perp / [\gamma_u (1 - uv_\parallel/c^2)]$ with $\gamma_u = (1 - u^2/c^2)^{-1/2}$, but we will not need it explicitly.
+
+\medskip
+
+\textbf{Step 2: Write everything in terms of $\mu$}
+
+Insert $u = \sigma V_A$ and $v_\parallel = \mu v$ into Eq.~(1):
+\begin{equation}
+v_\parallel^{\text{(wf)}} 
+= \frac{\mu v - \sigma V_A}{1 - \sigma \dfrac{V_A}{c^2} \mu v}
+= \frac{\mu v - \sigma V_A}{1 - \sigma \beta_A \mu \dfrac{v}{c}}.
+\tag{2}
+\end{equation}
+
+Define $\beta \equiv v/c$ and $\beta_A \equiv V_A/c$:
+\begin{equation}
+v_\parallel^{\text{(wf)}}
+= \frac{c(\beta \mu - \sigma \beta_A)}{1 - \sigma \beta_A \beta \mu}.
+\tag{3}
+\end{equation}
+
+\medskip
+
+\textbf{Step 3: Transform total speed $v$}
+
+The total speed in the wave frame is
+\begin{equation}
+v^{\text{(wf)}} = \frac{v}{\gamma_u (1 - uv_\parallel / c^2)} = \frac{v}{\gamma_A (1 - \sigma \beta_A \beta \mu)},
+\quad
+\gamma_A = (1 - \beta_A^2)^{-1/2}.
+\tag{4}
+\end{equation}
+
+\medskip
+
+\end{tcolorbox}
+\begin{tcolorbox}[colback=white, colframe=black, title={Detailed Derivation of the Pitch–Angle Cosine in the \textbf{Wave Frame}}]
+
+\textbf{Step 4: Form the pitch–angle cosine in the wave frame}
+
+By definition,
+\begin{equation}
+\mu_{\text{wf}} = \frac{v_\parallel^{\text{(wf)}}}{v^{\text{(wf)}}}.
+\tag{5}
+\end{equation}
+
+Insert Eqs.~(3) and (4):
+\[
+\mu_{\text{wf}} = \frac{c(\beta \mu - \sigma \beta_A)}{1 - \sigma \beta_A \beta \mu}
+\div
+\frac{v}{\gamma_A (1 - \sigma \beta_A \beta \mu)}
+= \frac{\beta \mu - \sigma \beta_A}{\beta}
+= \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}.
+\tag{6}
+\]
+(*Multiply numerator and denominator by $(1 - \sigma \beta_A \mu)$ and cancel $\beta$.*)
+
+Thus we recover the compact formula:
+\[
+\boxed{
+\mu_{\text{wf}} = \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}
+},
+\qquad
+\beta_A = \frac{V_A}{c}.
+\]
+
+\medskip
+
+\textbf{Step 5: Non-relativistic limit for SEPs}
+
+For solar-wind Alfvén speeds $V_A \sim 50$--$100\,\text{km\,s}^{-1}$ and SEP speeds $v \gtrsim 10^4\,\text{km\,s}^{-1}$:
+\[
+\beta_A = \frac{V_A}{c} \ll 1, \qquad
+\beta = \frac{v}{c} \lesssim 0.1,
+\]
+so the denominator differs from unity by at most $\mathcal{O}(\beta_A)$. To first order:
+\[
+\mu_{\text{wf}} \simeq \mu - \sigma \frac{V_A}{v},
+\]
+but using the full relativistic form ensures exactness for any particle energy and keeps the code consistent with relativistic gyro-frequency formulas.
+
+\medskip
+
+\textbf{What is $c$ here?}
+
+\[
+c = 2.998 \times 10^8\,\text{m\,s}^{-1}
+\]
+is the speed of light in vacuum. It converts the boost velocity $V_A$ into the dimensionless parameter $\beta_A = V_A/c$ required by Lorentz (not Galilean) velocity addition.
+
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=white, colframe=black, title={Step-by-Step Derivation of Pitch–Angle Cosine in the Wave Frame}]
+
+\textbf{Goal}
+\[
+\boxed{
+\mu_{\text{wf}} = \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}
+},
+\qquad
+\beta_A \equiv \frac{V_A}{c}, \quad
+\sigma =
+\begin{cases}
++1 & \text{outward (anti-Sunward) wave},\\
+-1 & \text{inward (Sunward) wave}.
+\end{cases}
+\]
+
+\medskip
+
+\textbf{0. Geometry and notation}
+
+\begin{itemize}
+\item Field–aligned $z$-axis ($\vb{B}_0 \parallel \vu{z}$).
+\item Plasma–frame velocity $\vb{v} = (v_\perp, v_\parallel)$ with pitch-angle cosine $\mu = \dfrac{v_\parallel}{v}$.
+\item Wave frame moves at speed $\sigma V_A$ along $+\vu{z}$.
+\end{itemize}
+
+\medskip
+
+\textbf{1. Lorentz boost of the parallel component}
+
+For a boost velocity $u = \sigma V_A$ along $z$,
+\begin{equation}
+v_\parallel^{\text{(wf)}} = 
+\frac{v_\parallel - u}{1 - \dfrac{u v_\parallel}{c^2}}.
+\tag{1}
+\end{equation}
+
+\medskip
+
+\textbf{2. Substitute $u$ and $v_\parallel$}
+
+Let $\beta = v/c$ and $\beta_A = V_A / c$.
+
+Insert $u = \sigma V_A$ and $v_\parallel = \mu v = \mu \beta c$:
+\begin{equation}
+v_\parallel^{\text{(wf)}}
+= \frac{\mu \beta c - \sigma \beta_A c}{1 - \sigma \beta_A \beta \mu}
+= c \frac{\beta \mu - \sigma \beta_A}{1 - \sigma \beta_A \beta \mu}.
+\tag{2}
+\end{equation}
+
+\medskip
+
+\textbf{3. Lorentz boost of the total speed}
+
+The total speed in the wave frame is:
+\begin{equation}
+v^{\text{(wf)}} =
+\frac{v}{\gamma_A (1 - \sigma \beta_A \beta \mu)},
+\qquad
+\gamma_A = \frac{1}{\sqrt{1 - \beta_A^2}}.
+\tag{3}
+\end{equation}
+
+\medskip
+
+\textbf{4. Form the cosine in the wave frame}
+
+\[
+\mu_{\text{wf}}
+= \frac{v_\parallel^{\text{(wf)}}}{v^{\text{(wf)}}}
+= \frac{c(\beta \mu - \sigma \beta_A)}{1 - \sigma \beta_A \beta \mu}
+\times
+\frac{\gamma_A (1 - \sigma \beta_A \beta \mu)}{v}.
+\]
+
+Because $v = \beta c$, the $c$ and $(1 - \sigma \beta_A \beta \mu)$ terms cancel:
+\begin{equation}
+\mu_{\text{wf}}
+= \frac{\beta \mu - \sigma \beta_A}{\beta}
+= \frac{\mu - \sigma \beta_A}{1 - \sigma \beta_A \mu}.
+\tag{4}
+\end{equation}
+
+This is exactly the boxed result.
+
+\medskip
+
+\textbf{5. Non-relativistic (SEP) limit}
+
+If $v \gg V_A$, then $\beta_A \ll 1$ and
+\[
+\mu_{\text{wf}} \simeq \mu - \sigma \frac{V_A}{v},
+\]
+the familiar Galilean correction, obtained as the small-$\beta_A$ limit of the fully relativistic expression.
+
+
+
+\end{tcolorbox}
