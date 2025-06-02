@@ -120,10 +120,13 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
 ! CollisionCrossSection=function \\
 !   skdjhfkjsdhk 
 
-  CollisionCrossSection=HS
+! CollisionCrossSection=HS
 
-! CollisionCrossSection=const \\ !const, function
-!   const (H2O,H2O)= 3.4E-19 
+  CollisionCrossSection=const \\ !const, function
+    const (H2O,H2O)= 3.4E-19 \\
+    const (H2O,CO2)= 3.4E-19 \\
+    const (CO2,CO2)= 3.4E-19 
+
 #endParticleCollisions
 
 #IDF
