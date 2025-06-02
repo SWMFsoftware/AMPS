@@ -7,7 +7,6 @@
 
 #include "pic.h"
 
-
 PIC::Mover::fProcessOutsideDomainParticles PIC::Mover::ProcessOutsideDomainParticles=NULL;
 PIC::Mover::fProcessTriangleCutFaceIntersection PIC::Mover::ProcessTriangleCutFaceIntersection=NULL;
 
@@ -3605,7 +3604,9 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 }
 
 int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode)  {
-  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(ptr,dtTotal,startNode,false);
+//  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(ptr,dtTotal,startNode,false);
+
+  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,dtTotal,startNode,false);
 }
 
 //==================================================================
@@ -3726,3 +3727,582 @@ int PIC::Mover::Simple(long int ptr, double dtTotal,cTreeNodeAMR<PIC::Mesh::cDat
 
 
 
+int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(
+  long int ptr, 
+  double dtTotal, 
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode, 
+  bool FirstBoundaryFlag,
+  CutCell::cTriangleFace *lastIntersectedTriangleFace) {
+  
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* newNode;
+  double dtMin = -1.0;
+  PIC::ParticleBuffer::byte *ParticleData;
+  double v[3], x[3] = {0.0, 0.0, 0.0}, *xminBlock, *xmaxBlock;
+  int idim;
+
+  double dtTotal_init=dtTotal; 
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode_init=startNode; 
+  bool FirstBoundaryFlag_init=FirstBoundaryFlag;
+  CutCell::cTriangleFace *lastIntersectedTriangleFace_init=lastIntersectedTriangleFace; 
+  
+  long int LocalCellNumber;
+  int i, j, k;
+  
+  PIC::Mesh::cDataCenterNode *cell;
+  bool MovingTimeFinished = false;
+  
+  static long int nCallCounter = 0;
+  nCallCounter++;
+  
+  // Intersection type codes
+  #define _UNDEFINED_MIN_DT_INTERSECTION_CODE_        0
+  #define _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_    1
+  
+  int ParticleIntersectionCode = _UNDEFINED_MIN_DT_INTERSECTION_CODE_;
+  CutCell::cTriangleFace *IntersectionFace = NULL;
+  CutCell::cTriangleFace *lastIntersectedTriangleFace_LastCycle = NULL;
+  
+  // Get particle data
+  ParticleData = PIC::ParticleBuffer::GetParticleDataPointer(ptr);
+  PIC::ParticleBuffer::GetV(v, ParticleData);
+  PIC::ParticleBuffer::GetX(x, ParticleData);
+
+  // Track previous node for timestep recalculation logic
+  cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* previousNode = NULL;
+  
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  // Debug: verify particle location
+  if ((LocalCellNumber = PIC::Mesh::mesh->FindCellIndex(x, i, j, k, startNode, false)) == -1) {
+      exit(__LINE__, __FILE__, "Error: cannot find the cell where the particle is located");
+  }
+  
+  cell = startNode->block->GetCenterNode(LocalCellNumber);
+  if (cell->Measure <= 0.0) {
+      cout << "$PREFIX:" << __FILE__ << __LINE__ << endl;
+      exit(__LINE__, __FILE__, "Error: the cell measure is not initialized");
+  }
+  #endif
+
+  double maxAllowedDistance = 0.0;
+  
+  // Main integration loop
+  while (MovingTimeFinished == false) {
+      MovingLoop:
+      
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      // Verify particle is in correct cell
+      int iTemp, jTemp, kTemp;
+      if (PIC::Mesh::mesh->FindCellIndex(x, iTemp, jTemp, kTemp, startNode, false) == -1) {
+          exit(__LINE__, __FILE__, "Error: the cell is not found");
+      }
+      
+      if (startNode->block == NULL) {
+          exit(__LINE__, __FILE__, "Error: the block is not initialized");
+      }
+      #endif
+      
+      xminBlock = startNode->xmin;
+      xmaxBlock = startNode->xmax;
+      
+      // Only recalculate dtMin if we moved to a new block or first iteration
+      bool needRecalculateTimeStep = (previousNode != startNode);
+      
+      double blockSize[3];
+      double minBlockSize;
+      
+      if (needRecalculateTimeStep) {
+          // Calculate sub-timestep limited to 1/4 block size movement
+          double maxDistance = 0.0;
+          
+          // Calculate block dimensions
+          for (idim = 0; idim < 3; idim++) {
+              blockSize[idim] = xmaxBlock[idim] - xminBlock[idim];
+          }
+          
+          // Find maximum distance particle would travel in remaining time
+          for (idim = 0; idim < 3; idim++) {
+              double distance = fabs(v[idim] * dtTotal);
+              if (distance > maxDistance) {
+                  maxDistance = distance;
+              }
+          }
+          
+          // Limit timestep to ensure particle doesn't move more than one cell size
+          // into the next block (first cell row/column of neighboring block)
+          double cellSize[3];
+          for (idim = 0; idim < 3; idim++) {
+              cellSize[idim] = blockSize[idim] / ((idim == 0) ? _BLOCK_CELLS_X_ : 
+                                                (idim == 1) ? _BLOCK_CELLS_Y_ : _BLOCK_CELLS_Z_);
+          }
+          
+          // Calculate current particle position within the block (normalized coordinates)
+          double particleBlockPosition[3];
+          for (idim = 0; idim < 3; idim++) {
+              particleBlockPosition[idim] = (x[idim] - xminBlock[idim]) / blockSize[idim];
+              // Clamp to [0,1] range
+              if (particleBlockPosition[idim] < 0.0) particleBlockPosition[idim] = 0.0;
+              if (particleBlockPosition[idim] > 1.0) particleBlockPosition[idim] = 1.0;
+          }
+          
+          // Maximum allowed distance from current particle location
+          maxAllowedDistance = 0.0;
+
+	  dtMin = dtTotal;
+          MovingTimeFinished = true;
+
+          for (idim = 0; idim < 3; idim++) {
+              double distanceToBlockEdge, maxDistanceThisDir;
+              
+              if (v[idim] > 0.0) {
+                  // Moving in positive direction - distance to max edge + one cell
+                  distanceToBlockEdge = (1.0 - particleBlockPosition[idim]) * blockSize[idim];
+                  maxDistanceThisDir = distanceToBlockEdge + cellSize[idim]/2.0;
+
+		  double t=maxDistanceThisDir/v[idim];
+		  if (dtMin>t) {
+                    dtMin=t;
+		    MovingTimeFinished=false;
+		  }
+              } else if (v[idim] < 0.0) {
+                  // Moving in negative direction - distance to min edge + one cell
+                  distanceToBlockEdge = particleBlockPosition[idim] * blockSize[idim];
+                  maxDistanceThisDir = distanceToBlockEdge + cellSize[idim];
+
+                  double t=-maxDistanceThisDir/v[idim];
+                  if (dtMin>t) {
+                    dtMin=t;
+                    MovingTimeFinished=false;
+                  }
+              } else {
+                  // Not moving in this direction
+                  maxDistanceThisDir = 1e30; // Very large value
+              }
+              
+              if (maxDistanceThisDir > maxAllowedDistance) {
+                  maxAllowedDistance = maxDistanceThisDir;
+              }
+          }
+          
+	  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+	  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+	  if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+          #endif 
+          
+          // Store current node for next iteration
+          previousNode = startNode;
+      } else {
+          // Use remaining time or distance limit, whichever is smaller
+          double maxDistance = 0.0;
+          for (idim = 0; idim < 3; idim++) {
+              double distance = fabs(v[idim] * dtTotal);
+              if (distance > maxDistance) {
+                  maxDistance = distance;
+              }
+          }
+          
+          if (maxDistance > maxAllowedDistance) {
+              // Still need to limit timestep
+              double maxSpeed = 0.0;
+              for (idim = 0; idim < 3; idim++) {
+                  if (fabs(v[idim]) > maxSpeed) {
+                      maxSpeed = fabs(v[idim]);
+                  }
+              }
+              
+              if (maxSpeed > 0.0) {
+                  dtMin = maxAllowedDistance / maxSpeed;
+                  MovingTimeFinished = false;
+              } else {
+                  dtMin = dtTotal;
+                  MovingTimeFinished = true;
+              }
+          } else {
+              dtMin = dtTotal;
+              MovingTimeFinished = true;
+          }
+
+	  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+	  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+          #endif 
+      }
+      
+      // Reset intersection tracking
+      ParticleIntersectionCode = _UNDEFINED_MIN_DT_INTERSECTION_CODE_;
+      IntersectionFace = NULL;
+
+      if (CutCell::nBoundaryTriangleFaces > 0) {
+        PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IncrementCounter();
+      }
+
+      
+      // Store reference to last intersected face from previous cycle
+      lastIntersectedTriangleFace_LastCycle = lastIntersectedTriangleFace;
+      
+      // Check intersection with triangulated surfaces
+      double xLocalIntersectionFace[2], xIntersectionFace[3];
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+      if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+      #endif
+      
+      if (startNode->FirstTriangleCutFace != NULL) {
+          CutCell::cTriangleFaceDescriptor *t;
+          CutCell::cTriangleFace *TriangleFace;
+          double TimeOfFlight;
+          double xLocalIntersection[2], xIntersection[3];
+          
+          for (t = startNode->FirstTriangleCutFace; t != NULL; t = t->next) {
+              if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace) {
+                  if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
+                      if (TriangleFace->RayIntersection(x, v, TimeOfFlight, xLocalIntersection, xIntersection, PIC::Mesh::mesh->EPS) == true) {
+
+                          TimeOfFlight*=(1.0-1.0E-5);
+
+                          if ((TimeOfFlight < dtMin) && (TimeOfFlight > 0.0)) {
+                              // Check intersection acceptance flag (same logic as original)
+                              bool FaceIntersectionAccetanceFlag = true;
+                              
+                              if (FaceIntersectionAccetanceFlag == true) {
+                                  dtMin = TimeOfFlight;
+                                  IntersectionFace = t->TriangleFace;
+
+				  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+				  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+				  if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                                  #endif
+                                  
+                                  memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
+                                  memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
+                                  
+                                  ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                                  MovingTimeFinished = false;
+                              }
+                          }
+                      }
+                  }
+
+		  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+		  if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+		  if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                  #endif
+              }
+          }
+      }
+      
+      // Advance particle position (no acceleration)
+      double xOriginal[3];
+      memcpy(xOriginal, x, 3 * sizeof(double));
+
+      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+      if (isfinite(dtMin)==false) exit(__LINE__,__FILE__,"Error: non finite");
+      if (std::fpclassify(dtMin) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+      #endif
+      
+      for (idim = 0; idim < 3; idim++) {
+          x[idim] += dtMin * v[idim];
+      }
+      
+      // Check if particle moved to a different block
+      cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* potentialNewNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+      
+      if (potentialNewNode != NULL && potentialNewNode != startNode) {
+          // Particle moved to a different block - need to check cut faces in new block
+          double dtMinCutFace = dtMin; // Initialize with current dtMin
+          bool foundCutFaceIntersection = false;
+          
+          // Check cut faces in the new block from original particle position
+          if (potentialNewNode->FirstTriangleCutFace != NULL) {
+              
+              CutCell::cTriangleFaceDescriptor *t;
+              CutCell::cTriangleFace *TriangleFace;
+              double TimeOfFlight;
+              double xLocalIntersection[2], xIntersection[3];
+              
+              for (t = potentialNewNode->FirstTriangleCutFace; t != NULL; t = t->next) {
+                  if ((TriangleFace = t->TriangleFace) != lastIntersectedTriangleFace)  if (PIC::Mesh::IrregularSurface::CutFaceAccessCounter::IsFirstAccecssWithAccessCounterUpdate(TriangleFace) == true) {
+                      if (TriangleFace->RayIntersection(xOriginal, v, TimeOfFlight, 
+                                                     xLocalIntersection, xIntersection, 
+                                                     PIC::Mesh::mesh->EPS) == true) {
+
+                          TimeOfFlight*=(1.0-1.0E-5);
+
+                          if ((TimeOfFlight < dtMinCutFace) && (TimeOfFlight > 0.0)) {
+                              dtMinCutFace = TimeOfFlight;
+                              foundCutFaceIntersection = true;
+
+			      #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+			      if (isfinite(dtMinCutFace)==false) exit(__LINE__,__FILE__,"Error: non finite");
+			      if (std::fpclassify(dtMinCutFace) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+                              #endif
+                              
+                              // Update intersection data
+                              IntersectionFace = TriangleFace;
+                              memcpy(xLocalIntersectionFace, xLocalIntersection, 2 * sizeof(double));
+                              memcpy(xIntersectionFace, xIntersection, 3 * sizeof(double));
+                              ParticleIntersectionCode = _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_;
+                          }
+                      }
+                  }
+              }
+          }
+          
+          // If cut face intersection found, limit dtMin and recalculate position
+          if (foundCutFaceIntersection) {
+              dtMin = dtMinCutFace;
+              MovingTimeFinished = false;
+              
+              // Recalculate particle position with limited dtMin
+              for (idim = 0; idim < 3; idim++) {
+                  x[idim] = xOriginal[idim] + dtMin * v[idim];
+              }
+          }
+      }
+      
+      FirstBoundaryFlag = false;
+      
+      // Adjust remaining time
+      dtTotal -= dtMin;
+      
+      // Reset lastIntersectedTriangleFace if not intersecting boundary face
+      if (ParticleIntersectionCode != _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_) {
+          lastIntersectedTriangleFace = NULL;
+
+          #if _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE_ == _PIC_PARTICLE_MOVER__FORCE_INTEGRTAION_MODE__ON_
+          double accl[3];
+	  int spec;
+
+	  spec=PIC::ParticleBuffer::GetI(ParticleData);
+          _PIC_PARTICLE_MOVER__TOTAL_PARTICLE_ACCELERATION_(accl,spec,ptr,x,v,startNode);
+
+	  for (int idim=0;idim<3;idim++) {
+  	    v[idim]+=accl[idim]*dtMin;
+
+            #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+            if (isfinite(v[idim])==false) exit(__LINE__,__FILE__,"Error: non finite");
+            if (std::fpclassify(v[idim]) == FP_SUBNORMAL) exit(__LINE__,__FILE__,"Error: non finite");
+            #endif
+            #endif
+	  }
+      }
+      
+      // Handle triangulated surface intersections
+      if (ParticleIntersectionCode == _BOUNDARY_FACE_MIN_DT_INTERSECTION_CODE_) {
+          const double xLocalEPS = 1.0E-5;
+          
+          // Recalculate intersection point using local coordinates
+          for (idim = 0; idim < 2; idim++) {
+              if (xLocalIntersectionFace[idim] < xLocalEPS) {
+                  xLocalIntersectionFace[idim] = xLocalEPS;
+              }
+              if (xLocalIntersectionFace[idim] > 1.0 - xLocalEPS) {
+                  xLocalIntersectionFace[idim] = 1.0 - xLocalEPS;
+              }
+          }
+          
+          if (xLocalIntersectionFace[0] + xLocalIntersectionFace[1] > 1.0 - xLocalEPS) {
+              double c = (1.0 - xLocalEPS) / (xLocalIntersectionFace[0] + xLocalIntersectionFace[1]);
+              xLocalIntersectionFace[0] *= c;
+              xLocalIntersectionFace[1] *= c;
+          }
+          
+          // Update particle position to intersection point
+          for (idim = 0; idim < 3; idim++) {
+              x[idim] = IntersectionFace->x0Face[idim] + 
+                       xLocalIntersectionFace[0] * IntersectionFace->e0[idim] +
+                       xLocalIntersectionFace[1] * IntersectionFace->e1[idim];
+          }
+          
+          // Apply boundary condition procedure
+          int code;
+          newNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+          
+          do {
+              code = (ProcessTriangleCutFaceIntersection != NULL) ? 
+                     ProcessTriangleCutFaceIntersection(ptr, x, v, IntersectionFace, newNode) : 
+                     _PARTICLE_DELETED_ON_THE_FACE_;
+              
+              if (code == _PARTICLE_DELETED_ON_THE_FACE_) {
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                  return _PARTICLE_LEFT_THE_DOMAIN_;
+              }
+          }
+          while (v[0] * IntersectionFace->ExternalNormal[0] + 
+                 v[1] * IntersectionFace->ExternalNormal[1] + 
+                 v[2] * IntersectionFace->ExternalNormal[2] <= 0.0);
+          
+          // Ensure particle is positioned outside the surface after scattering
+          double normalDotPosition = 0.0;
+          double *surfaceNormal = IntersectionFace->ExternalNormal;
+          double *surfacePoint = IntersectionFace->x0Face;
+          
+          // Calculate distance from surface (positive = outside, negative = inside)
+          for (idim = 0; idim < 3; idim++) {
+              normalDotPosition += (x[idim] - surfacePoint[idim]) * surfaceNormal[idim];
+          }
+          
+          // If particle is inside or too close to surface, move it outside
+          double minDistanceFromSurface = 2.0 * PIC::Mesh::mesh->EPS;
+          if (normalDotPosition < minDistanceFromSurface) {
+              double displacementDistance = minDistanceFromSurface - normalDotPosition;
+              
+              // Move particle along surface normal to ensure it's outside
+              for (idim = 0; idim < 3; idim++) {
+                  x[idim] += displacementDistance * surfaceNormal[idim];
+              }
+              
+              // Verify the particle is now outside the surface
+              normalDotPosition = 0.0;
+              for (idim = 0; idim < 3; idim++) {
+                  normalDotPosition += (x[idim] - surfacePoint[idim]) * surfaceNormal[idim];
+              }
+              
+              // Additional safety check - if still inside, move further out
+              if (normalDotPosition < minDistanceFromSurface) {
+                  for (idim = 0; idim < 3; idim++) {
+                      x[idim] += minDistanceFromSurface * surfaceNormal[idim];
+                  }
+              }
+          }
+          
+          // Double-check using domain boundary function if available
+          #if _PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_ == _PIC_MODE_ON_
+          if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces, 
+                                            CutCell::nBoundaryTriangleFaces, 
+                                            false, 0.0 * PIC::Mesh::mesh->EPS) == false) {
+              // Particle is still inside - move it further out along normal
+              for (idim = 0; idim < 3; idim++) {
+                  x[idim] += 5.0 * PIC::Mesh::mesh->EPS * surfaceNormal[idim];
+              }
+              
+              // Final check - if still inside, delete particle to avoid infinite loop
+              if (CutCell::CheckPointInsideDomain(x, CutCell::BoundaryTriangleFaces, 
+                                                CutCell::nBoundaryTriangleFaces, 
+                                                false, 0.0 * PIC::Mesh::mesh->EPS) == false) {
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                  return _PARTICLE_LEFT_THE_DOMAIN_;
+              }
+          }
+          #endif
+          
+          // Save the intersected face and update node
+          lastIntersectedTriangleFace = IntersectionFace;
+          startNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+          
+          if (startNode == NULL) {
+              // Particle moved outside computational domain
+              PIC::ParticleBuffer::DeleteParticle(ptr);
+              return _PARTICLE_LEFT_THE_DOMAIN_;
+          }
+      }
+      else {
+          // Check if particle moved outside current block
+          bool particleOutsideBlock = false;
+          for (idim = 0; idim < 3; idim++) {
+              if (x[idim] < xminBlock[idim] || x[idim] > xmaxBlock[idim]) {
+                  particleOutsideBlock = true;
+                  break;
+              }
+          }
+          
+          if (particleOutsideBlock) {
+              // Find new node containing the particle
+              newNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+              
+              if (newNode == NULL) {
+                  // Particle left computational domain - delete it
+                  PIC::ParticleBuffer::DeleteParticle(ptr);
+                  return _PARTICLE_LEFT_THE_DOMAIN_;
+              }
+              
+              // Update to new block
+              startNode = newNode;
+          }
+      }
+  } // End of main while loop
+  
+  // Final particle placement
+  if ((LocalCellNumber = PIC::Mesh::mesh->FindCellIndex(x, i, j, k, startNode, false)) == -1) {
+      exit(__LINE__, __FILE__, "Error: cannot find the cell where the particle is located");
+  }
+  
+  if (startNode->block == NULL) {
+      //there is a problem with the particles: remove the particle
+      if (_PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ == _PIC_MODE_OFF_) {
+        double Rate;
+	int spec;
+
+	spec=PIC::ParticleBuffer::GetI(ParticleData);
+
+
+        Rate=startNode_init->block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)/
+            startNode_init->block->GetLocalTimeStep(spec);
+
+        PIC::Mover::Sampling::Errors::AddRemovedParticleData(Rate,spec,__LINE__,__FILE__);
+
+        //remove the particle
+        PIC::ParticleBuffer::DeleteParticle(ptr);
+        return _PARTICLE_LEFT_THE_DOMAIN_;
+      }
+      else exit(__LINE__,__FILE__,"Error: startNode->block == NULL");
+  }
+  
+  PIC::Mesh::cDataBlockAMR *block = startNode->block;
+  
+  // Update particle data
+  PIC::ParticleBuffer::SetV(v, ParticleData);
+  PIC::ParticleBuffer::SetX(x, ParticleData);
+  
+  // Link particle into cell list (thread-safe)
+  #if _PIC_MOVER__MPI_MULTITHREAD_ == _PIC_MODE_ON_
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
+  
+  long int tempFirstCellParticle = atomic_exchange(
+      block->tempParticleMovingListTable + i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k), ptr);
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
+  
+  if (tempFirstCellParticle != -1) {
+      PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
+  }
+  
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__MPI_
+  long int tempFirstCellParticle, *tempFirstCellParticlePtr;
+  
+  tempFirstCellParticlePtr = block->tempParticleMovingListTable + 
+                            i + _BLOCK_CELLS_X_ * (j + _BLOCK_CELLS_Y_ * k);
+  tempFirstCellParticle = (*tempFirstCellParticlePtr);
+  
+  PIC::ParticleBuffer::SetNext(tempFirstCellParticle, ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
+  
+  if (tempFirstCellParticle != -1) {
+      PIC::ParticleBuffer::SetPrev(ptr, tempFirstCellParticle);
+  }
+  *tempFirstCellParticlePtr = ptr;
+  
+  #elif _COMPILATION_MODE_ == _COMPILATION_MODE__HYBRID_
+  PIC::Mesh::cDataBlockAMR::cTempParticleMovingListMultiThreadTable* ThreadTempParticleMovingData = 
+      block->GetTempParticleMovingListMultiThreadTable(omp_get_thread_num(), i, j, k);
+  
+  PIC::ParticleBuffer::SetNext(ThreadTempParticleMovingData->first, ParticleData);
+  PIC::ParticleBuffer::SetPrev(-1, ParticleData);
+  
+  if (ThreadTempParticleMovingData->last == -1) {
+      ThreadTempParticleMovingData->last = ptr;
+  }
+  if (ThreadTempParticleMovingData->first != -1) {
+      PIC::ParticleBuffer::SetPrev(ptr, ThreadTempParticleMovingData->first);
+  }
+  ThreadTempParticleMovingData->first = ptr;
+  #endif
+  
+  #if _PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_
+  cell = startNode->block->GetCenterNode(LocalCellNumber);
+  if ((cell->Measure <= 0.0) && (startNode->Thread == PIC::Mesh::mesh->ThisThread)) {
+      cout << "$PREFIX:" << __FILE__ << __LINE__ << endl;
+      exit(__LINE__, __FILE__, "Error: the cell measure is not initialized");
+  }
+  #endif
+  
+  return _PARTICLE_MOTION_FINISHED_;
+}
