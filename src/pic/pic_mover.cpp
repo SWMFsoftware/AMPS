@@ -4257,8 +4257,8 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
 
 	spec=PIC::ParticleBuffer::GetI(ParticleData);
 	
-	if (i<s) {
-	  cout << "AMPS:: time step is too large: v*dt > block size: (" << s << "  > " << l << endl;
+	if (s>l) {
+	  cout << "AMPS:: time step is too large: v*dt > block size: (" << s << "  > " << l << ") -- reduce time step (" << __LINE__ << "@" << __FILE__ << ")" <<endl;
 	}
 
 
