@@ -4119,8 +4119,12 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
           // Apply boundary condition procedure
           int code;
           newNode = PIC::Mesh::mesh->findTreeNode(x, startNode);
+
+	  double dot_product_init=v[0] * IntersectionFace->ExternalNormal[0] +
+                 v[1] * IntersectionFace->ExternalNormal[1] +
+                 v[2] * IntersectionFace->ExternalNormal[2]; 
           
-          do {
+       //   do {
               code = (ProcessTriangleCutFaceIntersection != NULL) ? 
                      ProcessTriangleCutFaceIntersection(ptr, x, v, IntersectionFace, newNode) : 
                      _PARTICLE_DELETED_ON_THE_FACE_;
@@ -4129,11 +4133,14 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
                   PIC::ParticleBuffer::DeleteParticle(ptr);
                   return _PARTICLE_LEFT_THE_DOMAIN_;
               }
-          }
-          while (v[0] * IntersectionFace->ExternalNormal[0] + 
+        //  }
+        if  ((v[0] * IntersectionFace->ExternalNormal[0] + 
                  v[1] * IntersectionFace->ExternalNormal[1] + 
-                 v[2] * IntersectionFace->ExternalNormal[2] <= 0.0);
+                 v[2] * IntersectionFace->ExternalNormal[2])* dot_product_init>=0.0) {
+		 for (int i=0;i<3;i++) v[i]*=-1.0; 
+	}
           
+	/*
           // Ensure particle is positioned outside the surface after scattering
           double normalDotPosition = 0.0;
           double *surfaceNormal = IntersectionFace->ExternalNormal;
@@ -4167,6 +4174,8 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
                   }
               }
           }
+
+	  */
           
           // Double-check using domain boundary function if available
           #if _PIC_CONTROL_PARTICLE_INSIDE_NASTRAN_SURFACE_ == _PIC_MODE_ON_
@@ -4235,7 +4244,22 @@ int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryIn
         double Rate;
 	int spec;
 
+	//debug info 
+	double s=dtTotal_init*Vector3D::Length(v);
+	double l=0.0;
+
+        for (int i=0;i<3;i++) {
+	  double t=startNode->xmax[i]-startNode->xmin[i];
+          l+=t*t;
+	}
+
+        l=sqrt(l);	
+
 	spec=PIC::ParticleBuffer::GetI(ParticleData);
+	
+	if (i<s) {
+	  cout << "AMPS:: time step is too large: v*dt > block size" << endl;
+	}
 
 
         Rate=startNode_init->block->GetLocalParticleWeight(spec)*PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr)/
