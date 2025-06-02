@@ -330,7 +330,7 @@ double localTimeStep(int spec,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR> *startNode)
     double dt;
 
 #if _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_
-    CharacteristicSpeed = 20.;
+    CharacteristicSpeed = 400.;
     CellSize=startNode->GetCharacteristicCellSize();
     return 0.3*CellSize/CharacteristicSpeed;
 #endif        
