@@ -84,6 +84,9 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
   define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__CHEMISTRY_  _PIC_MODE_ON_
   define _PIC_PARTICLE_TRACKER__TRACKING_CONDITION_MODE__DYNAMICS_  _PIC_MODE_ON_ 
 
+  define _PIC_MOVER__UNKNOWN_ERROR_IN_PARTICLE_MOTION__STOP_EXECUTION_ _PIC_MODE_OFF_
+  define _PIC_PARTICLE_MOVER__MOVE_PARTICLE_BOUNDARY_INJECTION_(ptr,LocalTimeStep,node,FirstBoundaryFlag) PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,LocalTimeStep,node,FirstBoundaryFlag); 
+
 
   RecoverMacroscopicSampledData=off  \\ !!on, off
     execution=stop \\ ! continue \\ !stop \\ !stop,continue
