@@ -3604,9 +3604,12 @@ if (_PIC_DEBUGGER_MODE_ == _PIC_DEBUGGER_MODE_ON_) {
 }
 
 int PIC::Mover::UniformWeight_UniformTimeStep_noForce_TraceTrajectory_SecondOrder(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* startNode)  {
-//  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(ptr,dtTotal,startNode,false);
+  if (( _SIMULATION_TIME_STEP_MODE_ == _SINGLE_GLOBAL_TIME_STEP_)&&(_SIMULATION_PARTICLE_WEIGHT_MODE_ == _SPECIES_DEPENDENT_GLOBAL_PARTICLE_WEIGHT_)) { 
+    return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,dtTotal,startNode,false);  
+  }
+  
 
-  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_Simplified(ptr,dtTotal,startNode,false);
+  return UniformWeight_UniformTimeStep_noForce_TraceTrajectory_BoundaryInjection_SecondOrder(ptr,dtTotal,startNode,false);
 }
 
 //==================================================================
