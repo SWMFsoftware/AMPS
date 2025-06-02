@@ -28,7 +28,7 @@ int cMeshAMRgeneric<cCornerNode,cCenterNode,cBlockAMR>::GetCutcellTetrahedronMes
 
 
   //set margin for clacualting the local coordinates
-  CutCell::xLocalMargin=1.0E-5;
+  CutCell::xLocalMargin=0.0; //1.0E-5;
 
   class cCorner {
   public:
