@@ -135,7 +135,7 @@ UserDefinedSurfaceTriangulationData::mode=on,class=cSurfaceDataCG,header=Surface
   vvRelaxation=off !on,off
   rtRelaxation=on !on,off
 
-  nVibModes(H2O=2)
+! nVibModes(H2O=2)
   nRotModes(H2O=3)
 
   RotZnum(H2O=5)
