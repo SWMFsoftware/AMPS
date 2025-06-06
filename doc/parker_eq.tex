@@ -1,0 +1,585 @@
+\section{Parker Equation}
+
+\section*{\texorpdfstring{ \textbf{1. Adiabatic Cooling in the Parker Transport Equation}}{}}
+
+The standard \textbf{Parker transport equation} for the \textbf{isotropic} distribution function $f(v, r, t)$ is:
+
+\begin{equation}
+\frac{\partial f}{\partial t}
++ U \frac{\partial f}{\partial r}
+- \frac{1}{3} \frac{1}{r^2} \frac{d}{dr}(r^2 U) \, v \frac{\partial f}{\partial v}
+= \frac{\partial}{\partial r} \left( \kappa(r,v) \frac{\partial f}{\partial r} \right) + Q(r,v,t).
+\tag{1}
+\end{equation}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Term} & \textbf{Physical Meaning} \\
+\midrule
+$U$ & Solar wind speed \\
+$\kappa(r,v)$ & Spatial diffusion coefficient \\
+$Q$ & Source term \\
+$-\frac{1}{3} \frac{1}{r^2} \frac{d}{dr}(r^2 U) \, v \frac{\partial f}{\partial v}$ & \textbf{Adiabatic cooling} --- the focus here \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\hrulefill
+
+\subsection*{Physical Meaning of Adiabatic Cooling}
+
+\begin{itemize}
+    \item As the \textbf{solar wind expands}, the plasma does work on the particles.
+    \item \textbf{SEPs lose energy} as they move outward with the expanding solar wind.
+    \item This process is called \textbf{adiabatic cooling} — no heat transfer, just energy loss due to expansion.
+\end{itemize}
+
+The cooling term involves:
+
+\begin{equation}
+\boxed{
+\frac{dv}{dt} = - \frac{1}{3} v \nabla \cdot \mathbf{U}
+}
+\tag{2}
+\end{equation}
+
+For a \textbf{radial solar wind}:
+
+\begin{equation}
+\nabla \cdot \mathbf{U} = \frac{1}{r^2} \frac{d}{dr}(r^2 U(r))
+\tag{3}
+\end{equation}
+
+If $U$ is constant (typical in the solar wind beyond a few solar radii), $\nabla \cdot \mathbf{U} = \frac{2U}{r}$.
+
+Thus:
+
+\begin{equation}
+\boxed{
+\frac{dv}{dt} = -\frac{2}{3} \frac{U}{r} v
+}
+\tag{4}
+\end{equation}
+
+This is a \textbf{proportional decay} in particle speed as they move outward.
+
+\medskip
+
+\noindent
+\textbf{ References}:
+\begin{enumerate}
+    \item Parker (1965) --- \textit{The passage of energetic charged particles through interplanetary space}.
+    \item Fisk \& Axford (1969) --- \textit{The transport of cosmic rays}.
+    \item Schlickeiser (2002) --- \textit{Cosmic Ray Astrophysics}.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{2. Monte Carlo Algorithm: Translating Adiabatic Cooling}}{}}
+
+In a \textbf{Monte Carlo} solution:
+\begin{itemize}
+    \item Each particle $i$ carries position $r_i$, speed $v_i$, and weight $w_i$.
+    \item To include \textbf{adiabatic cooling}, we apply \textbf{deterministic velocity decay} along the trajectory of each particle.
+\end{itemize}
+
+\subsection*{ Monte Carlo Step for Adiabatic Cooling}
+
+At every time step $\Delta t$, update each particle’s speed:
+
+\begin{equation}
+v_i(t + \Delta t) = v_i(t) \times \exp\left( -\frac{2}{3} \frac{U(r_i)}{r_i} \Delta t \right)
+\tag{5}
+\end{equation}
+
+or, if $\Delta t$ is small (Taylor expansion):
+
+\begin{equation}
+\boxed{
+v_i(t + \Delta t) \approx v_i(t) \left( 1 - \frac{2}{3} \frac{U(r_i)}{r_i} \Delta t \right)
+}
+\tag{6}
+\end{equation}
+
+(valid for $\frac{2}{3} \frac{U \Delta t}{r} \ll 1$).
+
+Thus:
+\begin{itemize}
+    \item \textbf{Particle speed decreases} over time.
+    \item \textbf{No random scattering} here — this is a \textbf{systematic, deterministic} effect.
+\end{itemize}
+
+\subsection*{ Pseudocode for Adiabatic Cooling}
+
+\begin{verbatim}
+for each particle i:
+    r_i = particle position
+    v_i = particle speed
+    U_r = solar wind speed at r_i
+
+    # Adiabatic cooling step
+    dv_dt = - (2/3) * U_r / r_i * v_i
+    $v_i ← v_i + dv_dt * \Deltat$
+\end{verbatim}
+
+or more simply:
+
+\begin{verbatim}
+$v_i ← v_i * (1 - (2/3) * U_r / r_i * \Delta t)$
+\end{verbatim}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Important Notes}}{}}
+
+\begin{itemize}
+    \item \textbf{Adiabatic cooling acts continuously} — you apply it at every time step.
+    \item \textbf{Faster particles} cool proportionally faster because $\dot{v} \propto v$.
+    \item \textbf{Lower-energy SEPs} are cooled \textbf{more dramatically} over large radial distances.
+    \item \textbf{Thermal solar wind ions} also cool — this is important for long-time evolution.
+\end{itemize}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{References for Monte Carlo + Adiabatic Cooling}}{}}
+
+\begin{enumerate}
+    \item Earl (1974) --- \textit{Diffusion of Cosmic Rays Across a Magnetic Field}, ApJ, 193, 231.
+    \item Ruffolo (1995) --- \textit{Effect of Adiabatic Deceleration on the Focused Transport of Solar Cosmic Rays}, ApJ, 442, 861.
+    \item Zhang (1999) --- \textit{A Markov Stochastic Process Theory of Cosmic-Ray Modulation}, ApJ, 513, 409.
+    \item Pei et al. (2006) --- \textit{Modeling of Jovian electron propagation}.
+    \item Strauss et al. (2011) --- \textit{Monte Carlo modeling of particle acceleration}.
+    \item Dröge et al. (2010) --- \textit{Monte Carlo Simulation of SEP Transport}.
+    \item Laitinen et al. (2013) --- \textit{SEP propagation in turbulent fields}.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Final Boxed Formula}}{}}
+
+\[
+\boxed{
+\frac{dv}{dt} = -\frac{2}{3} \frac{U(r)}{r} v
+}
+\qquad \text{or} \qquad
+\boxed{
+v(t + \Delta t) = v(t) \exp\left( -\frac{2}{3} \frac{U(r)}{r} \Delta t \right)
+}
+\]
+
+
+\section*{\texorpdfstring{ \textbf{1. Generalized Parker Equation Along Field Lines}}{}}
+
+For particle transport along a \textbf{divergent magnetic field} $\mathbf{B}$, the \textbf{Parker transport equation} (isotropic $f(v, s, t)$) along coordinate $s$ (arc length along field line) becomes:
+
+\begin{equation}
+\frac{\partial f}{\partial t}
++ U_\parallel \frac{\partial f}{\partial s}
+- \frac{1}{3} (\nabla \cdot \mathbf{U}) \, v \frac{\partial f}{\partial v}
+= \frac{\partial}{\partial s} \left( \kappa_\parallel \frac{\partial f}{\partial s} \right) + Q(s, v, t)
+\tag{1}
+\end{equation}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Term} & \textbf{Physical Meaning} \\
+\midrule
+$s$ & Arc length along magnetic field \\
+$U_\parallel$ & Solar wind speed along field line (projection of $\mathbf{U}$) \\
+$\kappa_\parallel$ & Parallel diffusion coefficient \\
+$\nabla \cdot \mathbf{U}$ & \textbf{Flow divergence} — leads to \textbf{adiabatic cooling} \\
+$Q$ & Source term \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\hrulefill
+
+\subsection*{ General Adiabatic Cooling Term}
+
+The energy loss is governed by the \textbf{divergence of the flow}:
+
+\begin{equation}
+\boxed{
+\frac{dv}{dt} = -\frac{1}{3} (\nabla \cdot \mathbf{U}) \, v
+}
+\tag{2}
+\end{equation}
+
+No assumption about radial flow — only the divergence matters.
+
+\subsection*{ How to Compute $\nabla \cdot \mathbf{U}$ Along Magnetic Field Lines}
+
+If the flow is along the magnetic field lines, and the field lines expand (e.g., Parker spiral, coronal field expansion), then:
+
+\begin{equation}
+\nabla \cdot \mathbf{U} = \frac{1}{A(s)} \frac{d}{ds} \left( A(s) U_\parallel(s) \right)
+\tag{3}
+\end{equation}
+where:
+\begin{itemize}
+    \item $A(s)$ is the \textbf{cross-sectional area} of the magnetic flux tube at position $s$,
+    \item $U_\parallel(s)$ is the solar wind speed \textbf{along the field}.
+\end{itemize}
+
+Flux conservation along field lines gives:
+
+\begin{equation}
+A(s) B(s) = \text{const}.
+\tag{4}
+\end{equation}
+
+Thus:
+
+\begin{equation}
+A(s) \propto \frac{1}{B(s)}
+\quad \text{and} \quad
+\frac{d \ln A}{ds} = -\frac{d \ln B}{ds}.
+\tag{5}
+\end{equation}
+
+So, the divergence becomes:
+
+\begin{equation}
+\boxed{
+\nabla \cdot \mathbf{U} = U_\parallel \left( -\frac{d \ln B}{ds} \right) + \frac{d U_\parallel}{ds}
+}
+\tag{6}
+\end{equation}
+
+or expanded:
+
+\begin{equation}
+\nabla \cdot \mathbf{U} = -U_\parallel \frac{1}{B} \frac{dB}{ds} + \frac{d U_\parallel}{ds}.
+\end{equation}
+
+This is \textbf{completely general} for \textbf{non-radial magnetic fields}!
+
+\medskip
+
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \item Jokipii (1966),
+    \item Schlickeiser (1989),
+    \item Ruffolo (1995),
+    \item Litvinenko \& Schlickeiser (2013) — \textit{SEP transport in expanding magnetic fields}.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{2. Monte Carlo Algorithm: Along Field Lines}}{}}
+
+In a \textbf{Monte Carlo code}, you evolve each particle along the field line, updating:
+\begin{itemize}
+    \item $s_i(t)$ — particle’s position along the field line,
+    \item $v_i(t)$ — particle’s speed.
+\end{itemize}
+
+The \textbf{adiabatic cooling} for particle $i$ is:
+
+\begin{equation}
+\boxed{
+\frac{dv_i}{dt} = -\frac{1}{3} v_i \left[ -U_\parallel \frac{1}{B} \frac{dB}{ds} + \frac{d U_\parallel}{ds} \right]_{s_i}
+}
+\tag{7}
+\end{equation}
+
+Or rearranged:
+
+\begin{equation}
+\boxed{
+\frac{dv_i}{dt} = \frac{1}{3} v_i \left( \frac{U_\parallel}{B} \frac{dB}{ds} - \frac{d U_\parallel}{ds} \right).
+}
+\tag{8}
+\end{equation}
+
+For a small time step $\Delta t$:
+
+\begin{equation}
+v_i(t + \Delta t) = v_i(t) \times \exp\left( \frac{1}{3} \left( \frac{U_\parallel}{B} \frac{dB}{ds} - \frac{d U_\parallel}{ds} \right) \Delta t \right).
+\tag{9}
+\end{equation}
+
+Or, in a simple Euler form for small $\Delta t$:
+
+\begin{equation}
+\boxed{
+v_i(t + \Delta t) \approx v_i(t) \left( 1 + \frac{1}{3} \left( \frac{U_\parallel}{B} \frac{dB}{ds} - \frac{d U_\parallel}{ds} \right) \Delta t \right).
+}
+\tag{10}
+\end{equation}
+
+\subsection*{Pseudocode for Monte Carlo Step}
+
+\begin{lstlisting}[language={}, mathescape=true]
+for each particle i:
+    $s_i$ = particle position along field line
+    $v_i$ = particle speed
+    $U_{\text{par}}$ = solar wind speed along B at $s_i$
+    $B$ = magnetic field strength at $s_i$
+    
+    # Compute field gradients (finite differences along field line)
+    $\frac{dB}{ds} = \frac{B(s_i + \Delta s) - B(s_i)}{\Delta s}$
+    
+    $\frac{dU}{ds} = \frac{U_{\text{par}}(s_i + \Delta s) - U_{\text{par}}(s_i)}{\Delta s}$
+    
+    # Adiabatic cooling/heating step
+    divergence $= \frac{U_{\text{par}}}{B} \cdot \frac{dB}{ds} - \frac{dU}{ds}$
+    
+    $\frac{dv}{dt} = \frac{1}{3} v_i \cdot \text{divergence}$
+    
+    $v_i \leftarrow v_i + \frac{dv}{dt} \cdot \Delta t$
+\end{lstlisting}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Key Points}}{}}
+
+\begin{itemize}
+    \item \textbf{If the magnetic field expands} (i.e., $dB/ds < 0$), particles \textbf{cool} (lose energy).
+    \item \textbf{If the magnetic field converges} (e.g., near the Sun), particles \textbf{gain energy} (adiabatic heating).
+    \item \textbf{If the solar wind accelerates} ($dU/ds > 0$), particles \textbf{lose energy}.
+    \item \textbf{If the solar wind decelerates} ($dU/ds < 0$), particles \textbf{gain energy}.
+\end{itemize}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Full Supporting References}}{}}
+
+\begin{enumerate}
+    \item Jokipii (1966) --- \textit{Cosmic-Ray Propagation I}, ApJ 146, 480.
+    \item Schlickeiser (1989) --- \textit{Cosmic-Ray Transport and Acceleration}.
+    \item Ruffolo (1995) --- \textit{Adiabatic Deceleration of SEPs}, ApJ, 442, 861.
+    \item Litvinenko \& Schlickeiser (2013) --- \textit{Transport of Energetic Particles in Diverging Magnetic Fields}.
+    \item Skilling (1975) --- \textit{Cosmic ray streaming and wave interactions}.
+    \item Zhang (1999) --- \textit{Markov stochastic transport theory}.
+    \item Dröge et al. (2010) --- \textit{Monte Carlo SEP transport modeling}.
+    \item Pei et al. (2006) --- \textit{Modeling Jovian electron propagation}.
+    \item Strauss et al. (2011) --- \textit{Monte Carlo simulation of cosmic-ray acceleration}.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Final Boxed Summary}}{}}
+
+\[
+\boxed{
+\frac{dv}{dt} = \frac{1}{3} v \left( \frac{U_\parallel}{B} \frac{dB}{ds} - \frac{d U_\parallel}{ds} \right)
+}
+\]
+where $s$ is arc-length along the magnetic field line.
+
+Include this deterministic velocity update in the Monte Carlo simulation at each time step.
+
+\hrulefill
+
+Would you like me next to:
+\begin{itemize}
+    \item Show a \textit{full Monte Carlo loop} including \textit{scattering}, \textit{advection}, and \textit{adiabatic cooling} along a \textit{non-radial magnetic field line}?
+    \item Extend to handle \textit{non-constant solar wind speed} (e.g., realistic solar wind acceleration profiles)?
+\end{itemize}
+
+\section*{Why We Used \texorpdfstring{$\displaystyle \frac{1}{A}\frac{d}{ds}(A U_\parallel)$}{} Instead of Simply Taking $\nabla\!\cdot\!\mathbf{U}$ Directly}
+
+\begin{center}
+\begin{tabular}{@{}p{4.5cm}p{11cm}@{}}
+\toprule
+\textbf{Key Point} & \textbf{Explanation} \\
+\midrule
+\textbf{1. Particle motion is constrained to the flux tube, not full 3-D space} & 
+A guiding-centre Monte Carlo code treats particles that slide along a magnetic field line. What matters for their adiabatic energy change is the \textbf{divergence of the plasma flow \emph{within that one-dimensional tube}}—i.e., how fast the tube expands or contracts in the direction of motion. In curvilinear coordinates this is:
+\[
+\boxed{\displaystyle \nabla\!\cdot\!\mathbf{U} = \frac{1}{A(s)}\frac{d}{ds}\left(A(s)U_\parallel\right).}
+\] \\
+\midrule
+\textbf{2. Numerical robustness on a 1-D grid} & 
+On a discrete field-line mesh we already know $A(s)$ and $U_\parallel(s)$. Taking the 1-D derivative is straightforward and avoids having to build a full 3-D divergence operator in curving geometry. \\
+\midrule
+\textbf{3. Consistency with mass conservation} & 
+For a steady solar-wind flow the continuity equation reads:
+\[
+\nabla\!\cdot(\rho\mathbf{U}) = 0.
+\]
+With constant mass flux along a flux tube, $\rho U_\parallel A = \text{const}$. Taking the logarithmic derivative gives:
+\[
+\boxed{\displaystyle \frac{d\ln\rho}{dt} = -\,\nabla\!\cdot\!\mathbf{U}.}
+\] \\
+\midrule
+\textbf{4. Relation to density} & 
+Thus, \textbf{yes}: under steady flow,
+\[
+\boxed{\displaystyle \nabla\!\cdot\!\mathbf{U} = -\frac{d\ln\rho}{dt}.}
+\]
+Many SEP transport papers rewrite the adiabatic-cooling term as
+\[
++\frac{1}{3}\,v^2 \frac{\partial\ln\rho}{\partial t}.
+\]
+We used the equivalent form with $\nabla\!\cdot\!\mathbf{U}$ because it is simpler to evaluate from $A$ and $U_\parallel$ on the field-line grid. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\hrulefill
+
+\section*{Putting it Together}
+
+For \textbf{any} field-aligned Monte Carlo solver:
+\[
+\boxed{\displaystyle
+\frac{dv}{dt} = -\frac{1}{3} v \nabla\!\cdot\!\mathbf{U}
+= +\frac{1}{3} v \frac{d\ln\rho}{dt}
+}
+\]
+where
+\[
+\boxed{\displaystyle
+\nabla\!\cdot\!\mathbf{U}
+= \frac{1}{A(s)}\frac{d}{ds}\left[ A(s) U_\parallel(s) \right].
+}
+\]
+
+Using the flux-tube form guarantees that:
+\begin{itemize}
+    \item Thermal ions and SEPs both cool (or heat) correctly even on strongly curved or expanding lines.
+    \item Mass-flux conservation is honoured cell-by-cell in the numerical scheme.
+\end{itemize}
+
+\hrulefill
+
+\section*{References}
+\begin{itemize}
+    \item \textbf{Parker, E. N.} (1965), \textit{Planet. Space Sci.}, 13, 9.
+    \item \textbf{Ruffolo, D.} (1995), \textit{ApJ}, 442, 861.
+    \item \textbf{Schlickeiser, R.} (2002), \textit{Cosmic-Ray Astrophysics}, \S9.2.
+\end{itemize}
+
+
+\section*{1. What the \textbf{Total (Material) Derivative} Means}
+
+For any scalar $\rho(\mathbf{r}, t)$:
+
+\begin{equation}
+\boxed{\displaystyle
+\frac{d\ln\rho}{dt} =
+\frac{\partial\ln\rho}{\partial t} + \mathbf{U} \cdot \nabla \ln\rho
+}
+\tag{1}
+\end{equation}
+
+i.e., the time-rate of change \textbf{seen by a fluid element that rides with the solar-wind speed} $\mathbf{U}$.
+
+Using the continuity equation $\partial_t \rho + \nabla \cdot (\rho \mathbf{U}) = 0$ we obtain the familiar identity:
+
+\begin{equation}
+\boxed{\displaystyle
+\frac{d\ln\rho}{dt} = -\nabla \cdot \mathbf{U}
+}
+\tag{2}
+\end{equation}
+
+— exactly the term that appears in the adiabatic-cooling part of the Parker equation.
+
+\hrulefill
+
+\section*{2. How to Evaluate \texorpdfstring{$d\ln\rho/dt$}{} Inside a 1-D Monte Carlo Field-Line Code}
+
+Your Monte Carlo solver already carries:
+\begin{itemize}
+    \item A 1-D mesh along arc-length $s$ of the magnetic field,
+    \item The plasma bulk speed \textbf{along the field} $U_\parallel(s)$,
+    \item The local magnetic field strength $B(s)$.
+\end{itemize}
+
+Because the solar wind is frozen into the field, the flux-tube area is
+\[
+A(s) = A_0 \frac{B_0}{B(s)}.
+\]
+
+\begin{center}
+\[
+\text{Hence} \quad
+\boxed{\displaystyle
+\nabla \cdot \mathbf{U}
+= \frac{1}{A} \frac{d}{ds} \left[ A(s) U_\parallel(s) \right].
+}
+\]
+\end{center}
+
+\hrulefill
+
+\subsection*{Numerical Recipe (Finite Volumes)}
+
+For cell centre $s_j$ with width $\Delta s_j$:
+
+\begin{lstlisting}[language=C++, basicstyle=\ttfamily\small]
+double A_j   = A0 * B0 / B(s_j);               // tube cross-section
+double Fp    = A(s_j+½) * U(s_j+½);            // flux at + face
+double Fm    = A(s_j-½) * U(s_j-½);            // flux at - face
+
+double divU  = (Fp - Fm) / (A_j * Δs_j);       // ≡ ∇·U  (1-D form)
+
+double dlnrho_dt = -divU;                      // from Eq. (2)
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{No global density array is required.} You never have to store $\rho$; the Monte Carlo particles just need $d\ln\rho/dt$ or $\nabla \cdot \mathbf{U}$ in their current cell.
+    \item Works for \textbf{any} field-line geometry (radial, Parker-spiral, coronal loop, etc.) because only local $B$ and $U$ enter.
+\end{itemize}
+
+\hrulefill
+
+\section*{3. Plug Into Each Particle’s Update}
+
+For particle $i$ in cell $j$:
+
+\begin{equation}
+\boxed{\displaystyle
+v_i^{\text{new}} =
+v_i^{\text{old}} \times \exp\left( \frac{1}{3} \frac{d\ln\rho}{dt}(s_j) \Delta t \right)
+}
+\tag{3}
+\end{equation}
+
+or the first-order Euler form:
+\[
+v \to v \left[ 1 + \frac{1}{3} \left( \frac{d\ln\rho}{dt} \right) \Delta t \right]
+\]
+when
+\[
+\left| \frac{d\ln\rho}{dt} \right| \Delta t \ll 1.
+\]
+
+\hrulefill
+
+\section*{4. Why Not ``Measure'' Density from the Monte Carlo Particles?}
+
+\begin{itemize}
+    \item Particle density in a Monte Carlo scheme is \textbf{noisy} at modest particle numbers.
+    \item Equation (2) lets you compute $d\ln\rho/dt$ exactly from the smooth background flow $U$, giving a cleaner and faster update.
+\end{itemize}
+
+\hrulefill
+
+\section*{5. Literature Support}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Reference} & \textbf{Key Point} \\
+\midrule
+Jokipii (1966) & Introduces convective derivative and adiabatic term in cosmic-ray transport. \\
+Ruffolo (1995, ApJ 442 861) & Uses $d\ln\rho/dt = -\nabla \cdot \mathbf{U}$ for SEP deceleration along Parker-spiral lines. \\
+Schlickeiser (2002), \S9.2 & Derives Eq. (2) from continuity and applies to guiding-centre transport. \\
+Litvinenko \& Schlickeiser (2013) & Shows same formulation for curved, expanding coronal field lines. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\hrulefill
+
+\section*{Take-away}
+
+\textit{Compute $d\ln\rho/dt$ from the local bulk-flow divergence in each mesh cell; update every particle’s speed with Eq. (3). That single, deterministic step injects the Parker equation’s adiabatic-cooling physics directly into your Monte Carlo transport code—no global density array and no extra noise.}

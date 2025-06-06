@@ -1873,3 +1873,1049 @@ the familiar Galilean correction, obtained as the small-$\beta_A$ limit of the f
 
 
 \end{tcolorbox}
+
+\newpage
+
+\subsection{Probability that a particle will be scatted on Alfven}
+
+Sure! Let’s proceed carefully.
+
+You want to assume:
+\begin{itemize}
+    \item \textbf{Kolmogorov turbulence} for Alfvén waves,
+    \item \textbf{Isotropic SEP distribution} described by the \textbf{Parker equation},
+    \item and derive the \textbf{probability that a particle will scatter} due to interaction with the Alfvénic turbulence during a time step $\Delta t$,
+    \item assuming pitch-angle diffusion governed by quasi-linear theory (QLT),
+    \item with no explicit dependence on $\mu$ (since the Parker equation describes the \emph{isotropic part} of $f$).
+\end{itemize}
+
+\hrulefill
+
+\section*{\texorpdfstring{\textbf{Derivation}}{}}
+
+\hrulefill
+
+\subsection*{1. \textbf{Start with pitch-angle diffusion in QLT}}
+
+In quasi-linear theory for Alfvén wave turbulence, the \textbf{pitch-angle diffusion coefficient} for a particle of speed $v$, pitch-angle cosine $\mu$, and charge $q$ is:
+\begin{equation}
+D_{\mu\mu}(\mu, v) = \frac{\pi \Omega^2}{B_0^2} (1 - \mu^2) \frac{W(k_{\text{res}})}{|k_{\text{res}}|}
+\tag{1}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\Omega = \frac{q B_0}{\gamma m}$ is the relativistic gyrofrequency,
+    \item $k_{\text{res}}$ is the resonant wavenumber:
+\end{itemize}
+\begin{equation}
+k_{\text{res}} = \frac{\Omega}{v \mu \mp V_A}
+\end{equation}
+with $V_A$ being the Alfvén speed,
+
+\begin{itemize}
+    \item and $W(k)$ is the spectral energy density of Alfvén waves at wavenumber $k$.
+\end{itemize}
+
+\hrulefill
+
+\subsection*{2. \textbf{Kolmogorov spectrum for Alfvén waves}}
+
+Assume the turbulence follows a \textbf{Kolmogorov inertial-range} scaling:
+\begin{equation}
+W(k) = A\,k^{-5/3}
+\tag{2}
+\end{equation}
+where $A$ is the amplitude of the spectrum.
+
+Insert into (1):
+\begin{equation}
+D_{\mu\mu}(\mu, v) = \frac{\pi \Omega^2}{B_0^2} (1 - \mu^2) A |k_{\text{res}}|^{-8/3}
+\tag{3}
+\end{equation}
+
+\hrulefill
+
+\subsection*{3. \textbf{Average over isotropic pitch-angle distribution}}
+
+For an \textbf{isotropic distribution}, $f(\mu) \approx \text{const}$, the \textbf{average scattering rate} (pitch-angle decorrelation rate) is obtained by integrating $D_{\mu\mu}$ over $\mu \in [-1,1]$ with uniform probability:
+\begin{equation}
+\bar{D}_{\mu\mu}(v) = \frac{1}{2} \int_{-1}^{+1} D_{\mu\mu}(\mu, v) \, d\mu
+\tag{4}
+\end{equation}
+Substituting (3):
+\begin{equation}
+\bar{D}_{\mu\mu}(v) = \frac{\pi \Omega^2 A}{2 B_0^2} \int_{-1}^{+1} (1 - \mu^2) \left| \frac{v \mu \mp V_A}{\Omega} \right|^{8/3} \, d\mu
+\tag{5}
+\end{equation}
+Simplify:
+\begin{equation}
+\bar{D}_{\mu\mu}(v) = \frac{\pi A}{2 B_0^2} \Omega^{-2/3} v^{-8/3} \int_{-1}^{+1} (1 - \mu^2) |\mu \mp V_A/v|^{-8/3} \, d\mu
+\tag{6}
+\end{equation}
+This integral, call it $I(v)$, is usually calculated numerically or approximated for $v \gg V_A$, but remains well-defined.
+
+\hrulefill
+
+\subsection*{4. \textbf{Define scattering frequency}}
+
+The \textbf{scattering frequency} $\nu_{\text{sc}}(v)$ is twice the averaged diffusion coefficient (from standard diffusion theory):
+\begin{equation}
+\nu_{\text{sc}}(v) = 2 \bar{D}_{\mu\mu}(v)
+\tag{7}
+\end{equation}
+Thus:
+\begin{equation}
+\nu_{\text{sc}}(v) = \frac{\pi A}{B_0^2} \Omega^{-2/3} v^{-8/3} I(v)
+\tag{8}
+\end{equation}
+
+\hrulefill
+
+\subsection*{5. \textbf{Probability of scattering in time $\Delta t$}}
+
+The probability that a particle undergoes a scattering event in a short time interval $\Delta t$ is:
+\begin{equation}
+P_{\text{scatt}} = 1 - e^{-\nu_{\text{sc}}(v) \Delta t}
+\tag{9}
+\end{equation}
+For small $\Delta t$ (i.e., $\nu_{\text{sc}} \Delta t \ll 1$), this reduces to:
+\begin{equation}
+P_{\text{scatt}} \approx \nu_{\text{sc}}(v) \Delta t
+\tag{10}
+\end{equation}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{References}}{}}
+
+This derivation is based on well-established quasi-linear theory and Parker transport theory for SEPs:
+\begin{enumerate}
+    \item \textbf{Jokipii, J. R. (1966)} --- \textit{Cosmic-Ray Propagation I. Charged Particles in a Random Magnetic Field} [ApJ, 146, 480].
+    \item \textbf{Skilling, J. (1975)} --- \textit{Cosmic ray streaming. I. Effect of Alfvén waves on particles} [MNRAS, 172, 557--566].
+    \item \textbf{Schlickeiser, R. (1989)} --- \textit{Cosmic-ray transport and acceleration I. Derivation of the kinetic equation and application to cosmic rays in static cold media} [ApJ, 336, 243].
+    \item \textbf{Bieber, J. W. et al. (1994)} --- \textit{Proton and electron mean free paths: The Palmer consensus revisited} [ApJ, 420, 294].
+    \item \textbf{Zank, G. P. et al. (1998)} --- \textit{Particle acceleration at perpendicular shocks} [JGR, 103, 2085].
+    \item \textbf{Shalchi, A. (2009)} --- \textit{Nonlinear Cosmic Ray Diffusion Theories} (Springer).
+    \item \textbf{Zank, G. P., Rice, W. K. M., \& Wu, C. C. (2000)} --- \textit{Particle acceleration and coronal mass ejection driven shocks: A theoretical model} [JGR, 105, 25079].
+    \item \textbf{Matthaeus, W. H. et al. (2003)} --- \textit{Nonlinear collisionless damping of noncompressive MHD turbulence} [ApJ, 590, L53].
+    \item \textbf{Qin, G., Matthaeus, W. H., \& Bieber, J. W. (2002)} --- \textit{Subdiffusive transport of charged particles perpendicular to the large scale magnetic field} [GRL, 29, 1048].
+    \item \textbf{Zhang, M. (2006)} --- \textit{The radial dependence of the parallel mean free path of solar energetic particles} [ApJ, 645, 1421].
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Final Summary Formula}}{}}
+
+The \textbf{probability} that a particle will scatter on Kolmogorov Alfvén-wave turbulence in a time step $\Delta t$ is:
+\begin{equation}
+\boxed{P_{\text{scatt}}(v) = 1 - e^{-\nu_{\text{sc}}(v)\,\Delta t}}
+\end{equation}
+where
+\begin{equation}
+\boxed{\nu_{\text{sc}}(v) = \frac{\pi A}{B_0^2} \Omega^{-2/3} v^{-8/3} I(v)}
+\end{equation}
+with $I(v)$ being the isotropic integral over pitch angles.
+
+\hrulefill
+
+Would you like me to proceed further and:
+\begin{itemize}
+    \item Give a \textit{numerical example} assuming solar-wind conditions?
+    \item Approximate $I(v)$ for the case where $v \gg V_A$ (common for SEPs)?
+\end{itemize}
+
+
+\subsection{Derivation of Scattering Efficiency}
+
+
+
+
+You’re asking:
+\begin{itemize}
+    \item After a scattering event off Alfvén wave turbulence, \textbf{what happens to the particle’s velocity}?
+    \item \textbf{How much energy is exchanged} between the particle and the turbulence?
+\end{itemize}
+
+We’ll proceed step-by-step, and \textbf{support with references}.
+
+\hrulefill
+
+\section*{\texorpdfstring{\textbf{1. Particle Velocity After Scattering}}{}}
+
+In \textbf{quasilinear theory (QLT)}:
+\begin{itemize}
+    \item The particle undergoes \textbf{pitch-angle diffusion} without a large change in energy.
+    \item \textbf{Elastic scattering} occurs in the \textbf{wave frame} (the frame moving with the wave) --- typically at Alfvén speed $V_A$ along the magnetic field.
+\end{itemize}
+
+\subsection*{1.1. \textbf{Frame of Reference}}
+
+We consider:
+\begin{itemize}
+    \item \textbf{Plasma frame}: the frame of the background magnetic field $\mathbf{B}_0$.
+    \item \textbf{Wave frame}: moving at $\pm V_A$ along $\mathbf{B}_0$, depending on wave propagation direction.
+\end{itemize}
+
+In the \textbf{wave frame}, the particle’s total energy is approximately conserved.
+
+\subsection*{1.2. \textbf{Energy Conservation in the Wave Frame}}
+
+The \textbf{kinetic energy} of the particle in the wave frame is:
+\begin{equation}
+E' = \gamma' m c^2 - m c^2
+\end{equation}
+where $\gamma'$ is the Lorentz factor in the wave frame:
+\begin{equation}
+\gamma' = \frac{1}{\sqrt{1 - (v'_{\parallel} - V_A)^2/c^2 - v_{\perp}^2/c^2}}
+\end{equation}
+
+However, for \textbf{SEP energies} ($v \sim 0.1c$) and \textbf{solar wind turbulence} ($V_A \sim 10^{-4}c$), $V_A \ll v$, so the Lorentz transformation simplifies.
+
+In the \textbf{non-relativistic limit} ($v \ll c$):
+\begin{itemize}
+    \item Scattering is approximately \textbf{elastic in the wave frame}.
+    \item The particle’s energy changes only because of the \textbf{change of frames}.
+\end{itemize}
+
+\subsection*{1.3. \textbf{Velocity After Scattering}}
+
+Since scattering is mainly \textbf{pitch-angle diffusion}:
+\begin{itemize}
+    \item The \textbf{speed $v$} of the particle remains approximately the \textbf{same} in the plasma frame.
+    \item Only the \textbf{pitch-angle cosine} $\mu$ changes due to the scattering process.
+\end{itemize}
+
+Thus, after scattering:
+\begin{equation}
+\boxed{v_{\text{after}} \approx v_{\text{before}}}
+\end{equation}
+but the pitch-angle distribution becomes more isotropic.
+
+\medskip
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \item Jokipii (1966) --- \textit{Cosmic-Ray Propagation I} [ApJ 146, 480].
+    \item Schlickeiser (2002) --- \textit{Cosmic Ray Astrophysics}, Chapter 4 (Elastic scattering).
+    \item Melrose (1980) --- \textit{Plasma Astrophysics}, Vol. 1.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{2. Energy Exchange with Alfvénic Turbulence}}{}}
+
+Although the scattering is elastic in the wave frame, in the \textbf{plasma frame}, the particle \textbf{gains or loses energy} relative to the plasma due to the Doppler shift from the moving wave frame.
+
+This leads to \textbf{energy exchange} between particles and the wave field.
+
+\subsection*{2.1. \textbf{Energy Change Per Scattering}}
+
+The average \textbf{energy gain or loss} per scattering can be written (for non-relativistic speeds) as:
+\begin{equation}
+\Delta E = - p_{\parallel} \Delta v_{\parallel}
+\end{equation}
+where:
+\begin{itemize}
+    \item $p_{\parallel} = m v_{\parallel}$ is the parallel momentum,
+    \item $\Delta v_{\parallel}$ is the pitch-angle scattering increment in $v_{\parallel}$.
+\end{itemize}
+
+Using quasilinear theory, the \textbf{rate of energy change} for a single particle is:
+\begin{equation}
+\frac{dE}{dt} = - m V_A \frac{d v_{\parallel}}{dt}
+\end{equation}
+because scattering acts to isotropize the distribution by changing $v_{\parallel}$.
+
+This is often written in terms of the \textbf{pitch-angle diffusion coefficient}:
+\begin{equation}
+\frac{dE}{dt} = - m V_A v \left\langle \frac{d\mu}{dt} \right\rangle
+\tag{1}
+\end{equation}
+where $\left\langle \frac{d\mu}{dt} \right\rangle$ is linked to $D_{\mu\mu}$.
+
+\textbf{Key point}:
+\begin{itemize}
+    \item Particles interacting with Alfvén waves tend to:
+    \begin{itemize}
+        \item \textbf{Gain energy} if moving \textbf{opposite} to the wave ($\mu < 0$),
+        \item \textbf{Lose energy} if moving \textbf{with} the wave ($\mu > 0$).
+    \end{itemize}
+\end{itemize}
+
+Thus, overall, the wave and particle can \textbf{exchange energy}.
+
+\subsection*{2.2. \textbf{Energy Transfer to the Waves}}
+
+Due to the action-reaction principle (conservation of total energy):
+\begin{itemize}
+    \item The energy change of the \textbf{wave} is \textbf{opposite} to the particle’s energy change.
+\end{itemize}
+
+Thus:
+\begin{equation}
+\boxed{\Delta W_{\text{wave}} = - \Delta E_{\text{particle}}}
+\tag{2}
+\end{equation}
+
+In a Monte-Carlo model, for each scattering event where a particle changes its pitch angle, the energy exchange with the wave field is calculated as:
+\begin{equation}
+\Delta W = - m V_A v \Delta \mu
+\tag{3}
+\end{equation}
+for each particle.
+
+\subsection*{2.3. \textbf{Interpretation}}
+
+Even though the particle speed stays the same, there is \textbf{energy transfer} between the particle and the turbulence because of the \textbf{moving frame} of the Alfvén waves.
+
+\medskip
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \setcounter{enumi}{3}
+    \item Earl (1974) --- \textit{The Diffusion of Cosmic Rays across a Magnetic Field} [ApJ 193, 231].
+    \item Skilling (1975) --- \textit{Cosmic ray streaming I: effect of Alfvén waves on particles} [MNRAS 172, 557].
+    \item Völk (1975) --- \textit{Transport Processes of Cosmic Rays} [Rev. Geophys. Space Phys. 13, 547].
+    \item McKenzie \& Völk (1982) --- \textit{Dynamical Effects of Cosmic Rays in the Galaxy} [A\&A 116, 191].
+    \item Schlickeiser (1989) --- \textit{Cosmic-ray transport and acceleration I}.
+    \item Malkov \& Drury (2001) --- \textit{Nonlinear Theory of Diffusive Acceleration} [Rep. Prog. Phys. 64, 429].
+    \item Shalchi (2009) --- \textit{Nonlinear Cosmic Ray Diffusion Theories}, Chapter 3.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Summary}}{}}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Quantity} & \textbf{Result} \\
+\midrule
+\textbf{Particle speed after scattering} & $v_{\text{after}} \approx v_{\text{before}}$ --- no significant change (elastic in wave frame) \\
+\textbf{Energy change} & $\Delta E_{\text{particle}} = - m V_A v \Delta \mu$ \\
+\textbf{Wave energy change} & $\Delta W_{\text{wave}} = - \Delta E_{\text{particle}}$ --- action-reaction principle \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Particles gain or lose energy \textbf{depending on their pitch angle}, and the \textbf{waves gain or lose energy accordingly}.
+
+\hrulefill
+
+Would you like me to show:
+\begin{itemize}
+    \item The \textit{full ensemble average} energy transfer rate (e.g., how turbulence damps by particle scattering)?
+    \item \textit{Numerical examples} of the size of energy exchanged for SEPs at 1 AU?
+\end{itemize}
+
+
+
+\subsection{\textbf{General Derivation: Energy Exchange During Scattering on Alfvén Turbulence}}
+
+\hrulefill
+
+\subsection*{1. \textbf{Resonant Condition}}
+
+For a particle interacting with Alfvén waves:
+\begin{itemize}
+    \item Cyclotron resonance condition:
+\end{itemize}
+\begin{equation}
+\omega - k_\parallel v \mu = \pm \Omega
+\tag{1}
+\end{equation}
+For \textbf{Alfvén waves} ($\omega = \pm V_A k_\parallel$), we get:
+\begin{equation}
+k_\parallel = \frac{\Omega}{v \mu \mp V_A}
+\tag{2}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\Omega = \frac{q B_0}{\gamma m}$ --- relativistic gyrofrequency,
+    \item $V_A$ --- Alfvén speed,
+    \item $\mu \equiv \cos\theta$ --- pitch-angle cosine.
+\end{itemize}
+
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \item Schlickeiser (1989),
+    \item Kulsrud (2005), \textit{Plasma Physics for Astrophysics}.
+\end{enumerate}
+
+\hrulefill
+
+\subsection*{2. \textbf{Frame Transformations}}
+
+Let’s consider:
+\begin{itemize}
+    \item \textbf{Plasma frame}: Rest frame of solar wind background.
+    \item \textbf{Wave frame}: Frame moving at $\pm V_A$ along $B_0$.
+\end{itemize}
+
+Define:
+\begin{itemize}
+    \item In plasma frame: parallel velocity $v_\parallel = v \mu$,
+    \item In wave frame:
+\end{itemize}
+\begin{equation}
+v'_\parallel = v_\parallel \mp V_A
+\tag{3}
+\end{equation}
+
+The \textbf{total energy} in the wave frame is:
+\[
+E' = \gamma' m c^2,
+\]
+with:
+\[
+\gamma' = \frac{1}{\sqrt{1 - \frac{(v'_\parallel)^2 + v_\perp^2}{c^2}}}.
+\]
+
+If scattering is \textbf{elastic in the wave frame}, $E'$ is conserved during the pitch-angle diffusion process:
+\begin{equation}
+\Delta E' = 0.
+\tag{4}
+\end{equation}
+
+\hrulefill
+
+\subsection*{3. \textbf{Energy Change in the Plasma Frame}}
+
+The particle’s energy in the \textbf{plasma frame} is:
+\[
+E = \gamma m c^2.
+\]
+
+The connection between frames:
+\begin{equation}
+E = \gamma_w ( E' + p'_\parallel V_A )
+\tag{5}
+\end{equation}
+where:
+\begin{itemize}
+    \item $\gamma_w = \frac{1}{\sqrt{1 - V_A^2/c^2}}$ --- Lorentz factor of the wave frame relative to plasma frame,
+    \item $p'_\parallel = \gamma' m v'_\parallel$.
+\end{itemize}
+
+Now, differentiate to find the energy change in the plasma frame due to small changes in pitch-angle scattering:
+\begin{equation}
+dE = \gamma_w \left( d p'_\parallel \right) V_A
+\tag{6}
+\end{equation}
+since $\Delta E' = 0$, and $\gamma_w$ and $V_A$ are constants.
+
+Now:
+\[
+p'_\parallel = \gamma' m (v \mu \mp V_A),
+\]
+so for small changes $d\mu$ in pitch-angle:
+\begin{equation}
+d p'_\parallel = \gamma' m v \, d\mu + m (v \mu \mp V_A) \, d\gamma'.
+\end{equation}
+But for small-angle scattering, the dominant term is:
+\begin{equation}
+d p'_\parallel \approx \gamma' m v \, d\mu
+\tag{7}
+\end{equation}
+because $d\gamma'$ is second-order small in $d\mu$.
+
+Thus:
+\begin{equation}
+dE = \gamma_w \gamma' m v V_A \, d\mu
+\tag{8}
+\end{equation}
+
+\hrulefill
+
+\subsection*{4. \textbf{Energy Change Per Scattering}}
+
+For a finite change $\Delta \mu$, the total energy change per scattering event is:
+\begin{equation}
+\boxed{ \Delta E = \gamma_w \gamma' m v V_A \, \Delta \mu }
+\tag{9}
+\end{equation}
+
+This equation works for:
+\begin{itemize}
+    \item \textbf{Thermal ions} ($v \sim V_A$),
+    \item \textbf{SEPs} ($v \gg V_A$),
+    \item \textbf{Any intermediate case}.
+\end{itemize}
+
+No assumptions have been made about $v \gg V_A$ or $v \ll V_A$.
+
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \setcounter{enumi}{2}
+    \item Earl (1974) --- \textit{The Diffusion of Cosmic Rays across a Magnetic Field} [ApJ 193, 231],
+    \item Skilling (1975),
+    \item Schlickeiser (2002), \textit{Cosmic Ray Astrophysics}.
+\end{enumerate}
+
+\hrulefill
+
+\subsection*{5. \textbf{Energy Exchange with the Wave Field}}
+
+\textbf{Action--reaction}: The energy gained or lost by the particle is lost or gained by the wave field.
+
+Thus, for the wave field:
+\begin{equation}
+\boxed{ \Delta W_{\text{wave}} = - \Delta E }
+\tag{10}
+\end{equation}
+
+Every scattering event transfers a small amount of energy between particles and waves.
+\begin{itemize}
+    \item If $\Delta \mu > 0$ (particle moving toward larger pitch angles), it gains energy,
+    \item If $\Delta \mu < 0$ (particle moves toward smaller pitch angles), it loses energy.
+\end{itemize}
+
+\noindent
+\textbf{References}:
+\begin{enumerate}
+    \setcounter{enumi}{5}
+    \item Völk (1975),
+    \item Melrose (1980), \textit{Plasma Astrophysics} Vol. 1,
+    \item McKenzie \& Völk (1982).
+\end{enumerate}
+
+\hrulefill
+
+\subsection*{6. \textbf{Interpretation}}
+
+\textbf{For Thermal Ions}:
+\begin{itemize}
+    \item $v \sim V_A$,
+    \item The energy change per scattering is \textbf{significant},
+    \item The scattering leads to \textbf{heating} of thermal plasma --- important in solar wind.
+\end{itemize}
+
+\textbf{For SEPs}:
+\begin{itemize}
+    \item $v \gg V_A$,
+    \item The energy change per scattering is \textbf{small} (energy transfer efficiency $\sim V_A/v$),
+    \item Scattering primarily leads to \textbf{pitch-angle isotropization}, with only minor energy exchange.
+\end{itemize}
+
+This explains why:
+\begin{itemize}
+    \item \textbf{Alfvén turbulence can heat the solar wind} (thermal ions),
+    \item \textbf{SEPs scatter off turbulence} with little energy loss.
+\end{itemize}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Supporting References (full list)}}{}}
+
+\begin{enumerate}
+    \item \textbf{Jokipii, J. R. (1966)} --- \textit{Cosmic-Ray Propagation I} [ApJ, 146, 480].
+    \item \textbf{Schlickeiser, R. (1989)} --- \textit{Cosmic-ray transport and acceleration} [ApJ, 336, 243].
+    \item \textbf{Kulsrud, R. M. (2005)} --- \textit{Plasma Physics for Astrophysics} (Princeton).
+    \item \textbf{Earl, J. A. (1974)} --- \textit{Diffusion of Cosmic Rays Across Magnetic Fields} [ApJ, 193, 231].
+    \item \textbf{Skilling, J. (1975)} --- \textit{Cosmic Ray Streaming I} [MNRAS, 172, 557].
+    \item \textbf{Völk, H. J. (1975)} --- \textit{Transport Processes of Cosmic Rays} [Rev. Geophys., 13, 547].
+    \item \textbf{Melrose, D. B. (1980)} --- \textit{Plasma Astrophysics}, Vol. 1 (Gordon and Breach).
+    \item \textbf{McKenzie, J. F. \& Völk, H. J. (1982)} --- \textit{Dynamical Effects of Cosmic Rays in the Galaxy} [A\&A, 116, 191].
+    \item \textbf{Malkov, M. A. \& Drury, L. O'C. (2001)} --- \textit{Nonlinear theory of diffusive acceleration} [Rep. Prog. Phys., 64, 429].
+    \item \textbf{Schlickeiser, R. (2002)} --- \textit{Cosmic Ray Astrophysics} (Springer).
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Final Boxed Results}}{}}
+
+\begin{equation}
+\boxed{ \Delta E = \gamma_w \gamma' m v V_A \, \Delta \mu }
+\end{equation}
+
+\begin{equation}
+\boxed{ \Delta W_{\text{wave}} = - \Delta E }
+\end{equation}
+
+No assumptions about $v \gg V_A$ or $v \ll V_A$.
+
+
+
+\textbf{Assumptions}:
+\begin{enumerate}
+    \item \textbf{Isotropic SEP or thermal ion distribution}: no explicit pitch-angle $\mu$ --- just speed $v$ and position $r$.
+    \item \textbf{Kolmogorov turbulence}:
+    \[
+    W(k) = A(r, t)\,k^{-5/3}
+    \]
+    between $k_{\min}$ and $k_{\max}$ --- \textbf{only the amplitude} $A(r, t)$ evolves.
+    \item \textbf{Energy exchange}: Particles scatter on turbulence, transferring energy via pitch-angle diffusion; turbulence energy is updated accordingly.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Monte Carlo Algorithm}}{}}
+
+\hrulefill
+
+\subsection*{0. \textbf{Preliminaries}}
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Variable} & \textbf{Meaning} \\
+\midrule
+$r$ & Radial distance along field line (can generalize to 1D Parker spiral) \\
+$v$ & Particle speed \\
+$w_i$ & Weight of particle $i$ (real particles per MC particle) \\
+$A(r,t)$ & Kolmogorov turbulence amplitude at position $r$ and time $t$ \\
+$\nu_{\text{sc}}(v,r,t)$ & Scattering frequency \\
+$\Delta t$ & Global time step \\
+$\Delta r$ & Radial cell size \\
+$N_k$ & Normalizing integral over $k$: $N_k = \int_{k_{\min}}^{k_{\max}} k^{-5/3} \, dk$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Turbulence energy density per unit volume:
+\begin{equation}
+\mathcal{W}(r,t) = A(r,t)\,N_k
+\tag{1}
+\end{equation}
+
+Alfvén wave group speed:
+\[
+V_{\text{g}} = V_A - U(r),
+\]
+where $U(r)$ is the solar wind speed.
+
+\hrulefill
+
+\subsection*{1. \textbf{Initialization}}
+
+\begin{verbatim}
+Initialize:
+    - Grid in r: r_j, j = 0..N_r
+    - A(r, t=0) from some initial model (e.g., $\sim$ r^(-3/2))
+    - Particle ensemble {r_i, v_i, w_i}
+    - $Delta$t satisfying CFL condition for advection
+    - Precompute N_k = (k_max^(-2/3) - k_min^(-2/3)) / (2/3)
+\end{verbatim}
+
+\hrulefill
+
+\subsection*{2. \textbf{Per Global Time Step $\Delta t$}}
+
+\begin{lstlisting}[language={}, mathescape=true]
+for each time step t:
+    1. Wave advection and cascade (no particle coupling yet)
+    --------------------------------------------------------
+    for each cell j:
+        * Compute advection flux:
+          $F_j = (V_A - U(r_j)) \times A(r_j)$
+        
+        * Update $A(r_j)$ via upwind finite difference:
+          $A(r_j) \leftarrow A(r_j) - \frac{\Delta t}{\Delta r} \left( F_j - F_{j-1} \right)$
+        
+        * Apply Kolmogorov cascade sink:
+          $\tau_{\text{cas}} = \frac{L_{\perp}(r_j)}{C_k \sqrt{ \frac{2 A(r_j) N_k}{\rho(r_j)} }}$
+          
+          $P_{\text{cas}} = \frac{A(r_j) N_k}{\tau_{\text{cas}}}$
+          
+          $A(r_j) \leftarrow A(r_j) - \frac{\Delta t}{N_k} \times P_{\text{cas}}$
+
+    2. Monte Carlo particle advance
+    --------------------------------
+    Initialize array $P_{ion}(j) = 0$ for all cells j
+    for each particle i:
+        - Get local cell j for $r_i$
+        * Compute gyrofrequency:
+          $\Omega_i = \frac{q B(r_j)}{\gamma_i m}$
+        
+        * Compute scattering frequency:
+          $\nu_{\text{sc}}(v_i, r_j) = \left( \frac{\pi A(r_j)}{B(r_j)^2} \right) \times \Omega_i^{-2/3} \times v_i^{-8/3} \times I\left( \frac{v_i}{V_A} \right)$
+        
+        * Compute probability of scattering:
+          $P_{\text{scat}} = 1 - \exp\left( -\nu_{\text{sc}} \times \Delta t \right)$
+        
+        * Generate random number $\xi \in [0, 1]$.
+        
+        * If $\xi < P_{\text{scat}}$:
+            - Isotropically randomize velocity direction (keep $v_i$ constant).
+            - Draw Gaussian increment:
+              $\Delta \mu \sim \mathcal{N}\left(0, \sqrt{2 D_{\mu \mu} \Delta t} \right)$
+            - Compute particle energy change:
+              $\Delta E = \gamma_w \gamma'_i m v_i V_A \Delta \mu$
+            - Update energy (optional, for monitoring).
+            - Update particle-wave energy exchange:
+              $P_{\text{ion}}(j) \leftarrow P_{\text{ion}}(j) - \frac{w_i \times \Delta E}{\Delta t}$
+        
+        * Move particle (radial drift):
+          $r_i \leftarrow r_i + \left( U(r_j) + v_i \mu' \right) \times \Delta t$
+
+    3. Particle-Wave Energy Exchange
+    --------------------------------
+    For each cell j:
+        * Update turbulence amplitude:
+          $A(r_j) \leftarrow A(r_j) - \frac{\Delta t}{N_k} \times P_{\text{ion}}(j)$
+        * Ensure positivity:
+          $A(r_j) \leftarrow \max\left( A(r_j), 0 \right)$
+
+    4. Boundary conditions
+    ----------------------
+    - Reflect or absorb particles at inner/outer boundaries
+    - Inject new turbulence if needed at r = $r_0$ (base)
+    
+    5. Diagnostics (optional)
+    -------------------------
+    - Compute particle density n(r), energy density
+    - Monitor total wave energy
+\end{lstlisting}
+
+\hrulefill
+
+\subsection*{3. \textbf{Important Notes}}
+
+\begin{itemize}
+    \item \textbf{Scattering frequency} $\nu_{\text{sc}}(v, r)$ is evaluated \textbf{from the local turbulence amplitude} $A(r)$.
+    \item \textbf{Energy conservation} is \textbf{exact}:
+    The energy gained by particles is exactly removed from the turbulence $A(r) \times N_k$.
+    \item \textbf{Kolmogorov spectrum} is maintained by assuming that the \textbf{shape} $W(k) \propto k^{-5/3}$ stays fixed --- only the amplitude $A(r, t)$ changes.
+    \item \textbf{Scattering is isotropic}: no explicit $\mu$ tracking; only speed $v$ and position $r$ are evolved.
+\end{itemize}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Summary Diagram}}{}}
+\[
+\begin{array}{c@{\qquad}c}
+\texttt{+------------------------+} & \texttt{+--------------------------+} \\
+\texttt{|  Turbulence Amplitude  |} & \texttt{|  Monte Carlo Particles   |} \\
+\texttt{|      A(r, t)           |} & \texttt{|  \{r\_i, v\_i, w\_i\}     |} \\
+\texttt{+------------------------+} & \texttt{+--------------------------+} \\
+\multicolumn{2}{c}{\texttt{                    |}} \\
+\multicolumn{2}{c}{\texttt{                    |}} \\
+\multicolumn{2}{c}{\texttt{         Advection + Kolmogorov Cascade}} \\
+\multicolumn{2}{c}{\texttt{              Isotropic Scattering}} \\
+\multicolumn{2}{c}{\texttt{                    |}} \\
+\multicolumn{2}{c}{\texttt{    +-------------------------------------------+}} \\
+\multicolumn{2}{c}{\texttt{            Coupled Energy Exchange}} \\
+\end{array}
+\]
+
+\section*{\texorpdfstring{ \textbf{Key References}}{}}
+
+\begin{enumerate}
+    \item Jokipii (1966) --- \textit{Cosmic-Ray Propagation}.
+    \item Schlickeiser (1989) --- \textit{Cosmic-ray transport and acceleration}.
+    \item Earl (1974) --- \textit{Cosmic-ray diffusion}.
+    \item Shalchi (2009) --- \textit{Nonlinear Cosmic Ray Diffusion Theories}.
+    \item Tu \& Marsch (1995) --- \textit{MHD Turbulence in the Solar Wind}.
+    \item Bruno \& Carbone (2013) --- \textit{Solar Wind Turbulence}.
+    \item Skilling (1975) --- \textit{Cosmic ray streaming I}.
+    \item Matthaeus et al. (1999) --- \textit{Evolution of Turbulence in the Solar Wind}.
+    \item Malkov \& Drury (2001) --- \textit{Nonlinear Diffusive Shock Acceleration}.
+    \item Zank et al. (1998) --- \textit{Particle acceleration at shocks}.
+\end{enumerate}
+
+\hrulefill
+
+
+
+\subsection{Why Split into $W_+$ and $W_-$?}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+& $W_+$ & $W_-$ \\
+\midrule
+Propagation direction    & Outward Alfvén waves (away from Sun) & Inward Alfvén waves (toward Sun) \\
+Group velocity           & $+V_A$                               & $-V_A$                           \\
+Resonance with particles & $\mu > 0$                            & $\mu < 0$                        \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+    \item \textbf{Alfvén waves} are \textbf{non-compressive}, and they can \textbf{propagate only along or against} the magnetic field $\mathbf{B}_0$.
+    \item \textbf{SEPs} or \textbf{solar wind ions} interact differently with $W_+$ and $W_-$ because:
+    \begin{itemize}
+        \item \textbf{Scattering} depends on wave direction relative to particle motion.
+        \item \textbf{Wave growth/damping} depends on the net streaming relative to the waves.
+    \end{itemize}
+\end{itemize}
+
+In quasilinear theory, \textbf{resonant interactions} occur \textbf{only with the wave population moving in the opposite direction} to the particle's parallel motion.
+
+\hrulefill
+
+\subsection*{Formal Definition}
+
+You model:
+\[
+W_+(k, r, t) \quad \text{(outward, anti-sunward Alfvén waves)},
+\]
+\[
+W_-(k, r, t) \quad \text{(inward, sunward Alfvén waves)}.
+\]
+
+Each obeys its own \textbf{transport equation}:
+\begin{equation}
+\frac{\partial W_\pm}{\partial t} + (V_A \mp U) \frac{\partial W_\pm}{\partial r}
+= \text{Growth}_\pm - \text{Cascade}_\pm - \text{Damping}_\pm.
+\tag{1}
+\end{equation}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Why Splitting Matters}}{}}
+
+\begin{enumerate}
+    \item \textbf{Anisotropic wave field:} The solar wind typically has much more \textbf{outward} wave power $W_+ \gg W_-$ near the Sun, but backscattering and reflection gradually build $W_-$.
+    
+    \item \textbf{Particle scattering depends on wave sense:} In QLT, the \textbf{pitch-angle diffusion coefficient} $D_{\mu\mu}$ has contributions:
+    \[
+    D_{\mu\mu}(\mu) \propto (1 - \mu^2) \left[
+    \frac{W_+\bigl(k_{\text{res}}^+\bigr)}{|k_{\text{res}}^+|}
+    +
+    \frac{W_-\bigl(k_{\text{res}}^-\bigr)}{|k_{\text{res}}^-|}
+    \right].
+    \tag{2}
+    \]
+    where
+    \[
+    k_{\text{res}}^\pm = \frac{\Omega}{v\mu \mp V_A}.
+    \]
+    
+    Each wave field $W_\pm$ resonates at different $k$ depending on the particle's direction of motion.
+    
+    \item \textbf{Energy exchange (growth/damping) is direction-dependent:} The particles \textbf{gain/lose energy} differently depending on their interaction with $W_+$ or $W_-$. The turbulence damps/grows accordingly.
+    
+    \item \textbf{Alfvén wave advection:}
+    \[
+    W_+ \text{ is carried outward faster (group speed } V_A + U\text{)},
+    \]
+    \[
+    W_- \text{ can be convected inward relative to the wind (group speed } V_A - U\text{)}.
+    \]
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{How to Adapt the Monte Carlo Algorithm}}{}}
+
+You must track:
+\begin{itemize}
+    \item $A_+(r, t)$ — amplitude of outward waves.
+    \item $A_-(r, t)$ — amplitude of inward waves.
+\end{itemize}
+
+Each amplitude evolves by:
+
+\begin{verbatim}
+# For W_+
+Advection at V_A - U
+- Cascade sink
+- Energy change from particle scattering (P_ion_plus)
+
+# For W_-
+Advection at -V_A - U
+- Cascade sink
+- Energy change from particle scattering (P_ion_minus)
+\end{verbatim}
+
+And the \textbf{scattering frequency} for each particle is now:
+\[
+\nu_{\text{sc}}(v, r) = \nu_+(v, r) + \nu_-(v, r),
+\]
+where
+\[
+\nu_\pm(v, r) = \frac{\pi A_\pm(r)}{B_0(r)^2} \Omega^{-2/3} v^{-8/3} I_\pm(v).
+\]
+$I_\pm(v)$ are pitch-angle integrals that weight the contribution of $W_+$ and $W_-$.
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Key References Supporting Split $W_+, W_-$}}{}}
+
+\begin{enumerate}
+    \item Jokipii (1966) --- \textit{Cosmic-Ray Propagation I}.
+    \item Skilling (1975) --- \textit{Cosmic ray streaming and Alfvén waves}.
+    \item Schlickeiser (1989) --- \textit{Cosmic-ray transport}.
+    \item Matthaeus et al. (1990) --- \textit{Turbulence transport equations}.
+    \item Bieber et al. (1994) --- \textit{Proton and electron mean free paths}.
+    \item Zank et al. (1996) --- \textit{Turbulence evolution in the solar wind}.
+    \item Shalchi (2009) --- \textit{Nonlinear Cosmic Ray Diffusion Theories}.
+    \item Tu \& Marsch (1995) --- \textit{MHD turbulence in the solar wind}.
+    \item Ruffolo et al. (2012) --- \textit{Turbulence transport modeling}.
+    \item Zank et al. (2012) --- \textit{Transport of Turbulence in the Outer Heliosphere}.
+\end{enumerate}
+
+\hrulefill
+
+\section*{\texorpdfstring{ \textbf{Final Boxed Answer}}{}}
+
+\[
+\boxed{
+W(k, r, t) = W_+(k, r, t) + W_-(k, r, t) \quad \text{(must track both)}
+}
+\]
+
+and in your Monte Carlo + turbulence coupling:
+\begin{itemize}
+    \item Track both $A_+(r, t)$ and $A_-(r, t)$ separately,
+    \item Calculate scattering and energy transfer for each wave direction,
+    \item Update turbulence fields accordingly.
+\end{itemize}
+
+\section*{1. Governing Equation (per Propagation Sense)}
+
+For a single wavenumber $k$ bin, or for the Kolmogorov amplitude $A_\pm \propto W_\pm$,
+\begin{equation}
+\boxed{
+\frac{\partial W_\pm}{\partial t}
++ \underbrace{(V_A \mp U_\parallel) \frac{\partial W_\pm}{\partial s}}_{\text{advection}}
+= \underbrace{S_\pm}_{\substack{\text{wave–particle} \\ \text{growth/damping}}}
+- \underbrace{D_\pm}_{\substack{\text{nonlinear} \\ \text{cascade sink}}}.
+}
+\tag{1}
+\end{equation}
+
+\begin{itemize}
+    \item $s$ = arc-length along the magnetic field.
+    \item $U_\parallel(s)$ = solar-wind speed \textbf{along} the field.
+    \item $V_A(s) = B / \sqrt{\mu_0 \rho}$ = Alfvén speed.
+    \item $S_\pm$ and $D_\pm$ are cell-centred source/sink terms (from SEP streaming and Kolmogorov cascade).
+\end{itemize}
+
+\hrulefill
+
+\section*{2. Mesh and Notation}
+
+\begin{itemize}
+    \item $i = 0, \ldots, N$ (cell centres)
+    \item $s_i$ = arc length of centre $i$
+    \item $\Delta s_i$ = cell length
+    \item $F_{i+1/2}$ = flux through right face
+\end{itemize}
+
+Define the \textbf{cell-average} wave energy:
+\[
+\langle W_\pm \rangle_i(t) = \frac{1}{\Delta s_i} \int_{s_{i-1/2}}^{s_{i+1/2}} W_\pm(s, t)\, ds.
+\]
+
+\hrulefill
+
+\section*{3. Semi-Discrete FV Form}
+
+\begin{equation}
+\boxed{
+\frac{d}{dt} \langle W_\pm \rangle_i
+= -\frac{F_{i+1/2} - F_{i-1/2}}{\Delta s_i}
++ S_{\pm, i} - D_{\pm, i}.
+}
+\tag{2}
+\end{equation}
+
+\hrulefill
+
+\section*{4. Numerical Flux $F_{i+1/2}$}
+
+Because advection speed $a_\pm = V_A \mp U_\parallel$ is \textbf{known and sign-definite} at a face, use an \textbf{upwind flux}:
+
+\begin{equation}
+F_{i+1/2} =
+\begin{cases}
+a_{i+1/2}\; W_{\pm,i}^{(\text{L})} & a_{i+1/2} > 0, \\
+a_{i+1/2}\; W_{\pm,i+1}^{(\text{R})} & a_{i+1/2} < 0,
+\end{cases}
+\tag{3}
+\end{equation}
+where $W^{(\text{L})}$ and $W^{(\text{R})}$ are left/right reconstructions:
+\begin{itemize}
+    \item \textbf{First-order (robust):} $W^{(\text{L})} = W_i$, $W^{(\text{R})} = W_{i+1}$.
+    \item \textbf{Second-order TVD:}
+    \[
+    W^{(\text{L})} = W_i + \frac{1}{2} \phi(\theta_i)(W_i - W_{i-1}),
+    \]
+    with limiter (minmod, van Leer, etc.).
+\end{itemize}
+
+\textbf{CFL}: $|a_\pm|\, \Delta t < \min(\Delta s)$ for explicit update.
+
+\hrulefill
+
+\section*{5. Source/Sink Discretisation}
+
+\begin{itemize}
+    \item \textbf{Wave–particle term} (from the Monte Carlo step):
+    \[
+    S_{\pm, i} = \frac{\Delta E_{\pm, i}^{(\text{MC})}}{\Delta s_i},
+    \]
+    where $\Delta E_{\pm, i}^{(\text{MC})}$ is the energy gained/lost by the waves in cell $i$ during $\Delta t$.
+
+    \item \textbf{Cascade sink} for a Kolmogorov inertial range:
+    \[
+    D_{\pm, i} = \frac{W_{\pm, i}}{\tau_{\text{cas}, i}},
+    \]
+    with
+    \[
+    \tau_{\text{cas}}^{-1} = C_K \frac{\sqrt{W_{\pm, i}}}{L_\perp}.
+    \]
+    (choose $C_K \simeq 0.2$, $L_\perp(s)$ from geometry).
+\end{itemize}
+
+Both terms are \textbf{local} and added directly after the flux divergence.
+
+\hrulefill
+
+\section*{6. Time Integration}
+
+\textbf{Second-order TVD Runge–Kutta (RK2):}
+\begin{align*}
+W^*      &= W^n + \Delta t \cdot \text{RHS}(W^n), \\
+W^{n+1}  &= \frac{1}{2} W^n + \frac{1}{2} (W^* + \Delta t \cdot \text{RHS}(W^*)),
+\end{align*}
+where \texttt{RHS} implements Eq. (2) with fluxes (3) and sources.
+
+\hrulefill
+
+\section*{7. Complete Update Cycle (Pseudo-Algorithm)}
+
+\begin{lstlisting}[language={}, mathescape=true]
+for every global step $\Delta t$:
+    # 1. compute face velocities $a_{i+1/2} = V_A \pm U_{\text{parallel}}$ (geometry)
+    # 2. compute upwind fluxes $F_{i+1/2}$ (Eq. 3 with limiter)
+    # 3. Monte-Carlo loop $\rightarrow$ obtain $\Delta E^{\pm}_i$ (wave-particle coupling)
+    # 4. compute source arrays   $S_i = \Delta E^{\pm}_i / \Delta s_i$
+    # 5. compute cascade sinks   $D_i = W_i / \tau_{\text{cas},i}$
+    # 6. perform RK2 finite-volume update (Eq. 2)
+    # 7. boundary conditions:
+         $\bullet$ inner: prescribed driver or symmetry
+         $\bullet$ outer: zero-gradient (outflow) for $W_+$
+                   small inflow or reflection for $W_-$ if needed
+\end{lstlisting}
+
+\hrulefill
+
+\section*{8. Typical Accuracy and Stability}
+
+\begin{itemize}
+    \item \textbf{First-order upwind:} very stable, diffusive; fine for coarse tests.
+    \item \textbf{TVD-second-order:} good shock-like front resolution (e.g., abrupt driver).
+    \item \textbf{CFL safety factor} 0.4–0.6 keeps RK2 explicit scheme stable.
+\end{itemize}
+
+\hrulefill
+
+\section*{9. Core References for Finite-Volume Turbulence Transport}
+
+\begin{enumerate}
+    \item \textbf{Zank, G. P. et al.} 1996, \textit{JGR} 101, 457: 1-D turbulence transport in the solar wind.
+    \item \textbf{Matthaeus, W. H. \& Velli, M.} 1999, \textit{Space Sci. Rev.} 87, 269: description of turbulence advection/decay equations.
+    \item \textbf{Oughton, S. et al.} 2011, \textit{ApJ} 731, 73: FV discretisation of $W_\pm$ equations.
+    \item \textbf{Usmanov, A. V. et al.} 2014, \textit{ApJ} 788, 43: TVD upwind scheme for Alfvénic turbulence in 1-D flux tubes.
+\end{enumerate}
+
+\hrulefill
+
+\section*{Take-away}
+
+\textit{Integrate Eq. (1) in conservative form (2); use upwind-TVD fluxes for advection, add local Monte-Carlo energy exchange and Kolmogorov sink as centred source terms; advance with an explicit RK2 or RK3 method under a CFL condition determined by $|V_A \mp U_\parallel|$.}
