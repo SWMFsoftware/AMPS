@@ -375,7 +375,8 @@ namespace PIC {
       //......................................................................
       inline bool is_active() {return offset >= 0;}
 
-      inline void activate(long int& offsetInOut, vector<cDatumStored*>* DatumVector) {
+
+      inline void activate(long int& offsetInOut,vector<cDatumStored*>* DatumVector=NULL) {
         if (is_active()) exit(__LINE__,__FILE__,"ERROR: trying to activate datum a second time");
 
         // set offset to the variable
@@ -384,12 +385,8 @@ namespace PIC {
        	// return info about length of the variable
         offsetInOut+=length*sizeof(double);
 
-        // add this datum to the provided cDatum vector
+	// add this datum to the provided cDatum vector
         if (DatumVector!=NULL) DatumVector->push_back(this);
-
-//        if (doPrint==true) {
-//          exit(__LINE__,__FILE__,"Error: not implemented:: the data output need to be implemented in PIC::Mesh::cDataCenterNode");
-//        }
       }
 
       // constructor is inherited
@@ -414,7 +411,7 @@ namespace PIC {
 
       cDatumSampled() {}; //degault constructor
 
-      inline void activate(long int& offsetInOut, vector<cDatumSampled*>* DatumVector) {
+      inline void activate(long int& offsetInOut, vector<cDatumSampled*>* DatumVector=NULL) {
         if (is_active()) exit(__LINE__,__FILE__,"ERROR: trying to activate datum a second time");
 
         // set offset to the variable
@@ -425,7 +422,7 @@ namespace PIC {
         offsetInOut += length*sizeof(double)*PIC::nTotalSpecies;
 
         // add this datum to the provided cDatum vector
-        DatumVector->push_back(this);
+        if (DatumVector!=NULL) DatumVector->push_back(this);
       }
 
       // constructor is inherited
@@ -915,6 +912,18 @@ namespace PIC {
       //segment's vertices
       cFieldLineVertex* begin;
       cFieldLineVertex* end;
+
+      // --- Associated Data ---
+      static int totalAssociatedDataLength;
+      static int sampleDataLength;
+      static int CollectingSamplingOffset;
+      static int CompletedSamplingOffset;
+      char* AssociatedDataPointer;
+
+      static vector<cDatumStored*> DataStoredAtSegment;
+      static vector<cDatumSampled*> DataSampledAtSegment;
+ 
+
     public:
       long int Temp_ID;
       bool ActiveFlag;
@@ -939,23 +948,111 @@ namespace PIC {
       //.......................................................................
       // interface with stack functionality
       inline void cleanDataBuffer() {
+        int i,length=totalAssociatedDataLength/sizeof(double);
+        double *p;
+        for (i=0,p=(double*)AssociatedDataPointer;i<length;i++,p++) *p=0.0;
+      }
+
+      //Manage Associated Data
+      inline int AssociatedDataLength() { return totalAssociatedDataLength; }
+      inline char* GetAssociatedDataBufferPointer() { return AssociatedDataPointer; }
+      inline void SetAssociatedDataBufferPointer(char* ptr) { AssociatedDataPointer = ptr; }
+
+      static void AddDatumStored(PIC::Datum::cDatumStored* d) {
+        DataStoredAtSegment.push_back(d);
+      }
+
+      static void AddDatumSampled(PIC::Datum::cDatumSampled* d) {
+        DataSampledAtSegment.push_back(d);
+      }
+
+      static void SetDataOffsets(int SamplingOffset, int SampleDataLengthIn) {
+         CollectingSamplingOffset = SamplingOffset;
+         CompletedSamplingOffset = SamplingOffset + SampleDataLengthIn;
+         totalAssociatedDataLength = SamplingOffset + 2 * SampleDataLengthIn;
+         sampleDataLength = SampleDataLengthIn;
+      }
+
+      void flushCompletedSamplingBuffer() {
+        if (AssociatedDataPointer != NULL) {
+          int length = sampleDataLength / sizeof(double);
+          double *ptr = (double*)(AssociatedDataPointer + CompletedSamplingOffset);
+          for (int i = 0; i < length; i++, ptr++) *ptr = 0.0;
+        }
+      }
+
+      void flushCollectingSamplingBuffer() {
+        if (AssociatedDataPointer != NULL) {
+          int length = sampleDataLength / sizeof(double);
+          double *ptr = (double*)(AssociatedDataPointer + CollectingSamplingOffset);
+          for (int i = 0; i < length; i++, ptr++) *ptr = 0.0;
+        }
+      }
+
+      static void swapSamplingBuffers() {
+        int tempOffset = CollectingSamplingOffset;
+        CollectingSamplingOffset = CompletedSamplingOffset;
+        CompletedSamplingOffset = tempOffset;
+      }
+
+      // --- Set and Get Datum ---
+      void SetDatum(cDatumStored& Datum, double* In) {
+        if (Datum.offset >= 0 && AssociatedDataPointer != NULL)
+           memcpy(AssociatedDataPointer + Datum.offset, In, Datum.length * sizeof(double));
+      }
+
+      void SetDatum(cDatumStored& Datum, double In) {
+        if (Datum.offset >= 0 && AssociatedDataPointer != NULL)
+           memcpy(AssociatedDataPointer + Datum.offset, &In, sizeof(double));
+      }
+
+      void GetDatum(cDatumStored& Datum, double* Out) {
+        if (Datum.offset >= 0 && AssociatedDataPointer != NULL)
+          memcpy(Out, AssociatedDataPointer + Datum.offset, Datum.length * sizeof(double));
+        else
+          for (int i = 0; i < Datum.length; i++) Out[i] = 0.0;
+      }
+
+      void GetDatum(cDatumStored& Datum, double& Out) {
+        if (Datum.offset >= 0 && AssociatedDataPointer != NULL)
+            Out = *(double*)(AssociatedDataPointer + Datum.offset);
+        else
+            Out = 0.0;
+      }
+
+      double* GetDatum_ptr(cDatumStored& Datum) {
+        return (Datum.offset >= 0 && AssociatedDataPointer != NULL) ?
+            (double*)(AssociatedDataPointer + Datum.offset) : NULL;
+      }
+
+      static void InitDatum() {
+        long int SamplingOffset,Offset=0;
+
+        for (auto it : DataStoredAtSegment) {
+          if (it->is_active()==true) exit(__LINE__,__FILE__,"Error: re-initialization of Datum");
+          it->activate(Offset);
+        }
+
+        SamplingOffset = Offset;
+        Offset = 0;
+
+        for (auto it : DataSampledAtSegment) {
+          if (it->is_active()==true) exit(__LINE__,__FILE__,"Error: re-initialization of Datum");
+          it->activate(Offset);
+        }
+
+        SetDataOffsets(SamplingOffset, Offset);
+      }
+
+
+      cFieldLineSegment() {
+        Thread=0;
         Temp_ID = 0;
         IsSet=0, length=0.0;
         prev  = (next = NULL);
         begin = (end  = NULL);
         ActiveFlag=false;
         FirstParticleIndex=-1,tempFirstParticleIndex=-1;
-      }
-
-
-      inline int AssociatedDataLength(){return 0;}
-      inline char* GetAssociatedDataBufferPointer(){return NULL;}
-      inline void SetAssociatedDataBufferPointer(char* ptr){}
-
-    
-      cFieldLineSegment() {
-        Thread=0;
-        cleanDataBuffer();
       }
 
       //get cartesian coordinats of the location
