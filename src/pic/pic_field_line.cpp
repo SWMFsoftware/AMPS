@@ -704,6 +704,27 @@ namespace PIC {
         DistanceTable[iSegment+1]=DistanceTable[iSegment]+Segment->GetLength();
       } 
 
+      // Create mapping from vertices to adjacent segments for edge data averaging
+      std::vector<std::vector<cFieldLineSegment*>> vertexToSegmentsMap(nVertex);
+
+      if (!OutputGeometryOnly) {
+      // Build the vertex-to-segments mapping
+        for (iSegment=0, Segment=FirstSegment; iSegment<nSegment; iSegment++, Segment=Segment->GetNext()) {
+          // Each segment connects vertex iSegment to vertex iSegment+1
+          vertexToSegmentsMap[iSegment].push_back(Segment);
+
+          if (iSegment+1 < nVertex) {
+            vertexToSegmentsMap[iSegment+1].push_back(Segment);
+          }
+
+          // Special handling for closed loops
+          if (is_loop() && iSegment == nSegment-1) {
+            // Last segment connects back to first vertex
+            vertexToSegmentsMap[0].push_back(Segment);
+          }
+        }
+      }
+
 
       if (OutputGeometryOnly==true) { 
         for (int iVertex=0; iVertex<nVertex; iVertex++) {
@@ -820,6 +841,87 @@ namespace PIC {
             fprintf(fout, "%e ", Value[i]);
           }
         }
+
+    for (auto it : PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment) {
+      if (it->doPrint) {
+        // Initialize averaging arrays
+        std::vector<double> avgValue(it->length, 0.0);
+        double totalWeight = 0.0;
+        
+        // Average over all segments connected to this vertex
+        for (auto segment : vertexToSegmentsMap[iVertex]) {
+          double segmentValue[it->length];
+          segment->GetDatum(*it, segmentValue);
+          
+          // Weight by segment length for better averaging
+          double weight = segment->GetLength();
+          totalWeight += weight;
+          
+          for (int i = 0; i < it->length; i++) {
+            avgValue[i] += weight * segmentValue[i];
+          }
+        }
+        
+        // Normalize by total weight
+        if (totalWeight > 0.0) {
+          for (int i = 0; i < it->length; i++) {
+            avgValue[i] /= totalWeight;
+            fprintf(fout, "%e ", avgValue[i]);
+          }
+        } else {
+          // No adjacent segments - output zeros
+          for (int i = 0; i < it->length; i++) {
+            fprintf(fout, "%e ", 0.0);
+          }
+        }
+      }
+    }
+
+    // Output segment-sampled data (averaged over adjacent segments)
+    for (auto it : PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment) {
+      if (it->doPrint) {
+        // Initialize averaging arrays
+        std::vector<double> avgValue(it->length, 0.0);
+        double totalWeight = 0.0;
+        
+        // Average over all segments connected to this vertex
+        for (auto segment : vertexToSegmentsMap[iVertex]) {
+          double segmentValue[it->length];
+          
+          // Handle different sampling types
+          if (it->type == PIC::Datum::cDatumSampled::Timed_) {
+            cDatumTimed* ptrDatumTimed = static_cast<cDatumTimed*>(it);
+            segment->GetDatumAverage(*ptrDatumTimed, segmentValue, 0, SampleCycleCounter);
+          } else if (it->type == PIC::Datum::cDatumSampled::Weighted_) {
+            cDatumWeighted* ptrDatumWeighted = static_cast<cDatumWeighted*>(it);
+            segment->GetDatumAverage(*ptrDatumWeighted, segmentValue, 0);
+          } else {
+            exit(__LINE__,__FILE__,"Error: not implemented");
+          }
+          
+          // Weight by segment length
+          double weight = segment->GetLength();
+          totalWeight += weight;
+          
+          for (int i = 0; i < it->length; i++) {
+            avgValue[i] += weight * segmentValue[i];
+          }
+        }
+        
+        // Normalize by total weight
+        if (totalWeight > 0.0) {
+          for (int i = 0; i < it->length; i++) {
+            avgValue[i] /= totalWeight;
+            fprintf(fout, "%e ", avgValue[i]);
+          }
+        } else {
+          // No adjacent segments - output zeros
+          for (int i = 0; i < it->length; i++) {
+            fprintf(fout, "%e ", 0.0);
+          }
+        }
+      }
+    }
 
 
         fprintf(fout,"\n");
@@ -943,6 +1045,14 @@ switch (DIM) {
 
         for (itrDatum = DataSampledAtVertex.begin(); itrDatum!= DataSampledAtVertex.end(); itrDatum++) {
           if ((*itrDatum)->doPrint) (*itrDatum)->PrintName(fout);
+        }
+
+	for (auto it : PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment) {
+          if (it->doPrint==true) it->PrintName(fout);  
+	}
+
+	for (auto it : PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment) {
+          if (it->doPrint==true) it->PrintName(fout);
         }
       }
 
