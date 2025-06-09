@@ -10,6 +10,14 @@ int PIC::FieldLine::cFieldLineVertex::sampleDataLength=-1;
 int PIC::FieldLine::cFieldLineVertex::CollectingSamplingOffset=-1;
 int PIC::FieldLine::cFieldLineVertex::CompletedSamplingOffset=-1;
 
+int PIC::FieldLine::cFieldLineSegment::totalAssociatedDataLength=-1;
+int PIC::FieldLine::cFieldLineSegment::sampleDataLength=-1;
+int PIC::FieldLine::cFieldLineSegment::CollectingSamplingOffset=-1;
+int PIC::FieldLine::cFieldLineSegment::CompletedSamplingOffset=-1;
+vector<PIC::Datum::cDatumStored*> PIC::FieldLine::cFieldLineSegment::DataStoredAtSegment;
+vector<PIC::Datum::cDatumSampled*> PIC::FieldLine::cFieldLineSegment::DataSampledAtSegment;
+
+
 //the following is used to output the distance from the beginning of the 
 //field line in units other than SI
 //first -> the conversion factor
@@ -837,7 +845,10 @@ namespace PIC {
       // allocate container for field lines
       FieldLinesAll = new cFieldLine [nFieldLineMax];
 
-      // activate data storage
+      //activate segment data storage 
+      cFieldLineSegment::InitDatum();
+
+      // activate vertex data storage
       long int Offset = 0;
 
       // activate data that are stored but NOT sampled
