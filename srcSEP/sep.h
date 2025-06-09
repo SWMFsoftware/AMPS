@@ -142,6 +142,20 @@ namespace SEP {
   //account for the perpendicular diffusion when modeling particle transport in 3D
   extern bool PerpendicularDiffusionMode;
 
+  //functions for self-consistent modeling Alfven turbulence 
+  namespace AlfvenTurbulence {
+    extern PIC::Datum::cDatumStored WaveEnergyDensity;
+
+    namespace ModelInit {
+      double dB_B(double r);
+      void Init();
+    }
+
+    namespace IsotropicDistributionSEP {
+      void SampleParticleData();
+    }
+  }
+
 
   //max turbolence level
   extern double MaxTurbulenceLevel;
