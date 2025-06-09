@@ -920,11 +920,10 @@ namespace PIC {
       static int CompletedSamplingOffset;
       char* AssociatedDataPointer;
 
+    public:
       static vector<cDatumStored*> DataStoredAtSegment;
       static vector<cDatumSampled*> DataSampledAtSegment;
  
-
-    public:
       long int Temp_ID;
       bool ActiveFlag;
       int Thread;
@@ -1043,6 +1042,68 @@ namespace PIC {
 
         SetDataOffsets(SamplingOffset, Offset);
       }
+
+      //get accumulated data
+      //.......................................................................
+      inline void GetDatumCumulative(Datum::cDatumSampled& Datum, double* Out, int spec) {
+        if (Datum.offset>=0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset));
+      }
+
+      inline double GetDatumCumulative(Datum::cDatumSampled& Datum, int spec) {
+        return (Datum.offset>=0) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) : 0.0;
+      }
+
+      //get data averaged over time
+      //.......................................................................
+      inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec) {
+        if (Datum.offset>=0) {
+          if (PIC::LastSampleLength>0) {
+            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength;
+          }
+          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        }
+      }
+
+      inline void GetDatumAverage(cDatumTimed& Datum, double* Out, int spec,int SampleLength) {
+        if (Datum.offset>=0) {
+          if (SampleLength>0) {
+            for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength;
+          }
+          else for(int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        }
+      }
+
+
+      inline double GetDatumAverage(cDatumTimed& Datum, int spec) {
+        return ((PIC::LastSampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / PIC::LastSampleLength : 0.0;
+      }
+
+      inline double GetDatumAverage(cDatumTimed& Datum, int spec,int SampleLength) {
+        return ((SampleLength>0)&&(Datum.offset>=0)) ? *(spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / SampleLength : 0.0;
+      }
+
+      //get data averaged over sampled weight
+      //.......................................................................
+      inline void GetDatumAverage(cDatumWeighted& Datum, double* Out, int spec) {
+        double TotalWeight=0.0;
+
+        GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
+
+        if (Datum.offset>=0) {
+          if (TotalWeight>0) for (int i=0; i<Datum.length; i++) Out[i] = *(i + Datum.length * spec + (double*)(AssociatedDataPointer + CompletedSamplingOffset+ Datum.offset)) / TotalWeight;
+          else for (int i=0; i<Datum.length; i++) Out[i] = 0.0;
+        }
+      }
+
+      inline double GetDatumAverage(cDatumWeighted& Datum, int spec) {
+        double TotalWeight=0.0;
+
+        GetDatumCumulative(DatumAtVertexParticleWeight, &TotalWeight, spec);
+
+        return ((TotalWeight>0)&&(Datum.offset>=0)) ? *(spec +(double*)(AssociatedDataPointer + CompletedSamplingOffset+Datum.offset)) / TotalWeight : 0.0;
+      }
+
+
 
 
       cFieldLineSegment() {
