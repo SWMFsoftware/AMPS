@@ -4,6 +4,14 @@
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
 
+PIC::Datum::cDatumSampled SEP::AlfvenTurbulence::IsotropicDistributionSEP::S(SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals,"",false); 
+double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(SEP::AlfvenTurbulence::IsotropicDistributionSEP::e_stream_min,_H__MASS_)); 
+double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(SEP::AlfvenTurbulence::IsotropicDistributionSEP::e_stream_max,_H__MASS_));
+
+double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_dp_stream=
+  (SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max-SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min)/
+       SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals;	
+
 double SEP::AlfvenTurbulence::ModelInit::dB_B(double r) {
    // Example: power-law dependence on heliocentric distance
    // dB/B = dB_B_0 * (r/r_0)^alpha
@@ -126,3 +134,126 @@ void SEP::AlfvenTurbulence::ModelInit::Init() {
      }
    }
 }
+
+//=========================================================================
+//sampling particle particle streaming  
+void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double s_final,double s_init,double speed,double weight,double dt,PIC::FieldLine::cFieldLineSegment *segment_start, int iFieldLine) {
+  int pBin;
+
+  double log_p=log(Relativistic::Speed2Momentum(speed,_H__MASS_));
+
+  if ((log_p>log_p_stream_max)||(log_p<log_p_stream_min)) return;  
+  pBin=static_cast<int>(std::floor((log_p-log_p_stream_min)/log_dp_stream));
+
+  if ((pBin<0)||(pBin>=n_stream_intervals)) exit(__LINE__,__FILE__,"Error: out of range"); 
+
+  auto seg = segment_start;
+  double s=s_init;
+
+  if (!seg) return;
+
+  // Branch A: forward motion  (s_final>s_init > 0)
+  if (s_final - s > 0.0) {
+    while (s_final > s && seg) {
+      // Calculate fractional position within current segment
+      double xi = s - std::floor(s);
+        
+      // Get Parker stream data array
+      double* ParkerStream = seg->GetDatum_ptr(S);
+        
+      // Get segment geometry
+      auto v0 = seg->GetBegin();
+      auto v1 = seg->GetEnd();
+      double L, vol, dFlux;
+        
+      if (std::floor(s_final) != std::floor(s)) {
+        // Cross segment boundary - travel from xi to end of segment
+        L = (1.0 - xi) * seg->GetLength();
+            
+        // Use FULL segment volume for Parker flux normalization
+        vol = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+            
+        dFlux = weight * L / (dt * vol);
+        ParkerStream[pBin] += dFlux;
+            
+        // Move to next segment
+        s += 1.0;
+        s = std::floor(s);  // Ensure we're at exact segment boundary
+        seg = seg->GetNext();
+      }
+      else {
+         // Stop within current segment
+         double s_final_xi = s_final - std::floor(s_final);  // final fractional position
+         L = (s_final_xi - xi) * seg->GetLength();
+            
+         // Use FULL segment volume for Parker flux normalization
+         vol = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+            
+         dFlux = weight * L / (dt * vol);
+         ParkerStream[pBin] += dFlux;
+            
+         // Particle stops here
+         s = s_final;
+         break;
+       }
+    }
+  }
+
+
+  // Branch B: Backward motion (s_final < s_init)
+  if (s_final < s_init) {
+    while (s_final < s && seg) {
+      double L, dFlux, vol;
+      double xi = s - std::floor(s);  // fractional part within current segment
+        
+       // Get segment data pointer
+       double* ParkerStream = seg->GetDatum_ptr(S);
+        
+        // Get segment endpoints for validation
+        auto v0 = seg->GetBegin();
+        auto v1 = seg->GetEnd();
+        
+       if (std::floor(s_final) != std::floor(s)) {
+          // s_final and s are in different segments
+          // Particle crosses segment boundary backward - travels from xi to beginning (0.0)
+            
+          // Distance traveled in this segment (from xi to beginning of segment)
+          L = xi * seg->GetLength();
+          vol = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+            
+          // Calculate Parker flux contribution (negative for backward motion)
+          dFlux = -weight * L / (dt * vol);
+            
+          // Add flux to this segment
+          ParkerStream[pBin] += dFlux;
+            
+          // Move to previous segment (proper two-step process)
+          s = std::floor(s) - 1.0E-8;     // Step 2: Position at end of previous segment (xi = 1.0)
+          seg = seg->GetPrev();
+        }
+        else {
+          // Particle motion stops within the current segment
+            
+          // Distance traveled within current segment (backward)
+          L = (s - s_final) * seg->GetLength();
+          vol = SEP::FieldLine::GetSegmentVolume(seg, iFieldLine);
+            
+          // Calculate Parker flux contribution (negative for backward motion)
+          dFlux = -weight * L / (dt * vol);
+            
+          // Add flux to this segment
+          ParkerStream[pBin] += dFlux;
+            
+          // Update position to final position and stop
+          s = s_final;
+          break;
+        }
+      }
+   }
+}
+
+
+
+
+
+
