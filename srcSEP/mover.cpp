@@ -2284,6 +2284,7 @@ int SEP::ParticleMover_Parker_MeanFreePath(long int ptr,double dtTotal,cTreeNode
   return _PARTICLE_MOTION_FINISHED_;
 }
 
+
 int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;
   namespace FL = PIC::FieldLine;
@@ -2309,147 +2310,268 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
   }
 
   double TimeCounter=0.0,dt;
-  double MeanFreePath,ds;
+  double MeanFreePath,ds,Dxx,dDxx_ds;
   double energy,vnew[3],l[3],x[3],r; 
 
   Segment->GetCartesian(x,FieldLineCoord);
   r=Vector3D::Length(x);
   Speed=sqrt(vNormal*vNormal+vParallel*vParallel);
 
-  while (TimeCounter<dtTotal) {
-    MeanFreePath=QLT::calculateMeanFreePath(r,Speed); 
-
-    energy=Relativistic::Speed2E(Speed,PIC::MolecularData::GetMass(spec));
-
-    MeanFreePath=SEP::Scattering::Tenishev2005AIAA::lambda0*
-      pow(energy/GeV2J,SEP::Scattering::Tenishev2005AIAA::alpha)*
-      pow(r/_AU_,SEP::Scattering::Tenishev2005AIAA::beta);
-
-    //get the value of the backgound magnetic field 
-    double AbsB;
-
-    switch (_PIC_COUPLER_MODE_) {
-    case _PIC_COUPLER_MODE__SWMF_:
-      AbsB=SEP::FieldLineData::GetAbsB(FieldLineCoord,Segment,iFieldLine);
+  // Helper function to calculate mean free path (adapted from ParticleMover_Parker_MeanFreePath)
+  auto CalculateMeanFreePath = [&] (int spec, double rHelio, double Speed, double AbsB) {
+    double MeanFreePath, dxx, energy;
+    
+    switch (SEP::Scattering::MeanFreePathMode) {
+    case SEP::Scattering::MeanFreePathMode_QLT:
+      MeanFreePath = QLT::calculateMeanFreePath(rHelio, Speed);
+      break;
+    case SEP::Scattering::MeanFreePathMode_QLT1:
+      MeanFreePath = QLT1::calculateMeanFreePath(rHelio, Speed, AbsB);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Tenishev2005AIAA:
+      energy = Relativistic::Speed2E(Speed, PIC::MolecularData::GetMass(spec));
+      MeanFreePath = SEP::Scattering::Tenishev2005AIAA::lambda0 *
+        pow(energy/GeV2J, SEP::Scattering::Tenishev2005AIAA::alpha) *
+        pow(rHelio/_AU_, SEP::Scattering::Tenishev2005AIAA::beta);
+      break;
+    case SEP::Scattering::MeanFreePathMode_Chen2024AA:
+      energy = Relativistic::Speed2E(Speed, PIC::MolecularData::GetMass(spec));
+      dxx = SEP::Diffusion::Chen2024AA::GetDxx(rHelio, energy);
+      MeanFreePath = 3.0 * dxx / Speed; // Eq. 15, Liu-2024-arXiv
       break;
     default:
-      AbsB=SEP::ParkerSpiral::GetAbsB(r);
+      exit(__LINE__, __FILE__, "Error: the option is unknown");
     }
 
-    MeanFreePath=QLT1::calculateMeanFreePath(r,Speed,AbsB);
+    return MeanFreePath; 
+  };
 
+  // Helper function to calculate Dxx from mean free path
+  auto CalculateDxx = [&] (double MeanFreePath, double Speed) {
+    return MeanFreePath * Speed / 3.0;  // Standard relation: Dxx = λ * v / 3
+  };
 
-    //determine d (Dxx)/dx
-    double xx[3],rr,s,dxx_minus,dxx,dxx_plus,d_dxx_dx; 
-    bool f_minus=true,f_plus=true;
-
-
-    ds=-5*MeanFreePath;
-    s=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
+  // Helper function to calculate d(Dxx)/ds using finite differences
+  auto CalculateDxxGradient = [&] (double currentFieldLineCoord, FL::cFieldLineSegment* currentSegment, 
+                                   int fieldLineId, double currentSpeed, int particleSpec) {
+    double dDxx_ds = 0.0;
+    double delta_s = 0.01 * currentSegment->GetLength(); // Small displacement for finite difference
     
-    if (Segment!=NULL) {
-      Segment->GetCartesian(xx,s);
-      rr=Vector3D::Length(xx);
-
-      dxx_minus=QLT1::calculateDxx(rr,Speed,AbsB);  
+    // Get current position and properties
+    double x_current[3], r_current;
+    currentSegment->GetCartesian(x_current, currentFieldLineCoord);
+    r_current = Vector3D::Length(x_current);
+    
+    // Get magnetic field at current position
+    double AbsB_current;
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      AbsB_current = SEP::FieldLineData::GetAbsB(currentFieldLineCoord, currentSegment, fieldLineId); 
+      break;
+    default:
+      AbsB_current = SEP::ParkerSpiral::GetAbsB(r_current);
     }
-    else {
-      f_minus=false;
+    
+    double MeanFreePath_current = CalculateMeanFreePath(particleSpec, r_current, currentSpeed, AbsB_current);
+    double Dxx_current = CalculateDxx(MeanFreePath_current, currentSpeed);
+    
+    // Try forward difference
+    double FieldLineCoord_forward = FL::FieldLinesAll[fieldLineId].move(currentFieldLineCoord, delta_s, currentSegment);
+    FL::cFieldLineSegment* Segment_forward = FL::FieldLinesAll[fieldLineId].GetSegment(FieldLineCoord_forward);
+    
+    if (Segment_forward != NULL) {
+      double x_forward[3], r_forward;
+      Segment_forward->GetCartesian(x_forward, FieldLineCoord_forward);
+      r_forward = Vector3D::Length(x_forward);
+      
+      double AbsB_forward;
+      switch (_PIC_COUPLER_MODE_) {
+      case _PIC_COUPLER_MODE__SWMF_:
+        AbsB_forward = SEP::FieldLineData::GetAbsB(FieldLineCoord_forward, Segment_forward, fieldLineId);
+        break;
+      default:
+        AbsB_forward = SEP::ParkerSpiral::GetAbsB(r_forward);
+      }
+      
+      double MeanFreePath_forward = CalculateMeanFreePath(particleSpec, r_forward, currentSpeed, AbsB_forward);
+      double Dxx_forward = CalculateDxx(MeanFreePath_forward, currentSpeed);
+      
+      // Try backward difference
+      double FieldLineCoord_backward = FL::FieldLinesAll[fieldLineId].move(currentFieldLineCoord, -delta_s, currentSegment);
+      FL::cFieldLineSegment* Segment_backward = FL::FieldLinesAll[fieldLineId].GetSegment(FieldLineCoord_backward);
+      
+      if (Segment_backward != NULL) {
+        double x_backward[3], r_backward;
+        Segment_backward->GetCartesian(x_backward, FieldLineCoord_backward);
+        r_backward = Vector3D::Length(x_backward);
+        
+        double AbsB_backward;
+        switch (_PIC_COUPLER_MODE_) {
+        case _PIC_COUPLER_MODE__SWMF_:
+          AbsB_backward = SEP::FieldLineData::GetAbsB(FieldLineCoord_backward, Segment_backward, fieldLineId);
+          break;
+        default:
+          AbsB_backward = SEP::ParkerSpiral::GetAbsB(r_backward);
+        }
+        
+        double MeanFreePath_backward = CalculateMeanFreePath(particleSpec, r_backward, currentSpeed, AbsB_backward);
+        double Dxx_backward = CalculateDxx(MeanFreePath_backward, currentSpeed);
+        
+        // Central difference
+        dDxx_ds = (Dxx_forward - Dxx_backward) / (2.0 * delta_s);
+      } else {
+        // Forward difference only
+        dDxx_ds = (Dxx_forward - Dxx_current) / delta_s;
+      }
+    } else {
+      // Try backward difference only
+      double FieldLineCoord_backward = FL::FieldLinesAll[fieldLineId].move(currentFieldLineCoord, -delta_s, currentSegment);
+      FL::cFieldLineSegment* Segment_backward = FL::FieldLinesAll[fieldLineId].GetSegment(FieldLineCoord_backward);
+      
+      if (Segment_backward != NULL) {
+        double x_backward[3], r_backward;
+        Segment_backward->GetCartesian(x_backward, FieldLineCoord_backward);
+        r_backward = Vector3D::Length(x_backward);
+        
+        double AbsB_backward;
+        switch (_PIC_COUPLER_MODE_) {
+        case _PIC_COUPLER_MODE__SWMF_:
+          AbsB_backward = SEP::FieldLineData::GetAbsB(FieldLineCoord_backward, Segment_backward, fieldLineId);
+          break;
+        default:
+          AbsB_backward = SEP::ParkerSpiral::GetAbsB(r_backward);
+        }
+        
+        double MeanFreePath_backward = CalculateMeanFreePath(particleSpec, r_backward, currentSpeed, AbsB_backward);
+        double Dxx_backward = CalculateDxx(MeanFreePath_backward, currentSpeed);
+        
+        // Backward difference
+        dDxx_ds = (Dxx_current - Dxx_backward) / delta_s;
+      } else {
+        // Cannot calculate gradient - set to zero
+        dDxx_ds = 0.0;
+      }
+    }
+    
+    return dDxx_ds;
+  };
+
+  while (TimeCounter < dtTotal) {
+    // Get current magnetic field magnitude
+    double AbsB;
+    switch (_PIC_COUPLER_MODE_) {
+    case _PIC_COUPLER_MODE__SWMF_:
+      AbsB = SEP::FieldLineData::GetAbsB(FieldLineCoord, Segment, iFieldLine); 
+      break;
+    default:
+      AbsB = SEP::ParkerSpiral::GetAbsB(r);
     }
 
-    ds=5*MeanFreePath;
-    s=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
-
-    if (Segment!=NULL) {
-      Segment->GetCartesian(xx,s);
-      rr=Vector3D::Length(xx);
-
-      dxx_plus=QLT1::calculateDxx(r,Speed,AbsB);
+    // Calculate mean free path using the same method as ParticleMover_Parker_MeanFreePath
+    MeanFreePath = CalculateMeanFreePath(spec, r, Speed, AbsB);
+    
+    // Calculate Dxx from mean free path
+    Dxx = CalculateDxx(MeanFreePath, Speed);
+    
+    // Calculate gradient of Dxx
+    dDxx_ds = CalculateDxxGradient(FieldLineCoord, Segment, iFieldLine, Speed, spec);
+    
+    // Store Dxx in particle data if sampling is active
+    if ((SEP::Offset::MeanFreePath != -1) && (SEP::Sampling::MeanFreePath::active_flag == true)) {
+      *((double*)(ParticleData + SEP::Offset::MeanFreePath)) = MeanFreePath;
     }
-    else {
-      f_plus=false;
+
+    // Determine time step based on scattering time scale
+    double scattering_time = MeanFreePath / Speed;  // Characteristic scattering time scale
+    dt = -scattering_time * log(rnd());  // Exponential distribution for scattering events
+    
+    // Limit time step to not exceed remaining simulation time
+    if (TimeCounter + dt > dtTotal) {
+      dt = dtTotal - TimeCounter;
     }
+    
+    // Calculate particle displacement accounting for diffusion and its gradient
+    // Based on the solution to: ds/dt = dDxx/ds + sqrt(2*Dxx) * η(t)
+    // where η(t) is white noise
+    
+    double stochastic_displacement = sqrt(2.0 * Dxx * dt) * Vector3D::Distribution::Normal();
+    double deterministic_displacement = dDxx_ds * dt;
+    
+    ds = deterministic_displacement + stochastic_displacement;
+    
+    // Move particle along field line
+    FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds, Segment);
 
-    if ((f_minus==true)&&(f_plus==true)) {
-      d_dxx_dx=(dxx_plus-dxx_minus)/(2.0*ds);
-    }
-    else if ((f_minus==false)&&(f_plus==false)) {
-      exit(__LINE__,__FILE__,"Error: cannot calculate d_dxx_dx -> both points are outdise of the field line");
-    }
-    else {
-      dxx=QLT1::calculateDxx(r,Speed,AbsB);
-      d_dxx_dx=(f_minus==true) ? (dxx-dxx_minus)/ds : (dxx_plus-dxx)/ds;  
-    }	    
-
-    ds=d_dxx_dx*dtTotal;
-
-
-
-
-
-    ds=-MeanFreePath*log(rnd());
-    dt=ds/fabs(vParallel);
-
-    if (TimeCounter+dt<dtTotal) {
-      //scattering occured begore the end of the time interval 
-      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
-
-      //simulate scattering of the particle
-      Vector3D::Distribution::Uniform(vnew,Speed);
-
-      Segment->GetDir(l);
-      Vector3D::GetComponents(vParallel,vNormal,vnew,l);
-    }
-    else {
-      //scattering does not occur before the enf of the simulated time interval  
-      dt=dtTotal-TimeCounter; 
-      ds=vParallel*dt;
-
-      FieldLineCoord=FL::FieldLinesAll[iFieldLine].move(FieldLineCoord,ds,Segment);
-    } 
-
-
-    TimeCounter+=dt;  
-
-    if (Segment==NULL) {
-      //the particle has left the simulation, and it is need to be deleted 
+    if (Segment == NULL) {
+      // The particle has left the simulation domain
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
 
-    Segment->GetCartesian(x,FieldLineCoord);
-    r=Vector3D::Length(x);
+    // Update particle position and radial distance
+    Segment->GetCartesian(x, FieldLineCoord);
+    r = Vector3D::Length(x);
+    
+    // Update perpendicular scattering if enabled
+    if (SEP::Offset::RadialLocation != -1) {
+      double radial_pos = *((double*)(ParticleData + SEP::Offset::RadialLocation));
+      double dr, theta = PiTimes2 * rnd();
+      double sin_theta = sin(theta);
+      double D_perp;
+
+      // Apply perpendicular diffusion
+      switch (1) {  // Using diffusion mode
+      case 0:  // Mean free path mode
+        radial_pos = sqrt(radial_pos*radial_pos + vNormal*dt*(2.0*sin_theta*radial_pos + vNormal*dt));
+        break;
+      case 1:  // Diffusion mode
+        D_perp = QLT1::calculatePerpendicularDiffusion(r, Speed, AbsB);
+        dr = sqrt(2.0 * D_perp * dt) * Vector3D::Distribution::Normal();
+        radial_pos = sqrt(radial_pos*radial_pos + dr*dr + 2.0*radial_pos*dr*sin_theta);
+        break;
+      }
+
+      *((double*)(ParticleData + SEP::Offset::RadialLocation)) = radial_pos;
+    }
+
+    // Check if scattering occurred (based on whether we used the full scattering time)
+    if (TimeCounter + scattering_time * (-log(rnd())) < dtTotal) {
+      // Scattering event occurred - randomize velocity direction
+      Vector3D::Distribution::Uniform(vnew, Speed);
+      Segment->GetDir(l);
+      Vector3D::GetComponents(vParallel, vNormal, vnew, l);
+    }
+
+    TimeCounter += dt;
   }
 
-  //set the new values of the normal and parallel particle velocities 
-  PB::SetVParallel(vParallel,ParticleData);
-  PB::SetVNormal(vNormal,ParticleData);
+  // Set the new values of the normal and parallel particle velocities 
+  PB::SetVParallel(vParallel, ParticleData);
+  PB::SetVNormal(vNormal, ParticleData);
 
-  //set the new particle coordinate 
-  PB::SetFieldLineCoord(FieldLineCoord,ParticleData);
+  // Set the new particle coordinate 
+  PB::SetFieldLineCoord(FieldLineCoord, ParticleData);
 
-  //attach the particle to the temporaty list
+  // Attach the particle to the temporary list
   switch (_PIC_PARTICLE_LIST_ATTACHING_) {
-  case  _PIC_PARTICLE_LIST_ATTACHING_NODE_:
-    exit(__LINE__,__FILE__,"Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
+  case _PIC_PARTICLE_LIST_ATTACHING_NODE_:
+    exit(__LINE__, __FILE__, "Error: the function was developed for the case _PIC_PARTICLE_LIST_ATTACHING_==_PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_");
     break;
   case _PIC_PARTICLE_LIST_ATTACHING_FL_SEGMENT_:
     {
-      long int temp=Segment->tempFirstParticleIndex.exchange(ptr);
-      PIC::ParticleBuffer::SetNext(temp,ParticleData);
-      PIC::ParticleBuffer::SetPrev(-1,ParticleData);
+      long int temp = Segment->tempFirstParticleIndex.exchange(ptr);
+      PIC::ParticleBuffer::SetNext(temp, ParticleData);
+      PIC::ParticleBuffer::SetPrev(-1, ParticleData);
 
-      if (temp!=-1) PIC::ParticleBuffer::SetPrev(ptr,temp);
+      if (temp != -1) PIC::ParticleBuffer::SetPrev(ptr, temp);
     }
-
     break;
   default:
-    exit(__LINE__,__FILE__,"Error: the option is unknown");
+    exit(__LINE__, __FILE__, "Error: the option is unknown");
   }
 
   return _PARTICLE_MOTION_FINISHED_;
 }
-
 
 int SEP::ParticleMover_Tenishev_2005_FL(long int ptr,double dtTotal,cTreeNodeAMR<PIC::Mesh::cDataBlockAMR>* node) {
   namespace PB = PIC::ParticleBuffer;
