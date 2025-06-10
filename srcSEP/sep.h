@@ -152,7 +152,7 @@ namespace SEP {
     }
 
     namespace IsotropicDistributionSEP {
-      void SampleParticleData(double s_new,double s_init,double speed,double weight,double dt,PIC::FieldLine::cFieldLineSegment *segment_start,int iFieldLine);
+      void SampleParticleData(double s_new,double s_init,double speed,long int ptr,double dt,PIC::FieldLine::cFieldLineSegment *segment_start,int iFieldLine);
 
       extern PIC::Datum::cDatumSampled S;
       const int n_stream_intervals=20;

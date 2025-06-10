@@ -137,15 +137,19 @@ void SEP::AlfvenTurbulence::ModelInit::Init() {
 
 //=========================================================================
 //sampling particle particle streaming  
-void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double s_final,double s_init,double speed,double weight,double dt,PIC::FieldLine::cFieldLineSegment *segment_start, int iFieldLine) {
+void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double s_final,double s_init,double speed,long int ptr,double dt,PIC::FieldLine::cFieldLineSegment *segment_start, int iFieldLine) {
   int pBin;
 
-  double log_p=log(Relativistic::Speed2Momentum(speed,_H__MASS_));
+  int spec=PIC::ParticleBuffer::GetI(ptr);
+  double log_p=log(Relativistic::Speed2Momentum(speed,spec));
 
   if ((log_p>log_p_stream_max)||(log_p<log_p_stream_min)) return;  
   pBin=static_cast<int>(std::floor((log_p-log_p_stream_min)/log_dp_stream));
 
   if ((pBin<0)||(pBin>=n_stream_intervals)) exit(__LINE__,__FILE__,"Error: out of range"); 
+
+  double weight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
+  weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
 
   auto seg = segment_start;
   double s=s_init;
