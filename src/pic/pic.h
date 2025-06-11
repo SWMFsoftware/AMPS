@@ -1019,8 +1019,7 @@ namespace PIC {
             Out = 0.0;
       }
 
-      template <class T>
-      double* GetDatum_ptr(T& Datum) {
+      double* GetDatum_ptr(cDatumStored& Datum) {
         return (Datum.offset >= 0 && AssociatedDataPointer != NULL) ?
             (double*)(AssociatedDataPointer + Datum.offset) : NULL;
       }
