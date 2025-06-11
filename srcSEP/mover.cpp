@@ -2309,6 +2309,11 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     exit(__LINE__,__FILE__,"Error: cannot find the segment");
   }
 
+  // Save initial values for Parker flux sampling
+  double s_init = FieldLineCoord;
+  double dtTotal_saved = dtTotal;
+  FL::cFieldLineSegment *segment_start = Segment;
+
   double TimeCounter=0.0,dt;
   double MeanFreePath,ds,Dxx,dDxx_ds;
   double energy,vnew[3],l[3],x[3],r; 
@@ -2503,7 +2508,12 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     FieldLineCoord = FL::FieldLinesAll[iFieldLine].move(FieldLineCoord, ds, Segment);
 
     if (Segment == NULL) {
-      // The particle has left the simulation domain
+      // The particle has left the simulation domain - sample flux before deletion
+      double s_final = FieldLineCoord;
+      SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(
+        s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
+      
+      // Now delete the particle
       PIC::ParticleBuffer::DeleteParticle(ptr);
       return _PARTICLE_LEFT_THE_DOMAIN_;
     }
@@ -2544,6 +2554,11 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
     TimeCounter += dt;
   }
+
+  // Sample Parker flux using the final position
+  double s_final = FieldLineCoord;
+  SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(
+    s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
 
   // Set the new values of the normal and parallel particle velocities 
   PB::SetVParallel(vParallel, ParticleData);
