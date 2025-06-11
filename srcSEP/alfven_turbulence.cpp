@@ -4,9 +4,9 @@
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
 
-PIC::Datum::cDatumSampled SEP::AlfvenTurbulence::IsotropicDistributionSEP::S(SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals,"",false); 
-double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(SEP::AlfvenTurbulence::IsotropicDistributionSEP::e_stream_min,_H__MASS_)); 
-double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(SEP::AlfvenTurbulence::IsotropicDistributionSEP::e_stream_max,_H__MASS_));
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence::IsotropicDistributionSEP::S(SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals,"",false); 
+double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(0.8*SEP::FieldLine::InjectionParameters::emin*MeV2J,_H__MASS_)); 
+double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(1.2*SEP::FieldLine::InjectionParameters::emax*MeV2J,_H__MASS_));
 
 double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_dp_stream=
   (SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max-SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min)/
@@ -141,7 +141,8 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
   int pBin;
 
   int spec=PIC::ParticleBuffer::GetI(ptr);
-  double log_p=log(Relativistic::Speed2Momentum(speed,spec));
+  double log_p=log(Relativistic::Speed2Momentum(speed,PIC::MolecularData::GetMass(spec)));
+  double e=Relativistic::Speed2E(speed,PIC::MolecularData::GetMass(spec))*J2MeV;
 
   if ((log_p>log_p_stream_max)||(log_p<log_p_stream_min)) return;  
   pBin=static_cast<int>(std::floor((log_p-log_p_stream_min)/log_dp_stream));
@@ -150,6 +151,7 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
 
   double weight=PIC::ParticleWeightTimeStep::GlobalParticleWeight[spec]; 
   weight*=PIC::ParticleBuffer::GetIndividualStatWeightCorrection(ptr);
+
 
   auto seg = segment_start;
   double s=s_init;
@@ -164,6 +166,7 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
         
       // Get Parker stream data array
       double* ParkerStream = seg->GetDatum_ptr(S);
+      if (ParkerStream==NULL) return;
         
       // Get segment geometry
       auto v0 = seg->GetBegin();
@@ -184,6 +187,7 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
         s += 1.0;
         s = std::floor(s);  // Ensure we're at exact segment boundary
         seg = seg->GetNext();
+	if (seg==NULL) return;
       }
       else {
          // Stop within current segment
@@ -212,6 +216,7 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
         
        // Get segment data pointer
        double* ParkerStream = seg->GetDatum_ptr(S);
+       if (ParkerStream==NULL) return;
         
         // Get segment endpoints for validation
         auto v0 = seg->GetBegin();
@@ -234,6 +239,7 @@ void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double 
           // Move to previous segment (proper two-step process)
           s = std::floor(s) - 1.0E-8;     // Step 2: Position at end of previous segment (xi = 1.0)
           seg = seg->GetPrev();
+	  if (seg==NULL) return;
         }
         else {
           // Particle motion stops within the current segment
