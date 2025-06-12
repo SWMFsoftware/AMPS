@@ -44,9 +44,18 @@ int main(int argc,char **argv) {
      SEP::Parser::ReadFile(PIC::PostCompileInputFileName);
   }
   
+
+  //setup datum to store the segment's data for the Alfven turbulence model 
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::WaveEnergyDensity); 
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::IsotropicDistributionSEP::S);
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::IsotropicDistributionSEP::S_pm);
+	  
  
   amps_init_mesh();
   amps_init();
+
+  //init the Alfven turbulence IC
+  SEP::AlfvenTurbulence::ModelInit::Init(); 
 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
     TestManager();
@@ -56,10 +65,33 @@ int main(int argc,char **argv) {
 
   SEP::Diffusion::GetPitchAngleDiffusionCoefficient=SEP::Diffusion::Jokopii1966AJ::GetPitchAngleDiffusionCoefficient;
 
+
+  //init MPI exchange of field line segent's associated data 
+  PIC::FieldLine::Parallel::InitializeDatumStoredAtEdgeMPI();
+
   //time step
   for (long int niter=0;niter<TotalIterations;niter++) {
     //SEP::InitDriftVelData();
     amps_time_step();
+
+    //reduce S
+    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence::IsotropicDistributionSEP::S);
+
+    //calculate S+/-
+
+
+    //scatter S+/-  
+    
+    
+    //update Alfven turbulence energy density due to particle interaction  
+
+
+    //scatter Alfven turbulence energy density 
+
+
+    //convect Alfven turbument energy density 
+
+
 
     //PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);
     //
