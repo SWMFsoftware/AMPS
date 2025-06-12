@@ -33,6 +33,11 @@
 #include <sstream>
 
 
+#include <iostream>
+#include <cassert>
+#include <unordered_map>
+#include <vector>
+#include <cstddef>
 
 
 #include "logger.h"
@@ -480,7 +485,6 @@ namespace PIC {
     //inject particles with Maxwellian distrivution at the beginning of a field line
     int InjectMaxwellianLineBeginning(int spec,double NumberDensity,double Temperature,double* BulkVelocity,double InjectionArea,int iFieldLine,int nMaxInjectedParticles);
 
-
     class cParticleFieldLineData {
     public:
       //local coordinate, and velocity along the field line 
@@ -888,6 +892,142 @@ namespace PIC {
       inline cFieldLineVertex* GetPrev() {return prev;}
       inline cFieldLineVertex* GetNext() {return next;}
     };
+
+
+    //routines for exchenge of data saved with the field line's edges 
+
+        namespace Parallel {
+
+// Class for managing MPI datatypes for DatumStoredAtEdge operations
+namespace  DatumStoredAtEdgeMPIManager {
+    // Constructor/Destructor
+    void Initialize();
+    void Finalize();
+    
+    // Field line change notification
+    void NotifyFieldLinesChanged();
+    bool AreFieldLinesChanged();
+    
+    // MPI Datatype construction and management
+    MPI_Datatype ConstructDatumStoredAtEdgeDatatype(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S);
+    
+    // Check if MPI datatype is available for given configuration
+    bool IsDatumStoredAtEdgeDatatypeAvailable(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S);
+    
+    // Get existing datatype (returns MPI_DATATYPE_NULL if not available)
+    MPI_Datatype GetDatumStoredAtEdgeDatatype(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S);
+    
+    // MPI Scatter/Gather datatype construction for process-specific segments
+    MPI_Datatype ConstructScatterGatherDatatype(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S,
+        int target_process_rank);
+    
+    // Check availability for scatter/gather datatypes
+    bool IsScatterGatherDatatypeAvailable(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S,
+        int target_process_rank);
+    
+    // Remove specific datatype from cache
+    bool RemoveDatatype(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S);
+    
+    // Clean up all cached datatypes
+    void CleanupAllDatatypes();
+    
+    // Get statistics
+    int GetCachedDatatypeCount();
+    void PrintCacheStatistics();
+
+    // Internal cache management
+    extern std::unordered_map<size_t, MPI_Datatype> datatype_cache;
+    extern std::unordered_map<size_t, bool> datatype_availability;
+    extern bool is_initialized;
+    extern bool field_lines_changed;
+    
+    // Cached field lines data
+    extern std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>> cached_field_lines;
+    extern bool field_lines_cache_valid;
+    
+    // Helper functions
+    size_t CreateDatatypeKey(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        int datum_length);
+    
+    size_t CreateScatterGatherDatatypeKey(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        int datum_length,
+        int target_process_rank);
+    
+    MPI_Datatype CreateDatumStoredAtEdgeDatatypeInternal(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S);
+    
+    MPI_Datatype CreateScatterGatherDatatypeInternal(
+        const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+        const cDatumStored& S,
+        int target_process_rank);
+    
+    // Internal field lines collection with caching
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& GetCachedFieldLines();
+    void InvalidateFieldLinesCache();
+} 
+
+// Main MPI collective communication functions
+void MPIAllReduceDatumStoredAtEdge(const cDatumStored& S);
+
+void MPIAllReduceDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S);
+
+// MPI Scatter and Gather functions based on segment->Thread assignment
+void MPIScatterDatumStoredAtEdge(cDatumStored& S, int root_rank = 0);
+
+void MPIGatherDatumStoredAtEdge(cDatumStored& S, int root_rank = 0);
+
+void MPIScatterDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank = 0);
+
+void MPIGatherDatumStoredAtEdgeFieldLine(int field_line_idx, cDatumStored& S, int root_rank = 0);
+
+// Datatype management functions
+MPI_Datatype ConstructDatumStoredAtEdgeMPIDatatype(
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+    const cDatumStored& S);
+
+bool IsDatumStoredAtEdgeMPIDatatypeAvailable(
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+    const cDatumStored& S);
+
+// Scatter and Gather functions for process-specific data distribution
+MPI_Datatype ConstructScatterGatherMPIDatatype(
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+    const cDatumStored& S,
+    int target_process_rank);
+
+bool IsScatterGatherMPIDatatypeAvailable(
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+    const cDatumStored& S,
+    int target_process_rank);
+
+void RemoveDatumStoredAtEdgeDatatype(
+    const std::vector<std::vector<PIC::FieldLine::cFieldLineSegment*>>& field_lines,
+    const cDatumStored& S);
+
+// Cleanup and utility functions
+void CleanupDatumStoredAtEdgeMPI();
+void InitializeDatumStoredAtEdgeMPI();
+
+// Convenience functions for common field line configurations
+MPI_Datatype ConstructDatumStoredAtEdgeMPIDatatypeAllFieldLines(const cDatumStored& S);
+bool IsDatumStoredAtEdgeMPIDatatypeAvailableAllFieldLines(const cDatumStored& S);
+
+        } // namespace Parallel
 
     //class cFieldLineVertex --------------------------------------------------
     class cFieldLineSegment : public cStackElementBase {
