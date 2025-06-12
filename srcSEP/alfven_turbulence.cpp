@@ -5,6 +5,8 @@
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence::IsotropicDistributionSEP::S(SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals,"",false); 
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence::IsotropicDistributionSEP::S_pm(2,"\"S+\",\"S-\"",false);
+
 double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(0.8*SEP::FieldLine::InjectionParameters::emin*MeV2J,_H__MASS_)); 
 double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(1.2*SEP::FieldLine::InjectionParameters::emax*MeV2J,_H__MASS_));
 
