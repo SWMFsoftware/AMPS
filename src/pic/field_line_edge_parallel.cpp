@@ -1,8 +1,4 @@
 /*
-================================================================================
-                         MPI DATUM STORED AT EDGE - COMPREHENSIVE HELP
-================================================================================
-
 PURPOSE:
 --------
 This module provides efficient MPI communication for DatumStoredAtEdge data 
@@ -10,16 +6,6 @@ across field line segments in the AMPS plasma simulation. It handles the complex
 memory layout where each field line segment stores its own DatumStoredAtEdge data
 in individual memory locations, making standard MPI operations challenging.
 
-PROBLEM SOLVED:
----------------
-Field line segments store DatumStoredAtEdge data in non-contiguous memory:
-  Segment 0: DatumData at 0x10000  [value0, value1, value2, ...]
-  Segment 1: DatumData at 0x25000  [value0, value1, value2, ...]  
-  Segment 2: DatumData at 0x41000  [value0, value1, value2, ...]
-
-Standard MPI operations cannot handle this scattered memory layout efficiently.
-This module creates custom MPI struct datatypes that handle absolute memory
-addresses, enabling efficient collective operations.
 
 KEY FEATURES:
 -------------
@@ -287,21 +273,6 @@ COMMON PITFALLS:
 5. PREMATURE CACHE INVALIDATION:
    Only call NotifyFieldLinesChanged() when structure actually changes
 
-DEPENDENCIES:
-=============
-- MPI library (MPI-2 or later)
-- AMPS PIC framework
-- C++11 or later (for std::unordered_map, auto, etc.)
-
-VERSION HISTORY:
-================
-- v1.0: Initial implementation with basic all-reduce support
-- v2.0: Added scatter/gather operations and caching
-- v3.0: Added single field line operations and improved error handling
-- v4.0: Enhanced performance optimization and comprehensive documentation
-
-AUTHOR: Generated for AMPS Parker1D Alfven Wave Simulation
-LICENSE: Same as AMPS framework
 ================================================================================
 */
 
