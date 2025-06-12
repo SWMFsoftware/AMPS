@@ -2,19 +2,20 @@
 
 #include "sep.h"
 
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensityGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence::IsotropicDistributionSEP::S(SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals,"",false); 
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence::IsotropicDistributionSEP::S_pm(2,"\"S+\",\"S-\"",false);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals,"",false); 
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm(2,"\"S+\",\"S-\"",false);
 
-double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(0.8*SEP::FieldLine::InjectionParameters::emin*MeV2J,_H__MASS_)); 
-double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(1.2*SEP::FieldLine::InjectionParameters::emax*MeV2J,_H__MASS_));
+double SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_min=log(Relativistic::Energy2Momentum(0.8*SEP::FieldLine::InjectionParameters::emin*MeV2J,_H__MASS_)); 
+double SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_max=log(Relativistic::Energy2Momentum(1.2*SEP::FieldLine::InjectionParameters::emax*MeV2J,_H__MASS_));
 
-double SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_dp_stream=
-  (SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_max-SEP::AlfvenTurbulence::IsotropicDistributionSEP::log_p_stream_min)/
-       SEP::AlfvenTurbulence::IsotropicDistributionSEP::n_stream_intervals;	
+double SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_dp_stream=
+  (SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_max-SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_min)/
+       SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals;	
 
-double SEP::AlfvenTurbulence::ModelInit::dB_B(double r) {
+double SEP::AlfvenTurbulence_Kolmogorov::ModelInit::dB_B(double r) {
    // Example: power-law dependence on heliocentric distance
    // dB/B = dB_B_0 * (r/r_0)^alpha
    // where r is in meters, r_0 is 1 AU
@@ -30,22 +31,22 @@ double SEP::AlfvenTurbulence::ModelInit::dB_B(double r) {
 
 //=========================================================================
 // Main initialization function
-void SEP::AlfvenTurbulence::ModelInit::Init() {      
+void SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init() {      
   namespace FL = PIC::FieldLine;
 
   // Check if field lines are available
   if (FL::FieldLinesAll == nullptr || FL::nFieldLine == 0) {
     if (PIC::ThisThread == 0) {
-      printf("SEP::AlfvenTurbulence::ModelInit: No field lines available for initialization\n");
+      printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: No field lines available for initialization\n");
     }
 
     return;
   }
 
   // Ensure the wave energy density datum is activated
-  if (!SEP::AlfvenTurbulence::WaveEnergyDensity.is_active()) {
+  if (!SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity.is_active()) {
     if (PIC::ThisThread == 0) {
-      printf("SEP::AlfvenTurbulence::ModelInit: Warning - WaveEnergyDensity datum not activated\n");
+      printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Warning - WaveEnergyDensity datum not activated\n");
     }
 
      return;
@@ -131,7 +132,7 @@ void SEP::AlfvenTurbulence::ModelInit::Init() {
 
      // Report completion
      if (PIC::ThisThread == 0) {
-       printf("SEP::AlfvenTurbulence::ModelInit: Initialized turbulence for %d segments across %d field lines\n",
+       printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Initialized turbulence for %d segments across %d field lines\n",
        totalSegmentsProcessed, FL::nFieldLine);
      }
    }
@@ -139,7 +140,7 @@ void SEP::AlfvenTurbulence::ModelInit::Init() {
 
 //=========================================================================
 //sampling particle particle streaming  
-void SEP::AlfvenTurbulence::IsotropicDistributionSEP::SampleParticleData(double s_final,double s_init,double speed,long int ptr,double dt,PIC::FieldLine::cFieldLineSegment *segment_start, int iFieldLine) {
+void SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(double s_final,double s_init,double speed,long int ptr,double dt,PIC::FieldLine::cFieldLineSegment *segment_start, int iFieldLine) {
   int pBin;
 
   int spec=PIC::ParticleBuffer::GetI(ptr);

@@ -46,16 +46,16 @@ int main(int argc,char **argv) {
   
 
   //setup datum to store the segment's data for the Alfven turbulence model 
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::WaveEnergyDensity); 
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::IsotropicDistributionSEP::S);
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence::IsotropicDistributionSEP::S_pm);
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity); 
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
+  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
 	  
  
   amps_init_mesh();
   amps_init();
 
   //init the Alfven turbulence IC
-  SEP::AlfvenTurbulence::ModelInit::Init(); 
+  SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
     TestManager();
@@ -75,7 +75,7 @@ int main(int argc,char **argv) {
     amps_time_step();
 
     //reduce S
-    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence::IsotropicDistributionSEP::S);
+    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
     //calculate S+/-
 

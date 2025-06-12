@@ -77,6 +77,7 @@
 #include "sep.dfn"
 #include "sample3d.h"
 #include "solar_wind.h"
+#include "parker_streaming_calculator.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -143,15 +144,15 @@ namespace SEP {
   extern bool PerpendicularDiffusionMode;
 
   //functions for self-consistent modeling Alfven turbulence 
-  namespace AlfvenTurbulence {
-    extern PIC::Datum::cDatumStored WaveEnergyDensity;
+  namespace AlfvenTurbulence_Kolmogorov {
+    extern PIC::Datum::cDatumStored WaveEnergyDensity,WaveEnergyDensityGrowthRate;
 
     namespace ModelInit {
       double dB_B(double r);
       void Init();
     }
 
-    namespace IsotropicDistributionSEP {
+    namespace IsotropicSEP {
       void SampleParticleData(double s_new,double s_init,double speed,long int ptr,double dt,PIC::FieldLine::cFieldLineSegment *segment_start,int iFieldLine);
 
       extern PIC::Datum::cDatumStored S,S_pm;
