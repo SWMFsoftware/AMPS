@@ -1,6 +1,6 @@
 #main
 
-SpeciesList=O_PLUS,25thElectron
+SpeciesList=25thElectron,O_PLUS
 
 DebuggerMode=off !on,off
 ForceRepeatableSimulationPath=on ! on,off 
@@ -55,9 +55,10 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   RequestedParticleBufferLength=10000000
   FirstPrintedOutputFile=0
 
-  !define  _PIC_SAMPLING_MODE_  _PIC_MODE_OFF_ 
-  define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_ON_
+  define  _PIC_SAMPLING_MODE_  _PIC_MODE_OFF_ 
+  define _PIC_BC__PERIODIC_MODE_ _PIC_BC__PERIODIC_MODE_OFF_
   define _PIC_LINEAR_SOLVER_MODE_ _PIC_MODE_ON_
+  define _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE_  _PIC_PROCESS_NODE_ASSSOCIATED_DATA_MODE__Yuxi_
 
   ReferenceInjectionParticleNumber=60000
   MaxMeshRefinmentLevel=12
@@ -68,13 +69,13 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   
   MeshType=uniform !uniform,non-uniform
   BlockCells=16,8,4
-  GhostCells=2,2,2
-  CommunicationDepth=2,2
-  divediscretization=yuxi
+  GhostCells=1,1,1
+  CommunicationDepth=1,1
+  divediscretization=default
   CorrectionFactorDivE=0.51
 
   !InternalBoundary=off
-  NastranSurfaceUserData=off !on !!!on, off
+  NastranSurfaceUserData=on !on !!!on, off
   ControlParticleInsideNastranSurface=off !!!on,off
 
   TrajectoryTracing=off !on
@@ -88,6 +89,9 @@ CouplerMode=off !!file(tecplot) !!off, file,  swmf
   define _PIC_FIELD_SOLVER_MODE_ _PIC_FIELD_SOLVER_MODE__ELECTROMAGNETIC__ECSIM_
   define _PIC_FIELD_SOLVER_INPUT_UNIT_  _PIC_FIELD_SOLVER_INPUT_UNIT_NORM_
   !define _PIC_FIELD_SOLVER_INPUT_UNIT_ _PIC_FIELD_SOLVER_INPUT_UNIT_SI_
+  define _PIC_SAMPLE__VELOCITY_TENSOR_MODE_  _PIC_MODE_OFF_	
+  define _PIC_FIELD_SOLVER_B_MODE_  _PIC_FIELD_SOLVER_B_CORNER_BASED_        
+  define _PIC_FIELD_SOLVER_SAMPLE_SPECIES_ON_CORNER_ _PIC_MODE_ON_
 #endGeneral
 
 #interface
