@@ -46,16 +46,18 @@ int main(int argc,char **argv) {
   
 
   //setup datum to store the segment's data for the Alfven turbulence model 
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity); 
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
-  PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) { 
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity); 
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
+    PIC::FieldLine::cFieldLineSegment::AddDatumStored(&SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm);
+  }
 	  
  
   amps_init_mesh();
   amps_init();
 
   //init the Alfven turbulence IC
-  SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init(); 
 
   if (_PIC_FIELD_LINE_MODE_==_PIC_MODE_ON_) { 
     TestManager();
@@ -74,23 +76,24 @@ int main(int argc,char **argv) {
     //SEP::InitDriftVelData();
     amps_time_step();
 
-    //reduce S
-    PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
+    if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) {
+      //reduce S
+      PIC::FieldLine::Parallel::MPIAllReduceDatumStoredAtEdge(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S);
 
-    //calculate S+/-
+      //calculate S+/-
 
 
-    //scatter S+/-  
+      //scatter S+/-  
     
     
-    //update Alfven turbulence energy density due to particle interaction  
+      //update Alfven turbulence energy density due to particle interaction  
 
 
-    //scatter Alfven turbulence energy density 
+      //scatter Alfven turbulence energy density 
 
 
-    //convect Alfven turbument energy density 
-
+      //convect Alfven turbulence energy density 
+    }
 
 
     //PIC::ParticleSplitting::Split::SplitWithVelocityShift_FL(10,200);

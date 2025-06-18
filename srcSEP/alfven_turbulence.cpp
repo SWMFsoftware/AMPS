@@ -2,6 +2,8 @@
 
 #include "sep.h"
 
+bool SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag=true;
+
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensityGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 

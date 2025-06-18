@@ -2510,7 +2510,7 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
     if (Segment == NULL) {
       // The particle has left the simulation domain - sample flux before deletion
       double s_final = FieldLineCoord;
-      SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
+      if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
         s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
       
       // Now delete the particle
@@ -2557,7 +2557,7 @@ int SEP::ParticleMover_Parker_Dxx(long int ptr,double dtTotal,cTreeNodeAMR<PIC::
 
   // Sample Parker flux using the final position
   double s_final = FieldLineCoord;
-  SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
+  if (SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag) SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::SampleParticleData(
     s_final, s_init, Speed, ptr, dtTotal_saved, segment_start, iFieldLine);
 
   // Set the new values of the normal and parallel particle velocities 
