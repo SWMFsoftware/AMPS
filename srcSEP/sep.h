@@ -78,6 +78,7 @@
 #include "sample3d.h"
 #include "solar_wind.h"
 #include "parker_streaming_calculator.h"
+#include "wave_particle_coupling_kolmogorov.h"
 
 //define which diffution model is used in the simulation
 #define _DIFFUSION_NONE_                 0
@@ -145,7 +146,7 @@ namespace SEP {
 
   //functions for self-consistent modeling Alfven turbulence 
   namespace AlfvenTurbulence_Kolmogorov {
-    extern PIC::Datum::cDatumStored WaveEnergyDensity,WaveEnergyDensityGrowthRate;
+    extern PIC::Datum::cDatumStored CellIntegratedWaveEnergy,WaveEnergyGrowthRate;
     extern bool ActiveFlag;
 
     namespace ModelInit {

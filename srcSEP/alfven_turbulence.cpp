@@ -4,8 +4,8 @@
 
 bool SEP::AlfvenTurbulence_Kolmogorov::ActiveFlag=true;
 
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity(2,"\"W+\",\"W-\"",true);
-PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensityGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy(2,"\"W+\",\"W-\"",true);
+PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyGrowthRate(2,"\"dW+/dt\",\"dW-/dt\"",true);
 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S(SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals,"",false); 
 PIC::Datum::cDatumStored SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::S_pm(2,"\"S+\",\"S-\"",false);
@@ -46,9 +46,9 @@ void SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init() {
   }
 
   // Ensure the wave energy density datum is activated
-  if (!SEP::AlfvenTurbulence_Kolmogorov::WaveEnergyDensity.is_active()) {
+  if (!SEP::AlfvenTurbulence_Kolmogorov::CellIntegratedWaveEnergy.is_active()) {
     if (PIC::ThisThread == 0) {
-      printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Warning - WaveEnergyDensity datum not activated\n");
+      printf("SEP::AlfvenTurbulence_Kolmogorov::ModelInit: Warning - CellIntegratedWaveEnergy datum not activated\n");
     }
 
      return;
@@ -124,7 +124,7 @@ void SEP::AlfvenTurbulence_Kolmogorov::ModelInit::Init() {
        }
 
        // Store the wave energy density in the segment
-       segment->SetDatum(WaveEnergyDensity,W);
+       segment->SetDatum(CellIntegratedWaveEnergy,W);
 
        totalSegmentsProcessed++;
 
