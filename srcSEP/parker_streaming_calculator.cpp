@@ -483,3 +483,240 @@ void CalculatePlasmaParameters(double B0, double rho, double& VA, double& Omega,
 } // namespace IsotropicSEP
 } // namespace AlfvenTurbulence_Kolmogorov  
 } // namespace SEP
+
+namespace SEP {
+namespace AlfvenTurbulence_Kolmogorov {
+namespace IsotropicSEP {
+
+// ============================================================================
+// SINGLE SEGMENT PARKER GROWTH RATE CALCULATION
+// ============================================================================
+
+void CalculateParkerGrowthRatesFromScalarSingleSegment(
+    PIC::FieldLine::cFieldLineSegment* segment,   // Input: specific field line segment
+    const PIC::Datum::cDatumStored& S_scalar,     // Input: scalar distribution S
+    const std::vector<double>& kGrid,             // k-space grid (wavenumber) [rad/m]
+    const std::vector<double>& pGrid,             // momentum grid [kg⋅m/s]
+    double B0,                                    // Background magnetic field [T]
+    double rho,                                   // Mass density [kg/m³]
+    double& Gamma_plus,                           // Output: Γ+ growth rate [s⁻¹]
+    double& Gamma_minus                           // Output: Γ- damping rate [s⁻¹]
+) {
+    // ========================================================================
+    // INITIALIZE OUTPUT
+    // ========================================================================
+    Gamma_plus = 0.0;
+    Gamma_minus = 0.0;
+
+    // ========================================================================
+    // INPUT VALIDATION
+    // ========================================================================
+    if (!segment) {
+        std::cerr << "Error: Null segment pointer" << std::endl;
+        return;
+    }
+
+    const size_t Nk = kGrid.size();
+    const size_t Np = pGrid.size();
+
+    if (Nk < 2 || Np == 0) {
+        std::cerr << "Error: Invalid grid sizes (Nk=" << Nk << ", Np=" << Np << ")" << std::endl;
+        return;
+    }
+
+    // ========================================================================
+    // PHYSICAL CONSTANTS
+    // ========================================================================
+    const double mu0     = 4.0e-7 * M_PI;          // Permeability [H/m]
+    const double eCharge = 1.602176634e-19;        // Elementary charge [C]
+    const double mp      = 1.6726219e-27;          // Proton mass [kg]
+    const double CLIGHT  = 2.99792458e8;           // Speed of light [m/s]
+
+    // ========================================================================
+    // PLASMA PHYSICS PARAMETERS
+    // ========================================================================
+    const double VA = B0 / std::sqrt(mu0 * rho);        // Alfvén speed [m/s]
+    const double Omega = eCharge * B0 / mp;             // Cyclotron frequency [rad/s]
+
+    if (VA <= 0.0 || Omega <= 0.0) {
+        std::cerr << "Error: Invalid plasma parameters (VA=" << VA
+                  << ", Omega=" << Omega << ")" << std::endl;
+        return;
+    }
+
+    // Kolmogorov turbulence prefactor: C = (π²e²VA)/(cB₀²)
+    const double kolmogorov_prefactor = (M_PI * M_PI * eCharge * eCharge * VA) / (CLIGHT * B0 * B0);
+
+    // ========================================================================
+    // K-GRID LOGARITHMIC INTERPOLATION SETUP
+    // ========================================================================
+    const double logK0   = std::log(kGrid.front());
+    const double inv_dln = 1.0 / (std::log(kGrid[1]) - logK0);
+    const double kMin    = kGrid.front();
+    const double kMax    = kGrid.back();
+
+    // ========================================================================
+    // GET SEGMENT DATA POINTER
+    // ========================================================================
+    PIC::Datum::cDatumStored S_scalar_copy = S_scalar;
+    double* Sscalar = segment->GetDatum_ptr(S_scalar_copy);
+
+    if (!Sscalar) {
+        std::cerr << "Error: Failed to get scalar distribution data pointer for segment" << std::endl;
+        return;
+    }
+
+    // ========================================================================
+    // DIRECT ACCUMULATION VARIABLES (NO INTERMEDIATE ARRAYS!)
+    // ========================================================================
+    double sumPlus = 0.0;   // Direct accumulator for Σ S+/k
+    double sumMinus = 0.0;  // Direct accumulator for Σ S-/k
+
+    // ========================================================================
+    // MOMENTUM SPACE LOOP: DIRECT ACCUMULATION
+    // ========================================================================
+    for (size_t m = 0; m < Np && m < static_cast<size_t>(S_scalar.length); ++m) {
+        double p = pGrid[m];
+        if (p <= 0.0) continue;
+
+        // Relativistic particle kinematics using AMPS function
+        double v = Relativistic::Momentum2Speed(p, mp);  // relativistic velocity [m/s]
+        if (v < 1.0e-8) continue;                        // guard
+
+        double muRes = std::min(1.0, std::fabs(VA / v));  // pitch angle cosine
+
+        // Wave resonance conditions
+        double kPlus = Omega / (v * muRes + VA);      // outward waves
+        double kMinus = Omega / (v * (-muRes) + VA);  // inward waves
+
+        bool plusValid = (kPlus >= kMin && kPlus <= kMax);
+        bool minusValid = (kMinus >= kMin && kMinus <= kMax);
+
+        if (!plusValid && !minusValid) continue;     // no resonance
+
+        // Get scalar flux for this momentum bin
+        double scalarFlux = Sscalar[m];
+        if (scalarFlux == 0.0) continue;              // no flux
+
+        // Flux distribution logic
+        double fluxPlus = 0.0, fluxMinus = 0.0;
+        if (plusValid && minusValid) {
+            // Both modes valid: split equally
+            fluxPlus = fluxMinus = 0.5 * scalarFlux;
+        } else if (plusValid) {
+            // Only + mode valid: all flux goes there
+            fluxPlus = scalarFlux;
+        } else {
+            // Only - mode valid: all flux goes there
+            fluxMinus = scalarFlux;
+        }
+
+        // ====================================================================
+        // DIRECT KOLMOGOROV ACCUMULATION: Σ S±/k
+        // ====================================================================
+
+        // Lambda for direct accumulation without intermediate storage
+        auto directAccumulate = [&](double kRes, double flux, double& sum_accumulator) {
+            // CIC interpolation on log k-grid
+            double x = (std::log(kRes) - logK0) * inv_dln;
+            int l0 = static_cast<int>(std::floor(x));
+            int l1 = l0 + 1;
+            double w1 = x - l0;
+            double w0 = 1.0 - w1;
+
+            // Clamp indices to prevent out-of-bounds access
+            auto clamp = [](auto value, auto low, auto high) {
+                return (value < low) ? low : (value > high) ? high : value;
+            };
+
+            l0 = clamp(l0, 0, static_cast<int>(Nk) - 1);
+            l1 = clamp(l1, 0, static_cast<int>(Nk) - 1);
+
+            // Direct accumulation of S/k contribution
+            sum_accumulator += flux * w0 / kGrid[l0];
+            sum_accumulator += flux * w1 / kGrid[l1];
+        };
+
+        // Accumulate directly into final sum variables
+        if (plusValid) {
+            directAccumulate(kPlus, fluxPlus, sumPlus);
+        }
+        if (minusValid) {
+            directAccumulate(kMinus, fluxMinus, sumMinus);
+        }
+    }
+
+    // ========================================================================
+    // APPLY KOLMOGOROV PREFACTOR TO GET FINAL GROWTH RATES
+    // ========================================================================
+    Gamma_plus = kolmogorov_prefactor * sumPlus;     // Convert to [s⁻¹]
+    Gamma_minus = kolmogorov_prefactor * sumMinus;   // Convert to [s⁻¹]
+}
+
+// ============================================================================
+// CONVENIENCE WRAPPER USING SEP MOMENTUM GRID PARAMETERS
+// ============================================================================
+
+void CalculateParkerGrowthRatesFromScalarSingleSegment(
+    PIC::FieldLine::cFieldLineSegment* segment,   // Input: specific field line segment
+    const PIC::Datum::cDatumStored& S_scalar,     // Input: scalar distribution S
+    double& Gamma_plus,                           // Output: Γ+ growth rate [s⁻¹]
+    double& Gamma_minus                           // Output: Γ- damping rate [s⁻¹]
+) {
+    // Default k-grid: log-uniform from 1e-6 to 1e-3 rad/m
+    const size_t Nk = 64;
+    std::vector<double> defaultKGrid(Nk);
+    const double kMin = 1.0e-6, kMax = 1.0e-3;
+    const double logKMin = std::log(kMin), logKMax = std::log(kMax);
+    for (size_t i = 0; i < Nk; ++i) {
+        double logK = logKMin + (logKMax - logKMin) * i / (Nk - 1);
+        defaultKGrid[i] = std::exp(logK);
+    }
+
+    // Get momentum grid from SEP namespace parameters
+    std::vector<double> sepPGrid = CreateMomentumGridFromSEPParams();
+    if (sepPGrid.empty()) {
+        std::cerr << "Error: Failed to create momentum grid from SEP parameters" << std::endl;
+        Gamma_plus = Gamma_minus = 0.0;
+        return;
+    }
+
+    // Default plasma parameters (typical solar wind)
+    const double B0_default = 5.0e-9;              // 5 nT
+    const double rho_default = 5.0e-21;            // kg/m³
+
+    CalculateParkerGrowthRatesFromScalarSingleSegment(segment, S_scalar,
+                                                      defaultKGrid, sepPGrid,
+                                                      B0_default, rho_default,
+                                                      Gamma_plus, Gamma_minus);
+}
+
+// ============================================================================
+// UTILITY FUNCTION FOR BATCH PROCESSING MULTIPLE SEGMENTS
+// ============================================================================
+
+void CalculateParkerGrowthRatesMultipleSegments(
+    const std::vector<PIC::FieldLine::cFieldLineSegment*>& segments,  // Input: vector of segments
+    const PIC::Datum::cDatumStored& S_scalar,                        // Input: scalar distribution S
+    const std::vector<double>& kGrid,                                 // k-space grid [rad/m]
+    const std::vector<double>& pGrid,                                 // momentum grid [kg⋅m/s]
+    double B0,                                                        // Background magnetic field [T]
+    double rho,                                                       // Mass density [kg/m³]
+    std::vector<double>& Gamma_plus_results,                          // Output: Γ+ for each segment [s⁻¹]
+    std::vector<double>& Gamma_minus_results                          // Output: Γ- for each segment [s⁻¹]
+) {
+    const size_t num_segments = segments.size();
+    Gamma_plus_results.resize(num_segments);
+    Gamma_minus_results.resize(num_segments);
+
+    for (size_t i = 0; i < num_segments; ++i) {
+        CalculateParkerGrowthRatesFromScalarSingleSegment(
+            segments[i], S_scalar, kGrid, pGrid, B0, rho,
+            Gamma_plus_results[i], Gamma_minus_results[i]
+        );
+    }
+}
+
+} // namespace IsotropicSEP
+} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace SEP

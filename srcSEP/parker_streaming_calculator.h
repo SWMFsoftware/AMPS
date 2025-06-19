@@ -1,272 +1,288 @@
 /*
 ================================================================================
-                    PARKER STREAMING: HEADER FILE
+                    PARKER STREAMING: COMPLETE GROWTH/DAMPING CALCULATION
 ================================================================================
 
 PURPOSE:
 --------
-Header file for Parker streaming growth/damping rate calculations using
-Kolmogorov turbulence spectrum and isotropic SEP approximation.
+Complete header file for calculating growth rates (Γ+ and Γ-) from 
+scalar particle distribution S using Parker transport theory and Kolmogorov 
+turbulence spectrum. Includes both multi-segment MPI parallel computation and 
+single-segment analysis functions.
+
+PHYSICS:
+--------
+For Kolmogorov turbulence with spectrum P(k) ∝ k^(-5/3), the growth rates 
+are given by:
+  Γ± = C × Σ S±(k)/k
+
+Where:
+  C = (π²e²VA)/(cB₀²)  = prefactor from quasi-linear theory
+  S±(k) = wave-sense particle flux from resonance conditions k± = Ω/(v⋅μ ± VA)
+  Γ+ = growth rate for outward-propagating waves (away from Sun)
+  Γ- = growth rate for inward-propagating waves (toward Sun)
+
+ALGORITHM:
+----------
+1. Loop through field line segments (MPI parallel or single segment)
+2. For each segment, initialize growth rate accumulators to zero
+3. For each momentum bin in scalar distribution S:
+   - Calculate resonant wavenumbers k± using Parker theory
+   - Split scalar flux between ± modes based on validity
+   - Directly accumulate contribution to Σ S±/k using CIC interpolation
+4. Apply Kolmogorov prefactor and store final Γ+ and Γ- values
+
+ADVANTAGES:
+-----------
+- Memory efficient: No intermediate S±(k) arrays stored
+- Single-pass computation: Direct calculation of final quantities
+- Physically motivated: Based on established Kolmogorov theory
+- MPI parallel: Process-local computation with proper data distribution
+- Flexible interface: Both array output and scalar output options
 
 NAMESPACE ORGANIZATION:
 -----------------------
 SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP
   └── Solar Energetic Particle transport with Alfvén wave turbulence
-      └── Kolmogorov spectrum assumption  
+      └── Kolmogorov spectrum assumption
           └── Isotropic pitch angle distribution approximation
-
-MAIN FUNCTIONS:
----------------
-1. CalculateParkerGrowthRatesFromScalar() - Per-energy growth rates
-2. CalculateParkerGrowthRatesIntegrated() - Spatially integrated rates
-3. CreateMomentumGridFromSEPParams() - Grid from SEP namespace parameters
-
-DEPENDENCIES:
--------------
-- AMPS PIC framework (pic.h)
-- MPI parallelization (mpi.h)
-- SEP namespace parameters
-- Relativistic kinematics functions
-
-USAGE:
-------
-#include "parker_streaming_calculator.h"
-
-using namespace SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP;
-
-// Basic usage with SEP parameters
-CalculateParkerGrowthRatesFromScalar(S_scalar, Gamma_plus, Gamma_minus);
-
-// Advanced usage with custom parameters
-auto kGrid = CreateLogUniformKGrid(1e-6, 1e-3, 64);
-auto pGrid = CreateMomentumGridFromSEPParams();
-CalculateParkerGrowthRatesFromScalar(S_scalar, Gamma_plus, Gamma_minus,
-                                     kGrid, pGrid, B0, rho);
 
 ================================================================================
 */
 
-#ifndef PARKER_STREAMING_CALCULATOR_H
-#define PARKER_STREAMING_CALCULATOR_H
+#ifndef PARKER_STREAMING_CALCULATOR_COMPLETE_H
+#define PARKER_STREAMING_CALCULATOR_COMPLETE_H
 
-// ============================================================================
-// SYSTEM INCLUDES
-// ============================================================================
+#include "pic.h"              // AMPS PIC framework
+#include <mpi.h>              // MPI parallelization
 #include <vector>             // STL containers
 #include <iostream>           // Error output
 
-// ============================================================================
-// AMPS FRAMEWORK INCLUDES
-// ============================================================================
-#include "pic.h"              // AMPS PIC framework
-#include <mpi.h>              // MPI parallelization
-
-// ============================================================================
-// NAMESPACE DECLARATION
-// ============================================================================
 namespace SEP {
 namespace AlfvenTurbulence_Kolmogorov {
 namespace IsotropicSEP {
 
 // ============================================================================
-// MAIN CALCULATION FUNCTIONS
+// MAIN CALCULATION FUNCTIONS - MULTI-SEGMENT MPI PARALLEL (ORIGINAL)
 // ============================================================================
 
 /**
- * @brief Calculate Parker growth rates from scalar SEP distribution
+ * @brief Calculate Parker growth rates for all field line segments (MPI parallel)
  * 
- * Computes growth and damping rates (Γ+ and Γ-) directly from scalar particle 
- * distribution S using Parker transport theory and Kolmogorov turbulence spectrum.
- * No intermediate S±(k) arrays are stored - everything computed in single pass.
+ * Main function that calculates growth rates directly from scalar 
+ * particle distribution using Parker transport theory. Processes all field line
+ * segments assigned to the current MPI process with direct accumulation algorithm.
  * 
- * @param S_scalar     [in]  Scalar SEP distribution S(p) [particles m⁻² s⁻¹ (Δp)⁻¹]
- * @param Gamma_plus   [out] Growth rates Γ+ for outward waves [s⁻¹]
- * @param Gamma_minus  [out] Damping rates Γ- for inward waves [s⁻¹]
- * @param kGrid        [in]  Wavenumber grid (log-uniform) [rad/m]
- * @param pGrid        [in]  Momentum grid [kg⋅m/s]
- * @param B0           [in]  Background magnetic field [T]
- * @param rho          [in]  Background plasma mass density [kg/m³]
+ * @param S_scalar      Input scalar particle distribution S [particles/(m³·s·sr·GeV)]
+ * @param Gamma_plus    Output: Γ+ growth rates for outward waves per momentum bin [s⁻¹]
+ * @param Gamma_minus   Output: Γ- growth rates for inward waves per momentum bin [s⁻¹]
+ * @param kGrid         Wavenumber grid for turbulence spectrum [rad/m]
+ * @param pGrid         Particle momentum grid [kg·m/s]
+ * @param B0            Background magnetic field strength [T]
+ * @param rho           Mass density of background plasma [kg/m³]
  * 
- * @note Uses relativistic kinematics via Relativistic::Momentum2Speed()
- * @note Processes only segments assigned to current MPI rank
- * @note Growth rates calculated per energy bin for each segment
+ * @note Uses MPI parallelization across field line segments
+ * @note Each segment processes independently with rank-based filtering
+ * @note No intermediate S±(k) arrays stored - direct accumulation for efficiency
+ * @note Output arrays have length equal to momentum grid size
  */
 void CalculateParkerGrowthRatesFromScalar(
-    const PIC::Datum::cDatumStored& S_scalar,
-    const PIC::Datum::cDatumStored& Gamma_plus,
-    const PIC::Datum::cDatumStored& Gamma_minus,
-    const std::vector<double>& kGrid,
-    const std::vector<double>& pGrid,
-    double B0,
-    double rho
+    const PIC::Datum::cDatumStored& S_scalar,     
+    const PIC::Datum::cDatumStored& Gamma_plus,   
+    const PIC::Datum::cDatumStored& Gamma_minus,  
+    const std::vector<double>& kGrid,             
+    const std::vector<double>& pGrid,             
+    double B0,                                    
+    double rho                                    
 );
 
 /**
- * @brief Calculate spatially integrated Parker growth rates
+ * @brief Convenience wrapper using default parameters and SEP momentum grid (ORIGINAL)
  * 
- * Computes single growth/damping rate values by integrating over all segments
- * assigned to current MPI process. Useful for global turbulence analysis.
+ * Simplified interface for the main calculation function that uses:
+ * - Default k-grid: log-uniform from 1e-6 to 1e-3 rad/m (64 points)
+ * - SEP namespace momentum grid parameters
+ * - Typical solar wind plasma parameters (B₀=5nT, ρ=5×10⁻²¹ kg/m³)
  * 
- * @param S_scalar     [in]  Scalar SEP distribution S(p)
- * @param kGrid        [in]  Wavenumber grid [rad/m]
- * @param pGrid        [in]  Momentum grid [kg⋅m/s]
- * @param B0           [in]  Background magnetic field [T]
- * @param rho          [in]  Background plasma density [kg/m³]
- * @param gammaPlus    [out] Integrated growth rate Γ+ [s⁻¹]
- * @param gammaMinus   [out] Integrated damping rate Γ- [s⁻¹]
+ * @param S_scalar      Input scalar particle distribution S
+ * @param Gamma_plus    Output: Γ+ growth rates for outward waves per momentum bin [s⁻¹]
+ * @param Gamma_minus   Output: Γ- growth rates for inward waves per momentum bin [s⁻¹]
+ */
+void CalculateParkerGrowthRatesFromScalar(
+    const PIC::Datum::cDatumStored& S_scalar,     
+    const PIC::Datum::cDatumStored& Gamma_plus,   
+    const PIC::Datum::cDatumStored& Gamma_minus   
+);
+
+// ============================================================================
+// SPATIALLY INTEGRATED CALCULATION - MPI PARALLEL (ORIGINAL)
+// ============================================================================
+
+/**
+ * @brief Calculate spatially-averaged Parker growth rates (MPI parallel)
+ * 
+ * Computes single integrated growth rates by processing all field 
+ * line segments assigned to current MPI process and summing contributions.
+ * More efficient than full spatial resolution when only global rates are needed.
+ * 
+ * @param S_scalar      Input scalar particle distribution S
+ * @param kGrid         Wavenumber grid for turbulence spectrum [rad/m]
+ * @param pGrid         Particle momentum grid [kg·m/s]
+ * @param B0            Background magnetic field strength [T]
+ * @param rho           Mass density of background plasma [kg/m³]
+ * @param gammaPlus     Output: spatially-integrated Γ+ growth rate for outward waves [s⁻¹]
+ * @param gammaMinus    Output: spatially-integrated Γ- growth rate for inward waves [s⁻¹]
+ * 
+ * @note Uses same physics as detailed calculation but outputs scalar values
+ * @note Suitable for global diagnostics and reduced computational overhead
+ * @note MPI parallel with direct accumulation across all assigned segments
  */
 void CalculateParkerGrowthRatesIntegrated(
-    const PIC::Datum::cDatumStored& S_scalar,
-    const std::vector<double>& kGrid,
-    const std::vector<double>& pGrid,
-    double B0,
-    double rho,
-    double& gammaPlus,
-    double& gammaMinus
+    const PIC::Datum::cDatumStored& S_scalar,     
+    const std::vector<double>& kGrid,             
+    const std::vector<double>& pGrid,             
+    double B0,                                    
+    double rho,                                   
+    double& gammaPlus,                            
+    double& gammaMinus                            
+);
+
+// ============================================================================
+// SINGLE SEGMENT CALCULATION FUNCTIONS (NEW)
+// ============================================================================
+
+/**
+ * @brief Calculate Parker growth rates for a single field line segment
+ * 
+ * Computes growth rates (Γ+ and Γ-) directly from scalar particle 
+ * distribution for one specific segment. Uses same physics as multi-segment
+ * version but provides focused analysis capability.
+ * 
+ * @param segment       Pointer to specific field line segment to process
+ * @param S_scalar      Input scalar particle distribution S [particles/(m³·s·sr·GeV)]
+ * @param kGrid         Wavenumber grid for turbulence spectrum [rad/m]
+ * @param pGrid         Particle momentum grid [kg·m/s]
+ * @param B0            Background magnetic field strength [T]
+ * @param rho           Mass density of background plasma [kg/m³]
+ * @param Gamma_plus    Output: growth rate for outward waves [s⁻¹]
+ * @param Gamma_minus   Output: growth rate for inward waves [s⁻¹]
+ * 
+ * @note No MPI parallelization - operates on single segment only
+ * @note Uses same direct accumulation algorithm as multi-segment version
+ * @note Useful for debugging, testing, and focused spatial analysis
+ */
+void CalculateParkerGrowthRatesFromScalarSingleSegment(
+    PIC::FieldLine::cFieldLineSegment* segment,   
+    const PIC::Datum::cDatumStored& S_scalar,     
+    const std::vector<double>& kGrid,             
+    const std::vector<double>& pGrid,             
+    double B0,                                    
+    double rho,                                   
+    double& Gamma_plus,                           
+    double& Gamma_minus                           
 );
 
 /**
- * @brief Convenience wrapper using default parameters and SEP momentum grid
+ * @brief Single segment calculation with default parameters (NEW)
  * 
- * Uses default k-grid and gets momentum grid from SEP namespace parameters:
+ * @param segment       Pointer to specific field line segment to process
+ * @param S_scalar      Input scalar particle distribution S
+ * @param Gamma_plus    Output: growth rate for outward waves [s⁻¹]
+ * @param Gamma_minus   Output: growth rate for inward waves [s⁻¹]
+ */
+void CalculateParkerGrowthRatesFromScalarSingleSegment(
+    PIC::FieldLine::cFieldLineSegment* segment,   
+    const PIC::Datum::cDatumStored& S_scalar,     
+    double& Gamma_plus,                           
+    double& Gamma_minus                           
+);
+
+/**
+ * @brief Calculate Parker growth rates for multiple segments in batch (NEW)
+ * 
+ * Efficiently processes multiple field line segments using the same grids
+ * and plasma parameters. Useful for spatial analysis of growth rate variations
+ * without full MPI overhead.
+ * 
+ * @param segments              Vector of segment pointers to process
+ * @param S_scalar              Input scalar particle distribution S
+ * @param kGrid                 Wavenumber grid for turbulence spectrum [rad/m]
+ * @param pGrid                 Particle momentum grid [kg·m/s]
+ * @param B0                    Background magnetic field strength [T]
+ * @param rho                   Mass density of background plasma [kg/m³]
+ * @param Gamma_plus_results    Output: growth rates for outward waves for each segment [s⁻¹]
+ * @param Gamma_minus_results   Output: growth rates for inward waves for each segment [s⁻¹]
+ * 
+ * @note Output vectors are resized to match input segment count
+ * @note Each segment processed independently - no cross-segment coupling
+ * @note No MPI communication - suitable for local analysis
+ */
+void CalculateParkerGrowthRatesMultipleSegments(
+    const std::vector<PIC::FieldLine::cFieldLineSegment*>& segments,  
+    const PIC::Datum::cDatumStored& S_scalar,                        
+    const std::vector<double>& kGrid,                                 
+    const std::vector<double>& pGrid,                                 
+    double B0,                                                        
+    double rho,                                                       
+    std::vector<double>& Gamma_plus_results,                          
+    std::vector<double>& Gamma_minus_results                          
+);
+
+// ============================================================================
+// UTILITY FUNCTIONS (ORIGINAL)
+// ============================================================================
+
+/**
+ * @brief Create momentum grid from SEP namespace parameters (ORIGINAL)
+ * 
+ * Generates logarithmically-spaced momentum grid using:
  * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_min
  * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_max  
  * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals
  * 
- * @param S_scalar     [in]  Scalar SEP distribution
- * @param Gamma_plus   [out] Growth rates Γ+
- * @param Gamma_minus  [out] Damping rates Γ-
+ * @return Vector of momentum values [kg·m/s]
+ * @note Returns empty vector if SEP parameters are invalid
  */
-void CalculateParkerGrowthRatesFromScalar(
-    const PIC::Datum::cDatumStored& S_scalar,
-    const PIC::Datum::cDatumStored& Gamma_plus,
-    const PIC::Datum::cDatumStored& Gamma_minus
-);
-
-// ============================================================================
-// GRID CREATION UTILITY FUNCTIONS
-// ============================================================================
+std::vector<double> CreateMomentumGridFromSEPParams();
 
 /**
- * @brief Create log-uniform wavenumber grid
+ * @brief Create logarithmically-uniform wavenumber grid (ORIGINAL)
  * 
- * @param kMin   Minimum wavenumber [rad/m]
- * @param kMax   Maximum wavenumber [rad/m]  
- * @param Nk     Number of grid points
- * @return       Vector of k values in log-uniform spacing
+ * @param kMin  Minimum wavenumber [rad/m]
+ * @param kMax  Maximum wavenumber [rad/m] 
+ * @param Nk    Number of grid points
+ * @return Vector of wavenumber values [rad/m]
  */
 std::vector<double> CreateLogUniformKGrid(double kMin, double kMax, size_t Nk);
 
 /**
- * @brief Create linear momentum grid
+ * @brief Create linearly-uniform momentum grid (ORIGINAL)
  * 
- * @param pMin   Minimum momentum [kg⋅m/s]
- * @param pMax   Maximum momentum [kg⋅m/s]
- * @param Np     Number of grid points
- * @return       Vector of p values in linear spacing
+ * @param pMin  Minimum momentum [kg·m/s]
+ * @param pMax  Maximum momentum [kg·m/s]
+ * @param Np    Number of grid points
+ * @return Vector of momentum values [kg·m/s]
  */
 std::vector<double> CreateLinearPGrid(double pMin, double pMax, size_t Np);
 
 /**
- * @brief Create log-uniform momentum grid from log values
+ * @brief Calculate plasma physics parameters from B-field and density (ORIGINAL)
  * 
- * @param log_pMin   log(minimum momentum)
- * @param log_pMax   log(maximum momentum)
- * @param Np         Number of grid points
- * @return           Vector of p values in log-uniform spacing
+ * Computes fundamental plasma parameters needed for Parker streaming calculations:
+ * - Alfvén speed: VA = B₀/√(μ₀ρ)
+ * - Cyclotron frequency: Ω = eB₀/mp
+ * - Kolmogorov prefactor: C = (π²e²VA)/(cB₀²)
+ * 
+ * @param B0                    Background magnetic field [T]
+ * @param rho                   Mass density [kg/m³]
+ * @param VA                    Output: Alfvén speed [m/s]
+ * @param Omega                 Output: cyclotron frequency [rad/s]
+ * @param kolmogorov_prefactor  Output: Kolmogorov theory prefactor [s⁻¹]
  */
-std::vector<double> CreateLogPGrid(double log_pMin, double log_pMax, size_t Np);
-
-/**
- * @brief Create momentum grid from SEP namespace parameters
- * 
- * Reads momentum grid specification from:
- * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_min
- * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::log_p_stream_max
- * - SEP::AlfvenTurbulence_Kolmogorov::IsotropicSEP::n_stream_intervals
- * 
- * @return  Log-uniform momentum grid [kg⋅m/s]
- * @note    Returns empty vector on error
- */
-std::vector<double> CreateMomentumGridFromSEPParams();
-
-// ============================================================================
-// PLASMA PHYSICS UTILITY FUNCTIONS
-// ============================================================================
-
-/**
- * @brief Calculate plasma parameters from magnetic field and density
- * 
- * @param B0                     [in]  Magnetic field [T]
- * @param rho                    [in]  Mass density [kg/m³]
- * @param VA                     [out] Alfvén speed [m/s]
- * @param Omega                  [out] Cyclotron frequency [rad/s]
- * @param kolmogorov_prefactor   [out] Kolmogorov turbulence prefactor [s⁻¹]
- */
-void CalculatePlasmaParameters(
-    double B0,
-    double rho,
-    double& VA,
-    double& Omega,
-    double& kolmogorov_prefactor
-);
-
-// ============================================================================
-// PHYSICAL CONSTANTS (for reference)
-// ============================================================================
-
-/**
- * @brief Physical constants used in calculations
- * 
- * These are defined in the implementation file:
- * - mu0     = 4π×10⁻⁷ H/m       (permeability of free space)
- * - eCharge = 1.602176634×10⁻¹⁹ C (elementary charge)
- * - mp      = 1.6726219×10⁻²⁷ kg  (proton mass)
- * - CLIGHT  = 2.99792458×10⁸ m/s  (speed of light)
- */
-
-// ============================================================================
-// PHYSICS DOCUMENTATION
-// ============================================================================
-
-/**
- * @section physics Physics Background
- * 
- * @subsection resonance Wave-Particle Resonance Conditions
- * For charged particles streaming along magnetic field lines, wave-particle
- * resonances occur when:
- * 
- *   k± = Ω / (v⋅μ ± VA)
- * 
- * Where:
- * - k±  = wavenumber for outward (+) or inward (-) propagating waves [rad/m]
- * - Ω   = cyclotron frequency = eB₀/mₚ [rad/s]
- * - v   = particle velocity from Relativistic::Momentum2Speed(p,mₚ) [m/s]
- * - μ   = pitch angle cosine = VA/v (isotropic approximation)
- * - VA  = Alfvén speed = B₀/√(μ₀ρ) [m/s]
- * 
- * @subsection kolmogorov Kolmogorov Turbulence
- * For Kolmogorov turbulence with spectrum P(k) ∝ k^(-5/3), the growth/damping
- * rates are given by:
- * 
- *   Γ± = C × Σ S±(k)/k
- * 
- * Where:
- * - C = (π²e²VA)/(cB₀²) = Kolmogorov prefactor from quasi-linear theory
- * - S±(k) = wave-sense particle flux from resonance conditions
- * 
- * @subsection algorithm Algorithm Summary
- * 1. For each momentum bin in scalar distribution S(p):
- *    - Calculate relativistic velocity v = Relativistic::Momentum2Speed(p,mₚ)
- *    - Determine resonant wavenumbers k± using Parker theory
- *    - Split scalar flux between ± modes based on validity
- *    - Directly accumulate contribution to Σ S±/k using CIC interpolation
- * 2. Apply Kolmogorov prefactor to get final growth/damping rates
- * 3. Store results in Γ+ and Γ- data arrays for each segment
- */
+void CalculatePlasmaParameters(double B0, double rho, double& VA, double& Omega, double& kolmogorov_prefactor);
 
 } // namespace IsotropicSEP
-} // namespace AlfvenTurbulence_Kolmogorov
+} // namespace AlfvenTurbulence_Kolmogorov  
 } // namespace SEP
 
-#endif // PARKER_STREAMING_CALCULATOR_H
+#endif // PARKER_STREAMING_CALCULATOR_COMPLETE_H
